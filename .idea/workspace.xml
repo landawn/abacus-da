@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AnalysisUIOptions">
+    <option name="ANALYZE_TEST_SOURCES" value="false" />
+  </component>
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="SELECTIVE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="2d89cef6-a65f-4818-ac7b-a84002709ef7" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/.idea/compiler.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/compiler.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/aws/AWSRDSUtil.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/aws/AWSRDSUtil.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/aws/AWSS3Util.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/aws/AWSS3Util.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/blink/DataSetUtil.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/blink/DataSetUtil.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/blink/DataStreamUtil.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/blink/DataStreamUtil.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/hadoop/HDFSUtil.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/hadoop/HDFSUtil.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/hadoop/HadoopUtil.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/hadoop/HadoopUtil.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/hbase/AnyScan.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/hbase/AnyScan.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/search/ElasticsearchExecutor.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/search/ElasticsearchExecutor.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/search/LuceneExecutor.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/search/LuceneExecutor.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/search/SolrExecutor.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/search/SolrExecutor.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/spark/DStreamUtil.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/spark/DStreamUtil.java" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/spark/DatasetUtil.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/spark/DatasetUtil.java" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="HighlightingSettingsPerFile">
+    <setting file="jar://$MAVEN_REPOSITORY$/org/mongodb/mongodb-driver-reactivestreams/5.5.1/mongodb-driver-reactivestreams-5.5.1-sources.jar!/com/mongodb/reactivestreams/client/MongoCollection.java" root0="SKIP_INSPECTION" />
+  </component>
+  <component name="ProjectColorInfo">{
+  &quot;associatedIndex&quot;: 0
+}</component>
+  <component name="ProjectId" id="2qKnzyyYm8wT8xosgI7fCho5Ycb" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252&quot;: &quot;true&quot;,
+    &quot;SONARLINT_PRECOMMIT_ANALYSIS&quot;: &quot;true&quot;,
+    &quot;ignore.virus.scanning.warn.message&quot;: &quot;true&quot;,
+    &quot;kotlin-language-version-configured&quot;: &quot;true&quot;,
+    &quot;last_opened_file_path&quot;: &quot;C:/Users/haiyangl/Landawn/abacus-core/Intellij_spotbugs_profile_abacus.xml&quot;,
+    &quot;run.code.analysis.last.selected.profile&quot;: &quot;pProject Default&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;preferences.pluginManager&quot;
+  }
+}</component>
+  <component name="SpellCheckerSettings" RuntimeDictionaries="0" Folders="0" CustomDictionaries="0" DefaultDictionary="application-level" UseSingleDictionary="true" transferred="true" />
+  <component name="SvnConfiguration" cleanupOnStartRun="true">
+    <configuration>C:\Users\haiyangl\AppData\Roaming\Subversion</configuration>
+    <supportedVersion>125</supportedVersion>
+  </component>
+  <component name="SvnFileUrlMappingImpl">
+    <option name="myMappingRoots">
+      <list>
+        <SvnCopyRootSimple>
+          <option name="myVcsRoot" value="C:\Users\haiyangl\Landawn\abacus-da" />
+          <option name="myCopyRoot" value="C:\Users\haiyangl\Landawn\abacus-da" />
+        </SvnCopyRootSimple>
+      </list>
+    </option>
+    <option name="myMoreRealMappingRoots">
+      <list>
+        <SvnCopyRootSimple>
+          <option name="myVcsRoot" value="C:\Users\haiyangl\Landawn\abacus-da" />
+          <option name="myCopyRoot" value="C:\Users\haiyangl\Landawn\abacus-da" />
+        </SvnCopyRootSimple>
+      </list>
+    </option>
+  </component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="2d89cef6-a65f-4818-ac7b-a84002709ef7" name="Changes" comment="" />
+      <created>1734420400217</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1734420400217</updated>
+    </task>
+    <task id="LOCAL-00001" summary="Fix coding issues reported by code analysis">
+      <option name="closed" value="true" />
+      <created>1735446537991</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1735446537991</updated>
+    </task>
+    <task id="LOCAL-00002" summary="Fix coding issues reported by code analysis">
+      <option name="closed" value="true" />
+      <created>1735446946598</created>
+      <option name="number" value="00002" />
+      <option name="presentableId" value="LOCAL-00002" />
+      <option name="project" value="LOCAL" />
+      <updated>1735446946598</updated>
+    </task>
+    <task id="LOCAL-00003" summary="Fix coding issues reported by code analysis">
+      <option name="closed" value="true" />
+      <created>1735467655435</created>
+      <option name="number" value="00003" />
+      <option name="presentableId" value="LOCAL-00003" />
+      <option name="project" value="LOCAL" />
+      <updated>1735467655435</updated>
+    </task>
+    <option name="localTasksCounter" value="4" />
+    <servers />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="Fix coding issues reported by code analysis" />
+    <option name="LAST_COMMIT_MESSAGE" value="Fix coding issues reported by code analysis" />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" type="java-line">
+          <url>file://$PROJECT_DIR$/src/main/java/com/landawn/abacus/da/mongodb/MDB.java</url>
+          <line>553</line>
+          <option name="timeStamp" value="1" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
+  </component>
+  <component name="github-copilot-workspace">
+    <instructionFileLocations>
+      <option value=".github/instructions" />
+    </instructionFileLocations>
+    <promptFileLocations>
+      <option value=".github/prompts" />
+    </promptFileLocations>
+  </component>
+</project>

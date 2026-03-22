@@ -1,0 +1,251 @@
+-- ==========================================================
+
+Use multiple agents to fix all javadoc issues reported by running: mvn javadoc:javadoc.
+
+-- ==========================================================
+
+Use multiple agents to review all classes under folder: ./src/main/java/ line by line carefully to find bugs and fix them.
+
+Use multiple agents to review logger and error messages in every class and interface under ./src/main/java/, and replace them with more accurate, concise, and consistent messages where better alternatives are identified.
+
+Use multiple agents to review the names of all local variables, fields, and methods in every class and interface under ./src/main/java/, and replace them with more accurate, concise, and consistent names where better alternatives are identified.
+
+
+-- ==========================================================
+
+Follow the steps below strictly and execute them in order.
+
+Step 1 - Use multiple agents to review the Javadoc comments for all public methods in the in all classes and interfaces under folder: ./src/main/java/. Ensure that similar methods have consistent and harmonized documentation, including clear and uniform descriptions of method behavior, parameters, and exceptions. For methods annotated with @Override, just review, improve and verify existing javadoc for them. Don't add or generate new javadoc for methods annotated with @Override.
+
+Step 2 - Use multiple agents to generate comprehensive Javadoc for all public methods, including public static methods but skip the methods annotated with @Override, in all classes and interfaces under folder: ./src/main/java/. The Javadoc should be detailed and precise, thoroughly explaining the method’s purpose, behavior, parameters, return value, and exceptions. Where applicable, include a concise usage example (a couple of lines). The example block should always be placed before any @param, @return, or other annotation tags. If Javadoc already exists, review it against the actual implementation and update it for accuracy and clarity. Finally, merge the new or revised Javadoc directly into source file, replacing any existing documentation. DON'T skip any class. For methods annotated with @Override, just review, improve and verify existing javadoc for them. Don't add or generate new javadoc for methods annotated with @Override. Use below template for usage example in Javadoc:
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Sample codes
+     * }</pre>
+
+Step 3 - Use multiple agents to verify every sample/example in all Javadoc across all classes and interfaces under ./src/main/java/ by actually running the implementations, ensuring that all samples/examples pass. If a class import is required during verification, add the import only in the test class, do not add the import to the original Javadoc.
+
+Step 4 - Run mvn javadoc:javadoc to verify all changes are valid
+
+
+-- ==========================================================
+
+
+Follow the steps below strictly and execute them in order.
+
+Step 1 - Use multiple agents to review the Javadoc comments for all public methods in the in all classes and interfaces in package: com.landawn.abacus under folder: ./src/main/java/. Ensure that similar methods have consistent and harmonized documentation, including clear and uniform descriptions of method behavior, parameters, and exceptions. For methods annotated with @Override, just review, improve and verify existing javadoc for them. Don't add or generate new javadoc for methods annotated with @Override.
+
+Step 2 - Use multiple agents to generate comprehensive Javadoc for all public methods, including public static methods but skip the methods annotated with @Override, in all classes and interfaces in package: com.landawn.abacus under folder: ./src/main/java/. The Javadoc should be detailed and precise, thoroughly explaining the method’s purpose, behavior, parameters, return value, and exceptions. Where applicable, include a concise usage example (a couple of lines). The example block should always be placed before any @param, @return, or other annotation tags. If Javadoc already exists, review it against the actual implementation and update it for accuracy and clarity. Finally, merge the new or revised Javadoc directly into source file, replacing any existing documentation. DON'T skip any class. For methods annotated with @Override, just review, improve and verify existing javadoc for them. Don't add or generate new javadoc for methods annotated with @Override. Use below template for usage example in Javadoc:
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Sample codes
+     * }</pre>
+
+Step 3 - Use multiple agents to verify every sample/example in all Javadoc across all classes and interfaces in package: com.landawn.abacus under ./src/main/java/ by actually running the implementations, ensuring that all samples/examples pass. If a class import is required during verification, add the import only in the test class, do not add the import to the original Javadoc.
+
+Step 4 - Run mvn javadoc:javadoc to verify all changes are valid
+
+
+-- ==========================================================
+
+Follow the steps below strictly and execute them in order.
+
+Step 1 - Use multiple agents to verify every sample/example in all Javadoc across all classes and interfaces under ./src/main/java/ by actually running the implementations, ensuring that all samples/examples pass. If a class import is required during verification, add the import only in the test class, do not add the import to the original Javadoc.
+
+Step 2 - Use multiple agents to review Javadoc against the actual implementation and update it for accuracy and clarity. Finally, merge the new or revised Javadoc directly into source file, replacing any existing documentation. DON'T skip any class. For methods annotated with @Override, just review, improve and verify existing javadoc for them. Don't add or generate new javadoc for methods annotated with @Override. Use below template for usage example in Javadoc:
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Sample codes
+     * }</pre>
+
+Step 3 - Run mvn javadoc:javadoc to verify all changes are valid
+
+-- ==========================================================
+
+Follow the steps below strictly and execute them in order.
+
+Step 1 — Use multiple agents to generate comprehensive unit tests for all public methods in every class under: ./src/main/java/ and for all public methods inherited from parent classes.
+
+Requirements:
+
+	1.1. Do not skip any public method. Every public method must have at least one corresponding unit test.
+	1.2. The test class package must be identical to that of the source class.
+	1.3. All test classes and test methods must be declared public.
+	1.4. Each test class must extend the base class TestBase.
+	1.5. The test class name must follow this pattern: *2025Test.java (append 2025Test to the source class name).
+	1.6. Use JUnit 5 (org.junit.jupiter.api.Assertions). Do not use org.junit.Assert.
+	1.7. Use Pair.left() and Pair.right() methods instead of direct field access (Pair.left, Pair.right).
+	1.8. If a file such as *2025Test.java already exists, append new test methods to it rather than overwriting the file.
+	1.9. Add @Tag("2025") for each test class if the tag doesn't exist.
+	1.10. Ensure that the tests provide thorough code path coverage based on the actual implementation logic.
+
+Step 2 — Review all unit tests in every *2025Test.java file to verify that: Each public method (including inherited ones) has at least one test. Add missing tests where necessary.
+
+Step 3 — Fix Compilation Errors. Compile all *2025Test.java classes and fix any compilation errors.
+
+Step 4 — Re-verify Coverage. After fixing compilation issues, re-review all *2025Test.java files to ensure: Every public method in the source classes is tested at least once. Add any missing tests.
+
+Step 5 — Final Compilation Check Recompile all *2025Test.java files and resolve any remaining compilation errors.
+
+
+
+-- ==========================================================
+
+Follow the steps below strictly and execute them in order.
+
+Step 1 — Use multiple agents to thoroughly review the implementation of all public methods in all classes under ./src/main/java, and add the @MayReturnNull tag to any public method that may return null.
+
+Step 2 — Use multiple agents to thoroughly review the implementation of all public methods which is annotated with @MayReturnNull in all classes under ./src/main/java. Remove @MayReturnNull from any public method that actually never return null.
+
+
+
+More Javadoc enhancement and fixing Tasks
+-- ==========================================================
+
+Step 1 - Use multiple agents to apply below template to all sample/example in javadoc in all classes in folder: ./src/main/java/ 
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Sample codes
+     * }</pre>
+	 
+Step 2 - Replace below sample/example template in Javadoc
+     * <pre>
+     * Sample codes
+     * </pre>
+with:
+     * <pre>{@code
+     * Sample codes
+     * }</pre>
+
+Step 3 - Replace below sample/example template in Javadoc
+     * <pre>
+     * <code>
+     * Sample codes
+     * </code>
+     * </pre>
+with:
+     * <pre>{@code
+     * Sample codes
+     * }</pre>
+
+Step 4 - Replace below sample/example template in Javadoc
+     * <pre>
+     * Sample codes
+     * </pre>
+with:
+     * <pre>{@code
+     * Sample codes
+     * }</pre>
+
+Step 5 - Replace all other sample/example templates in Javadoc with template:
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Sample codes
+     * }</pre>
+
+
+Step 6 - Run mvn javadoc:javadoc to verify all changes are valid
+
+
+-- ==========================================================
+
+Task:  Use multiple agents fix Javadoc Errors for Type Parameters
+
+Goal:
+	Correct all Javadoc errors related to missing or misplaced type parameter descriptions (e.g., @param <E>) in all classes under the folder ./src/main/java.
+
+Requirements:
+
+	1) Correct Order of Javadoc Tags. Ensure that the @param <T> (or any type parameter tag) appears before other @param annotations for method parameters.
+	Incorrect example:
+
+		/**
+		 * @param isProp
+		 * @param inputClass
+		 * @param <T> the type parameter
+		 */
+
+	Corrected example:
+
+		/**
+		 * @param <T> the type parameter
+		 * @param isProp  whether it is a property
+		 * @param inputClass  the input class
+		 */
+
+
+	2) Add Meaningful Descriptions. Each type parameter annotation (@param <T>, @param <E>, etc.) must include a clear and meaningful description. Avoid vague or repetitive text such as:
+
+		* @param <T> the type parameter
+
+
+	Instead, write context-specific documentation, for example:
+
+		* @param <E> the type of elements in the collection
+		* @param <T> the type of the input value
+		* @param <R> the type of the result
+
+
+	3) Remember, type parameters are the generic placeholders defined using angle brackets (< and >). They appear in two main places:
+		a) After the class name, for example: 
+				class Traverser<T>
+				class Pair<L, R>
+
+		b) Before the method’s return type, for example: 
+			public <U, E extends Exception> U map()
+
+		c) Note that a declaration like below. Uses a type parameter (E), but does not define one.
+			public Iterator<List<E>> iterator()
+
+	4) Run mvn javadoc:javadoc to verify all changes are valid
+
+
+
+-- ==========================================================
+
+
+
+Read the Eclipse-generated HTML coverage reports located in ./report/coverage/260315/ batch by batch.
+Each batch contains 20 HTML files, ordered by highest "Missed Instructions" first (start with the classes that have the most uncovered instructions). 
+For each class report in the batch:
+
+  - Identify the lines that are not covered by existing tests.
+  - Add unit tests that execute those uncovered lines.
+
+The newly added unit tests must follow the requirements below:
+
+  - Use ONLY org.junit.jupiter.api.Assertions:
+    assertEquals, assertNotNull, assertTrue, assertThrows, assertDoesNotThrow, etc.
+
+  - Every test method: public void, annotated with @Test, contains at least one
+    meaningful assertion.
+
+  - Naming pattern:
+      testMethodName()            -- primary / happy-path case
+      testMethodName_EdgeCase()   -- named edge case
+        Examples: testMethodName_EmptyInput
+                  testMethodName_NullKey
+                  testMethodName_Overflow
+
+  - Add a one-line comment above each new test group if the intent is not obvious
+    from the method name.
+
+  - Use methods from Suppliers and IntFunctions to create Supplier and IntFunction instances for input parameters whenever appropriate.
+  
+  - Avoid using size()/length() > 0 or < 0 in assertions. When possible, use assertEquals(expectedSizeOrLength, size()/length()) instead.
+
+  - Before adding a test method, check whether a method with the same name already
+    exists in the test class. If so, append a disambiguating suffix to avoid
+    duplicate method names.
+
+  - If no test class exists yet, CREATE one in the same package under
+    ./src/test/java/, named {SourceClassName}Test.java, extending TestBase.
+
+  - If a public method is abstract, part of a generated API, or genuinely
+    untestable in isolation, SKIP it and leave a // TODO: comment in the test
+    class explaining why.
+
+
+After completing each batch, run only the newly added test methods. If any tests fail, fix them — updating the source code if the failure is caused by a bug, or correcting the test itself if the test is wrong.
+
+
