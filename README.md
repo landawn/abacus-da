@@ -1,17 +1,19 @@
 # abacus-da
-Abacus Data Access&Analysis
+abacus-da is a data access toolkit for working with NoSQL databases, search engines, cloud data services, and big-data platforms through consistent, high-level APIs.
 
 [![Maven Central](https://img.shields.io/maven-central/v/com.landawn/abacus-da.svg)](https://maven-badges.herokuapp.com/maven-central/com.landawn/abacus-da/)
 [![Javadocs](https://www.javadoc.io/badge/com.landawn/abacus-da.svg)](https://www.javadoc.io/doc/com.landawn/abacus-da)
  
+It wraps vendor SDKs with executor-style APIs for CRUD, queries, mapping, bulk operations, async/reactive access, and dataset-oriented processing so application code stays smaller and more uniform across backends.
 
-* ORMs for NoSQL: 
-[MongoCollectionExecutor](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/MongoCollectionExecutor_view.html), 
-[CassandraExecutor](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/CassandraExecutor_view.html) with [CqlBuilder](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/CqlBuilder_view.html), 
-[CouchbaseExecutor](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/CouchbaseExecutor_view.html), 
-[HBaseExecutor](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/HBaseExecutor_view.html), 
-[DynamoDBExecutor](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/DynamoDBExecutor_view.html) and 
-[Neo4jExecutor](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/Neo4jExecutor_view.html).
+It includes integrations for:
+
+* MongoDB: [MongoCollectionExecutor](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/MongoCollectionExecutor_view.html), async MongoDB, and reactive-streams MongoDB
+* Cassandra: [CassandraExecutor](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/CassandraExecutor_view.html) and [CqlBuilder](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/CqlBuilder_view.html)
+* DynamoDB: [DynamoDBExecutor](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/DynamoDBExecutor_view.html) and async executors for AWS SDK v1/v2
+* HBase: [HBaseExecutor](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/HBaseExecutor_view.html)
+* Neo4j: [Neo4jExecutor](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/Neo4jExecutor_view.html)
+* Additional modules for Couchbase, Azure Cosmos DB, Google BigQuery, Elasticsearch, Solr, Lucene, Hadoop/HDFS, Spark, and Blink
 
 
 ## Download/Installation & [Changes](https://github.com/landawn/abacus-da/blob/master/CHANGES.md):
@@ -21,7 +23,7 @@ Abacus Data Access&Analysis
 * Gradle:
 ```gradle
 // JDK 17 or above:
-compile 'com.landawn:abacus-da:1.9.29'
+implementation 'com.landawn:abacus-da:2.0'
 ```
 
 
