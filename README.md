@@ -45,7 +45,7 @@ implementation 'com.landawn:abacus-da:2.0'
 Please refer to [Wiki](https://github.com/landawn/abacus-da/wiki)
 
 
-## Also See: [abacus-common](https://github.com/landawn/abacus-common), [abacus-jdbc](https://github.com/landawn/abacus-jdbc), [abacus-extra](https://github.com/landawn/abacus-extra).
+## Also See: [abacus-common](https://github.com/landawn/abacus-common), [abacus-query](https://github.com/landawn/abacus-query), [abacus-jdbc](https://github.com/landawn/abacus-jdbc).
 
 
 ## Recommended Java programming libraries/frameworks:
