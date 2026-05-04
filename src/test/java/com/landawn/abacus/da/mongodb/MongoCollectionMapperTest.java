@@ -316,11 +316,11 @@ public class MongoCollectionMapperTest extends TestBase {
     public void testQueryForSingleResult() {
         String propName = "value";
         Document filter = new Document("id", 1);
-        when(mockCollExecutor.queryForSingleResult(propName, filter, String.class)).thenReturn(Nullable.of("result"));
+        when(mockCollExecutor.queryForSingleValue(propName, filter, String.class)).thenReturn(Nullable.of("result"));
 
-        Nullable<String> result = mapper.queryForSingleResult(propName, filter, String.class);
+        Nullable<String> result = mapper.queryForSingleValue(propName, filter, String.class);
         Assertions.assertEquals("result", result.get());
-        verify(mockCollExecutor).queryForSingleResult(propName, filter, String.class);
+        verify(mockCollExecutor).queryForSingleValue(propName, filter, String.class);
     }
 
     @Test

@@ -937,15 +937,15 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Count total users
-     * Nullable<Long> userCount = executor.queryForSingleResult(
+     * Nullable<Long> userCount = executor.queryForSingleValue(
      *     Long.class, "SELECT COUNT(*) FROM users");
      *
      * // Get user name by ID
-     * Nullable<String> userName = executor.queryForSingleResult(
+     * Nullable<String> userName = executor.queryForSingleValue(
      *     String.class, "SELECT name FROM users WHERE id = ?", userId);
      *
      * // Get maximum timestamp
-     * Nullable<Instant> maxTimestamp = executor.queryForSingleResult(
+     * Nullable<Instant> maxTimestamp = executor.queryForSingleValue(
      *     Instant.class, "SELECT MAX(created_at) FROM events WHERE date = ?", today);
      * }</pre>
      *
@@ -957,7 +957,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @throws IllegalArgumentException if valueClass or query is null
      */
     @Override
-    public <E> Nullable<E> queryForSingleResult(final Class<E> valueClass, final String query, final Object... parameters) {
+    public <E> Nullable<E> queryForSingleValue(final Class<E> valueClass, final String query, final Object... parameters) {
         final ResultSet resultSet = execute(query, parameters);
         final Row row = resultSet.one();
 
@@ -967,7 +967,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     /**
      * Executes a CQL query and returns a single non-null result value.
      *
-     * <p>Similar to {@link #queryForSingleResult}, but returns an {@link Optional}
+     * <p>Similar to {@link #queryForSingleValue}, but returns an {@link Optional}
      * that will be empty if the result is null. This method is useful when you need
      * to distinguish between "no result found" and "result found but value is null".</p>
      *

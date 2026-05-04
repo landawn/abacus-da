@@ -370,7 +370,7 @@ public class MongoDBExecutorTest extends AbstractNoSQLTest {
         assertEquals(account.getLastName(), dataset.get("lastName"));
 
         // ===================
-        assertEquals(objectId, collExecutor.queryForSingleResult(_ID, filter, ObjectId.class).get());
+        assertEquals(objectId, collExecutor.queryForSingleValue(_ID, filter, ObjectId.class).get());
     }
 
     /**
@@ -479,7 +479,7 @@ public class MongoDBExecutorTest extends AbstractNoSQLTest {
         assertEquals(account.getLastName(), dataset.get("lastName"));
 
         // ===================
-        assertEquals(objectId, asyncCollExecutor.queryForSingleResult(_ID, filter, ObjectId.class).get().get());
+        assertEquals(objectId, asyncCollExecutor.queryForSingleValue(_ID, filter, ObjectId.class).get().get());
     }
 
     @Test
@@ -581,7 +581,7 @@ public class MongoDBExecutorTest extends AbstractNoSQLTest {
         assertEquals(account.getLastName(), dataset.get("lastName"));
 
         // ===================
-        assertEquals(objectId, collExecutor.queryForSingleResult(_ID, filter, ObjectId.class).get());
+        assertEquals(objectId, collExecutor.queryForSingleValue(_ID, filter, ObjectId.class).get());
     }
 
     /**
@@ -688,7 +688,7 @@ public class MongoDBExecutorTest extends AbstractNoSQLTest {
         assertEquals(account.getLastName(), dataset.get("lastName"));
 
         // ===================
-        assertEquals(objectId, asyncCollExecutor.queryForSingleResult(_ID, filter, ObjectId.class).get().get());
+        assertEquals(objectId, asyncCollExecutor.queryForSingleValue(_ID, filter, ObjectId.class).get().get());
     }
 
     @Test

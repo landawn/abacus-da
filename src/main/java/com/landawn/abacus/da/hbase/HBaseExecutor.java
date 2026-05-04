@@ -295,8 +295,8 @@ public final class HBaseExecutor implements AutoCloseable {
         final Method setMethod = rowKeyPropInfo.setMethod;
 
         if (HBaseColumn.class.equals(rowKeyPropInfo.clazz)
-                || (rowKeyPropInfo.type.parameterTypes().length == 1 && rowKeyPropInfo.type.parameterTypes()[0].javaType().equals(HBaseColumn.class))
-                || (rowKeyPropInfo.type.parameterTypes().length == 2 && rowKeyPropInfo.type.parameterTypes()[1].javaType().equals(HBaseColumn.class))) {
+                || (rowKeyPropInfo.type.parameterTypes().size() == 1 && rowKeyPropInfo.type.parameterTypes().get(0).javaType().equals(HBaseColumn.class))
+                || (rowKeyPropInfo.type.parameterTypes().size() == 2 && rowKeyPropInfo.type.parameterTypes().get(1).javaType().equals(HBaseColumn.class))) {
             throw new IllegalArgumentException(
                     "Unsupported row key property type: " + setMethod.toGenericString() + ". Row key property type cannot be HBaseColumn");
         }
@@ -786,8 +786,8 @@ public final class HBaseExecutor implements AutoCloseable {
                         continue;
                     }
 
-                    if (columnPropInfo.jsonXmlType.isMap() && columnPropInfo.jsonXmlType.parameterTypes()[1].javaType().equals(HBaseColumn.class)) {
-                        columnValueType = columnPropInfo.jsonXmlType.parameterTypes()[1].elementType();
+                    if (columnPropInfo.jsonXmlType.isMap() && columnPropInfo.jsonXmlType.parameterTypes().get(1).javaType().equals(HBaseColumn.class)) {
+                        columnValueType = columnPropInfo.jsonXmlType.parameterTypes().get(1).elementType();
 
                         if (familyColumnValueTypeMap == null) {
                             familyColumnValueTypeMap = new HashMap<>();
@@ -818,8 +818,8 @@ public final class HBaseExecutor implements AutoCloseable {
                         column = HBaseColumn.valueOf(columnValueType.valueOf(getValueString(cell)), cell.getTimestamp());
                         columnMap.put(column.version(), column);
                     } else if (columnPropInfo.jsonXmlType.isCollection()
-                            && columnPropInfo.jsonXmlType.parameterTypes()[0].javaType().equals(HBaseColumn.class)) {
-                        columnValueType = columnPropInfo.jsonXmlType.parameterTypes()[0].elementType();
+                            && columnPropInfo.jsonXmlType.parameterTypes().get(0).javaType().equals(HBaseColumn.class)) {
+                        columnValueType = columnPropInfo.jsonXmlType.parameterTypes().get(0).elementType();
 
                         if (familyColumnValueTypeMap == null) {
                             familyColumnValueTypeMap = new HashMap<>();
@@ -864,7 +864,7 @@ public final class HBaseExecutor implements AutoCloseable {
                         columnValueType = columnValueTypeMap.get(qualifier);
 
                         if (columnValueType == null) {
-                            columnValueType = columnPropInfo.jsonXmlType.parameterTypes()[0];
+                            columnValueType = columnPropInfo.jsonXmlType.parameterTypes().get(0);
                             columnValueTypeMap.put(qualifier, columnValueType);
                         }
 
@@ -875,8 +875,8 @@ public final class HBaseExecutor implements AutoCloseable {
                         columnPropInfo.setPropValue(propEntity, columnPropInfo.jsonXmlType.valueOf(getValueString(cell)));
                     }
 
-                } else if (familyPropInfo.jsonXmlType.isMap() && familyPropInfo.jsonXmlType.parameterTypes()[1].javaType().equals(HBaseColumn.class)) {
-                    columnValueType = familyPropInfo.jsonXmlType.parameterTypes()[1].elementType();
+                } else if (familyPropInfo.jsonXmlType.isMap() && familyPropInfo.jsonXmlType.parameterTypes().get(1).javaType().equals(HBaseColumn.class)) {
+                    columnValueType = familyPropInfo.jsonXmlType.parameterTypes().get(1).elementType();
 
                     if (familyColumnValueTypeMap == null) {
                         familyColumnValueTypeMap = new HashMap<>();
@@ -906,8 +906,8 @@ public final class HBaseExecutor implements AutoCloseable {
 
                     column = HBaseColumn.valueOf(columnValueType.valueOf(getValueString(cell)), cell.getTimestamp());
                     columnMap.put(column.version(), column);
-                } else if (familyPropInfo.jsonXmlType.isCollection() && familyPropInfo.jsonXmlType.parameterTypes()[0].javaType().equals(HBaseColumn.class)) {
-                    columnValueType = familyPropInfo.jsonXmlType.parameterTypes()[0].elementType();
+                } else if (familyPropInfo.jsonXmlType.isCollection() && familyPropInfo.jsonXmlType.parameterTypes().get(0).javaType().equals(HBaseColumn.class)) {
+                    columnValueType = familyPropInfo.jsonXmlType.parameterTypes().get(0).elementType();
 
                     if (familyColumnValueTypeMap == null) {
                         familyColumnValueTypeMap = new HashMap<>();
@@ -952,7 +952,7 @@ public final class HBaseExecutor implements AutoCloseable {
                     columnValueType = columnValueTypeMap.get(qualifier);
 
                     if (columnValueType == null) {
-                        columnValueType = familyPropInfo.jsonXmlType.parameterTypes()[0];
+                        columnValueType = familyPropInfo.jsonXmlType.parameterTypes().get(0);
                         columnValueTypeMap.put(qualifier, columnValueType);
                     }
 

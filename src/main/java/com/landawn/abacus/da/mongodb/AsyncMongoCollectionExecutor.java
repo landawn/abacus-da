@@ -1296,7 +1296,7 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * async.queryForSingleResult("metadata", Filters.eq("docId", "doc123"), MetadataClass.class)
+     * async.queryForSingleValue("metadata", Filters.eq("docId", "doc123"), MetadataClass.class)
      *      .thenRunAsync(meta -> meta.ifPresent(m -> processMetadata(m)));
      * }</pre>
      *
@@ -1310,14 +1310,14 @@ public final class AsyncMongoCollectionExecutor {
      * @see Nullable
      * @see #queryForSingleNonNull(String, Bson, Class)
      */
-    public <V> ContinuableFuture<Nullable<V>> queryForSingleResult(final String propName, final Bson filter, final Class<V> valueType) {
-        return asyncExecutor.execute(() -> collExecutor.queryForSingleResult(propName, filter, valueType));
+    public <V> ContinuableFuture<Nullable<V>> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType) {
+        return asyncExecutor.execute(() -> collExecutor.queryForSingleValue(propName, filter, valueType));
     }
 
     /**
      * Asynchronously queries for a single non-null field value from the first matching document.
      *
-     * <p>Similar to queryForSingleResult but returns Optional instead of Nullable,
+     * <p>Similar to queryForSingleValue but returns Optional instead of Nullable,
      * ensuring the value is never null when present. Useful when null values should be treated as absent.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -1334,7 +1334,7 @@ public final class AsyncMongoCollectionExecutor {
      * @throws IllegalArgumentException if any parameter is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Optional
-     * @see #queryForSingleResult(String, Bson, Class)
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final String propName, final Bson filter, final Class<V> valueType) {
         return asyncExecutor.execute(() -> collExecutor.queryForSingleNonNull(propName, filter, valueType));

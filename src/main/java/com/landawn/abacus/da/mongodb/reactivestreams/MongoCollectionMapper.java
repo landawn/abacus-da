@@ -1036,7 +1036,7 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson filter = Filters.eq("id", entityId);
-     * Mono<BigDecimal> amount = userMapper.queryForSingleResult("amount", filter, BigDecimal.class);
+     * Mono<BigDecimal> amount = userMapper.queryForSingleValue("amount", filter, BigDecimal.class);
      * amount.subscribe(amt -> processPayment(amt));
      * }</pre>
      *
@@ -1048,8 +1048,8 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if any parameter is null
      * @throws ClassCastException if the value cannot be converted to the specified type
      */
-    public <V> Mono<V> queryForSingleResult(final String propName, final Bson filter, final Class<V> valueType) {
-        return collExecutor.queryForSingleResult(propName, filter, valueType);
+    public <V> Mono<V> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType) {
+        return collExecutor.queryForSingleValue(propName, filter, valueType);
     }
 
     /**

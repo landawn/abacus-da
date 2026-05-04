@@ -1198,7 +1198,7 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<Document> mapper = mongoDB.collMapper(Document.class);
-     * Nullable<BigDecimal> price = mapper.queryForSingleResult("price", 
+     * Nullable<BigDecimal> price = mapper.queryForSingleValue("price", 
      *     Filters.eq("productId", "PROD999"), BigDecimal.class);
      * price.ifPresent(p -> System.out.println("Price: $" + p));
      * }</pre>
@@ -1212,8 +1212,8 @@ public final class MongoCollectionMapper<T> {
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Nullable
      */
-    public <V> Nullable<V> queryForSingleResult(final String propName, final Bson filter, final Class<V> valueType) {
-        return collExecutor.queryForSingleResult(propName, filter, valueType);
+    public <V> Nullable<V> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType) {
+        return collExecutor.queryForSingleValue(propName, filter, valueType);
     }
 
     /**

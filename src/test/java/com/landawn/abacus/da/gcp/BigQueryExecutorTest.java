@@ -432,7 +432,7 @@ public class BigQueryExecutorTest extends TestBase {
         when(mockTableResult.getValues()).thenReturn(Arrays.asList(row));
         when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
 
-        Nullable<String> result = executor.queryForSingleResult(TestEntity.class, String.class, "name", Filters.eq("id", 1));
+        Nullable<String> result = executor.queryForSingleValue(TestEntity.class, String.class, "name", Filters.eq("id", 1));
 
         assertTrue(result.isPresent());
         assertEquals("TestName", result.get());
@@ -449,7 +449,7 @@ public class BigQueryExecutorTest extends TestBase {
         when(mockTableResult.getValues()).thenReturn(Arrays.asList(row));
         when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
 
-        Nullable<Integer> result = executor.queryForSingleResult(Integer.class, "SELECT COUNT(*) FROM test_table", new Object[0]);
+        Nullable<Integer> result = executor.queryForSingleValue(Integer.class, "SELECT COUNT(*) FROM test_table", new Object[0]);
 
         assertTrue(result.isPresent());
         assertEquals(5, result.get());
@@ -893,7 +893,7 @@ public class BigQueryExecutorTest extends TestBase {
         when(mockTableResult.getTotalRows()).thenReturn(0L);
         when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
 
-        Nullable<String> result = executor.queryForSingleResult(String.class, "SELECT name FROM test_table WHERE id = ?", 999);
+        Nullable<String> result = executor.queryForSingleValue(String.class, "SELECT name FROM test_table WHERE id = ?", 999);
 
         assertFalse(result.isPresent());
     }

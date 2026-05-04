@@ -1047,7 +1047,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Get count of active users
-     * Nullable<Long> count = executor.queryForSingleResult(Long.class,
+     * Nullable<Long> count = executor.queryForSingleValue(Long.class,
      *     "SELECT COUNT(*) FROM users WHERE status = ?", "active");
      *
      * if (count.isPresent()) {
@@ -1055,11 +1055,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * }
      *
      * // Get maximum salary (could be null if table is empty)
-     * Nullable<BigDecimal> maxSalary = executor.queryForSingleResult(
+     * Nullable<BigDecimal> maxSalary = executor.queryForSingleValue(
      *     BigDecimal.class, "SELECT MAX(salary) FROM employees WHERE department = ?", "engineering");
      *
      * // Get user email (may be null if user not found or email is null)
-     * Nullable<String> email = executor.queryForSingleResult(
+     * Nullable<String> email = executor.queryForSingleValue(
      *     String.class, "SELECT email FROM users WHERE id = ?", userId);
      *
      * // Handle nullable result with chaining
@@ -1075,7 +1075,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @throws IllegalArgumentException if valueClass or query is null
      */
     @Override
-    public <E> Nullable<E> queryForSingleResult(final Class<E> valueClass, final String query, final Object... parameters) {
+    public <E> Nullable<E> queryForSingleValue(final Class<E> valueClass, final String query, final Object... parameters) {
         final ResultSet resultSet = execute(query, parameters);
         final Row row = resultSet.one();
 

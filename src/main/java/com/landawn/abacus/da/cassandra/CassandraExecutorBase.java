@@ -812,7 +812,6 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return the result set from the UPDATE operation
      * @throws IllegalArgumentException if entity is null
      */
-    @SuppressWarnings("deprecation")
     public RS update(final Object entity) {
         final Class<?> entityClass = entity.getClass();
         final Set<String> keyNameSet = getKeyNameSet(entityClass);
@@ -921,7 +920,6 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return the result set from the batch UPDATE operation
      * @throws IllegalArgumentException if entities is null or empty
      */
-    @SuppressWarnings("deprecation")
     public RS batchUpdate(final Collection<?> entities, final BT type) {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
 
@@ -1291,7 +1289,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
     public long count(final Class<?> targetClass, final Condition whereClause) {
         final SP cp = prepareQuery(targetClass, N.asList(CqlBuilder.COUNT_ALL), whereClause, 1);
 
-        return queryForSingleResult(long.class, cp.query(), cp.parameters().toArray()).orElse(0L);
+        return queryForSingleValue(long.class, cp.query(), cp.parameters().toArray()).orElse(0L);
     }
 
     /**
@@ -1458,7 +1456,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     @Beta
     public <T> OptionalBoolean queryForBoolean(final Class<T> targetClass, final String propName, final Condition whereClause) {
-        return queryForSingleResult(targetClass, Boolean.class, propName, whereClause).mapToBoolean(ToBooleanFunction.UNBOX);
+        return queryForSingleValue(targetClass, Boolean.class, propName, whereClause).mapToBoolean(ToBooleanFunction.UNBOX);
     }
 
     /**
@@ -1481,7 +1479,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     @Beta
     public <T> OptionalChar queryForChar(final Class<T> targetClass, final String propName, final Condition whereClause) {
-        return queryForSingleResult(targetClass, Character.class, propName, whereClause).mapToChar(ToCharFunction.UNBOX);
+        return queryForSingleValue(targetClass, Character.class, propName, whereClause).mapToChar(ToCharFunction.UNBOX);
     }
 
     /**
@@ -1504,7 +1502,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     @Beta
     public <T> OptionalByte queryForByte(final Class<T> targetClass, final String propName, final Condition whereClause) {
-        return queryForSingleResult(targetClass, Byte.class, propName, whereClause).mapToByte(ToByteFunction.UNBOX);
+        return queryForSingleValue(targetClass, Byte.class, propName, whereClause).mapToByte(ToByteFunction.UNBOX);
     }
 
     /**
@@ -1527,7 +1525,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     @Beta
     public <T> OptionalShort queryForShort(final Class<T> targetClass, final String propName, final Condition whereClause) {
-        return queryForSingleResult(targetClass, Short.class, propName, whereClause).mapToShort(ToShortFunction.UNBOX);
+        return queryForSingleValue(targetClass, Short.class, propName, whereClause).mapToShort(ToShortFunction.UNBOX);
     }
 
     /**
@@ -1550,7 +1548,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     @Beta
     public <T> OptionalInt queryForInt(final Class<T> targetClass, final String propName, final Condition whereClause) {
-        return queryForSingleResult(targetClass, Integer.class, propName, whereClause).mapToInt(ToIntFunction.UNBOX);
+        return queryForSingleValue(targetClass, Integer.class, propName, whereClause).mapToInt(ToIntFunction.UNBOX);
     }
 
     /**
@@ -1573,7 +1571,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     @Beta
     public <T> OptionalLong queryForLong(final Class<T> targetClass, final String propName, final Condition whereClause) {
-        return queryForSingleResult(targetClass, Long.class, propName, whereClause).mapToLong(ToLongFunction.UNBOX);
+        return queryForSingleValue(targetClass, Long.class, propName, whereClause).mapToLong(ToLongFunction.UNBOX);
     }
 
     /**
@@ -1596,7 +1594,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     @Beta
     public <T> OptionalFloat queryForFloat(final Class<T> targetClass, final String propName, final Condition whereClause) {
-        return queryForSingleResult(targetClass, Float.class, propName, whereClause).mapToFloat(ToFloatFunction.UNBOX);
+        return queryForSingleValue(targetClass, Float.class, propName, whereClause).mapToFloat(ToFloatFunction.UNBOX);
     }
 
     /**
@@ -1619,7 +1617,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     @Beta
     public <T> OptionalDouble queryForDouble(final Class<T> targetClass, final String propName, final Condition whereClause) {
-        return queryForSingleResult(targetClass, Double.class, propName, whereClause).mapToDouble(ToDoubleFunction.UNBOX);
+        return queryForSingleValue(targetClass, Double.class, propName, whereClause).mapToDouble(ToDoubleFunction.UNBOX);
     }
 
     /**
@@ -1642,7 +1640,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     @Beta
     public <T> Nullable<String> queryForString(final Class<T> targetClass, final String propName, final Condition whereClause) {
-        return this.queryForSingleResult(targetClass, String.class, propName, whereClause);
+        return this.queryForSingleValue(targetClass, String.class, propName, whereClause);
     }
 
     /**
@@ -1665,7 +1663,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     @Beta
     public <T> Nullable<Date> queryForDate(final Class<T> targetClass, final String propName, final Condition whereClause) {
-        return this.queryForSingleResult(targetClass, Date.class, propName, whereClause);
+        return this.queryForSingleValue(targetClass, Date.class, propName, whereClause);
     }
 
     /**
@@ -1693,7 +1691,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
     @Beta
     public <T, E extends Date> Nullable<E> queryForDate(final Class<T> targetClass, final Class<E> valueClass, final String propName,
             final Condition whereClause) {
-        return this.queryForSingleResult(targetClass, valueClass, propName, whereClause);
+        return this.queryForSingleValue(targetClass, valueClass, propName, whereClause);
     }
 
     /**
@@ -1703,7 +1701,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Nullable<BigDecimal> price = executor.queryForSingleResult(Product.class,
+     * Nullable<BigDecimal> price = executor.queryForSingleValue(Product.class,
      *                                                            BigDecimal.class,
      *                                                            "price",
      *                                                            Filters.eq("id", productId));
@@ -1718,16 +1716,16 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return a Nullable containing the result, which may be null
      * @throws IllegalArgumentException if targetClass is null or valueClass is null or propName is null or empty
      */
-    public <T, V> Nullable<V> queryForSingleResult(final Class<T> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause) {
+    public <T, V> Nullable<V> queryForSingleValue(final Class<T> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause) {
         final SP cp = prepareQuery(targetClass, List.of(propName), whereClause, 1);
 
-        return queryForSingleResult(valueClass, cp.query(), cp.parameters().toArray());
+        return queryForSingleValue(valueClass, cp.query(), cp.parameters().toArray());
     }
 
     /**
      * Queries for a single non-null result value of the specified type from a property.
      *
-     * <p>Unlike queryForSingleResult, this method returns an Optional that will be empty
+     * <p>Unlike queryForSingleValue, this method returns an Optional that will be empty
      * if the result is null, providing a cleaner API for non-nullable values.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -1834,7 +1832,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     @Deprecated
     public final long count(final String query, final Object... parameters) {
-        return queryForSingleResult(long.class, query, parameters).orElse(0L);
+        return queryForSingleValue(long.class, query, parameters).orElse(0L);
     }
 
     /**
@@ -1848,7 +1846,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     @Beta
     public final OptionalBoolean queryForBoolean(final String query, final Object... parameters) {
-        return this.queryForSingleResult(Boolean.class, query, parameters).mapToBoolean(ToBooleanFunction.UNBOX);
+        return this.queryForSingleValue(Boolean.class, query, parameters).mapToBoolean(ToBooleanFunction.UNBOX);
     }
 
     /**
@@ -1862,7 +1860,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     @Beta
     public final OptionalChar queryForChar(final String query, final Object... parameters) {
-        return this.queryForSingleResult(Character.class, query, parameters).mapToChar(ToCharFunction.UNBOX);
+        return this.queryForSingleValue(Character.class, query, parameters).mapToChar(ToCharFunction.UNBOX);
     }
 
     /**
@@ -1876,7 +1874,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     @Beta
     public final OptionalByte queryForByte(final String query, final Object... parameters) {
-        return this.queryForSingleResult(Byte.class, query, parameters).mapToByte(ToByteFunction.UNBOX);
+        return this.queryForSingleValue(Byte.class, query, parameters).mapToByte(ToByteFunction.UNBOX);
     }
 
     /**
@@ -1890,7 +1888,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     @Beta
     public final OptionalShort queryForShort(final String query, final Object... parameters) {
-        return this.queryForSingleResult(Short.class, query, parameters).mapToShort(ToShortFunction.UNBOX);
+        return this.queryForSingleValue(Short.class, query, parameters).mapToShort(ToShortFunction.UNBOX);
     }
 
     /**
@@ -1904,7 +1902,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     @Beta
     public final OptionalInt queryForInt(final String query, final Object... parameters) {
-        return this.queryForSingleResult(Integer.class, query, parameters).mapToInt(ToIntFunction.UNBOX);
+        return this.queryForSingleValue(Integer.class, query, parameters).mapToInt(ToIntFunction.UNBOX);
     }
 
     /**
@@ -1918,7 +1916,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     @Beta
     public final OptionalLong queryForLong(final String query, final Object... parameters) {
-        return this.queryForSingleResult(Long.class, query, parameters).mapToLong(ToLongFunction.UNBOX);
+        return this.queryForSingleValue(Long.class, query, parameters).mapToLong(ToLongFunction.UNBOX);
     }
 
     /**
@@ -1932,7 +1930,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     @Beta
     public final OptionalFloat queryForFloat(final String query, final Object... parameters) {
-        return this.queryForSingleResult(Float.class, query, parameters).mapToFloat(ToFloatFunction.UNBOX);
+        return this.queryForSingleValue(Float.class, query, parameters).mapToFloat(ToFloatFunction.UNBOX);
     }
 
     /**
@@ -1946,7 +1944,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     @Beta
     public final OptionalDouble queryForDouble(final String query, final Object... parameters) {
-        return this.queryForSingleResult(Double.class, query, parameters).mapToDouble(ToDoubleFunction.UNBOX);
+        return this.queryForSingleValue(Double.class, query, parameters).mapToDouble(ToDoubleFunction.UNBOX);
     }
 
     /**
@@ -1960,7 +1958,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     @Beta
     public final Nullable<String> queryForString(final String query, final Object... parameters) {
-        return this.queryForSingleResult(String.class, query, parameters);
+        return this.queryForSingleValue(String.class, query, parameters);
     }
 
     /**
@@ -1974,15 +1972,15 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Count total users
-     * Nullable<Long> userCount = executor.queryForSingleResult(
+     * Nullable<Long> userCount = executor.queryForSingleValue(
      *     Long.class, "SELECT COUNT(*) FROM users");
      *
      * // Get user name by ID
-     * Nullable<String> userName = executor.queryForSingleResult(
+     * Nullable<String> userName = executor.queryForSingleValue(
      *     String.class, "SELECT name FROM users WHERE id = ?", userId);
      *
      * // Get maximum timestamp
-     * Nullable<Instant> maxTimestamp = executor.queryForSingleResult(
+     * Nullable<Instant> maxTimestamp = executor.queryForSingleValue(
      *     Instant.class, "SELECT MAX(created_at) FROM events WHERE date = ?", today);
      * }</pre>
      *
@@ -1993,12 +1991,12 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return a Nullable containing the result value, or empty if no result was found
      * @throws IllegalArgumentException if valueClass or query is null
      */
-    public abstract <E> Nullable<E> queryForSingleResult(final Class<E> valueClass, final String query, final Object... parameters);
+    public abstract <E> Nullable<E> queryForSingleValue(final Class<E> valueClass, final String query, final Object... parameters);
 
     /**
      * Executes a CQL query and returns a single non-null result value.
      *
-     * <p>Similar to {@link #queryForSingleResult}, but returns an {@link Optional}
+     * <p>Similar to {@link #queryForSingleValue}, but returns an {@link Optional}
      * that will be empty if the result is null. This method is useful when you need
      * to distinguish between "no result found" and "result found but value is null".</p>
      *
@@ -2521,7 +2519,6 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param entity the entity to update
      * @return a future containing the result set from the update operation
      */
-    @SuppressWarnings("deprecation")
     public ContinuableFuture<RS> asyncUpdate(final Object entity) {
         final Class<?> entityClass = entity.getClass();
         final Set<String> keyNameSet = getKeyNameSet(entityClass);
@@ -2577,7 +2574,6 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param type the batch type
      * @return a future containing the result set from the batch update operation
      */
-    @SuppressWarnings("deprecation")
     public ContinuableFuture<RS> asyncBatchUpdate(final Collection<?> entities, final BT type) {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
 

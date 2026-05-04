@@ -1323,7 +1323,7 @@ public class BigQueryExecutor {
      * <pre>{@code
      * // Query for a single property value
      * Condition condition = Filters.eq("customerId", "CUST123");
-     * Nullable<String> email = executor.queryForSingleResult(
+     * Nullable<String> email = executor.queryForSingleValue(
      *     Customer.class, String.class, "email", condition);
      *
      * if (email.isPresent()) {
@@ -1332,7 +1332,7 @@ public class BigQueryExecutor {
      *
      * // Get maximum order amount
      * Condition activeOrders = Filters.eq("status", "active");
-     * Nullable<BigDecimal> maxAmount = executor.queryForSingleResult(
+     * Nullable<BigDecimal> maxAmount = executor.queryForSingleValue(
      *     Order.class, BigDecimal.class, "orderAmount", activeOrders);
      * }</pre>
      *
@@ -1344,12 +1344,12 @@ public class BigQueryExecutor {
      * @param whereClause the condition to filter records
      * @return a Nullable containing the first matching value, or empty if no match found
      * @throws IllegalArgumentException if any parameter is null
-     * @see #queryForSingleResult(Class, String, Object...)
+     * @see #queryForSingleValue(Class, String, Object...)
      */
-    public <T, V> Nullable<V> queryForSingleResult(final Class<T> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause) {
+    public <T, V> Nullable<V> queryForSingleValue(final Class<T> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause) {
         final SP sp = prepareQuery(targetClass, N.asList(propName), whereClause);
 
-        return queryForSingleResult(valueClass, sp.query(), sp.parameters().toArray());
+        return queryForSingleValue(valueClass, sp.query(), sp.parameters().toArray());
     }
 
     /**
@@ -1362,17 +1362,17 @@ public class BigQueryExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Get count of records
-     * Nullable<Long> count = executor.queryForSingleResult(Long.class,
+     * Nullable<Long> count = executor.queryForSingleValue(Long.class,
      *     "SELECT COUNT(*) FROM customers WHERE status = ?", "active");
      * System.out.println("Active customers: " + count.orElse(0L));
      *
      * // Get maximum value
-     * Nullable<BigDecimal> maxAmount = executor.queryForSingleResult(BigDecimal.class,
+     * Nullable<BigDecimal> maxAmount = executor.queryForSingleValue(BigDecimal.class,
      *     "SELECT MAX(order_amount) FROM orders WHERE order_date = ?",
      *     LocalDate.now());
      *
      * // Get single field value
-     * Nullable<String> customerName = executor.queryForSingleResult(String.class,
+     * Nullable<String> customerName = executor.queryForSingleValue(String.class,
      *     "SELECT name FROM customers WHERE customer_id = ?", "CUST123");
      *
      * customerName.ifPresent(name -> System.out.println("Customer: " + name));
@@ -1387,7 +1387,7 @@ public class BigQueryExecutor {
      * @throws IllegalArgumentException if valueClass or query is null
      * @see #execute(String, Object...)
      */
-    public final <V> Nullable<V> queryForSingleResult(final Class<V> valueClass, final String query, final Object... parameters) {
+    public final <V> Nullable<V> queryForSingleValue(final Class<V> valueClass, final String query, final Object... parameters) {
         final TableResult tableResult = execute(query, parameters);
         final FieldValueList row = tableResult.getTotalRows() > 0 ? tableResult.getValues().iterator().next() : null;
 

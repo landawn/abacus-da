@@ -944,7 +944,7 @@ public final class MongoCollectionExecutor {
      */
     @Beta
     public Mono<Boolean> queryForBoolean(final String propName, final Bson filter) {
-        return queryForSingleResult(propName, filter, Boolean.class);
+        return queryForSingleValue(propName, filter, Boolean.class);
     }
 
     /**
@@ -964,7 +964,7 @@ public final class MongoCollectionExecutor {
      */
     @Beta
     public Mono<Character> queryForChar(final String propName, final Bson filter) {
-        return queryForSingleResult(propName, filter, Character.class);
+        return queryForSingleValue(propName, filter, Character.class);
     }
 
     /**
@@ -984,7 +984,7 @@ public final class MongoCollectionExecutor {
      */
     @Beta
     public Mono<Byte> queryForByte(final String propName, final Bson filter) {
-        return queryForSingleResult(propName, filter, Byte.class);
+        return queryForSingleValue(propName, filter, Byte.class);
     }
 
     /**
@@ -1004,7 +1004,7 @@ public final class MongoCollectionExecutor {
      */
     @Beta
     public Mono<Short> queryForShort(final String propName, final Bson filter) {
-        return queryForSingleResult(propName, filter, Short.class);
+        return queryForSingleValue(propName, filter, Short.class);
     }
 
     /**
@@ -1024,7 +1024,7 @@ public final class MongoCollectionExecutor {
      */
     @Beta
     public Mono<Integer> queryForInt(final String propName, final Bson filter) {
-        return queryForSingleResult(propName, filter, Integer.class);
+        return queryForSingleValue(propName, filter, Integer.class);
     }
 
     /**
@@ -1044,7 +1044,7 @@ public final class MongoCollectionExecutor {
      */
     @Beta
     public Mono<Long> queryForLong(final String propName, final Bson filter) {
-        return queryForSingleResult(propName, filter, Long.class);
+        return queryForSingleValue(propName, filter, Long.class);
     }
 
     /**
@@ -1064,7 +1064,7 @@ public final class MongoCollectionExecutor {
      */
     @Beta
     public Mono<Float> queryForFloat(final String propName, final Bson filter) {
-        return queryForSingleResult(propName, filter, Float.class);
+        return queryForSingleValue(propName, filter, Float.class);
     }
 
     /**
@@ -1084,7 +1084,7 @@ public final class MongoCollectionExecutor {
      */
     @Beta
     public Mono<Double> queryForDouble(final String propName, final Bson filter) {
-        return queryForSingleResult(propName, filter, Double.class);
+        return queryForSingleValue(propName, filter, Double.class);
     }
 
     /**
@@ -1104,7 +1104,7 @@ public final class MongoCollectionExecutor {
      */
     @Beta
     public Mono<String> queryForString(final String propName, final Bson filter) {
-        return queryForSingleResult(propName, filter, String.class);
+        return queryForSingleValue(propName, filter, String.class);
     }
 
     /**
@@ -1124,7 +1124,7 @@ public final class MongoCollectionExecutor {
      */
     @Beta
     public Mono<Date> queryForDate(final String propName, final Bson filter) {
-        return queryForSingleResult(propName, filter, Date.class);
+        return queryForSingleValue(propName, filter, Date.class);
     }
 
     /**
@@ -1145,7 +1145,7 @@ public final class MongoCollectionExecutor {
      * @return a Mono that emits the typed Date value, or empty if not found
      */
     public <T extends Date> Mono<T> queryForDate(final String propName, final Bson filter, final Class<T> rowType) {
-        return queryForSingleResult(propName, filter, rowType);
+        return queryForSingleValue(propName, filter, rowType);
     }
 
     /**
@@ -1157,7 +1157,7 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Mono<BigDecimal> balance = executor.queryForSingleResult("balance", filter, BigDecimal.class);
+     * Mono<BigDecimal> balance = executor.queryForSingleValue("balance", filter, BigDecimal.class);
      * }</pre>
      *
      * @param <V> the type of value to retrieve
@@ -1166,7 +1166,7 @@ public final class MongoCollectionExecutor {
      * @param valueType the Class representing the target type for conversion
      * @return a Mono that emits the converted value, or empty if not found
      */
-    public <V> Mono<V> queryForSingleResult(final String propName, final Bson filter, final Class<V> valueType) {
+    public <V> Mono<V> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType) {
         return query(N.asList(propName), filter, null, 0, 1).next().flatMap(doc -> convert(doc, propName, valueType));
     }
 

@@ -480,11 +480,11 @@ public class MongoCollectionMapperTest extends TestBase {
         Bson filter = new Document("key", "value");
         String value = "custom value";
 
-        when(mockExecutor.queryForSingleResult(propName, filter, String.class)).thenReturn(Mono.just(value));
+        when(mockExecutor.queryForSingleValue(propName, filter, String.class)).thenReturn(Mono.just(value));
 
-        StepVerifier.create(mapper.queryForSingleResult(propName, filter, String.class)).expectNext(value).verifyComplete();
+        StepVerifier.create(mapper.queryForSingleValue(propName, filter, String.class)).expectNext(value).verifyComplete();
 
-        verify(mockExecutor).queryForSingleResult(propName, filter, String.class);
+        verify(mockExecutor).queryForSingleValue(propName, filter, String.class);
     }
 
     @Test

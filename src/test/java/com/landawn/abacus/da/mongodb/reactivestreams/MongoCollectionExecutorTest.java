@@ -651,7 +651,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
 
-        Mono<Integer> result = executor.queryForSingleResult(propName, filter, Integer.class);
+        Mono<Integer> result = executor.queryForSingleValue(propName, filter, Integer.class);
 
         StepVerifier.create(result).expectNext(42).verifyComplete();
     }
@@ -1583,7 +1583,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.first()).thenReturn(Mono.just(emptyDoc));
 
-        Mono<String> result = executor.queryForSingleResult(propName, filter, String.class);
+        Mono<String> result = executor.queryForSingleValue(propName, filter, String.class);
 
         StepVerifier.create(result).verifyComplete();
     }

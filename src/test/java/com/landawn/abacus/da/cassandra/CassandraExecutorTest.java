@@ -183,10 +183,10 @@ public class CassandraExecutorTest extends AbstractNoSQLTest {
 
         cassandraExecutor.get(Users.class, Filters.eq("id", id)).ifPresent(Fn.println());
 
-        cassandraExecutor.queryForSingleResult(Users.class, Users.Name.class, "name", Filters.eq("id", id)).ifPresent(Fn.println());
-        assertFalse(cassandraExecutor.queryForSingleResult(Users.class, Users.Name.class, "name", Filters.eq("id", id)).isNull());
+        cassandraExecutor.queryForSingleValue(Users.class, Users.Name.class, "name", Filters.eq("id", id)).ifPresent(Fn.println());
+        assertFalse(cassandraExecutor.queryForSingleValue(Users.class, Users.Name.class, "name", Filters.eq("id", id)).isNull());
         cassandraExecutor.execute(cql, id);
-        assertTrue(cassandraExecutor.queryForSingleResult(Users.class, Users.Name.class, "name", Filters.eq("id", id)).isNull());
+        assertTrue(cassandraExecutor.queryForSingleValue(Users.class, Users.Name.class, "name", Filters.eq("id", id)).isNull());
 
         cassandraExecutor.delete(Users.class, Filters.in("id", ids));
     }
@@ -311,11 +311,11 @@ public class CassandraExecutorTest extends AbstractNoSQLTest {
         dataset.println();
         assertEquals(song.getId(), dataset.get("id"));
 
-        UUID uuid = cassandraExecutor.queryForSingleResult(UUID.class, "SELECT id FROM simplex.songs WHERE id = ?", song.getId()).orElse(null);
+        UUID uuid = cassandraExecutor.queryForSingleValue(UUID.class, "SELECT id FROM simplex.songs WHERE id = ?", song.getId()).orElse(null);
         N.println(uuid);
         assertEquals(song.getId(), uuid);
 
-        String strUUID = cassandraExecutor.queryForSingleResult(String.class, "SELECT id FROM simplex.songs WHERE id = ?", song.getId()).orElse(null);
+        String strUUID = cassandraExecutor.queryForSingleValue(String.class, "SELECT id FROM simplex.songs WHERE id = ?", song.getId()).orElse(null);
         N.println(strUUID);
         assertEquals(song.getId().toString(), strUUID);
 

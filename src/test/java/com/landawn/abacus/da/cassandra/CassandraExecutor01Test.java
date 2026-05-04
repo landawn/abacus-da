@@ -204,7 +204,7 @@ public class CassandraExecutor01Test extends TestBase {
         when(mockResultSet.one()).thenReturn(mockRow);
         when(mockRow.getObject(0)).thenReturn("test");
 
-        Nullable<String> result = executor.queryForSingleResult(String.class, "SELECT name FROM test WHERE id = ?", 1L);
+        Nullable<String> result = executor.queryForSingleValue(String.class, "SELECT name FROM test WHERE id = ?", 1L);
         assertTrue(result.isPresent());
         assertEquals("test", result.get());
     }

@@ -395,7 +395,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockFindIterable.projection(any())).thenReturn(mockFindIterable);
         when(mockFindIterable.limit(anyInt())).thenReturn(mockFindIterable);
 
-        Nullable<String> result = executor.queryForSingleResult(propName, filter, String.class);
+        Nullable<String> result = executor.queryForSingleValue(propName, filter, String.class);
         Assertions.assertTrue(result.isPresent());
         Assertions.assertEquals("result", result.get());
     }

@@ -1164,11 +1164,11 @@ public final class MongoCollectionExecutor {
      * @return an OptionalBoolean containing the boolean value if found, empty otherwise
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
-     * @see #queryForSingleResult(String, Bson, Class)
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
     public OptionalBoolean queryForBoolean(final String propName, final Bson filter) {
-        return queryForSingleResult(propName, filter, Boolean.class).mapToBoolean(ToBooleanFunction.UNBOX);
+        return queryForSingleValue(propName, filter, Boolean.class).mapToBoolean(ToBooleanFunction.UNBOX);
     }
 
     /**
@@ -1192,11 +1192,11 @@ public final class MongoCollectionExecutor {
      * @return an OptionalChar containing the character value if found, empty otherwise
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
-     * @see #queryForSingleResult(String, Bson, Class)
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
     public OptionalChar queryForChar(final String propName, final Bson filter) {
-        return queryForSingleResult(propName, filter, Character.class).mapToChar(ToCharFunction.UNBOX);
+        return queryForSingleValue(propName, filter, Character.class).mapToChar(ToCharFunction.UNBOX);
     }
 
     /**
@@ -1220,11 +1220,11 @@ public final class MongoCollectionExecutor {
      * @return an OptionalByte containing the byte value if found, empty otherwise
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
-     * @see #queryForSingleResult(String, Bson, Class)
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
     public OptionalByte queryForByte(final String propName, final Bson filter) {
-        return queryForSingleResult(propName, filter, Byte.class).mapToByte(ToByteFunction.UNBOX);
+        return queryForSingleValue(propName, filter, Byte.class).mapToByte(ToByteFunction.UNBOX);
     }
 
     /**
@@ -1248,11 +1248,11 @@ public final class MongoCollectionExecutor {
      * @return an OptionalShort containing the short value if found, empty otherwise
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
-     * @see #queryForSingleResult(String, Bson, Class)
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
     public OptionalShort queryForShort(final String propName, final Bson filter) {
-        return queryForSingleResult(propName, filter, Short.class).mapToShort(ToShortFunction.UNBOX);
+        return queryForSingleValue(propName, filter, Short.class).mapToShort(ToShortFunction.UNBOX);
     }
 
     /**
@@ -1276,11 +1276,11 @@ public final class MongoCollectionExecutor {
      * @return an OptionalInt containing the integer value if found, empty otherwise
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
-     * @see #queryForSingleResult(String, Bson, Class)
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
     public OptionalInt queryForInt(final String propName, final Bson filter) {
-        return queryForSingleResult(propName, filter, Integer.class).mapToInt(ToIntFunction.UNBOX);
+        return queryForSingleValue(propName, filter, Integer.class).mapToInt(ToIntFunction.UNBOX);
     }
 
     /**
@@ -1308,11 +1308,11 @@ public final class MongoCollectionExecutor {
      * @return an OptionalLong containing the long value if found, empty otherwise
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
-     * @see #queryForSingleResult(String, Bson, Class)
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
     public OptionalLong queryForLong(final String propName, final Bson filter) {
-        return queryForSingleResult(propName, filter, Long.class).mapToLong(ToLongFunction.UNBOX);
+        return queryForSingleValue(propName, filter, Long.class).mapToLong(ToLongFunction.UNBOX);
     }
 
     /**
@@ -1340,11 +1340,11 @@ public final class MongoCollectionExecutor {
      * @return an OptionalFloat containing the float value if found, empty otherwise
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
-     * @see #queryForSingleResult(String, Bson, Class)
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
     public OptionalFloat queryForFloat(final String propName, final Bson filter) {
-        return queryForSingleResult(propName, filter, Float.class).mapToFloat(ToFloatFunction.UNBOX);
+        return queryForSingleValue(propName, filter, Float.class).mapToFloat(ToFloatFunction.UNBOX);
     }
 
     /**
@@ -1373,11 +1373,11 @@ public final class MongoCollectionExecutor {
      * @return an OptionalDouble containing the double value if found, empty otherwise
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
-     * @see #queryForSingleResult(String, Bson, Class)
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
     public OptionalDouble queryForDouble(final String propName, final Bson filter) {
-        return queryForSingleResult(propName, filter, Double.class).mapToDouble(ToDoubleFunction.UNBOX);
+        return queryForSingleValue(propName, filter, Double.class).mapToDouble(ToDoubleFunction.UNBOX);
     }
 
     /**
@@ -1406,11 +1406,11 @@ public final class MongoCollectionExecutor {
      * @return a Nullable containing the string value if found, empty otherwise
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
-     * @see #queryForSingleResult(String, Bson, Class)
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
     public Nullable<String> queryForString(final String propName, final Bson filter) {
-        return queryForSingleResult(propName, filter, String.class);
+        return queryForSingleValue(propName, filter, String.class);
     }
 
     /**
@@ -1440,11 +1440,11 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForDate(String, Bson, Class)
-     * @see #queryForSingleResult(String, Bson, Class)
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
     public Nullable<Date> queryForDate(final String propName, final Bson filter) {
-        return queryForSingleResult(propName, filter, Date.class);
+        return queryForSingleValue(propName, filter, Date.class);
     }
 
     /**
@@ -1476,10 +1476,10 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if propName or rowType is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForDate(String, Bson)
-     * @see #queryForSingleResult(String, Bson, Class)
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     public <T extends Date> Nullable<T> queryForDate(final String propName, final Bson filter, final Class<T> rowType) {
-        return queryForSingleResult(propName, filter, rowType);
+        return queryForSingleValue(propName, filter, rowType);
     }
 
     /**
@@ -1493,12 +1493,12 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Get user email as String:
-     * Nullable<String> email = executor.queryForSingleResult("email", 
+     * Nullable<String> email = executor.queryForSingleValue("email", 
      *                                                        Filters.eq("userId", "user123"), 
      *                                                        String.class);
      * 
      * // Get product price as BigDecimal:
-     * Nullable<BigDecimal> price = executor.queryForSingleResult("price", 
+     * Nullable<BigDecimal> price = executor.queryForSingleValue("price", 
      *                                                            Filters.eq("productId", "P001"), 
      *                                                            BigDecimal.class);
      * 
@@ -1520,7 +1520,7 @@ public final class MongoCollectionExecutor {
      * @see #queryForSingleNonNull(String, Bson, Class)
      * @see com.landawn.abacus.util.u.Nullable
      */
-    public <V> Nullable<V> queryForSingleResult(final String propName, final Bson filter, final Class<V> valueType) {
+    public <V> Nullable<V> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType) {
         final FindIterable<Document> findIterable = query(N.asList(propName), filter, null, 0, 1);
 
         final Document doc = findIterable.first();
@@ -1531,7 +1531,7 @@ public final class MongoCollectionExecutor {
     /**
      * Queries for a single non-null field value from the first document matching the filter.
      *
-     * <p>This method is similar to {@link #queryForSingleResult(String, Bson, Class)} but returns
+     * <p>This method is similar to {@link #queryForSingleValue(String, Bson, Class)} but returns
      * an Optional instead of Nullable, providing better null-safety guarantees. The Optional will
      * be empty if no matching document is found, but if a document is found, the value is guaranteed
      * to be non-null (after type conversion).</p>
@@ -1559,7 +1559,7 @@ public final class MongoCollectionExecutor {
      * @return an Optional containing the converted non-null field value if found, empty otherwise
      * @throws IllegalArgumentException if propName or valueType is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
-     * @see #queryForSingleResult(String, Bson, Class)
+     * @see #queryForSingleValue(String, Bson, Class)
      * @see java.util.Optional
      */
     public <V> Optional<V> queryForSingleNonNull(final String propName, final Bson filter, final Class<V> valueType) {

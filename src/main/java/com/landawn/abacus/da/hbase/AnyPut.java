@@ -759,7 +759,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
 
                     propEntityTP = propEntityFamilyColumnNameMap.get(columnPropInfo.name);
 
-                    if (columnPropInfo.jsonXmlType.isMap() && columnPropInfo.jsonXmlType.parameterTypes()[1].javaType().equals(HBaseColumn.class)) {
+                    if (columnPropInfo.jsonXmlType.isMap() && columnPropInfo.jsonXmlType.parameterTypes().get(1).javaType().equals(HBaseColumn.class)) {
                         columnMap = (Map<Long, HBaseColumn<?>>) propValue;
 
                         for (final HBaseColumn<?> e : columnMap.values()) {
@@ -767,7 +767,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
 
                         }
                     } else if (columnPropInfo.jsonXmlType.isCollection()
-                            && columnPropInfo.jsonXmlType.parameterTypes()[0].javaType().equals(HBaseColumn.class)) {
+                            && columnPropInfo.jsonXmlType.parameterTypes().get(0).javaType().equals(HBaseColumn.class)) {
                         columnColl = (Collection<HBaseColumn<?>>) propValue;
 
                         for (final HBaseColumn<?> e : columnColl) {
@@ -781,14 +781,14 @@ public final class AnyPut extends AnyMutation<AnyPut> {
                         anyPut.addColumn(tp._1, propEntityTP._2, propValue);
                     }
                 }
-            } else if (propInfo.jsonXmlType.isMap() && propInfo.jsonXmlType.parameterTypes()[1].javaType().equals(HBaseColumn.class)) {
+            } else if (propInfo.jsonXmlType.isMap() && propInfo.jsonXmlType.parameterTypes().get(1).javaType().equals(HBaseColumn.class)) {
                 columnMap = (Map<Long, HBaseColumn<?>>) propValue;
 
                 for (final HBaseColumn<?> e : columnMap.values()) {
                     anyPut.addColumn(tp._1, columnName, e.version(), e.value());
 
                 }
-            } else if (propInfo.jsonXmlType.isCollection() && propInfo.jsonXmlType.parameterTypes()[0].javaType().equals(HBaseColumn.class)) {
+            } else if (propInfo.jsonXmlType.isCollection() && propInfo.jsonXmlType.parameterTypes().get(0).javaType().equals(HBaseColumn.class)) {
                 columnColl = (Collection<HBaseColumn<?>>) propValue;
 
                 for (final HBaseColumn<?> e : columnColl) {

@@ -411,8 +411,8 @@ public class CassandraExecutorBaseTest extends TestBase {
 
     @Test
     public void testQueryForSingleResult() {
-        // Test queryForSingleResult with condition
-        Nullable<String> result1 = executor.queryForSingleResult(TestEntity.class, String.class, "name", Filters.eq("id", 1L));
+        // Test queryForSingleValue with condition
+        Nullable<String> result1 = executor.queryForSingleValue(TestEntity.class, String.class, "name", Filters.eq("id", 1L));
         assertNotNull(result1);
 
         // Test queryForSingleNonNull with condition
@@ -677,7 +677,7 @@ public class CassandraExecutorBaseTest extends TestBase {
 
     @Test
     public void testAsyncQueryForSingleResult() {
-        // Test async queryForSingleResult
+        // Test async queryForSingleValue
         ContinuableFuture<Nullable<String>> asyncResult1 = executor.asyncQueryForSingleResult(TestEntity.class, String.class, "name", Filters.eq("id", 1L));
         assertNotNull(asyncResult1);
 
@@ -784,7 +784,7 @@ public class CassandraExecutorBaseTest extends TestBase {
         }
 
         @Override
-        public <E> Nullable<E> queryForSingleResult(Class<E> valueClass, String query, Object... parameters) {
+        public <E> Nullable<E> queryForSingleValue(Class<E> valueClass, String query, Object... parameters) {
             return Nullable.of((E) null);
         }
 
