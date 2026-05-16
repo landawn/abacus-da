@@ -317,7 +317,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * }</pre>
      * 
      * @param session the Cassandra session from Driver 3.x (com.datastax.driver.core.Session)
-     * @throws IllegalArgumentException if session is null
+     * @throws NullPointerException if session is null
      */
     public CassandraExecutor(final Session session) {
         this(session, null);
@@ -341,7 +341,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * 
      * @param session the Cassandra session from Driver 3.x
      * @param settings default statement configuration, or null for driver defaults
-     * @throws IllegalArgumentException if session is null
+     * @throws NullPointerException if session is null
      */
     public CassandraExecutor(final Session session, final StatementSettings settings) {
         this(session, settings, null);
@@ -364,7 +364,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param session the Cassandra session from Driver 3.x
      * @param settings default statement configuration, or null for driver defaults
      * @param cqlMapper mapper containing pre-configured CQL statements, or null if not needed
-     * @throws IllegalArgumentException if session is null
+     * @throws NullPointerException if session is null
      * @see CqlMapper
      */
     public CassandraExecutor(final Session session, final StatementSettings settings, final CqlMapper cqlMapper) {
@@ -405,9 +405,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param session the Cassandra session from Driver 3.x
      * @param settings default statement configuration, or null for driver defaults
      * @param cqlMapper mapper containing pre-configured CQL statements, or null
-     * @param namingPolicy policy for mapping Java property names to Cassandra column names, 
+     * @param namingPolicy policy for mapping Java property names to Cassandra column names,
      *                     or null for SNAKE_CASE
-     * @throws IllegalArgumentException if session is null
+     * @throws NullPointerException if session is null
      * @see com.datastax.driver.core.Session#executeAsync
      * @see StatementSettings
      * @see NamingPolicy
@@ -533,7 +533,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * }</pre>
      *
      * @param javaClazz the Java class for which to register a type codec
-     * @throws IllegalArgumentException if javaClazz is null
+     * @throws NullPointerException if javaClazz is null
      * @see #registerTypeCodec(CodecRegistry, Class)
      */
     public void registerTypeCodec(final Class<?> javaClazz) {
@@ -731,7 +731,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param row the Cassandra Row to convert
      * @param entityClass the target entity class with getter/setter methods
      * @return an instance of the entity class populated with row data
-     * @throws IllegalArgumentException if row or entityClass is null
+     * @throws NullPointerException if row or entityClass is null
      */
     public static <T> T toEntity(final Row row, final Class<T> entityClass) {
         final ColumnDefinitions columnDefinitions = row.getColumnDefinitions();

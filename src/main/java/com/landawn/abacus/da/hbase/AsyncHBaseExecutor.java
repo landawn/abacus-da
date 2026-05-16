@@ -337,7 +337,7 @@ public final class AsyncHBaseExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.scan("users", "info")
-     *      .thenRunAsync(stream -> stream.forEach(result -> System.out.println(result)));
+     *      .thenAcceptAsync(stream -> stream.forEach(result -> System.out.println(result)));
      * }</pre>
      *
      * @param tableName the name of the HBase table to scan
@@ -419,7 +419,7 @@ public final class AsyncHBaseExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.scan("users", AnyScan.of().setStartRow("user1").setStopRow("user9").setLimit(100))
-     *      .thenRunAsync(stream -> stream.forEach(System.out::println));
+     *      .thenAcceptAsync(stream -> stream.forEach(System.out::println));
      * }</pre>
      *
      * @param tableName the name of the HBase table to scan
@@ -459,7 +459,7 @@ public final class AsyncHBaseExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.scan("users", "info", User.class)
-     *      .thenRunAsync(stream -> stream.forEach(user -> System.out.println(user.getName())));
+     *      .thenAcceptAsync(stream -> stream.forEach(user -> System.out.println(user.getName())));
      * }</pre>
      *
      * @param <T> the target type for conversion
@@ -539,7 +539,7 @@ public final class AsyncHBaseExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.scan("users", AnyScan.of().setStartRow("user1").setLimit(50), User.class)
-     *      .thenRunAsync(stream -> stream.forEach(user -> processUser(user)));
+     *      .thenAcceptAsync(stream -> stream.forEach(user -> processUser(user)));
      * }</pre>
      *
      * @param <T> the target type for conversion
@@ -853,7 +853,7 @@ public final class AsyncHBaseExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.append("users", AnyAppend.of("user123").addColumn("info", "log", "Entry1"))
-     *      .thenRunAsync(result -> System.out.println("New value: " + result));
+     *      .thenAcceptAsync(result -> System.out.println("New value: " + result));
      * }</pre>
      *
      * @param tableName the name of the HBase table
@@ -894,7 +894,7 @@ public final class AsyncHBaseExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.increment("users", AnyIncrement.of("user123").addColumn("stats", "loginCount", 1))
-     *      .thenRunAsync(result -> System.out.println("New count: " + Bytes.toLong(result.getValue(...))));
+     *      .thenAcceptAsync(result -> System.out.println("New count: " + Bytes.toLong(result.getValue(...))));
      * }</pre>
      *
      * @param tableName the name of the HBase table
@@ -935,7 +935,7 @@ public final class AsyncHBaseExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.incrementColumnValue("users", "user123", "stats", "loginCount", 1)
-     *      .thenRunAsync(newCount -> System.out.println("Login count: " + newCount));
+     *      .thenAcceptAsync(newCount -> System.out.println("Login count: " + newCount));
      * }</pre>
      *
      * @param tableName the name of the HBase table

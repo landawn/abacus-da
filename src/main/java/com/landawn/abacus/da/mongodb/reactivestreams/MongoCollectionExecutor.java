@@ -1722,10 +1722,11 @@ public final class MongoCollectionExecutor {
     }
 
     /**
-     * Updates the first document using an aggregation pipeline reactively.
+     * Updates the first document matching the filter using a collection of update operations reactively.
      *
-     * <p>Updates the first matching document using an aggregation pipeline, which allows
-     * for more complex update operations including field references and expressions.</p>
+     * <p>Applies multiple update operations from a collection to the first matching document.
+     * This corresponds to MongoDB's pipeline-style update form, allowing more complex update
+     * operations including field references and expressions.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1736,7 +1737,7 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param filter the query filter to identify the document to update
-     * @param objList the aggregation pipeline stages for the update
+     * @param objList the collection of update operations to apply
      * @return a Mono that emits the UpdateResult containing operation details
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final Collection<?> objList) {
@@ -1744,10 +1745,11 @@ public final class MongoCollectionExecutor {
     }
 
     /**
-     * Updates the first document using an aggregation pipeline with options reactively.
+     * Updates the first document matching the filter using a collection of update operations with options reactively.
      *
-     * <p>Performs a pipeline update on the first matching document with custom options,
-     * enabling complex field transformations with upsert and other update behaviors.</p>
+     * <p>Applies multiple update operations from a collection to the first matching document with custom options.
+     * This corresponds to MongoDB's pipeline-style update form, enabling complex field transformations
+     * with upsert and other update behaviors.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1757,7 +1759,7 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param filter the query filter to identify the document to update
-     * @param objList the aggregation pipeline stages for the update
+     * @param objList the collection of update operations to apply
      * @param updateOptions the options to apply to the update operation
      * @return a Mono that emits the UpdateResult containing operation details
      */

@@ -548,7 +548,7 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * @param minStamp minimum timestamp value in milliseconds, inclusive
      * @param maxStamp maximum timestamp value in milliseconds, exclusive
      * @return this query instance for method chaining
-     * @throws IllegalArgumentException if cf is null or minStamp >= maxStamp
+     * @throws IllegalArgumentException if minStamp or maxStamp is negative, or maxStamp is less than minStamp
      * @see #setColumnFamilyTimeRange(byte[], long, long)
      * @see #getColumnFamilyTimeRange()
      * @see TimeRange
@@ -587,7 +587,7 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * @param minStamp minimum timestamp value in milliseconds, inclusive
      * @param maxStamp maximum timestamp value in milliseconds, exclusive
      * @return this query instance for method chaining
-     * @throws IllegalArgumentException if cf is null or minStamp >= maxStamp
+     * @throws IllegalArgumentException if minStamp or maxStamp is negative, or maxStamp is less than minStamp
      * @see #setColumnFamilyTimeRange(String, long, long)
      * @see #getColumnFamilyTimeRange()
      * @see TimeRange

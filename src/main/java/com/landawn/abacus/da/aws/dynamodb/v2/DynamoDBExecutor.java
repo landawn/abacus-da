@@ -543,9 +543,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * }</pre>
      *
      * @param value the value for the update operation, can be null for DELETE actions
-     * @param action the update action to perform using AWS SDK v2 AttributeAction enum. Must not be null.
+     * @param action the update action to perform using AWS SDK v2 AttributeAction enum
      * @return an AttributeValueUpdate with the specified action and converted value, never null
-     * @throws IllegalArgumentException if action is null
      * @see #attrValueOf(Object)
      * @see #attrValueUpdateOf(Object)
      */
@@ -1155,9 +1154,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * using the specified target class. If the response does not contain an item, it returns null.</p>
      *
      * @param <T> the type of the entity to convert to
-     * @param getItemResponse the GetItemResponse containing the item to convert
+     * @param getItemResponse the GetItemResponse containing the item to convert, can be {@code null}
      * @param targetClass the class of the entity to convert to
-     * @return an instance of the target class representing the item, or null if no item is present
+     * @return an instance of the target class representing the item, or null if {@code getItemResponse}
+     *         is null or contains no item
      */
     public static <T> T toEntity(final GetItemResponse getItemResponse, final Class<T> targetClass) {
         if (getItemResponse == null || !getItemResponse.hasItem()) {
@@ -1638,6 +1638,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param offset the starting index for pagination
      * @param count the maximum number of items to return
      * @return a Dataset containing the extracted data, never null
+     * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
      */
     public static Dataset extractData(final ScanResponse scanResult, final int offset, final int count) {
         return extractData(scanResult.items(), offset, count);

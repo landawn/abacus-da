@@ -192,9 +192,10 @@ public final class ParsedCql {
      * 
      * <p>The constructor identifies and processes different types of operations:
      * <ul>
-     * <li><strong>DML Operations:</strong> SELECT, INSERT, UPDATE, DELETE, MERGE</li>
-     * <li><strong>DDL Operations:</strong> CREATE, ALTER, DROP (no parameter processing)</li>
-     * <li><strong>Batch Operations:</strong> BATCH statements with multiple operations</li>
+     * <li><strong>DML Operations:</strong> SELECT, INSERT, UPDATE, DELETE, MERGE (parameter processing applied)</li>
+     * <li><strong>Other statements:</strong> any statement not starting with one of the
+     *     keywords above (for example DDL such as CREATE, ALTER, DROP, or BATCH) is stored
+     *     as-is with no parameter detection or normalization</li>
      * </ul></p>
      * 
      * <p>Parameter processing includes:</p>
@@ -363,13 +364,15 @@ public final class ParsedCql {
     }
 
     /**
-     * Returns the original, unmodified CQL statement.
-     * 
-     * <p>This method returns the CQL statement exactly as it was provided to the parser,
-     * including original formatting, whitespace, and parameter placeholders. This is useful
-     * for logging, debugging, or when you need to preserve the original query format.</p>
-     * 
-     * @return the original CQL statement string
+     * Returns the original CQL statement (with leading and trailing whitespace trimmed).
+     *
+     * <p>This method returns the CQL statement as it was provided to the parser, after
+     * applying a {@code trim()} on the leading and trailing whitespace. Internal formatting,
+     * whitespace, and the original parameter placeholders ({@code ?}, {@code :name},
+     * {@code #{name}}) are preserved. This is useful for logging, debugging, or when you
+     * need to preserve the original query format.</p>
+     *
+     * @return the trimmed original CQL statement string
      */
     public String originalCql() {
         return cql;
@@ -382,8 +385,8 @@ public final class ParsedCql {
      * <ul>
      * <li>All named parameters ({@code :name}) are converted to {@code ?}</li>
      * <li>All MyBatis-style parameters ({@code #{name}}) are converted to {@code ?}</li>
-     * <li>Trailing semicolons are removed</li>
-     * <li>Whitespace is normalized</li>
+     * <li>Leading and trailing whitespace is stripped</li>
+     * <li>A single trailing semicolon, if present, is removed</li>
      * </ul>
      * 
      * <p>This parameterized version is what gets sent to Cassandra for prepared statement creation.</p>

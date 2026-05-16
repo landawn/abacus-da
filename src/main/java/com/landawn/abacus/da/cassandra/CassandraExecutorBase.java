@@ -413,7 +413,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * 
      * @param entity the entity object containing primary key values
      * @return a Condition representing the primary key equality check based on entity values
-     * @throws IllegalArgumentException if entity is null or has null key values
+     * @throws IllegalArgumentException if no key names are defined for the entity class, or a key property value is null or empty
      */
     protected static Condition entityToCondition(final Object entity) {
         final Class<?> targetClass = entity.getClass();

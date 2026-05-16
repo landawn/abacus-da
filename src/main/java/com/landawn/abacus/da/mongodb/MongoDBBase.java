@@ -181,7 +181,7 @@ public abstract class MongoDBBase {
      *
      * @param objectId the string representation of the ObjectId (24 hex characters)
      * @return a Bson filter document that matches the specified ObjectId
-     * @throws IllegalArgumentException if objectId is null or empty
+     * @throws IllegalArgumentException if objectId is null or empty, or is not a valid hexadecimal ObjectId representation
      * @see ObjectId
      * @see #objectId2Filter(ObjectId)
      */
@@ -222,7 +222,7 @@ public abstract class MongoDBBase {
      *
      * <p>This method parses the provided JSON string and creates an instance of the specified BSON type.
      * It supports MongoDB's native BSON types including Document, BasicBSONObject, and BasicDBObject.
-     * The JSON string should follow MongoDB's extended JSON format for proper parsing.</p>
+     * Parsing is performed by the framework's JSON parser, so the input should be standard JSON.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -233,13 +233,13 @@ public abstract class MongoDBBase {
      * // Create BasicBSONObject from JSON:
      * BasicBSONObject bsonObj = MDB.fromJson(userJson, BasicBSONObject.class);
      *
-     * // MongoDB extended JSON with ObjectId:
-     * String extendedJson = "{\"_id\": {\"$oid\": \"507f1f77bcf86cd799439011\"}, \"name\": \"John\"}";
-     * Document doc = MDB.fromJson(extendedJson, Document.class);
+     * // Nested JSON:
+     * String nestedJson = "{\"name\": \"John\", \"address\": {\"city\": \"NYC\"}}";
+     * Document doc = MDB.fromJson(nestedJson, Document.class);
      * }</pre>
      *
      * @param <T> the target BSON type
-     * @param json the JSON string to parse (must be valid MongoDB extended JSON)
+     * @param json the JSON string to parse
      * @param rowType the target class - must be one of: Bson.class, Document.class, BasicBSONObject.class, or BasicDBObject.class
      * @return an instance of the specified type populated with the JSON data
      * @throws IllegalArgumentException if rowType is not supported
@@ -434,7 +434,8 @@ public abstract class MongoDBBase {
      *
      * @param obj the object to convert - can be an entity with getter/setter methods, {@code Map<String, Object>}, or array of property name-value pairs
      * @return a MongoDB Document representation of the object
-     * @throws IllegalArgumentException if obj is null or cannot be converted to a Document
+     * @throws NullPointerException if obj is null
+     * @throws IllegalArgumentException if obj cannot be converted to a Document
      * @see Document
      * @see #toBson(Object)
      */
@@ -545,7 +546,8 @@ public abstract class MongoDBBase {
      *
      * @param obj the object to convert - can be an entity with getter/setter methods, {@code Map<String, Object>}, or array of property name-value pairs
      * @return a BasicBSONObject representation of the object
-     * @throws IllegalArgumentException if obj is null or cannot be converted to BasicBSONObject
+     * @throws NullPointerException if obj is null
+     * @throws IllegalArgumentException if obj cannot be converted to BasicBSONObject
      * @see BasicBSONObject
      * @see #toBSONObject(Object...)
      * @see #toDocument(Object)
@@ -641,7 +643,8 @@ public abstract class MongoDBBase {
      *
      * @param obj the object to convert - can be an entity with getter/setter methods, {@code Map<String, Object>}, or array of property name-value pairs
      * @return a BasicDBObject representation of the object
-     * @throws IllegalArgumentException if obj is null, cannot be converted to BasicDBObject, or array has odd number of elements
+     * @throws NullPointerException if obj is null
+     * @throws IllegalArgumentException if obj cannot be converted to BasicDBObject, or array has odd number of elements
      * @see BasicDBObject
      * @see #toDBObject(Object...)
      * @see #toBSONObject(Object)

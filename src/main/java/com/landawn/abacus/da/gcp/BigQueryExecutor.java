@@ -752,9 +752,9 @@ public class BigQueryExecutor {
      * System.out.println("Rows inserted: " + result.getTotalRows());
      * }</pre>
      *
-     * @param entity the entity instance to insert (must have @Table annotation or class name matching table)
+     * @param entity the entity instance to insert; the table name is resolved from its class via the configured naming policy
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if entity is null or invalid
+     * @throws IllegalArgumentException if entity is null
      * @see #insert(Class, Map)
      */
     public TableResult insert(final Object entity) {
@@ -806,7 +806,7 @@ public class BigQueryExecutor {
      * @param targetClass the class representing the target table (used for table name resolution)
      * @param props a Map containing column names as keys and values to insert
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if targetClass or props is null, or if props is empty
+     * @throws IllegalArgumentException if targetClass or props is null
      * @see #insert(Object)
      */
     public TableResult insert(final Class<?> targetClass, final Map<String, Object> props) {
@@ -1780,7 +1780,7 @@ public class BigQueryExecutor {
      *                   or basic single value types)
      * @param queryConfig the BigQuery QueryJobConfiguration with query and job settings
      * @return a Stream containing all query results converted to the target type
-     * @throws JobException if the query job fails
+     * @throws RuntimeException if the query job fails or the calling thread is interrupted
      * @see QueryJobConfiguration
      * @see #stream(QueryJobConfiguration)
      */
@@ -1834,7 +1834,7 @@ public class BigQueryExecutor {
      *
      * @param queryConfig the BigQuery QueryJobConfiguration with query and job settings
      * @return a Stream containing raw FieldValueList objects from the query results
-     * @throws JobException if the query job fails
+     * @throws RuntimeException if the query job fails or the calling thread is interrupted
      * @see QueryJobConfiguration
      * @see FieldValueList
      * @see #stream(Class, QueryJobConfiguration)
@@ -1888,7 +1888,7 @@ public class BigQueryExecutor {
      * @param query the SQL query string with ? parameter placeholders
      * @param parameters the parameter values to bind to the query
      * @return the TableResult containing query results and execution statistics
-     * @throws JobException if the query execution fails
+     * @throws RuntimeException if the query execution fails or the calling thread is interrupted
      * @see #stream(Class, String, Object...)
      * @see #list(Class, String, Object...)
      */
@@ -2009,7 +2009,10 @@ public class BigQueryExecutor {
      * }</pre>
      *
      * @param parameters the Java objects to convert to BigQuery parameters
-     * @return a List of QueryParameterValue objects ready for BigQuery parameter binding
+     * @return a List of QueryParameterValue objects ready for BigQuery parameter binding,
+     *         or an empty list if {@code parameters} is null or empty
+     * @throws IllegalArgumentException if any parameter is {@code null} and not wrapped in a
+     *                                  {@link QueryParameterValue}
      * @see QueryParameterValue
      * @see #execute(String, Object...)
      */
@@ -2050,6 +2053,8 @@ public class BigQueryExecutor {
      *
      * @param fieldValueList the FieldValueList containing schema information, must not be {@code null}
      * @return the FieldList schema defining the structure of the row data
+     * @throws IllegalArgumentException if the internal schema field cannot be accessed via reflection
+     * @throws RuntimeException if the schema field is inaccessible
      * @see FieldList
      * @see FieldValueList
      */

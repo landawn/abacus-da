@@ -95,8 +95,7 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
      * avoid overwhelming output or improve performance.
      * </p>
      *
-     * @param maxCols the maximum number of columns to include in the map representation;
-     *                if negative, all columns will be included
+     * @param maxCols the maximum number of columns to include in the map representation
      * @return a Map representation of this operation with at most maxCols columns;
      *         never null but may be empty
      */
@@ -132,8 +131,7 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
      * more manageable output or improved performance.
      * </p>
      *
-     * @param maxCols the maximum number of columns to include in the JSON representation;
-     *                if negative, all columns will be included
+     * @param maxCols the maximum number of columns to include in the JSON representation
      * @return a JSON string representation of this operation with at most maxCols columns;
      *         never null
      * @throws UncheckedIOException if an I/O error occurs during JSON serialization
@@ -192,8 +190,7 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
      * with many columns.
      * </p>
      *
-     * @param maxCols the maximum number of columns to include in the string representation;
-     *                if negative, all columns will be included
+     * @param maxCols the maximum number of columns to include in the string representation
      * @return a string representation of this operation with at most maxCols columns;
      *         never null
      */

@@ -181,6 +181,7 @@ public final class MongoDB extends MongoDBBase {
      *
      * @param collectionName the name of the MongoDB collection
      * @return a MongoCollectionExecutor for the specified collection
+     * @throws IllegalArgumentException if collectionName is null
      * @see MongoCollectionExecutor
      */
     public MongoCollectionExecutor collExecutor(final String collectionName) {
@@ -213,6 +214,7 @@ public final class MongoDB extends MongoDBBase {
      *
      * @param collection the MongoDB collection instance to wrap
      * @return a MongoCollectionExecutor for the provided collection
+     * @throws IllegalArgumentException if collection is null
      * @see MongoCollectionExecutor
      * @see MongoCollection
      */

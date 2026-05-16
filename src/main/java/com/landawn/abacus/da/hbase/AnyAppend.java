@@ -338,7 +338,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @param minStamp minimum timestamp value, inclusive
      * @param maxStamp maximum timestamp value, exclusive
      * @return this AnyAppend instance for method chaining
-     * @throws IllegalArgumentException if minStamp is negative, maxStamp is negative, or minStamp >= maxStamp
+     * @throws IllegalArgumentException if minStamp is negative, maxStamp is negative, or maxStamp is less than minStamp
      * @see #getTimeRange()
      * @see org.apache.hadoop.hbase.io.TimeRange
      */

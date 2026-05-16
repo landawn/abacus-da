@@ -582,9 +582,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * }</pre>
      * 
      * @param value the value for the update operation, can be null for DELETE actions
-     * @param action the update action to perform. Must not be null.
+     * @param action the update action to perform
      * @return an AttributeValueUpdate with the specified action and converted value, never null
-     * @throws IllegalArgumentException if action is null
      * @see #attrValueOf(Object)
      */
     public static AttributeValueUpdate attrValueUpdateOf(final Object value, final AttributeAction action) {

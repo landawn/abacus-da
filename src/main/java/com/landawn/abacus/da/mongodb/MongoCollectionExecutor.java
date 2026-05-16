@@ -121,10 +121,10 @@ import com.mongodb.client.result.UpdateResult;
  * // Basic CRUD operations:
  * Document user = new Document("name", "John").append("age", 30);
  * executor.insertOne(user);
- * 
- * List<Document> results = executor.stream("{age: {$gte: 18}}").toList();
- * executor.updateMany("{active: false}", "{$set: {status: 'inactive'}}");
- * executor.deleteOne("{_id: ObjectId('...')}");
+ *
+ * List<Document> results = executor.stream(Filters.gte("age", 18)).toList();
+ * executor.updateMany(Filters.eq("active", false), Updates.set("status", "inactive"));
+ * executor.deleteOne("507f1f77bcf86cd799439011");
  * 
  * // Aggregation pipeline:
  * List<Document> aggregated = executor.aggregate(Arrays.asList(
@@ -397,7 +397,6 @@ public final class MongoCollectionExecutor {
      *
      * @param options configuration options for the estimation operation
      * @return an estimated count of documents in the collection
-     * @throws IllegalArgumentException if options is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @see EstimatedDocumentCountOptions
      * @see MongoCollection#estimatedDocumentCount(EstimatedDocumentCountOptions)
@@ -1841,25 +1840,25 @@ public final class MongoCollectionExecutor {
     }
 
     /**
-     * Executes a query with field projection, filtering, sorting, and pagination, returning the results as a Dataset with typed rows.
+     * Executes a query with BSON field projection, filtering, and sorting, returning all results as a Dataset with typed rows.
      *
-     * <p>This method combines field projection, filtering, sorting, and pagination to efficiently retrieve
-     * a specific subset of documents with only selected fields. The results are converted to the specified row type
+     * <p>This method combines BSON field projection, filtering, and sorting to retrieve all matching
+     * documents with only selected fields. The results are converted to the specified row type
      * and organized in a Dataset for tabular operations.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Get page 1 of active users with selected fields:
-     * Collection<String> fields = Arrays.asList("userId", "name", "email");
+     * // Get all active users with selected fields:
+     * Bson projection = Projections.fields(Projections.include("userId", "name", "email"));
      * Bson filter = Filters.eq("status", "active");
      * Bson sort = Sorts.ascending("name");
-     * Dataset userPage = executor.query(fields, filter, sort, 0, 50, User.class);
-     * 
-     * // Export paginated sorted projected data:
-     * userPage.toCsv("active_users_page1.csv");
-     * 
-     * // Process paginated data:
-     * List<String> emails = userPage.getColumn("email", String.class);
+     * Dataset users = executor.query(projection, filter, sort, User.class);
+     *
+     * // Export sorted projected data:
+     * users.toCsv("active_users.csv");
+     *
+     * // Process data:
+     * List<String> emails = users.getColumn("email", String.class);
      * }</pre>
      *
      * @param <T> the target type for each row in the Dataset
@@ -1867,7 +1866,7 @@ public final class MongoCollectionExecutor {
      * @param filter BSON filter criteria to match documents (null for all documents)
      * @param sort BSON sort specification for result ordering (null for natural order)
      * @param rowType the target type for conversion of each document
-     * @return a Dataset containing the paginated query results with projected fields and typed rows
+     * @return a Dataset containing all matching query results with projected fields and typed rows
      */
     public <T> Dataset query(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
         return query(projection, filter, sort, 0, Integer.MAX_VALUE, rowType);

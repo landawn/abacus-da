@@ -233,7 +233,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * @param <T> the entity type
      * @param targetEntityClass the entity class to create mapper for. Must be annotated with @Table. Must not be null.
      * @return a cached async Mapper instance for the specified entity class, never null
-     * @throws IllegalArgumentException if targetEntityClass is null, not a bean class, or missing @Table annotation
+     * @throws IllegalArgumentException if targetEntityClass is not a bean class, missing the @Table annotation, or does not have exactly one @Id field
      */
     public <T> Mapper<T> mapper(final Class<T> targetEntityClass) {
         @SuppressWarnings("rawtypes")
@@ -287,9 +287,9 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * @param <T> the entity type
      * @param targetEntityClass the entity class to create mapper for. Must be a valid bean class. Must not be null.
      * @param tableName the DynamoDB table name to use for operations. Must not be null or empty.
-     * @param namingPolicy the naming policy for converting property names to attribute names. Must not be null.
+     * @param namingPolicy the naming policy for converting property names to attribute names. If null, defaults to CAMEL_CASE.
      * @return a new async Mapper instance configured with the specified parameters, never null
-     * @throws IllegalArgumentException if any parameter is null, targetEntityClass is not a bean class, or tableName is empty
+     * @throws IllegalArgumentException if targetEntityClass is null or not a bean class, tableName is null or empty, or the entity does not have exactly one @Id field
      */
     public <T> Mapper<T> mapper(final Class<T> targetEntityClass, final String tableName, final NamingPolicy namingPolicy) {
         return new Mapper<>(targetEntityClass, this, tableName, namingPolicy);
@@ -2331,13 +2331,9 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Create a mapper for User entities
-     * Mapper<User> userMapper = new Mapper<>(
-     *     User.class, 
-     *     dynamoDBExecutor, 
-     *     "users-table",
-     *     NamingPolicy.CAMEL_CASE
-     * );
-     * 
+     * AsyncDynamoDBExecutor.Mapper<User> userMapper =
+     *     executor.mapper(User.class, "users-table", NamingPolicy.CAMEL_CASE);
+     *
      * // Use the mapper for operations
      * User user = new User();
      * user.setUserId("123");
@@ -2348,7 +2344,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * }</pre>
      * 
      * @param <T> the type of entity this mapper handles. Must be a valid bean class with getter/setter methods
-     *            and at least one field annotated with @Id.
+     *            and exactly one field annotated with @Id.
      */
     public static class Mapper<T> {
         private final AsyncDynamoDBExecutor dynamoDBExecutor;
@@ -2368,12 +2364,8 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * Mapper<Product> productMapper = new Mapper<>(
-         *     Product.class,
-         *     dynamoDBExecutor,
-         *     "products-table",
-         *     NamingPolicy.SCREAMING_SNAKE_CASE
-         * );
+         * AsyncDynamoDBExecutor.Mapper<Product> productMapper =
+         *     executor.mapper(Product.class, "products-table", NamingPolicy.SCREAMING_SNAKE_CASE);
          * }</pre>
          * 
          * @param targetEntityClass the class of entities this mapper will handle. Must not be null

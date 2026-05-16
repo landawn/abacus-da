@@ -655,7 +655,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *                    .setMaxResultsPerColumnFamily(50);
      * }</pre>
      *
-     * @param limit the maximum number of results per column family (must be positive)
+     * @param limit the maximum number of results per column family (must be non-negative)
      * @return this AnyGet instance for method chaining
      * @throws IllegalArgumentException if limit is less than 0
      * @see #getMaxResultsPerColumnFamily()

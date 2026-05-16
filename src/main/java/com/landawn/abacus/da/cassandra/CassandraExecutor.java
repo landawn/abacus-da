@@ -1345,11 +1345,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Asynchronously retrieves a single entity of the specified type from the database.
+     * Asynchronously retrieves a single entity of the specified type from the database through the {@code asyncGett} contract.
      *
      * <p>This method executes a query that is expected to return at most one row,
-     * and maps the result to an instance of the specified target class. If more than
-     * one row is returned, a {@link DuplicateResultException} is thrown.</p>
+     * and maps the result to an instance of the specified target class. If no row matches,
+     * the returned future completes with {@code null}. If more than one row is returned,
+     * the future completes exceptionally with {@link DuplicateResultException}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

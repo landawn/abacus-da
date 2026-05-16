@@ -169,8 +169,8 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
     /**
      * Constructs a new CqlBuilder with the specified naming policy and CQL policy.
      * 
-     * @param namingPolicy the naming policy for column names, defaults to SNAKE_CASE if null
-     * @param sqlPolicy the CQL generation policy, defaults to CQL if null
+     * @param namingPolicy the naming policy for column names
+     * @param sqlPolicy the CQL generation policy
      */
     protected CqlBuilder(final NamingPolicy namingPolicy, final SQLPolicy sqlPolicy) {
         super(namingPolicy, sqlPolicy);
@@ -191,7 +191,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
     }
 
     /**
-     * Repeat question mark({@code ?}) {@code n} times with delimiter {@code ", "}.
+     * Repeat question mark({@code ?}) {@code count} times with delimiter {@code ", "}.
      * 
      * <p>This utility method generates a string of parameterized placeholders suitable for 
      * batch CQL operations, particularly useful for IN clauses or VALUES lists with dynamic
@@ -2211,7 +2211,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ACCB.select("firstName", "lastName").from("account").where(Filters.eq("id", 1)).build().query();
-     * // Output: SELECT FIRST_NAME AS "firstName", LAST_NAME AS "lastName" FROM ACCOUNT WHERE ID = 1
+     * // Output: SELECT FIRST_NAME AS "firstName", LAST_NAME AS "lastName" FROM account WHERE ID = 1
      * }</pre>
      *
      * @deprecated {@code PAC or NAC} is preferred for better security and performance.
@@ -3340,15 +3340,15 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
         /**
          * Creates a COUNT(*) CQL builder for a table.
          * 
-         * <p>This is a convenience method for counting rows. The table name is
-         * automatically converted to uppercase.</p>
-         * 
+         * <p>This is a convenience method for counting rows. The table name is used as-is and is
+         * not transformed by the naming policy; only column names are converted to uppercase.</p>
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = ACCB.count("users")
-         *                  .where(Filters.eq("ACTIVE", true))
+         *                  .where(Filters.eq("active", true))
          *                  .build().query();
-         * // Output: SELECT count(*) FROM USERS WHERE ACTIVE = true
+         * // Output: SELECT count(*) FROM users WHERE ACTIVE = true
          * }</pre>
          *
          * @param tableName the name of the table to count rows from
@@ -4795,7 +4795,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
         /**
          * Creates an INSERT statement builder from an entity object.
          * 
-         * <p>All non-null properties of the entity will be included in the INSERT statement,
+         * <p>The insertable properties of the entity will be included in the INSERT statement,
          * except those marked with {@code @Transient}, {@code @ReadOnly}, or {@code @ReadOnlyId}
          * annotations.</p>
          *
@@ -5838,7 +5838,6 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      * }</pre>
      * 
      * <p><b>Advanced Examples:</b></p>
-     * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // SELECT with entity class
      * String cql = PSC.selectFrom(Account.class)
@@ -5990,7 +5989,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
         /**
          * Creates an INSERT statement from an entity object.
          * 
-         * <p>This method inspects the entity object and extracts all non-null properties that are
+         * <p>This method inspects the entity object and extracts the properties that are
          * suitable for insertion. Properties marked with @Transient, @ReadOnly, or @ReadOnlyId
          * annotations are automatically excluded. Property names are converted to snake_case format.</p>
          * 
@@ -7107,7 +7106,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      *                 .from("account")
      *                 .where(Filters.eq("id", 1))
      *                 .build().query();
-     * // Output: SELECT FIRST_NAME AS "firstName", LAST_NAME AS "lastName" FROM ACCOUNT WHERE ID = ?
+     * // Output: SELECT FIRST_NAME AS "firstName", LAST_NAME AS "lastName" FROM account WHERE ID = ?
      * }</pre>
      */
     public static class PAC extends CqlBuilder {
@@ -8294,7 +8293,6 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      * }</pre>
      * 
      * <p><b>Advanced Examples:</b></p>
-     * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Complex JOIN query with camelCase columns
      * String cql = PLC.select("a.id", "a.firstName", "COUNT(o.id) AS orderCount")
@@ -8461,7 +8459,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
         /**
          * Creates an INSERT statement from an entity object.
          * 
-         * <p>This method extracts all non-null properties from the entity object,
+         * <p>This method extracts the insertable properties from the entity object,
          * excluding those marked with @Transient, @ReadOnly, or @ReadOnlyId annotations.
          * Property names maintain their camelCase format. This is the most convenient way
          * to insert data when working with entity objects.</p>
@@ -9821,7 +9819,6 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      * naming convention of fields and columns without any transformation. It's particularly useful when
      * working with databases where column names match exactly with your Java field names.</p>
      *
-     * <p>For example:</p>
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * N.println(NSB.select("first_Name", "last_NaMe").from("account").where(Filters.eq("last_NaMe", 1)).build().query());
@@ -9974,7 +9971,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
         /**
          * Creates an INSERT CQL builder from an entity object.
          * 
-         * <p>This method extracts all non-null properties from the entity object to create the INSERT statement.
+         * <p>This method extracts the insertable properties from the entity object to create the INSERT statement.
          * Properties annotated with {@code @Transient}, {@code @ReadOnly}, or {@code @ReadOnlyId} are automatically excluded.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -12148,7 +12145,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      * <pre>{@code
      * // Simple SELECT with named parameters
      * N.println(NAC.select("firstName", "lastName").from("account").where(Filters.eq("id", 1)).build().query());
-     * // Output: SELECT FIRST_NAME AS "firstName", LAST_NAME AS "lastName" FROM ACCOUNT WHERE ID = :id
+     * // Output: SELECT FIRST_NAME AS "firstName", LAST_NAME AS "lastName" FROM account WHERE ID = :id
      * 
      * // INSERT with entity
      * Account account = new Account();
@@ -13577,14 +13574,16 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * This method generates a single INSERT statement with multiple value rows,
          * which is more efficient than executing multiple individual INSERT statements.
          * Each entity in the collection will have its own set of named parameters with numeric suffixes.
-         * 
+         *
+         * <p><b>Note:</b> This is a beta feature and may change in future versions.</p>
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Account account1 = new Account("John", "Doe");
          * Account account2 = new Account("Jane", "Smith");
          * Account account3 = new Account("Bob", "Johnson");
          * List<Account> accounts = Arrays.asList(account1, account2, account3);
-         * 
+         *
          * String cql = NLC.batchInsert(accounts).into("account").build().query();
          * // Output: INSERT INTO account (firstName, lastName) VALUES
          * //         (:firstName_1, :lastName_1),
@@ -13595,7 +13594,6 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * @param propsList collection of entities or property maps to insert
          * @return a new CqlBuilder instance configured for batch INSERT operation
          * @throws IllegalArgumentException if propsList is null or empty
-         * <p><b>Note:</b> This is a beta feature and may change in future versions</p>
          */
         @Beta
         public static CqlBuilder batchInsert(final Collection<?> propsList) {

@@ -110,7 +110,7 @@ import reactor.core.publisher.Mono;
  *     .doOnNext(user -> System.out.println("Processing user: " + user.getName()));
  * 
  * // Reactive aggregation with type conversion:
- * Mono<Long> userCount = Mono.from(userMapper.count("{department: 'Engineering'}"))
+ * Mono<Long> userCount = userMapper.count(Filters.eq("department", "Engineering"))
  *     .doOnSuccess(count -> System.out.println("Engineering users: " + count));
  * 
  * // Error handling with reactive streams:

@@ -503,7 +503,6 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @return {@code true} if the increment will return results, {@code false} otherwise
      * @see #setReturnResults(boolean)
      */
-    // This method makes public the superclass's protected method.
     public boolean isReturnResults() {
 
         return increment.isReturnResults();
