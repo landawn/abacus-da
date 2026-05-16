@@ -318,4 +318,157 @@ public class CqlBuilderTest extends AbstractNoSQLTest {
         N.println(cql);
         assertEquals("SELECT first_name AS \"firstName\", last_name AS \"lastName\" FROM account WHERE id = :id LIMIT 9", cql);
     }
+
+    /**
+     * Regression test for the count(*) LIMIT 1 bug.
+     *
+     * <p>{@code CassandraExecutorBase.count(Class, Condition)} and {@code asyncCount(Class, Condition)}
+     * previously built the count query via {@code prepareQuery(targetClass, [count(*)], where, 1)},
+     * which appended {@code LIMIT 1} to a {@code SELECT count(*)} statement. In Cassandra, a LIMIT on
+     * a {@code count(*)} aggregate caps the returned count itself, so a table with 10 matching rows
+     * would report a count of 1.</p>
+     *
+     * <p>This test reproduces the exact CQL the (fixed) count path builds and asserts it no longer
+     * carries a bogus {@code LIMIT}.</p>
+     */
+    @Test
+    public void test_count_query_has_no_bogus_limit() {
+        // Mirrors CassandraExecutorBase.prepareQuery(..., count = 0) for the SNAKE_CASE naming policy.
+        final String countCql = NSC.select(N.asList(CqlBuilder.COUNT_ALL))
+                .from("account")
+                .appendIf(true, Filters.eq("id", Filters.QME))
+                .build()
+                .query();
+        N.println(countCql);
+
+        assertTrue(countCql.startsWith("SELECT count(*)"), countCql);
+        assertTrue(countCql.contains("FROM account"), countCql);
+        assertTrue(countCql.contains("WHERE id = :id"), countCql);
+        // The core of the fix: a COUNT query must NOT be capped by LIMIT.
+        assertTrue(!countCql.toUpperCase().contains("LIMIT"), "Count CQL must not contain a LIMIT clause: " + countCql);
+
+        // Sanity check: the buggy behavior (count = 1 -> limit(1)) would have produced "LIMIT 1",
+        // which truncates the aggregated count in Cassandra.
+        final String buggyCql = NSC.select(N.asList(CqlBuilder.COUNT_ALL))
+                .from("account")
+                .appendIf(true, Filters.eq("id", Filters.QME))
+                .limit(1)
+                .build()
+                .query();
+        N.println(buggyCql);
+        assertTrue(buggyCql.endsWith("LIMIT 1"), buggyCql);
+    }
+
+    /**
+     * Verifies the (NamingPolicy, SQLPolicy) pairing and createInstance() return type implied by each
+     * dialect class name, exercised through the generated CQL string.
+     *
+     * <ul>
+     * <li>S*  -> no params (RAW_SQL, values inlined)</li>
+     * <li>P*  -> parameterized (?)</li>
+     * <li>N*  -> named (:name)</li>
+     * <li>*CB / *SC -> snake_case, *AC -> SCREAMING_SNAKE_CASE, *LC -> camelCase (NO_CHANGE for *SB)</li>
+     * </ul>
+     */
+    @Test
+    public void test_dialect_policy_pairings() {
+        // The naming policy applies to ALL identifiers (select columns AND condition columns),
+        // so we assert the select-column casing per suffix and the parameter style per prefix,
+        // without over-asserting the WHERE-column casing.
+
+        // S* : RAW_SQL -> literal value embedded (no '?' / no named ':' placeholder).
+        final String sccb = SCCB.select("firstName").from("account").where(Filters.eq("id", 123)).build().query();
+        N.println(sccb);
+        assertTrue(sccb.endsWith("= 123"), sccb);
+        assertTrue(!sccb.contains("?") && !sccb.contains(" = :"), sccb);
+        assertTrue(sccb.contains("first_name"), sccb);
+
+        final String accb = ACCB.select("firstName").from("account").where(Filters.eq("id", 123)).build().query();
+        N.println(accb);
+        assertTrue(accb.endsWith("= 123"), accb);
+        assertTrue(!accb.contains("?") && !accb.contains(" = :"), accb);
+        assertTrue(accb.contains("FIRST_NAME"), accb);
+
+        final String lccb = LCCB.select("firstName").from("account").where(Filters.eq("id", 123)).build().query();
+        N.println(lccb);
+        assertTrue(lccb.endsWith("= 123"), lccb);
+        assertTrue(!lccb.contains("?") && !lccb.contains(" = :"), lccb);
+        assertTrue(lccb.contains("firstName"), lccb);
+
+        // P* : PARAMETERIZED_SQL -> '?' placeholder.
+        final String psc = PSC.select("firstName").from("account").where(Filters.eq("id", 123)).build().query();
+        N.println(psc);
+        assertTrue(psc.endsWith("= ?"), psc);
+        assertTrue(psc.contains("first_name"), psc);
+
+        final String pac = PAC.select("firstName").from("account").where(Filters.eq("id", 123)).build().query();
+        N.println(pac);
+        assertTrue(pac.endsWith("= ?"), pac);
+        assertTrue(pac.contains("FIRST_NAME"), pac);
+
+        final String plc = PLC.select("firstName").from("account").where(Filters.eq("id", 123)).build().query();
+        N.println(plc);
+        assertTrue(plc.endsWith("= ?"), plc);
+        assertTrue(plc.contains("firstName"), plc);
+
+        // N* : NAMED_SQL -> ':name' placeholder.
+        final String nsc = NSC.select("firstName").from("account").where(Filters.eq("id", 123)).build().query();
+        N.println(nsc);
+        assertTrue(nsc.contains(" = :"), nsc);
+        assertTrue(nsc.contains("first_name"), nsc);
+
+        final String nac = NAC.select("firstName").from("account").where(Filters.eq("id", 123)).build().query();
+        N.println(nac);
+        assertTrue(nac.contains(" = :"), nac);
+        assertTrue(nac.contains("FIRST_NAME"), nac);
+
+        final String nlc = NLC.select("firstName").from("account").where(Filters.eq("id", 123)).build().query();
+        N.println(nlc);
+        assertTrue(nlc.contains(" = :"), nlc);
+        assertTrue(nlc.contains("firstName"), nlc);
+    }
+
+    /**
+     * Verifies the Cassandra-specific keyword constants render with correct spacing and that
+     * USING TIMESTAMP applies the ms -> microsecond (x1000) conversion while USING TTL does not.
+     */
+    @Test
+    public void test_cassandra_keyword_generation() {
+        // USING TTL: seconds, NOT multiplied (must be exactly the supplied value).
+        final String ttlCql = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).usingTTL(3600).build().query();
+        N.println(ttlCql);
+        assertTrue(ttlCql.endsWith(" USING TTL 3600"), ttlCql);
+
+        // USING TIMESTAMP(long): milliseconds -> microseconds (x1000).
+        final String tsLongCql = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).usingTimestamp(1234567890123L).build().query();
+        N.println(tsLongCql);
+        assertTrue(tsLongCql.endsWith(" USING TIMESTAMP 1234567890123000"), tsLongCql);
+
+        // USING TIMESTAMP(Date): Date.getTime() (ms) -> microseconds (x1000), same as the long overload.
+        final String tsDateCql = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).usingTimestamp(new Date(1234567890123L)).build()
+                .query();
+        N.println(tsDateCql);
+        assertTrue(tsDateCql.endsWith(" USING TIMESTAMP 1234567890123000"), tsDateCql);
+
+        // IF EXISTS vs IF NOT EXISTS (not swapped) + leading space (must not yield "?IF EXISTS").
+        final String ifExistsCql = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).ifExists().build().query();
+        N.println(ifExistsCql);
+        assertTrue(ifExistsCql.endsWith(" IF EXISTS"), ifExistsCql);
+        assertTrue(!ifExistsCql.contains("IF NOT EXISTS"), ifExistsCql);
+
+        final String ifNotExistsCql = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).ifNotExists().build().query();
+        N.println(ifNotExistsCql);
+        assertTrue(ifNotExistsCql.endsWith(" IF NOT EXISTS"), ifNotExistsCql);
+
+        // ALLOW FILTERING leading space (must not produce "id = ?ALLOW FILTERING").
+        final String afCql = PSC.select("firstName").from("account").where(Filters.eq("id", 1)).allowFiltering().build().query();
+        N.println(afCql);
+        assertTrue(afCql.endsWith(" ALLOW FILTERING"), afCql);
+        assertTrue(afCql.contains("? ALLOW FILTERING"), afCql);
+
+        // Lightweight transaction IF clause spacing (leading space, single space around expr).
+        final String iFCql = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).iF("status = 'inactive'").build().query();
+        N.println(iFCql);
+        assertTrue(iFCql.endsWith(" IF status = 'inactive'"), iFCql);
+    }
 }

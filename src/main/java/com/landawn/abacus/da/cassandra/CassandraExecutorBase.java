@@ -1287,7 +1287,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws IllegalArgumentException if targetClass is null
      */
     public long count(final Class<?> targetClass, final Condition whereClause) {
-        final SP cp = prepareQuery(targetClass, N.asList(CqlBuilder.COUNT_ALL), whereClause, 1);
+        // Note: LIMIT must NOT be applied to a COUNT(*) query. In Cassandra, "SELECT count(*) ... LIMIT 1"
+        // caps the aggregated count itself (a table with 10 matching rows would return count = 1).
+        final SP cp = prepareQuery(targetClass, N.asList(CqlBuilder.COUNT_ALL), whereClause, 0);
 
         return queryForSingleValue(long.class, cp.query(), cp.parameters().toArray()).orElse(0L);
     }
@@ -2787,7 +2789,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     @SuppressWarnings("deprecation")
     public ContinuableFuture<Long> asyncCount(final Class<?> targetClass, final Condition whereClause) {
-        final SP cp = prepareQuery(targetClass, N.asList(NSC.COUNT_ALL), whereClause, 1);
+        // Note: LIMIT must NOT be applied to a COUNT(*) query. In Cassandra, "SELECT count(*) ... LIMIT 1"
+        // caps the aggregated count itself (a table with 10 matching rows would return count = 1).
+        final SP cp = prepareQuery(targetClass, N.asList(NSC.COUNT_ALL), whereClause, 0);
 
         return asyncCount(cp.query(), cp.parameters().toArray());
     }

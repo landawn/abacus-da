@@ -1757,4 +1757,79 @@ public class MongoCollectionExecutorTest extends TestBase {
 
         StepVerifier.create(result).expectNext(resultDoc).verifyComplete();
     }
+
+    /**
+     * Regression test for the missing {@code N.isEmpty(doc)} guard in the private
+     * {@code toEntity(Class)} mapper. The non-reactive executor maps an empty Document
+     * to {@code null}; the reactive version was mapping it directly via
+     * {@code MongoDB.readRow(doc, rowType)}, which for a wrapper type like Integer
+     * produced a bogus default value (0) instead of treating "no data" as null.
+     *
+     * <p>With the fix, an empty Document is mapped to {@code null}. Because Reactor's
+     * {@code Mono.map} does not allow a mapper to return {@code null}, this now surfaces
+     * as a NullPointerException instead of silently emitting a fabricated {@code 0}.</p>
+     */
+    @Test
+    public void testFindFirstTypedWithEmptyDocumentDoesNotProduceDefaultValue() {
+        Bson filter = new Document("id", 999);
+        Document emptyDoc = new Document();
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.first()).thenReturn(Mono.just(emptyDoc));
+
+        Mono<Integer> result = executor.findFirst(filter, Integer.class);
+
+        // Before the fix this emitted a bogus 0 (default value of Integer).
+        // After the fix toEntity returns null for an empty document.
+        StepVerifier.create(result).verifyError(NullPointerException.class);
+    }
+
+    /**
+     * Companion positive test: a non-empty document is still mapped correctly after
+     * adding the {@code N.isEmpty(doc)} guard to {@code toEntity(Class)}.
+     */
+    @Test
+    public void testFindFirstTypedWithNonEmptyDocumentStillMaps() {
+        Bson filter = new Document("id", 1);
+        Document doc = new Document("value", 42);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+
+        Mono<Integer> result = executor.findFirst(filter, Integer.class);
+
+        StepVerifier.create(result).expectNext(42).verifyComplete();
+    }
+
+    @Test
+    public void testListWithZeroCountReturnsEmptyAndDoesNotUseLimitZero() {
+        // Regression: limit(0) is treated by the MongoDB driver as "no limit" (return ALL docs).
+        // A user-supplied count of 0 must yield zero results, not the whole collection.
+        Bson filter = new Document("status", "active");
+        Document alwaysFalse = new Document("$expr", false);
+        when(mockCollection.find(eq(alwaysFalse))).thenReturn(mockFindPublisher);
+
+        Flux<Document> result = executor.list(filter, 0, 0, Document.class);
+
+        StepVerifier.create(result).verifyComplete();
+        verify(mockCollection).find(eq(alwaysFalse));
+        verify(mockFindPublisher, org.mockito.Mockito.never()).limit(0);
+    }
+
+    @Test
+    public void testUpdateOneWithDriverBuiltBsonNotWrappedInSet() {
+        // Regression: a driver-built Bson (Updates.set(...)) is neither Document nor BasicDBObject.
+        // It must be passed through as-is, not re-wrapped in {$set: ...} which corrupts the update.
+        Bson filter = new Document("name", "test");
+        Bson update = com.mongodb.client.model.Updates.set("verified", true);
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        when(mockCollection.updateOne(eq(filter), eq(update))).thenReturn(publisher);
+
+        Mono<UpdateResult> result = executor.updateOne(filter, update);
+
+        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
+    }
 }

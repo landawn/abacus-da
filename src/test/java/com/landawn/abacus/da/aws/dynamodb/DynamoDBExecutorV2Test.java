@@ -1595,4 +1595,56 @@ public class DynamoDBExecutorV2Test extends TestBase {
             mapper.getItem(request);
         });
     }
+
+    /**
+     * Regression test: when a Query result is paginated (has a non-empty LastEvaluatedKey) the
+     * {@code query(QueryRequest, Class)} Map branch must aggregate subsequent pages. AWS SDK v2's
+     * {@code QueryResponse.items()} returns an immutable list, so the previous implementation threw
+     * {@link UnsupportedOperationException} when calling {@code addAll} on it. The fix copies the
+     * items into a mutable list before aggregating additional pages.
+     */
+    @Test
+    public void testQueryWithPaginationDoesNotThrowOnImmutableItems() {
+        QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
+
+        QueryResponse page1 = QueryResponse.builder()
+                .items(List.of(Map.of("id", AttributeValue.builder().s("1").build())))
+                .lastEvaluatedKey(Map.of("id", AttributeValue.builder().s("1").build()))
+                .build();
+
+        QueryResponse page2 = QueryResponse.builder().items(List.of(Map.of("id", AttributeValue.builder().s("2").build()))).build();
+
+        when(mockDynamoDbClient.query(any(QueryRequest.class))).thenReturn(page1, page2);
+
+        Dataset result = executor.query(queryRequest, Map.class);
+
+        assertNotNull(result);
+        assertEquals(2, result.size());
+    }
+
+    /**
+     * Regression test mirroring {@link #testQueryWithPaginationDoesNotThrowOnImmutableItems()} for
+     * the untyped {@code query(QueryRequest)} entry point.
+     */
+    @Test
+    public void testQueryUntypedWithPaginationDoesNotThrowOnImmutableItems() {
+        QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
+
+        QueryResponse page1 = QueryResponse.builder()
+                .items(List.of(Map.of("id", AttributeValue.builder().s("a").build())))
+                .lastEvaluatedKey(Map.of("id", AttributeValue.builder().s("a").build()))
+                .build();
+
+        QueryResponse page2 = QueryResponse.builder()
+                .items(List.of(Map.of("id", AttributeValue.builder().s("b").build()),
+                        Map.of("id", AttributeValue.builder().s("c").build())))
+                .build();
+
+        when(mockDynamoDbClient.query(any(QueryRequest.class))).thenReturn(page1, page2);
+
+        Dataset result = executor.query(queryRequest);
+
+        assertNotNull(result);
+        assertEquals(3, result.size());
+    }
 }

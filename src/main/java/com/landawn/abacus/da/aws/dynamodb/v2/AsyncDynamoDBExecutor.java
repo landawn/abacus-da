@@ -1747,9 +1747,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
             final CompletableFuture<QueryResponse> queryResultFuture = dynamoDBClient.query(queryRequest);
 
             return queryResultFuture.thenApplyAsync(queryResult -> {
-                final List<Map<String, AttributeValue>> items = queryResult.items();
+                List<Map<String, AttributeValue>> items = queryResult.items();
 
                 if (N.notEmpty(queryResult.lastEvaluatedKey()) && N.isEmpty(queryRequest.exclusiveStartKey())) {
+                    // QueryResponse.items() returns an immutable list, so copy it before aggregating subsequent pages.
+                    items = new ArrayList<>(items);
                     QueryRequest newQueryRequest = queryRequest.copy(builder -> builder.exclusiveStartKey(queryResult.lastEvaluatedKey()));
                     QueryResponse newQueryResult = queryResult;
 

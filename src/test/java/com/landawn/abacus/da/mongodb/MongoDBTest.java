@@ -158,6 +158,34 @@ public class MongoDBTest extends TestBase {
         });
     }
 
+    @Test
+    public void testToEntityDoesNotInjectNullIdWhenAbsent() {
+        // Bug fix: MongoDBBase.toEntity must not add a spurious "_id": null entry
+        // to a Document that originally had no _id field.
+        Document doc = new Document("name", "test");
+
+        TestEntity entity = MongoDBBase.toEntity(doc, TestEntity.class);
+
+        Assertions.assertNotNull(entity);
+        Assertions.assertEquals("test", entity.getName());
+        Assertions.assertFalse(doc.containsKey("_id"), "Document must not contain a spurious _id key after conversion");
+        Assertions.assertEquals(1, doc.size());
+    }
+
+    @Test
+    public void testToEntityPreservesExistingId() {
+        // When _id is present it must be restored on the source Document after conversion.
+        org.bson.types.ObjectId oid = new org.bson.types.ObjectId();
+        Document doc = new Document("_id", oid).append("name", "test");
+
+        TestEntity entity = MongoDBBase.toEntity(doc, TestEntity.class);
+
+        Assertions.assertNotNull(entity);
+        Assertions.assertEquals("test", entity.getName());
+        Assertions.assertTrue(doc.containsKey("_id"), "Existing _id must be restored after conversion");
+        Assertions.assertEquals(oid, doc.get("_id"));
+    }
+
     // Test entity class
     private static class TestEntity {
         private String id;

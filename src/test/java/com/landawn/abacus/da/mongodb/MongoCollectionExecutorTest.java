@@ -697,6 +697,40 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     // Test entity class
+    @Test
+    public void testListWithZeroCountReturnsEmptyAndDoesNotUseLimitZero() {
+        // Regression: limit(0) is treated by the MongoDB driver as "no limit" (return ALL docs).
+        // A user-supplied count of 0 must yield zero results, not the whole collection.
+        Document filter = new Document("status", "active");
+        org.mockito.ArgumentCaptor<Bson> findCaptor = org.mockito.ArgumentCaptor.forClass(Bson.class);
+        when(mockFindIterable.into(any())).thenReturn(Arrays.asList());
+
+        List<Document> result = executor.list(filter, 0, 0, Document.class);
+
+        Assertions.assertTrue(result.isEmpty());
+        verify(mockCollection).find(findCaptor.capture());
+        Assertions.assertEquals(new Document("$expr", false), findCaptor.getValue());
+        // limit(0) must never be applied (it would mean "no limit").
+        verify(mockFindIterable, org.mockito.Mockito.never()).limit(0);
+    }
+
+    @Test
+    public void testUpdateOneWithDriverBuiltBsonNotWrappedInSet() {
+        // Regression: a driver-built Bson (Updates.set(...)) is neither Document nor BasicDBObject.
+        // It must be passed through as-is, not re-wrapped in {$set: ...} which corrupts the update.
+        Document filter = new Document("name", "test");
+        Bson update = com.mongodb.client.model.Updates.set("verified", true);
+        UpdateResult updateResult = mock(UpdateResult.class);
+        org.mockito.ArgumentCaptor<Bson> updateCaptor = org.mockito.ArgumentCaptor.forClass(Bson.class);
+        when(mockCollection.updateOne(any(Bson.class), any(Bson.class))).thenReturn(updateResult);
+
+        executor.updateOne(filter, update);
+
+        verify(mockCollection).updateOne(any(Bson.class), updateCaptor.capture());
+        Assertions.assertSame(update, updateCaptor.getValue());
+        Assertions.assertFalse(updateCaptor.getValue() instanceof Document);
+    }
+
     private static class TestEntity {
         private String id;
         private String name;

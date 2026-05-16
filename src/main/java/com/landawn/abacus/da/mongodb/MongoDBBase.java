@@ -840,7 +840,9 @@ public abstract class MongoDBBase {
                 }
             }
         } finally {
-            doc.put(_ID, objectId);
+            if (objectId != null) {
+                doc.put(_ID, objectId);
+            }
         }
 
         return entity;

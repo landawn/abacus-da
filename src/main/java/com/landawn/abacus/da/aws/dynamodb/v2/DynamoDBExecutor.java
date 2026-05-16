@@ -2792,9 +2792,11 @@ public final class DynamoDBExecutor implements AutoCloseable {
     public Dataset query(final QueryRequest queryRequest, final Class<?> targetClass) {
         if (targetClass == null || Map.class.isAssignableFrom(targetClass)) {
             final QueryResponse queryResult = dynamoDBClient.query(queryRequest);
-            final List<Map<String, AttributeValue>> items = queryResult.items();
+            List<Map<String, AttributeValue>> items = queryResult.items();
 
             if (N.notEmpty(queryResult.lastEvaluatedKey()) && N.isEmpty(queryRequest.exclusiveStartKey())) {
+                // QueryResponse.items() returns an immutable list, so copy it before aggregating subsequent pages.
+                items = new ArrayList<>(items);
                 QueryRequest newQueryRequest = queryRequest.copy(builder -> builder.exclusiveStartKey(queryResult.lastEvaluatedKey()));
                 QueryResponse newQueryResult = queryResult;
 

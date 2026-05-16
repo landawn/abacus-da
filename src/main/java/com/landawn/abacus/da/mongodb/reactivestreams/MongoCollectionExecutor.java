@@ -151,6 +151,8 @@ public final class MongoCollectionExecutor {
 
     static final String _$SET = "$set";
 
+    static final String _$EXPR = "$expr";
+
     static final String _$GROUP = "$group";
 
     static final String _$SUM = "$sum";
@@ -1388,7 +1390,7 @@ public final class MongoCollectionExecutor {
     }
 
     private static <T> Function<Document, T> toEntity(final Class<T> rowType) {
-        return doc -> MongoDB.readRow(doc, rowType);
+        return doc -> N.isEmpty(doc) ? null : MongoDB.readRow(doc, rowType);
     }
 
     private Flux<Document> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count) {
@@ -1404,6 +1406,12 @@ public final class MongoCollectionExecutor {
     private Flux<Document> executeQuery(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count) {
         if (offset < 0 || count < 0) {
             throw new IllegalArgumentException("offset (" + offset + ") and count (" + count + ") cannot be negative");
+        }
+
+        if (count == 0) {
+            // The MongoDB driver treats limit(0) as "no limit" (return all matching documents).
+            // A request for zero documents must yield zero documents, so use an always-false filter.
+            return Flux.from(coll.find(new Document(_$EXPR, false)));
         }
 
         FindPublisher<Document> findIterable = filter == null ? coll.find() : coll.find(filter);
@@ -1786,8 +1794,15 @@ public final class MongoCollectionExecutor {
             if (!doc.isEmpty() && doc.keySet().iterator().next().startsWith(_$)) {
                 return doc;
             }
-        } else if ((bson instanceof final BasicDBObject dbObject) && (!dbObject.isEmpty() && dbObject.keySet().iterator().next().startsWith(_$))) { //NOSONAR
-            return dbObject;
+        } else if (bson instanceof final BasicDBObject dbObject) { //NOSONAR
+            if (!dbObject.isEmpty() && dbObject.keySet().iterator().next().startsWith(_$)) {
+                return dbObject;
+            }
+        } else {
+            // A driver-built Bson (e.g. Updates.set(...)/Updates.combine(...)) is already a
+            // complete update expression. It is neither Document nor BasicDBObject, so it must
+            // be returned as-is rather than (incorrectly) re-wrapped in a {$set: ...} document.
+            return bson;
         }
 
         return new Document(_$SET, bson);

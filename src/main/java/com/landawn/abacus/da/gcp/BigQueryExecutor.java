@@ -636,6 +636,12 @@ public class BigQueryExecutor {
         }
 
         final Schema schema = tableResult.getSchema();
+
+        // A null schema (e.g. a DML statement's TableResult) has no result columns regardless of the affected-row count.
+        if (schema == null) {
+            return new ArrayList<>(0);
+        }
+
         final FieldList fields = schema.getFields();
         final Iterable<FieldValueList> rows = tableResult.iterateAll();
 
@@ -668,7 +674,7 @@ public class BigQueryExecutor {
         final int rowCount = Numbers.toIntExact(tableResult.getTotalRows());
         final Schema schema = tableResult.getSchema();
 
-        if (schema == null && rowCount == 0) {
+        if (schema == null) {
             return N.newEmptyDataset();
         }
 

@@ -160,6 +160,8 @@ public final class MongoCollectionExecutor {
 
     static final String _$SET = "$set";
 
+    static final String _$EXPR = "$expr";
+
     static final String _$GROUP = "$group";
 
     static final String _$SUM = "$sum";
@@ -2383,6 +2385,12 @@ public final class MongoCollectionExecutor {
             throw new IllegalArgumentException("offset (" + offset + ") and count (" + count + ") cannot be negative");
         }
 
+        if (count == 0) {
+            // The MongoDB driver treats limit(0) as "no limit" (return all matching documents).
+            // A request for zero documents must yield zero documents, so use an always-false filter.
+            return coll.find(new Document(_$EXPR, false));
+        }
+
         FindIterable<Document> findIterable = filter == null ? coll.find() : coll.find(filter);
 
         if (projection != null) {
@@ -2886,8 +2894,15 @@ public final class MongoCollectionExecutor {
             if (!doc.isEmpty() && doc.keySet().iterator().next().startsWith(_$)) {
                 return doc;
             }
-        } else if ((bson instanceof final BasicDBObject dbObject) && (!dbObject.isEmpty() && dbObject.keySet().iterator().next().startsWith(_$))) { //NOSONAR
-            return dbObject;
+        } else if (bson instanceof final BasicDBObject dbObject) { //NOSONAR
+            if (!dbObject.isEmpty() && dbObject.keySet().iterator().next().startsWith(_$)) {
+                return dbObject;
+            }
+        } else {
+            // A driver-built Bson (e.g. Updates.set(...)/Updates.combine(...)) is already a
+            // complete update expression. It is neither Document nor BasicDBObject, so it must
+            // be returned as-is rather than (incorrectly) re-wrapped in a {$set: ...} document.
+            return bson;
         }
 
         return new Document(_$SET, bson);

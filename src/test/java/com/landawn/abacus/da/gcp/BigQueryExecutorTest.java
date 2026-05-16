@@ -913,6 +913,46 @@ public class BigQueryExecutorTest extends TestBase {
         assertEquals(123, entity.getId());
     }
 
+    @Test
+    public void testExtractDataWithNullSchemaButNonZeroRows() {
+        // Simulates a DML statement result (INSERT/UPDATE/DELETE): BigQuery returns a
+        // TableResult whose getSchema() is null while getTotalRows() reflects the
+        // affected-row count (> 0). The guard must not dereference the null schema.
+        when(mockTableResult.getTotalRows()).thenReturn(5L);
+        when(mockTableResult.getSchema()).thenReturn(null);
+
+        Dataset dataset = BigQueryExecutor.extractData(mockTableResult, TestEntity.class);
+
+        assertNotNull(dataset);
+        assertEquals(0, dataset.size());
+        assertEquals(0, dataset.columnCount());
+    }
+
+    @Test
+    public void testExtractDataWithNullSchemaAndMapClassNonZeroRows() {
+        when(mockTableResult.getTotalRows()).thenReturn(3L);
+        when(mockTableResult.getSchema()).thenReturn(null);
+
+        Dataset dataset = BigQueryExecutor.extractData(mockTableResult, Map.class);
+
+        assertNotNull(dataset);
+        assertEquals(0, dataset.size());
+    }
+
+    @Test
+    public void testToListWithNullSchemaButNonZeroRows() {
+        // Same DML-result shape as the extractData case: getSchema() is null while
+        // getTotalRows() is the affected-row count (> 0). toList must not dereference
+        // the null schema (previously NPE'd at schema.getFields()).
+        when(mockTableResult.getTotalRows()).thenReturn(7L);
+        when(mockTableResult.getSchema()).thenReturn(null);
+
+        List<TestEntity> list = BigQueryExecutor.toList(mockTableResult, TestEntity.class);
+
+        assertNotNull(list);
+        assertTrue(list.isEmpty());
+    }
+
     // Test entity classes
     public static class TestEntity {
         private int id;
