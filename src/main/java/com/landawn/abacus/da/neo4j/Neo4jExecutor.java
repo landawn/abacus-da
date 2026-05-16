@@ -175,7 +175,7 @@ public final class Neo4jExecutor {
      *     person.setName("Updated Name");
      *     session.save(person);
      * } finally {
-     *     // Important: manually close the session
+     *     // Important: manually clear the session to release resources
      *     session.clear();
      * }
      *
@@ -1728,9 +1728,9 @@ public final class Neo4jExecutor {
      * to optimize query execution for read-only operations. The stream is lazily
      * evaluated and automatically manages the session lifecycle.
      * 
-     * @param cypher the Cypher query string
+     * @param cypher the Cypher query string with named parameter placeholders
      * @param parameters the named parameters for the query
-     * @param readOnly true if the query is read-only and can be optimized accordingly
+     * @param readOnly {@code true} if the query is read-only and can be optimized accordingly
      * @return a stream of result maps, each representing a query result row
      * @see #query(String, Map)
      * @see #query(Class, String, Map)

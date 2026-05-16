@@ -102,7 +102,7 @@ import com.mongodb.client.result.UpdateResult;
  * }
  * 
  * // Create mapper:
- * MongoCollectionMapper<User> userMapper = mongoDB.collMapper("users", User.class);
+ * MongoCollectionMapper<User> userMapper = mongoDB.collMapper(User.class);
  *
  * // Type-safe operations:
  * User newUser = new User("John Doe", "john@example.com", new Date());

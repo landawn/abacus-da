@@ -1288,9 +1288,11 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
         /**
          * Creates a batch INSERT CQL builder for multiple entities or property maps.
          * 
-         * <p>This method generates MyCQL-style batch insert CQL for efficient bulk inserts.
+         * <p>This method generates batch-style INSERT CQL for efficient bulk inserts.
          * All entities or maps in the collection must have the same structure (same properties).</p>
-         * 
+         *
+         * <p><b>Note:</b> This is a beta feature and may be subject to change.</p>
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<Account> accounts = Arrays.asList(
@@ -1304,7 +1306,6 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * @param propsList collection of entities or property maps to insert
          * @return a new CqlBuilder instance configured for batch INSERT operation
          * @throws IllegalArgumentException if propsList is null or empty
-         * <p><b>Note:</b> This is a beta feature and may be subject to change</p>
          */
         @Beta
         public static CqlBuilder batchInsert(final Collection<?> propsList) {
@@ -2209,11 +2210,11 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * ACSB.select("firstName", "lastName").from("account").where(Filters.eq("id", 1)).build().query();
+     * ACCB.select("firstName", "lastName").from("account").where(Filters.eq("id", 1)).build().query();
      * // Output: SELECT FIRST_NAME AS "firstName", LAST_NAME AS "lastName" FROM ACCOUNT WHERE ID = 1
      * }</pre>
      *
-     * @deprecated {@code PAC or NAC} is preferred for better security and performance. 
+     * @deprecated {@code PAC or NAC} is preferred for better security and performance.
      *             Un-parameterized CQL is vulnerable to CQL injection attacks.
      */
     @Deprecated
@@ -2249,7 +2250,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = ACSB.insert("firstName")
+         * String cql = ACCB.insert("firstName")
          *                  .into("users")
          *                  .values("John")
          *                  .build().query();
@@ -2274,7 +2275,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = ACSB.insert("firstName", "lastName", "email")
+         * String cql = ACCB.insert("firstName", "lastName", "email")
          *                  .into("users")
          *                  .values("John", "Doe", "john@example.com")
          *                  .build().query();
@@ -2305,7 +2306,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<String> columns = Arrays.asList("firstName", "lastName", "email");
-         * String cql = ACSB.insert(columns)
+         * String cql = ACCB.insert(columns)
          *                  .into("users")
          *                  .values("John", "Doe", "john@example.com")
          *                  .build().query();
@@ -2338,7 +2339,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * Map<String, Object> data = new HashMap<>();
          * data.put("firstName", "John");
          * data.put("age", 30);
-         * String cql = ACSB.insert(data).into("users").build().query();
+         * String cql = ACCB.insert(data).into("users").build().query();
          * // Output: INSERT INTO USERS (FIRST_NAME, AGE) VALUES ('John', 30)
          * }</pre>
          *
@@ -2367,7 +2368,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * User user = new User("John", 30, "john@example.com");
-         * String cql = ACSB.insert(user).into("users").build().query();
+         * String cql = ACCB.insert(user).into("users").build().query();
          * // Output: INSERT INTO USERS (FIRST_NAME, AGE, EMAIL) VALUES ('John', 30, 'john@example.com')
          * }</pre>
          *
@@ -2389,7 +2390,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <pre>{@code
          * User user = new User("John", 30, "john@example.com");
          * Set<String> excluded = new HashSet<>(Arrays.asList("createdDate", "modifiedDate"));
-         * String cql = ACSB.insert(user, excluded).into("users").build().query();
+         * String cql = ACCB.insert(user, excluded).into("users").build().query();
          * // Output: INSERT INTO USERS (FIRST_NAME, AGE, EMAIL) VALUES ('John', 30, 'john@example.com')
          * }</pre>
          *
@@ -2420,7 +2421,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = ACSB.insert(User.class).into("users").build().query();
+         * String cql = ACCB.insert(User.class).into("users").build().query();
          * // Output: INSERT INTO USERS (FIRST_NAME, LAST_NAME, AGE, EMAIL)
          * }</pre>
          *
@@ -2442,7 +2443,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = new HashSet<>(Arrays.asList("id", "createdDate"));
-         * String cql = ACSB.insert(User.class, excluded).into("users").build().query();
+         * String cql = ACCB.insert(User.class, excluded).into("users").build().query();
          * // Output: INSERT INTO USERS (FIRST_NAME, LAST_NAME, AGE, EMAIL)
          * }</pre>
          *
@@ -2471,7 +2472,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = ACSB.insertInto(User.class)
+         * String cql = ACCB.insertInto(User.class)
          *                  .values("John", "Doe", 30, "john@example.com")
          *                  .build().query();
          * // Output: INSERT INTO USER (FIRST_NAME, LAST_NAME, AGE, EMAIL) VALUES ('John', 'Doe', 30, 'john@example.com')
@@ -2494,7 +2495,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = new HashSet<>(Arrays.asList("id"));
-         * String cql = ACSB.insertInto(User.class, excluded)
+         * String cql = ACCB.insertInto(User.class, excluded)
          *                  .values("John", "Doe", 30, "john@example.com")
          *                  .build().query();
          * // Output: INSERT INTO USER (FIRST_NAME, LAST_NAME, AGE, EMAIL) VALUES ('John', 'Doe', 30, 'john@example.com')
@@ -2512,25 +2513,26 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
         /**
          * Creates a batch INSERT CQL builder for multiple entities or property maps.
          * 
-         * <p>This method generates MyCQL-style batch insert CQL for efficient bulk inserts.
+         * <p>This method generates batch-style INSERT CQL for efficient bulk inserts.
          * All entities or maps in the collection must have the same structure (same properties).</p>
-         * 
+         *
+         * <p><b>Note:</b> This is a beta feature and may be subject to change.</p>
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<User> users = Arrays.asList(
          *     new User("John", 30, "john@example.com"),
          *     new User("Jane", 25, "jane@example.com")
          * );
-         * String cql = ACSB.batchInsert(users).into("users").build().query();
-         * // Output: INSERT INTO USERS (FIRST_NAME, AGE, EMAIL) VALUES 
-         * //         ('John', 30, 'john@example.com'), 
+         * String cql = ACCB.batchInsert(users).into("users").build().query();
+         * // Output: INSERT INTO USERS (FIRST_NAME, AGE, EMAIL) VALUES
+         * //         ('John', 30, 'john@example.com'),
          * //         ('Jane', 25, 'jane@example.com')
          * }</pre>
          *
          * @param propsList collection of entities or property maps to insert
          * @return a new CqlBuilder instance configured for batch INSERT operation
          * @throws IllegalArgumentException if propsList is null or empty
-         * <p><b>Note:</b> This is a beta feature and may be subject to change</p>
          */
         @Beta
         public static CqlBuilder batchInsert(final Collection<?> propsList) {
@@ -2559,7 +2561,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = ACSB.update("users")
+         * String cql = ACCB.update("users")
          *                  .set("LAST_NAME", "'Smith'")
          *                  .where(Filters.eq("ID", 123))
          *                  .build().query();
@@ -2589,7 +2591,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = ACSB.update("users", User.class)
+         * String cql = ACCB.update("users", User.class)
          *                  .set("age", 31)  // "age" is mapped to "AGE" column
          *                  .where(Filters.eq("firstName", "'John'"))
          *                  .build().query();
@@ -2622,7 +2624,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = ACSB.update(User.class)
+         * String cql = ACCB.update(User.class)
          *                  .set("age", 31)
          *                  .where(Filters.eq("firstName", "'John'"))
          *                  .build().query();
@@ -2646,7 +2648,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = new HashSet<>(Arrays.asList("id", "createdDate"));
-         * String cql = ACSB.update(User.class, excluded)
+         * String cql = ACCB.update(User.class, excluded)
          *                  .set("age", 31)
          *                  .where(Filters.eq("id", 1))
          *                  .build().query();
@@ -2675,7 +2677,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * Creates a DELETE CQL builder for a single column or expression.
          *
          * <p>This method initializes a DELETE statement for one column. The column name will be
-         * converted according to the snake_case naming policy. This is useful for deleting
+         * converted to SCREAMING_SNAKE_CASE according to the naming policy. This is useful for deleting
          * specific columns from a row rather than the entire row.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -2701,7 +2703,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * Creates a DELETE CQL builder for multiple columns.
          *
          * <p>This method initializes a DELETE statement for multiple columns. All column names
-         * will be converted according to the snake_case naming policy. This allows selective
+         * will be converted according to the SCREAMING_SNAKE_CASE naming policy. This allows selective
          * deletion of specific columns from rows.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -2710,7 +2712,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *                  .from("account")
          *                  .where(Filters.eq("id", 1))
          *                  .build().query();
-         * // Output: DELETE FIRST_NAME, LAST_NAME, email FROM account WHERE ID = 1
+         * // Output: DELETE FIRST_NAME, LAST_NAME, EMAIL FROM account WHERE ID = 1
          * }</pre>
          *
          * @param columnNames the column names to delete
@@ -2733,7 +2735,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *
          * <p>This method is useful when column names are determined dynamically. The collection
          * can contain property names that will be converted to column names according to the
-         * snake_case naming policy.</p>
+         * SCREAMING_SNAKE_CASE naming policy.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -2826,7 +2828,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = ACSB.deleteFrom("users")
+         * String cql = ACCB.deleteFrom("users")
          *                  .where(Filters.lt("AGE", 18))
          *                  .build().query();
          * // Output: DELETE FROM USERS WHERE AGE < 18
@@ -2855,7 +2857,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = ACSB.deleteFrom("users", User.class)
+         * String cql = ACCB.deleteFrom("users", User.class)
          *                  .where(Filters.eq("age", 18))  // "age" is mapped to "AGE" column
          *                  .build().query();
          * // Output: DELETE FROM USERS WHERE AGE = 18
@@ -2887,7 +2889,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = ACSB.deleteFrom(User.class)
+         * String cql = ACCB.deleteFrom(User.class)
          *                  .where(Filters.eq("ID", 1))
          *                  .build().query();
          * // Output: DELETE FROM USER WHERE ID = 1
@@ -2917,7 +2919,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = ACSB.select("COUNT(*) as total, AVG(SALARY) as avgSalary")
+         * String cql = ACCB.select("COUNT(*) as total, AVG(SALARY) as avgSalary")
          *                  .from("EMPLOYEES")
          *                  .build().query();
          * // Output: SELECT COUNT(*) as total, AVG(SALARY) as avgSalary FROM EMPLOYEES
@@ -2945,7 +2947,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = ACSB.select("firstName", "lastName", "age")
+         * String cql = ACCB.select("firstName", "lastName", "age")
          *                  .from("users")
          *                  .where(Filters.gte("age", 18))
          *                  .build().query();
@@ -2977,7 +2979,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<String> columns = getRequiredColumns();   // returns ["firstName", "email"]
-         * String cql = ACSB.select(columns)
+         * String cql = ACCB.select(columns)
          *                  .from("users")
          *                  .build().query();
          * // Output: SELECT FIRST_NAME AS "firstName", EMAIL AS "email" FROM USERS
@@ -3009,7 +3011,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * Map<String, String> aliases = new HashMap<>();
          * aliases.put("firstName", "fname");
          * aliases.put("lastName", "lname");
-         * String cql = ACSB.select(aliases).from("users").build().query();
+         * String cql = ACCB.select(aliases).from("users").build().query();
          * // Output: SELECT FIRST_NAME AS "fname", LAST_NAME AS "lname" FROM USERS
          * }</pre>
          *
@@ -3036,7 +3038,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = ACSB.select(User.class)
+         * String cql = ACCB.select(User.class)
          *                  .from("users")
          *                  .build().query();
          * // Output: SELECT ID AS "id", FIRST_NAME AS "firstName", LAST_NAME AS "lastName", AGE AS "age", EMAIL AS "email" FROM USERS
@@ -3058,7 +3060,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = ACSB.select(Order.class, true)  // includes Customer sub-entity
+         * String cql = ACCB.select(Order.class, true)  // includes Customer sub-entity
          *                  .from("orders")
          *                  .build().query();
          * // Output includes both Order and nested Customer properties with uppercase column names
@@ -3082,7 +3084,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = new HashSet<>(Arrays.asList("password", "secretKey"));
-         * String cql = ACSB.select(User.class, excluded)
+         * String cql = ACCB.select(User.class, excluded)
          *                  .from("users")
          *                  .build().query();
          * // Output: SELECT ID AS "id", FIRST_NAME AS "firstName", LAST_NAME AS "lastName", AGE AS "age", EMAIL AS "email" FROM USERS
@@ -3106,7 +3108,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = new HashSet<>(Arrays.asList("internalNotes"));
-         * String cql = ACSB.select(Order.class, true, excluded)
+         * String cql = ACCB.select(Order.class, true, excluded)
          *                  .from("orders")
          *                  .build().query();
          * // Output includes Order and Customer properties, excluding internalNotes
@@ -3138,7 +3140,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = ACSB.selectFrom(User.class)
+         * String cql = ACCB.selectFrom(User.class)
          *                  .where(Filters.gte("age", 18))
          *                  .build().query();
          * // Output: SELECT ID AS "id", FIRST_NAME AS "firstName", LAST_NAME AS "lastName", AGE AS "age", EMAIL AS "email" 
@@ -3161,7 +3163,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = ACSB.selectFrom(User.class, "u")
+         * String cql = ACCB.selectFrom(User.class, "u")
          *                  .where(Filters.gte("u.AGE", 18))
          *                  .build().query();
          * // Output: SELECT u.ID AS "id", u.FIRST_NAME AS "firstName", u.LAST_NAME AS "lastName", u.AGE AS "age", u.EMAIL AS "email" 
@@ -3185,7 +3187,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = ACSB.selectFrom(Order.class, true)
+         * String cql = ACCB.selectFrom(Order.class, true)
          *                  .where(Filters.eq("STATUS", "'ACTIVE'"))
          *                  .build().query();
          * // Output includes JOINs for sub-entities like Customer
@@ -3208,7 +3210,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = ACSB.selectFrom(Order.class, "o", true)
+         * String cql = ACCB.selectFrom(Order.class, "o", true)
          *                  .where(Filters.eq("o.STATUS", "'ACTIVE'"))
          *                  .build().query();
          * // Output includes aliased columns and JOINs for sub-entities
@@ -3233,7 +3235,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = new HashSet<>(Arrays.asList("largeBlob", "metadata"));
-         * String cql = ACSB.selectFrom(User.class, excluded)
+         * String cql = ACCB.selectFrom(User.class, excluded)
          *                  .where(Filters.eq("ACTIVE", true))
          *                  .build().query();
          * // Output: SELECT ID AS "id", FIRST_NAME AS "firstName", LAST_NAME AS "lastName", AGE AS "age", EMAIL AS "email" 
@@ -3258,7 +3260,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = new HashSet<>(Arrays.asList("internalCode"));
-         * String cql = ACSB.selectFrom(User.class, "u", excluded)
+         * String cql = ACCB.selectFrom(User.class, "u", excluded)
          *                  .innerJoin("ORDERS", "o").on("u.ID = o.USER_ID")
          *                  .build().query();
          * // Output uses alias "u" and excludes internalCode property
@@ -3283,7 +3285,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = new HashSet<>(Arrays.asList("deletedFlag"));
-         * String cql = ACSB.selectFrom(Order.class, true, excluded)
+         * String cql = ACCB.selectFrom(Order.class, true, excluded)
          *                  .where(Filters.gt("CREATED_DATE", "'2023-01-01'"))
          *                  .build().query();
          * // Output includes Order with Customer sub-entity, excluding deletedFlag
@@ -3309,7 +3311,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = new HashSet<>(Arrays.asList("debugInfo"));
-         * String cql = ACSB.selectFrom(Order.class, "ord", true, excluded)
+         * String cql = ACCB.selectFrom(Order.class, "ord", true, excluded)
          *                  .where(Filters.gt("ord.TOTAL_AMOUNT", 1000))
          *                  .build().query();
          * // Output: Complex SELECT with alias, sub-entities, and exclusions
@@ -3343,7 +3345,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = ACSB.count("users")
+         * String cql = ACCB.count("users")
          *                  .where(Filters.eq("ACTIVE", true))
          *                  .build().query();
          * // Output: SELECT count(*) FROM USERS WHERE ACTIVE = true
@@ -3367,7 +3369,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = ACSB.count(User.class)
+         * String cql = ACCB.count(User.class)
          *                  .where(Filters.gte("AGE", 18))
          *                  .build().query();
          * // Output: SELECT count(*) FROM USER WHERE AGE >= 18
@@ -3392,7 +3394,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Condition cond = Filters.and(Filters.eq("firstName", "'John'"), Filters.gt("age", 18));
-         * String cql = ACSB.parse(cond, User.class).build().query();
+         * String cql = ACCB.parse(cond, User.class).build().query();
          * // Output: FIRST_NAME = 'John' AND AGE > 18
          * }</pre>
          *
@@ -3431,7 +3433,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * LCSB.select("firstName", "lastName").from("userAccount").where(Filters.eq("userId", 1)).build().query();
+     * LCCB.select("firstName", "lastName").from("userAccount").where(Filters.eq("userId", 1)).build().query();
      * // Output: SELECT firstName, lastName FROM userAccount WHERE userId = 1
      * }</pre>
      * 
@@ -3471,7 +3473,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = LCSB.insert("userName")
+         * String cql = LCCB.insert("userName")
          *                  .into("users")
          *                  .values("John")
          *                  .build().query();
@@ -3499,7 +3501,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = LCSB.insert("firstName", "lastName", "email")
+         * String cql = LCCB.insert("firstName", "lastName", "email")
          *                  .into("users")
          *                  .values("John", "Doe", "john@example.com")
          *                  .build().query();
@@ -3530,7 +3532,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<String> columns = Arrays.asList("firstName", "lastName", "email");
-         * String cql = LCSB.insert(columns)
+         * String cql = LCCB.insert(columns)
          *                  .into("users")
          *                  .values("John", "Doe", "john@example.com")
          *                  .build().query();
@@ -3563,7 +3565,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * Map<String, Object> props = new HashMap<>();
          * props.put("firstName", "John");
          * props.put("age", 30);
-         * String cql = LCSB.insert(props).into("users").build().query();
+         * String cql = LCCB.insert(props).into("users").build().query();
          * // Output: INSERT INTO users (firstName, age) VALUES ('John', 30)
          * }</pre>
          * 
@@ -3592,7 +3594,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * User user = new User("John", "Doe", "john@example.com");
-         * String cql = LCSB.insert(user).into("users").build().query();
+         * String cql = LCCB.insert(user).into("users").build().query();
          * // Output: INSERT INTO users (firstName, lastName, email) VALUES ('John', 'Doe', 'john@example.com')
          * }</pre>
          * 
@@ -3616,7 +3618,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <pre>{@code
          * User user = new User("John", "Doe", "john@example.com");
          * Set<String> excluded = new HashSet<>(Arrays.asList("createdDate", "modifiedDate"));
-         * String cql = LCSB.insert(user, excluded).into("users").build().query();
+         * String cql = LCCB.insert(user, excluded).into("users").build().query();
          * // Output: INSERT INTO users (firstName, lastName, email) VALUES ('John', 'Doe', 'john@example.com')
          * }</pre>
          * 
@@ -3647,7 +3649,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = LCSB.insert(User.class).into("users").build().query();
+         * String cql = LCCB.insert(User.class).into("users").build().query();
          * // Output: INSERT INTO users (firstName, lastName, email)
          * }</pre>
          * 
@@ -3672,7 +3674,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = new HashSet<>(Arrays.asList("id", "createdDate"));
-         * String cql = LCSB.insert(User.class, excluded).into("users").build().query();
+         * String cql = LCCB.insert(User.class, excluded).into("users").build().query();
          * // Output: INSERT INTO users (firstName, lastName, email)
          * }</pre>
          * 
@@ -3701,7 +3703,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = LCSB.insertInto(User.class)
+         * String cql = LCCB.insertInto(User.class)
          *                  .values("John", "Doe", "john@example.com")
          *                  .build().query();
          * // Output: INSERT INTO users (firstName, lastName, email) VALUES ('John', 'Doe', 'john@example.com')
@@ -3726,7 +3728,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = new HashSet<>(Arrays.asList("id"));
-         * String cql = LCSB.insertInto(User.class, excluded)
+         * String cql = LCCB.insertInto(User.class, excluded)
          *                  .values("John", "Doe", "john@example.com")
          *                  .build().query();
          * // Output: INSERT INTO users (firstName, lastName, email) VALUES ('John', 'Doe', 'john@example.com')
@@ -3744,24 +3746,25 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
         /**
          * Creates a batch INSERT CQL builder for multiple entities or property maps.
          * 
-         * <p>This method generates MyCQL-style batch insert CQL for inserting multiple
+         * <p>This method generates batch-style INSERT CQL for inserting multiple
          * rows in a single statement. The input collection can contain either entity
          * objects or Map instances. All items must have the same structure.</p>
-         * 
+         *
+         * <p><b>Note:</b> This is a beta feature and may be subject to change.</p>
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<User> users = Arrays.asList(
          *     new User("John", "Doe"),
          *     new User("Jane", "Smith")
          * );
-         * String cql = LCSB.batchInsert(users).into("users").build().query();
+         * String cql = LCCB.batchInsert(users).into("users").build().query();
          * // Output: INSERT INTO users (firstName, lastName) VALUES ('John', 'Doe'), ('Jane', 'Smith')
          * }</pre>
-         * 
+         *
          * @param propsList collection of entities or property maps to insert
          * @return a new CqlBuilder instance configured for batch INSERT operation
          * @throws IllegalArgumentException if propsList is null or empty
-         * <p><b>Note:</b> This is a beta feature and may be subject to change</p>
          */
         @Beta
         public static CqlBuilder batchInsert(final Collection<?> propsList) {
@@ -3790,7 +3793,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = LCSB.update("users")
+         * String cql = LCCB.update("users")
          *                  .set("lastName", "'Smith'")
          *                  .where(Filters.eq("id", 123))
          *                  .build().query();
@@ -3820,7 +3823,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = LCSB.update("users", User.class)
+         * String cql = LCCB.update("users", User.class)
          *                  .set("age", 31)
          *                  .where(Filters.eq("firstName", "'John'"))
          *                  .build().query();
@@ -3854,7 +3857,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = LCSB.update(User.class)
+         * String cql = LCCB.update(User.class)
          *                  .set("age", 31)
          *                  .where(Filters.eq("firstName", "'John'"))
          *                  .build().query();
@@ -3882,7 +3885,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = new HashSet<>(Arrays.asList("id", "createdDate"));
-         * String cql = LCSB.update(User.class, excluded)
+         * String cql = LCCB.update(User.class, excluded)
          *                  .set("firstName", "'John'")
          *                  .where(Filters.eq("id", 123))
          *                  .build().query();
@@ -3910,8 +3913,8 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
         /**
          * Creates a DELETE CQL builder for a single column or expression.
          *
-         * <p>This method initializes a DELETE statement for one column. The column name will be
-         * converted according to the snake_case naming policy. This is useful for deleting
+         * <p>This method initializes a DELETE statement for one column. The column name is
+         * preserved in camelCase format without conversion. This is useful for deleting
          * specific columns from a row rather than the entire row.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -3937,7 +3940,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * Creates a DELETE CQL builder for multiple columns.
          *
          * <p>This method initializes a DELETE statement for multiple columns. All column names
-         * will be converted according to the snake_case naming policy. This allows selective
+         * are preserved in camelCase format without conversion. This allows selective
          * deletion of specific columns from rows.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -3968,8 +3971,8 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * Creates a DELETE CQL builder for a collection of columns.
          *
          * <p>This method is useful when column names are determined dynamically. The collection
-         * can contain property names that will be converted to column names according to the
-         * snake_case naming policy.</p>
+         * can contain property names that are preserved in camelCase format without
+         * conversion.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -4062,7 +4065,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = LCSB.deleteFrom("users")
+         * String cql = LCCB.deleteFrom("users")
          *                  .where(Filters.eq("status", "'inactive'"))
          *                  .build().query();
          * // Output: DELETE FROM users WHERE status = 'inactive'
@@ -4091,7 +4094,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = LCSB.deleteFrom("users", User.class)
+         * String cql = LCCB.deleteFrom("users", User.class)
          *                  .where(Filters.eq("age", 18))
          *                  .build().query();
          * // Output: DELETE FROM users WHERE age = 18
@@ -4123,7 +4126,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = LCSB.deleteFrom(User.class)
+         * String cql = LCCB.deleteFrom(User.class)
          *                  .where(Filters.eq("id", 1))
          *                  .build().query();
          * // Output: DELETE FROM users WHERE id = 1
@@ -4153,7 +4156,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = LCSB.select("COUNT(*) as total, AVG(salary) as avgSalary")
+         * String cql = LCCB.select("COUNT(*) as total, AVG(salary) as avgSalary")
          *                  .from("employees")
          *                  .build().query();
          * // Output: SELECT COUNT(*) as total, AVG(salary) as avgSalary FROM employees
@@ -4181,7 +4184,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = LCSB.select("firstName", "lastName", "email")
+         * String cql = LCCB.select("firstName", "lastName", "email")
          *                  .from("users")
          *                  .where(Filters.eq("active", true))
          *                  .build().query();
@@ -4212,7 +4215,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<String> columns = getRequiredColumns();
-         * String cql = LCSB.select(columns)
+         * String cql = LCCB.select(columns)
          *                  .from("users")
          *                  .build().query();
          * // Output: SELECT firstName, lastName, email FROM users
@@ -4244,7 +4247,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * Map<String, String> aliases = new HashMap<>();
          * aliases.put("firstName", "fname");
          * aliases.put("lastName", "lname");
-         * String cql = LCSB.select(aliases).from("users").build().query();
+         * String cql = LCCB.select(aliases).from("users").build().query();
          * // Output: SELECT firstName AS fname, lastName AS lname FROM users
          * }</pre>
          * 
@@ -4271,7 +4274,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = LCSB.select(User.class)
+         * String cql = LCCB.select(User.class)
          *                  .from("users")
          *                  .build().query();
          * // Output: SELECT id, firstName, lastName, email FROM users
@@ -4296,7 +4299,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * // If User has an Address sub-entity
-         * String cql = LCSB.select(User.class, true)
+         * String cql = LCCB.select(User.class, true)
          *                  .from("users")
          *                  .build().query();
          * // Output: SELECT firstName, lastName, address.street, address.city FROM users
@@ -4320,7 +4323,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = new HashSet<>(Arrays.asList("password", "secretKey"));
-         * String cql = LCSB.select(User.class, excluded)
+         * String cql = LCCB.select(User.class, excluded)
          *                  .from("users")
          *                  .build().query();
          * // Output: SELECT id, firstName, lastName, email FROM users
@@ -4344,7 +4347,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = new HashSet<>(Arrays.asList("internalNotes"));
-         * String cql = LCSB.select(Order.class, true, excluded)
+         * String cql = LCCB.select(Order.class, true, excluded)
          *                  .from("orders")
          *                  .build().query();
          * // Output includes Order and Customer properties, excluding internalNotes
@@ -4376,7 +4379,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = LCSB.selectFrom(User.class)
+         * String cql = LCCB.selectFrom(User.class)
          *                  .where(Filters.eq("active", true))
          *                  .build().query();
          * // Output: SELECT id, firstName, lastName, email FROM users WHERE active = true
@@ -4400,7 +4403,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = LCSB.selectFrom(User.class, "u")
+         * String cql = LCCB.selectFrom(User.class, "u")
          *                  .where(Filters.eq("u.active", true))
          *                  .build().query();
          * // Output: SELECT u.id, u.firstName, u.lastName FROM users u WHERE u.active = true
@@ -4423,7 +4426,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = LCSB.selectFrom(Order.class, true)
+         * String cql = LCCB.selectFrom(Order.class, true)
          *                  .where(Filters.gt("totalAmount", 100))
          *                  .build().query();
          * // Output includes JOINs for sub-entities
@@ -4446,7 +4449,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = LCSB.selectFrom(Order.class, "o", true)
+         * String cql = LCCB.selectFrom(Order.class, "o", true)
          *                  .where(Filters.eq("o.status", "'ACTIVE'"))
          *                  .build().query();
          * // Output includes aliased columns and JOINs for sub-entities
@@ -4470,7 +4473,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = new HashSet<>(Arrays.asList("largeBlob", "metadata"));
-         * String cql = LCSB.selectFrom(User.class, excluded)
+         * String cql = LCCB.selectFrom(User.class, excluded)
          *                  .where(Filters.eq("active", true))
          *                  .build().query();
          * // Output: SELECT id, firstName, lastName, email FROM users WHERE active = true
@@ -4494,7 +4497,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = new HashSet<>(Arrays.asList("internalCode"));
-         * String cql = LCSB.selectFrom(User.class, "u", excluded)
+         * String cql = LCCB.selectFrom(User.class, "u", excluded)
          *                  .innerJoin("orders", "o").on("u.id = o.userId")
          *                  .build().query();
          * // Output uses alias "u" and excludes internalCode property
@@ -4519,7 +4522,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = new HashSet<>(Arrays.asList("deletedFlag"));
-         * String cql = LCSB.selectFrom(Order.class, true, excluded)
+         * String cql = LCCB.selectFrom(Order.class, true, excluded)
          *                  .where(Filters.gt("createdDate", "'2023-01-01'"))
          *                  .build().query();
          * // Output includes Order with Customer sub-entity, excluding deletedFlag
@@ -4545,7 +4548,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = new HashSet<>(Arrays.asList("debugInfo"));
-         * String cql = LCSB.selectFrom(Order.class, "ord", true, excluded)
+         * String cql = LCCB.selectFrom(Order.class, "ord", true, excluded)
          *                  .where(Filters.gt("ord.totalAmount", 1000))
          *                  .build().query();
          * // Output: Complex SELECT with alias, sub-entities, and exclusions
@@ -4578,7 +4581,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = LCSB.count("users")
+         * String cql = LCCB.count("users")
          *                  .where(Filters.eq("active", true))
          *                  .build().query();
          * // Output: SELECT count(*) FROM users WHERE active = true
@@ -4602,7 +4605,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = LCSB.count(User.class)
+         * String cql = LCCB.count(User.class)
          *                  .where(Filters.between("age", 18, 65))
          *                  .build().query();
          * // Output: SELECT count(*) FROM users WHERE age BETWEEN 18 AND 65
@@ -4632,7 +4635,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *     Filters.gt("age", 18)
          * );
          * 
-         * String cql = LCSB.parse(cond, User.class).build().query();
+         * String cql = LCCB.parse(cond, User.class).build().query();
          * // Output: active = true AND age > 18
          * }</pre>
          * 
@@ -4940,7 +4943,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
         /**
          * Creates a batch INSERT statement builder for multiple records.
          * 
-         * <p>Generates MyCQL-style batch insert CQL that can insert multiple rows in a single
+         * <p>Generates batch insert CQL that can insert multiple rows in a single
          * statement. The input collection can contain either entity objects or Map instances
          * representing the data to insert.</p>
          *
@@ -5091,8 +5094,8 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
         /**
          * Creates a DELETE CQL builder for a single column or expression.
          *
-         * <p>This method initializes a DELETE statement for one column. The column name will be
-         * converted according to the SCREAMING_SNAKE_CASE naming policy. This is useful for deleting
+         * <p>This method initializes a DELETE statement for one column. The column name is
+         * used as-is without any naming transformation. This is useful for deleting
          * specific columns from a row rather than the entire row.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -5118,7 +5121,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * Creates a DELETE CQL builder for multiple columns.
          *
          * <p>This method initializes a DELETE statement for multiple columns. All column names
-         * will be converted according to the SCREAMING_SNAKE_CASE naming policy. This allows selective
+         * are used as-is without any naming transformation. This allows selective
          * deletion of specific columns from rows.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -5149,8 +5152,8 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * Creates a DELETE CQL builder for a collection of columns.
          *
          * <p>This method is useful when column names are determined dynamically. The collection
-         * can contain property names that will be converted to column names according to the
-         * SCREAMING_SNAKE_CASE naming policy.</p>
+         * can contain property or column names that are used as-is without any naming
+         * transformation.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -7538,7 +7541,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * Creates a DELETE CQL builder for a single column or expression.
          *
          * <p>This method initializes a DELETE statement for one column. The column name will be
-         * converted according to the camelCase naming policy. This is useful for deleting
+         * converted according to the SCREAMING_SNAKE_CASE naming policy. This is useful for deleting
          * specific columns from a row rather than the entire row.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -7564,7 +7567,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * Creates a DELETE CQL builder for multiple columns.
          *
          * <p>This method initializes a DELETE statement for multiple columns. All column names
-         * will be converted according to the camelCase naming policy. This allows selective
+         * will be converted according to the SCREAMING_SNAKE_CASE naming policy. This allows selective
          * deletion of specific columns from rows.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -7596,7 +7599,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *
          * <p>This method is useful when column names are determined dynamically. The collection
          * can contain property names that will be converted to column names according to the
-         * camelCase naming policy.</p>
+         * SCREAMING_SNAKE_CASE naming policy.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -8865,7 +8868,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * Creates a DELETE CQL builder for a single column or expression.
          *
          * <p>This method initializes a DELETE statement for one column. The column name will be
-         * converted according to the NO_CHANGE naming policy. This is useful for deleting
+         * converted according to the camelCase naming policy. This is useful for deleting
          * specific columns from a row rather than the entire row.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -8891,7 +8894,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * Creates a DELETE CQL builder for multiple columns.
          *
          * <p>This method initializes a DELETE statement for multiple columns. All column names
-         * will be converted according to the NO_CHANGE naming policy. This allows selective
+         * will be converted according to the camelCase naming policy. This allows selective
          * deletion of specific columns from rows.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -8923,7 +8926,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *
          * <p>This method is useful when column names are determined dynamically. The collection
          * can contain property names that will be converted to column names according to the
-         * NO_CHANGE naming policy.</p>
+         * camelCase naming policy.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -10285,8 +10288,8 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
         /**
          * Creates a DELETE CQL builder for a single column or expression.
          *
-         * <p>This method initializes a DELETE statement for one column. The column name will be
-         * converted according to the SCREAMING_SNAKE_CASE naming policy. This is useful for deleting
+         * <p>This method initializes a DELETE statement for one column. The column name is
+         * used as-is without any naming transformation. This is useful for deleting
          * specific columns from a row rather than the entire row.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -10312,7 +10315,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * Creates a DELETE CQL builder for multiple columns.
          *
          * <p>This method initializes a DELETE statement for multiple columns. All column names
-         * will be converted according to the SCREAMING_SNAKE_CASE naming policy. This allows selective
+         * are used as-is without any naming transformation. This allows selective
          * deletion of specific columns from rows.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -10343,8 +10346,8 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * Creates a DELETE CQL builder for a collection of columns.
          *
          * <p>This method is useful when column names are determined dynamically. The collection
-         * can contain property names that will be converted to column names according to the
-         * SCREAMING_SNAKE_CASE naming policy.</p>
+         * can contain property or column names that are used as-is without any naming
+         * transformation.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -12561,7 +12564,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * Creates a DELETE CQL builder for a single column or expression.
          *
          * <p>This method initializes a DELETE statement for one column. The column name will be
-         * converted according to the camelCase naming policy. This is useful for deleting
+         * converted according to the SCREAMING_SNAKE_CASE naming policy. This is useful for deleting
          * specific columns from a row rather than the entire row.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -12587,7 +12590,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * Creates a DELETE CQL builder for multiple columns.
          *
          * <p>This method initializes a DELETE statement for multiple columns. All column names
-         * will be converted according to the camelCase naming policy. This allows selective
+         * will be converted according to the SCREAMING_SNAKE_CASE naming policy. This allows selective
          * deletion of specific columns from rows.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -12619,7 +12622,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *
          * <p>This method is useful when column names are determined dynamically. The collection
          * can contain property names that will be converted to column names according to the
-         * camelCase naming policy.</p>
+         * SCREAMING_SNAKE_CASE naming policy.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -13734,7 +13737,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * Creates a DELETE CQL builder for a single column or expression.
          *
          * <p>This method initializes a DELETE statement for one column. The column name will be
-         * converted according to the NO_CHANGE naming policy. This is useful for deleting
+         * converted according to the camelCase naming policy. This is useful for deleting
          * specific columns from a row rather than the entire row.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -13760,7 +13763,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * Creates a DELETE CQL builder for multiple columns.
          *
          * <p>This method initializes a DELETE statement for multiple columns. All column names
-         * will be converted according to the NO_CHANGE naming policy. This allows selective
+         * will be converted according to the camelCase naming policy. This allows selective
          * deletion of specific columns from rows.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -13792,7 +13795,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *
          * <p>This method is useful when column names are determined dynamically. The collection
          * can contain property names that will be converted to column names according to the
-         * NO_CHANGE naming policy.</p>
+         * camelCase naming policy.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -14457,6 +14460,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * @param entityClass the entity class
          * @return a new CqlBuilder instance configured for COUNT operation
+         * @throws IllegalArgumentException if entityClass is null
          */
         public static CqlBuilder count(final Class<?> entityClass) {
             N.checkArgNotNull(entityClass, SELECTION_PART_MSG);

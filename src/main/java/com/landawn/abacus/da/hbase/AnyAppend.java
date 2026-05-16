@@ -490,7 +490,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      *
      * @param family the column family name as a string, must not be null or empty
      * @param qualifier the column qualifier as a string, must not be null or empty
-     * @param value the value to append, will be automatically converted to bytes (can be null for delete)
+     * @param value the value to append, will be automatically converted to bytes
      * @return this AnyAppend instance for method chaining
      * @throws IllegalArgumentException if family or qualifier is null or empty
      * @see #addColumn(byte[], byte[], byte[])

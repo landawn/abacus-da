@@ -87,7 +87,7 @@ import com.landawn.abacus.util.XmlUtil;
  * 
  * // Get parsed CQL statement
  * ParsedCql parsedCql = mapper.get("findAccountById");
- * String cql = parsedCql.cql();
+ * String cql = parsedCql.originalCql();
  * 
  * // Add new CQL statement programmatically
  * Map<String, String> attributes = new HashMap<>();
@@ -260,7 +260,7 @@ public final class CqlMapper {
      * <pre>{@code
      * ParsedCql parsedCql = mapper.get("findUserById");
      * if (parsedCql != null) {
-     *     String cql = parsedCql.cql();
+     *     String cql = parsedCql.originalCql();
      *     String parameterizedCql = parsedCql.getParameterizedCql();
      *     Map<String, String> attributes = parsedCql.getAttributes();
      * }
@@ -318,8 +318,8 @@ public final class CqlMapper {
      * @param id the unique identifier for this CQL statement
      * @param cql the CQL statement string to be parsed and stored
      * @param attrs optional attributes map for statement metadata (can be null)
-     * @throws IllegalArgumentException if the ID already exists or if the CQL is invalid
-     * @throws NullPointerException if {@code cql} is null
+     * @throws IllegalArgumentException if the ID already exists, if {@code cql} is null,
+     *         or if the CQL is invalid
      */
     public void add(final String id, final String cql, final Map<String, String> attrs) {
         if (cqlMap.containsKey(id)) {
@@ -342,14 +342,15 @@ public final class CqlMapper {
     }
 
     /**
-     * Creates a deep copy of this CqlMapper.
-     * 
-     * <p>Returns a new CqlMapper instance that contains all the same CQL statements
-     * as this mapper. The copy is independent of the original, so modifications to
-     * one will not affect the other. This is useful for creating isolated mapper
-     * instances for different application contexts.</p>
-     * 
-     * @return a new CqlMapper instance containing copies of all CQL statements
+     * Creates a copy of this CqlMapper.
+     *
+     * <p>Returns a new CqlMapper instance whose internal map contains the same
+     * ID-to-{@link ParsedCql} mappings as this mapper. The two maps are independent,
+     * so adding or removing statements from one will not affect the other (the
+     * shared {@code ParsedCql} values are immutable). This is useful for creating
+     * isolated mapper instances for different application contexts.</p>
+     *
+     * @return a new CqlMapper instance containing the same CQL statement mappings
      */
     public CqlMapper copy() {
         final CqlMapper copy = new CqlMapper();

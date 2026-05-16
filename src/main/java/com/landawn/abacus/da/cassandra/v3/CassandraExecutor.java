@@ -1259,7 +1259,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * }</pre>
      * 
      * @param <T> the result type
-     * @param statement the prepared statement to execute
+     * @param statement the statement to execute
      * @param rowMapper function to convert column definitions and rows to result objects
      * @return a Stream of mapped results
      * @throws IllegalArgumentException if statement or rowMapper is null

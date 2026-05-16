@@ -121,7 +121,6 @@ import com.landawn.abacus.util.stream.Stream;
  * }</pre>
  *
  * <h3>Usage Examples</h3>
- * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * // Initialize executor
  * HBaseExecutor executor = new HBaseExecutor(connection);
@@ -906,7 +905,8 @@ public final class HBaseExecutor implements AutoCloseable {
 
                     column = HBaseColumn.valueOf(columnValueType.valueOf(getValueString(cell)), cell.getTimestamp());
                     columnMap.put(column.version(), column);
-                } else if (familyPropInfo.jsonXmlType.isCollection() && familyPropInfo.jsonXmlType.parameterTypes().get(0).javaType().equals(HBaseColumn.class)) {
+                } else if (familyPropInfo.jsonXmlType.isCollection()
+                        && familyPropInfo.jsonXmlType.parameterTypes().get(0).javaType().equals(HBaseColumn.class)) {
                     columnValueType = familyPropInfo.jsonXmlType.parameterTypes().get(0).elementType();
 
                     if (familyColumnValueTypeMap == null) {

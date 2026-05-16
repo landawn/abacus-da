@@ -1369,8 +1369,7 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the string representation of the MongoDB ObjectId
      * @param update the entity containing the update values
      * @return a Mono that emits the update result
-     * @throws IllegalArgumentException if objectId or update is null
-     * @throws IllegalArgumentException if objectId is not a valid ObjectId format
+     * @throws IllegalArgumentException if objectId or update is null, or if objectId is not a valid ObjectId format
      */
     public Mono<UpdateResult> updateOne(final String objectId, final T update) {
         return collExecutor.updateOne(objectId, update);
@@ -1608,8 +1607,7 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the string representation of the MongoDB ObjectId
      * @param replacement the entity to replace the existing document with
      * @return a Mono that emits the update result
-     * @throws IllegalArgumentException if objectId or replacement is null
-     * @throws IllegalArgumentException if objectId is not a valid ObjectId format
+     * @throws IllegalArgumentException if objectId or replacement is null, or if objectId is not a valid ObjectId format
      */
     public Mono<UpdateResult> replaceOne(final String objectId, final T replacement) {
         return collExecutor.replaceOne(objectId, replacement);
@@ -1698,8 +1696,7 @@ public final class MongoCollectionMapper<T> {
      *
      * @param objectId the string representation of the MongoDB ObjectId
      * @return a Mono that emits the delete result
-     * @throws IllegalArgumentException if objectId is null
-     * @throws IllegalArgumentException if objectId is not a valid ObjectId format
+     * @throws IllegalArgumentException if objectId is null, or if objectId is not a valid ObjectId format
      */
     public Mono<DeleteResult> deleteOne(final String objectId) {
         return collExecutor.deleteOne(objectId);

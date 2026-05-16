@@ -732,8 +732,9 @@ public abstract class MongoDBBase {
      * // Result: {"name": "John", "age": 30, "address": {"city": "NYC"}}
      * }</pre>
      *
-     * @param doc the MongoDB Document to convert; can be null
-     * @return a Map representation of the document, or appropriate default if doc is null
+     * @param doc the MongoDB Document to convert; must not be null
+     * @return a Map representation of the document
+     * @throws NullPointerException if doc is null
      * @see #toMap(Document, IntFunction)
      * @see Document
      */
@@ -768,7 +769,7 @@ public abstract class MongoDBBase {
      * @param doc the MongoDB Document to convert; must not be null
      * @param mapSupplier a function that creates Map instances based on expected size
      * @return a Map representation of the document using the supplied Map type
-     * @throws IllegalArgumentException if doc or mapSupplier is null
+     * @throws NullPointerException if doc or mapSupplier is null
      * @see #toMap(Document)
      * @see IntFunction
      * @see Document
@@ -806,10 +807,9 @@ public abstract class MongoDBBase {
      * }</pre>
      *
      * @param <T> the target entity type
-     * @param doc the MongoDB Document to convert
+     * @param doc the MongoDB Document to convert; if null, {@code null} is returned
      * @param rowType the Class representing the target entity type
-     * @return an entity instance populated with data from the document
-     * @throws IllegalArgumentException if doc or rowType is null
+     * @return an entity instance populated with data from the document, or {@code null} if doc is null
      * @see Document
      * @see #_ID
      * @see com.landawn.abacus.annotation.Id

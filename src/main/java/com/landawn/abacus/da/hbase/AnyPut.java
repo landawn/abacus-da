@@ -837,7 +837,6 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * using HBase's standard conversion mechanisms. The value can be any supported Java type
      * including String, Integer, Long, Date, byte arrays, etc.</p>
      *
-     * <p><strong>Examples:</strong></p>
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyPut put = AnyPut.of("user123")
@@ -869,7 +868,6 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * need to insert data with a specific point-in-time version, such as backdating data or
      * implementing event sourcing patterns.</p>
      *
-     * <p><strong>Examples:</strong></p>
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * long eventTime = 1609459200000L;  // Jan 1, 2021 00:00:00

@@ -937,15 +937,18 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * Converts a Java object to a DynamoDB item Map using AWS SDK v2 with automatic type detection.
      *
      * <p>This method converts a Java object (Entity or Map) into a DynamoDB item Map, where each property
-     * is represented as an AttributeValue. The conversion respects the naming policy for attribute names.</p>
+     * is represented as an AttributeValue. The conversion uses the {@link NamingPolicy#CAMEL_CASE} naming policy.
+     * Properties with {@code null} values are skipped.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValue> item = toItem(myEntity);
      * }</pre>
      *
-     * @param entity the Java object to convert, can be null
+     * @param entity the Java object (Entity, Map, or Object[]) to convert, must not be {@code null}
      * @return a Map representing the DynamoDB item, never null
+     * @throws NullPointerException if {@code entity} is {@code null}
+     * @throws IllegalArgumentException if {@code entity} is not an Entity, Map, or Object[]
      */
     public static Map<String, AttributeValue> toItem(final Object entity) {
         return toItem(entity, NamingPolicy.CAMEL_CASE);
@@ -962,10 +965,11 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * Map<String, AttributeValue> item = toItem(myEntity, NamingPolicy.UPPER_CAMEL_CASE);
      * }</pre>
      *
-     * @param entity the Java object to convert, must not be {@code null}
+     * @param entity the Java object (Entity, Map, or Object[]) to convert, must not be {@code null}
      * @param namingPolicy the naming policy to use for attribute names, must not be {@code null}
      * @return a Map representing the DynamoDB item, never null
      * @throws NullPointerException if {@code entity} or {@code namingPolicy} is {@code null}
+     * @throws IllegalArgumentException if {@code entity} is not an Entity, Map, or Object[]
      */
     public static Map<String, AttributeValue> toItem(final Object entity, final NamingPolicy namingPolicy) {
         final boolean isCamelCase = namingPolicy == NamingPolicy.CAMEL_CASE;
@@ -1011,15 +1015,18 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * Converts a Java object to a DynamoDB update item Map using AWS SDK v2 with automatic type detection.
      *
      * <p>This method converts a Java object (Entity or Map) into a DynamoDB update item Map, where each property
-     * is represented as an AttributeValueUpdate. The conversion respects the default naming policy (lower camel case).</p>
+     * is represented as an AttributeValueUpdate. The conversion uses the {@link NamingPolicy#CAMEL_CASE} naming policy.
+     * Properties with {@code null} values are skipped.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValueUpdate> updateItem = toUpdateItem(myEntity);
      * }</pre>
      *
-     * @param entity the Java object to convert, can be null
+     * @param entity the Java object (Entity, Map, or Object[]) to convert, must not be {@code null}
      * @return a Map representing the DynamoDB update item, never null
+     * @throws NullPointerException if {@code entity} is {@code null}
+     * @throws IllegalArgumentException if {@code entity} is not an Entity, Map, or Object[]
      */
     public static Map<String, AttributeValueUpdate> toUpdateItem(final Object entity) {
         return toUpdateItem(entity, NamingPolicy.CAMEL_CASE);
@@ -1036,10 +1043,11 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * Map<String, AttributeValueUpdate> updateItem = toUpdateItem(myEntity, NamingPolicy.UPPER_CAMEL_CASE);
      * }</pre>
      *
-     * @param entity the Java object to convert, must not be {@code null}
+     * @param entity the Java object (Entity, Map, or Object[]) to convert, must not be {@code null}
      * @param namingPolicy the naming policy to use for attribute names, must not be {@code null}
      * @return a Map representing the DynamoDB update item, never null
      * @throws NullPointerException if {@code entity} or {@code namingPolicy} is {@code null}
+     * @throws IllegalArgumentException if {@code entity} is not an Entity, Map, or Object[]
      */
     public static Map<String, AttributeValueUpdate> toUpdateItem(final Object entity, final NamingPolicy namingPolicy) {
         final boolean isCamelCase = namingPolicy == NamingPolicy.CAMEL_CASE;
@@ -1110,21 +1118,21 @@ public final class DynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * Converts a DynamoDB item map to a standard Java map with default map supplier.
+     * Converts a DynamoDB item map to a standard Java map using a default {@code HashMap} supplier.
      *
-     * @param item the DynamoDB item map with AttributeValue objects
-     * @return a Map with converted Java objects, or null if item is null
+     * @param item the DynamoDB item map with {@link AttributeValue} objects, can be {@code null}
+     * @return a Map with converted Java objects, or {@code null} if {@code item} is {@code null}
      */
     public static Map<String, Object> toMap(final Map<String, AttributeValue> item) {
         return toMap(item, IntFunctions.ofMap());
     }
 
     /**
-     * Converts a DynamoDB item map to a standard Java map with custom map supplier.
+     * Converts a DynamoDB item map to a standard Java map using a custom map supplier.
      *
-     * @param item the DynamoDB item map with AttributeValue objects
-     * @param mapSupplier function to create the target map instance
-     * @return a Map with converted Java objects, or null if item is null
+     * @param item the DynamoDB item map with {@link AttributeValue} objects, can be {@code null}
+     * @param mapSupplier function to create the target map instance, receiving the expected size
+     * @return a Map with converted Java objects, or {@code null} if {@code item} is {@code null}
      */
     public static Map<String, Object> toMap(final Map<String, AttributeValue> item, final IntFunction<? extends Map<String, Object>> mapSupplier) {
         if (item == null) {
@@ -1209,14 +1217,18 @@ public final class DynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * Reads a row from a DynamoDB GetItemResponse and converts it to an entity of the specified class.
+     * Reads a row from a DynamoDB {@link GetItemResponse} and converts it to a value of the specified class.
      *
-     * <p>This method extracts the item from the GetItemResponse and converts it to an entity
-     * using the specified target class. If the response does not contain an item, it returns null.</p>
+     * <p>This method extracts the item from the {@code GetItemResponse} and converts it to a value
+     * (entity, Map, array, collection, or single value) of the specified class. If the response does not
+     * contain an item, it returns {@code null} when {@code rowClass} is {@code null}, otherwise the default
+     * value for {@code rowClass}.</p>
      *
-     * @param getItemResponse the GetItemResponse containing the item to convert
-     * @param rowClass the class of the entity to convert to
-     * @return an instance of the target class representing the item, or null if no item is present
+     * @param <T> the type of the value to convert to
+     * @param getItemResponse the {@code GetItemResponse} containing the item to convert, can be {@code null}
+     * @param rowClass the class of the value to convert to, can be {@code null}
+     * @return an instance of {@code rowClass} representing the item, or the default value of {@code rowClass}
+     *         (or {@code null} if {@code rowClass} is {@code null}) if no item is present
      */
     static <T> T readRow(final GetItemResponse getItemResponse, final Class<T> rowClass) {
         if (getItemResponse == null || !getItemResponse.hasItem()) {
@@ -1227,14 +1239,19 @@ public final class DynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * Reads a row from a DynamoDB GetItemResponse and converts it to an entity of the specified class.
+     * Reads a row from a DynamoDB item Map and converts it to a value of the specified class.
      *
-     * <p>This method extracts the item from the GetItemResponse and converts it to an entity
-     * using the specified target class. If the response does not contain an item, it returns null.</p>
+     * <p>This method converts the given item Map to a value of the specified class. The target class may be
+     * an object array, collection, Map, bean/entity, or a single-value type (when the row has a single column).
+     * If {@code row} is {@code null}, it returns {@code null} when {@code rowClass} is {@code null}, otherwise
+     * the default value for {@code rowClass}.</p>
      *
-     * @param row the Map representing the DynamoDB item, can be null
-     * @param rowClass the class of the entity to convert to
-     * @return an instance of the target class representing the item, or null if no item is present
+     * @param <T> the type of the value to convert to
+     * @param row the Map representing the DynamoDB item, can be {@code null}
+     * @param rowClass the class of the value to convert to, can be {@code null}
+     * @return an instance of {@code rowClass} representing the item, or the default value of {@code rowClass}
+     *         (or {@code null} if {@code rowClass} is {@code null}) if {@code row} is {@code null}
+     * @throws IllegalArgumentException if the row/column type is not supported
      */
     @SuppressWarnings("rawtypes")
     static <T> T readRow(final Map<String, AttributeValue> row, final Class<T> rowClass) {
@@ -1321,27 +1338,35 @@ public final class DynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * Converts an AttributeValue to a Java value of the specified type.
+     * Converts an {@link AttributeValue} to its natural Java value.
      *
-     * <p>This method extracts the value from the AttributeValue and converts it to the specified target class.
-     * If the AttributeValue is null or has a null value, it returns null or a default value for the target class.</p>
+     * <p>This method extracts the value from the {@code AttributeValue} based on its underlying DynamoDB type
+     * (S, N, BOOL, B, SS, NS, BS, L, or M) without applying any explicit target type conversion.
+     * If the {@code AttributeValue} is {@code null} or represents a NULL value, it returns {@code null}.</p>
      *
-     * @param x the AttributeValue to convert, can be null
-     * @return the converted value, or null if x is null or has a null value
+     * @param <T> the inferred type of the returned value
+     * @param x the {@code AttributeValue} to convert, can be {@code null}
+     * @return the converted value, or {@code null} if {@code x} is {@code null} or represents a NULL value
+     * @throws IllegalArgumentException if the attribute type is not supported
      */
     static <T> T toValue(final AttributeValue x) {
         return toValue(x, null);
     }
 
     /**
-     * Converts an AttributeValue to a Java value of the specified type.
+     * Converts an {@link AttributeValue} to a Java value of the specified type.
      *
-     * <p>This method extracts the value from the AttributeValue and converts it to the specified target class.
-     * If the AttributeValue is null or has a null value, it returns null or a default value for the target class.</p>
+     * <p>This method extracts the value from the {@code AttributeValue} based on its underlying DynamoDB type
+     * and, if {@code targetClass} is provided and not already assignable, converts it to that class.
+     * If the {@code AttributeValue} is {@code null} or represents a NULL value, it returns {@code null} when
+     * {@code targetClass} is {@code null}, otherwise the default value for {@code targetClass}.</p>
      *
-     * @param x the AttributeValue to convert, can be null
-     * @param targetClass the class of the target value, can be null
-     * @return the converted value, or null if x is null or has a null value
+     * @param <T> the type of the value to convert to
+     * @param x the {@code AttributeValue} to convert, can be {@code null}
+     * @param targetClass the class of the target value, can be {@code null}
+     * @return the converted value, or {@code null}/default value for {@code targetClass} if {@code x} is
+     *         {@code null} or represents a NULL value
+     * @throws IllegalArgumentException if the attribute type is not supported
      */
     static <T> T toValue(final AttributeValue x, final Class<T> targetClass) {
         if (x == null || N.isTrue(x.nul())) {
@@ -1406,7 +1431,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * <p>This method extracts the responses from the BatchGetItemResponse and converts them to a Map of entity lists
      * using the specified target class. If the response does not contain any items, it returns an empty map.</p>
      *
-     * @param batchGetItemResponse the BatchGetItemResponse containing the items to convert
+     * @param <T> the type of the entities to convert to
+     * @param batchGetItemResponse the BatchGetItemResponse containing the items to convert, can be {@code null}
      * @param targetClass the class of the entities to convert to
      * @return a Map where each key is the table name and the value is a list of entities, never null
      */
@@ -1424,6 +1450,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * <p>This method extracts the items from the provided map and converts them to a Map of entity lists
      * using the specified target class. If the map does not contain any items, it returns an empty map.</p>
      *
+     * @param <T> the type of the entities to convert to
      * @param tableItems a Map where each key is the table name and the value is a list of items (Maps)
      * @param targetClass the class of the entities to convert to
      * @return a Map where each key is the table name and the value is a list of entities, never null
@@ -1468,6 +1495,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param count the maximum number of items to return
      * @param targetClass the class of the entities to convert to
      * @return a List of entities, never null
+     * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
      */
     public static <T> List<T> toList(final QueryResponse queryResult, final int offset, final int count, final Class<T> targetClass) {
         if (queryResult == null || !queryResult.hasItems()) {
@@ -1505,6 +1533,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param count the maximum number of items to return
      * @param targetClass the class of the entities to convert to
      * @return a List of entities, never null
+     * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
      */
     public static <T> List<T> toList(final ScanResponse scanResult, final int offset, final int count, final Class<T> targetClass) {
         if (scanResult == null || !scanResult.hasItems()) {
@@ -1520,6 +1549,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * <p>This method extracts the items from the provided list and converts them to a List of entities
      * using the specified target class. If the list is empty, it returns an empty list.</p>
      *
+     * @param <T> the type of the entities to convert to
      * @param items the List of DynamoDB items (Maps) to convert
      * @param targetClass the class of the entities to convert to
      * @return a List of entities, never null
@@ -1535,11 +1565,13 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * using the specified target class, starting from the given offset and limiting the number of items to count.
      * If the list is empty, it returns an empty list.</p>
      *
+     * @param <T> the type of the entities to convert to
      * @param items the List of DynamoDB items (Maps) to convert
      * @param offset the starting index for pagination
      * @param count the maximum number of items to return
      * @param targetClass the class of the entities to convert to
      * @return a List of entities, never null
+     * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
      */
     static <T> List<T> toList(final List<Map<String, AttributeValue>> items, final int offset, int count, final Class<T> targetClass) {
         if (offset < 0 || count < 0) {
@@ -1579,6 +1611,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param offset the starting index for pagination
      * @param count the maximum number of items to return
      * @return a Dataset containing the extracted data, never null
+     * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
      */
     public static Dataset extractData(final QueryResponse queryResult, final int offset, final int count) {
         return extractData(queryResult.items(), offset, count);
@@ -2622,7 +2655,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * Lists items from the specified DynamoDB table using a QueryRequest and converts the results to entities of the specified type.
      *
      * <p>This method performs a query operation using AWS SDK v2 and returns the results as a list of entities
-     * of the specified target class.</p>
+     * of the specified target class. If the query result is paginated and no exclusive start key was set on the
+     * request, this method automatically fetches and aggregates all remaining pages.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2733,7 +2767,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * Queries items from the specified DynamoDB table using a QueryRequest and converts the results to a Dataset.
      *
      * <p>This method performs a query operation using AWS SDK v2 and returns the results as a Dataset
-     * containing entities of the specified target class.</p>
+     * containing entities of the specified target class. If {@code targetClass} is {@code null} or a Map type,
+     * the Dataset is built directly from the raw item attributes. If the query result is paginated and no
+     * exclusive start key was set on the request, this method automatically fetches and aggregates all
+     * remaining pages.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2746,9 +2783,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * }</pre>
      *
      * @param queryRequest the QueryRequest containing the table name and query parameters. Must not be null.
-     * @param targetClass the class of the entities to convert to. Must not be null.
+     * @param targetClass the class of the entities to convert to, or {@code null}/a Map type to build the
+     *                     Dataset from raw item attributes
      * @return a Dataset containing entities of the specified target class. Never null.
-     * @throws IllegalArgumentException if queryRequest or targetClass is null
+     * @throws IllegalArgumentException if queryRequest is null
      */
     public Dataset query(final QueryRequest queryRequest, final Class<?> targetClass) {
         if (targetClass == null || Map.class.isAssignableFrom(targetClass)) {
@@ -2929,9 +2967,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * Scans items from the specified DynamoDB table using a ScanRequest with a scan filter.
+     * Scans items from the specified DynamoDB table with a scan filter.
      *
-     * <p>This method performs a scan operation using AWS SDK v2 and returns the results as a list of maps.</p>
+     * <p>This method performs a scan operation using AWS SDK v2 and returns the results as a stream of maps.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2951,9 +2989,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * Scans items from the specified DynamoDB table using a ScanRequest with attributes to get and a scan filter.
+     * Scans items from the specified DynamoDB table with attributes to get and a scan filter.
      *
-     * <p>This method performs a scan operation using AWS SDK v2 and returns the results as a list of maps.</p>
+     * <p>This method performs a scan operation using AWS SDK v2 and returns the results as a stream of maps.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2996,17 +3034,16 @@ public final class DynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * Scans items from the specified DynamoDB table using a ScanRequest and converts the results to a stream of entities of the specified type.
+     * Scans items from the specified DynamoDB table retrieving only the specified attributes,
+     * and converts the results to a stream of entities of the specified type.
      *
      * <p>This method performs a scan operation using AWS SDK v2 and returns the results as a stream of entities
      * of the specified target class.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * ScanRequest scanRequest = ScanRequest.builder()
-     *     .tableName("Users")
-     *     .build();
-     * Stream<User> results = executor.scan(scanRequest, User.class);
+     * List<String> attributesToGet = Arrays.asList("userId", "name");
+     * Stream<User> results = executor.scan("Users", attributesToGet, User.class);
      * }</pre>
      *
      * @param <T> the type of the entities to convert to
@@ -4041,8 +4078,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * constructing Condition objects. All methods return Map objects that can be used directly
      * with scan operations or combined using the ConditionBuilder.</p>
      * 
-     * <p>The class follows a fluent interface pattern and provides methods for all DynamoDB
-     * comparison operators including equality, range comparisons, null checks, and string operations.</p>
+     * <p>The class provides static factory methods for all DynamoDB comparison operators including
+     * equality, range comparisons, null checks, and string operations, plus a {@link #builder()}
+     * method that returns a fluent {@link ConditionBuilder} for composing compound filters.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -4396,7 +4434,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Map<String, Condition> complexFilter = ConditionBuilder.create()
+     * Map<String, Condition> complexFilter = Filters.builder()
      *     .eq("status", "ACTIVE")
      *     .bt("age", 25, 65)
      *     .contains("skills", "Java")

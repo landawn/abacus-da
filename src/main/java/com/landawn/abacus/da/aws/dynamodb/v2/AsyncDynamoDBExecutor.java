@@ -1266,7 +1266,8 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * 
      * <p>This method modifies an existing item by specifying which attributes to update using
      * AttributeValueUpdate objects. Each update can use different actions (PUT, ADD, DELETE)
-     * to modify attributes in various ways. If the item doesn't exist, the operation will fail.</p>
+     * to modify attributes in various ways. If the item doesn't exist, a new item is created
+     * with the specified attributes (unless a condition expression prevents it).</p>
      * 
      * <p><b>Update Actions:</b></p>
      * <ul>
@@ -1737,7 +1738,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * }</pre>
      * 
      * @param queryRequest the QueryRequest with query parameters. Must not be null.
-     * @param targetClass the class to convert results to, or Map.class for raw results
+     * @param targetClass the class to convert results to, or {@code null}/a Map type for raw results
      * @return a CompletableFuture containing a typed Dataset with query results
      * @throws IllegalArgumentException if queryRequest is null
      */

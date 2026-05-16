@@ -980,8 +980,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * // Results in: {"userId": {S: "123"}, "name": {S: "John"}, "age": {N: "30"}}
      * }</pre>
      * 
-     * @param entity the entity to convert (POJO, Map, or Object array)
-     * @return a Map of attribute names to AttributeValues, never null
+     * @param entity the entity to convert (POJO, Map, or Object array), must not be {@code null}
+     * @return a Map of attribute names to AttributeValues, never {@code null}
+     * @throws NullPointerException if {@code entity} is {@code null}
      * @throws IllegalArgumentException if entity type is not supported
      */
     public static Map<String, AttributeValue> toItem(final Object entity) {
@@ -1056,9 +1057,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
     /**
      * Converts an entity to a DynamoDB update item map using CAMEL_CASE naming policy.
-     * 
-     * <p>Only the dirty properties will be set to the result Map if the specified entity is a dirty marker entity.
-     * This method creates AttributeValueUpdate objects with PUT action for all non-null properties.</p>
+     *
+     * <p>This method creates {@link AttributeValueUpdate} objects with {@link AttributeAction#PUT} action
+     * for all non-null properties. Properties with {@code null} values are excluded from the result.
+     * Supported inputs are beans with getter/setter methods, {@link Map}, and {@code Object[]} name-value pairs.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1067,8 +1069,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * Map<String, AttributeValueUpdate> updates = toUpdateItem(user);
      * }</pre>
      *
-     * @param entity the entity to convert to update map
-     * @return a Map of attribute names to AttributeValueUpdate objects, never null
+     * @param entity the entity to convert to update map, must not be {@code null}
+     * @return a Map of attribute names to AttributeValueUpdate objects, never {@code null}
+     * @throws NullPointerException if {@code entity} is {@code null}
      * @throws IllegalArgumentException if entity type is not supported
      */
     public static Map<String, AttributeValueUpdate> toUpdateItem(final Object entity) {
@@ -1077,9 +1080,11 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
     /**
      * Converts an entity to a DynamoDB update item map with specified naming policy.
-     * 
-     * <p>Only the dirty properties will be set to the result Map if the specified entity is a dirty marker entity.
-     * This method provides control over attribute naming while creating update maps.</p>
+     *
+     * <p>This method creates {@link AttributeValueUpdate} objects with {@link AttributeAction#PUT} action
+     * for all non-null properties, providing control over how property names are converted to attribute
+     * names. Properties with {@code null} values are excluded from the result. Supported inputs are beans
+     * with getter/setter methods, {@link Map}, and {@code Object[]} name-value pairs.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2664,9 +2669,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * }</pre>
      *
      * @param queryRequest the query parameters. Must not be {@code null}.
-     * @param targetClass the class to convert retrieved items to. Must not be {@code null}.
+     * @param targetClass the class to convert retrieved items to; if {@code null} or a {@link Map} type,
+     *                    results are extracted as raw attribute maps
      * @return a {@link Dataset} containing all query results in tabular format
-     * @throws IllegalArgumentException if queryRequest or targetClass is null
+     * @throws IllegalArgumentException if queryRequest is null
      */
     public Dataset query(final QueryRequest queryRequest, final Class<?> targetClass) {
         if (targetClass == null || Map.class.isAssignableFrom(targetClass)) {
@@ -3447,14 +3453,14 @@ public final class DynamoDBExecutor implements AutoCloseable {
         /**
          * Creates or replaces multiple items in DynamoDB in a single batch operation.
          *
-         * @param entities collection of entities to save to DynamoDB
-         * @return the BatchWriteItemResult containing operation metadata
-         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<User> users = Arrays.asList(user1, user2, user3);
          * BatchWriteItemResult result = mapper.batchPutItem(users);
          * }</pre>
+         *
+         * @param entities collection of entities to save to DynamoDB
+         * @return the BatchWriteItemResult containing operation metadata
          */
         public BatchWriteItemResult batchPutItem(final Collection<? extends T> entities) {
             return dynamoDBExecutor.batchWriteItem(createBatchPutRequest(entities));
@@ -4415,7 +4421,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Map<String, Condition> filters = ConditionBuilder.create()
+     * Map<String, Condition> filters = Filters.builder()
      *     .eq("status", "active")
      *     .gt("age", 18)
      *     .le("price", 100)

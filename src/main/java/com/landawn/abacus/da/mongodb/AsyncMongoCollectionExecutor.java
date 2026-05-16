@@ -2851,7 +2851,7 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param filter the query filter to find the document
      * @param update the update operations to apply
-     * @return a ContinuableFuture that completes with the found document (before update by default)
+     * @return a ContinuableFuture that completes with the found document (before update by default), or {@code null} if no document matches
      * @throws IllegalArgumentException if filter or update is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #findOneAndUpdate(Bson, Object, FindOneAndUpdateOptions)
@@ -2878,7 +2878,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to find the document
      * @param update the update operations to apply
      * @param rowType the class to deserialize the result document into
-     * @return a ContinuableFuture that completes with the found document as the specified type
+     * @return a ContinuableFuture that completes with the found document as the specified type, or {@code null} if no document matches
      * @throws IllegalArgumentException if filter, update, or rowType is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #findOneAndUpdate(Bson, Object)
@@ -2907,7 +2907,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to find the document
      * @param update the update operations to apply
      * @param options the options to apply to the operation
-     * @return a ContinuableFuture that completes with the found document
+     * @return a ContinuableFuture that completes with the found document, or {@code null} if no document matches
      * @throws IllegalArgumentException if filter, update, or options is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see FindOneAndUpdateOptions
@@ -2936,7 +2936,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param update the update operations to apply
      * @param options the options to apply to the operation
      * @param rowType the class to deserialize the result document into
-     * @return a ContinuableFuture that completes with the found document as the specified type
+     * @return a ContinuableFuture that completes with the found document as the specified type, or {@code null} if no document matches
      * @throws IllegalArgumentException if any parameter is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see FindOneAndUpdateOptions
@@ -2962,7 +2962,7 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param filter the query filter to find the document
      * @param objList the collection of update operations to apply
-     * @return a ContinuableFuture that completes with the found document (before update by default)
+     * @return a ContinuableFuture that completes with the found document (before update by default), or {@code null} if no document matches
      * @throws IllegalArgumentException if filter or objList is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #findOneAndUpdate(Bson, Object)
@@ -2989,7 +2989,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to find the document
      * @param objList the collection of update operations to apply
      * @param rowType the class to deserialize the result document into
-     * @return a ContinuableFuture that completes with the found document as the specified type
+     * @return a ContinuableFuture that completes with the found document as the specified type, or {@code null} if no document matches
      * @throws IllegalArgumentException if any parameter is null or objList is empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #findOneAndUpdate(Bson, Collection)
@@ -3015,7 +3015,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to find the document
      * @param objList the collection of update operations to apply
      * @param options the options to apply to the operation
-     * @return a ContinuableFuture that completes with the found document
+     * @return a ContinuableFuture that completes with the found document, or {@code null} if no document matches
      * @throws IllegalArgumentException if any parameter is null or objList is empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see FindOneAndUpdateOptions
@@ -3044,7 +3044,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param objList the collection of update operations to apply
      * @param options the options to apply to the operation
      * @param rowType the class to deserialize the result document into
-     * @return a ContinuableFuture that completes with the found document as the specified type
+     * @return a ContinuableFuture that completes with the found document as the specified type, or {@code null} if no document matches
      * @throws IllegalArgumentException if any parameter is null or objList is empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see FindOneAndUpdateOptions
@@ -3071,7 +3071,7 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param filter the query filter to find the document
      * @param replacement the replacement document
-     * @return a ContinuableFuture that completes with the found document (before replacement by default)
+     * @return a ContinuableFuture that completes with the found document (before replacement by default), or {@code null} if no document matches
      * @throws IllegalArgumentException if filter or replacement is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #findOneAndReplace(Bson, Object, FindOneAndReplaceOptions)
@@ -3097,7 +3097,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to find the document
      * @param replacement the replacement document
      * @param rowType the class to deserialize the result document into
-     * @return a ContinuableFuture that completes with the found document as the specified type
+     * @return a ContinuableFuture that completes with the found document as the specified type, or {@code null} if no document matches
      * @throws IllegalArgumentException if any parameter is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #findOneAndReplace(Bson, Object)
@@ -3125,7 +3125,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to find the document
      * @param replacement the replacement document
      * @param options the options to apply to the operation
-     * @return a ContinuableFuture that completes with the found document
+     * @return a ContinuableFuture that completes with the found document, or {@code null} if no document matches
      * @throws IllegalArgumentException if any parameter is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see FindOneAndReplaceOptions
@@ -3153,7 +3153,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param replacement the replacement document
      * @param options the options to apply to the operation
      * @param rowType the class to deserialize the result document into
-     * @return a ContinuableFuture that completes with the found document as the specified type
+     * @return a ContinuableFuture that completes with the found document as the specified type, or {@code null} if no document matches
      * @throws IllegalArgumentException if any parameter is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see FindOneAndReplaceOptions
@@ -3178,7 +3178,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param filter the query filter to find the document
-     * @return a ContinuableFuture that completes with the deleted document
+     * @return a ContinuableFuture that completes with the deleted document, or {@code null} if no document matches
      * @throws IllegalArgumentException if filter is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #findOneAndDelete(Bson, FindOneAndDeleteOptions)
@@ -3203,7 +3203,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
      * @param rowType the class to deserialize the result document into
-     * @return a ContinuableFuture that completes with the deleted document as the specified type
+     * @return a ContinuableFuture that completes with the deleted document as the specified type, or {@code null} if no document matches
      * @throws IllegalArgumentException if filter or rowType is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #findOneAndDelete(Bson)
@@ -3230,7 +3230,7 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param filter the query filter to find the document
      * @param options the options to apply to the operation
-     * @return a ContinuableFuture that completes with the deleted document
+     * @return a ContinuableFuture that completes with the deleted document, or {@code null} if no document matches
      * @throws IllegalArgumentException if filter or options is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see FindOneAndDeleteOptions
@@ -3257,7 +3257,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to find the document
      * @param options the options to apply to the operation
      * @param rowType the class to deserialize the result document into
-     * @return a ContinuableFuture that completes with the deleted document as the specified type
+     * @return a ContinuableFuture that completes with the deleted document as the specified type, or {@code null} if no document matches
      * @throws IllegalArgumentException if any parameter is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see FindOneAndDeleteOptions

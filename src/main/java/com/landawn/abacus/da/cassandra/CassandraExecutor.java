@@ -899,7 +899,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Retrieves a single entity of the specified type from the database through the nullable {@code gett} contract.
+     * Retrieves a single entity of the specified type from the database through the {@code gett} contract.
      *
      * <p>This method executes a query that is expected to return at most one row,
      * and maps the result to an instance of the specified target class. If no row
@@ -1317,11 +1317,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Asynchronously retrieves a single entity of the specified type from the database through the nullable {@code asyncGett} contract.
+     * Asynchronously retrieves a single entity of the specified type from the database through the {@code asyncGet} contract.
      *
      * <p>This method executes a query that is expected to return at most one row,
-     * and maps the result to an instance of the specified target class. If no row
-     * matches, the returned future completes with {@code null}. If more than one row
+     * and maps the result to an Optional containing an instance of the specified target class.
+     * If no row matches, the returned future completes with an empty Optional. If more than one row
      * is returned, the future completes exceptionally with
      * {@link DuplicateResultException}.</p>
      *

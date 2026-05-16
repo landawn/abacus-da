@@ -77,7 +77,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     }
 
     /**
-     * Creates a Scan operation starting at the specified row.
+     * Constructs a new AnyScan that starts scanning at the specified row.
      *
      * <p>If the specified row does not exist, the Scanner will start from the
      * next closest row after the specified row.</p>
@@ -92,7 +92,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     }
 
     /**
-     * Creates a Scan operation for the range of rows specified.
+     * Constructs a new AnyScan for the range of rows specified.
      *
      * @param startRow row to start scanner at or after (inclusive)
      * @param stopRow row to stop scanner before (exclusive)
@@ -105,7 +105,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     }
 
     /**
-     * Creates a Scan operation starting at the specified row with a filter.
+     * Constructs a new AnyScan that starts scanning at the specified row with a filter.
      *
      * @param startRow row to start scanner at or after
      * @param filter the filter to apply to the scan
@@ -1617,6 +1617,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * </ul>
      * Note: HBase may override your choice in certain cases. For example, it will always use
      * pread for get scans regardless of this setting.
+     * </p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

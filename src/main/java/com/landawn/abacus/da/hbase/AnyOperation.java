@@ -48,6 +48,7 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
      * Constructs a new AnyOperation wrapper around the specified HBase Operation.
      *
      * @param op the HBase Operation to wrap; must not be null
+     * @throws IllegalArgumentException if op is null
      */
     protected AnyOperation(final Operation op) {
         if (op == null) {

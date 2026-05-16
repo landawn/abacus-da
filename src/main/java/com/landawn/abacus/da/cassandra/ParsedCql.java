@@ -207,7 +207,8 @@ public final class ParsedCql {
      * 
      * @param cql the raw CQL statement to parse
      * @param attrs optional attributes map containing metadata such as timeout, consistency level, etc.
-     * @throws IllegalArgumentException if the CQL contains mixed parameter styles
+     * @throws IllegalArgumentException if the CQL contains a named parameter with an empty name,
+     *         or mixes different parameter styles ({@code ?}, {@code :name}, {@code #{name}}) in the same statement
      */
     @SuppressWarnings({ "unchecked", "rawtypes" })
     private ParsedCql(final String cql, final Map<String, String> attrs) {
@@ -284,9 +285,9 @@ public final class ParsedCql {
      * 
      * <p>The caching mechanism uses the raw CQL string as the key, so identical queries
      * with the same whitespace and formatting will share the same cached instance.
-     * However, the attributes parameter is not part of the cache key, so queries with
-     * different attributes will share the same parsed structure but may have different
-     * metadata.</p>
+     * Caching only applies when the attributes map is empty; if a non-empty attributes
+     * map is supplied, the cache is bypassed and a new instance is always created so
+     * that statement-specific metadata is not shared across calls.</p>
      * 
      * <p>Cache performance characteristics:</p>
      * <ul>
@@ -328,8 +329,8 @@ public final class ParsedCql {
      * @param cql the CQL statement to parse (used as cache key)
      * @param attrs optional attributes map for statement metadata; when non-empty, parsing bypasses cache
      * @return a ParsedCql instance, either newly created or retrieved from cache
-     * @throws IllegalArgumentException if cql is null or contains mixed parameter styles
-     * @see #parse(String, Map)
+     * @throws IllegalArgumentException if {@code cql} is null, or the CQL contains a named
+     *         parameter with an empty name, or mixes different parameter styles
      */
     public static ParsedCql parse(final String cql, final Map<String, String> attrs) {
         N.checkArgNotNull(cql, "cql");

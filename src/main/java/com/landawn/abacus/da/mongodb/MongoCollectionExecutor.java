@@ -85,9 +85,9 @@ import com.mongodb.client.result.UpdateResult;
  *   <li><strong>Query Builder Support:</strong> Integration with MongoDB's filter, projection, and sort builders</li>
  *   <li><strong>Aggregation Framework:</strong> Full support for MongoDB's aggregation pipeline operations</li>
  *   <li><strong>Bulk Operations:</strong> Efficient batch processing with ordered and unordered bulk writes</li>
- *   <li><strong>Change Streams:</strong> Real-time monitoring of collection changes with reactive support</li>
- *   <li><strong>GridFS Support:</strong> Large file storage and retrieval capabilities</li>
- *   <li><strong>Indexing:</strong> Index creation, management, and optimization utilities</li>
+ *   <li><strong>Change Streams:</strong> Real-time monitoring of collection changes via {@code watch} operations</li>
+ *   <li><strong>Distinct &amp; Grouping:</strong> Convenience methods for distinct values and group-by counting</li>
+ *   <li><strong>Atomic Find-And-Modify:</strong> Find-and-update, find-and-replace, and find-and-delete operations</li>
  *   <li><strong>Async Support:</strong> Non-blocking operations through integrated async executor</li>
  * </ul>
  *
@@ -256,7 +256,6 @@ public final class MongoCollectionExecutor {
      *
      * @param objectId the ObjectId to check for existence
      * @return {@code true} if a document with the specified ObjectId exists, {@code false} otherwise
-     * @throws IllegalArgumentException if objectId is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @see ObjectId
      * @see #exists(String)
@@ -767,7 +766,7 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to match documents against
      * @param rowType the Class representing the target type for conversion
      * @return an Optional containing the first matching converted object, or empty if none found
-     * @throws IllegalArgumentException if filter or rowType is null
+     * @throws IllegalArgumentException if rowType is null or unsupported
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #findFirst(Collection, Bson, Class)
      */
@@ -794,7 +793,7 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to match documents against
      * @param rowType the Class representing the target type for conversion
      * @return an Optional containing the first matching converted object with projected fields, or empty if none found
-     * @throws IllegalArgumentException if filter or rowType is null
+     * @throws IllegalArgumentException if rowType is null or unsupported
      * @throws com.mongodb.MongoException if the database operation fails
      * @see com.mongodb.client.model.Projections
      */
@@ -824,7 +823,7 @@ public final class MongoCollectionExecutor {
      * @param sort the sort criteria for ordering results (null for no sorting)
      * @param rowType the Class representing the target type for conversion
      * @return an Optional containing the first matching sorted converted object with projected fields, or empty if none found
-     * @throws IllegalArgumentException if filter or rowType is null
+     * @throws IllegalArgumentException if rowType is null or unsupported
      * @throws com.mongodb.MongoException if the database operation fails
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Sorts
@@ -862,7 +861,7 @@ public final class MongoCollectionExecutor {
      * @param sort the sort criteria for ordering results (null for no sorting)
      * @param rowType the Class representing the target type for conversion
      * @return an Optional containing the first matching sorted converted object with projected fields, or empty if none found
-     * @throws IllegalArgumentException if filter or rowType is null
+     * @throws IllegalArgumentException if rowType is null or unsupported
      * @throws com.mongodb.MongoException if the database operation fails
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Sorts
@@ -916,7 +915,7 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to match documents against
      * @param rowType the Class representing the target type for conversion
      * @return a List containing all matching converted objects (empty list if none found)
-     * @throws IllegalArgumentException if filter or rowType is null
+     * @throws IllegalArgumentException if rowType is null or unsupported
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #list(Bson, int, int, Class)
      */
@@ -944,7 +943,7 @@ public final class MongoCollectionExecutor {
      * @param count the maximum number of documents to return
      * @param rowType the Class representing the target type for conversion
      * @return a List containing the specified range of matching converted objects
-     * @throws IllegalArgumentException if filter or rowType is null, or if offset/count is negative
+     * @throws IllegalArgumentException if rowType is null or unsupported, or if offset or count is negative
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #list(Collection, Bson, int, int, Class)
      */
@@ -999,7 +998,7 @@ public final class MongoCollectionExecutor {
      * @param count maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a paginated list of matching documents converted to the specified type
-     * @throws IllegalArgumentException if rowType is null, offset is negative, or count is non-positive
+     * @throws IllegalArgumentException if rowType is null or unsupported, or if offset or count is negative
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #list(Collection, Bson, Class)
      * @see #list(Collection, Bson, Bson, int, int, Class)
@@ -1560,7 +1559,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if propName or valueType is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
-     * @see java.util.Optional
+     * @see com.landawn.abacus.util.u.Optional
      */
     public <V> Optional<V> queryForSingleNonNull(final String propName, final Bson filter, final Class<V> valueType) {
         final FindIterable<Document> findIterable = query(N.asList(propName), filter, null, 0, 1);
@@ -1674,7 +1673,7 @@ public final class MongoCollectionExecutor {
      * @param count maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the paginated query results with typed rows
-     * @throws IllegalArgumentException if rowType is null, offset is negative, or count is non-positive
+     * @throws IllegalArgumentException if rowType is null or unsupported, or if offset or count is negative
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Dataset
      * @see #query(Bson, Class)
@@ -1749,7 +1748,7 @@ public final class MongoCollectionExecutor {
      * @param count maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the paginated query results with projected fields and typed rows
-     * @throws IllegalArgumentException if rowType is null, offset is negative, or count is non-positive
+     * @throws IllegalArgumentException if rowType is null or unsupported, or if offset or count is negative
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Dataset
      * @see #query(Collection, Bson, Class)
@@ -1827,7 +1826,7 @@ public final class MongoCollectionExecutor {
      * @param count maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the sorted and paginated query results with projected fields and typed rows
-     * @throws IllegalArgumentException if rowType is null, offset is negative, or count is non-positive
+     * @throws IllegalArgumentException if rowType is null or unsupported, or if offset or count is negative
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> Dataset query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
@@ -2693,9 +2692,9 @@ public final class MongoCollectionExecutor {
      *
      * <p>This method updates a single document matching the provided ObjectId string with the specified
      * update operations. The update can be a Bson update document, a Document with update operators,
-     * a Map, or an entity class. If the update object implements the DirtyMarker interface, only the
-     * dirty properties will be updated. If the update doesn't contain MongoDB update operators, it's
-     * automatically wrapped in a $set operation.</p>
+     * a Map, or an entity class. When the update is a Map or entity, its non-null properties are mapped
+     * into a document. If the resulting update document does not contain MongoDB update operators (keys
+     * starting with {@code $}), it is automatically wrapped in a {@code $set} operation.</p>
      *
      * <p><b>Note:</b> This method performs a blocking operation. For non-blocking operations, use {@link #async()}.</p>
      *
@@ -2731,8 +2730,9 @@ public final class MongoCollectionExecutor {
     /**
      * Updates a single document identified by ObjectId.
      *
-     * <p>Updates the document with the specified ObjectId. If the update object
-     * implements DirtyMarker interface, only dirty properties are updated for efficiency.</p>
+     * <p>Updates the document with the specified ObjectId. When the update is a Map or entity, its
+     * non-null properties are mapped into the update document and wrapped in a {@code $set} operation
+     * unless MongoDB update operators are already present.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2753,8 +2753,9 @@ public final class MongoCollectionExecutor {
     /**
      * Updates a single document matching the filter.
      *
-     * <p>Updates the first document that matches the filter criteria. If the update
-     * object implements DirtyMarker interface, only dirty properties are updated.</p>
+     * <p>Updates the first document that matches the filter criteria. When the update is a Map or
+     * entity, its non-null properties are mapped into the update document and wrapped in a
+     * {@code $set} operation unless MongoDB update operators are already present.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2937,8 +2938,9 @@ public final class MongoCollectionExecutor {
      * Updates multiple documents matching the filter with the specified update operations (blocking operation).
      *
      * <p>This method performs a bulk update operation on all documents that match the given filter.
-     * The update parameter can be a BSON update document, a Map, or an entity object. If the update
-     * object implements DirtyMarker interface, only modified properties will be updated for efficiency.</p>
+     * The update parameter can be a BSON update document, a Map, or an entity object. When the update
+     * is a Map or entity, its non-null properties are mapped into the update document and wrapped in a
+     * {@code $set} operation unless MongoDB update operators are already present.</p>
      *
      * <p><b>Note:</b> This method performs a blocking operation. For non-blocking operations, use {@link #async()}.</p>
      *
@@ -3229,7 +3231,7 @@ public final class MongoCollectionExecutor {
     }
 
     /**
-     * Deletes a single document with additional options, including collation and hint specifications
+     * Deletes a single document with additional options, including collation and hint specifications.
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

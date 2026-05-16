@@ -968,8 +968,8 @@ public final class AsyncDynamoDBExecutor {
      * Asynchronously updates specific attributes of an item in the specified DynamoDB table.
      * 
      * <p>This method performs partial updates on an existing item, modifying only the specified
-     * attributes while leaving other attributes unchanged. If the item doesn't exist, the
-     * update will fail unless you're using ADD action for numeric attributes.</p>
+     * attributes while leaving other attributes unchanged. If the item doesn't exist, a new item
+     * is created with the specified attributes (unless a conditional expression prevents it).</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

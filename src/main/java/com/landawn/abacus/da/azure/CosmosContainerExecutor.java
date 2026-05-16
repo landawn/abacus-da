@@ -176,8 +176,8 @@ import com.landawn.abacus.util.stream.Stream;
  * <p>The executor supports configurable naming policies for mapping Java property names to Cosmos DB field names:</p>
  * <ul>
  * <li><strong>SNAKE_CASE:</strong> {@code firstName} → {@code first_name}</li>
+ * <li><strong>SCREAMING_SNAKE_CASE:</strong> {@code firstName} → {@code FIRST_NAME}</li>
  * <li><strong>CAMEL_CASE:</strong> {@code firstName} → {@code firstName}</li>
- * <li><strong>UPPER_CAMEL_CASE:</strong> {@code firstName} → {@code FirstName}</li>
  * </ul>
  * 
  * @see CosmosContainer
@@ -738,7 +738,7 @@ public class CosmosContainerExecutor {
      * <p>This is a bulk delete operation that removes all documents within the specified
      * partition. This operation is more efficient than deleting items individually
      * and is useful for partition-level cleanup operations. This is a server-side
-     * operation that deletes all items in a single atomic transaction.</p>
+     * operation that deletes the items in the background after the response is returned.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -763,14 +763,14 @@ public class CosmosContainerExecutor {
      * );
      * }</pre>
      *
+     * <p><b>Warning:</b> This operation cannot be undone and will delete all items in the partition.
+     * Use with caution in production environments.</p>
+     *
      * @param partitionKey the partition key identifying the partition to clear (must not be null)
      * @param options additional options for the delete operation (can be null for default behavior)
      * @return a CosmosItemResponse with metadata about the bulk delete operation
      * @throws CosmosException if the operation fails
      * @throws IllegalArgumentException if partitionKey is null
-     *
-     * <p><b>Warning:</b> This operation cannot be undone and will delete all items in the partition.
-     * Use with caution in production environments.</p>
      */
     public CosmosItemResponse<Object> deleteAllItemsByPartitionKey(final PartitionKey partitionKey, final CosmosItemRequestOptions options) {
         return cosmosContainer.deleteAllItemsByPartitionKey(partitionKey, options);
