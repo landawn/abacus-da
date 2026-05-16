@@ -12,7 +12,8 @@
       "Bash(mvn test:*)",
       "Bash(ls \"C:\\\\Users\\\\haiyangl\\\\Landawn\\\\abacus-da\\\\src\\\\test\\\\java\\\\com\\\\landawn\\\\abacus\\\\da\\\\aws\\\\dynamodb\"\" | grep \"JavadocExampleTest \")",
       "Bash(for file in src/main/java/com/landawn/abacus/da/aws/dynamodb/*.java src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/*.java)",
-      "Bash(done)"
+      "Bash(done)",
+      "PowerShell(mvn *)"
     ],
     "deny": [],
     "ask": []

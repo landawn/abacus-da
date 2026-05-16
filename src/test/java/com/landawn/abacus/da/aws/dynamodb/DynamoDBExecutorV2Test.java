@@ -330,6 +330,21 @@ public class DynamoDBExecutorV2Test extends TestBase {
     }
 
     @Test
+    public void testToMapWithEmptyStringAttribute() {
+        // Regression: an empty-string ("") S attribute is a legal DynamoDB value.
+        // toValue() must return it rather than throwing "Unsupported Attribute type".
+        Map<String, AttributeValue> item = new HashMap<>();
+        item.put("emptyStr", AttributeValue.builder().s("").build());
+        item.put("normalStr", AttributeValue.builder().s("abc").build());
+
+        Map<String, Object> result = DynamoDBExecutor.toMap(item);
+
+        assertNotNull(result);
+        assertEquals("", result.get("emptyStr"));
+        assertEquals("abc", result.get("normalStr"));
+    }
+
+    @Test
     public void testToEntityWithGetItemResponse() {
         class TestEntity {
             private String id;

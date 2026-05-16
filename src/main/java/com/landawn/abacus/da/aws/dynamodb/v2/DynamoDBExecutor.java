@@ -1414,6 +1414,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
             }
 
             ret = val;
+        } else if (x.s() != null) {
+            ret = x.s();
+        } else if (x.n() != null) {
+            ret = x.n();
         } else {
             throw new IllegalArgumentException("Unsupported Attribute type: " + x);
         }

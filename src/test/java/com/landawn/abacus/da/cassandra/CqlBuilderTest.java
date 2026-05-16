@@ -41,6 +41,42 @@ public class CqlBuilderTest extends AbstractNoSQLTest {
     }
 
     @Test
+    public void zzz_explore() {
+        N.println("BETWEEN PSC: " + PSC.select("id").from("account").where(Filters.between("age", 18, 65)).build().query());
+        N.println("BETWEEN NSC: " + NSC.select("id").from("account").where(Filters.between("age", 18, 65)).build().query());
+        N.println("NOTBETWEEN PSC: " + PSC.select("id").from("account").where(Filters.notBetween("age", 18, 65)).build().query());
+        N.println("IN PSC: " + PSC.select("id").from("account").where(Filters.in("id", N.asList(1, 2, 3))).build().query());
+        N.println("IN NSC: " + NSC.select("id").from("account").where(Filters.in("id", N.asList(1, 2, 3))).build().query());
+        N.println("NOTIN NSC: " + NSC.select("id").from("account").where(Filters.notIn("id", N.asList(1, 2, 3))).build().query());
+        N.println("iF cond PSC: " + PSC.update("account").set("firstName").where(Filters.eq("id", 1)).iF(Filters.eq("status", "x")).build().query());
+        N.println("DELETE cols: " + PSC.delete("firstName", "lastName").from("account").where(Filters.eq("id", 1)).build().query());
+        N.println("AND junction: " + PSC.select("id").from("account").where(Filters.and(Filters.eq("a", 1), Filters.eq("b", 2))).build().query());
+        N.println("OR junction: " + PSC.select("id").from("account").where(Filters.or(Filters.eq("a", 1), Filters.eq("b", 2))).build().query());
+        N.println("TTL+IF order: " + PSC.update("account").set("firstName").where(Filters.eq("id", 1)).usingTTL(60).iF(Filters.eq("s", "x")).build().query());
+        N.println("INSERT TTL: " + PSC.insert("id", "name").into("account").usingTTL(60).build().query());
+        N.println("batchInsert: " + SCCB.batchInsert(N.asList(N.asMap("firstName", "a"), N.asMap("firstName", "b"))).into("account").build().query());
+        N.println("NotEqual null: " + SCCB.select("id").from("account").where(Filters.ne("firstName", "x")).build().query());
+        N.println("InSubQuery: " + PSC.select("id").from("account")
+                .where(Filters.in("id", SubQueryGen())).build().query());
+        N.println("NotInSubQuery: " + NSC.select("id").from("account")
+                .where(Filters.notIn("id", SubQueryGen())).build().query());
+        N.println("parse cond NSC: " + NSC.parse(Filters.and(Filters.eq("status", "A"), Filters.gt("balance", 1000)), Account.class).build().query());
+        N.println("parse cond SCCB: " + SCCB.parse(Filters.and(Filters.eq("status", "A"), Filters.gt("balance", 1000)), Account.class).build().query());
+        N.println("nested AND/OR: " + PSC.select("id").from("account")
+                .where(Filters.and(Filters.eq("a", 1), Filters.or(Filters.eq("b", 2), Filters.eq("c", 3)))).build().query());
+        N.println("update entity: " + SCCB.update(Account.class).set("firstName", "lastName").where(Filters.eq("id", 1)).build().query());
+        N.println("multi-col InSubQuery: " + PSC.select("id").from("account")
+                .where(new com.landawn.abacus.query.condition.InSubQuery(N.asList("a", "b"),
+                        new com.landawn.abacus.query.condition.SubQuery("t", N.asList("x", "y"), Filters.eq("z", 1)))).build().query());
+        N.println("eq null SCCB: " + SCCB.select("id").from("account").where(Filters.eq("firstName", null)).build().query());
+        N.println("count SCCB: " + SCCB.count("account").where(Filters.eq("id", 1)).build().query());
+    }
+
+    private static com.landawn.abacus.query.condition.SubQuery SubQueryGen() {
+        return new com.landawn.abacus.query.condition.SubQuery("account", N.asList("id"), Filters.eq("status", "A"));
+    }
+
+    @Test
     public void testUsingTimestampConvertsDateMillisToMicros() {
         final String cql = PSC.insert("id").into("users").usingTimestamp(new Date(5L)).build().query();
 
@@ -470,5 +506,102 @@ public class CqlBuilderTest extends AbstractNoSQLTest {
         final String iFCql = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).iF("status = 'inactive'").build().query();
         N.println(iFCql);
         assertTrue(iFCql.endsWith(" IF status = 'inactive'"), iFCql);
+    }
+
+    /**
+     * Regression guard for {@code appendCondition}: BETWEEN / NOT BETWEEN must emit the correct
+     * keyword (not swapped) with the {@code AND} separator, IN / NOT IN must emit the correct
+     * keyword with a parenthesized, comma-separated placeholder list, and the column must be
+     * snake_case formalized. These are the parallel condition-rendering paths most exposed to
+     * copy-paste/inverted-keyword defects.
+     */
+    @Test
+    public void test_between_in_keyword_and_operator_rendering() {
+        final String between = PSC.select("id").from("account").where(Filters.between("age", 18, 65)).build().query();
+        N.println(between);
+        assertEquals("SELECT id FROM account WHERE age BETWEEN ? AND ?", between);
+
+        final String notBetween = PSC.select("id").from("account").where(Filters.notBetween("age", 18, 65)).build().query();
+        N.println(notBetween);
+        assertEquals("SELECT id FROM account WHERE age NOT BETWEEN ? AND ?", notBetween);
+
+        final String in = PSC.select("id").from("account").where(Filters.in("id", N.asList(1, 2, 3))).build().query();
+        N.println(in);
+        assertEquals("SELECT id FROM account WHERE id IN (?, ?, ?)", in);
+
+        final String notIn = PSC.select("id").from("account").where(Filters.notIn("id", N.asList(1, 2, 3))).build().query();
+        N.println(notIn);
+        assertEquals("SELECT id FROM account WHERE id NOT IN (?, ?, ?)", notIn);
+
+        // NAMED_SQL min/max + indexed-IN parameter naming must not collide between the two bounds/elements.
+        final String namedBetween = NSC.select("id").from("account").where(Filters.between("age", 18, 65)).build().query();
+        N.println(namedBetween);
+        assertEquals("SELECT id FROM account WHERE age BETWEEN :minAge AND :maxAge", namedBetween);
+
+        final String namedIn = NSC.select("id").from("account").where(Filters.in("id", N.asList(1, 2, 3))).build().query();
+        N.println(namedIn);
+        assertEquals("SELECT id FROM account WHERE id IN (:id1, :id2, :id3)", namedIn);
+    }
+
+    /**
+     * Regression guard for the AND vs OR junction keyword in {@code appendCondition} (Junction branch)
+     * and the documented Cassandra parenthesization (per-element parens, no outer wrapping parens).
+     */
+    @Test
+    public void test_and_or_junction_keyword_rendering() {
+        final String and = PSC.select("id").from("account").where(Filters.and(Filters.eq("a", 1), Filters.eq("b", 2))).build().query();
+        N.println(and);
+        assertEquals("SELECT id FROM account WHERE (a = ?) AND (b = ?)", and);
+
+        final String or = PSC.select("id").from("account").where(Filters.or(Filters.eq("a", 1), Filters.eq("b", 2))).build().query();
+        N.println(or);
+        assertEquals("SELECT id FROM account WHERE (a = ?) OR (b = ?)", or);
+    }
+
+    /**
+     * Regression guard that the SELECT vs DELETE keyword (and column list) is emitted by the correct
+     * branch of {@code appendOperationBeforeFrom} for column-level DELETE and that snake_case
+     * formalization is applied to the deleted columns.
+     */
+    @Test
+    public void test_select_vs_delete_keyword() {
+        final String select = PSC.select("firstName", "lastName").from("account").where(Filters.eq("id", 1)).build().query();
+        N.println(select);
+        assertTrue(select.startsWith("SELECT "), select);
+        assertTrue(select.contains("first_name") && select.contains("last_name"), select);
+
+        final String delete = PSC.delete("firstName", "lastName").from("account").where(Filters.eq("id", 1)).build().query();
+        N.println(delete);
+        assertEquals("DELETE first_name, last_name FROM account WHERE id = ?", delete);
+
+        final String deleteFrom = PSC.deleteFrom("account").where(Filters.eq("id", 1)).build().query();
+        N.println(deleteFrom);
+        assertEquals("DELETE FROM account WHERE id = ?", deleteFrom);
+    }
+
+    /**
+     * Regression guard that USING TTL is NOT unit-converted (seconds, verbatim) while USING TIMESTAMP
+     * IS converted ms -&gt; microseconds (x1000) for every overload, and that the two clauses are not
+     * swapped.
+     */
+    @Test
+    public void test_ttl_vs_timestamp_unit_conversion() {
+        final String ttl = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).usingTTL(3600).build().query();
+        N.println(ttl);
+        assertTrue(ttl.endsWith(" USING TTL 3600"), ttl);
+        assertTrue(!ttl.contains("TIMESTAMP"), ttl);
+
+        final String tsLong = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).usingTimestamp(1000L).build().query();
+        N.println(tsLong);
+        assertTrue(tsLong.endsWith(" USING TIMESTAMP 1000000"), tsLong);
+
+        final String tsDate = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).usingTimestamp(new Date(2L)).build().query();
+        N.println(tsDate);
+        assertTrue(tsDate.endsWith(" USING TIMESTAMP 2000"), tsDate);
+
+        final String tsStr = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).usingTimestamp("42").build().query();
+        N.println(tsStr);
+        // String overload is verbatim (no x1000) per its contract.
+        assertTrue(tsStr.endsWith(" USING TIMESTAMP 42"), tsStr);
     }
 }
