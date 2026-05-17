@@ -663,7 +663,11 @@ public final class HBaseExecutor implements AutoCloseable {
             throw new IllegalArgumentException("Map type is not supported for HBase result conversion");
         }
 
-        if (result.isEmpty() || !result.advance()) {
+        // Don't call result.advance() here as the empty check: a non-empty Result always has at least one cell,
+        // and this method may be entered after the caller (3-arg toValue) already advanced the Result's internal
+        // cell cursor. A second advance() would skip/consume the only cell of a single-cell Result and make it
+        // look empty. Both branches below call result.cellScanner() which resets the cursor before reading.
+        if (result.isEmpty()) {
             return type.defaultValue();
         }
 

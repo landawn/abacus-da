@@ -19,6 +19,7 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -1303,5 +1304,64 @@ public class DynamoDBExecutor01Test extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> {
             mapper.getItem(request);
         });
+    }
+
+    /**
+     * Regression test for bug in DynamoDBExecutor.Mapper.createBatchPutRequest:
+     * it previously used toItem(entity) (always CAMEL_CASE) instead of
+     * toItem(entity, namingPolicy), so batchPutItem ignored the mapper's configured
+     * NamingPolicy while putItem/updateItem honored it. This produced inconsistent
+     * attribute names (e.g. "firstName" vs "first_name") for the same entity.
+     */
+    @Test
+    public void testMapperBatchPutItemRespectsNamingPolicy() {
+        @com.landawn.abacus.annotation.Table(name = "TestTable")
+        class TestEntity {
+            @com.landawn.abacus.annotation.Id
+            private String id;
+            private String firstName;
+
+            public String getId() {
+                return id;
+            }
+
+            public void setId(String id) {
+                this.id = id;
+            }
+
+            public String getFirstName() {
+                return firstName;
+            }
+
+            public void setFirstName(String firstName) {
+                this.firstName = firstName;
+            }
+        }
+
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class, "TestTable", NamingPolicy.SNAKE_CASE);
+
+        TestEntity entity = new TestEntity();
+        entity.setId("123");
+        entity.setFirstName("John");
+
+        // Mapper.batchPutItem -> createBatchPutRequest returns a Map, so the Map overload of batchWriteItem is invoked.
+        when(mockDynamoDBClient.batchWriteItem(any(Map.class))).thenReturn(new BatchWriteItemResult());
+
+        mapper.batchPutItem(List.of(entity));
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, List<WriteRequest>>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(mockDynamoDBClient).batchWriteItem(captor.capture());
+
+        Map<String, AttributeValue> writtenItem = captor.getValue()
+                .get("TestTable")
+                .get(0)
+                .getPutRequest()
+                .getItem();
+
+        // With SNAKE_CASE the attribute must be "first_name", not the CAMEL_CASE "firstName".
+        assertTrue(writtenItem.containsKey("first_name"), "Expected snake_case attribute name 'first_name' but got: " + writtenItem.keySet());
+        assertEquals("John", writtenItem.get("first_name").getS());
+        assertEquals("123", writtenItem.get("id").getS());
     }
 }

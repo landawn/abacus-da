@@ -3990,7 +3990,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
             final List<WriteRequest> keys = new ArrayList<>(entities.size());
 
             for (final T entity : entities) {
-                keys.add(new WriteRequest().withPutRequest(new PutRequest().withItem(toItem(entity))));
+                keys.add(new WriteRequest().withPutRequest(new PutRequest().withItem(toItem(entity, namingPolicy))));
             }
 
             return N.asMap(tableName, keys);

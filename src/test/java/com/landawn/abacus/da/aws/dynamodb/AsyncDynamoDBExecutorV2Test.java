@@ -974,4 +974,62 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
         assertNotNull(result);
         assertEquals(3, result.size());
     }
+
+    /**
+     * Regression test: {@code stream(QueryRequest, Class)} must not terminate prematurely when an
+     * intermediate page returns zero items but a non-empty LastEvaluatedKey. AWS SDK v2's
+     * {@code QueryResponse.hasItems()} returns {@code true} even for an empty (but present) items
+     * list, so the previous {@code if (queryResult.hasItems())} check broke out of the pagination
+     * loop and dropped all subsequent pages.
+     */
+    @Test
+    public void testStreamSkipsEmptyIntermediatePageAndContinuesPagination() throws ExecutionException, InterruptedException {
+        QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
+
+        QueryResponse page1 = QueryResponse.builder()
+                .items(List.of())
+                .lastEvaluatedKey(Map.of("id", AttributeValue.builder().s("k1").build()))
+                .build();
+        QueryResponse page2 = QueryResponse.builder()
+                .items(List.of(Map.of("id", AttributeValue.builder().s("1").build()),
+                        Map.of("id", AttributeValue.builder().s("2").build())))
+                .build();
+
+        when(mockDynamoDbAsyncClient.query(any(QueryRequest.class))).thenReturn(CompletableFuture.completedFuture(page1),
+                CompletableFuture.completedFuture(page2));
+
+        CompletableFuture<Stream<Map<String, Object>>> future = asyncExecutor.stream(queryRequest);
+        Stream<Map<String, Object>> stream = future.get();
+
+        assertNotNull(stream);
+        assertEquals(2, stream.count());
+    }
+
+    /**
+     * Regression test mirroring {@link #testStreamSkipsEmptyIntermediatePageAndContinuesPagination()}
+     * for the scan stream pagination path.
+     */
+    @Test
+    public void testScanStreamSkipsEmptyIntermediatePageAndContinuesPagination() throws ExecutionException, InterruptedException {
+        ScanRequest scanRequest = ScanRequest.builder().tableName("TestTable").build();
+
+        ScanResponse page1 = ScanResponse.builder()
+                .items(List.of())
+                .lastEvaluatedKey(Map.of("id", AttributeValue.builder().s("k1").build()))
+                .build();
+        ScanResponse page2 = ScanResponse.builder()
+                .items(List.of(Map.of("id", AttributeValue.builder().s("1").build()),
+                        Map.of("id", AttributeValue.builder().s("2").build()),
+                        Map.of("id", AttributeValue.builder().s("3").build())))
+                .build();
+
+        when(mockDynamoDbAsyncClient.scan(any(ScanRequest.class))).thenReturn(CompletableFuture.completedFuture(page1),
+                CompletableFuture.completedFuture(page2));
+
+        CompletableFuture<Stream<Map<String, Object>>> future = asyncExecutor.scan(scanRequest);
+        Stream<Map<String, Object>> stream = future.get();
+
+        assertNotNull(stream);
+        assertEquals(3, stream.count());
+    }
 }

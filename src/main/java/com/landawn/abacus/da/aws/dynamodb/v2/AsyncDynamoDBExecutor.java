@@ -1894,7 +1894,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
                             throw ExceptionUtil.toRuntimeException(e, true);
                         }
 
-                        if (queryResult.hasItems()) {
+                        if (queryResult.hasItems() && !queryResult.items().isEmpty()) {
                             items = queryResult.items();
                             break;
                         } else {
@@ -2235,7 +2235,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
                             throw ExceptionUtil.toRuntimeException(e, true);
                         }
 
-                        if (scanResult.hasItems()) {
+                        if (scanResult.hasItems() && !scanResult.items().isEmpty()) {
                             items = scanResult.items();
                             break;
                         } else {

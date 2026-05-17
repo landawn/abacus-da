@@ -1173,7 +1173,7 @@ public final class MongoCollectionExecutor {
     }
 
     private static <V> Mono<V> convert(final Document doc, final String propName, final Class<V> targetType) {
-        return N.isEmpty(doc) ? Mono.empty() : Mono.just(N.convert(doc.get(propName), targetType));
+        return N.isEmpty(doc) ? Mono.empty() : Mono.justOrEmpty(N.convert(doc.get(propName), targetType));
     }
 
     /**

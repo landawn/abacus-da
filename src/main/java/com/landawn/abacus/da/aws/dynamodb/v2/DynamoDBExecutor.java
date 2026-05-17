@@ -2923,7 +2923,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
                         queryResult = dynamoDBClient.query(newQueryRequest);
 
-                        if (queryResult.hasItems()) {
+                        if (queryResult.hasItems() && !queryResult.items().isEmpty()) {
                             items = queryResult.items();
                             break;
                         } else {
@@ -3156,7 +3156,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
                         scanResult = dynamoDBClient.scan(newScanRequest);
 
-                        if (scanResult.hasItems()) {
+                        if (scanResult.hasItems() && !scanResult.items().isEmpty()) {
                             items = scanResult.items();
                             break;
                         } else {

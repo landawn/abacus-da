@@ -1662,4 +1662,60 @@ public class DynamoDBExecutorV2Test extends TestBase {
         assertNotNull(result);
         assertEquals(3, result.size());
     }
+
+    /**
+     * Regression test: {@code stream(QueryRequest, Class)} must not terminate prematurely when an
+     * intermediate page returns zero items but a non-empty LastEvaluatedKey (common with filter
+     * expressions). AWS SDK v2's {@code QueryResponse.hasItems()} returns {@code true} even for an
+     * empty (but present) items list, so the previous {@code if (queryResult.hasItems())} check
+     * broke out of the pagination loop and dropped all subsequent pages.
+     */
+    @Test
+    public void testStreamSkipsEmptyIntermediatePageAndContinuesPagination() {
+        QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
+
+        // Page 1: empty items but has LastEvaluatedKey -> must continue paginating, not stop.
+        QueryResponse page1 = QueryResponse.builder()
+                .items(List.of())
+                .lastEvaluatedKey(Map.of("id", AttributeValue.builder().s("k1").build()))
+                .build();
+        // Page 2: real data, no more pages.
+        QueryResponse page2 = QueryResponse.builder()
+                .items(List.of(Map.of("id", AttributeValue.builder().s("1").build()),
+                        Map.of("id", AttributeValue.builder().s("2").build())))
+                .build();
+
+        when(mockDynamoDbClient.query(any(QueryRequest.class))).thenReturn(page1, page2);
+
+        Stream<Map<String, Object>> stream = executor.stream(queryRequest);
+
+        assertNotNull(stream);
+        assertEquals(2, stream.count());
+    }
+
+    /**
+     * Regression test mirroring {@link #testStreamSkipsEmptyIntermediatePageAndContinuesPagination()}
+     * for the scan stream pagination path.
+     */
+    @Test
+    public void testScanStreamSkipsEmptyIntermediatePageAndContinuesPagination() {
+        ScanRequest scanRequest = ScanRequest.builder().tableName("TestTable").build();
+
+        ScanResponse page1 = ScanResponse.builder()
+                .items(List.of())
+                .lastEvaluatedKey(Map.of("id", AttributeValue.builder().s("k1").build()))
+                .build();
+        ScanResponse page2 = ScanResponse.builder()
+                .items(List.of(Map.of("id", AttributeValue.builder().s("1").build()),
+                        Map.of("id", AttributeValue.builder().s("2").build()),
+                        Map.of("id", AttributeValue.builder().s("3").build())))
+                .build();
+
+        when(mockDynamoDbClient.scan(any(ScanRequest.class))).thenReturn(page1, page2);
+
+        Stream<Map<String, Object>> stream = executor.scan(scanRequest);
+
+        assertNotNull(stream);
+        assertEquals(3, stream.count());
+    }
 }

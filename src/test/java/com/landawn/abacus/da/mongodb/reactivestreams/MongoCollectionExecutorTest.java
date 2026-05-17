@@ -1832,4 +1832,23 @@ public class MongoCollectionExecutorTest extends TestBase {
 
         StepVerifier.create(result).expectNext(updateResult).verifyComplete();
     }
+
+    @Test
+    public void testQueryForSingleValueWithFoundDocumentButNullPropertyCompletesEmpty() {
+        // Regression: a matching document is found but the requested property is absent/null.
+        // N.convert(null, String.class) returns null and Mono.just(null) throws NPE.
+        // The reactive contract requires completing empty (no value) instead.
+        String propName = "name";
+        Bson filter = new Document("id", 1);
+        Document doc = new Document("otherField", "value"); // no "name" property
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+
+        Mono<String> result = executor.queryForSingleValue(propName, filter, String.class);
+
+        StepVerifier.create(result).verifyComplete();
+    }
 }
