@@ -34,6 +34,8 @@ import com.google.cloud.bigquery.QueryJobConfiguration;
 import com.google.cloud.bigquery.QueryParameterValue;
 import com.google.cloud.bigquery.Schema;
 import com.google.cloud.bigquery.TableResult;
+import com.landawn.abacus.logging.Logger;
+import com.landawn.abacus.logging.LoggerFactory;
 import com.landawn.abacus.parser.ParserUtil;
 import com.landawn.abacus.parser.ParserUtil.BeanInfo;
 import com.landawn.abacus.parser.ParserUtil.PropInfo;
@@ -134,6 +136,8 @@ import com.landawn.abacus.util.stream.Stream;
  */
 @SuppressWarnings("java:S1192")
 public class BigQueryExecutor {
+
+    private static final Logger logger = LoggerFactory.getLogger(BigQueryExecutor.class);
 
     private static volatile java.lang.reflect.Field schemaFieldOfFieldList;
 
@@ -1791,6 +1795,10 @@ public class BigQueryExecutor {
      * @see #stream(QueryJobConfiguration)
      */
     public final <T> Stream<T> stream(final Class<T> targetClass, final QueryJobConfiguration queryConfig) {
+        if (logger.isDebugEnabled()) {
+            logger.debug("Executing query: {}", queryConfig.getQuery());
+        }
+
         final Function<? super FieldValueList, ? extends T> mapper = createRowMapper(targetClass, null);
 
         try {
@@ -1846,6 +1854,10 @@ public class BigQueryExecutor {
      * @see #stream(Class, QueryJobConfiguration)
      */
     public final Stream<FieldValueList> stream(final QueryJobConfiguration queryConfig) {
+        if (logger.isDebugEnabled()) {
+            logger.debug("Executing query: {}", queryConfig.getQuery());
+        }
+
         try {
             return Stream.of(bigQuery.query(queryConfig).iterateAll());
         } catch (final InterruptedException e) {
@@ -1899,6 +1911,10 @@ public class BigQueryExecutor {
      * @see #list(Class, String, Object...)
      */
     public final TableResult execute(final String query, final Object... parameters) {
+        if (logger.isDebugEnabled()) {
+            logger.debug("Executing query: {}", query);
+        }
+
         final List<QueryParameterValue> values = buildQueryParameterValue(parameters);
         final QueryJobConfiguration queryConfig = QueryJobConfiguration.newBuilder(query).setPositionalParameters(values).build();
 

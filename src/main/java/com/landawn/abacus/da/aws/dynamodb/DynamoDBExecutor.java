@@ -56,6 +56,8 @@ import com.amazonaws.services.dynamodbv2.model.ScanResult;
 import com.amazonaws.services.dynamodbv2.model.UpdateItemRequest;
 import com.amazonaws.services.dynamodbv2.model.UpdateItemResult;
 import com.amazonaws.services.dynamodbv2.model.WriteRequest;
+import com.landawn.abacus.logging.Logger;
+import com.landawn.abacus.logging.LoggerFactory;
 import com.landawn.abacus.parser.ParserUtil;
 import com.landawn.abacus.parser.ParserUtil.BeanInfo;
 import com.landawn.abacus.parser.ParserUtil.PropInfo;
@@ -145,6 +147,8 @@ import com.landawn.abacus.util.stream.Stream;
  */
 @SuppressWarnings("java:S1192")
 public final class DynamoDBExecutor implements AutoCloseable {
+
+    private static final Logger logger = LoggerFactory.getLogger(DynamoDBExecutor.class);
 
     static {
         final BiFunction<AttributeValue, Class<?>, Object> converter = DynamoDBExecutor::toValue;
@@ -1770,6 +1774,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @see #getItem(String, Map, Class)
      */
     public Map<String, Object> getItem(final String tableName, final Map<String, AttributeValue> key) {
+        if (logger.isDebugEnabled()) {
+            logger.debug("getItem on table: {}", tableName);
+        }
+
         return getItem(tableName, key, Clazz.PROPS_MAP);
     }
 
@@ -2096,6 +2104,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @see #updateItem for partial updates
      */
     public PutItemResult putItem(final String tableName, final Map<String, AttributeValue> item) {
+        if (logger.isDebugEnabled()) {
+            logger.debug("putItem on table: {}", tableName);
+        }
+
         return dynamoDBClient.putItem(tableName, item);
     }
 
@@ -2293,6 +2305,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
      */
     public UpdateItemResult updateItem(final String tableName, final Map<String, AttributeValue> key,
             final Map<String, AttributeValueUpdate> attributeUpdates) {
+        if (logger.isDebugEnabled()) {
+            logger.debug("updateItem on table: {}", tableName);
+        }
+
         return dynamoDBClient.updateItem(tableName, key, attributeUpdates);
     }
 
@@ -2405,6 +2421,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @see #deleteItem(String, Map, String) to retrieve the deleted item
      */
     public DeleteItemResult deleteItem(final String tableName, final Map<String, AttributeValue> key) {
+        if (logger.isDebugEnabled()) {
+            logger.debug("deleteItem on table: {}", tableName);
+        }
+
         return dynamoDBClient.deleteItem(tableName, key);
     }
 

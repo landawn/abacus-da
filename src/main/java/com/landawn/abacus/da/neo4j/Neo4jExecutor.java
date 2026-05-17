@@ -29,6 +29,8 @@ import org.neo4j.ogm.session.Session;
 import org.neo4j.ogm.session.SessionFactory;
 
 import com.landawn.abacus.annotation.Beta;
+import com.landawn.abacus.logging.Logger;
+import com.landawn.abacus.logging.LoggerFactory;
 import com.landawn.abacus.util.stream.Stream;
 
 /**
@@ -123,6 +125,8 @@ import com.landawn.abacus.util.stream.Stream;
  * @see <a href="http://neo4j.com/docs/ogm/java/stable/">Neo4j OGM Documentation</a>
  */
 public final class Neo4jExecutor {
+
+    private static final Logger logger = LoggerFactory.getLogger(Neo4jExecutor.class);
 
     private final LinkedBlockingQueue<Session> sessionPool = new LinkedBlockingQueue<>(8192);
 
@@ -1658,6 +1662,10 @@ public final class Neo4jExecutor {
      * @see #query(String, Map)
      */
     public <T> T queryForObject(final Class<T> objectType, final String cypher, final Map<String, ?> parameters) {
+        if (logger.isDebugEnabled()) {
+            logger.debug("Executing Cypher: {}", cypher);
+        }
+
         final Session session = getSession();
 
         try {
@@ -1711,6 +1719,10 @@ public final class Neo4jExecutor {
      * @see #queryForObject(Class, String, Map)
      */
     public Stream<Map<String, Object>> query(final String cypher, final Map<String, ?> parameters) {
+        if (logger.isDebugEnabled()) {
+            logger.debug("Executing Cypher: {}", cypher);
+        }
+
         final Session session = getSession();
         try {
             return Stream.of(session.query(cypher, parameters).iterator()).onClose(newCloseHandle(session));
@@ -1736,6 +1748,10 @@ public final class Neo4jExecutor {
      * @see #query(Class, String, Map)
      */
     public Stream<Map<String, Object>> query(final String cypher, final Map<String, ?> parameters, final boolean readOnly) {
+        if (logger.isDebugEnabled()) {
+            logger.debug("Executing Cypher: {}", cypher);
+        }
+
         final Session session = getSession();
         try {
             return Stream.of(session.query(cypher, parameters, readOnly).iterator()).onClose(newCloseHandle(session));
@@ -1795,6 +1811,10 @@ public final class Neo4jExecutor {
      * @see #query(String, Map)
      */
     public <T> Stream<T> query(final Class<T> objectType, final String cypher, final Map<String, ?> parameters) {
+        if (logger.isDebugEnabled()) {
+            logger.debug("Executing Cypher: {}", cypher);
+        }
+
         final Session session = getSession();
         try {
             return Stream.of(session.query(objectType, cypher, parameters).iterator()).onClose(newCloseHandle(session));

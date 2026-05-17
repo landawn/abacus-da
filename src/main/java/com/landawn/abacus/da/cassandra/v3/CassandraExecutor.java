@@ -59,6 +59,8 @@ import com.landawn.abacus.da.cassandra.CqlMapper;
 import com.landawn.abacus.da.cassandra.CassandraExecutorBase;
 import com.landawn.abacus.da.cassandra.ParsedCql;
 import com.landawn.abacus.exception.DuplicateResultException;
+import com.landawn.abacus.logging.Logger;
+import com.landawn.abacus.logging.LoggerFactory;
 import com.landawn.abacus.parser.ParserUtil;
 import com.landawn.abacus.parser.ParserUtil.BeanInfo;
 import com.landawn.abacus.parser.ParserUtil.PropInfo;
@@ -252,6 +254,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     static final ImmutableList<String> COUNT_SELECT_PROP_NAMES = ImmutableList.of(NSC.COUNT_ALL);
 
     static final int POOLABLE_LENGTH = 1024;
+
+    private static final Logger logger = LoggerFactory.getLogger(CassandraExecutor.class);
 
     private static final Map<String, Class<?>> namedDataType = new HashMap<>();
 
@@ -2270,6 +2274,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      */
     @Override
     protected PreparedStatement prepare(final String query) {
+        if (logger.isDebugEnabled()) {
+            logger.debug("Preparing CQL: {}", query);
+        }
+
         final PreparedStatement preStat = session.prepare(query);
 
         if (settings != null) {

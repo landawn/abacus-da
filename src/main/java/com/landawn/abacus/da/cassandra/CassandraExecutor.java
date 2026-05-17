@@ -59,6 +59,8 @@ import com.datastax.oss.driver.api.core.type.codec.registry.MutableCodecRegistry
 import com.datastax.oss.driver.api.core.type.reflect.GenericType;
 import com.datastax.oss.protocol.internal.ProtocolConstants;
 import com.landawn.abacus.exception.DuplicateResultException;
+import com.landawn.abacus.logging.Logger;
+import com.landawn.abacus.logging.LoggerFactory;
 import com.landawn.abacus.parser.ParserUtil;
 import com.landawn.abacus.parser.ParserUtil.BeanInfo;
 import com.landawn.abacus.parser.ParserUtil.PropInfo;
@@ -273,6 +275,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         protocolCodeDataType.put(ProtocolConstants.DataType.BLOB, ByteBuffer.class);
         protocolCodeDataType.put(ProtocolConstants.DataType.CUSTOM, ByteBuffer.class);
     }
+
+    private static final Logger logger = LoggerFactory.getLogger(CassandraExecutor.class);
 
     private final KeyedObjectPool<String, PoolableAdapter<BoundStatement>> statementPool = PoolFactory.createKeyedObjectPool(1024, 3000);
 
@@ -2095,6 +2099,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
     @Override
     protected PreparedStatement prepare(final String query) {
+        if (logger.isDebugEnabled()) {
+            logger.debug("Preparing CQL: {}", query);
+        }
+
         return session.prepare(query);
     }
 

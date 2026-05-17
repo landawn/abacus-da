@@ -24,6 +24,8 @@ import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 
 import com.landawn.abacus.annotation.Beta;
+import com.landawn.abacus.logging.Logger;
+import com.landawn.abacus.logging.LoggerFactory;
 import com.landawn.abacus.util.AsyncExecutor;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.Fn;
@@ -155,6 +157,8 @@ import com.mongodb.client.result.UpdateResult;
  * @see <a href="https://www.mongodb.com/docs/drivers/java/sync/current/">MongoDB Java Driver</a>
  */
 public final class MongoCollectionExecutor {
+
+    private static final Logger logger = LoggerFactory.getLogger(MongoCollectionExecutor.class);
 
     static final String _$ = "$";
 
@@ -2381,6 +2385,10 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if offset or count is negative
      */
     private FindIterable<Document> executeQuery(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count) {
+        if (logger.isDebugEnabled()) {
+            logger.debug("Querying collection {} with filter: {}", coll.getNamespace().getFullName(), filter);
+        }
+
         if (offset < 0 || count < 0) {
             throw new IllegalArgumentException("offset (" + offset + ") and count (" + count + ") cannot be negative");
         }

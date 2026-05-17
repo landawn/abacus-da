@@ -52,6 +52,8 @@ import com.google.protobuf.Message;
 import com.google.protobuf.Service;
 import com.landawn.abacus.da.hbase.annotation.ColumnFamily;
 import com.landawn.abacus.exception.UncheckedIOException;
+import com.landawn.abacus.logging.Logger;
+import com.landawn.abacus.logging.LoggerFactory;
 import com.landawn.abacus.parser.ParserUtil;
 import com.landawn.abacus.parser.ParserUtil.BeanInfo;
 import com.landawn.abacus.parser.ParserUtil.PropInfo;
@@ -147,6 +149,8 @@ public final class HBaseExecutor implements AutoCloseable {
 
         N.registerConverter(Result.class, converter);
     }
+
+    private static final Logger logger = LoggerFactory.getLogger(HBaseExecutor.class);
 
     static final String EMPTY_QUALIFIER = Strings.EMPTY;
 
@@ -1029,6 +1033,10 @@ public final class HBaseExecutor implements AutoCloseable {
      * @see org.apache.hadoop.hbase.TableName
      */
     public Table getTable(final String tableName) throws UncheckedIOException {
+        if (logger.isDebugEnabled()) {
+            logger.debug("Acquiring HBase table: {}", tableName);
+        }
+
         try {
             return conn.getTable(TableName.valueOf(tableName));
         } catch (final IOException e) {
