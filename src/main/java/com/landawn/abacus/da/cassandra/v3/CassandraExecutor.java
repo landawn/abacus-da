@@ -2082,7 +2082,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      */
     @Override
     protected BatchStatement prepareBatchStatement(final BatchStatement.Type type) {
-        final BatchStatement stmt = new BatchStatement(type);
+        final BatchStatement stmt = new BatchStatement(type == null ? BatchStatement.Type.LOGGED : type);
 
         configStatement(stmt);
 

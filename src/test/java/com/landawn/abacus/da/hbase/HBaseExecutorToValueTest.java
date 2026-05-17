@@ -96,4 +96,36 @@ public class HBaseExecutorToValueTest {
 
         org.junit.jupiter.api.Assertions.assertNull(entity);
     }
+
+    /**
+     * Non-bean (single value) path regression: the 3-arg {@code toValue} calls
+     * {@code result.advance()} as an emptiness probe and then the non-bean branch re-reads
+     * the value via a fresh {@code result.cellScanner()}. A single-cell Result must still
+     * yield the cell value (not the type default), guarding against a regression where the
+     * non-bean branch is "optimized" to reuse the already-advanced internal cursor.
+     */
+    @Test
+    public void test_toEntity_singleCellResult_singleValueType() {
+        final byte[] row = Bytes.toBytes("row-3");
+        final Cell cell = new KeyValue(row, Bytes.toBytes("cf"), Bytes.toBytes("v"), Bytes.toBytes("scalar-value"));
+
+        final Result result = Result.create(List.<Cell> of(cell));
+
+        final String value = HBaseExecutor.toEntity(result, String.class);
+
+        assertEquals("scalar-value", value);
+    }
+
+    /**
+     * Non-bean path: an empty Result must yield the type default (null for String), exercising
+     * the {@code result.isEmpty()} short-circuit in the 3-arg {@code toValue}.
+     */
+    @Test
+    public void test_toEntity_emptyResult_singleValueType_returnsDefault() {
+        final Result result = Result.create(List.<Cell> of());
+
+        final String value = HBaseExecutor.toEntity(result, String.class);
+
+        org.junit.jupiter.api.Assertions.assertNull(value);
+    }
 }

@@ -3281,7 +3281,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
             final List<WriteRequest> keys = new ArrayList<>(entities.size());
 
             for (final T entity : entities) {
-                keys.add(WriteRequest.builder().putRequest(PutRequest.builder().item(toItem(entity)).build()).build());
+                keys.add(WriteRequest.builder().putRequest(PutRequest.builder().item(toItem(entity, namingPolicy)).build()).build());
             }
 
             return N.asMap(tableName, keys);

@@ -1718,4 +1718,54 @@ public class DynamoDBExecutorV2Test extends TestBase {
         assertNotNull(stream);
         assertEquals(3, stream.count());
     }
+
+    @Test
+    public void testMapperBatchPutItemAppliesNamingPolicy() {
+        class TestEntity {
+            @com.landawn.abacus.annotation.Id
+            private String id;
+            private String userName;
+
+            public String getId() {
+                return id;
+            }
+
+            public void setId(String id) {
+                this.id = id;
+            }
+
+            public String getUserName() {
+                return userName;
+            }
+
+            public void setUserName(String userName) {
+                this.userName = userName;
+            }
+        }
+
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class, "TestTable", NamingPolicy.SNAKE_CASE);
+
+        TestEntity entity = new TestEntity();
+        entity.setId("123");
+        entity.setUserName("Alice");
+
+        when(mockDynamoDbClient.batchWriteItem(any(BatchWriteItemRequest.class))).thenReturn(BatchWriteItemResponse.builder().build());
+
+        org.mockito.ArgumentCaptor<BatchWriteItemRequest> captor = org.mockito.ArgumentCaptor.forClass(BatchWriteItemRequest.class);
+
+        mapper.batchPutItem(List.of(entity));
+
+        verify(mockDynamoDbClient).batchWriteItem(captor.capture());
+
+        Map<String, AttributeValue> item = captor.getValue()
+                .requestItems()
+                .get("TestTable")
+                .get(0)
+                .putRequest()
+                .item();
+
+        // With SNAKE_CASE the "userName" property must be written as "user_name", not the default camelCase.
+        assertTrue(item.containsKey("user_name"));
+        assertEquals("Alice", item.get("user_name").s());
+    }
 }
