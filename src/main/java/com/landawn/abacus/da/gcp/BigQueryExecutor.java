@@ -147,7 +147,10 @@ public class BigQueryExecutor {
         try {
             tmp = FieldValueList.class.getDeclaredField("schema");
         } catch (final Throwable e) {
-            // ignore.
+            // ignore: optional optimization, falls back to the public API below.
+            if (logger.isDebugEnabled()) {
+                logger.debug("Unable to access FieldValueList.schema via reflection; falling back to public API", e);
+            }
         }
 
         if (tmp != null && tmp.getType().equals(FieldList.class)) {
@@ -2088,6 +2091,7 @@ public class BigQueryExecutor {
         try {
             fields = (FieldList) schemaFieldOfFieldList.get(fieldValueList);
         } catch (final IllegalAccessException e) {
+            logger.warn("Unexpected: schema field of 'FieldValueList' became inaccessible; disabling reflection-based schema access", e);
             schemaFieldOfFieldList = null;
             throw ExceptionUtil.toRuntimeException(e, true);
         }

@@ -1967,6 +1967,9 @@ public final class Neo4jExecutor {
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt(); // Preserve interrupt status
             // After interrupt, still need to return a session
+            if (logger.isWarnEnabled()) {
+                logger.warn("Interrupted while waiting for a session from the pool; opening a new session instead", e);
+            }
             session = openSession();
             return session;
         }
@@ -1986,6 +1989,9 @@ public final class Neo4jExecutor {
                 sessionPool.offer(session, 100, TimeUnit.MILLISECONDS); //NOSONAR
             } catch (final InterruptedException e) {
                 Thread.currentThread().interrupt(); // Preserve interrupt status
+                if (logger.isWarnEnabled()) {
+                    logger.warn("Interrupted while returning a session to the pool; the session may not be reused", e);
+                }
             }
         }
     }

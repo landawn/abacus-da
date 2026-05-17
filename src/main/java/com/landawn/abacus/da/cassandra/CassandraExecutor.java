@@ -2090,6 +2090,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                     values[i] = N.convert(values[i], javaClass);
                 } catch (final ClassCastException | IllegalArgumentException e) {
                     // Type conversion failed, keep original value
+                    if (logger.isDebugEnabled()) {
+                        logger.debug("Failed to convert parameter at index {} from {} to {}; keeping original value", i,
+                                values[i] == null ? null : values[i].getClass().getName(), javaClass.getName(), e);
+                    }
                 }
             }
         }

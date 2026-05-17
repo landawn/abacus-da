@@ -53,10 +53,10 @@ import com.datastax.driver.core.exceptions.InvalidTypeException;
 import com.datastax.driver.core.policies.RetryPolicy;
 import com.datastax.driver.mapping.Mapper;
 import com.datastax.driver.mapping.MappingManager;
+import com.landawn.abacus.da.cassandra.CassandraExecutorBase;
 import com.landawn.abacus.da.cassandra.CqlBuilder;
 import com.landawn.abacus.da.cassandra.CqlBuilder.NSC;
 import com.landawn.abacus.da.cassandra.CqlMapper;
-import com.landawn.abacus.da.cassandra.CassandraExecutorBase;
 import com.landawn.abacus.da.cassandra.ParsedCql;
 import com.landawn.abacus.exception.DuplicateResultException;
 import com.landawn.abacus.logging.Logger;
@@ -2255,6 +2255,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                     values[i] = N.convert(values[i], javaClazz);
                 } catch (final ClassCastException | IllegalArgumentException e) {
                     // Type conversion failed, keep original value
+                    if (logger.isDebugEnabled()) {
+                        logger.debug("Failed to convert parameter at index {} from {} to {}; keeping original value", i,
+                                values[i] == null ? null : values[i].getClass().getName(), javaClazz.getName(), e);
+                    }
                 }
             }
         }
