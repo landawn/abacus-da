@@ -177,7 +177,7 @@ public class CqlBuilderTest extends AbstractNoSQLTest {
     }
 
     public void testCqlBuilder_2() {
-        Account account = Beans.newRandom(Account.class);
+        Account account = Beans.newRandomBean(Account.class);
         String cql = SCCB.insert(account).into("account").build().query();
 
         N.println(cql);

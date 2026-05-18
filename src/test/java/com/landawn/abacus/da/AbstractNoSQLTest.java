@@ -16,7 +16,7 @@ public class AbstractNoSQLTest {
     static final XmlParser xmlParser = ParserFactory.createXmlParser();
 
     protected Account createAccount() {
-        Account account = Beans.newRandom(Account.class);
+        Account account = Beans.newRandomBean(Account.class);
         account.setId(generateId());
         return account;
     }
