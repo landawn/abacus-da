@@ -1,5 +1,9 @@
-### 2.0
+## 2.7.2
+* Change <groupId>com.landawn</groupId> to <groupId>com.landawn.abacus</groupId>
+* Naming convention improvements
+* Improvements and bug fixes
 
+### 2.0
 * Improvements and bug fix.
 
 ### 1.9.29
