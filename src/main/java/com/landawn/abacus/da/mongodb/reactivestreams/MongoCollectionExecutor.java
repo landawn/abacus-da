@@ -97,7 +97,7 @@ import reactor.core.publisher.Mono;
  *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
- * MongoCollectionExecutor executor = reactiveMongoDB.collExecutor("users");
+ * MongoCollectionExecutor executor = reactiveMongoDB.collectionExecutor("users");
  * 
  * // Single value operations (Mono-like):
  * Publisher<Long> countPublisher = executor.count();
@@ -191,7 +191,7 @@ public final class MongoCollectionExecutor {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionExecutor executor = reactiveMongoDB.collExecutor("users");
+     * MongoCollectionExecutor executor = reactiveMongoDB.collectionExecutor("users");
      * 
      * Mono<Boolean> existsMono = executor.exists("507f1f77bcf86cd799439011");
      * existsMono.subscribe(
@@ -202,8 +202,7 @@ public final class MongoCollectionExecutor {
      *
      * @param objectId the ObjectId as a string to check for existence
      * @return a Mono that emits {@code true} if a document with the specified ObjectId exists, {@code false} otherwise
-     * @throws IllegalArgumentException if objectId is null or empty
-     * @throws org.bson.BsonInvalidOperationException if objectId string is not a valid ObjectId format
+     * @throws IllegalArgumentException if objectId is null or empty, or if it is not a valid ObjectId hex string
      * @see ObjectId
      */
     public Mono<Boolean> exists(final String objectId) {
@@ -412,8 +411,7 @@ public final class MongoCollectionExecutor {
      *
      * @param objectId the ObjectId as a string to search for
      * @return a Mono that emits the found document, or empty if no document matches the ObjectId
-     * @throws IllegalArgumentException if objectId is null or empty
-     * @throws org.bson.BsonInvalidOperationException if objectId string is not a valid ObjectId format
+     * @throws IllegalArgumentException if objectId is null or empty, or if it is not a valid ObjectId hex string
      * @see Document
      * @see ObjectId
      */
@@ -468,8 +466,7 @@ public final class MongoCollectionExecutor {
      * @param objectId the ObjectId as a string to search for
      * @param rowType the Class representing the target type for conversion
      * @return a Mono that emits the converted object, or empty if no document matches the ObjectId
-     * @throws IllegalArgumentException if objectId is null/empty or rowType is null
-     * @throws org.bson.BsonInvalidOperationException if objectId string is not a valid ObjectId format
+     * @throws IllegalArgumentException if objectId is null/empty, rowType is null, or objectId is not a valid ObjectId hex string
      * @see ObjectId
      */
     public <T> Mono<T> get(final String objectId, final Class<T> rowType) {
@@ -526,8 +523,7 @@ public final class MongoCollectionExecutor {
      * @param selectPropNames the collection of field names to include in the projection
      * @param rowType the Class representing the target type for conversion
      * @return a Mono that emits the converted projected object, or empty if no document matches the ObjectId
-     * @throws IllegalArgumentException if objectId is null/empty, selectPropNames is null, or rowType is null
-     * @throws org.bson.BsonInvalidOperationException if objectId string is not a valid ObjectId format
+     * @throws IllegalArgumentException if objectId is null/empty, selectPropNames is null, rowType is null, or objectId is not a valid ObjectId hex string
      * @see ObjectId
      * @see com.mongodb.client.model.Projections
      */
@@ -1643,8 +1639,9 @@ public final class MongoCollectionExecutor {
     /**
      * Updates a single document by string ObjectId reactively.
      *
-     * <p>Updates the document with the specified ObjectId using the provided update object.
-     * If the update object implements DirtyMarker, only dirty properties are updated.</p>
+     * <p>Updates the document with the specified ObjectId using the provided update object. The update
+     * object (Bson/Document/Map/entity class) is converted to a Bson update; if it does not already
+     * begin with an update operator, it is automatically wrapped in a {@code $set} operator.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1842,8 +1839,9 @@ public final class MongoCollectionExecutor {
      * Updates all documents matching the filter reactively.
      *
      * <p>Updates all documents that match the filter criteria with the provided update
-     * specification. If the update implements DirtyMarker, only dirty properties are updated.
-     * This method is useful for bulk updates where you need to modify multiple documents
+     * specification. The update (Bson/Document/Map/entity class) is converted to a Bson update; if it
+     * does not already begin with an update operator, it is automatically wrapped in a {@code $set}
+     * operator. This method is useful for bulk updates where you need to modify multiple documents
      * with the same update operations.</p>
      *
      * <p><b>Usage Examples:</b></p>

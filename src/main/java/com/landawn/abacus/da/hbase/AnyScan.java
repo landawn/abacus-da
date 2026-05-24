@@ -120,8 +120,10 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     /**
      * Constructs a new AnyScan wrapping an existing HBase Scan object.
      *
+     * <p>No null-check is performed; passing {@code null} will result in a
+     * {@link NullPointerException} the first time the wrapped scan is dereferenced.</p>
+     *
      * @param scan the HBase Scan object to wrap; must not be null
-     * @throws IllegalArgumentException if scan is null
      */
     AnyScan(final Scan scan) {
         super(scan);
@@ -133,10 +135,13 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <p>
      * This constructor converts a Get operation into a Scan operation,
      * which can be useful when you want to extend a point query into a range query.
+     * The conversion is delegated to the underlying {@link Scan#Scan(Get)} constructor.
      * </p>
      *
+     * <p>No null-check is performed; passing {@code null} will result in a
+     * {@link NullPointerException} from the wrapped HBase {@link Scan} constructor.</p>
+     *
      * @param get the Get operation to convert to a Scan; must not be null
-     * @throws IllegalArgumentException if get is null
      */
     AnyScan(final Get get) {
         this(new Scan(get));
@@ -203,7 +208,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * @param cursor the cursor position from which to resume scanning; must not be null
      * @return a new AnyScan instance configured to start from the cursor position
-     * @throws IllegalArgumentException if cursor is null
+     * @throws NullPointerException if {@code cursor} is null (raised by the wrapped {@link Scan#createScanFromCursor(Cursor)})
      * @see #setNeedCursorResult(boolean)
      */
     public static AnyScan createScanFromCursor(final Cursor cursor) {
@@ -260,7 +265,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * @param scan the HBase Scan object to wrap; must not be null
      * @return a new AnyScan instance wrapping the provided scan
-     * @throws IllegalArgumentException if scan is null
+     * @throws NullPointerException if {@code scan} is null (raised on first subsequent dereference of the wrapped Scan)
      */
     public static AnyScan of(final Scan scan) {
         return new AnyScan(scan);
@@ -275,7 +280,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * @param get the Get operation to convert to a Scan; must not be null
      * @return a new AnyScan instance created from the Get operation
-     * @throws IllegalArgumentException if get is null
+     * @throws NullPointerException if {@code get} is null (raised by the wrapped HBase {@link Scan} constructor)
      */
     public static AnyScan of(final Get get) {
         return new AnyScan(get);
@@ -448,9 +453,12 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * AnyScan scan = AnyScan.create().setFamilyMap(familyMap);
      * }</pre>
      *
+     * <p>This method delegates directly to {@link Scan#setFamilyMap(Map)}; the underlying HBase
+     * call simply stores the supplied reference, so any later traversal of a {@code null} map
+     * will fail with a {@link NullPointerException}.</p>
+     *
      * @param familyMap the complete family-to-qualifiers mapping; must not be null
      * @return this AnyScan instance for method chaining
-     * @throws IllegalArgumentException if familyMap is null
      * @see #getFamilyMap()
      */
     public AnyScan setFamilyMap(final Map<byte[], NavigableSet<byte[]>> familyMap) {

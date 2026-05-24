@@ -102,7 +102,7 @@ import com.mongodb.client.result.UpdateResult;
  * }
  * 
  * // Create mapper:
- * MongoCollectionMapper<User> userMapper = mongoDB.collMapper(User.class);
+ * MongoCollectionMapper<User> userMapper = mongoDB.collectionMapper(User.class);
  *
  * // Type-safe operations:
  * User newUser = new User("John Doe", "john@example.com", new Date());
@@ -129,12 +129,12 @@ import com.mongodb.client.result.UpdateResult;
  */
 public final class MongoCollectionMapper<T> {
 
-    private final MongoCollectionExecutor collExecutor;
+    private final MongoCollectionExecutor collectionExecutor;
 
     private final Class<T> rowType;
 
-    MongoCollectionMapper(final MongoCollectionExecutor collExecutor, final Class<T> resultClass) {
-        this.collExecutor = collExecutor;
+    MongoCollectionMapper(final MongoCollectionExecutor collectionExecutor, final Class<T> resultClass) {
+        this.collectionExecutor = collectionExecutor;
         rowType = resultClass;
     }
 
@@ -146,8 +146,8 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> userMapper = mongoDB.collMapper(User.class);
-     * MongoCollectionExecutor executor = userMapper.collExecutor();
+     * MongoCollectionMapper<User> userMapper = mongoDB.collectionMapper(User.class);
+     * MongoCollectionExecutor executor = userMapper.mongoCollectionExecutor();
      * // Use raw executor for complex operations:
      * Document complexResult = executor.aggregate(complexPipeline).first();
      * }</pre>
@@ -155,8 +155,8 @@ public final class MongoCollectionMapper<T> {
      * @return the underlying MongoCollectionExecutor instance
      * @see MongoCollectionExecutor
      */
-    public MongoCollectionExecutor collExecutor() {
-        return collExecutor;
+    public MongoCollectionExecutor mongoCollectionExecutor() {
+        return collectionExecutor;
     }
 
     /**
@@ -168,7 +168,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> userMapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> userMapper = mongoDB.collectionMapper(User.class);
      * String userId = "507f1f77bcf86cd799439011";
      * if (userMapper.exists(userId)) {
      *     System.out.println("User exists");
@@ -182,7 +182,7 @@ public final class MongoCollectionMapper<T> {
      * @see #exists(ObjectId)
      */
     public boolean exists(final String objectId) {
-        return collExecutor.exists(objectId);
+        return collectionExecutor.exists(objectId);
     }
 
     /**
@@ -194,7 +194,7 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ObjectId userId = new ObjectId();
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * boolean userExists = mapper.exists(userId);
      * }</pre>
      *
@@ -205,7 +205,7 @@ public final class MongoCollectionMapper<T> {
      * @see ObjectId
      */
     public boolean exists(final ObjectId objectId) {
-        return collExecutor.exists(objectId);
+        return collectionExecutor.exists(objectId);
     }
 
     /**
@@ -216,7 +216,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * // Check if any active users exist:
      * boolean hasActiveUsers = mapper.exists(Filters.eq("status", "active"));
      * // Check using JSON filter:
@@ -225,27 +225,27 @@ public final class MongoCollectionMapper<T> {
      *
      * @param filter the query filter to match entities against
      * @return {@code true} if any entities match the filter, {@code false} otherwise
-     * @throws IllegalArgumentException if filter is null
+     * @throws NullPointerException if filter is null (thrown by the underlying MongoDB driver)
      * @throws com.mongodb.MongoException if the database operation fails
      * @see com.mongodb.client.model.Filters
      */
     public boolean exists(final Bson filter) {
-        return collExecutor.exists(filter);
+        return collectionExecutor.exists(filter);
     }
 
     /**
      * Returns the total number of entities in the collection (blocking operation).
      *
      * <p>This method counts all entities of the mapped type in the collection.
-     * For large collections, consider using {@link #collExecutor()}{@code .estimatedDocumentCount()} for better performance
+     * For large collections, consider using {@link #mongoCollectionExecutor()}{@code .estimatedDocumentCount()} for better performance
      * when exact counts are not required.</p>
      *
      * <p><b>Note:</b> This method performs a blocking operation. For non-blocking operations, use
-     * {@link #collExecutor()}.{@code async()}.</p>
+     * {@link #mongoCollectionExecutor()}.{@code async()}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> userMapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> userMapper = mongoDB.collectionMapper(User.class);
      * long totalUsers = userMapper.count();
      * System.out.println("Total users: " + totalUsers);
      * }</pre>
@@ -253,10 +253,10 @@ public final class MongoCollectionMapper<T> {
      * @return the total number of entities in the collection
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #count(Bson)
-     * @see #collExecutor()
+     * @see #mongoCollectionExecutor()
      */
     public long count() {
-        return collExecutor.count();
+        return collectionExecutor.count();
     }
 
     /**
@@ -267,7 +267,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * // Count active users:
      * long activeUsers = mapper.count(Filters.eq("status", "active"));
      * // Count using JSON filter:
@@ -276,12 +276,12 @@ public final class MongoCollectionMapper<T> {
      *
      * @param filter the query filter to count matching entities
      * @return the number of entities matching the filter
-     * @throws IllegalArgumentException if filter is null
+     * @throws NullPointerException if filter is null (thrown by the underlying MongoDB driver)
      * @throws com.mongodb.MongoException if the database operation fails
      * @see com.mongodb.client.model.Filters
      */
     public long count(final Bson filter) {
-        return collExecutor.count(filter);
+        return collectionExecutor.count(filter);
     }
 
     /**
@@ -292,7 +292,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * // Count with limit to avoid expensive operations:
      * CountOptions options = new CountOptions().limit(1000);
      * long limitedCount = mapper.count(Filters.exists("email"), options);
@@ -301,12 +301,12 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to count matching entities
      * @param options additional options for the count operation (null uses defaults)
      * @return the number of entities matching the filter within the specified constraints
-     * @throws IllegalArgumentException if filter is null
+     * @throws NullPointerException if filter is null (thrown by the underlying MongoDB driver)
      * @throws com.mongodb.MongoException if the database operation fails
      * @see CountOptions
      */
     public long count(final Bson filter, final CountOptions options) {
-        return collExecutor.count(filter, options);
+        return collectionExecutor.count(filter, options);
     }
 
     /**
@@ -318,7 +318,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * String userId = "507f1f77bcf86cd799439011";
      * Optional<User> user = mapper.get(userId);
      * user.ifPresent(u -> System.out.println("Found: " + u.getName()));
@@ -332,7 +332,7 @@ public final class MongoCollectionMapper<T> {
      * @see #get(ObjectId)
      */
     public Optional<T> get(final String objectId) {
-        return collExecutor.get(objectId, rowType);
+        return collectionExecutor.get(objectId, rowType);
     }
 
     /**
@@ -344,7 +344,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * ObjectId userId = new ObjectId();
      * Optional<User> user = mapper.get(userId);
      * user.ifPresent(u -> System.out.println("Found: " + u.getName()));
@@ -358,7 +358,7 @@ public final class MongoCollectionMapper<T> {
      * @see Optional
      */
     public Optional<T> get(final ObjectId objectId) {
-        return collExecutor.get(objectId, rowType);
+        return collectionExecutor.get(objectId, rowType);
     }
 
     /**
@@ -371,7 +371,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * String userId = "507f1f77bcf86cd799439011";
      * Collection<String> fields = Arrays.asList("name", "email", "status");
      * Optional<User> partialUser = mapper.get(userId, fields);
@@ -385,7 +385,7 @@ public final class MongoCollectionMapper<T> {
      * @see #get(ObjectId, Collection)
      */
     public Optional<T> get(final String objectId, final Collection<String> selectPropNames) {
-        return collExecutor.get(objectId, selectPropNames, rowType);
+        return collectionExecutor.get(objectId, selectPropNames, rowType);
     }
 
     /**
@@ -398,7 +398,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * ObjectId id = new ObjectId();
      * Collection<String> fields = Set.of("name", "email");
      * Optional<User> user = mapper.get(id, fields);
@@ -412,7 +412,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Projections
      */
     public Optional<T> get(final ObjectId objectId, final Collection<String> selectPropNames) {
-        return collExecutor.get(objectId, selectPropNames, rowType);
+        return collectionExecutor.get(objectId, selectPropNames, rowType);
     }
 
     /**
@@ -425,7 +425,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * User user = mapper.gett("507f1f77bcf86cd799439011");
      * if (user != null) {
      *     System.out.println("Found user: " + user.getName());
@@ -440,7 +440,7 @@ public final class MongoCollectionMapper<T> {
      * @see #gett(ObjectId)
      */
     public T gett(final String objectId) {
-        return collExecutor.gett(objectId, rowType);
+        return collectionExecutor.gett(objectId, rowType);
     }
 
     /**
@@ -452,7 +452,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * ObjectId id = new ObjectId();
      * User user = mapper.gett(id);
      * if (user != null) {
@@ -468,7 +468,7 @@ public final class MongoCollectionMapper<T> {
      * @see #gett(String)
      */
     public T gett(final ObjectId objectId) {
-        return collExecutor.gett(objectId, rowType);
+        return collectionExecutor.gett(objectId, rowType);
     }
 
     /**
@@ -480,7 +480,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * Collection<String> fields = Arrays.asList("name", "email", "department");
      * User partialUser = mapper.gett("507f1f77bcf86cd799439011", fields);
      * if (partialUser != null) {
@@ -497,7 +497,7 @@ public final class MongoCollectionMapper<T> {
      * @see #gett(ObjectId, Collection)
      */
     public T gett(final String objectId, final Collection<String> selectPropNames) {
-        return collExecutor.gett(objectId, selectPropNames, rowType);
+        return collectionExecutor.gett(objectId, selectPropNames, rowType);
     }
 
     /**
@@ -510,7 +510,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * ObjectId id = new ObjectId();
      * Collection<String> fields = Set.of("name", "email");
      * User user = mapper.gett(id, fields);
@@ -528,7 +528,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Projections
      */
     public T gett(final ObjectId objectId, final Collection<String> selectPropNames) {
-        return collExecutor.gett(objectId, selectPropNames, rowType);
+        return collectionExecutor.gett(objectId, selectPropNames, rowType);
     }
 
     /**
@@ -541,7 +541,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * // Find the first active user:
      * Optional<User> user = mapper.findFirst(Filters.eq("status", "active"));
      * // Using JSON filter with Document.parse():
@@ -556,7 +556,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Filters
      */
     public Optional<T> findFirst(final Bson filter) {
-        return collExecutor.findFirst(filter, rowType);
+        return collectionExecutor.findFirst(filter, rowType);
     }
 
     /**
@@ -569,7 +569,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * Collection<String> fields = Arrays.asList("name", "email");
      * // Get first active user with only name and email:
      * Optional<User> user = mapper.findFirst(fields, Filters.eq("status", "active"));
@@ -584,7 +584,7 @@ public final class MongoCollectionMapper<T> {
      * @see #findFirst(Collection, Bson, Bson)
      */
     public Optional<T> findFirst(final Collection<String> selectPropNames, final Bson filter) {
-        return collExecutor.findFirst(selectPropNames, filter, rowType);
+        return collectionExecutor.findFirst(selectPropNames, filter, rowType);
     }
 
     /**
@@ -597,7 +597,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Order> mapper = mongoDB.collMapper(Order.class);
+     * MongoCollectionMapper<Order> mapper = mongoDB.collectionMapper(Order.class);
      * Collection<String> fields = Arrays.asList("orderId", "total", "status");
      * Bson filter = Filters.eq("customerId", "CUST123");
      * Bson sort = Sorts.descending("createdAt");   // Most recent first
@@ -615,7 +615,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Sorts
      */
     public Optional<T> findFirst(final Collection<String> selectPropNames, final Bson filter, final Bson sort) {
-        return collExecutor.findFirst(selectPropNames, filter, sort, rowType);
+        return collectionExecutor.findFirst(selectPropNames, filter, sort, rowType);
     }
 
     /**
@@ -628,7 +628,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Article> mapper = mongoDB.collMapper(Article.class);
+     * MongoCollectionMapper<Article> mapper = mongoDB.collectionMapper(Article.class);
      * Bson projection = Projections.fields(
      *     Projections.include("title", "author"),
      *     Projections.slice("tags", 5)
@@ -649,7 +649,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Sorts
      */
     public Optional<T> findFirst(final Bson projection, final Bson filter, final Bson sort) {
-        return collExecutor.findFirst(projection, filter, sort, rowType);
+        return collectionExecutor.findFirst(projection, filter, sort, rowType);
     }
 
     /**
@@ -662,7 +662,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * // Find all active users:
      * List<User> activeUsers = mapper.list(Filters.eq("status", "active"));
      * activeUsers.forEach(user -> processUser(user));
@@ -676,7 +676,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Filters
      */
     public List<T> list(final Bson filter) {
-        return collExecutor.list(filter, rowType);
+        return collectionExecutor.list(filter, rowType);
     }
 
     /**
@@ -688,7 +688,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Product> mapper = mongoDB.collMapper(Product.class);
+     * MongoCollectionMapper<Product> mapper = mongoDB.collectionMapper(Product.class);
      * Bson filter = Filters.eq("category", "electronics");
      * // Get page 2 (next 20 products):
      * List<Product> page2 = mapper.list(filter, 20, 20);
@@ -704,7 +704,7 @@ public final class MongoCollectionMapper<T> {
      * @see #list(Collection, Bson, int, int)
      */
     public List<T> list(final Bson filter, final int offset, final int count) {
-        return collExecutor.list(filter, offset, count, rowType);
+        return collectionExecutor.list(filter, offset, count, rowType);
     }
 
     /**
@@ -716,7 +716,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * Collection<String> fields = Arrays.asList("name", "email", "status");
      * // Get all active users with only name, email, and status:
      * List<User> users = mapper.list(fields, Filters.eq("status", "active"));
@@ -731,7 +731,7 @@ public final class MongoCollectionMapper<T> {
      * @see #list(Collection, Bson, int, int)
      */
     public List<T> list(final Collection<String> selectPropNames, final Bson filter) {
-        return collExecutor.list(selectPropNames, filter, rowType);
+        return collectionExecutor.list(selectPropNames, filter, rowType);
     }
 
     /**
@@ -743,7 +743,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Product> mapper = mongoDB.collMapper(Product.class);
+     * MongoCollectionMapper<Product> mapper = mongoDB.collectionMapper(Product.class);
      * Collection<String> fields = Arrays.asList("name", "price", "category");
      * Bson filter = Filters.eq("inStock", true);
      * // Get second page of available products with minimal data:
@@ -761,7 +761,7 @@ public final class MongoCollectionMapper<T> {
      * @see #list(Bson, int, int)
      */
     public List<T> list(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count) {
-        return collExecutor.list(selectPropNames, filter, offset, count, rowType);
+        return collectionExecutor.list(selectPropNames, filter, offset, count, rowType);
     }
 
     /**
@@ -773,7 +773,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Article> mapper = mongoDB.collMapper(Article.class);
+     * MongoCollectionMapper<Article> mapper = mongoDB.collectionMapper(Article.class);
      * Collection<String> fields = Arrays.asList("title", "author", "publishedAt", "viewCount");
      * Bson filter = Filters.eq("status", "published");
      * Bson sort = Sorts.descending("viewCount");   // Most viewed first
@@ -791,7 +791,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Sorts
      */
     public List<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort) {
-        return collExecutor.list(selectPropNames, filter, sort, rowType);
+        return collectionExecutor.list(selectPropNames, filter, sort, rowType);
     }
 
     /**
@@ -803,7 +803,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * Collection<String> fields = Arrays.asList("username", "email", "lastLoginAt");
      * Bson filter = Filters.eq("status", "active");
      * Bson sort = Sorts.descending("lastLoginAt");
@@ -824,7 +824,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Sorts
      */
     public List<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count) {
-        return collExecutor.list(selectPropNames, filter, sort, offset, count, rowType);
+        return collectionExecutor.list(selectPropNames, filter, sort, offset, count, rowType);
     }
 
     /**
@@ -836,7 +836,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Order> mapper = mongoDB.collMapper(Order.class);
+     * MongoCollectionMapper<Order> mapper = mongoDB.collectionMapper(Order.class);
      * Bson projection = Projections.fields(
      *     Projections.include("customerId", "items"),
      *     Projections.computed("totalAmount", new Document("$sum", "$items.price"))
@@ -857,7 +857,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Sorts
      */
     public List<T> list(final Bson projection, final Bson filter, final Bson sort) {
-        return collExecutor.list(projection, filter, sort, rowType);
+        return collectionExecutor.list(projection, filter, sort, rowType);
     }
 
     /**
@@ -869,7 +869,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Product> mapper = mongoDB.collMapper(Product.class);
+     * MongoCollectionMapper<Product> mapper = mongoDB.collectionMapper(Product.class);
      * Bson projection = Projections.fields(
      *     Projections.include("name", "category"),
      *     Projections.elemMatch("reviews", Filters.gte("rating", 4))
@@ -893,7 +893,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Projections
      */
     public List<T> list(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count) {
-        return collExecutor.list(projection, filter, sort, offset, count, rowType);
+        return collectionExecutor.list(projection, filter, sort, offset, count, rowType);
     }
 
     /**
@@ -905,7 +905,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * OptionalBoolean isActive = mapper.queryForBoolean("active", Filters.eq("userId", "123"));
      * if (isActive.isPresent()) {
      *     System.out.println("Active: " + isActive.getAsBoolean());
@@ -915,13 +915,13 @@ public final class MongoCollectionMapper<T> {
      * @param propName the name of the boolean property to retrieve
      * @param filter the query filter to match entities against
      * @return an OptionalBoolean containing the property value if found, or empty if not found
-     * @throws IllegalArgumentException if propName or filter is null
+     * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see OptionalBoolean
      */
     @Beta
     public OptionalBoolean queryForBoolean(final String propName, final Bson filter) {
-        return collExecutor.queryForBoolean(propName, filter);
+        return collectionExecutor.queryForBoolean(propName, filter);
     }
 
     /**
@@ -933,7 +933,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Entity> mapper = mongoDB.collMapper(Entity.class);
+     * MongoCollectionMapper<Entity> mapper = mongoDB.collectionMapper(Entity.class);
      * OptionalChar grade = mapper.queryForChar("grade", Filters.eq("studentId", "456"));
      * grade.ifPresent(g -> System.out.println("Grade: " + g));
      * }</pre>
@@ -941,13 +941,13 @@ public final class MongoCollectionMapper<T> {
      * @param propName the name of the character property to retrieve
      * @param filter the query filter to match entities against
      * @return an OptionalChar containing the property value if found, or empty if not found
-     * @throws IllegalArgumentException if propName or filter is null
+     * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see OptionalChar
      */
     @Beta
     public OptionalChar queryForChar(final String propName, final Bson filter) {
-        return collExecutor.queryForChar(propName, filter);
+        return collectionExecutor.queryForChar(propName, filter);
     }
 
     /**
@@ -959,7 +959,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Entity> mapper = mongoDB.collMapper(Entity.class);
+     * MongoCollectionMapper<Entity> mapper = mongoDB.collectionMapper(Entity.class);
      * OptionalByte flags = mapper.queryForByte("flags", Filters.eq("id", "789"));
      * flags.ifPresent(f -> System.out.println("Flags: " + f));
      * }</pre>
@@ -967,13 +967,13 @@ public final class MongoCollectionMapper<T> {
      * @param propName the name of the byte property to retrieve
      * @param filter the query filter to match entities against
      * @return an OptionalByte containing the property value if found, or empty if not found
-     * @throws IllegalArgumentException if propName or filter is null
+     * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see OptionalByte
      */
     @Beta
     public OptionalByte queryForByte(final String propName, final Bson filter) {
-        return collExecutor.queryForByte(propName, filter);
+        return collectionExecutor.queryForByte(propName, filter);
     }
 
     /**
@@ -985,7 +985,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Product> mapper = mongoDB.collMapper(Product.class);
+     * MongoCollectionMapper<Product> mapper = mongoDB.collectionMapper(Product.class);
      * OptionalShort quantity = mapper.queryForShort("quantity", Filters.eq("sku", "ABC123"));
      * quantity.ifPresent(q -> System.out.println("Quantity: " + q));
      * }</pre>
@@ -993,13 +993,13 @@ public final class MongoCollectionMapper<T> {
      * @param propName the name of the short property to retrieve
      * @param filter the query filter to match entities against
      * @return an OptionalShort containing the property value if found, or empty if not found
-     * @throws IllegalArgumentException if propName or filter is null
+     * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see OptionalShort
      */
     @Beta
     public OptionalShort queryForShort(final String propName, final Bson filter) {
-        return collExecutor.queryForShort(propName, filter);
+        return collectionExecutor.queryForShort(propName, filter);
     }
 
     /**
@@ -1011,7 +1011,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * OptionalInt age = mapper.queryForInt("age", Filters.eq("userId", "user123"));
      * age.ifPresent(a -> System.out.println("Age: " + a));
      * }</pre>
@@ -1019,13 +1019,13 @@ public final class MongoCollectionMapper<T> {
      * @param propName the name of the integer property to retrieve
      * @param filter the query filter to match entities against
      * @return an OptionalInt containing the property value if found, or empty if not found
-     * @throws IllegalArgumentException if propName or filter is null
+     * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see OptionalInt
      */
     @Beta
     public OptionalInt queryForInt(final String propName, final Bson filter) {
-        return collExecutor.queryForInt(propName, filter);
+        return collectionExecutor.queryForInt(propName, filter);
     }
 
     /**
@@ -1037,7 +1037,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Transaction> mapper = mongoDB.collMapper(Transaction.class);
+     * MongoCollectionMapper<Transaction> mapper = mongoDB.collectionMapper(Transaction.class);
      * OptionalLong timestamp = mapper.queryForLong("timestamp", Filters.eq("txnId", "TXN789"));
      * timestamp.ifPresent(t -> System.out.println("Timestamp: " + new Date(t)));
      * }</pre>
@@ -1045,13 +1045,13 @@ public final class MongoCollectionMapper<T> {
      * @param propName the name of the long property to retrieve
      * @param filter the query filter to match entities against
      * @return an OptionalLong containing the property value if found, or empty if not found
-     * @throws IllegalArgumentException if propName or filter is null
+     * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see OptionalLong
      */
     @Beta
     public OptionalLong queryForLong(final String propName, final Bson filter) {
-        return collExecutor.queryForLong(propName, filter);
+        return collectionExecutor.queryForLong(propName, filter);
     }
 
     /**
@@ -1063,7 +1063,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Product> mapper = mongoDB.collMapper(Product.class);
+     * MongoCollectionMapper<Product> mapper = mongoDB.collectionMapper(Product.class);
      * OptionalFloat rating = mapper.queryForFloat("rating", Filters.eq("productId", "PROD456"));
      * rating.ifPresent(r -> System.out.println("Rating: " + r));
      * }</pre>
@@ -1071,13 +1071,13 @@ public final class MongoCollectionMapper<T> {
      * @param propName the name of the float property to retrieve
      * @param filter the query filter to match entities against
      * @return an OptionalFloat containing the property value if found, or empty if not found
-     * @throws IllegalArgumentException if propName or filter is null
+     * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see OptionalFloat
      */
     @Beta
     public OptionalFloat queryForFloat(final String propName, final Bson filter) {
-        return collExecutor.queryForFloat(propName, filter);
+        return collectionExecutor.queryForFloat(propName, filter);
     }
 
     /**
@@ -1089,7 +1089,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Order> mapper = mongoDB.collMapper(Order.class);
+     * MongoCollectionMapper<Order> mapper = mongoDB.collectionMapper(Order.class);
      * OptionalDouble total = mapper.queryForDouble("totalAmount", Filters.eq("orderId", "ORD123"));
      * total.ifPresent(t -> System.out.println("Total: $" + t));
      * }</pre>
@@ -1097,13 +1097,13 @@ public final class MongoCollectionMapper<T> {
      * @param propName the name of the double property to retrieve
      * @param filter the query filter to match entities against
      * @return an OptionalDouble containing the property value if found, or empty if not found
-     * @throws IllegalArgumentException if propName or filter is null
+     * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see OptionalDouble
      */
     @Beta
     public OptionalDouble queryForDouble(final String propName, final Bson filter) {
-        return collExecutor.queryForDouble(propName, filter);
+        return collectionExecutor.queryForDouble(propName, filter);
     }
 
     /**
@@ -1115,7 +1115,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * Nullable<String> email = mapper.queryForString("email", Filters.eq("userId", "user456"));
      * email.ifPresent(e -> System.out.println("Email: " + e));
      * }</pre>
@@ -1123,13 +1123,13 @@ public final class MongoCollectionMapper<T> {
      * @param propName the name of the string property to retrieve
      * @param filter the query filter to match entities against
      * @return a Nullable containing the property value if found, or empty if not found
-     * @throws IllegalArgumentException if propName or filter is null
+     * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Nullable
      */
     @Beta
     public Nullable<String> queryForString(final String propName, final Bson filter) {
-        return collExecutor.queryForString(propName, filter);
+        return collectionExecutor.queryForString(propName, filter);
     }
 
     /**
@@ -1141,7 +1141,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Event> mapper = mongoDB.collMapper(Event.class);
+     * MongoCollectionMapper<Event> mapper = mongoDB.collectionMapper(Event.class);
      * Nullable<Date> startDate = mapper.queryForDate("startDate", Filters.eq("eventId", "EVT789"));
      * startDate.ifPresent(d -> System.out.println("Start Date: " + d));
      * }</pre>
@@ -1149,14 +1149,14 @@ public final class MongoCollectionMapper<T> {
      * @param propName the name of the date property to retrieve
      * @param filter the query filter to match entities against
      * @return a Nullable containing the property value if found, or empty if not found
-     * @throws IllegalArgumentException if propName or filter is null
+     * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Nullable
      * @see Date
      */
     @Beta
     public Nullable<Date> queryForDate(final String propName, final Bson filter) {
-        return collExecutor.queryForDate(propName, filter);
+        return collectionExecutor.queryForDate(propName, filter);
     }
 
     /**
@@ -1168,7 +1168,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Task> mapper = mongoDB.collMapper(Task.class);
+     * MongoCollectionMapper<Task> mapper = mongoDB.collectionMapper(Task.class);
      * Nullable<Timestamp> created = mapper.queryForDate("createdAt", 
      *     Filters.eq("taskId", "TASK123"), Timestamp.class);
      * created.ifPresent(t -> System.out.println("Created: " + t));
@@ -1176,16 +1176,16 @@ public final class MongoCollectionMapper<T> {
      *
      * @param <P> the specific Date subtype to return
      * @param propName the name of the date property to retrieve
-     * @param filter the query filter to match entities against
+     * @param filter the query filter to match entities against (null matches all)
      * @param valueType the class of the Date subtype to convert to
      * @return a Nullable containing the property value if found, or empty if not found
-     * @throws IllegalArgumentException if propName, filter, or valueType is null
+     * @throws IllegalArgumentException if propName or valueType is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Nullable
      * @see Date
      */
     public <P extends Date> Nullable<P> queryForDate(final String propName, final Bson filter, final Class<P> valueType) {
-        return collExecutor.queryForDate(propName, filter, valueType);
+        return collectionExecutor.queryForDate(propName, filter, valueType);
     }
 
     /**
@@ -1197,7 +1197,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Document> mapper = mongoDB.collMapper(Document.class);
+     * MongoCollectionMapper<Document> mapper = mongoDB.collectionMapper(Document.class);
      * Nullable<BigDecimal> price = mapper.queryForSingleValue("price", 
      *     Filters.eq("productId", "PROD999"), BigDecimal.class);
      * price.ifPresent(p -> System.out.println("Price: $" + p));
@@ -1205,15 +1205,15 @@ public final class MongoCollectionMapper<T> {
      *
      * @param <V> the type to convert the property value to
      * @param propName the name of the property to retrieve
-     * @param filter the query filter to match entities against
+     * @param filter the query filter to match entities against (null matches all)
      * @param valueType the class of the type to convert to
      * @return a Nullable containing the property value if found, or empty if not found
-     * @throws IllegalArgumentException if propName, filter, or valueType is null
+     * @throws IllegalArgumentException if propName or valueType is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Nullable
      */
     public <V> Nullable<V> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType) {
-        return collExecutor.queryForSingleValue(propName, filter, valueType);
+        return collectionExecutor.queryForSingleValue(propName, filter, valueType);
     }
 
     /**
@@ -1225,7 +1225,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Sales> mapper = mongoDB.collMapper(Sales.class);
+     * MongoCollectionMapper<Sales> mapper = mongoDB.collectionMapper(Sales.class);
      * Dataset ds = mapper.query(Filters.gte("amount", 1000));
      * ds.forEach(row -> System.out.println(row));
      * }</pre>
@@ -1237,7 +1237,7 @@ public final class MongoCollectionMapper<T> {
      * @see Dataset
      */
     public Dataset query(final Bson filter) {
-        return collExecutor.query(filter, rowType);
+        return collectionExecutor.query(filter, rowType);
     }
 
     /**
@@ -1249,7 +1249,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Sales> mapper = mongoDB.collMapper(Sales.class);
+     * MongoCollectionMapper<Sales> mapper = mongoDB.collectionMapper(Sales.class);
      * Dataset ds = mapper.query(Filters.gte("amount", 1000), 0, 100);
      * System.out.println("First 100 high-value sales: " + ds.size());
      * }</pre>
@@ -1263,7 +1263,7 @@ public final class MongoCollectionMapper<T> {
      * @see Dataset
      */
     public Dataset query(final Bson filter, final int offset, final int count) {
-        return collExecutor.query(filter, offset, count, rowType);
+        return collectionExecutor.query(filter, offset, count, rowType);
     }
 
     /**
@@ -1275,7 +1275,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Customer> mapper = mongoDB.collMapper(Customer.class);
+     * MongoCollectionMapper<Customer> mapper = mongoDB.collectionMapper(Customer.class);
      * Collection<String> fields = Arrays.asList("name", "email", "city");
      * Dataset ds = mapper.query(fields, Filters.eq("status", "active"));
      * }</pre>
@@ -1288,7 +1288,7 @@ public final class MongoCollectionMapper<T> {
      * @see Dataset
      */
     public Dataset query(final Collection<String> selectPropNames, final Bson filter) {
-        return collExecutor.query(selectPropNames, filter, rowType);
+        return collectionExecutor.query(selectPropNames, filter, rowType);
     }
 
     /**
@@ -1315,7 +1315,7 @@ public final class MongoCollectionMapper<T> {
      * @see #query(Collection, Bson)
      */
     public Dataset query(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count) {
-        return collExecutor.query(selectPropNames, filter, offset, count, rowType);
+        return collectionExecutor.query(selectPropNames, filter, offset, count, rowType);
     }
 
     /**
@@ -1341,7 +1341,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Sorts
      */
     public Dataset query(final Collection<String> selectPropNames, final Bson filter, final Bson sort) {
-        return collExecutor.query(selectPropNames, filter, sort, rowType);
+        return collectionExecutor.query(selectPropNames, filter, sort, rowType);
     }
 
     /**
@@ -1369,7 +1369,7 @@ public final class MongoCollectionMapper<T> {
      * @see #query(Collection, Bson, Bson)
      */
     public Dataset query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count) {
-        return collExecutor.query(selectPropNames, filter, sort, offset, count, rowType);
+        return collectionExecutor.query(selectPropNames, filter, sort, offset, count, rowType);
     }
 
     /**
@@ -1397,7 +1397,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Projections
      */
     public Dataset query(final Bson projection, final Bson filter, final Bson sort) {
-        return collExecutor.query(projection, filter, sort, rowType);
+        return collectionExecutor.query(projection, filter, sort, rowType);
     }
 
     /**
@@ -1428,7 +1428,7 @@ public final class MongoCollectionMapper<T> {
      * @see #query(Bson, Bson, Bson)
      */
     public Dataset query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count) {
-        return collExecutor.query(projection, filter, sort, offset, count, rowType);
+        return collectionExecutor.query(projection, filter, sort, offset, count, rowType);
     }
 
     /**
@@ -1440,7 +1440,7 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * 
      * // Stream active users for processing:
      * try (Stream<User> userStream = mapper.stream(Filters.eq("status", "active"))) {
@@ -1467,7 +1467,7 @@ public final class MongoCollectionMapper<T> {
      * @see #list(Bson)
      */
     public Stream<T> stream(final Bson filter) {
-        return collExecutor.stream(filter, rowType);
+        return collectionExecutor.stream(filter, rowType);
     }
 
     /**
@@ -1479,7 +1479,7 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Order> mapper = mongoDB.collMapper(Order.class);
+     * MongoCollectionMapper<Order> mapper = mongoDB.collectionMapper(Order.class);
      * Bson filter = Filters.gte("orderDate", LocalDate.now().minusDays(7));
      * 
      * // Process second batch of recent orders:
@@ -1502,7 +1502,7 @@ public final class MongoCollectionMapper<T> {
      * @see Stream
      */
     public Stream<T> stream(final Bson filter, final int offset, final int count) {
-        return collExecutor.stream(filter, offset, count, rowType);
+        return collectionExecutor.stream(filter, offset, count, rowType);
     }
 
     /**
@@ -1514,7 +1514,7 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * Collection<String> fields = Arrays.asList("email", "preferences.newsletter");
      * Bson filter = Filters.eq("preferences.newsletter", true);
      * 
@@ -1535,7 +1535,7 @@ public final class MongoCollectionMapper<T> {
      * @see #list(Collection, Bson)
      */
     public Stream<T> stream(final Collection<String> selectPropNames, final Bson filter) {
-        return collExecutor.stream(selectPropNames, filter, rowType);
+        return collectionExecutor.stream(selectPropNames, filter, rowType);
     }
 
     /**
@@ -1547,7 +1547,7 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Product> mapper = mongoDB.collMapper(Product.class);
+     * MongoCollectionMapper<Product> mapper = mongoDB.collectionMapper(Product.class);
      * Collection<String> fields = Arrays.asList("name", "price", "category");
      * Bson filter = Filters.lt("price", 100.0);
      * 
@@ -1574,7 +1574,7 @@ public final class MongoCollectionMapper<T> {
      * @see #stream(Bson, int, int)
      */
     public Stream<T> stream(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count) {
-        return collExecutor.stream(selectPropNames, filter, offset, count, rowType);
+        return collectionExecutor.stream(selectPropNames, filter, offset, count, rowType);
     }
 
     /**
@@ -1586,7 +1586,7 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Article> mapper = mongoDB.collMapper(Article.class);
+     * MongoCollectionMapper<Article> mapper = mongoDB.collectionMapper(Article.class);
      * Collection<String> fields = Arrays.asList("title", "publishedAt", "viewCount");
      * Bson filter = Filters.eq("status", "published");
      * Bson sort = Sorts.descending("publishedAt");   // Latest first
@@ -1610,7 +1610,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Sorts
      */
     public Stream<T> stream(final Collection<String> selectPropNames, final Bson filter, final Bson sort) {
-        return collExecutor.stream(selectPropNames, filter, sort, rowType);
+        return collectionExecutor.stream(selectPropNames, filter, sort, rowType);
     }
 
     /**
@@ -1622,7 +1622,7 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Transaction> mapper = mongoDB.collMapper(Transaction.class);
+     * MongoCollectionMapper<Transaction> mapper = mongoDB.collectionMapper(Transaction.class);
      * Collection<String> fields = Arrays.asList("amount", "timestamp", "accountId");
      * Bson filter = Filters.gte("amount", 1000.0);   // High-value transactions
      * Bson sort = Sorts.descending("timestamp");     // Most recent first
@@ -1650,7 +1650,7 @@ public final class MongoCollectionMapper<T> {
      * @see #stream(Collection, Bson, int, int)
      */
     public Stream<T> stream(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count) {
-        return collExecutor.stream(selectPropNames, filter, sort, offset, count, rowType);
+        return collectionExecutor.stream(selectPropNames, filter, sort, offset, count, rowType);
     }
 
     /**
@@ -1662,7 +1662,7 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Order> mapper = mongoDB.collMapper(Order.class);
+     * MongoCollectionMapper<Order> mapper = mongoDB.collectionMapper(Order.class);
      * 
      * // Complex projection with computed total:
      * Bson projection = Projections.fields(
@@ -1690,7 +1690,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Projections
      */
     public Stream<T> stream(final Bson projection, final Bson filter, final Bson sort) {
-        return collExecutor.stream(projection, filter, sort, rowType);
+        return collectionExecutor.stream(projection, filter, sort, rowType);
     }
 
     /**
@@ -1702,7 +1702,7 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Analytics> mapper = mongoDB.collMapper(Analytics.class);
+     * MongoCollectionMapper<Analytics> mapper = mongoDB.collectionMapper(Analytics.class);
      * 
      * // Advanced analytics with computed metrics:
      * Bson projection = Projections.fields(
@@ -1738,7 +1738,7 @@ public final class MongoCollectionMapper<T> {
      * @see #stream(Collection, Bson, Bson, int, int)
      */
     public Stream<T> stream(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count) {
-        return collExecutor.stream(projection, filter, sort, offset, count, rowType);
+        return collectionExecutor.stream(projection, filter, sort, offset, count, rowType);
     }
 
     /**
@@ -1749,11 +1749,11 @@ public final class MongoCollectionMapper<T> {
      * ID field mapping and type conversions transparently.</p>
      *
      * <p><b>Note:</b> This method performs a blocking operation. For non-blocking operations, use
-     * the underlying executor's async methods via {@link #collExecutor()}.{@code async()}.</p>
+     * the underlying executor's async methods via {@link #mongoCollectionExecutor()}.{@code async()}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      *
      * User newUser = new User("John Doe", "john@example.com", 30);
      * mapper.insertOne(newUser);
@@ -1768,10 +1768,10 @@ public final class MongoCollectionMapper<T> {
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #insertOne(Object, InsertOneOptions)
      * @see #insertMany(Collection)
-     * @see #collExecutor()
+     * @see #mongoCollectionExecutor()
      */
     public void insertOne(final T obj) {
-        collExecutor.insertOne(obj);
+        collectionExecutor.insertOne(obj);
     }
 
     /**
@@ -1783,7 +1783,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * User newUser = new User("Jane Smith", "jane@example.com", 25);
      *
      * // Insert with custom write concern:
@@ -1803,7 +1803,7 @@ public final class MongoCollectionMapper<T> {
      * @see InsertOneOptions
      */
     public void insertOne(final T obj, final InsertOneOptions options) {
-        collExecutor.insertOne(obj, options);
+        collectionExecutor.insertOne(obj, options);
     }
 
     /**
@@ -1816,7 +1816,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      *
      * List<User> users = Arrays.asList(
      *     new User("John", "john@example.com", 30),
@@ -1838,7 +1838,7 @@ public final class MongoCollectionMapper<T> {
      * @see #insertOne(Object)
      */
     public void insertMany(final Collection<? extends T> objList) {
-        collExecutor.insertMany(objList);
+        collectionExecutor.insertMany(objList);
     }
 
     /**
@@ -1866,7 +1866,7 @@ public final class MongoCollectionMapper<T> {
      * @see InsertManyOptions
      */
     public void insertMany(final Collection<? extends T> objList, final InsertManyOptions options) {
-        collExecutor.insertMany(objList, options);
+        collectionExecutor.insertMany(objList, options);
     }
 
     /**
@@ -1879,7 +1879,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * String userId = "507f1f77bcf86cd799439011";
      *
      * // Update with partial entity:
@@ -1901,7 +1901,7 @@ public final class MongoCollectionMapper<T> {
      * @see #updateOne(ObjectId, Object)
      */
     public UpdateResult updateOne(final String objectId, final T update) {
-        return collExecutor.updateOne(objectId, update);
+        return collectionExecutor.updateOne(objectId, update);
     }
 
     /**
@@ -1929,7 +1929,7 @@ public final class MongoCollectionMapper<T> {
      * @see UpdateResult
      */
     public UpdateResult updateOne(final ObjectId objectId, final T update) {
-        return collExecutor.updateOne(objectId, update);
+        return collectionExecutor.updateOne(objectId, update);
     }
 
     /**
@@ -1957,7 +1957,7 @@ public final class MongoCollectionMapper<T> {
      * @see UpdateResult
      */
     public UpdateResult updateOne(final Bson filter, final T update) {
-        return collExecutor.updateOne(filter, update);
+        return collectionExecutor.updateOne(filter, update);
     }
 
     /**
@@ -1989,7 +1989,7 @@ public final class MongoCollectionMapper<T> {
      * @see UpdateOptions
      */
     public UpdateResult updateOne(final Bson filter, final T update, final UpdateOptions options) {
-        return collExecutor.updateOne(filter, update, options);
+        return collectionExecutor.updateOne(filter, update, options);
     }
 
     /**
@@ -2018,7 +2018,7 @@ public final class MongoCollectionMapper<T> {
      * @see #updateOne(Bson, Object)
      */
     public UpdateResult updateOne(final Bson filter, final Collection<? extends T> objList) {
-        return collExecutor.updateOne(filter, objList);
+        return collectionExecutor.updateOne(filter, objList);
     }
 
     /**
@@ -2047,7 +2047,7 @@ public final class MongoCollectionMapper<T> {
      * @see UpdateOptions
      */
     public UpdateResult updateOne(final Bson filter, final Collection<? extends T> objList, final UpdateOptions options) {
-        return collExecutor.updateOne(filter, objList, options);
+        return collectionExecutor.updateOne(filter, objList, options);
     }
 
     /**
@@ -2058,7 +2058,7 @@ public final class MongoCollectionMapper<T> {
      * filters that may match large numbers of documents.</p>
      *
      * <p><b>Note:</b> This method performs a blocking operation. For non-blocking operations, use
-     * {@link #collExecutor()}.{@code async()}.</p>
+     * {@link #mongoCollectionExecutor()}.{@code async()}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2077,10 +2077,10 @@ public final class MongoCollectionMapper<T> {
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #updateOne(Bson, Object)
      * @see UpdateResult
-     * @see #collExecutor()
+     * @see #mongoCollectionExecutor()
      */
     public UpdateResult updateMany(final Bson filter, final T update) {
-        return collExecutor.updateMany(filter, update);
+        return collectionExecutor.updateMany(filter, update);
     }
 
     /**
@@ -2111,7 +2111,7 @@ public final class MongoCollectionMapper<T> {
      * @see UpdateOptions
      */
     public UpdateResult updateMany(final Bson filter, final T update, final UpdateOptions options) {
-        return collExecutor.updateMany(filter, update, options);
+        return collectionExecutor.updateMany(filter, update, options);
     }
 
     /**
@@ -2140,7 +2140,7 @@ public final class MongoCollectionMapper<T> {
      * @see #updateMany(Bson, Object)
      */
     public UpdateResult updateMany(final Bson filter, final Collection<? extends T> objList) {
-        return collExecutor.updateMany(filter, objList);
+        return collectionExecutor.updateMany(filter, objList);
     }
 
     /**
@@ -2170,7 +2170,7 @@ public final class MongoCollectionMapper<T> {
      * @see UpdateOptions
      */
     public UpdateResult updateMany(final Bson filter, final Collection<? extends T> objList, final UpdateOptions options) {
-        return collExecutor.updateMany(filter, objList, options);
+        return collectionExecutor.updateMany(filter, objList, options);
     }
 
     /**
@@ -2197,7 +2197,7 @@ public final class MongoCollectionMapper<T> {
      * @see UpdateResult
      */
     public UpdateResult replaceOne(final String objectId, final T replacement) {
-        return collExecutor.replaceOne(objectId, replacement);
+        return collectionExecutor.replaceOne(objectId, replacement);
     }
 
     /**
@@ -2224,7 +2224,7 @@ public final class MongoCollectionMapper<T> {
      * @see UpdateResult
      */
     public UpdateResult replaceOne(final ObjectId objectId, final T replacement) {
-        return collExecutor.replaceOne(objectId, replacement);
+        return collectionExecutor.replaceOne(objectId, replacement);
     }
 
     /**
@@ -2251,7 +2251,7 @@ public final class MongoCollectionMapper<T> {
      * @see UpdateResult
      */
     public UpdateResult replaceOne(final Bson filter, final T replacement) {
-        return collExecutor.replaceOne(filter, replacement);
+        return collectionExecutor.replaceOne(filter, replacement);
     }
 
     /**
@@ -2282,7 +2282,7 @@ public final class MongoCollectionMapper<T> {
      * @see ReplaceOptions
      */
     public UpdateResult replaceOne(final Bson filter, final T replacement, final ReplaceOptions options) {
-        return collExecutor.replaceOne(filter, replacement, options);
+        return collectionExecutor.replaceOne(filter, replacement, options);
     }
 
     /**
@@ -2308,7 +2308,7 @@ public final class MongoCollectionMapper<T> {
      * @see DeleteResult
      */
     public DeleteResult deleteOne(final String objectId) {
-        return collExecutor.deleteOne(objectId);
+        return collectionExecutor.deleteOne(objectId);
     }
 
     /**
@@ -2336,7 +2336,7 @@ public final class MongoCollectionMapper<T> {
      * @see DeleteResult
      */
     public DeleteResult deleteOne(final ObjectId objectId) {
-        return collExecutor.deleteOne(objectId);
+        return collectionExecutor.deleteOne(objectId);
     }
 
     /**
@@ -2365,7 +2365,7 @@ public final class MongoCollectionMapper<T> {
      * @see DeleteResult
      */
     public DeleteResult deleteOne(final Bson filter) {
-        return collExecutor.deleteOne(filter);
+        return collectionExecutor.deleteOne(filter);
     }
 
     /**
@@ -2393,7 +2393,7 @@ public final class MongoCollectionMapper<T> {
      * @see DeleteOptions
      */
     public DeleteResult deleteOne(final Bson filter, final DeleteOptions options) {
-        return collExecutor.deleteOne(filter, options);
+        return collectionExecutor.deleteOne(filter, options);
     }
 
     /**
@@ -2404,7 +2404,7 @@ public final class MongoCollectionMapper<T> {
      * Consider using deleteOne for single deletions or adding specific filters to limit scope.</p>
      *
      * <p><b>Note:</b> This method performs a blocking operation. For non-blocking operations, use
-     * {@link #collExecutor()}.{@code async()}.</p>
+     * {@link #mongoCollectionExecutor()}.{@code async()}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2421,10 +2421,10 @@ public final class MongoCollectionMapper<T> {
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #deleteOne(Bson)
      * @see DeleteResult
-     * @see #collExecutor()
+     * @see #mongoCollectionExecutor()
      */
     public DeleteResult deleteMany(final Bson filter) {
-        return collExecutor.deleteMany(filter);
+        return collectionExecutor.deleteMany(filter);
     }
 
     /**
@@ -2455,7 +2455,7 @@ public final class MongoCollectionMapper<T> {
      * @see DeleteOptions
      */
     public DeleteResult deleteMany(final Bson filter, final DeleteOptions options) {
-        return collExecutor.deleteMany(filter, options);
+        return collectionExecutor.deleteMany(filter, options);
     }
 
     /**
@@ -2481,7 +2481,7 @@ public final class MongoCollectionMapper<T> {
      * @see #insertMany(Collection)
      */
     public int bulkInsert(final Collection<? extends T> entities) {
-        return collExecutor.bulkInsert(entities);
+        return collectionExecutor.bulkInsert(entities);
     }
 
     /**
@@ -2510,7 +2510,7 @@ public final class MongoCollectionMapper<T> {
      * @see BulkWriteOptions
      */
     public int bulkInsert(final Collection<? extends T> entities, final BulkWriteOptions options) {
-        return collExecutor.bulkInsert(entities, options);
+        return collectionExecutor.bulkInsert(entities, options);
     }
 
     /**
@@ -2539,7 +2539,7 @@ public final class MongoCollectionMapper<T> {
      * @see BulkWriteResult
      */
     public BulkWriteResult bulkWrite(final List<? extends WriteModel<? extends Document>> requests) {
-        return collExecutor.bulkWrite(requests);
+        return collectionExecutor.bulkWrite(requests);
     }
 
     /**
@@ -2568,7 +2568,7 @@ public final class MongoCollectionMapper<T> {
      * @see BulkWriteOptions
      */
     public BulkWriteResult bulkWrite(final List<? extends WriteModel<? extends Document>> requests, final BulkWriteOptions options) {
-        return collExecutor.bulkWrite(requests, options);
+        return collectionExecutor.bulkWrite(requests, options);
     }
 
     /**
@@ -2595,7 +2595,7 @@ public final class MongoCollectionMapper<T> {
      * @see #findOneAndUpdate(Bson, Object, FindOneAndUpdateOptions)
      */
     public T findOneAndUpdate(final Bson filter, final T update) {
-        return collExecutor.findOneAndUpdate(filter, update, rowType);
+        return collectionExecutor.findOneAndUpdate(filter, update, rowType);
     }
 
     /**
@@ -2628,7 +2628,7 @@ public final class MongoCollectionMapper<T> {
      * @see FindOneAndUpdateOptions
      */
     public T findOneAndUpdate(final Bson filter, final T update, final FindOneAndUpdateOptions options) {
-        return collExecutor.findOneAndUpdate(filter, update, options, rowType);
+        return collectionExecutor.findOneAndUpdate(filter, update, options, rowType);
     }
 
     /**
@@ -2658,7 +2658,7 @@ public final class MongoCollectionMapper<T> {
      * @see #findOneAndUpdate(Bson, Collection, FindOneAndUpdateOptions)
      */
     public T findOneAndUpdate(final Bson filter, final Collection<? extends T> objList) {
-        return collExecutor.findOneAndUpdate(filter, objList, rowType);
+        return collectionExecutor.findOneAndUpdate(filter, objList, rowType);
     }
 
     /**
@@ -2689,7 +2689,7 @@ public final class MongoCollectionMapper<T> {
      * @see FindOneAndUpdateOptions
      */
     public T findOneAndUpdate(final Bson filter, final Collection<? extends T> objList, final FindOneAndUpdateOptions options) {
-        return collExecutor.findOneAndUpdate(filter, objList, options, rowType);
+        return collectionExecutor.findOneAndUpdate(filter, objList, options, rowType);
     }
 
     /**
@@ -2716,7 +2716,7 @@ public final class MongoCollectionMapper<T> {
      * @see #replaceOne(Bson, Object)
      */
     public T findOneAndReplace(final Bson filter, final T replacement) {
-        return collExecutor.findOneAndReplace(filter, replacement, rowType);
+        return collectionExecutor.findOneAndReplace(filter, replacement, rowType);
     }
 
     /**
@@ -2748,7 +2748,7 @@ public final class MongoCollectionMapper<T> {
      * @see FindOneAndReplaceOptions
      */
     public T findOneAndReplace(final Bson filter, final T replacement, final FindOneAndReplaceOptions options) {
-        return collExecutor.findOneAndReplace(filter, replacement, options, rowType);
+        return collectionExecutor.findOneAndReplace(filter, replacement, options, rowType);
     }
 
     /**
@@ -2780,7 +2780,7 @@ public final class MongoCollectionMapper<T> {
      * @see #deleteOne(Bson)
      */
     public T findOneAndDelete(final Bson filter) {
-        return collExecutor.findOneAndDelete(filter, rowType);
+        return collectionExecutor.findOneAndDelete(filter, rowType);
     }
 
     /**
@@ -2809,7 +2809,7 @@ public final class MongoCollectionMapper<T> {
      * @see FindOneAndDeleteOptions
      */
     public T findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options) {
-        return collExecutor.findOneAndDelete(filter, options, rowType);
+        return collectionExecutor.findOneAndDelete(filter, options, rowType);
     }
 
     /**
@@ -2837,7 +2837,7 @@ public final class MongoCollectionMapper<T> {
      * @see Stream
      */
     public Stream<T> distinct(final String fieldName) {
-        return collExecutor.distinct(fieldName, rowType);
+        return collectionExecutor.distinct(fieldName, rowType);
     }
 
     /**
@@ -2866,7 +2866,7 @@ public final class MongoCollectionMapper<T> {
      * @see Stream
      */
     public Stream<T> distinct(final String fieldName, final Bson filter) {
-        return collExecutor.distinct(fieldName, filter, rowType);
+        return collectionExecutor.distinct(fieldName, filter, rowType);
     }
 
     /**
@@ -2898,7 +2898,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Accumulators
      */
     public Stream<T> aggregate(final List<? extends Bson> pipeline) {
-        return collExecutor.aggregate(pipeline, rowType);
+        return collectionExecutor.aggregate(pipeline, rowType);
     }
 
     /**
@@ -2926,7 +2926,7 @@ public final class MongoCollectionMapper<T> {
      */
     @Beta
     public Stream<T> groupBy(final String fieldName) {
-        return collExecutor.groupBy(fieldName, rowType);
+        return collectionExecutor.groupBy(fieldName, rowType);
     }
 
     /**
@@ -2955,7 +2955,7 @@ public final class MongoCollectionMapper<T> {
      */
     @Beta
     public Stream<T> groupBy(final Collection<String> fieldNames) {
-        return collExecutor.groupBy(fieldNames, rowType);
+        return collectionExecutor.groupBy(fieldNames, rowType);
     }
 
     /**
@@ -2983,7 +2983,7 @@ public final class MongoCollectionMapper<T> {
      */
     @Beta
     public Stream<T> groupByAndCount(final String fieldName) {
-        return collExecutor.groupByAndCount(fieldName, rowType);
+        return collectionExecutor.groupByAndCount(fieldName, rowType);
     }
 
     /**
@@ -3014,7 +3014,7 @@ public final class MongoCollectionMapper<T> {
      */
     @Beta
     public Stream<T> groupByAndCount(final Collection<String> fieldNames) {
-        return collExecutor.groupByAndCount(fieldNames, rowType);
+        return collectionExecutor.groupByAndCount(fieldNames, rowType);
     }
 
     /**
@@ -3046,6 +3046,6 @@ public final class MongoCollectionMapper<T> {
      */
     @Deprecated
     public Stream<T> mapReduce(final String mapFunction, final String reduceFunction) {
-        return collExecutor.mapReduce(mapFunction, reduceFunction, rowType);
+        return collectionExecutor.mapReduce(mapFunction, reduceFunction, rowType);
     }
 }

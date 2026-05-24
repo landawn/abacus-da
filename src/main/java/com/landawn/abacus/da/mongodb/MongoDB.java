@@ -43,9 +43,9 @@ import com.mongodb.client.MongoDatabase;
 @SuppressWarnings("java:S1192")
 public final class MongoDB extends MongoDBBase {
 
-    //    private final Map<String, MongoCollectionExecutor> collExecutorPool = new ConcurrentHashMap<>();
+    //    private final Map<String, MongoCollectionExecutor> collectionExecutorPool = new ConcurrentHashMap<>();
     //
-    //    private final Map<Class<?>, MongoCollectionMapper<?>> collMapperPool = new ConcurrentHashMap<>();
+    //    private final Map<Class<?>, MongoCollectionMapper<?>> collectionMapperPool = new ConcurrentHashMap<>();
 
     private final MongoDatabase mongoDatabase;
 
@@ -175,7 +175,7 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionExecutor executor = mongoDB.collExecutor("users");
+     * MongoCollectionExecutor executor = mongoDB.collectionExecutor("users");
      * long count = executor.count(Filters.eq("status", "active"));
      * }</pre>
      *
@@ -184,17 +184,17 @@ public final class MongoDB extends MongoDBBase {
      * @throws IllegalArgumentException if collectionName is null
      * @see MongoCollectionExecutor
      */
-    public MongoCollectionExecutor collExecutor(final String collectionName) {
+    public MongoCollectionExecutor collectionExecutor(final String collectionName) {
         N.checkArgNotNull(collectionName, "collectionName");
 
-        //    MongoCollectionExecutor collExecutor = collExecutorPool.get(collectionName);
+        //    MongoCollectionExecutor collectionExecutor = collectionExecutorPool.get(collectionName);
         //
-        //    if (collExecutor == null) {
-        //        collExecutor = new MongoCollectionExecutor(mongoDatabase.getCollection(collectionName), asyncExecutor);
-        //        collExecutorPool.put(collectionName, collExecutor);
+        //    if (collectionExecutor == null) {
+        //        collectionExecutor = new MongoCollectionExecutor(mongoDatabase.getCollection(collectionName), asyncExecutor);
+        //        collectionExecutorPool.put(collectionName, collectionExecutor);
         //    }
         //
-        //    return collExecutor;
+        //    return collectionExecutor;
 
         return new MongoCollectionExecutor(mongoDatabase.getCollection(collectionName), asyncExecutor);
     }
@@ -209,7 +209,7 @@ public final class MongoDB extends MongoDBBase {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollection<Document> coll = database.getCollection("users").withWriteConcern(WriteConcern.MAJORITY);
-     * MongoCollectionExecutor executor = mongoDB.collExecutor(coll);
+     * MongoCollectionExecutor executor = mongoDB.collectionExecutor(coll);
      * }</pre>
      *
      * @param collection the MongoDB collection instance to wrap
@@ -218,17 +218,17 @@ public final class MongoDB extends MongoDBBase {
      * @see MongoCollectionExecutor
      * @see MongoCollection
      */
-    public MongoCollectionExecutor collExecutor(final MongoCollection<Document> collection) {
+    public MongoCollectionExecutor collectionExecutor(final MongoCollection<Document> collection) {
         N.checkArgNotNull(collection, "collection");
 
-        //    MongoCollectionExecutor collExecutor = collExecutorPool.get(collectionName);
+        //    MongoCollectionExecutor collectionExecutor = collectionExecutorPool.get(collectionName);
         //
-        //    if (collExecutor == null) {
-        //        collExecutor = new MongoCollectionExecutor(mongoDatabase.getCollection(collectionName), asyncExecutor);
-        //        collExecutorPool.put(collectionName, collExecutor);
+        //    if (collectionExecutor == null) {
+        //        collectionExecutor = new MongoCollectionExecutor(mongoDatabase.getCollection(collectionName), asyncExecutor);
+        //        collectionExecutorPool.put(collectionName, collectionExecutor);
         //    }
         //
-        //    return collExecutor;
+        //    return collectionExecutor;
 
         return new MongoCollectionExecutor(collection, asyncExecutor);
     }
@@ -242,7 +242,7 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * Optional<User> user = mapper.findFirst(Filters.eq("email", "john@example.com"));
      * }</pre>
      *
@@ -251,8 +251,8 @@ public final class MongoDB extends MongoDBBase {
      * @return a MongoCollectionMapper for the specified entity type
      * @see MongoCollectionMapper
      */
-    public <T> MongoCollectionMapper<T> collMapper(final Class<T> rowType) {
-        return collMapper(ClassUtil.getSimpleClassName(rowType), rowType);
+    public <T> MongoCollectionMapper<T> collectionMapper(final Class<T> rowType) {
+        return collectionMapper(ClassUtil.getSimpleClassName(rowType), rowType);
     }
 
     /**
@@ -264,7 +264,7 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> userMapper = mongoDB.collMapper("users", User.class);
+     * MongoCollectionMapper<User> userMapper = mongoDB.collectionMapper("users", User.class);
      *
      * // Use mapper for type-safe operations:
      * Optional<User> user = userMapper.findFirst(Filters.eq("active", true));
@@ -277,24 +277,24 @@ public final class MongoDB extends MongoDBBase {
      * @return a MongoCollectionMapper configured for the specified type and collection
      * @throws IllegalArgumentException if collectionName or rowType is null
      * @see MongoCollectionMapper
-     * @see #collMapper(Class)
+     * @see #collectionMapper(Class)
      */
     @SuppressWarnings("rawtypes")
-    public <T> MongoCollectionMapper<T> collMapper(final String collectionName, final Class<T> rowType) {
+    public <T> MongoCollectionMapper<T> collectionMapper(final String collectionName, final Class<T> rowType) {
         N.checkArgNotNull(collectionName, "collectionName");
         N.checkArgNotNull(rowType, "rowType");
 
-        //    MongoCollectionMapper collMapper = collMapperPool.get(rowType);
+        //    MongoCollectionMapper collectionMapper = collectionMapperPool.get(rowType);
         //
-        //    if (collMapper == null) {
-        //        collMapper = new MongoCollectionMapper(collExecutor(collectionName), rowType);
+        //    if (collectionMapper == null) {
+        //        collectionMapper = new MongoCollectionMapper(collectionExecutor(collectionName), rowType);
         //
-        //        collMapperPool.put(rowType, collMapper);
+        //        collectionMapperPool.put(rowType, collectionMapper);
         //    }
         //
-        //    return collMapper;
+        //    return collectionMapper;
 
-        return new MongoCollectionMapper(collExecutor(collectionName), rowType);
+        return new MongoCollectionMapper(collectionExecutor(collectionName), rowType);
     }
 
     /**
@@ -311,7 +311,7 @@ public final class MongoDB extends MongoDBBase {
      *     .withReadPreference(ReadPreference.secondaryPreferred())
      *     .withWriteConcern(WriteConcern.MAJORITY);
      *
-     * MongoCollectionMapper<User> mapper = mongoDB.collMapper(customCollection, User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(customCollection, User.class);
      * }</pre>
      *
      * @param <T> the entity type for object-document mapping
@@ -323,20 +323,20 @@ public final class MongoDB extends MongoDBBase {
      * @see MongoCollection
      */
     @SuppressWarnings("rawtypes")
-    public <T> MongoCollectionMapper<T> collMapper(final MongoCollection<Document> collection, final Class<T> rowType) {
+    public <T> MongoCollectionMapper<T> collectionMapper(final MongoCollection<Document> collection, final Class<T> rowType) {
         N.checkArgNotNull(collection, "collection");
         N.checkArgNotNull(rowType, "rowType");
 
-        //    MongoCollectionMapper collMapper = collMapperPool.get(rowType);
+        //    MongoCollectionMapper collectionMapper = collectionMapperPool.get(rowType);
         //
-        //    if (collMapper == null) {
-        //        collMapper = new MongoCollectionMapper(collExecutor(collectionName), rowType);
+        //    if (collectionMapper == null) {
+        //        collectionMapper = new MongoCollectionMapper(collectionExecutor(collectionName), rowType);
         //
-        //        collMapperPool.put(rowType, collMapper);
+        //        collectionMapperPool.put(rowType, collectionMapper);
         //    }
         //
-        //    return collMapper;
+        //    return collectionMapper;
 
-        return new MongoCollectionMapper(collExecutor(collection), rowType);
+        return new MongoCollectionMapper(collectionExecutor(collection), rowType);
     }
 }

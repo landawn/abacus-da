@@ -58,7 +58,7 @@ public class MongoCollectionMapperTest extends TestBase {
 
     @Test
     public void testCollExecutor() {
-        MongoCollectionExecutor result = mapper.collExecutor();
+        MongoCollectionExecutor result = mapper.mongoCollectionExecutor();
         Assertions.assertSame(mockCollExecutor, result);
     }
 
@@ -313,7 +313,7 @@ public class MongoCollectionMapperTest extends TestBase {
     }
 
     @Test
-    public void testQueryForSingleResult() {
+    public void testqueryForSingleValue() {
         String propName = "value";
         Document filter = new Document("id", 1);
         when(mockCollExecutor.queryForSingleValue(propName, filter, String.class)).thenReturn(Nullable.of("result"));

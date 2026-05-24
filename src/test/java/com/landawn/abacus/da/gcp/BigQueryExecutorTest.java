@@ -422,7 +422,7 @@ public class BigQueryExecutorTest extends TestBase {
     }
 
     @Test
-    public void testQueryForSingleResultWithTargetClass() throws Exception {
+    public void testqueryForSingleValueWithTargetClass() throws Exception {
         Field field = Field.of("name", StandardSQLTypeName.STRING);
         FieldList fields = FieldList.of(field);
 
@@ -439,7 +439,7 @@ public class BigQueryExecutorTest extends TestBase {
     }
 
     @Test
-    public void testQueryForSingleResultWithQuery() throws Exception {
+    public void testqueryForSingleValueWithQuery() throws Exception {
         Field field = Field.of("count", StandardSQLTypeName.INT64);
         FieldList fields = FieldList.of(field);
 
@@ -889,7 +889,7 @@ public class BigQueryExecutorTest extends TestBase {
     }
 
     @Test
-    public void testQueryForSingleResultWithEmptyResult() throws Exception {
+    public void testqueryForSingleValueWithEmptyResult() throws Exception {
         when(mockTableResult.getTotalRows()).thenReturn(0L);
         when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
 

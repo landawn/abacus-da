@@ -75,10 +75,8 @@ import com.landawn.abacus.query.condition.Condition;
 import com.landawn.abacus.type.Type;
 import com.landawn.abacus.util.Beans;
 import com.landawn.abacus.util.ClassUtil;
-import com.landawn.abacus.util.ContinuableFuture;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.IntFunctions;
-import com.landawn.abacus.util.MutableInt;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.NamingPolicy;
 import com.landawn.abacus.util.RowDataset;
@@ -163,7 +161,7 @@ import lombok.experimental.Accessors;
  *     N.asMap("email", "john@example.com"));
  *
  * // Asynchronous operations
- * ContinuableFuture<List<User>> futureUsers = executor.asyncList(User.class, 
+ * ContinuableFuture<List<User>> futureUsers = executor.async().list(User.class,
  *     "SELECT * FROM users WHERE created_at > ?", yesterday);
  * }</pre>
  *
@@ -288,6 +286,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
     private final StatementSettings settings;
 
+    private final AsyncCassandraExecutor asyncCassandraExecutor;
+
     /**
      * Creates a new CassandraExecutor with the specified Cassandra session.
      *
@@ -396,6 +396,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                     .traceQuery(settings.traceQuery());
         }
 
+        asyncCassandraExecutor = new AsyncCassandraExecutor(this);
     }
 
     /**
@@ -416,6 +417,15 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      */
     public CqlSession session() {
         return session;
+    }
+
+    /**
+     * Returns an asynchronous facade for this executor.
+     *
+     * @return an AsyncCassandraExecutor for non-blocking Cassandra operations
+     */
+    public AsyncCassandraExecutor async() {
+        return asyncCassandraExecutor;
     }
 
     /**
@@ -497,8 +507,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * necessary conversions.</p>
      *
      * @param resultSet the Cassandra ResultSet to extract data from
-     * @param targetClass the entity class
-     *                   or null for no type conversion
+     * @param targetClass the entity class used to determine target column types, or null for no type conversion
      * @return a Dataset with type-converted data based on the target class
      * @throws NullPointerException if resultSet is null
      */
@@ -1321,493 +1330,6 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Asynchronously retrieves a single entity of the specified type from the database through the {@code asyncGet} contract.
-     *
-     * <p>This method executes a query that is expected to return at most one row,
-     * and maps the result to an Optional containing an instance of the specified target class.
-     * If no row matches, the returned future completes with an empty Optional. If more than one row
-     * is returned, the future completes exceptionally with
-     * {@link DuplicateResultException}.</p>
-     *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * // Async find user by email
-     * ContinuableFuture<Optional<User>> futureUser = executor.asyncGet(User.class, null, Filters.eq("email", email));
-     * }</pre>
-     *
-     * @param <T> the type of the entity to retrieve
-     * @param targetClass the entity class
-     * @param selectPropNames the property names to select (null for all properties)
-     * @param whereClause the WHERE condition
-     * @return a ContinuableFuture that will complete with an Optional containing the entity instance, or an empty Optional if no result is found
-     */
-    @Override
-    public <T> ContinuableFuture<Optional<T>> asyncGet(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
-        final SP cp = prepareQuery(targetClass, selectPropNames, whereClause, 2);
-
-        return asyncExecute(cp).map(resultSet -> Optional.ofNullable(fetchOnlyOne(targetClass, resultSet)));
-    }
-
-    /**
-     * Asynchronously retrieves a single entity of the specified type from the database through the {@code asyncGett} contract.
-     *
-     * <p>This method executes a query that is expected to return at most one row,
-     * and maps the result to an instance of the specified target class. If no row matches,
-     * the returned future completes with {@code null}. If more than one row is returned,
-     * the future completes exceptionally with {@link DuplicateResultException}.</p>
-     *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * // Async find user by email
-     * ContinuableFuture<User> futureUser = executor.asyncGett(User.class, null, Filters.eq("email", email));
-     * }</pre>
-     *
-     * @param <T> the type of the entity to retrieve
-     * @param targetClass the entity class
-     * @param selectPropNames the property names to select (null for all properties)
-     * @param whereClause the WHERE condition
-     * @return a ContinuableFuture that completes with an instance of the target class populated with data from the first row,
-     *         or {@code null} if no result is found
-     */
-    @Override
-    public <T> ContinuableFuture<T> asyncGett(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
-        final SP cp = prepareQuery(targetClass, selectPropNames, whereClause, 2);
-
-        return asyncExecute(cp).map(resultSet -> fetchOnlyOne(targetClass, resultSet));
-    }
-
-    /**
-     * Asynchronously executes a CQL query and returns a single result value.
-     *
-     * <p>This method executes the query asynchronously and returns a {@link ContinuableFuture}
-     * that will complete with the result. This is ideal for non-blocking operations and can
-     * improve application performance when dealing with high-latency queries or when you need
-     * to execute multiple queries concurrently.</p>
-     *
-     * <p>The returned {@link ContinuableFuture} provides enhanced functionality over standard
-     * {@link java.util.concurrent.CompletableFuture}, including additional composition methods
-     * and better exception handling.</p>
-     *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * // Async count query
-     * ContinuableFuture<Nullable<Long>> futureCount = executor.asyncQueryForSingleResult(
-     *     Long.class, "SELECT COUNT(*) FROM users WHERE status = ?", "active");
-     *
-     * // Chain operations
-     * ContinuableFuture<String> result = futureCount
-     *     .map(count -> count.orElse(0L))
-     *     .map(count -> "Total active users: " + count);
-     *
-     * // Handle completion
-     * futureCount.thenRunAsync(count -> {
-     *     if (count.isPresent()) {
-     *         System.out.println("User count: " + count.get());
-     *     }
-     * });
-     *
-     * // Multiple concurrent queries
-     * ContinuableFuture<Nullable<Long>> activeUsers = executor.asyncQueryForSingleResult(
-     *     Long.class, "SELECT COUNT(*) FROM users WHERE status = 'active'");
-     * ContinuableFuture<Nullable<Long>> inactiveUsers = executor.asyncQueryForSingleResult(
-     *     Long.class, "SELECT COUNT(*) FROM users WHERE status = 'inactive'");
-     *
-     * ContinuableFuture<String> summary = ContinuableFuture.allOf(activeUsers, inactiveUsers)
-     *     .thenCallAsync(v -> String.format("Active: %d, Inactive: %d",
-     *                      activeUsers.join().orElse(0L),
-     *                      inactiveUsers.join().orElse(0L)));
-     * }</pre>
-     *
-     * @param <T> the type of the expected result value
-     * @param valueClass the Java class to convert the result to
-     * @param query the CQL query string
-     * @param parameters the query parameters
-     * @return a ContinuableFuture that will complete with a Nullable containing the result
-     * @throws IllegalArgumentException if valueClass or query is null
-     * @see ContinuableFuture
-     */
-    @Override
-    public <T> ContinuableFuture<Nullable<T>> asyncQueryForSingleResult(final Class<T> valueClass, final String query, final Object... parameters) {
-        return asyncExecute(query, parameters).map(resultSet -> {
-            final Row row = resultSet.one();
-
-            return row == null ? Nullable.empty() : Nullable.of(N.convert(row.getObject(0), valueClass));
-        });
-    }
-
-    /**
-     * Asynchronously executes a CQL query and returns a single non-null result value.
-     *
-     * <p>This method is similar to {@link #asyncQueryForSingleResult}, but it returns an
-     * {@link Optional} that will be empty if the result is null. This is useful when you need
-     * to distinguish between "no result found" and "result found but value is null".</p>
-     *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * // Async get active user count (never null for COUNT queries)
-     * ContinuableFuture<Optional<Long>> futureActiveUsers = executor.asyncQueryForSingleNonNull(
-     *     Long.class, "SELECT COUNT(*) FROM users WHERE status = 'active'");
-     *
-     * // Async get user email (could be null)
-     * ContinuableFuture<Optional<String>> futureEmail = executor.asyncQueryForSingleNonNull(
-     *     String.class, "SELECT email FROM users WHERE id = ?", userId);
-     * }</pre>
-     *
-     * @param <T> the type of the expected result value
-     * @param valueClass the Java class to convert the result to
-     * @param query the CQL query string
-     * @param parameters the query parameters
-     * @return a ContinuableFuture that will complete with an Optional containing the non-null result value, or empty if no result or null value
-     */
-    @Override
-    public <T> ContinuableFuture<Optional<T>> asyncQueryForSingleNonNull(final Class<T> valueClass, final String query, final Object... parameters) {
-        return asyncExecute(query, parameters).map(resultSet -> {
-            final Row row = resultSet.one();
-
-            return row == null ? Optional.empty() : Optional.of(N.convert(row.getObject(0), valueClass));
-        });
-    }
-
-    /**
-     * Asynchronously finds the first row from a CQL query result and maps it to the specified type.
-     *
-     * <p>This method executes the query asynchronously and returns a ContinuableFuture that will
-     * complete with the first result row mapped to the target type. If no rows are found, an empty
-     * Optional is returned.</p>
-     *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * // Async find user by email
-     * ContinuableFuture<Optional<User>> futureUser = executor.asyncFindFirst(User.class,
-     *     "SELECT * FROM users WHERE email = ? LIMIT 1", email);
-     * }</pre>
-     *
-     * @param <T> the type to map the result row to
-     * @param targetClass the entity class
-     * @param query the CQL query string
-     * @param parameters the query parameters
-     * @return a ContinuableFuture that will complete with an Optional containing the first result row mapped to the target type, or empty if no results
-     * @throws IllegalArgumentException if targetClass or query is null
-     */
-    @Override
-    public <T> ContinuableFuture<Optional<T>> asyncFindFirst(final Class<T> targetClass, final String query, final Object... parameters) {
-        return asyncExecute(query, parameters).map(resultSet -> {
-            final Row row = resultSet.one();
-
-            return row == null ? Optional.empty() : Optional.of(readRow(targetClass, row));
-        });
-    }
-
-    /**
-     * Asynchronously executes a CQL query and returns a Stream of Object arrays.
-     *
-     * <p>This method executes the query asynchronously and returns a {@link ContinuableFuture}
-     * that will complete with a {@link Stream} of rows, where each row is represented as an
-     * Object array. This is useful for processing large result sets in a memory-efficient
-     * manner.</p>
-     *
-     * <p>The returned Stream is lazy and processes rows on-demand. Ensure the Stream is
-     * properly closed to release resources.</p>
-     *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * ContinuableFuture<Stream<Object[]>> futureStream = executor.asyncStream(
-     *     "SELECT id, name, email FROM users WHERE status = ?", "active");
-     *
-     * futureStream.thenRunAsync(stream -> {
-     *     try (Stream<Object[]> rows = stream) {
-     *         rows.forEach(row -> {
-     *             UUID id = (UUID) row[0];
-     *             String name = (String) row[1];
-     *             String email = (String) row[2];
-     *             // Process row...
-     *         });
-     *     }
-     * });
-     * }</pre>
-     *
-     * @param query the CQL query string to execute
-     * @param parameters the query parameters
-     * @return a {@link ContinuableFuture} that will complete with a {@link Stream} of Object arrays
-     * @throws IllegalArgumentException if the query is null or empty
-     * @see ContinuableFuture
-     * @see Stream
-     */
-    @Override
-    public ContinuableFuture<Stream<Object[]>> asyncStream(final String query, final Object... parameters) {
-        return asyncExecute(query, parameters).map(resultSet -> {
-            final MutableInt columnCount = MutableInt.of(0);
-
-            return Stream.of(resultSet.iterator()).map(row -> {
-                if (columnCount.value() == 0) {
-                    final ColumnDefinitions columnDefinitions = row.getColumnDefinitions();
-                    columnCount.setAndGet(columnDefinitions.size());
-                }
-
-                final Object[] a = new Object[columnCount.value()];
-                Object propValue = null;
-
-                for (int i = 0, len = a.length; i < len; i++) {
-                    propValue = row.getObject(i);
-
-                    if (propValue instanceof Row) {
-                        a[i] = readRow(Object[].class, (Row) propValue);
-                    } else {
-                        a[i] = propValue;
-                    }
-                }
-
-                return a;
-            });
-        });
-    }
-
-    /**
-     * Asynchronously executes a CQL query and returns a ContinuableFuture of Stream with custom row mapping.
-     *
-     * <p>This method combines asynchronous execution with custom row mapping, allowing you to
-     * process query results with sophisticated mapping logic while maintaining non-blocking
-     * operation. The returned ContinuableFuture will complete with a Stream that can be
-     * processed when the query execution finishes.</p>
-     *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * // Custom mapper for data transformation
-     * BiFunction<ColumnDefinitions, Row, UserStats> mapper = (columns, row) -> {
-     *     return new UserStats(
-     *         row.getUuid("id"),
-     *         row.getString("name"),
-     *         row.getLong("login_count"),
-     *         row.getInstant("last_active")
-     *     );
-     * };
-     *
-     * ContinuableFuture<Stream<UserStats>> futureStream = executor.asyncStream(
-     *     "SELECT id, name, login_count, last_active FROM user_stats WHERE department = ?",
-     *     mapper,
-     *     "engineering"
-     * );
-     *
-     * // Process results when available
-     * ContinuableFuture<List<UserStats>> futureActiveUsers = futureStream
-     *     .map(stream -> {
-     *         try (stream) {
-     *             return stream
-     *                 .filter(stats -> stats.getLastActive().isAfter(Instant.now().minus(Duration.ofDays(7))))
-     *                 .collect(Collectors.toList());
-     *         }
-     *     });
-     *
-     * futureActiveUsers.thenRunAsync(activeUsers -> {
-     *     System.out.println("Found " + activeUsers.size() + " recently active users");
-     * });
-     * }</pre>
-     *
-     * @param <T> the type of objects in the returned stream
-     * @param query the CQL query string
-     * @param rowMapper a function that maps column definitions and rows to result objects
-     * @param parameters the query parameters
-     * @return a ContinuableFuture that will complete with a Stream of mapped objects
-     * @throws IllegalArgumentException if query or rowMapper is null
-     */
-    public <T> ContinuableFuture<Stream<T>> asyncStream(final String query, final BiFunction<ColumnDefinitions, Row, T> rowMapper, final Object... parameters) {
-        return asyncExecute(query, parameters).map(resultSet -> Stream.of(resultSet.iterator()).map(createRowMapper(rowMapper)));
-    }
-
-    /**
-     * Asynchronously executes a pre-configured Statement and returns a ContinuableFuture of Stream with custom row mapping.
-     *
-     * <p>This method provides asynchronous execution of pre-configured Statement objects with
-     * custom row mapping capabilities. It's useful when you need both fine-grained control
-     * over statement configuration and sophisticated row processing logic, while maintaining
-     * non-blocking operation.</p>
-     *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * // Configure statement with specific settings
-     * PreparedStatement preparedStatement = session.prepare(
-     *     "SELECT user_id, action, timestamp, metadata FROM activity_log WHERE date_bucket = ?");
-     *
-     * BoundStatement statement = preparedStatement.bind(LocalDate.now())
-     *     .setConsistencyLevel(ConsistencyLevel.LOCAL_ONE)
-     *     .setPageSize(5000);
-     *
-     * // Custom mapper for activity analysis
-     * BiFunction<ColumnDefinitions, Row, ActivityEvent> mapper = (columns, row) -> {
-     *     UUID userId = row.getUuid("user_id");
-     *     String action = row.getString("action");
-     *     Instant timestamp = row.getInstant("timestamp");
-     *     String metadata = row.getString("metadata");
-     *
-     *     return new ActivityEvent(userId, action, timestamp, 
-     *         metadata != null ? parseMetadata(metadata) : Collections.emptyMap());
-     * };
-     *
-     * ContinuableFuture<Stream<ActivityEvent>> futureStream = 
-     *     executor.asyncStream(statement, mapper);
-     *
-     * // Chain processing operations
-     * ContinuableFuture<Map<String, Long>> actionCounts = futureStream
-     *     .map(stream -> {
-     *         try (stream) {
-     *             return stream
-     *                 .filter(event -> event.getTimestamp().isAfter(Instant.now().minus(Duration.ofHours(1))))
-     *                 .collect(Collectors.groupingBy(
-     *                     ActivityEvent::getAction,
-     *                     Collectors.counting()));
-     *         }
-     *     });
-     * }</pre>
-     *
-     * @param <T> the type of objects in the returned stream
-     * @param statement the configured CQL Statement to execute
-     * @param rowMapper a function that maps column definitions and rows to result objects
-     * @return a ContinuableFuture that will complete with a Stream of mapped objects
-     * @throws IllegalArgumentException if statement or rowMapper is null
-     */
-    public <T> ContinuableFuture<Stream<T>> asyncStream(final Statement<?> statement, final BiFunction<ColumnDefinitions, Row, T> rowMapper) {
-        return asyncExecute(statement).map(resultSet -> Stream.of(resultSet.iterator()).map(createRowMapper(rowMapper)));
-    }
-
-    /**
-     * Asynchronously executes a CQL query and returns a ContinuableFuture of ResultSet.
-     *
-     * <p>This method executes the provided CQL query asynchronously and returns a
-     * ContinuableFuture that will complete with the ResultSet. This is useful for
-     * non-blocking operations and can improve application performance when dealing
-     * with high-latency queries or when you need to execute multiple queries concurrently.</p>
-     *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * // Async execute query
-     * ContinuableFuture<ResultSet> futureResults = executor.asyncExecute(
-     *     "SELECT id, name, email FROM users WHERE status = ?", "active");
-     *
-     * // Handle completion
-     * futureResults.thenRunAsync(results -> {
-     *     for (Row row : results) {
-     *         UUID id = row.getUuid("id");
-     *         String name = row.getString("name");
-     *         String email = row.getString("email");
-     *         // Process row...
-     *     }
-     * });
-     * }</pre>
-     *
-     * @param query the CQL query string to execute
-     * @return a ContinuableFuture that will complete with the ResultSet from Cassandra
-     */
-    @Override
-    public ContinuableFuture<ResultSet> asyncExecute(final String query) {
-        return ContinuableFuture.wrap(session.executeAsync(prepareStatement(query)).toCompletableFuture()).map(ResultSets::wrap);
-    }
-
-    /**
-     * Asynchronously executes a CQL query with the provided parameters and returns a ContinuableFuture of ResultSet.
-     *
-     * <p>This method executes the given query asynchronously, allowing non-blocking operations.
-     * It supports parameterized queries with variable arguments, which are automatically bound
-     * to the query. The returned {@link ContinuableFuture} can be used to handle the result
-     * once the query execution is complete.</p>
-     *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * ContinuableFuture<ResultSet> futureResults = executor.asyncExecute(
-     *     "SELECT * FROM users WHERE status = ?", "active");
-     *
-     * futureResults.thenRunAsync(results -> {
-     *     for (Row row : results) {
-     *         UUID id = row.getUuid("id");
-     *         String name = row.getString("name");
-     *         // Process row...
-     *     }
-     * });
-     * }</pre>
-     *
-     * @param query the CQL query string to execute. Must not be null or empty.
-     * @param parameters the query parameters
-     * @return a {@link ContinuableFuture} that will complete with the {@link ResultSet} from Cassandra.
-     * @throws IllegalArgumentException if the query is null or empty.
-     * @see ContinuableFuture
-     * @see ResultSet
-     */
-    @Override
-    public ContinuableFuture<ResultSet> asyncExecute(final String query, final Object... parameters) {
-        return ContinuableFuture.wrap(session.executeAsync(prepareStatement(query, parameters)).toCompletableFuture()).map(ResultSets::wrap);
-    }
-
-    /**
-     * Asynchronously executes a CQL query with the provided named parameters and returns a ContinuableFuture of ResultSet.
-     *
-     * <p>This method allows executing parameterized CQL queries using a Map of named parameters.
-     * The parameter names in the query should match the keys in the provided Map. This approach
-     * improves readability and reduces errors compared to positional parameters.</p>
-     *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * Map<String, Object> params = new HashMap<>();
-     * params.put("status", "active");
-     * params.put("department", "engineering");
-     *
-     * ContinuableFuture<ResultSet> futureResults = executor.asyncExecute(
-     *     "SELECT * FROM users WHERE status = :status AND department = :department", params);
-     *
-     * futureResults.thenRunAsync(results -> {
-     *     for (Row row : results) {
-     *         UUID id = row.getUuid("id");
-     *         String name = row.getString("name");
-     *         // Process row...
-     *     }
-     * });
-     * }</pre>
-     *
-     * @param query the CQL query string with named parameters. Must not be null or empty.
-     * @param parameters the query parameters
-     *                   Must not be null or empty.
-     * @return a {@link ContinuableFuture} that will complete with the {@link ResultSet} from Cassandra.
-     * @throws IllegalArgumentException if the query is null, empty, or if required parameters are missing.
-     * @see ContinuableFuture
-     * @see ResultSet
-     */
-    @Override
-    public ContinuableFuture<ResultSet> asyncExecute(final String query, final Map<String, Object> parameters) {
-        return ContinuableFuture.wrap(session.executeAsync(prepareStatement(query, parameters)).toCompletableFuture()).map(ResultSets::wrap);
-    }
-
-    /**
-     * Asynchronously executes a pre-configured CQL Statement and returns a ContinuableFuture of ResultSet.
-     *
-     * <p>This method executes the provided Statement asynchronously, allowing non-blocking operations.
-     * It supports any type of Cassandra Statement object, including BoundStatement, BatchStatement,
-     * or SimpleStatement. The returned ContinuableFuture can be used to handle the result once the
-     * query execution is complete.</p>
-     *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * // Prepare a statement
-     * PreparedStatement preparedStatement = session.prepare("SELECT * FROM users WHERE status = ?");
-     * BoundStatement boundStatement = preparedStatement.bind("active");
-     *
-     * ContinuableFuture<ResultSet> futureResults = executor.asyncExecute(boundStatement);
-     *
-     * futureResults.thenRunAsync(results -> {
-     *     for (Row row : results) {
-     *         UUID id = row.getUuid("id");
-     *         String name = row.getString("name");
-     *         // Process row...
-     *     }
-     * });
-     * }</pre>
-     *
-     * @param statement the configured CQL Statement to execute. Must not be null.
-     * @return a {@link ContinuableFuture} that will complete with the {@link ResultSet} from Cassandra.
-     */
-    @Override
-    public ContinuableFuture<ResultSet> asyncExecute(final Statement<?> statement) {
-        return ContinuableFuture.wrap(session.executeAsync(statement).toCompletableFuture()).map(ResultSets::wrap);
-    }
-
-    /**
      * Closes this executor and releases all associated resources.
      *
      * <p>This method closes the underlying Cassandra session and releases all cached
@@ -2188,6 +1710,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         };
     }
 
+    @Override
     protected <T> T fetchOnlyOne(final Class<T> targetClass, final ResultSet resultSet) {
         final Iterator<Row> iter = resultSet.iterator();
 

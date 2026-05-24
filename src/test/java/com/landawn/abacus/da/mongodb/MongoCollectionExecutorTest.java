@@ -76,7 +76,7 @@ public class MongoCollectionExecutorTest extends TestBase {
 
     @Test
     public void testColl() {
-        MongoCollection<Document> result = executor.coll();
+        MongoCollection<Document> result = executor.mongoCollection();
         Assertions.assertSame(mockCollection, result);
     }
 
@@ -387,7 +387,7 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
-    public void testQueryForSingleResult() {
+    public void testqueryForSingleValue() {
         String propName = "value";
         Document filter = new Document("id", 1);
         Document doc = new Document(propName, "result");

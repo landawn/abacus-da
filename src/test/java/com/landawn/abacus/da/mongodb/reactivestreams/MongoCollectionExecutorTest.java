@@ -641,7 +641,7 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
-    public void testQueryForSingleResult() {
+    public void testqueryForSingleValue() {
         String propName = "value";
         Bson filter = new Document("id", 1);
         Document doc = new Document(propName, 42);
@@ -1573,7 +1573,7 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
-    public void testQueryForSingleResultWithEmptyDocument() {
+    public void testqueryForSingleValueWithEmptyDocument() {
         String propName = "value";
         Bson filter = new Document("id", 999);
         Document emptyDoc = new Document();

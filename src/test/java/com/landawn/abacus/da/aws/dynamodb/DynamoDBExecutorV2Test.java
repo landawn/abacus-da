@@ -1651,8 +1651,7 @@ public class DynamoDBExecutorV2Test extends TestBase {
                 .build();
 
         QueryResponse page2 = QueryResponse.builder()
-                .items(List.of(Map.of("id", AttributeValue.builder().s("b").build()),
-                        Map.of("id", AttributeValue.builder().s("c").build())))
+                .items(List.of(Map.of("id", AttributeValue.builder().s("b").build()), Map.of("id", AttributeValue.builder().s("c").build())))
                 .build();
 
         when(mockDynamoDbClient.query(any(QueryRequest.class))).thenReturn(page1, page2);
@@ -1675,14 +1674,10 @@ public class DynamoDBExecutorV2Test extends TestBase {
         QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
 
         // Page 1: empty items but has LastEvaluatedKey -> must continue paginating, not stop.
-        QueryResponse page1 = QueryResponse.builder()
-                .items(List.of())
-                .lastEvaluatedKey(Map.of("id", AttributeValue.builder().s("k1").build()))
-                .build();
+        QueryResponse page1 = QueryResponse.builder().items(List.of()).lastEvaluatedKey(Map.of("id", AttributeValue.builder().s("k1").build())).build();
         // Page 2: real data, no more pages.
         QueryResponse page2 = QueryResponse.builder()
-                .items(List.of(Map.of("id", AttributeValue.builder().s("1").build()),
-                        Map.of("id", AttributeValue.builder().s("2").build())))
+                .items(List.of(Map.of("id", AttributeValue.builder().s("1").build()), Map.of("id", AttributeValue.builder().s("2").build())))
                 .build();
 
         when(mockDynamoDbClient.query(any(QueryRequest.class))).thenReturn(page1, page2);
@@ -1701,13 +1696,9 @@ public class DynamoDBExecutorV2Test extends TestBase {
     public void testScanStreamSkipsEmptyIntermediatePageAndContinuesPagination() {
         ScanRequest scanRequest = ScanRequest.builder().tableName("TestTable").build();
 
-        ScanResponse page1 = ScanResponse.builder()
-                .items(List.of())
-                .lastEvaluatedKey(Map.of("id", AttributeValue.builder().s("k1").build()))
-                .build();
+        ScanResponse page1 = ScanResponse.builder().items(List.of()).lastEvaluatedKey(Map.of("id", AttributeValue.builder().s("k1").build())).build();
         ScanResponse page2 = ScanResponse.builder()
-                .items(List.of(Map.of("id", AttributeValue.builder().s("1").build()),
-                        Map.of("id", AttributeValue.builder().s("2").build()),
+                .items(List.of(Map.of("id", AttributeValue.builder().s("1").build()), Map.of("id", AttributeValue.builder().s("2").build()),
                         Map.of("id", AttributeValue.builder().s("3").build())))
                 .build();
 
@@ -1757,12 +1748,7 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
         verify(mockDynamoDbClient).batchWriteItem(captor.capture());
 
-        Map<String, AttributeValue> item = captor.getValue()
-                .requestItems()
-                .get("TestTable")
-                .get(0)
-                .putRequest()
-                .item();
+        Map<String, AttributeValue> item = captor.getValue().requestItems().get("TestTable").get(0).putRequest().item();
 
         // With SNAKE_CASE the "userName" property must be written as "user_name", not the default camelCase.
         assertTrue(item.containsKey("user_name"));

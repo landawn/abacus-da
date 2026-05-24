@@ -32,7 +32,7 @@ import com.landawn.abacus.exception.UncheckedIOException;
  *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
- * AnyGet anyGet = new AnyGet(get);
+ * AnyGet anyGet = AnyGet.of("user123");
  * Map<String, Object> fingerprint = anyGet.getFingerprint();
  * }</pre>
  *
@@ -144,28 +144,28 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
         }
     }
 
-    /**
-     * Converts this operation to a JSON string representation.
-     *
-     * @return a JSON string representation of this operation
-     * @deprecated Use {@link #toJson()} instead.
-     */
-    @Deprecated
-    public String toJSON() {
-        return toJson();
-    }
-
-    /**
-     * Converts this operation to a JSON string representation with a column limit.
-     *
-     * @param maxCols the maximum number of columns to include in the JSON output
-     * @return a JSON string representation of this operation
-     * @deprecated Use {@link #toJson(int)} instead.
-     */
-    @Deprecated
-    public String toJSON(final int maxCols) {
-        return toJson(maxCols);
-    }
+    //    /**
+    //     * Converts this operation to a JSON string representation.
+    //     *
+    //     * @return a JSON string representation of this operation
+    //     * @deprecated Use {@link #toJson()} instead.
+    //     */
+    //    @Deprecated
+    //    public String toJSON() {
+    //        return toJson();
+    //    }
+    //
+    //    /**
+    //     * Converts this operation to a JSON string representation with a column limit.
+    //     *
+    //     * @param maxCols the maximum number of columns to include in the JSON output
+    //     * @return a JSON string representation of this operation
+    //     * @deprecated Use {@link #toJson(int)} instead.
+    //     */
+    //    @Deprecated
+    //    public String toJSON(final int maxCols) {
+    //        return toJson(maxCols);
+    //    }
 
     /**
      * Returns a string representation of this operation.

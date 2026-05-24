@@ -56,18 +56,19 @@ public class CqlBuilderTest extends AbstractNoSQLTest {
         N.println("INSERT TTL: " + PSC.insert("id", "name").into("account").usingTTL(60).build().query());
         N.println("batchInsert: " + SCCB.batchInsert(N.asList(N.asMap("firstName", "a"), N.asMap("firstName", "b"))).into("account").build().query());
         N.println("NotEqual null: " + SCCB.select("id").from("account").where(Filters.ne("firstName", "x")).build().query());
-        N.println("InSubQuery: " + PSC.select("id").from("account")
-                .where(Filters.in("id", SubQueryGen())).build().query());
-        N.println("NotInSubQuery: " + NSC.select("id").from("account")
-                .where(Filters.notIn("id", SubQueryGen())).build().query());
+        N.println("InSubQuery: " + PSC.select("id").from("account").where(Filters.in("id", SubQueryGen())).build().query());
+        N.println("NotInSubQuery: " + NSC.select("id").from("account").where(Filters.notIn("id", SubQueryGen())).build().query());
         N.println("parse cond NSC: " + NSC.parse(Filters.and(Filters.eq("status", "A"), Filters.gt("balance", 1000)), Account.class).build().query());
         N.println("parse cond SCCB: " + SCCB.parse(Filters.and(Filters.eq("status", "A"), Filters.gt("balance", 1000)), Account.class).build().query());
-        N.println("nested AND/OR: " + PSC.select("id").from("account")
-                .where(Filters.and(Filters.eq("a", 1), Filters.or(Filters.eq("b", 2), Filters.eq("c", 3)))).build().query());
+        N.println("nested AND/OR: "
+                + PSC.select("id").from("account").where(Filters.and(Filters.eq("a", 1), Filters.or(Filters.eq("b", 2), Filters.eq("c", 3)))).build().query());
         N.println("update entity: " + SCCB.update(Account.class).set("firstName", "lastName").where(Filters.eq("id", 1)).build().query());
-        N.println("multi-col InSubQuery: " + PSC.select("id").from("account")
+        N.println("multi-col InSubQuery: " + PSC.select("id")
+                .from("account")
                 .where(new com.landawn.abacus.query.condition.InSubQuery(N.asList("a", "b"),
-                        new com.landawn.abacus.query.condition.SubQuery("t", N.asList("x", "y"), Filters.eq("z", 1)))).build().query());
+                        new com.landawn.abacus.query.condition.SubQuery("t", N.asList("x", "y"), Filters.eq("z", 1))))
+                .build()
+                .query());
         N.println("eq null SCCB: " + SCCB.select("id").from("account").where(Filters.eq("firstName", null)).build().query());
         N.println("count SCCB: " + SCCB.count("account").where(Filters.eq("id", 1)).build().query());
     }
@@ -370,11 +371,7 @@ public class CqlBuilderTest extends AbstractNoSQLTest {
     @Test
     public void test_count_query_has_no_bogus_limit() {
         // Mirrors CassandraExecutorBase.prepareQuery(..., count = 0) for the SNAKE_CASE naming policy.
-        final String countCql = NSC.select(N.asList(CqlBuilder.COUNT_ALL))
-                .from("account")
-                .appendIf(true, Filters.eq("id", Filters.QME))
-                .build()
-                .query();
+        final String countCql = NSC.select(N.asList(CqlBuilder.COUNT_ALL)).from("account").appendIf(true, Filters.eq("id", Filters.QME)).build().query();
         N.println(countCql);
 
         assertTrue(countCql.startsWith("SELECT count(*)"), countCql);
@@ -481,8 +478,7 @@ public class CqlBuilderTest extends AbstractNoSQLTest {
         assertTrue(tsLongCql.endsWith(" USING TIMESTAMP 1234567890123000"), tsLongCql);
 
         // USING TIMESTAMP(Date): Date.getTime() (ms) -> microseconds (x1000), same as the long overload.
-        final String tsDateCql = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).usingTimestamp(new Date(1234567890123L)).build()
-                .query();
+        final String tsDateCql = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).usingTimestamp(new Date(1234567890123L)).build().query();
         N.println(tsDateCql);
         assertTrue(tsDateCql.endsWith(" USING TIMESTAMP 1234567890123000"), tsDateCql);
 
@@ -506,6 +502,19 @@ public class CqlBuilderTest extends AbstractNoSQLTest {
         final String iFCql = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).iF("status = 'inactive'").build().query();
         N.println(iFCql);
         assertTrue(iFCql.endsWith(" IF status = 'inactive'"), iFCql);
+
+        final String onlyIfExprCql = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).onlyIf("status = 'inactive'").build().query();
+        N.println(onlyIfExprCql);
+        assertEquals(iFCql, onlyIfExprCql);
+
+        final String onlyIfConditionCql = PSC.update("account")
+                .set("firstName")
+                .where(Filters.eq("id", 1))
+                .onlyIf(Filters.eq("status", "inactive"))
+                .build()
+                .query();
+        N.println(onlyIfConditionCql);
+        assertTrue(onlyIfConditionCql.endsWith(" IF status = ?"), onlyIfConditionCql);
     }
 
     /**

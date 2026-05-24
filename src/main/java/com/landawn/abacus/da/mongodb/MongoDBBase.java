@@ -135,7 +135,7 @@ public abstract class MongoDBBase {
      * }
      *
      * // Instead of:
-     * MDB.registerIdProperty(User.class, "userId");
+     * MongoDB.registerIdProperty(User.class, "userId");
      * }</pre>
      *
      * @param documentClass the entity class to configure ID property mapping for
@@ -175,7 +175,7 @@ public abstract class MongoDBBase {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * String id = "507f1f77bcf86cd799439011";
-     * Bson filter = MDB.objectId2Filter(id);
+     * Bson filter = MongoDB.objectId2Filter(id);
      * Document doc = collection.find(filter).first();
      * }</pre>
      *
@@ -201,7 +201,7 @@ public abstract class MongoDBBase {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ObjectId oid = new ObjectId();
-     * Bson filter = MDB.objectId2Filter(oid);
+     * Bson filter = MongoDB.objectId2Filter(oid);
      * collection.deleteOne(filter);
      * }</pre>
      *
@@ -228,14 +228,14 @@ public abstract class MongoDBBase {
      * <pre>{@code
      * // Create Document from JSON:
      * String userJson = "{\"name\": \"John\", \"age\": 30, \"active\": true}";
-     * Document userDoc = MDB.fromJson(userJson, Document.class);
+     * Document userDoc = MongoDB.fromJson(userJson, Document.class);
      *
      * // Create BasicBSONObject from JSON:
-     * BasicBSONObject bsonObj = MDB.fromJson(userJson, BasicBSONObject.class);
+     * BasicBSONObject bsonObj = MongoDB.fromJson(userJson, BasicBSONObject.class);
      *
      * // Nested JSON:
      * String nestedJson = "{\"name\": \"John\", \"address\": {\"city\": \"NYC\"}}";
-     * Document doc = MDB.fromJson(nestedJson, Document.class);
+     * Document doc = MongoDB.fromJson(nestedJson, Document.class);
      * }</pre>
      *
      * @param <T> the target BSON type
@@ -277,12 +277,12 @@ public abstract class MongoDBBase {
      * <pre>{@code
      * // Convert Document to JSON:
      * Document doc = new Document("name", "John").append("age", 30);
-     * String json = MDB.toJson(doc);
+     * String json = MongoDB.toJson(doc);
      * // Result: {"name": "John", "age": 30}
      *
      * // Convert filter to JSON:
      * Bson filter = Filters.and(Filters.eq("status", "active"), Filters.gte("age", 18));
-     * String filterJson = MDB.toJson(filter);
+     * String filterJson = MongoDB.toJson(filter);
      * }</pre>
      *
      * @param bson the BSON object to convert to JSON
@@ -308,7 +308,7 @@ public abstract class MongoDBBase {
      * bsonObj.put("age", 25);
      * bsonObj.put("active", true);
      *
-     * String json = MDB.toJson(bsonObj);
+     * String json = MongoDB.toJson(bsonObj);
      * // Result: {"name": "Alice", "age": 25, "active": true}
      * }</pre>
      *
@@ -335,7 +335,7 @@ public abstract class MongoDBBase {
      * dbObj.put("age", 28);
      * dbObj.put("_id", new ObjectId());
      *
-     * String json = MDB.toJson(dbObj);
+     * String json = MongoDB.toJson(dbObj);
      * // Result: {"name": "Charlie", "age": 28, "_id": ObjectId("...")}
      * }</pre>
      *
@@ -359,14 +359,14 @@ public abstract class MongoDBBase {
      * <pre>{@code
      * // Convert entity to BSON:
      * User user = new User("John", "john@example.com", 30);
-     * Bson userBson = MDB.toBson(user);
+     * Bson userBson = MongoDB.toBson(user);
      *
      * // Convert Map to BSON:
      * Map<String, Object> userMap = Map.of("name", "Alice", "age", 25);
-     * Bson mapBson = MDB.toBson(userMap);
+     * Bson mapBson = MongoDB.toBson(userMap);
      *
      * // Convert property pairs to BSON:
-     * Bson pairsBson = MDB.toBson("name", "Bob", "age", 35, "active", true);
+     * Bson pairsBson = MongoDB.toBson("name", "Bob", "age", 35, "active", true);
      * }</pre>
      *
      * @param obj the object to convert - can be an entity with getter/setter methods, {@code Map<String, Object>}, or array of property name-value pairs
@@ -390,14 +390,14 @@ public abstract class MongoDBBase {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Create BSON from property pairs:
-     * Bson userBson = MDB.toBson("name", "John", "age", 30, "active", true);
+     * Bson userBson = MongoDB.toBson("name", "John", "age", 30, "active", true);
      *
      * // Create BSON from single entity:
      * User user = new User("Alice", "alice@example.com", 25);
-     * Bson entityBson = MDB.toBson(user);
+     * Bson entityBson = MongoDB.toBson(user);
      *
      * // Create empty BSON:
-     * Bson emptyBson = MDB.toBson();
+     * Bson emptyBson = MongoDB.toBson();
      * }</pre>
      *
      * @param a variable arguments representing property name-value pairs, or a single object to convert
@@ -422,11 +422,11 @@ public abstract class MongoDBBase {
      * <pre>{@code
      * // Convert entity to Document:
      * User user = new User("John", "john@example.com", 30);
-     * Document userDoc = MDB.toDocument(user);
+     * Document userDoc = MongoDB.toDocument(user);
      *
      * // Convert Map to Document:
      * Map<String, Object> userMap = Map.of("name", "Alice", "age", 25);
-     * Document mapDoc = MDB.toDocument(userMap);
+     * Document mapDoc = MongoDB.toDocument(userMap);
      *
      * // The resulting Document can be used in MongoDB operations:
      * collection.insertOne(userDoc);
@@ -454,14 +454,14 @@ public abstract class MongoDBBase {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Create Document from property pairs:
-     * Document userDoc = MDB.toDocument("name", "John", "age", 30, "active", true);
+     * Document userDoc = MongoDB.toDocument("name", "John", "age", 30, "active", true);
      *
      * // Create Document from single entity:
      * User user = new User("Alice", 25);
-     * Document entityDoc = MDB.toDocument(user);
+     * Document entityDoc = MongoDB.toDocument(user);
      *
      * // Create empty Document:
-     * Document emptyDoc = MDB.toDocument();
+     * Document emptyDoc = MongoDB.toDocument();
      * }</pre>
      *
      * @param a variable arguments representing:
@@ -537,11 +537,11 @@ public abstract class MongoDBBase {
      * <pre>{@code
      * // Convert entity to BasicBSONObject:
      * User user = new User("John", "john@example.com", 30);
-     * BasicBSONObject userBson = MDB.toBSONObject(user);
+     * BasicBSONObject userBson = MongoDB.toBSONObject(user);
      *
      * // Convert Map to BasicBSONObject:
      * Map<String, Object> userMap = Map.of("name", "Alice", "age", 25);
-     * BasicBSONObject mapBson = MDB.toBSONObject(userMap);
+     * BasicBSONObject mapBson = MongoDB.toBSONObject(userMap);
      * }</pre>
      *
      * @param obj the object to convert - can be an entity with getter/setter methods, {@code Map<String, Object>}, or array of property name-value pairs
@@ -586,14 +586,14 @@ public abstract class MongoDBBase {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Empty BasicBSONObject:
-     * BasicBSONObject empty = MDB.toBSONObject();
+     * BasicBSONObject empty = MongoDB.toBSONObject();
      *
      * // Single object conversion:
      * User user = new User("Alice", 25);
-     * BasicBSONObject userBson = MDB.toBSONObject(user);
+     * BasicBSONObject userBson = MongoDB.toBSONObject(user);
      *
      * // Property pairs:
-     * BasicBSONObject pairsBson = MDB.toBSONObject("name", "Bob", "age", 30);
+     * BasicBSONObject pairsBson = MongoDB.toBSONObject("name", "Bob", "age", 30);
      * }</pre>
      *
      * @param a variable arguments that can be:
@@ -630,15 +630,15 @@ public abstract class MongoDBBase {
      * <pre>{@code
      * // Convert entity to BasicDBObject:
      * User user = new User("John", "john@example.com", 30);
-     * BasicDBObject userDb = MDB.toDBObject(user);
+     * BasicDBObject userDb = MongoDB.toDBObject(user);
      *
      * // Convert Map to BasicDBObject:
      * Map<String, Object> userMap = Map.of("name", "Alice", "age", 25);
-     * BasicDBObject mapDb = MDB.toDBObject(userMap);
+     * BasicDBObject mapDb = MongoDB.toDBObject(userMap);
      *
      * // Convert array to BasicDBObject:
      * Object[] userData = {"name", "Bob", "age", 35, "active", true};
-     * BasicDBObject arrayDb = MDB.toDBObject(userData);
+     * BasicDBObject arrayDb = MongoDB.toDBObject(userData);
      * }</pre>
      *
      * @param obj the object to convert - can be an entity with getter/setter methods, {@code Map<String, Object>}, or array of property name-value pairs
@@ -686,14 +686,14 @@ public abstract class MongoDBBase {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Empty BasicDBObject:
-     * BasicDBObject empty = MDB.toDBObject();
+     * BasicDBObject empty = MongoDB.toDBObject();
      *
      * // Single object conversion:
      * User user = new User("Alice", 25);
-     * BasicDBObject userDb = MDB.toDBObject(user);
+     * BasicDBObject userDb = MongoDB.toDBObject(user);
      *
      * // Property pairs for query building:
-     * BasicDBObject query = MDB.toDBObject("status", "active", "age", Map.of("$gte", 18));
+     * BasicDBObject query = MongoDB.toDBObject("status", "active", "age", Map.of("$gte", 18));
      * }</pre>
      *
      * @param a variable arguments that can be:
@@ -731,7 +731,7 @@ public abstract class MongoDBBase {
      * Document userDoc = new Document("name", "John")
      *                       .append("age", 30)
      *                       .append("address", new Document("city", "NYC"));
-     * Map<String, Object> userMap = MDB.toMap(userDoc);
+     * Map<String, Object> userMap = MongoDB.toMap(userDoc);
      * // Result: {"name": "John", "age": 30, "address": {"city": "NYC"}}
      * }</pre>
      *
@@ -760,13 +760,13 @@ public abstract class MongoDBBase {
      * <pre>{@code
      * // Using LinkedHashMap to preserve insertion order:
      * Document doc = new Document("name", "John").append("age", 30);
-     * Map<String, Object> orderedMap = MDB.toMap(doc, LinkedHashMap::new);
+     * Map<String, Object> orderedMap = MongoDB.toMap(doc, LinkedHashMap::new);
      *
      * // Using TreeMap for sorted keys:
-     * Map<String, Object> sortedMap = MDB.toMap(doc, size -> new TreeMap<>());
+     * Map<String, Object> sortedMap = MongoDB.toMap(doc, size -> new TreeMap<>());
      *
      * // Pre-sized HashMap for performance:
-     * Map<String, Object> preSizedMap = MDB.toMap(doc, HashMap::new);
+     * Map<String, Object> preSizedMap = MongoDB.toMap(doc, HashMap::new);
      * }</pre>
      *
      * @param doc the MongoDB Document to convert; must not be null
@@ -800,13 +800,13 @@ public abstract class MongoDBBase {
      *     .append("name", "John")
      *     .append("email", "john@example.com");
      *
-     * User user = MDB.toEntity(userDoc, User.class);
+     * User user = MongoDB.toEntity(userDoc, User.class);
      * // The user.getId() will contain the ObjectId from _id field
      *
      * // Works with String IDs too:
      * Document docWithStringId = new Document("_id", "user123")
      *     .append("name", "Alice");
-     * User alice = MDB.toEntity(docWithStringId, User.class);
+     * User alice = MongoDB.toEntity(docWithStringId, User.class);
      * }</pre>
      *
      * @param <T> the target entity type
@@ -860,21 +860,22 @@ public abstract class MongoDBBase {
      * <pre>{@code
      * // Convert query results to User entities:
      * FindIterable<Document> userDocs = collection.find(Filters.eq("status", "active"));
-     * List<User> users = MDB.toList(userDocs, User.class);
+     * List<User> users = MongoDB.toList(userDocs, User.class);
      *
      * // Convert to Maps:
-     * List<Map<String, Object>> userMaps = MDB.toList(userDocs, Map.class);
+     * List<Map<String, Object>> userMaps = MongoDB.toList(userDocs, Map.class);
      *
      * // Convert aggregation results to specific type:
      * AggregateIterable<Document> aggregated = collection.aggregate(pipeline);
-     * List<UserStats> stats = MDB.toList(aggregated, UserStats.class);
+     * List<UserStats> stats = MongoDB.toList(aggregated, UserStats.class);
      * }</pre>
      *
      * @param <T> the target type for list elements
      * @param findIterable the MongoDB query result to convert
      * @param rowType the target class - can be an entity class with getter/setter methods, Map.class, or basic single value type (Primitive/String/Date...)
      * @return a List containing all results converted to the specified type (empty list if no results)
-     * @throws IllegalArgumentException if findIterable or rowType is null
+     * @throws NullPointerException if findIterable or rowType is null
+     * @throws IllegalArgumentException if rowType is not supported (e.g. a document with more than two fields cannot be converted to a primitive/String/Date)
      * @see com.mongodb.client.MongoIterable
      * @see #toEntity(Document, Class)
      */
@@ -979,7 +980,7 @@ public abstract class MongoDBBase {
      * <pre>{@code
      * // Extract user data into Dataset:
      * FindIterable<Document> userDocs = collection.find(Filters.eq("department", "Engineering"));
-     * Dataset userData = MDB.extractData(userDocs);
+     * Dataset userData = MongoDB.extractData(userDocs);
      *
      * // Access data in tabular format:
      * userData.println();   // Print all data in table format
@@ -991,7 +992,7 @@ public abstract class MongoDBBase {
      *
      * @param findIterable the MongoDB query result to extract data from
      * @return a Dataset containing the query results with Map-based rows
-     * @throws IllegalArgumentException if findIterable is null
+     * @throws NullPointerException if findIterable is null
      * @see Dataset
      * @see #extractData(MongoIterable, Class)
      */
@@ -1011,20 +1012,21 @@ public abstract class MongoDBBase {
      * <pre>{@code
      * // Extract user data into Dataset with User objects:
      * FindIterable<Document> userDocs = collection.find(Filters.eq("active", true));
-     * Dataset userData = MDB.extractData(userDocs, User.class);
+     * Dataset userData = MongoDB.extractData(userDocs, User.class);
      *
      * // Access typed data:
      * List<User> users = userData.toList(User.class);
      * User firstUser = userData.getRow(0, User.class);
      *
      * // Extract as String representations:
-     * Dataset stringData = MDB.extractData(userDocs, String.class);
+     * Dataset stringData = MongoDB.extractData(userDocs, String.class);
      * }</pre>
      *
      * @param findIterable the MongoDB query result to extract data from
-     * @param rowType the target type for each row in the Dataset
+     * @param rowType the target type for each row in the Dataset; must be an entity class with getter/setter methods or assignable to Map
      * @return a Dataset containing the query results with typed rows
-     * @throws IllegalArgumentException if findIterable or rowType is null, or if rowType is unsupported
+     * @throws IllegalArgumentException if rowType is unsupported (not a bean class and not assignable to Map)
+     * @throws NullPointerException if findIterable is null
      * @see Dataset
      * @see #extractData(MongoIterable)
      * @see #extractData(Collection, MongoIterable, Class)
@@ -1046,20 +1048,21 @@ public abstract class MongoDBBase {
      * // Extract only specific fields:
      * Collection<String> fields = Arrays.asList("name", "email", "department");
      * FindIterable<Document> userDocs = collection.find();
-     * Dataset limitedData = MDB.extractData(fields, userDocs, Map.class);
+     * Dataset limitedData = MongoDB.extractData(fields, userDocs, Map.class);
      *
      * // Create focused User objects with only selected properties:
-     * Dataset userSummary = MDB.extractData(fields, userDocs, User.class);
+     * Dataset userSummary = MongoDB.extractData(fields, userDocs, User.class);
      *
      * // Extract all properties when selectPropNames is null:
-     * Dataset allData = MDB.extractData(null, userDocs, User.class);
+     * Dataset allData = MongoDB.extractData(null, userDocs, User.class);
      * }</pre>
      *
      * @param selectPropNames collection of property names to include in the Dataset; null to include all
      * @param findIterable the MongoDB query result to extract data from
-     * @param rowType the target type for each row in the Dataset
+     * @param rowType the target type for each row in the Dataset; must be an entity class with getter/setter methods or assignable to Map
      * @return a Dataset containing the selected properties with typed rows
-     * @throws IllegalArgumentException if findIterable or rowType is null, or if rowType is unsupported
+     * @throws IllegalArgumentException if rowType is unsupported (not a bean class and not assignable to Map)
+     * @throws NullPointerException if findIterable is null
      * @see Dataset
      * @see #extractData(MongoIterable, Class)
      */
@@ -1085,16 +1088,16 @@ public abstract class MongoDBBase {
      *     new Document("name", "John").append("age", 30),
      *     new Document("name", "Alice").append("age", 25)
      * );
-     * Dataset dataset = MDB.extractData(documents);
+     * Dataset dataset = MongoDB.extractData(documents);
      *
      * // Access tabular data:
      * dataset.println();   // Print in table format
      * List<String> names = dataset.getColumn("name");
      * }</pre>
      *
-     * @param rowList the list of objects to convert to Dataset rows
+     * @param rowList the list of objects to convert to Dataset rows; may be empty (returns an empty Dataset) but must not be null
      * @return a Dataset containing the objects as Map-based rows
-     * @throws IllegalArgumentException if rowList is null
+     * @throws NullPointerException if rowList is null
      * @see Dataset
      * @see #extractData(List, Class)
      */
@@ -1114,20 +1117,20 @@ public abstract class MongoDBBase {
      * <pre>{@code
      * // Convert list of documents to typed Dataset:
      * List<Document> userDocs = loadUserDocuments();
-     * Dataset userData = MDB.extractData(userDocs, User.class);
+     * Dataset userData = MongoDB.extractData(userDocs, User.class);
      *
      * // Access typed rows:
      * List<User> users = userData.toList(User.class);
      * User firstUser = userData.getRow(0, User.class);
      *
      * // Convert to String representations:
-     * Dataset stringData = MDB.extractData(userDocs, String.class);
+     * Dataset stringData = MongoDB.extractData(userDocs, String.class);
      * }</pre>
      *
-     * @param rowList the list of objects to convert to Dataset rows
+     * @param rowList the list of objects to convert to Dataset rows; may be empty (returns an empty Dataset) but must not be null
      * @param rowType the target type for each row in the Dataset
      * @return a Dataset containing the objects as typed rows
-     * @throws IllegalArgumentException if rowList or rowType is null, or if rowType is unsupported
+     * @throws NullPointerException if rowList is null
      * @see Dataset
      * @see #extractData(List)
      * @see #extractData(Collection, List, Class)
@@ -1159,23 +1162,23 @@ public abstract class MongoDBBase {
      *     new Document("name", "Alice").append("age", 25).append("city", "LA")
      * );
      * Collection<String> fields = Arrays.asList("name", "city");
-     * Dataset dataset = MDB.extractData(fields, docs, Map.class);
+     * Dataset dataset = MongoDB.extractData(fields, docs, Map.class);
      *
      * // Extract all fields as String representations:
-     * Dataset stringDataset = MDB.extractData(null, docs, String.class);
+     * Dataset stringDataset = MongoDB.extractData(null, docs, String.class);
      *
      * // Create focused data view for reporting:
      * List<User> users = loadUsersFromDatabase();
      * Collection<String> reportFields = Arrays.asList("name", "email", "department");
-     * Dataset reportData = MDB.extractData(reportFields, users, Map.class);
+     * Dataset reportData = MongoDB.extractData(reportFields, users, Map.class);
      * reportData.toCsv("user_report.csv");
      * }</pre>
      *
      * @param selectPropNames collection of property names to include in the Dataset (null to include all)
-     * @param rowList the list of objects to extract data from
+     * @param rowList the list of objects to extract data from; may be empty (returns an empty Dataset) but must not be null
      * @param rowType the target type for each row in the resulting Dataset
      * @return a Dataset containing the extracted properties as typed rows
-     * @throws IllegalArgumentException if rowList or rowType is null, or if rowType is unsupported
+     * @throws NullPointerException if rowList is null
      * @see Dataset
      * @see #extractData(List, Class)
      * @see #extractData(Collection, MongoIterable, Class)
@@ -1250,7 +1253,7 @@ public abstract class MongoDBBase {
      * <pre>{@code
      * // Create stream from find results:
      * FindIterable<Document> findResult = collection.find(Filters.eq("status", "active"));
-     * Stream<Document> docStream = MDB.stream(findResult);
+     * Stream<Document> docStream = MongoDB.stream(findResult);
      *
      * // Use functional operations:
      * List<String> names = docStream
@@ -1260,13 +1263,13 @@ public abstract class MongoDBBase {
      *
      * // Process aggregation results:
      * AggregateIterable<Document> aggResult = collection.aggregate(pipeline);
-     * MDB.stream(aggResult)
+     * MongoDB.stream(aggResult)
      *    .forEach(doc -> processDocument(doc));
      * }</pre>
      *
      * @param iter the MongoIterable to convert to a Stream
      * @return a Stream of Document objects
-     * @throws IllegalArgumentException if iter is null
+     * @throws NullPointerException if iter is null
      * @see Stream
      * @see #stream(MongoIterable, Class)
      * @see #stream(MongoCursor)
@@ -1287,7 +1290,7 @@ public abstract class MongoDBBase {
      * <pre>{@code
      * // Create typed stream from find results:
      * FindIterable<Document> userDocs = collection.find();
-     * Stream<User> userStream = MDB.stream(userDocs, User.class);
+     * Stream<User> userStream = MongoDB.stream(userDocs, User.class);
      *
      * // Use with typed operations:
      * List<String> emails = userStream
@@ -1296,7 +1299,7 @@ public abstract class MongoDBBase {
      *     .collect(Collectors.toList());
      *
      * // Convert to Maps for flexible processing:
-     * Stream<Map> mapStream = MDB.stream(userDocs, Map.class);
+     * Stream<Map> mapStream = MongoDB.stream(userDocs, Map.class);
      * mapStream.forEach(map -> processUserMap(map));
      * }</pre>
      *
@@ -1304,7 +1307,8 @@ public abstract class MongoDBBase {
      * @param iter the MongoIterable to convert to a Stream
      * @param rowType the Class representing the target type for each stream element
      * @return a Stream of objects of the specified type
-     * @throws IllegalArgumentException if iter or rowType is null, or if rowType is unsupported
+     * @throws NullPointerException if iter is null
+     * @throws IllegalArgumentException if rowType is unsupported by {@code readRow}
      * @see Stream
      * @see #stream(MongoIterable)
      * @see #stream(MongoCursor, Class)
@@ -1325,7 +1329,7 @@ public abstract class MongoDBBase {
      * <pre>{@code
      * // Create stream from cursor:
      * MongoCursor<Document> cursor = collection.find().iterator();
-     * Stream<Document> docStream = MDB.stream(cursor);
+     * Stream<Document> docStream = MongoDB.stream(cursor);
      *
      * // Process documents lazily:
      * docStream
@@ -1335,7 +1339,7 @@ public abstract class MongoDBBase {
      * // Cursor is automatically closed after stream operations
      *
      * // Use with try-with-resources for explicit management:
-     * try (Stream<Document> stream = MDB.stream(cursor)) {
+     * try (Stream<Document> stream = MongoDB.stream(cursor)) {
      *     return stream.map(doc -> doc.getString("name"))
      *                  .collect(Collectors.toList());
      * }
@@ -1343,7 +1347,6 @@ public abstract class MongoDBBase {
      *
      * @param cursor the MongoCursor to convert to a Stream
      * @return a Stream of Document objects with automatic cursor management
-     * @throws IllegalArgumentException if cursor is null
      * @see Stream
      * @see MongoCursor
      * @see #stream(MongoCursor, Class)
@@ -1364,7 +1367,7 @@ public abstract class MongoDBBase {
      * <pre>{@code
      * // Create typed stream from cursor:
      * MongoCursor<Document> cursor = collection.find().iterator();
-     * Stream<User> userStream = MDB.stream(cursor, User.class);
+     * Stream<User> userStream = MongoDB.stream(cursor, User.class);
      *
      * // Process with type safety:
      * Optional<User> activeAdmin = userStream
@@ -1375,7 +1378,7 @@ public abstract class MongoDBBase {
      *
      * // Convert to different types for processing:
      * MongoCursor<Document> anotherCursor = collection.find().iterator();
-     * try (Stream<Map> mapStream = MDB.stream(anotherCursor, Map.class)) {
+     * try (Stream<Map> mapStream = MongoDB.stream(anotherCursor, Map.class)) {
      *     return mapStream.filter(map -> "premium".equals(map.get("tier")))
      *                     .count();
      * }
@@ -1385,7 +1388,7 @@ public abstract class MongoDBBase {
      * @param cursor the MongoCursor to convert to a Stream
      * @param rowType the Class representing the target type for each stream element
      * @return a Stream of objects of the specified type with automatic cursor management
-     * @throws IllegalArgumentException if cursor or rowType is null, or if rowType is unsupported
+     * @throws IllegalArgumentException if rowType is unsupported by {@code readRow}
      * @see Stream
      * @see MongoCursor
      * @see #stream(MongoCursor)
@@ -1527,7 +1530,7 @@ public abstract class MongoDBBase {
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * Codec<MyEntity> codec = new MDB.GeneralCodec<>(MyEntity.class);
+         * Codec<MyEntity> codec = new MongoDBBase.GeneralCodec<>(MyEntity.class);
          * }</pre>
          *
          * @param cls the target Java type to encode/decode

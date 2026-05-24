@@ -109,9 +109,9 @@ public class CassandraExecutorTest extends AbstractNoSQLTest {
         N.println(sql);
         cassandraExecutor.execute(sql, user);
 
-        List<Users> dbUsers = cassandraExecutor.asyncList(Users.class, "SELECT * FROM simplex.users").get();
+        List<Users> dbUsers = cassandraExecutor.async().list(Users.class, "SELECT * FROM simplex.users").get();
         N.println(dbUsers);
-        cassandraExecutor.asyncDelete(Users.class, Filters.in("id", N.map(dbUsers, Users::getId)));
+        cassandraExecutor.async().delete(Users.class, Filters.in("id", N.map(dbUsers, Users::getId)));
     }
 
     @Test
@@ -215,7 +215,7 @@ public class CassandraExecutorTest extends AbstractNoSQLTest {
         dbUsers.forEach(it -> assertEquals(null, it.getName()));
         dbUsers.forEach(it -> assertEquals(null, it.getLastUpdateTime()));
 
-        cassandraExecutor.asyncBatchDelete(dbUsers).get();
+        cassandraExecutor.async().batchDelete(dbUsers).get();
 
         assertTrue(cassandraExecutor.list(Users.class, "SELECT * FROM simplex.users").isEmpty());
     }
@@ -366,27 +366,28 @@ public class CassandraExecutorTest extends AbstractNoSQLTest {
 
         N.println(resultSet.one());
 
-        assertTrue(cassandraExecutor.asyncExists("SELECT * FROM simplex.songs WHERE id = ?", song.getId()).get());
+        assertTrue(cassandraExecutor.async().exists("SELECT * FROM simplex.songs WHERE id = ?", song.getId()).get());
 
-        assertEquals(1, cassandraExecutor.asyncCount("SELECT count(*) FROM simplex.songs WHERE id = ?", song.getId()).get().longValue());
+        assertEquals(1, cassandraExecutor.async().count("SELECT count(*) FROM simplex.songs WHERE id = ?", song.getId()).get().longValue());
 
-        Song dbSong = cassandraExecutor.asyncFindFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = ?", song.getId()).get().orElse(null);
+        Song dbSong = cassandraExecutor.async().findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = ?", song.getId()).get().orElse(null);
         N.println(dbSong);
         assertEquals(song.getId(), dbSong.getId());
 
-        Map<String, Object> map = cassandraExecutor.asyncFindFirst(Map.class, "SELECT * FROM simplex.songs WHERE id = ?", song.getId()).get().orElse(null);
+        Map<String, Object> map = cassandraExecutor.async().findFirst(Map.class, "SELECT * FROM simplex.songs WHERE id = ?", song.getId()).get().orElse(null);
         N.println(map);
         assertEquals(song.getId(), map.get("id"));
 
-        Dataset dataset = cassandraExecutor.asyncQuery("SELECT * FROM simplex.songs WHERE id = 756716f7-2e54-4715-9f00-91dcbea6cf50;").get();
+        Dataset dataset = cassandraExecutor.async().query("SELECT * FROM simplex.songs WHERE id = 756716f7-2e54-4715-9f00-91dcbea6cf50;").get();
         dataset.println();
         assertEquals(song.getId(), dataset.get("id"));
 
-        UUID uuid = cassandraExecutor.asyncQueryForSingleResult(UUID.class, "SELECT id FROM simplex.songs WHERE id = ?", song.getId()).get().orElse(null);
+        UUID uuid = cassandraExecutor.async().queryForSingleValue(UUID.class, "SELECT id FROM simplex.songs WHERE id = ?", song.getId()).get().orElse(null);
         N.println(uuid);
         assertEquals(song.getId(), uuid);
 
-        String strUUID = cassandraExecutor.asyncQueryForSingleResult(String.class, "SELECT id FROM simplex.songs WHERE id = ?", song.getId())
+        String strUUID = cassandraExecutor.async()
+                .queryForSingleValue(String.class, "SELECT id FROM simplex.songs WHERE id = ?", song.getId())
                 .get()
                 .orElse(null);
         N.println(strUUID);
@@ -394,8 +395,8 @@ public class CassandraExecutorTest extends AbstractNoSQLTest {
 
         assertTrue(cassandraExecutor.exists("SELECT * FROM simplex.songs WHERE id = ?", song.getId()));
 
-        cassandraExecutor.asyncExecute("DELETE FROM simplex.songs WHERE id = ?", song.getId()).get();
-        assertFalse(cassandraExecutor.asyncExists("SELECT * FROM simplex.songs WHERE id = ?", song.getId()).get());
+        cassandraExecutor.async().execute("DELETE FROM simplex.songs WHERE id = ?", song.getId()).get();
+        assertFalse(cassandraExecutor.async().exists("SELECT * FROM simplex.songs WHERE id = ?", song.getId()).get());
     }
 
     @Test

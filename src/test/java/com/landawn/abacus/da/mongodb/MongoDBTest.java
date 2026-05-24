@@ -81,28 +81,28 @@ public class MongoDBTest extends TestBase {
         String collectionName = "testCollection";
         when(mockMongoDatabase.getCollection(collectionName)).thenReturn(mockCollection);
 
-        MongoCollectionExecutor result = mongoDB.collExecutor(collectionName);
+        MongoCollectionExecutor result = mongoDB.collectionExecutor(collectionName);
         Assertions.assertNotNull(result);
         verify(mockMongoDatabase).getCollection(collectionName);
     }
 
     @Test
     public void testCollExecutorWithCollection() {
-        MongoCollectionExecutor result = mongoDB.collExecutor(mockCollection);
+        MongoCollectionExecutor result = mongoDB.collectionExecutor(mockCollection);
         Assertions.assertNotNull(result);
     }
 
     @Test
     public void testCollExecutorWithNullCollectionName() {
         Assertions.assertThrows(IllegalArgumentException.class, () -> {
-            mongoDB.collExecutor((String) null);
+            mongoDB.collectionExecutor((String) null);
         });
     }
 
     @Test
     public void testCollExecutorWithNullCollection() {
         Assertions.assertThrows(IllegalArgumentException.class, () -> {
-            mongoDB.collExecutor((MongoCollection<Document>) null);
+            mongoDB.collectionExecutor((MongoCollection<Document>) null);
         });
     }
 
@@ -110,7 +110,7 @@ public class MongoDBTest extends TestBase {
     public void testCollMapperWithRowType() {
         when(mockMongoDatabase.getCollection("TestEntity")).thenReturn(mockCollection);
 
-        MongoCollectionMapper<TestEntity> result = mongoDB.collMapper(TestEntity.class);
+        MongoCollectionMapper<TestEntity> result = mongoDB.collectionMapper(TestEntity.class);
         Assertions.assertNotNull(result);
     }
 
@@ -119,42 +119,42 @@ public class MongoDBTest extends TestBase {
         String collectionName = "customCollection";
         when(mockMongoDatabase.getCollection(collectionName)).thenReturn(mockCollection);
 
-        MongoCollectionMapper<TestEntity> result = mongoDB.collMapper(collectionName, TestEntity.class);
+        MongoCollectionMapper<TestEntity> result = mongoDB.collectionMapper(collectionName, TestEntity.class);
         Assertions.assertNotNull(result);
         verify(mockMongoDatabase).getCollection(collectionName);
     }
 
     @Test
     public void testCollMapperWithCollectionAndRowType() {
-        MongoCollectionMapper<TestEntity> result = mongoDB.collMapper(mockCollection, TestEntity.class);
+        MongoCollectionMapper<TestEntity> result = mongoDB.collectionMapper(mockCollection, TestEntity.class);
         Assertions.assertNotNull(result);
     }
 
     //    @Test
     //    public void testCollMapperWithNullCollectionName() {
     //        Assertions.assertThrows(IllegalArgumentException.class, () -> {
-    //            mongoDB.collMapper(null, TestEntity.class);
+    //            mongoDB.collectionMapper(null, TestEntity.class);
     //        });
     //    }
 
     @Test
     public void testCollMapperWithNullRowType() {
         Assertions.assertThrows(IllegalArgumentException.class, () -> {
-            mongoDB.collMapper("collection", null);
+            mongoDB.collectionMapper("collection", null);
         });
     }
 
     @Test
     public void testCollMapperWithNullCollection() {
         Assertions.assertThrows(IllegalArgumentException.class, () -> {
-            mongoDB.collMapper((MongoCollection<Document>) null, TestEntity.class);
+            mongoDB.collectionMapper((MongoCollection<Document>) null, TestEntity.class);
         });
     }
 
     @Test
     public void testCollMapperWithCollectionAndNullRowType() {
         Assertions.assertThrows(IllegalArgumentException.class, () -> {
-            mongoDB.collMapper(mockCollection, null);
+            mongoDB.collectionMapper(mockCollection, null);
         });
     }
 

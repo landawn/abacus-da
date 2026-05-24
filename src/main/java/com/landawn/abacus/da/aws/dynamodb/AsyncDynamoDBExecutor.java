@@ -66,11 +66,10 @@ import com.landawn.abacus.util.stream.Stream;
  * // Perform async operations
  * Map<String, AttributeValue> key = Map.of("id", new AttributeValue("123"));
  * asyncExecutor.getItem("MyTable", key)
- *     .thenRunAsync(item -> System.out.println("Found: " + item))
- *     .exceptionally(error -> {
- *         System.err.println("Error: " + error.getMessage());
- *         return null;
- *     });
+ *     .thenRunAsync(item -> System.out.println("Found: " + item));
+ *
+ * // Or block for the result:
+ * Map<String, Object> item = asyncExecutor.getItem("MyTable", key).get();
  * }</pre>
  * 
  * @see DynamoDBExecutor
@@ -217,16 +216,14 @@ public final class AsyncDynamoDBExecutor {
      *     .withReturnConsumedCapacity(ReturnConsumedCapacity.TOTAL);
      *
      * asyncExecutor.getItem(request)
-     *     .thenRunAsync(user -> {
-     *         if (user != null) {
+     *     .thenRunAsync((user, ex) -> {
+     *         if (ex != null) {
+     *             logger.error("Failed to retrieve user", ex);
+     *         } else if (user != null) {
      *             System.out.println("User: " + user.get("email"));
      *         } else {
      *             System.out.println("User not found");
      *         }
-     *     })
-     *     .exceptionally(ex -> {
-     *         logger.error("Failed to retrieve user", ex);
-     *         return null;
      *     });
      * }</pre>
      *
@@ -262,17 +259,15 @@ public final class AsyncDynamoDBExecutor {
      * Map<String, AttributeValue> key = Map.of("orderId", new AttributeValue("ORDER-123"));
      *
      * asyncExecutor.getItem("Orders", key, Order.class)
-     *     .thenRunAsync(order -> {
-     *         if (order != null) {
+     *     .thenRunAsync((order, ex) -> {
+     *         if (ex != null) {
+     *             logger.error("Failed to retrieve order", ex);
+     *         } else if (order != null) {
      *             System.out.println("Order total: $" + order.getTotal());
      *             System.out.println("Status: " + order.getStatus());
      *         } else {
      *             System.out.println("Order not found");
      *         }
-     *     })
-     *     .exceptionally(ex -> {
-     *         logger.error("Failed to retrieve order", ex);
-     *         return null;
      *     });
      * }</pre>
      *
@@ -307,11 +302,12 @@ public final class AsyncDynamoDBExecutor {
      *
      * // Use strong consistency for financial data
      * executor.getItem("Accounts", key, true, Account.class)
-     *     .thenCallAsync(account -> account.getBalance())
-     *     .thenRunAsync(balance -> System.out.println("Balance: $" + balance))
-     *     .exceptionally(ex -> {
-     *         logger.error("Failed to get account", ex);
-     *         return null;
+     *     .thenRunAsync((account, ex) -> {
+     *         if (ex != null) {
+     *             logger.error("Failed to get account", ex);
+     *         } else if (account != null) {
+     *             System.out.println("Balance: $" + account.getBalance());
+     *         }
      *     });
      * }</pre>
      *
@@ -353,16 +349,12 @@ public final class AsyncDynamoDBExecutor {
      *     .withReturnConsumedCapacity(ReturnConsumedCapacity.TOTAL);
      *
      * executor.getItem(request, ProductSummary.class)
-     *     .thenCompose(product -> {
-     *         if (product != null && product.isInStock()) {
-     *             return processAvailableProduct(product);
-     *         } else {
-     *             return ContinuableFuture.completedFuture(null);
+     *     .thenRunAsync((product, ex) -> {
+     *         if (ex != null) {
+     *             logger.error("Product lookup failed", ex);
+     *         } else if (product != null && product.isInStock()) {
+     *             processAvailableProduct(product);
      *         }
-     *     })
-     *     .exceptionally(ex -> {
-     *         logger.error("Product lookup failed", ex);
-     *         return null;
      *     });
      * }</pre>
      *
@@ -447,14 +439,14 @@ public final class AsyncDynamoDBExecutor {
      * Map<String, KeysAndAttributes> requestItems = Map.of("Users", userKeys);
      *
      * executor.batchGetItem(requestItems, "TOTAL")
-     *     .thenRunAsync(results -> {
+     *     .thenRunAsync((results, ex) -> {
+     *         if (ex != null) {
+     *             logger.error("Batch get with capacity tracking failed", ex);
+     *             return;
+     *         }
      *         List<Map<String, Object>> users = results.get("Users");
      *         System.out.println("Retrieved " + users.size() + " users");
      *         // Note: Consumed capacity info available in response metadata
-     *     })
-     *     .exceptionally(ex -> {
-     *         logger.error("Batch get with capacity tracking failed", ex);
-     *         return null;
      *     });
      * }</pre>
      *
@@ -512,14 +504,14 @@ public final class AsyncDynamoDBExecutor {
      *     .withReturnConsumedCapacity(ReturnConsumedCapacity.TOTAL);
      *
      * asyncExecutor.batchGetItem(request)
-     *     .thenRunAsync(results -> {
+     *     .thenRunAsync((results, ex) -> {
+     *         if (ex != null) {
+     *             logger.error("Batch get failed", ex);
+     *             return;
+     *         }
      *         List<Map<String, Object>> users = results.get("Users");
      *         List<Map<String, Object>> orders = results.get("Orders");
      *         System.out.println("Retrieved " + users.size() + " users and " + orders.size() + " orders");
-     *     })
-     *     .exceptionally(ex -> {
-     *         logger.error("Batch get failed", ex);
-     *         return null;
      *     });
      * }</pre>
      *
@@ -560,16 +552,16 @@ public final class AsyncDynamoDBExecutor {
      * Map<String, KeysAndAttributes> requestItems = Map.of("Orders", orderKeys);
      * 
      * executor.batchGetItem(requestItems, Order.class)
-     *     .thenRunAsync(results -> {
+     *     .thenRunAsync((results, ex) -> {
+     *         if (ex != null) {
+     *             logger.error("Batch get with type conversion failed", ex);
+     *             return;
+     *         }
      *         List<Order> orders = results.get("Orders");
      *         orders.forEach(order -> {
-     *             System.out.println("Order " + order.getOrderId() + 
+     *             System.out.println("Order " + order.getOrderId() +
      *                              ": $" + order.getTotal());
      *         });
-     *     })
-     *     .exceptionally(ex -> {
-     *         logger.error("Batch get with type conversion failed", ex);
-     *         return null;
      *     });
      * }</pre>
      *
@@ -609,14 +601,14 @@ public final class AsyncDynamoDBExecutor {
      * Map<String, KeysAndAttributes> requestItems = Map.of("Products", productKeys);
      * 
      * executor.batchGetItem(requestItems, "TOTAL", Product.class)
-     *     .thenRunAsync(results -> {
+     *     .thenRunAsync((results, ex) -> {
+     *         if (ex != null) {
+     *             logger.error("Batch product lookup failed", ex);
+     *             return;
+     *         }
      *         List<Product> products = results.get("Products");
      *         logger.info("Retrieved {} products", products.size());
      *         products.forEach(this::processProduct);
-     *     })
-     *     .exceptionally(ex -> {
-     *         logger.error("Batch product lookup failed", ex);
-     *         return Collections.emptyMap();
      *     });
      * }</pre>
      *
@@ -717,7 +709,11 @@ public final class AsyncDynamoDBExecutor {
      * );
      *
      * asyncExecutor.putItem("Users", newItem, "ALL_OLD")
-     *     .thenRunAsync(result -> {
+     *     .thenRunAsync((result, ex) -> {
+     *         if (ex != null) {
+     *             logger.error("Put item failed", ex);
+     *             return;
+     *         }
      *         Map<String, AttributeValue> oldItem = result.getAttributes();
      *         if (oldItem != null && !oldItem.isEmpty()) {
      *             System.out.println("Replaced existing user: " + oldItem.get("name").getS());
@@ -725,10 +721,6 @@ public final class AsyncDynamoDBExecutor {
      *         } else {
      *             System.out.println("Created new user");
      *         }
-     *     })
-     *     .exceptionally(ex -> {
-     *         logger.error("Put item failed", ex);
-     *         return null;
      *     });
      * }</pre>
      *
@@ -778,17 +770,17 @@ public final class AsyncDynamoDBExecutor {
      * 
      * ContinuableFuture<PutItemResult> future = executor.putItem(request);
      * 
-     * future.thenRunAsync(result -> {
+     * future.thenRunAsync((result, ex) -> {
+     *         if (ex != null) {
+     *             if (ex.getCause() instanceof ConditionalCheckFailedException) {
+     *                 System.err.println("User already exists");
+     *             }
+     *             return;
+     *         }
      *         System.out.println("Consumed capacity: " + result.getConsumedCapacity().getCapacityUnits());
      *         if (result.getAttributes() != null) {
      *             System.out.println("Replaced existing item");
      *         }
-     *     })
-     *     .exceptionally(ex -> {
-     *         if (ex.getCause() instanceof ConditionalCheckFailedException) {
-     *             System.err.println("User already exists");
-     *         }
-     *         return null;
      *     });
      * }</pre>
      * 
@@ -867,16 +859,16 @@ public final class AsyncDynamoDBExecutor {
      * Map<String, List<WriteRequest>> requestItems = Map.of("Users", writeRequests);
      *
      * executor.batchWriteItem(requestItems)
-     *     .thenRunAsync(result -> {
+     *     .thenRunAsync((result, ex) -> {
+     *         if (ex != null) {
+     *             logger.error("Batch write failed", ex);
+     *             return;
+     *         }
      *         if (result.getUnprocessedItems() != null && !result.getUnprocessedItems().isEmpty()) {
      *             System.out.println("Some items were not processed, retry needed");
      *         } else {
      *             System.out.println("All items processed successfully");
      *         }
-     *     })
-     *     .exceptionally(ex -> {
-     *         logger.error("Batch write failed", ex);
-     *         return null;
      *     });
      * }</pre>
      *
@@ -933,7 +925,11 @@ public final class AsyncDynamoDBExecutor {
      *
      * ContinuableFuture<BatchWriteItemResult> future = executor.batchWriteItem(request);
      *
-     * future.thenRunAsync(result -> {
+     * future.thenRunAsync((result, ex) -> {
+     *         if (ex != null) {
+     *             logger.error("Batch write failed", ex);
+     *             return;
+     *         }
      *         System.out.println("Consumed capacity: " +
      *             result.getConsumedCapacity().stream()
      *                 .mapToDouble(c -> c.getCapacityUnits())
@@ -945,10 +941,6 @@ public final class AsyncDynamoDBExecutor {
      *             System.out.println("Retrying " + unprocessed.size() + " unprocessed items");
      *             retryWithBackoff(unprocessed);
      *         }
-     *     })
-     *     .exceptionally(ex -> {
-     *         logger.error("Batch write failed", ex);
-     *         return null;
      *     });
      * }</pre>
      *
@@ -1030,14 +1022,14 @@ public final class AsyncDynamoDBExecutor {
      *     .withValue(new AttributeValue().withN("-1")));  // Decrement by 1
      *
      * asyncExecutor.updateItem("Products", key, updates, "ALL_NEW")
-     *     .thenRunAsync(result -> {
+     *     .thenRunAsync((result, ex) -> {
+     *         if (ex != null) {
+     *             logger.error("Update failed", ex);
+     *             return;
+     *         }
      *         Map<String, AttributeValue> updatedItem = result.getAttributes();
      *         System.out.println("New price: $" + updatedItem.get("price").getN());
      *         System.out.println("Remaining stock: " + updatedItem.get("stock").getN());
-     *     })
-     *     .exceptionally(ex -> {
-     *         logger.error("Update failed", ex);
-     *         return null;
      *     });
      * }</pre>
      *
@@ -1095,15 +1087,15 @@ public final class AsyncDynamoDBExecutor {
      * 
      * ContinuableFuture<UpdateItemResult> future = executor.updateItem(request);
      * 
-     * future.thenRunAsync(result -> {
+     * future.thenRunAsync((result, ex) -> {
+     *         if (ex != null) {
+     *             if (ex.getCause() instanceof ConditionalCheckFailedException) {
+     *                 System.err.println("Item doesn't exist for update");
+     *             }
+     *             return;
+     *         }
      *         Map<String, AttributeValue> updatedAttrs = result.getAttributes();
      *         System.out.println("Updated attributes: " + updatedAttrs);
-     *     })
-     *     .exceptionally(ex -> {
-     *         if (ex.getCause() instanceof ConditionalCheckFailedException) {
-     *             System.err.println("Item doesn't exist for update");
-     *         }
-     *         return null;
      *     });
      * }</pre>
      * 
@@ -1131,10 +1123,12 @@ public final class AsyncDynamoDBExecutor {
      * );
      * 
      * asyncExecutor.deleteItem("Users", key)
-     *     .thenRunAsync(result -> System.out.println("Item deleted"))
-     *     .exceptionally(error -> {
-     *         System.err.println("Delete failed: " + error.getMessage());
-     *         return null;
+     *     .thenRunAsync((result, ex) -> {
+     *         if (ex != null) {
+     *             System.err.println("Delete failed: " + ex.getMessage());
+     *         } else {
+     *             System.out.println("Item deleted");
+     *         }
      *     });
      * }</pre>
      *
@@ -1170,7 +1164,11 @@ public final class AsyncDynamoDBExecutor {
      * );
      *
      * asyncExecutor.deleteItem("Orders", key, "ALL_OLD")
-     *     .thenRunAsync(result -> {
+     *     .thenRunAsync((result, ex) -> {
+     *         if (ex != null) {
+     *             logger.error("Delete failed", ex);
+     *             return;
+     *         }
      *         Map<String, AttributeValue> deletedItem = result.getAttributes();
      *         if (deletedItem != null && !deletedItem.isEmpty()) {
      *             // Archive the deleted order
@@ -1179,10 +1177,6 @@ public final class AsyncDynamoDBExecutor {
      *         } else {
      *             System.out.println("Order did not exist");
      *         }
-     *     })
-     *     .exceptionally(ex -> {
-     *         logger.error("Delete failed", ex);
-     *         return null;
      *     });
      * }</pre>
      *
@@ -1229,19 +1223,19 @@ public final class AsyncDynamoDBExecutor {
      * 
      * ContinuableFuture<DeleteItemResult> future = executor.deleteItem(request);
      * 
-     * future.thenRunAsync(result -> {
+     * future.thenRunAsync((result, ex) -> {
+     *         if (ex != null) {
+     *             if (ex.getCause() instanceof ConditionalCheckFailedException) {
+     *                 System.err.println("Cannot delete - user is not inactive");
+     *             }
+     *             return;
+     *         }
      *         if (result.getAttributes() != null) {
      *             System.out.println("Deleted user: " + result.getAttributes().get("name").getS());
      *         } else {
      *             System.out.println("User was already deleted");
      *         }
      *         System.out.println("Consumed capacity: " + result.getConsumedCapacity().getCapacityUnits());
-     *     })
-     *     .exceptionally(ex -> {
-     *         if (ex.getCause() instanceof ConditionalCheckFailedException) {
-     *             System.err.println("Cannot delete - user is not inactive");
-     *         }
-     *         return null;
      *     });
      * }</pre>
      * 
@@ -1330,14 +1324,14 @@ public final class AsyncDynamoDBExecutor {
      * 
      * ContinuableFuture<List<Order>> future = executor.list(queryRequest, Order.class);
      * 
-     * future.thenRunAsync(orders -> {
+     * future.thenRunAsync((orders, ex) -> {
+     *         if (ex != null) {
+     *             logger.error("Query failed", ex);
+     *             return;
+     *         }
      *         System.out.println("Found " + orders.size() + " shipped orders");
-     *         orders.forEach(order -> 
+     *         orders.forEach(order ->
      *             System.out.println("Order " + order.getOrderId() + ": $" + order.getTotal()));
-     *     })
-     *     .exceptionally(ex -> {
-     *         logger.error("Query failed", ex);
-     *         return null;
      *     });
      * }</pre>
      * 
@@ -1418,23 +1412,25 @@ public final class AsyncDynamoDBExecutor {
      *     ));
      *
      * asyncExecutor.query(request, Sale.class)
-     *     .thenRunAsync(dataset -> {
+     *     .thenRunAsync((dataset, ex) -> {
+     *         if (ex != null) {
+     *             logger.error("Query failed", ex);
+     *             return;
+     *         }
      *         // Print tabular view
      *         dataset.println();
      *
-     *         // Perform analysis
-     *         double totalRevenue = dataset.stream()
-     *             .mapToDouble(row -> row.getDouble("amount"))
+     *         // Perform analysis on a numeric column
+     *         double totalRevenue = dataset.<Number>getColumn("amount").stream()
+     *             .mapToDouble(Number::doubleValue)
      *             .sum();
      *         System.out.println("Total revenue: $" + totalRevenue);
      *
-     *         // Filter and process
-     *         Dataset highValue = dataset.filter(row -> row.getDouble("amount") > 1000);
-     *         System.out.println("High-value sales: " + highValue.size());
-     *     })
-     *     .exceptionally(ex -> {
-     *         logger.error("Query failed", ex);
-     *         return null;
+     *         // Stream rows as the Sale type
+     *         long highValueCount = dataset.stream(Sale.class)
+     *             .filter(sale -> sale.getAmount() > 1000)
+     *             .count();
+     *         System.out.println("High-value sales: " + highValueCount);
      *     });
      * }</pre>
      *
@@ -1522,22 +1518,17 @@ public final class AsyncDynamoDBExecutor {
      *     .withScanIndexForward(false);  // Most recent first
      *
      * asyncExecutor.stream(request, Transaction.class)
-     *     .thenRunAsync(stream -> {
-     *         // Find first high-value transaction
-     *         Optional<Transaction> largeTransaction = stream
-     *             .filter(t -> t.getAmount() > 10000)
-     *             .findFirst();
-     *
-     *         // Or process all matching transactions
+     *     .thenRunAsync((stream, ex) -> {
+     *         if (ex != null) {
+     *             logger.error("Query streaming failed", ex);
+     *             return;
+     *         }
+     *         // Streams can only be consumed once; pick one terminal operation
      *         double total = stream
      *             .filter(t -> "COMPLETED".equals(t.getStatus()))
      *             .mapToDouble(Transaction::getAmount)
      *             .sum();
      *         System.out.println("Total completed: $" + total);
-     *     })
-     *     .exceptionally(ex -> {
-     *         logger.error("Query streaming failed", ex);
-     *         return null;
      *     });
      * }</pre>
      *
@@ -1651,15 +1642,15 @@ public final class AsyncDynamoDBExecutor {
      *     .withAttributeValueList(new AttributeValue().withN("100")));
      *
      * asyncExecutor.scan("Products", attributes, filter)
-     *     .thenRunAsync(stream -> {
+     *     .thenRunAsync((stream, ex) -> {
+     *         if (ex != null) {
+     *             logger.error("Scan failed", ex);
+     *             return;
+     *         }
      *         List<Map<String, Object>> products = stream
      *             .limit(50)  // Process first 50 matches
-     *             .collect(Collectors.toList());
+     *             .toList();
      *         System.out.println("Found " + products.size() + " affordable electronics");
-     *     })
-     *     .exceptionally(ex -> {
-     *         logger.error("Scan failed", ex);
-     *         return null;
      *     });
      * }</pre>
      *

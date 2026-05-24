@@ -321,7 +321,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param <T> the entity type
      * @param targetEntityClass the entity class to create mapper for. Must be annotated with @Table. Must not be null.
      * @return a cached Mapper instance for the specified entity class, never null
-     * @throws IllegalArgumentException if targetEntityClass is null, not a bean class, or missing @Table annotation
+     * @throws NullPointerException if {@code targetEntityClass} is null
+     * @throws IllegalArgumentException if {@code targetEntityClass} is missing a {@code @Table} annotation, or fails the underlying Mapper validation (not a bean class, zero or multiple {@code @Id} fields, etc.)
      * @see #mapper(Class, String, NamingPolicy)
      */
     public <T> Mapper<T> mapper(final Class<T> targetEntityClass) {
@@ -390,9 +391,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param <T> the entity type
      * @param targetEntityClass the entity class to create mapper for. Must be a valid bean class. Must not be null.
      * @param tableName the DynamoDB table name to use for operations. Must not be null or empty.
-     * @param namingPolicy the naming policy for converting property names to attribute names. Must not be null.
+     * @param namingPolicy the naming policy for converting property names to attribute names. If {@code null}, defaults to {@link NamingPolicy#CAMEL_CASE}.
      * @return a new Mapper instance configured with the specified parameters, never null
-     * @throws IllegalArgumentException if any parameter is null, targetEntityClass is not a bean class, or tableName is empty
+     * @throws IllegalArgumentException if {@code targetEntityClass} is null, not a bean class, has zero or multiple {@code @Id} fields, or {@code tableName} is null/empty
      * @see NamingPolicy
      * @see #mapper(Class)
      */
@@ -2810,7 +2811,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param queryRequest the QueryRequest containing the table name and query parameters. Must not be null.
      * @param targetClass the class of the entities to convert to, or {@code null}/a Map type to build the
      *                     Dataset from raw item attributes
-     * @return a Dataset containing entities of the specified target class. Never null.
+     * @return a Dataset built from the query results. Never null.
      * @throws IllegalArgumentException if queryRequest is null
      */
     public Dataset query(final QueryRequest queryRequest, final Class<?> targetClass) {
@@ -3312,8 +3313,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @param dynamoDBExecutor the executor to use for DynamoDB operations; must not be null
          * @param tableName the name of the DynamoDB table; must not be null or empty
          * @param namingPolicy the naming policy for attribute name conversion; uses CAMEL_CASE if null
-         * @throws IllegalArgumentException if targetEntityClass is null, not a bean class, or has zero or multiple ID fields
-         * @throws IllegalArgumentException if dynamoDBExecutor is null or tableName is null/empty
+         * @throws IllegalArgumentException if {@code targetEntityClass} or {@code dynamoDBExecutor} is null,
+         *         {@code tableName} is null/empty, {@code targetEntityClass} is not a bean class, or it has
+         *         zero or multiple ID-annotated fields
          */
         Mapper(final Class<T> targetEntityClass, final DynamoDBExecutor dynamoDBExecutor, final String tableName, final NamingPolicy namingPolicy) {
             N.checkArgNotNull(targetEntityClass, "targetEntityClass");
@@ -3428,10 +3430,12 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Retrieves multiple items from DynamoDB in a single batch operation.
-         * 
+         *
          * <p>This method extracts keys from the provided entities and fetches all corresponding items
          * in a single batch request. This is more efficient than multiple individual getItem calls.
-         * DynamoDB limits batch get operations to 100 items per request.</p>
+         * DynamoDB limits batch get operations to 100 items per request; this method does NOT split
+         * larger collections automatically — the caller is responsible for batching to stay within
+         * the service limit.</p>
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3580,10 +3584,12 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Saves multiple entities to DynamoDB in a single batch operation.
-         * 
+         *
          * <p>This method is more efficient than multiple individual putItem calls for bulk inserts.
-         * DynamoDB limits batch write operations to 25 items per request. Items are written in parallel
-         * and the operation is atomic per item but not for the batch as a whole.</p>
+         * DynamoDB limits batch write operations to 25 items per request; this method does NOT split
+         * larger collections automatically — the caller is responsible for batching to stay within
+         * the service limit. Items are written in parallel and the operation is atomic per item but
+         * not for the batch as a whole.</p>
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3761,10 +3767,12 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Deletes multiple items from DynamoDB in a single batch operation.
-         * 
+         *
          * <p>This method is more efficient than multiple individual deleteItem calls for bulk deletions.
-         * DynamoDB limits batch write operations to 25 items per request. Deletions are processed
-         * in parallel and are atomic per item but not for the batch as a whole.</p>
+         * DynamoDB limits batch write operations to 25 items per request; this method does NOT split
+         * larger collections automatically — the caller is responsible for batching to stay within
+         * the service limit. Deletions are processed in parallel and are atomic per item but not for
+         * the batch as a whole.</p>
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code

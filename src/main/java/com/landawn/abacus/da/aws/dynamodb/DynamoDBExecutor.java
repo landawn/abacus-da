@@ -141,6 +141,10 @@ import com.landawn.abacus.util.stream.Stream;
  * List<User> users = executor.list(query, User.class);
  * }</pre>
  *
+ * <p><b>Validation:</b> Constructors throw {@link IllegalArgumentException} (not {@code NullPointerException}) when
+ * required arguments are {@code null}. Static helper methods that read {@code entity.getClass()} will throw
+ * {@link NullPointerException} when {@code entity} is {@code null}.</p>
+ *
  * @see <a href="http://docs.aws.amazon.com/AWSJavaSDK/latest/javadoc/">com.amazonaws.services.dynamodbv2.AmazonDynamoDB</a>
  * @see AsyncDynamoDBExecutor
  * @see <a href="https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/">DynamoDB Developer Guide</a>
@@ -389,7 +393,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * CAMEL_CASE naming policy by default for attribute name conversion.</p>
      * 
      * <p>Entity classes must be annotated with @Table, @javax.persistence.Table, or @jakarta.persistence.Table
-     * to specify the DynamoDB table name. ID fields must be annotated with appropriate key annotations.</p>
+     * to specify the DynamoDB table name. Exactly one ID property (annotated with @Id or equivalent) is required;
+     * mapping fails with {@link IllegalArgumentException} if no ID or multiple IDs are declared.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -451,11 +456,15 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * }</pre>
      * 
      * @param <T> the entity type
-     * @param targetEntityClass the entity class to create mapper for. Must be a valid bean class. Must not be null.
+     * @param targetEntityClass the entity class to create mapper for. Must be a valid bean class with exactly one
+     *                          ID property. Must not be null.
      * @param tableName the DynamoDB table name to use for operations. Must not be null or empty.
-     * @param namingPolicy the naming policy for converting property names to attribute names. Must not be null.
+     * @param namingPolicy the naming policy for converting property names to attribute names; if {@code null},
+     *                     {@link NamingPolicy#CAMEL_CASE} is used.
      * @return a new Mapper instance configured with the specified parameters, never null
-     * @throws IllegalArgumentException if any parameter is null, targetEntityClass is not a bean class, or tableName is empty
+     * @throws IllegalArgumentException if {@code targetEntityClass} or {@code dynamoDBExecutor} is {@code null},
+     *                                  if {@code tableName} is null/empty, if {@code targetEntityClass} is not a bean
+     *                                  class, or if it does not declare exactly one ID property
      */
     public <T> Mapper<T> mapper(final Class<T> targetEntityClass, final String tableName, final NamingPolicy namingPolicy) {
         return new Mapper<>(targetEntityClass, this, tableName, namingPolicy);
@@ -465,21 +474,22 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * Returns an asynchronous version of this DynamoDB executor for non-blocking operations.
      * 
      * <p>The returned AsyncDynamoDBExecutor provides the same functionality as this synchronous executor
-     * but returns CompletableFuture instances for all operations, allowing for asynchronous and reactive
+     * but returns {@link com.landawn.abacus.util.ContinuableFuture} instances for all operations, allowing for asynchronous
      * programming patterns. All async operations share the same underlying DynamoDB client and configuration.</p>
      * 
-     * <p>The async executor uses a dedicated thread pool configured during construction with CPU-optimized
-     * settings (core threads = max(64, CPU_CORES * 8), max threads = max(128, CPU_CORES * 16)).</p>
+     * <p>The async executor uses the {@link AsyncExecutor} supplied during construction. When the default
+     * is used, it is a dedicated thread pool with CPU-optimized settings (core threads = max(64, CPU_CORES * 8),
+     * max threads = max(128, CPU_CORES * 16)).</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * CompletableFuture<User> future = executor.async().getItem(tableName, key, User.class);
-     * future.thenApply(user -> {
+     * ContinuableFuture<User> future = executor.async().getItem(tableName, key, User.class);
+     * future.thenRunAsync(user -> {
      *     // Process user asynchronously
-     *     return user.getName();
-     * }).thenAccept(System.out::println);
+     *     System.out.println(user == null ? "(not found)" : user.getName());
+     * });
      * }</pre>
-     * 
+     *
      * @return an AsyncDynamoDBExecutor instance sharing this executor's configuration, never null
      */
     public AsyncDynamoDBExecutor async() {
@@ -505,16 +515,16 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * AttributeValue stringAttr = attrValueOf("Hello World");   // S: "Hello World"
-     * AttributeValue numberAttr = attrValueOf(42);              // N: "42"
-     * AttributeValue boolAttr = attrValueOf(true);              // BOOL: true
-     * AttributeValue nullAttr = attrValueOf(null);              // NULL: true
+     * AttributeValue stringAttr = toAttributeValue("Hello World");   // S: "Hello World"
+     * AttributeValue numberAttr = toAttributeValue(42);              // N: "42"
+     * AttributeValue boolAttr = toAttributeValue(true);              // BOOL: true
+     * AttributeValue nullAttr = toAttributeValue(null);              // NULL: true
      * }</pre>
      * 
      * @param value the Java object to convert, can be null
      * @return an AttributeValue representing the input value with appropriate type mapping, never null
      */
-    public static AttributeValue attrValueOf(final Object value) {
+    public static AttributeValue toAttributeValue(final Object value) {
         final AttributeValue attrVal = new AttributeValue();
 
         if (value == null) {
@@ -541,24 +551,24 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * 
      * <p>This convenience method creates an AttributeValueUpdate using the default PUT action,
      * which replaces the existing attribute value with the new value. The input value is automatically
-     * converted to an AttributeValue using the same rules as {@link #attrValueOf(Object)}.</p>
+     * converted to an AttributeValue using the same rules as {@link #toAttributeValue(Object)}.</p>
      * 
-     * <p>This is equivalent to calling {@code attrValueUpdateOf(value, AttributeAction.PUT)}.</p>
+     * <p>This is equivalent to calling {@code toAttributeValueUpdate(value, AttributeAction.PUT)}.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValueUpdate> updates = new HashMap<>();
-     * updates.put("name", attrValueUpdateOf("John Doe"));   // PUT action
-     * updates.put("age", attrValueUpdateOf(30));            // PUT action
+     * updates.put("name", toAttributeValueUpdate("John Doe"));   // PUT action
+     * updates.put("age", toAttributeValueUpdate(30));            // PUT action
      * }</pre>
      * 
      * @param value the value to create AttributeValueUpdate for, can be null
      * @return an AttributeValueUpdate with PUT action containing the converted value, never null
-     * @see #attrValueUpdateOf(Object, AttributeAction)
-     * @see #attrValueOf(Object)
+     * @see #toAttributeValueUpdate(Object, AttributeAction)
+     * @see #toAttributeValue(Object)
      */
-    public static AttributeValueUpdate attrValueUpdateOf(final Object value) {
-        return attrValueUpdateOf(value, AttributeAction.PUT);
+    public static AttributeValueUpdate toAttributeValueUpdate(final Object value) {
+        return toAttributeValueUpdate(value, AttributeAction.PUT);
     }
 
     /**
@@ -576,22 +586,22 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Replace value
-     * AttributeValueUpdate put = attrValueUpdateOf("new value", AttributeAction.PUT);
+     * AttributeValueUpdate put = toAttributeValueUpdate("new value", AttributeAction.PUT);
      * 
      * // Add to numeric value
-     * AttributeValueUpdate add = attrValueUpdateOf(5, AttributeAction.ADD);
+     * AttributeValueUpdate add = toAttributeValueUpdate(5, AttributeAction.ADD);
      * 
      * // Delete attribute
-     * AttributeValueUpdate delete = attrValueUpdateOf(null, AttributeAction.DELETE);
+     * AttributeValueUpdate delete = toAttributeValueUpdate(null, AttributeAction.DELETE);
      * }</pre>
      * 
      * @param value the value for the update operation, can be null for DELETE actions
      * @param action the update action to perform
      * @return an AttributeValueUpdate with the specified action and converted value, never null
-     * @see #attrValueOf(Object)
+     * @see #toAttributeValue(Object)
      */
-    public static AttributeValueUpdate attrValueUpdateOf(final Object value, final AttributeAction action) {
-        return new AttributeValueUpdate(attrValueOf(value), action);
+    public static AttributeValueUpdate toAttributeValueUpdate(final Object value, final AttributeAction action) {
+        return new AttributeValueUpdate(toAttributeValue(value), action);
     }
 
     /**
@@ -603,13 +613,12 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValue> key = asKey("userId", "user123");
-     * // Results in: {"userId": AttributeValue.builder().s("user123").build()}
+     * // Results in a map of one entry: "userId" -> AttributeValue with S = "user123"
      * }</pre>
-     * 
+     *
      * @param keyName the name of the key attribute (usually partition key). Must not be null.
      * @param value the value for the key attribute, can be null
      * @return a Map containing the single key-value pair as AttributeValue, never null
-     * @throws IllegalArgumentException if keyName is null
      * @see #asKey(String, Object, String, Object)
      */
     public static Map<String, AttributeValue> asKey(final String keyName, final Object value) {
@@ -626,18 +635,15 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValue> key = asKey("userId", "user123", "timestamp", 1640995200L);
-     * // Results in: {
-     * //   "userId": AttributeValue.builder().s("user123").build(),
-     * //   "timestamp": AttributeValue.builder().n("1640995200").build()
-     * // }
+     * // Results in two entries: "userId" -> AttributeValue with S = "user123",
+     * //                         "timestamp" -> AttributeValue with N = "1640995200"
      * }</pre>
-     * 
+     *
      * @param keyName the name of the partition key attribute. Must not be null.
      * @param value the value for the partition key, can be null
      * @param keyName2 the name of the sort key attribute. Must not be null.
      * @param value2 the value for the sort key, can be null
      * @return a Map containing both key-value pairs as AttributeValues, never null
-     * @throws IllegalArgumentException if keyName or keyName2 is null
      * @see #asKey(String, Object)
      */
     public static Map<String, AttributeValue> asKey(final String keyName, final Object value, final String keyName2, final Object value2) {
@@ -667,7 +673,6 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param keyName3 the name of the third key attribute. Must not be null.
      * @param value3 the value for the third key, can be null
      * @return a Map containing all three key-value pairs as AttributeValues, never null
-     * @throws IllegalArgumentException if any keyName is null
      */
     public static Map<String, AttributeValue> asKey(final String keyName, final Object value, final String keyName2, final Object value2, final String keyName3,
             final Object value3) {
@@ -690,9 +695,11 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * );
      * }</pre>
      * 
-     * @param a variable arguments in name-value pairs. Must have even number of arguments.
+     * @param a variable arguments in name-value pairs. Must have an even number of arguments and the
+     *          even-indexed elements (the keys) must be Strings.
      * @return a Map containing all key-value pairs as AttributeValues, never null
-     * @throws IllegalArgumentException if argument count is not even (must be name-value pairs)
+     * @throws IllegalArgumentException if argument count is not even
+     * @throws ClassCastException if an even-indexed argument is not a String
      */
     public static Map<String, AttributeValue> asKey(final Object... a) {
         return asItem(a);
@@ -708,21 +715,21 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValue> item = asItem("email", "user@example.com");
-     * // Results in: {"email": AttributeValue.builder().s("user@example.com").build()}
-     * 
+     * // Results in a single entry: "email" -> AttributeValue with S = "user@example.com"
+     *
      * // Can be extended with putAll
      * item.putAll(asItem("age", 25));
      * }</pre>
-     * 
+     *
      * @param attrName the name of the attribute. Must not be {@code null}.
      * @param value the value for the attribute, automatically converted to AttributeValue
-     * @return a LinkedHashMap containing the single attribute-value pair, never {@code null}
-     * @throws IllegalArgumentException if attrName is {@code null}
+     * @return a Map (currently a LinkedHashMap-backed result from {@link N#asMap}) containing the
+     *         single attribute-value pair, never {@code null}
      * @see #asItem(String, Object, String, Object) for multiple attributes
-     * @see #attrValueOf(Object) for value conversion rules
+     * @see #toAttributeValue(Object) for value conversion rules
      */
     public static Map<String, AttributeValue> asItem(final String attrName, final Object value) {
-        return N.asMap(attrName, attrValueOf(value));
+        return N.asMap(attrName, toAttributeValue(value));
     }
 
     /**
@@ -738,22 +745,20 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *     "userId", "user123",
      *     "email", "user@example.com"
      * );
-     * // Results in: {
-     * //   "userId": AttributeValue.builder().s("user123").build(),
-     * //   "email": AttributeValue.builder().s("user@example.com").build()
-     * // }
+     * // Results in two entries:
+     * //   "userId" -> AttributeValue with S = "user123"
+     * //   "email"  -> AttributeValue with S = "user@example.com"
      * }</pre>
-     * 
+     *
      * @param attrName the name of the first attribute. Must not be {@code null}.
      * @param value the value for the first attribute
      * @param attrName2 the name of the second attribute. Must not be {@code null}.
      * @param value2 the value for the second attribute
-     * @return a LinkedHashMap containing both attribute-value pairs, never {@code null}
-     * @throws IllegalArgumentException if any attribute name is {@code null}
+     * @return a Map containing both attribute-value pairs, never {@code null}
      * @see #asItem(String, Object, String, Object, String, Object) for three attributes
      */
     public static Map<String, AttributeValue> asItem(final String attrName, final Object value, final String attrName2, final Object value2) {
-        return N.asMap(attrName, attrValueOf(value), attrName2, attrValueOf(value2));
+        return N.asMap(attrName, toAttributeValue(value), attrName2, toAttributeValue(value2));
     }
 
     /**
@@ -770,26 +775,24 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *     "timestamp", System.currentTimeMillis(),
      *     "status", "ACTIVE"
      * );
-     * // Results in: {
-     * //   "userId": AttributeValue.builder().s("user123").build(),
-     * //   "timestamp": AttributeValue.builder().n("1640995200000").build(),
-     * //   "status": AttributeValue.builder().s("ACTIVE").build()
-     * // }
+     * // Results in three entries:
+     * //   "userId"    -> AttributeValue with S = "user123"
+     * //   "timestamp" -> AttributeValue with N = "1640995200000"
+     * //   "status"    -> AttributeValue with S = "ACTIVE"
      * }</pre>
-     * 
+     *
      * @param attrName the name of the first attribute. Must not be {@code null}.
      * @param value the value for the first attribute
      * @param attrName2 the name of the second attribute. Must not be {@code null}.
      * @param value2 the value for the second attribute
      * @param attrName3 the name of the third attribute. Must not be {@code null}.
      * @param value3 the value for the third attribute
-     * @return a LinkedHashMap containing all three attribute-value pairs, never {@code null}
-     * @throws IllegalArgumentException if any attribute name is {@code null}
+     * @return a Map containing all three attribute-value pairs, never {@code null}
      * @see #asItem(Object...) for variable number of attributes
      */
     public static Map<String, AttributeValue> asItem(final String attrName, final Object value, final String attrName2, final Object value2,
             final String attrName3, final Object value3) {
-        return N.asMap(attrName, attrValueOf(value), attrName2, attrValueOf(value2), attrName3, attrValueOf(value3));
+        return N.asMap(attrName, toAttributeValue(value), attrName2, toAttributeValue(value2), attrName3, toAttributeValue(value3));
     }
 
     /**
@@ -808,19 +811,18 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *     "premium", true,
      *     "balance", new BigDecimal("99.99")
      * );
-     * // Results in: {
-     * //   "userId": AttributeValue.builder().s("user123").build(),
-     * //   "age": AttributeValue.builder().n("30").build(),
-     * //   "premium": AttributeValue.builder().bool(true).build(),
-     * //   "balance": AttributeValue.builder().n("99.99").build()
-     * // }
+     * // Results in four entries:
+     * //   "userId"  -> AttributeValue with S    = "user123"
+     * //   "age"     -> AttributeValue with N    = "30"
+     * //   "premium" -> AttributeValue with BOOL = true
+     * //   "balance" -> AttributeValue with N    = "99.99"
      * }</pre>
-     * 
+     *
      * @param a variable arguments in name-value pairs. Must have even number of arguments.
-     *          Odd-indexed arguments must be Strings (attribute names).
+     *          Even-indexed arguments (0, 2, 4, ...) must be Strings (attribute names).
      * @return a LinkedHashMap containing all attribute-value pairs, never {@code null}
-     * @throws IllegalArgumentException if argument count is not even or if odd-indexed
-     *         arguments are not Strings
+     * @throws IllegalArgumentException if argument count is not even
+     * @throws ClassCastException if an even-indexed argument is not a String
      */
     public static Map<String, AttributeValue> asItem(final Object... a) {
         if ((a.length % 2) != 0) {
@@ -830,7 +832,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
         final Map<String, AttributeValue> item = N.newLinkedHashMap(a.length / 2);
 
         for (int i = 0; i < a.length; i++) {
-            item.put((String) a[i], attrValueOf(a[++i]));
+            item.put((String) a[i], toAttributeValue(a[++i]));
         }
 
         return item;
@@ -846,22 +848,20 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValueUpdate> updates = asUpdateItem("lastModified", Instant.now());
-     * // Results in: {
-     * //   "lastModified": AttributeValueUpdate with PUT action
-     * // }
-     * 
+     * // Results in a single entry: "lastModified" -> AttributeValueUpdate with PUT action
+     *
+     * Map<String, AttributeValue> key = asKey("userId", "user123");
      * UpdateItemResult result = executor.updateItem("Users", key, updates);
      * }</pre>
-     * 
+     *
      * @param attrName the name of the attribute to update. Must not be {@code null}.
      * @param value the new value for the attribute, automatically converted
-     * @return a LinkedHashMap containing the single attribute update, never {@code null}
-     * @throws IllegalArgumentException if attrName is {@code null}
+     * @return a Map containing the single attribute update, never {@code null}
      * @see #asUpdateItem(String, Object, String, Object) for multiple updates
-     * @see #attrValueUpdateOf(Object) for update creation
+     * @see #toAttributeValueUpdate(Object) for update creation
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final String attrName, final Object value) {
-        return N.asMap(attrName, attrValueUpdateOf(value));
+        return N.asMap(attrName, toAttributeValueUpdate(value));
     }
 
     /**
@@ -877,24 +877,23 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *     "email", "newemail@example.com",
      *     "lastModified", System.currentTimeMillis()
      * );
-     * // Results in: {
-     * //   "email": AttributeValueUpdate with PUT action,
-     * //   "lastModified": AttributeValueUpdate with PUT action
-     * // }
-     * 
+     * // Results in two entries:
+     * //   "email"        -> AttributeValueUpdate with PUT action
+     * //   "lastModified" -> AttributeValueUpdate with PUT action
+     *
+     * Map<String, AttributeValue> key = asKey("userId", "user123");
      * UpdateItemResult result = executor.updateItem("Users", key, updates);
      * }</pre>
-     * 
+     *
      * @param attrName the name of the first attribute to update. Must not be {@code null}.
      * @param value the new value for the first attribute
      * @param attrName2 the name of the second attribute to update. Must not be {@code null}.
      * @param value2 the new value for the second attribute
-     * @return a LinkedHashMap containing both attribute updates, never {@code null}
-     * @throws IllegalArgumentException if any attribute name is {@code null}
+     * @return a Map containing both attribute updates, never {@code null}
      * @see #asUpdateItem(String, Object, String, Object, String, Object) for three updates
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final String attrName, final Object value, final String attrName2, final Object value2) {
-        return N.asMap(attrName, attrValueUpdateOf(value), attrName2, attrValueUpdateOf(value2));
+        return N.asMap(attrName, toAttributeValueUpdate(value), attrName2, toAttributeValueUpdate(value2));
     }
 
     /**
@@ -911,28 +910,24 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *     "verifiedAt", Instant.now().toEpochMilli(),
      *     "verifiedBy", "admin123"
      * );
-     * // Results in: {
-     * //   "status": AttributeValueUpdate with PUT action,
-     * //   "verifiedAt": AttributeValueUpdate with PUT action,
-     * //   "verifiedBy": AttributeValueUpdate with PUT action
-     * // }
-     * 
+     * // Each entry maps the attribute name to an AttributeValueUpdate with PUT action.
+     *
+     * Map<String, AttributeValue> key = asKey("userId", "user123");
      * UpdateItemResult result = executor.updateItem("Users", key, updates);
      * }</pre>
-     * 
+     *
      * @param attrName the name of the first attribute to update. Must not be {@code null}.
      * @param value the new value for the first attribute
      * @param attrName2 the name of the second attribute to update. Must not be {@code null}.
      * @param value2 the new value for the second attribute
      * @param attrName3 the name of the third attribute to update. Must not be {@code null}.
      * @param value3 the new value for the third attribute
-     * @return a LinkedHashMap containing all three attribute updates, never {@code null}
-     * @throws IllegalArgumentException if any attribute name is {@code null}
+     * @return a Map containing all three attribute updates, never {@code null}
      * @see #asUpdateItem(Object...) for variable number of updates
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final String attrName, final Object value, final String attrName2, final Object value2,
             final String attrName3, final Object value3) {
-        return N.asMap(attrName, attrValueUpdateOf(value), attrName2, attrValueUpdateOf(value2), attrName3, attrValueUpdateOf(value3));
+        return N.asMap(attrName, toAttributeValueUpdate(value), attrName2, toAttributeValueUpdate(value2), attrName3, toAttributeValueUpdate(value3));
     }
 
     /**
@@ -951,9 +946,11 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * );
      * }</pre>
      * 
-     * @param a variable arguments in name-value pairs. Must have even number of arguments.
+     * @param a variable arguments in name-value pairs. Must have an even number of arguments and the
+     *          even-indexed elements (the attribute names) must be Strings.
      * @return a LinkedHashMap containing all attribute updates with PUT action, never null
      * @throws IllegalArgumentException if argument count is not even
+     * @throws ClassCastException if an even-indexed argument is not a String
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final Object... a) {
         if ((a.length % 2) != 0) {
@@ -963,7 +960,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
         final Map<String, AttributeValueUpdate> item = N.newLinkedHashMap(a.length / 2);
 
         for (int i = 0; i < a.length; i++) {
-            item.put((String) a[i], attrValueUpdateOf(a[++i]));
+            item.put((String) a[i], toAttributeValueUpdate(a[++i]));
         }
 
         return item;
@@ -1034,18 +1031,18 @@ public final class DynamoDBExecutor implements AutoCloseable {
                     continue;
                 }
 
-                attrs.put(getAttrName(propInfo, namingPolicy), attrValueOf(propValue));
+                attrs.put(getAttrName(propInfo, namingPolicy), toAttributeValue(propValue));
             }
         } else if (Map.class.isAssignableFrom(cls)) {
             final Map<String, Object> map = (Map<String, Object>) entity;
 
             if (isCamelCase) {
                 for (final Map.Entry<String, Object> entry : map.entrySet()) {
-                    attrs.put(entry.getKey(), attrValueOf(entry.getValue()));
+                    attrs.put(entry.getKey(), toAttributeValue(entry.getValue()));
                 }
             } else {
                 for (final Map.Entry<String, Object> entry : map.entrySet()) {
-                    attrs.put(namingPolicy.convert(entry.getKey()), attrValueOf(entry.getValue()));
+                    attrs.put(namingPolicy.convert(entry.getKey()), toAttributeValue(entry.getValue()));
                 }
             }
         } else if (entity instanceof Object[]) {
@@ -1122,18 +1119,18 @@ public final class DynamoDBExecutor implements AutoCloseable {
                     continue;
                 }
 
-                attrs.put(getAttrName(propInfo, namingPolicy), attrValueUpdateOf(propValue));
+                attrs.put(getAttrName(propInfo, namingPolicy), toAttributeValueUpdate(propValue));
             }
         } else if (Map.class.isAssignableFrom(cls)) {
             final Map<String, Object> map = (Map<String, Object>) entity;
 
             if (isCamelCase) {
                 for (final Map.Entry<String, Object> entry : map.entrySet()) {
-                    attrs.put(entry.getKey(), attrValueUpdateOf(entry.getValue()));
+                    attrs.put(entry.getKey(), toAttributeValueUpdate(entry.getValue()));
                 }
             } else {
                 for (final Map.Entry<String, Object> entry : map.entrySet()) {
-                    attrs.put(namingPolicy.convert(entry.getKey()), attrValueUpdateOf(entry.getValue()));
+                    attrs.put(namingPolicy.convert(entry.getKey()), toAttributeValueUpdate(entry.getValue()));
                 }
             }
         } else if (entity instanceof Object[]) {
@@ -1664,9 +1661,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * <pre>{@code
      * ScanResult result = dynamoDBClient.scan(scanRequest);
      * Dataset dataset = DynamoDBExecutor.extractData(result);
-     * dataset.toCSV(new FileWriter("data.csv"));
+     * dataset.toCsv(new File("data.csv"));
      * }</pre>
-     * 
+     *
      * @param scanResult the ScanResult to extract data from
      * @return a Dataset containing the scan results in tabular format
      */
@@ -2286,10 +2283,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * Map<String, AttributeValue> key = asKey("userId", "user123");
      * 
      * Map<String, AttributeValueUpdate> updates = new HashMap<>();
-     * updates.put("lastLogin", attrValueUpdateOf(Instant.now().toString()));
+     * updates.put("lastLogin", toAttributeValueUpdate(Instant.now().toString()));
      * updates.put("loginCount", new AttributeValueUpdate()
      *     .withAction(AttributeAction.ADD)
-     *     .withValue(attrValueOf(1)));
+     *     .withValue(toAttributeValue(1)));
      * updates.put("tempToken", new AttributeValueUpdate()
      *     .withAction(AttributeAction.DELETE));
      * 
@@ -2377,9 +2374,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *         "#c", "counter"
      *     ))
      *     .withExpressionAttributeValues(Map.of(
-     *         ":name", attrValueOf("New Name"),
-     *         ":inc", attrValueOf(1),
-     *         ":old", attrValueOf("Old Name")
+     *         ":name", toAttributeValue("New Name"),
+     *         ":inc", toAttributeValue(1),
+     *         ":old", toAttributeValue("Old Name")
      *     ))
      *     .withConditionExpression("#n = :old")
      *     .withReturnValues("ALL_NEW");
@@ -2485,7 +2482,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *     .withKey(asKey("userId", "user123"))
      *     .withConditionExpression("attribute_exists(userId) AND #s = :status")
      *     .withExpressionAttributeNames(Map.of("#s", "status"))
-     *     .withExpressionAttributeValues(Map.of(":status", attrValueOf("INACTIVE")))
+     *     .withExpressionAttributeValues(Map.of(":status", toAttributeValue("INACTIVE")))
      *     .withReturnValues("ALL_OLD");
      * 
      * try {
@@ -2517,7 +2514,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *     .withTableName("Sales")
      *     .withKeyConditionExpression("region = :region")
      *     .withExpressionAttributeValues(Map.of(
-     *         ":region", attrValueOf("US-WEST")
+     *         ":region", toAttributeValue("US-WEST")
      *     ));
      * 
      * List<Map<String, Object>> sales = executor.list(request);
@@ -2544,7 +2541,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *     .withTableName("Sales")
      *     .withKeyConditionExpression("region = :region")
      *     .withExpressionAttributeValues(Map.of(
-     *         ":region", attrValueOf("US-WEST")
+     *         ":region", toAttributeValue("US-WEST")
      *     ));
      * 
      * List<Sale> sales = executor.list(request, Sale.class);
@@ -2643,19 +2640,19 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *     .withTableName("Sales")
      *     .withKeyConditionExpression("region = :region")
      *     .withExpressionAttributeValues(Map.of(
-     *         ":region", attrValueOf("US-WEST")
+     *         ":region", toAttributeValue("US-WEST")
      *     ));
      * 
      * Dataset sales = executor.query(request);
-     * 
+     *
      * // Tabular operations
      * sales.println();   // Print as table
-     * double totalRevenue = sales.getColumn("revenue")
-     *     .mapToDouble(Double.class::cast)
+     * double totalRevenue = sales.<Number>getColumn("revenue").stream()
+     *     .mapToDouble(Number::doubleValue)
      *     .sum();
-     * 
+     *
      * // Export to CSV
-     * sales.toCSV(new FileWriter("sales.csv"));
+     * sales.toCsv(new File("sales.csv"));
      * }</pre>
      * 
      * @param queryRequest the query parameters. Must not be {@code null}.
@@ -2680,7 +2677,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *     .withTableName("Sales")
      *     .withKeyConditionExpression("region = :region")
      *     .withExpressionAttributeValues(Map.of(
-     *         ":region", attrValueOf("US-WEST")
+     *         ":region", toAttributeValue("US-WEST")
      *     ));
      * 
      * Dataset sales = executor.query(request, Sale.class);
@@ -2779,7 +2776,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *     .withTableName("Sales")
      *     .withKeyConditionExpression("region = :region")
      *     .withExpressionAttributeValues(Map.of(
-     *         ":region", attrValueOf("US-WEST")
+     *         ":region", toAttributeValue("US-WEST")
      *     ));
      *
      * try (Stream<Map<String, Object>> stream = executor.stream(request)) {
@@ -2821,7 +2818,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *     .withTableName("Users")
      *     .withKeyConditionExpression("status = :status")
      *     .withExpressionAttributeValues(Map.of(
-     *         ":status", attrValueOf("ACTIVE")
+     *         ":status", toAttributeValue("ACTIVE")
      *     ));
      *
      * try (Stream<User> userStream = executor.stream(request, User.class)) {
@@ -3030,7 +3027,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * Map<String, Condition> filters = Map.of(
      *     "status", new Condition()
      *         .withComparisonOperator(ComparisonOperator.EQ)
-     *         .withAttributeValueList(attrValueOf("ACTIVE"))
+     *         .withAttributeValueList(toAttributeValue("ACTIVE"))
      * );
      * 
      * try (Stream<User> activeUsers = executor.scan("Users", filters, User.class)) {
@@ -3071,7 +3068,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * Map<String, Condition> filters = Map.of(
      *     "department", new Condition()
      *         .withComparisonOperator(ComparisonOperator.EQ)
-     *         .withAttributeValueList(attrValueOf("Engineering"))
+     *         .withAttributeValueList(toAttributeValue("Engineering"))
      * );
      * 
      * try (Stream<Employee> engineers = executor.scan("Employees", attributes, filters, Employee.class)) {
@@ -3116,8 +3113,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *     .withTableName("Products")
      *     .withFilterExpression("price BETWEEN :low AND :high")
      *     .withExpressionAttributeValues(Map.of(
-     *         ":low", attrValueOf(100),
-     *         ":high", attrValueOf(500)
+     *         ":low", toAttributeValue(100),
+     *         ":high", toAttributeValue(500)
      *     ))
      *     .withProjectionExpression("productId, name, price")
      *     .withLimit(50);   // Page size
@@ -3787,9 +3784,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * // Print tabular view
          * results.println();
          *
-         * // Perform aggregations
-         * double avgAge = results.stream()
-         *     .mapToDouble(row -> row.getDouble("age"))
+         * // Perform aggregations over a numeric column
+         * double avgAge = results.<Number>getColumn("age").stream()
+         *     .mapToDouble(Number::doubleValue)
          *     .average()
          *     .orElse(0.0);
          * System.out.println("Average age: " + avgAge);
@@ -3990,7 +3987,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
             final Map<String, AttributeValue> key = new HashMap<>(keyPropNames.size());
 
             for (int i = 0, len = keyPropNames.size(); i < len; i++) {
-                key.put(keyPropNames.get(i), attrValueOf(keyPropInfos.get(i).getPropValue(entity)));
+                key.put(keyPropNames.get(i), toAttributeValue(keyPropInfos.get(i).getPropValue(entity)));
             }
 
             return key;
@@ -4139,7 +4136,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return a Map containing the equality condition for use in DynamoDB operations
          */
         public static Map<String, Condition> eq(final String attrName, final Object attrValue) {
-            return N.asMap(attrName, new Condition().withComparisonOperator(ComparisonOperator.EQ).withAttributeValueList(attrValueOf(attrValue)));
+            return N.asMap(attrName, new Condition().withComparisonOperator(ComparisonOperator.EQ).withAttributeValueList(toAttributeValue(attrValue)));
         }
 
         /**
@@ -4157,7 +4154,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return a Map containing the not-equal condition for use in DynamoDB operations
          */
         public static Map<String, Condition> ne(final String attrName, final Object attrValue) {
-            return N.asMap(attrName, new Condition().withComparisonOperator(ComparisonOperator.NE).withAttributeValueList(attrValueOf(attrValue)));
+            return N.asMap(attrName, new Condition().withComparisonOperator(ComparisonOperator.NE).withAttributeValueList(toAttributeValue(attrValue)));
         }
 
         /**
@@ -4175,7 +4172,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return a Map containing the greater-than condition for use in DynamoDB operations
          */
         public static Map<String, Condition> gt(final String attrName, final Object attrValue) {
-            return N.asMap(attrName, new Condition().withComparisonOperator(ComparisonOperator.GT).withAttributeValueList(attrValueOf(attrValue)));
+            return N.asMap(attrName, new Condition().withComparisonOperator(ComparisonOperator.GT).withAttributeValueList(toAttributeValue(attrValue)));
         }
 
         /**
@@ -4193,7 +4190,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return a Map containing the greater-than-or-equal condition for use in DynamoDB operations
          */
         public static Map<String, Condition> ge(final String attrName, final Object attrValue) {
-            return N.asMap(attrName, new Condition().withComparisonOperator(ComparisonOperator.GE).withAttributeValueList(attrValueOf(attrValue)));
+            return N.asMap(attrName, new Condition().withComparisonOperator(ComparisonOperator.GE).withAttributeValueList(toAttributeValue(attrValue)));
         }
 
         /**
@@ -4211,7 +4208,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return a Map containing the less-than condition for use in DynamoDB operations
          */
         public static Map<String, Condition> lt(final String attrName, final Object attrValue) {
-            return N.asMap(attrName, new Condition().withComparisonOperator(ComparisonOperator.LT).withAttributeValueList(attrValueOf(attrValue)));
+            return N.asMap(attrName, new Condition().withComparisonOperator(ComparisonOperator.LT).withAttributeValueList(toAttributeValue(attrValue)));
         }
 
         /**
@@ -4229,7 +4226,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return a Map containing the less-than-or-equal condition for use in DynamoDB operations
          */
         public static Map<String, Condition> le(final String attrName, final Object attrValue) {
-            return N.asMap(attrName, new Condition().withComparisonOperator(ComparisonOperator.LE).withAttributeValueList(attrValueOf(attrValue)));
+            return N.asMap(attrName, new Condition().withComparisonOperator(ComparisonOperator.LE).withAttributeValueList(toAttributeValue(attrValue)));
         }
 
         /**
@@ -4249,7 +4246,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          */
         public static Map<String, Condition> bt(final String attrName, final Object minAttrValue, final Object maxAttrValue) {
             return N.asMap(attrName, new Condition().withComparisonOperator(ComparisonOperator.BETWEEN)
-                    .withAttributeValueList(attrValueOf(minAttrValue), attrValueOf(maxAttrValue)));
+                    .withAttributeValueList(toAttributeValue(minAttrValue), toAttributeValue(maxAttrValue)));
         }
 
         /**
@@ -4302,7 +4299,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return a Map containing the contains condition for use in DynamoDB operations
          */
         public static Map<String, Condition> contains(final String attrName, final Object attrValue) {
-            return N.asMap(attrName, new Condition().withComparisonOperator(ComparisonOperator.CONTAINS).withAttributeValueList(attrValueOf(attrValue)));
+            return N.asMap(attrName, new Condition().withComparisonOperator(ComparisonOperator.CONTAINS).withAttributeValueList(toAttributeValue(attrValue)));
         }
 
         /**
@@ -4321,7 +4318,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return a Map containing the not-contains condition for use in DynamoDB operations
          */
         public static Map<String, Condition> notContains(final String attrName, final Object attrValue) {
-            return N.asMap(attrName, new Condition().withComparisonOperator(ComparisonOperator.NOT_CONTAINS).withAttributeValueList(attrValueOf(attrValue)));
+            return N.asMap(attrName,
+                    new Condition().withComparisonOperator(ComparisonOperator.NOT_CONTAINS).withAttributeValueList(toAttributeValue(attrValue)));
         }
 
         /**
@@ -4340,7 +4338,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return a Map containing the begins-with condition for use in DynamoDB operations
          */
         public static Map<String, Condition> beginsWith(final String attrName, final Object attrValue) {
-            return N.asMap(attrName, new Condition().withComparisonOperator(ComparisonOperator.BEGINS_WITH).withAttributeValueList(attrValueOf(attrValue)));
+            return N.asMap(attrName,
+                    new Condition().withComparisonOperator(ComparisonOperator.BEGINS_WITH).withAttributeValueList(toAttributeValue(attrValue)));
         }
 
         /**
@@ -4392,7 +4391,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
             final AttributeValue[] attributeValueList = new AttributeValue[attrValues.length];
 
             for (int i = 0, len = attrValues.length; i < len; i++) {
-                attributeValueList[i] = attrValueOf(attrValues[i]);
+                attributeValueList[i] = toAttributeValue(attrValues[i]);
             }
 
             final Condition cond = new Condition().withComparisonOperator(ComparisonOperator.IN).withAttributeValueList(attributeValueList);
@@ -4405,7 +4404,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
             int i = 0;
             for (final Object attrValue : attrValues) {
-                attributeValueList[i++] = attrValueOf(attrValue);
+                attributeValueList[i++] = toAttributeValue(attrValue);
             }
 
             final Condition cond = new Condition().withComparisonOperator(ComparisonOperator.IN).withAttributeValueList(attributeValueList);
@@ -4479,7 +4478,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return this builder for method chaining
          */
         public ConditionBuilder eq(final String attrName, final Object attrValue) {
-            condMap.put(attrName, new Condition().withComparisonOperator(ComparisonOperator.EQ).withAttributeValueList(attrValueOf(attrValue)));
+            condMap.put(attrName, new Condition().withComparisonOperator(ComparisonOperator.EQ).withAttributeValueList(toAttributeValue(attrValue)));
 
             return this;
         }
@@ -4493,7 +4492,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return this builder for method chaining
          */
         public ConditionBuilder ne(final String attrName, final Object attrValue) {
-            condMap.put(attrName, new Condition().withComparisonOperator(ComparisonOperator.NE).withAttributeValueList(attrValueOf(attrValue)));
+            condMap.put(attrName, new Condition().withComparisonOperator(ComparisonOperator.NE).withAttributeValueList(toAttributeValue(attrValue)));
 
             return this;
         }
@@ -4507,7 +4506,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return this builder for method chaining
          */
         public ConditionBuilder gt(final String attrName, final Object attrValue) {
-            condMap.put(attrName, new Condition().withComparisonOperator(ComparisonOperator.GT).withAttributeValueList(attrValueOf(attrValue)));
+            condMap.put(attrName, new Condition().withComparisonOperator(ComparisonOperator.GT).withAttributeValueList(toAttributeValue(attrValue)));
 
             return this;
         }
@@ -4521,7 +4520,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return this builder for method chaining
          */
         public ConditionBuilder ge(final String attrName, final Object attrValue) {
-            condMap.put(attrName, new Condition().withComparisonOperator(ComparisonOperator.GE).withAttributeValueList(attrValueOf(attrValue)));
+            condMap.put(attrName, new Condition().withComparisonOperator(ComparisonOperator.GE).withAttributeValueList(toAttributeValue(attrValue)));
 
             return this;
         }
@@ -4535,7 +4534,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return this builder for method chaining
          */
         public ConditionBuilder lt(final String attrName, final Object attrValue) {
-            condMap.put(attrName, new Condition().withComparisonOperator(ComparisonOperator.LT).withAttributeValueList(attrValueOf(attrValue)));
+            condMap.put(attrName, new Condition().withComparisonOperator(ComparisonOperator.LT).withAttributeValueList(toAttributeValue(attrValue)));
 
             return this;
         }
@@ -4549,7 +4548,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return this builder for method chaining
          */
         public ConditionBuilder le(final String attrName, final Object attrValue) {
-            condMap.put(attrName, new Condition().withComparisonOperator(ComparisonOperator.LE).withAttributeValueList(attrValueOf(attrValue)));
+            condMap.put(attrName, new Condition().withComparisonOperator(ComparisonOperator.LE).withAttributeValueList(toAttributeValue(attrValue)));
 
             return this;
         }
@@ -4565,7 +4564,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          */
         public ConditionBuilder bt(final String attrName, final Object minAttrValue, final Object maxAttrValue) {
             condMap.put(attrName, new Condition().withComparisonOperator(ComparisonOperator.BETWEEN)
-                    .withAttributeValueList(attrValueOf(minAttrValue), attrValueOf(maxAttrValue)));
+                    .withAttributeValueList(toAttributeValue(minAttrValue), toAttributeValue(maxAttrValue)));
 
             return this;
         }
@@ -4606,7 +4605,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return this builder for method chaining
          */
         public ConditionBuilder contains(final String attrName, final Object attrValue) {
-            condMap.put(attrName, new Condition().withComparisonOperator(ComparisonOperator.CONTAINS).withAttributeValueList(attrValueOf(attrValue)));
+            condMap.put(attrName, new Condition().withComparisonOperator(ComparisonOperator.CONTAINS).withAttributeValueList(toAttributeValue(attrValue)));
 
             return this;
         }
@@ -4621,7 +4620,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return this builder for method chaining
          */
         public ConditionBuilder notContains(final String attrName, final Object attrValue) {
-            condMap.put(attrName, new Condition().withComparisonOperator(ComparisonOperator.NOT_CONTAINS).withAttributeValueList(attrValueOf(attrValue)));
+            condMap.put(attrName, new Condition().withComparisonOperator(ComparisonOperator.NOT_CONTAINS).withAttributeValueList(toAttributeValue(attrValue)));
 
             return this;
         }
@@ -4636,7 +4635,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return this builder for method chaining
          */
         public ConditionBuilder beginsWith(final String attrName, final Object attrValue) {
-            condMap.put(attrName, new Condition().withComparisonOperator(ComparisonOperator.BEGINS_WITH).withAttributeValueList(attrValueOf(attrValue)));
+            condMap.put(attrName, new Condition().withComparisonOperator(ComparisonOperator.BEGINS_WITH).withAttributeValueList(toAttributeValue(attrValue)));
 
             return this;
         }

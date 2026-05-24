@@ -108,7 +108,7 @@ public class DynamoDBExecutorTest extends AbstractNoSQLTest {
     /**
      */
     public void test_00() {
-        AttributeValue attrValue = DynamoDBExecutor.attrValueOf(ByteBuffer.wrap("abc".getBytes(), 3, 0));
+        AttributeValue attrValue = DynamoDBExecutor.toAttributeValue(ByteBuffer.wrap("abc".getBytes(), 3, 0));
         String str = N.stringOf(attrValue);
         N.println(str);
         assertEquals("abc", new String(Strings.base64Decode(str)));

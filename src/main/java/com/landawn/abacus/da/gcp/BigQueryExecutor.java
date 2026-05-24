@@ -670,10 +670,10 @@ public class BigQueryExecutor {
      * analysis operations where columnar access is preferred.
      *
      * @param tableResult the BigQuery table result containing query data
-     * @param targetClass the target class for result conversion (entity class with getter/setter methods or Map.class)
-     *                   used to determine column types and structure
-     * @return a Dataset with column-oriented data from the table result
-     * @throws IllegalArgumentException if targetClass is not a valid entity or Map class
+     * @param targetClass the target class used to determine column types and structure; an entity class
+     *                   (with getter/setter methods) or Map.class drives type conversion, while
+     *                   {@code null} or any other class leaves column values unconverted
+     * @return a Dataset with column-oriented data from the table result, or an empty Dataset if the result has no schema
      * @see RowDataset
      * @see #query(Class, String, Object...)
      */
@@ -873,7 +873,8 @@ public class BigQueryExecutor {
      *
      * @param entity the entity instance containing updated values and primary key values
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if entity is null or no primary key fields are found
+     * @throws NullPointerException if entity is null
+     * @throws IllegalArgumentException if no primary key fields are found for the entity class
      * @see #update(Object, Set)
      */
     public TableResult update(final Object entity) {
@@ -912,7 +913,8 @@ public class BigQueryExecutor {
      * @param entity the entity instance containing updated values and primary key values
      * @param primaryKeyNames the set of property names to use as primary key fields in the WHERE clause
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if entity or primaryKeyNames is null or empty
+     * @throws NullPointerException if entity is null
+     * @throws IllegalArgumentException if primaryKeyNames is null or empty
      * @see #update(Class, Map, Condition)
      */
     public TableResult update(final Object entity, final Set<String> primaryKeyNames) {
@@ -972,9 +974,10 @@ public class BigQueryExecutor {
      *
      * @param targetClass the class representing the target table (used for table name resolution)
      * @param props a Map containing column names as keys and new values to set
-     * @param whereClause the condition specifying which records to update
+     * @param whereClause the condition specifying which records to update; if {@code null}, no WHERE
+     *                    clause is generated and all rows are updated
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if targetClass, props, or whereClause is null, or if props is empty
+     * @throws IllegalArgumentException if props is null or empty
      * @see com.landawn.abacus.query.Filters
      */
     public TableResult update(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause) {
@@ -1024,7 +1027,8 @@ public class BigQueryExecutor {
      *
      * @param entity the entity instance containing primary key values for deletion
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if entity is null or no primary key values are found
+     * @throws NullPointerException if entity is null
+     * @throws IllegalArgumentException if no primary key fields are defined or no key value is set on the entity
      * @see #delete(Class, Object...)
      */
     public TableResult delete(final Object entity) {
@@ -1089,9 +1093,10 @@ public class BigQueryExecutor {
      * }</pre>
      *
      * @param targetClass the target class representing the table (used for table name resolution)
-     * @param whereClause the condition specifying which records to delete
+     * @param whereClause the condition specifying which records to delete; if {@code null}, no WHERE
+     *                    clause is generated and all rows are deleted
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if targetClass or whereClause is null
+     * @throws IllegalArgumentException if targetClass is null
      * @see com.landawn.abacus.query.Filters
      */
     public TableResult delete(final Class<?> targetClass, final Condition whereClause) {
@@ -1312,9 +1317,9 @@ public class BigQueryExecutor {
      * }</pre>
      *
      * @param targetClass the class representing the target table (used for table name resolution)
-     * @param whereClause the condition to check for matching records
+     * @param whereClause the condition to check for matching records, or {@code null} to check whether the table has any rows
      * @return {@code true} if at least one record matches the condition, {@code false} otherwise
-     * @throws IllegalArgumentException if targetClass or whereClause is null
+     * @throws IllegalArgumentException if targetClass is null
      * @see com.landawn.abacus.query.Filters
      */
     public boolean exists(final Class<?> targetClass, final Condition whereClause) {
@@ -1354,9 +1359,9 @@ public class BigQueryExecutor {
      * @param targetClass the class representing the target table
      * @param valueClass the expected class of the returned value
      * @param propName the property/column name to select
-     * @param whereClause the condition to filter records
+     * @param whereClause the condition to filter records, or {@code null} to omit the WHERE clause
      * @return a Nullable containing the first matching value, or empty if no match found
-     * @throws IllegalArgumentException if any parameter is null
+     * @throws IllegalArgumentException if targetClass is null
      * @see #queryForSingleValue(Class, String, Object...)
      */
     public <T, V> Nullable<V> queryForSingleValue(final Class<T> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause) {
@@ -1397,7 +1402,7 @@ public class BigQueryExecutor {
      * @param parameters the parameter values to bind to the query
      * @return a Nullable containing the converted value from the first column of the first row,
      *         or empty if the query returns no rows
-     * @throws IllegalArgumentException if valueClass or query is null
+     * @throws NullPointerException if query is null
      * @see #execute(String, Object...)
      */
     public final <V> Nullable<V> queryForSingleValue(final Class<V> valueClass, final String query, final Object... parameters) {
@@ -1431,9 +1436,9 @@ public class BigQueryExecutor {
      *
      * @param <T> the target table entity type
      * @param targetClass the class representing the target table
-     * @param whereClause the condition to filter records
+     * @param whereClause the condition to filter records, or {@code null} to select all rows
      * @return a Dataset containing all matching records in columnar format
-     * @throws IllegalArgumentException if targetClass or whereClause is null
+     * @throws IllegalArgumentException if targetClass is null
      * @see #query(Class, Collection, Condition)
      * @see Dataset
      */
@@ -1465,9 +1470,9 @@ public class BigQueryExecutor {
      * @param <T> the target table entity type
      * @param targetClass the class representing the target table
      * @param selectPropNames the collection of property/column names to select, or null for all columns
-     * @param whereClause the condition to filter records
+     * @param whereClause the condition to filter records, or {@code null} to select all rows
      * @return a Dataset containing matching records for the selected columns in columnar format
-     * @throws IllegalArgumentException if targetClass or whereClause is null
+     * @throws IllegalArgumentException if targetClass is null
      * @see #query(Class, String, Object...)
      */
     public <T> Dataset query(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
@@ -1506,7 +1511,7 @@ public class BigQueryExecutor {
      * @param query the SQL query string with ? parameter placeholders
      * @param parameters the parameter values to bind to the query
      * @return a Dataset containing query results in columnar format
-     * @throws IllegalArgumentException if targetClass or query is null
+     * @throws NullPointerException if query is null
      * @see #execute(String, Object...)
      * @see Dataset
      */
@@ -1543,9 +1548,9 @@ public class BigQueryExecutor {
      * @param <T> the target type for list elements
      * @param targetClass the target class for result conversion (entity class with getter/setter methods, Map.class,
      *                   Object[].class, Collection classes, or supported basic types)
-     * @param whereClause the condition to filter records
+     * @param whereClause the condition to filter records, or {@code null} to select all rows
      * @return a List containing all matching records converted to the target type, empty list if no matches
-     * @throws IllegalArgumentException if targetClass or whereClause is null
+     * @throws IllegalArgumentException if targetClass is null
      * @see com.landawn.abacus.query.Filters
      * @see #list(Class, Collection, Condition)
      */
@@ -1582,9 +1587,9 @@ public class BigQueryExecutor {
      * @param targetClass the target class for result conversion (entity class with getter/setter methods, Map.class,
      *                   Object[].class, Collection classes, or basic single value types)
      * @param selectPropNames the collection of property/column names to select, or null for all columns
-     * @param whereClause the condition to filter records
+     * @param whereClause the condition to filter records, or {@code null} to select all rows
      * @return a List containing matching records for the selected columns converted to the target type
-     * @throws IllegalArgumentException if targetClass or whereClause is null
+     * @throws IllegalArgumentException if targetClass is null
      * @see com.landawn.abacus.query.Filters
      * @see #list(Class, String, Object...)
      */
@@ -1625,7 +1630,7 @@ public class BigQueryExecutor {
      * @param query the SQL query string with ? parameter placeholders
      * @param parameters the parameter values to bind to the query
      * @return a List containing all query results converted to the target type, empty list if no results
-     * @throws IllegalArgumentException if targetClass or query is null
+     * @throws NullPointerException if query is null
      * @see #execute(String, Object...)
      * @see #toList(TableResult, Class)
      */
@@ -1664,9 +1669,9 @@ public class BigQueryExecutor {
      * @param <T> the target type for stream elements
      * @param targetClass the target class for result conversion (entity class with getter/setter methods, Map.class,
      *                   or basic single value types)
-     * @param whereClause the condition to filter records
+     * @param whereClause the condition to filter records, or {@code null} to select all rows
      * @return a Stream containing all matching records converted to the target type
-     * @throws IllegalArgumentException if targetClass or whereClause is null
+     * @throws IllegalArgumentException if targetClass is null
      * @see com.landawn.abacus.query.Filters
      * @see #stream(Class, Collection, Condition)
      */
@@ -1702,9 +1707,9 @@ public class BigQueryExecutor {
      * @param targetClass the target class for result conversion (entity class with getter/setter methods, Map.class,
      *                   or basic single value types)
      * @param selectPropNames the collection of property/column names to select, or null for all columns
-     * @param whereClause the condition to filter records
+     * @param whereClause the condition to filter records, or {@code null} to select all rows
      * @return a Stream containing matching records for the selected columns converted to the target type
-     * @throws IllegalArgumentException if targetClass or whereClause is null
+     * @throws IllegalArgumentException if targetClass is null
      * @see com.landawn.abacus.query.Filters
      * @see #stream(Class, String, Object...)
      */
@@ -1747,7 +1752,7 @@ public class BigQueryExecutor {
      * @param query the SQL query string with ? parameter placeholders
      * @param parameters the parameter values to bind to the query
      * @return a Stream containing all query results converted to the target type
-     * @throws IllegalArgumentException if targetClass or query is null
+     * @throws NullPointerException if query is null
      * @see #execute(String, Object...)
      * @see Stream
      */

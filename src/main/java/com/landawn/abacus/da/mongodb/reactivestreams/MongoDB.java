@@ -65,7 +65,7 @@ import com.mongodb.reactivestreams.client.MongoDatabase;
  * <pre>{@code
  * // Basic reactive setup:
  * MongoDB reactiveMongoDB = new MongoDB(reactiveDatabase);
- * MongoCollectionExecutor executor = reactiveMongoDB.collExecutor("users");
+ * MongoCollectionExecutor executor = reactiveMongoDB.collectionExecutor("users");
  * 
  * // With Project Reactor:
  * Flux<Document> flux = executor.list(Filters.eq("status", "active"))
@@ -81,7 +81,7 @@ import com.mongodb.reactivestreams.client.MongoDatabase;
  * );
  *
  * // Type-safe reactive mapping:
- * MongoCollectionMapper<User> mapper = reactiveMongoDB.collMapper(User.class);
+ * MongoCollectionMapper<User> mapper = reactiveMongoDB.collectionMapper(User.class);
  * Flux<User> users = mapper.list(Filters.eq("department", "Engineering"))
  *     .take(100)  // Limit processing
  *     .buffer(10) // Process in batches
@@ -107,9 +107,9 @@ import com.mongodb.reactivestreams.client.MongoDatabase;
 @SuppressWarnings("java:S1192")
 public final class MongoDB extends MongoDBBase {
 
-    //    private final Map<String, MongoCollectionExecutor> collExecutorPool = new ConcurrentHashMap<>();
+    //    private final Map<String, MongoCollectionExecutor> collectionExecutorPool = new ConcurrentHashMap<>();
     //
-    //    private final Map<Class<?>, MongoCollectionMapper<?>> collMapperPool = new ConcurrentHashMap<>();
+    //    private final Map<Class<?>, MongoCollectionMapper<?>> collectionMapperPool = new ConcurrentHashMap<>();
 
     private final MongoDatabase mongoDatabase;
 
@@ -224,7 +224,7 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionExecutor executor = reactiveMongoDB.collExecutor("users");
+     * MongoCollectionExecutor executor = reactiveMongoDB.collectionExecutor("users");
      *
      * // Reactive operations return Flux/Mono:
      * Flux<Document> findPublisher = executor.list(Filters.eq("status", "active"));
@@ -242,17 +242,17 @@ public final class MongoDB extends MongoDBBase {
      * @see MongoCollectionExecutor
      * @see org.reactivestreams.Publisher
      */
-    public MongoCollectionExecutor collExecutor(final String collectionName) {
+    public MongoCollectionExecutor collectionExecutor(final String collectionName) {
         N.checkArgNotNull(collectionName, "collectionName");
 
-        //    MongoCollectionExecutor collExecutor = collExecutorPool.get(collectionName);
+        //    MongoCollectionExecutor collectionExecutor = collectionExecutorPool.get(collectionName);
         //
-        //    if (collExecutor == null) {
-        //        collExecutor = new MongoCollectionExecutor(mongoDatabase.getCollection(collectionName), asyncExecutor);
-        //        collExecutorPool.put(collectionName, collExecutor);
+        //    if (collectionExecutor == null) {
+        //        collectionExecutor = new MongoCollectionExecutor(mongoDatabase.getCollection(collectionName), asyncExecutor);
+        //        collectionExecutorPool.put(collectionName, collectionExecutor);
         //    }
         //
-        //    return collExecutor;
+        //    return collectionExecutor;
 
         return new MongoCollectionExecutor(mongoDatabase.getCollection(collectionName));
     }
@@ -270,7 +270,7 @@ public final class MongoDB extends MongoDBBase {
      *     .getCollection("users")
      *     .withReadPreference(ReadPreference.secondaryPreferred());
      *
-     * MongoCollectionExecutor executor = reactiveMongoDB.collExecutor(customCollection);
+     * MongoCollectionExecutor executor = reactiveMongoDB.collectionExecutor(customCollection);
      *
      * // All operations will use the custom collection settings:
      * Publisher<Long> countPublisher = executor.count();
@@ -282,17 +282,17 @@ public final class MongoDB extends MongoDBBase {
      * @see MongoCollectionExecutor
      * @see com.mongodb.reactivestreams.client.MongoCollection
      */
-    public MongoCollectionExecutor collExecutor(final MongoCollection<Document> collection) {
+    public MongoCollectionExecutor collectionExecutor(final MongoCollection<Document> collection) {
         N.checkArgNotNull(collection, "collection");
 
-        //    MongoCollectionExecutor collExecutor = collExecutorPool.get(collectionName);
+        //    MongoCollectionExecutor collectionExecutor = collectionExecutorPool.get(collectionName);
         //
-        //    if (collExecutor == null) {
-        //        collExecutor = new MongoCollectionExecutor(mongoDatabase.getCollection(collectionName), asyncExecutor);
-        //        collExecutorPool.put(collectionName, collExecutor);
+        //    if (collectionExecutor == null) {
+        //        collectionExecutor = new MongoCollectionExecutor(mongoDatabase.getCollection(collectionName), asyncExecutor);
+        //        collectionExecutorPool.put(collectionName, collectionExecutor);
         //    }
         //
-        //    return collExecutor;
+        //    return collectionExecutor;
 
         return new MongoCollectionExecutor(collection);
     }
@@ -306,11 +306,11 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> userMapper = reactiveMongoDB.collMapper(User.class);
+     * MongoCollectionMapper<User> userMapper = reactiveMongoDB.collectionMapper(User.class);
      * // Uses "User" as collection name
      *
-     * Publisher<User> userPublisher = userMapper.stream(Filters.eq("active", true));
-     * Flux.from(userPublisher)
+     * Flux<User> userFlux = userMapper.list(Filters.eq("active", true));
+     * userFlux
      *     .doOnNext(user -> System.out.println("Active user: " + user.getName()))
      *     .subscribe();
      * }</pre>
@@ -321,8 +321,8 @@ public final class MongoDB extends MongoDBBase {
      * @throws IllegalArgumentException if rowType is null
      * @see org.reactivestreams.Publisher
      */
-    public <T> MongoCollectionMapper<T> collMapper(final Class<T> rowType) {
-        return collMapper(ClassUtil.getSimpleClassName(rowType), rowType);
+    public <T> MongoCollectionMapper<T> collectionMapper(final Class<T> rowType) {
+        return collectionMapper(ClassUtil.getSimpleClassName(rowType), rowType);
     }
 
     /**
@@ -334,14 +334,14 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> userMapper = reactiveMongoDB.collMapper("users", User.class);
+     * MongoCollectionMapper<User> userMapper = reactiveMongoDB.collectionMapper("users", User.class);
      *
      * // Reactive type-safe operations:
-     * Publisher<User> activeUsers = userMapper.stream(Filters.eq("status", "active"));
-     * Publisher<InsertOneResult> insertResult = userMapper.insertOne(newUser);
+     * Flux<User> activeUsers = userMapper.list(Filters.eq("status", "active"));
+     * Mono<InsertOneResult> insertResult = userMapper.insertOne(newUser);
      *
      * // Process with backpressure:
-     * Flux.from(activeUsers)
+     * activeUsers
      *     .buffer(100)  // Process in batches
      *     .subscribe(batch -> processBatch(batch));
      * }</pre>
@@ -354,21 +354,21 @@ public final class MongoDB extends MongoDBBase {
      * @see org.reactivestreams.Publisher
      */
     @SuppressWarnings("rawtypes")
-    public <T> MongoCollectionMapper<T> collMapper(final String collectionName, final Class<T> rowType) {
+    public <T> MongoCollectionMapper<T> collectionMapper(final String collectionName, final Class<T> rowType) {
         N.checkArgNotNull(collectionName, "collectionName");
         N.checkArgNotNull(rowType, "rowType");
 
-        //    MongoCollectionMapper collMapper = collMapperPool.get(rowType);
+        //    MongoCollectionMapper collectionMapper = collectionMapperPool.get(rowType);
         //
-        //    if (collMapper == null) {
-        //        collMapper = new MongoCollectionMapper(collExecutor(collectionName), rowType);
+        //    if (collectionMapper == null) {
+        //        collectionMapper = new MongoCollectionMapper(collectionExecutor(collectionName), rowType);
         //
-        //        collMapperPool.put(rowType, collMapper);
+        //        collectionMapperPool.put(rowType, collectionMapper);
         //    }
         //
-        //    return collMapper;
+        //    return collectionMapper;
 
-        return new MongoCollectionMapper(collExecutor(collectionName), rowType);
+        return new MongoCollectionMapper(collectionExecutor(collectionName), rowType);
     }
 
     /**
@@ -385,7 +385,7 @@ public final class MongoDB extends MongoDBBase {
      *     .withWriteConcern(WriteConcern.MAJORITY)
      *     .withReadPreference(ReadPreference.primaryPreferred());
      *
-     * MongoCollectionMapper<User> mapper = reactiveMongoDB.collMapper(customCollection, User.class);
+     * MongoCollectionMapper<User> mapper = reactiveMongoDB.collectionMapper(customCollection, User.class);
      *
      * // All operations use custom collection settings with reactive streams:
      * Flux<User> users = mapper.list(Filters.eq("department", "Engineering"));
@@ -399,21 +399,21 @@ public final class MongoDB extends MongoDBBase {
      * @see com.mongodb.reactivestreams.client.MongoCollection
      */
     @SuppressWarnings("rawtypes")
-    public <T> MongoCollectionMapper<T> collMapper(final MongoCollection<Document> collection, final Class<T> rowType) {
+    public <T> MongoCollectionMapper<T> collectionMapper(final MongoCollection<Document> collection, final Class<T> rowType) {
         N.checkArgNotNull(collection, "collection");
         N.checkArgNotNull(rowType, "rowType");
 
-        //    MongoCollectionMapper collMapper = collMapperPool.get(rowType);
+        //    MongoCollectionMapper collectionMapper = collectionMapperPool.get(rowType);
         //
-        //    if (collMapper == null) {
-        //        collMapper = new MongoCollectionMapper(collExecutor(collectionName), rowType);
+        //    if (collectionMapper == null) {
+        //        collectionMapper = new MongoCollectionMapper(collectionExecutor(collectionName), rowType);
         //
-        //        collMapperPool.put(rowType, collMapper);
+        //        collectionMapperPool.put(rowType, collectionMapper);
         //    }
         //
-        //    return collMapper;
+        //    return collectionMapper;
 
-        return new MongoCollectionMapper(collExecutor(collection), rowType);
+        return new MongoCollectionMapper(collectionExecutor(collection), rowType);
     }
 
     protected static <T> T readRow(final Document row, final Class<T> rowType) {

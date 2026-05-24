@@ -23,7 +23,6 @@ import static com.landawn.abacus.util.SK._SPACE;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -99,7 +98,7 @@ import com.landawn.abacus.util.u.Optional;
  * String updateCql = PSC.update("users")
  *                       .set("lastLogin")
  *                       .where(Filters.eq("id", userId))
- *                       .iF(Filters.eq("status", "active"))
+ *                       .onlyIf(Filters.eq("status", "active"))
  *                       .build().query();
  * // Result: UPDATE users SET last_login = ? WHERE id = ? IF status = ?
  *
@@ -126,8 +125,8 @@ import com.landawn.abacus.util.u.Optional;
  * The builder maintains internal state during query construction and must not be shared across threads.</p>
  *
  * <h3>Resource Management:</h3>
- * <p>The builder uses internal resources that are automatically released when {@code cql()} or {@code pair()} 
- * is called. After calling these methods, the builder cannot be reused. Always call one of these methods 
+ * <p>The builder uses internal resources that are automatically released when {@code build()} or {@code pair()}
+ * is called. After calling either of these terminal methods, the builder cannot be reused. Always call one of them
  * to properly finalize the query and release resources.</p>
  *
  * <h3>Naming Policy:</h3>
@@ -176,20 +175,6 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
         super(namingPolicy, sqlPolicy);
     }
 
-    private static final Map<Integer, String> QM_CACHE = new HashMap<>();
-
-    static {
-        for (int i = 0; i <= 30; i++) {
-            QM_CACHE.put(i, Strings.repeat("?", i, ", "));
-        }
-
-        QM_CACHE.put(100, Strings.repeat("?", 100, ", "));
-        QM_CACHE.put(200, Strings.repeat("?", 200, ", "));
-        QM_CACHE.put(300, Strings.repeat("?", 300, ", "));
-        QM_CACHE.put(500, Strings.repeat("?", 500, ", "));
-        QM_CACHE.put(1000, Strings.repeat("?", 1000, ", "));
-    }
-
     /**
      * Repeat question mark({@code ?}) {@code count} times with delimiter {@code ", "}.
      * 
@@ -220,13 +205,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
     public static String repeatPlaceholders(final int count) {
         N.checkArgNotNegative(count, "count");
 
-        String result = QM_CACHE.get(count);
-
-        if (result == null) {
-            result = Strings.repeat("?", count, ", ");
-        }
-
-        return result;
+        return QueryUtil.placeholders(count);
     }
 
     /**
@@ -412,7 +391,43 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      * that must be met for the operation to succeed. This is particularly useful for ensuring
      * data consistency in concurrent environments.</p>
      *
-     * <p><b>Note:</b> The method name is spelled {@code iF} because {@code if} is a Java keyword.</p>
+     * <p>Prefer this method over {@link #iF(String)}. The {@code iF} method is kept for
+     * backward compatibility because {@code if} is a Java keyword.</p>
+     *
+     * @param expr the conditional expression as a string
+     * @return this CqlBuilder instance for method chaining
+     * @see #onlyIf(Condition)
+     * @see #iF(String)
+     */
+    public CqlBuilder onlyIf(final String expr) {
+        return iF(expr);
+    }
+
+    /**
+     * Adds a conditional IF clause to the CQL statement with the specified condition.
+     *
+     * <p>Prefer this method over {@link #iF(Condition)}. The {@code iF} method is kept for
+     * backward compatibility because {@code if} is a Java keyword.</p>
+     *
+     * @param cond the condition object for the IF clause
+     * @return this CqlBuilder instance for method chaining
+     * @see #onlyIf(String)
+     * @see #iF(Condition)
+     * @see com.landawn.abacus.query.Filters
+     */
+    public CqlBuilder onlyIf(final Condition cond) {
+        return iF(cond);
+    }
+
+    /**
+     * Adds a conditional IF clause to the CQL statement with the specified expression.
+     *
+     * <p>The IF clause enables lightweight transactions (LWT) in Cassandra by adding conditions
+     * that must be met for the operation to succeed. This is particularly useful for ensuring
+     * data consistency in concurrent environments.</p>
+     *
+     * <p><b>Note:</b> Prefer {@link #onlyIf(String)}. The method name is spelled {@code iF}
+     * because {@code if} is a Java keyword.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -435,6 +450,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      *
      * @param expr the conditional expression as a string
      * @return this CqlBuilder instance for method chaining
+     * @see #onlyIf(String)
      * @see #iF(Condition)
      */
     public CqlBuilder iF(final String expr) {
@@ -454,7 +470,8 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      * that must be met for the operation to succeed. This overload accepts a {@link Condition}
      * object, providing type-safe condition building with proper parameter binding.</p>
      *
-     * <p><b>Note:</b> The method name is spelled {@code iF} because {@code if} is a Java keyword.</p>
+     * <p><b>Note:</b> Prefer {@link #onlyIf(Condition)}. The method name is spelled {@code iF}
+     * because {@code if} is a Java keyword.</p>
      *
      * <p><b>Note:</b> Any literal written in Expression condition won't be formalized according
      * to the naming policy.</p>
@@ -480,6 +497,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      *
      * @param cond the condition object for the IF clause
      * @return this CqlBuilder instance for method chaining
+     * @see #onlyIf(Condition)
      * @see #iF(String)
      * @see com.landawn.abacus.query.Filters
      */
@@ -1933,16 +1951,19 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
         /**
          * Creates a SELECT FROM CQL builder for an entity class with table alias.
-         * 
-         * <p>This method allows specifying a table alias for use in complex queries with joins
-         * or subqueries.</p>
-         * 
+         *
+         * <p>This method allows specifying a table alias used to qualify column references
+         * (for example, in WHERE conditions).</p>
+         *
+         * <p><b>Note:</b> Apache Cassandra CQL does not support JOIN. The alias is only useful
+         * for qualifying column references within a single-table query.</p>
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = SCCB.selectFrom(Account.class, "a")
-         *                  .innerJoin("orders", "o").on("a.id = o.account_id")
+         *                  .where(Filters.eq("a.id", 1))
          *                  .build().query();
-         * // Output: SELECT a.id, a.first_name AS "firstName" ... FROM account a INNER JOIN orders o ON a.id = o.account_id
+         * // Output: SELECT a.id, a.first_name AS "firstName" ... FROM account a WHERE a.id = 1
          * }</pre>
          *
          * @param entityClass the entity class
@@ -1965,7 +1986,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * String cql = SCCB.selectFrom(Order.class, true)
          *                  .where(Filters.gt("totalAmount", 100))
          *                  .build().query();
-         * // Output includes automatic joins for sub-entities
+         * // Output includes columns of embedded sub-entities (CQL has no JOIN)
          * }</pre>
          *
          * @param entityClass the entity class
@@ -1988,7 +2009,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * String cql = SCCB.selectFrom(Order.class, "o", true)
          *                  .where(Filters.eq("o.status", "'COMPLETED'"))
          *                  .build().query();
-         * // Output includes aliased columns and joins for sub-entities
+         * // Output includes aliased columns plus embedded sub-entity columns (CQL has no JOIN)
          * }</pre>
          *
          * @param entityClass the entity class
@@ -2027,15 +2048,15 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
         /**
          * Creates a SELECT FROM CQL builder with alias, excluding specified properties.
-         * 
+         *
          * <p>This method provides aliasing capability while excluding specified properties
          * from the SELECT statement.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = N.asSet("internalCode");
          * String cql = SCCB.selectFrom(Account.class, "a", excluded)
-         *                  .innerJoin("orders", "o").on("a.id = o.account_id")
+         *                  .where(Filters.eq("a.id", 1))
          *                  .build().query();
          * // Output uses alias "a" and excludes internalCode property
          * }</pre>
@@ -2077,18 +2098,19 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
         /**
          * Creates a SELECT FROM CQL builder with full control over all options.
-         * 
+         *
          * <p>This method provides complete control over the SELECT FROM statement generation,
-         * including table alias, sub-entity properties, and property exclusion. When sub-entities
-         * are included, appropriate joins will be generated automatically.</p>
-         * 
+         * including table alias, sub-entity properties, and property exclusion. Cassandra CQL
+         * does not support JOIN; sub-entity properties are added to the projection of the
+         * single FROM table.</p>
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = N.asSet("debugInfo");
          * String cql = SCCB.selectFrom(Order.class, "ord", true, excluded)
          *                  .where(Filters.gt("ord.totalAmount", 1000))
          *                  .build().query();
-         * // Output: Complex SELECT with alias, sub-entities, and exclusions
+         * // SELECT with alias, embedded sub-entity columns, and exclusions
          * }</pre>
          *
          * @param entityClass the entity class
@@ -3157,16 +3179,18 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
         /**
          * Creates a SELECT FROM CQL builder with table alias for an entity class.
-         * 
-         * <p>The alias is used to qualify column names in complex queries with joins or subqueries.
-         * The table name is derived from the entity class and converted to uppercase.</p>
-         * 
+         *
+         * <p>The alias is used to qualify column references (for example, in WHERE conditions).
+         * The table name is derived from the entity class and converted to uppercase.
+         * Note that Cassandra CQL does not support JOIN; the alias applies only to the single
+         * FROM table.</p>
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = ACCB.selectFrom(User.class, "u")
          *                  .where(Filters.gte("u.AGE", 18))
          *                  .build().query();
-         * // Output: SELECT u.ID AS "id", u.FIRST_NAME AS "firstName", u.LAST_NAME AS "lastName", u.AGE AS "age", u.EMAIL AS "email" 
+         * // Output: SELECT u.ID AS "id", u.FIRST_NAME AS "firstName", u.LAST_NAME AS "lastName", u.AGE AS "age", u.EMAIL AS "email"
          * //         FROM USER u WHERE u.AGE >= 18
          * }</pre>
          *
@@ -3181,20 +3205,21 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
         /**
          * Creates a SELECT FROM CQL builder with sub-entity inclusion option.
-         * 
-         * <p>When includeSubEntityProperties is true, joins are added for sub-entities.
-         * This provides a convenient way to fetch related data in a single query.</p>
-         * 
+         *
+         * <p>When includeSubEntityProperties is true, sub-entity property columns are added
+         * to the projection. Cassandra CQL has no JOIN; sub-entity data must be stored in
+         * the same row (for example as UDT or collection columns).</p>
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = ACCB.selectFrom(Order.class, true)
          *                  .where(Filters.eq("STATUS", "'ACTIVE'"))
          *                  .build().query();
-         * // Output includes JOINs for sub-entities like Customer
+         * // Output includes Order columns plus embedded sub-entity columns
          * }</pre>
          *
          * @param entityClass the entity class
-         * @param includeSubEntityProperties whether to include and join sub-entities
+         * @param includeSubEntityProperties whether to include sub-entity properties
          * @return a new CqlBuilder instance configured for SELECT operation
          * @throws IllegalArgumentException if entityClass is null
          */
@@ -3204,21 +3229,21 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
         /**
          * Creates a SELECT FROM CQL builder with alias and sub-entity options.
-         * 
-         * <p>This method combines table aliasing with sub-entity inclusion for building
-         * complex queries with related data.</p>
-         * 
+         *
+         * <p>This method combines table aliasing with sub-entity inclusion. Cassandra CQL has
+         * no JOIN; sub-entity properties are added to the projection of the single FROM table.</p>
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = ACCB.selectFrom(Order.class, "o", true)
          *                  .where(Filters.eq("o.STATUS", "'ACTIVE'"))
          *                  .build().query();
-         * // Output includes aliased columns and JOINs for sub-entities
+         * // Output includes aliased columns plus embedded sub-entity columns
          * }</pre>
          *
          * @param entityClass the entity class
          * @param alias the table alias
-         * @param includeSubEntityProperties whether to include and join sub-entities
+         * @param includeSubEntityProperties whether to include sub-entity properties
          * @return a new CqlBuilder instance configured for SELECT operation
          * @throws IllegalArgumentException if entityClass is null
          */
@@ -3253,15 +3278,15 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
         /**
          * Creates a SELECT FROM CQL builder with alias and property exclusion.
-         * 
+         *
          * <p>This method combines aliasing with selective property selection for flexible
          * query construction.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = new HashSet<>(Arrays.asList("internalCode"));
          * String cql = ACCB.selectFrom(User.class, "u", excluded)
-         *                  .innerJoin("ORDERS", "o").on("u.ID = o.USER_ID")
+         *                  .where(Filters.eq("u.ID", 1))
          *                  .build().query();
          * // Output uses alias "u" and excludes internalCode property
          * }</pre>
@@ -4490,19 +4515,19 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
         /**
          * Creates a SELECT FROM CQL builder with table alias and property exclusion.
-         * 
+         *
          * <p>This method provides aliasing capability while excluding specified properties
          * from the SELECT statement.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = new HashSet<>(Arrays.asList("internalCode"));
          * String cql = LCCB.selectFrom(User.class, "u", excluded)
-         *                  .innerJoin("orders", "o").on("u.id = o.userId")
+         *                  .where(Filters.eq("u.id", 1))
          *                  .build().query();
          * // Output uses alias "u" and excludes internalCode property
          * }</pre>
-         * 
+         *
          * @param entityClass the entity class
          * @param alias the table alias
          * @param excludedPropNames properties to exclude from selection
@@ -5845,22 +5870,30 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      *                 .orderBy("lastName ASC")
      *                 .limit(10)
      *                 .build().query();
-     * 
+     *
      * // Batch INSERT
      * List<Account> accounts = Arrays.asList(account1, account2, account3);
-     * SP cqlPair = PSC.batchInsert(accounts).into("account").pair();
-     * // cqlPair.cql: INSERT INTO account (first_name, last_name) VALUES (?, ?), (?, ?), (?, ?)
-     * // cqlPair.parameters: ["John", "Doe", "Jane", "Smith", "Bob", "Johnson"]
-     * 
-     * // Complex JOIN query
-     * String cql = PSC.select("a.id", "a.firstName", "COUNT(o.id) AS orderCount")
-     *                 .from("account a")
-     *                 .leftJoin("orders o").on("a.id = o.account_id")
-     *                 .groupBy("a.id", "a.firstName")
-     *                 .having(Filters.gt("COUNT(o.id)", 5))
+     * SP cqlPair = PSC.batchInsert(accounts).into("account").build();
+     * // cqlPair.query():      INSERT INTO account (first_name, last_name) VALUES (?, ?), (?, ?), (?, ?)
+     * // cqlPair.parameters(): ["John", "Doe", "Jane", "Smith", "Bob", "Johnson"]
+     *
+     * // INSERT with lightweight transaction
+     * String cql = PSC.insert("id", "name", "email")
+     *                 .into("account")
+     *                 .values(1, "John", "john@example.com")
+     *                 .ifNotExists()
+     *                 .build().query();
+     * // Output: INSERT INTO account (id, name, email) VALUES (?, ?, ?) IF NOT EXISTS
+     *
+     * // SELECT with ALLOW FILTERING (note: CQL does NOT support JOIN, GROUP BY with HAVING,
+     * // or arbitrary aggregations the way SQL does)
+     * String cql = PSC.select("id", "firstName", "lastName")
+     *                 .from("account")
+     *                 .where(Filters.eq("status", "ACTIVE"))
+     *                 .allowFiltering()
      *                 .build().query();
      * }</pre>
-     * 
+     *
      * @see CqlBuilder
      * @see NSC
      */
@@ -5956,21 +5989,22 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
         /**
          * Creates an INSERT statement from a map of property names and values.
-         * 
+         *
          * <p>This method generates an INSERT statement where map keys represent property names
          * (converted to snake_case) and values are used to generate parameter placeholders.
-         * The actual values can be retrieved using the {@code pair()} method.</p>
-         * 
+         * The CQL string and parameter list can both be retrieved from the {@code SP} returned
+         * by {@link #build()}.</p>
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, Object> props = new HashMap<>();
          * props.put("firstName", "John");
          * props.put("lastName", "Doe");
-         * SP cqlPair = PSC.insert(props).into("account").pair();
-         * // cqlPair.cql: INSERT INTO account (first_name, last_name) VALUES (?, ?)
-         * // cqlPair.parameters: ["John", "Doe"]
+         * SP cqlPair = PSC.insert(props).into("account").build();
+         * // cqlPair.query():      INSERT INTO account (first_name, last_name) VALUES (?, ?)
+         * // cqlPair.parameters(): ["John", "Doe"]
          * }</pre>
-         * 
+         *
          * @param props map of property names to values
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if props is null or empty
@@ -5999,12 +6033,12 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * account.setFirstName("John");
          * account.setLastName("Doe");
          * account.setEmail("john.doe@example.com");
-         * 
-         * SP cqlPair = PSC.insert(account).into("account").pair();
-         * // cqlPair.cql: INSERT INTO account (first_name, last_name, email) VALUES (?, ?, ?)
-         * // cqlPair.parameters: ["John", "Doe", "john.doe@example.com"]
+         *
+         * SP cqlPair = PSC.insert(account).into("account").build();
+         * // cqlPair.query():      INSERT INTO account (first_name, last_name, email) VALUES (?, ?, ?)
+         * // cqlPair.parameters(): ["John", "Doe", "john.doe@example.com"]
          * }</pre>
-         * 
+         *
          * @param entity the entity object to insert
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if entity is null
@@ -6015,11 +6049,11 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
         /**
          * Creates an INSERT statement from an entity object with excluded properties.
-         * 
+         *
          * <p>This method allows fine-grained control over which properties to include in the INSERT
          * statement. Properties in the exclusion set will not be included even if they have values
          * and are normally insertable.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Account account = new Account();
@@ -6027,11 +6061,11 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * account.setLastName("Doe");
          * account.setEmail("john.doe@example.com");
          * account.setCreatedDate(new Date());
-         * 
+         *
          * Set<String> excluded = N.asSet("createdDate");
-         * SP cqlPair = PSC.insert(account, excluded).into("account").pair();
-         * // cqlPair.cql: INSERT INTO account (first_name, last_name, email) VALUES (?, ?, ?)
-         * // cqlPair.parameters: ["John", "Doe", "john.doe@example.com"]
+         * SP cqlPair = PSC.insert(account, excluded).into("account").build();
+         * // cqlPair.query():      INSERT INTO account (first_name, last_name, email) VALUES (?, ?, ?)
+         * // cqlPair.parameters(): ["John", "Doe", "john.doe@example.com"]
          * }</pre>
          * 
          * @param entity the entity object to insert
@@ -6149,11 +6183,15 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
         }
 
         /**
-         * Generates a MyCQL-style batch INSERT statement.
-         * 
-         * <p>This method creates an efficient batch insert statement with multiple value sets
-         * in a single INSERT statement, which is particularly useful for MyCQL databases and
-         * provides better performance than multiple individual INSERT statements.</p>
+         * Generates a multi-row batch INSERT statement.
+         *
+         * <p>This method creates a single INSERT statement that contains multiple value sets,
+         * which can be more efficient than issuing multiple individual INSERT statements.</p>
+         *
+         * <p><b>Note:</b> This is a Cassandra {@code CqlBuilder} but the generated SQL form
+         * (a single INSERT with multiple VALUES tuples) is not part of standard CQL; this
+         * method is provided for parity with the SQL builder and is marked {@code @Beta}.
+         * Use Cassandra BATCH statements when batching multiple INSERTs against Cassandra.</p>
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -6162,10 +6200,10 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *     new Account("Jane", "Smith"),
          *     new Account("Bob", "Johnson")
          * );
-         * 
-         * SP cqlPair = PSC.batchInsert(accounts).into("account").pair();
-         * // cqlPair.cql: INSERT INTO account (first_name, last_name) VALUES (?, ?), (?, ?), (?, ?)
-         * // cqlPair.parameters: ["John", "Doe", "Jane", "Smith", "Bob", "Johnson"]
+         *
+         * SP cqlPair = PSC.batchInsert(accounts).into("account").build();
+         * // cqlPair.query():      INSERT INTO account (first_name, last_name) VALUES (?, ?), (?, ?), (?, ?)
+         * // cqlPair.parameters(): ["John", "Doe", "Jane", "Smith", "Bob", "Johnson"]
          * }</pre>
          *
          * @param propsList collection of entities or property maps to insert
@@ -6917,19 +6955,19 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
         /**
          * Creates a SELECT FROM statement with alias and excluded properties.
-         * 
+         *
          * <p>This method combines table aliasing with property exclusion for precise control
          * over the generated SELECT statement.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = N.asSet("password");
          * String cql = PSC.selectFrom(Account.class, "a", excluded)
-         *                 .innerJoin("orders o").on("a.id = o.account_id")
+         *                 .where(Filters.eq("a.id", 1))
          *                 .build().query();
          * // Selects from account with alias 'a', excluding password
          * }</pre>
-         * 
+         *
          * @param entityClass the entity class
          * @param alias the table alias
          * @param excludedPropNames properties to exclude from selection
@@ -6967,21 +7005,19 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
         /**
          * Creates a complete SELECT FROM statement with all options.
-         * 
+         *
          * <p>This method provides maximum flexibility by allowing control over table alias,
-         * sub-entity inclusion, and property exclusion. It handles complex scenarios including
-         * automatic join generation for sub-entities.</p>
-         * 
+         * sub-entity inclusion, and property exclusion.</p>
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = N.asSet("password", "internalNotes");
          * String cql = PSC.selectFrom(Account.class, "a", true, excluded)
-         *                 .innerJoin("orders o").on("a.id = o.account_id")
-         *                 .where(Filters.gt("o.total", 1000))
+         *                 .where(Filters.gt("a.balance", 1000))
          *                 .build().query();
          * // Complex query with full control over selection
          * }</pre>
-         * 
+         *
          * @param entityClass the entity class
          * @param alias the table alias
          * @param includeSubEntityProperties Whether to include properties of nested entity objects
@@ -8143,19 +8179,19 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
         /**
          * Creates a SELECT FROM statement with full control over all options.
-         * 
-         * <p>This method provides maximum flexibility by allowing control over table alias, 
+         *
+         * <p>This method provides maximum flexibility by allowing control over table alias,
          * sub-entity inclusion, and property exclusion.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> exclude = new HashSet<>(Arrays.asList("password"));
          * String cql = PAC.selectFrom(User.class, "u", true, exclude)
-         *                 .innerJoin("addresses", "a").on("u.id = a.user_id")
+         *                 .where(Filters.eq("u.ID", 1))
          *                 .build().query();
          * // Complex query with full control
          * }</pre>
-         * 
+         *
          * @param entityClass the entity class
          * @param alias the table alias
          * @param includeSubEntityProperties whether to include sub-entity properties
@@ -8294,15 +8330,14 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      * 
      * <p><b>Advanced Examples:</b></p>
      * <pre>{@code
-     * // Complex JOIN query with camelCase columns
-     * String cql = PLC.select("a.id", "a.firstName", "COUNT(o.id) AS orderCount")
-     *                 .from("account a")
-     *                 .leftJoin("orders o").on("a.id = o.accountId")
-     *                 .groupBy("a.id", "a.firstName")
-     *                 .having(Filters.gt("COUNT(o.id)", 5))
+     * // SELECT with ALLOW FILTERING (CQL does NOT support JOIN / HAVING)
+     * String cql = PLC.select("id", "firstName", "lastName")
+     *                 .from("account")
+     *                 .where(Filters.eq("isActive", true))
+     *                 .allowFiltering()
      *                 .build().query();
-     * 
-     * // Using with MongoDB-style collections
+     *
+     * // Select an entity with camelCase columns
      * String cql = PLC.selectFrom(UserProfile.class)
      *                 .where(Filters.and(
      *                     Filters.eq("isActive", true),
@@ -8311,7 +8346,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      *                 .orderBy("lastLoginDate DESC")
      *                 .build().query();
      * }</pre>
-     * 
+     *
      * @see CqlBuilder
      * @see PSC
      * @see NLC
@@ -8360,16 +8395,16 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *                 .into("account")
          *                 .build().query();
          * // Output: INSERT INTO account (firstName, lastName, email) VALUES (?, ?, ?)
-         * 
-         * // With actual values using pair()
+         *
+         * // With actual values
          * SP cqlPair = PLC.insert("firstName", "lastName", "email")
          *                 .into("account")
          *                 .values("John", "Doe", "john@example.com")
-         *                 .pair();
-         * // cqlPair.cql: INSERT INTO account (firstName, lastName, email) VALUES (?, ?, ?)
-         * // cqlPair.parameters: ["John", "Doe", "john@example.com"]
+         *                 .build();
+         * // cqlPair.query():      INSERT INTO account (firstName, lastName, email) VALUES (?, ?, ?)
+         * // cqlPair.parameters(): ["John", "Doe", "john@example.com"]
          * }</pre>
-         * 
+         *
          * @param propOrColumnNames the property or column names to insert
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if propOrColumnNames is null or empty
@@ -8430,14 +8465,14 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * props.put("lastName", "Doe");
          * props.put("emailAddress", "john.doe@example.com");
          * props.put("isActive", true);
-         * 
-         * SP cqlPair = PLC.insert(props).into("account").pair();
-         * // cqlPair.cql: INSERT INTO account (firstName, lastName, emailAddress, isActive) VALUES (?, ?, ?, ?)
-         * // cqlPair.parameters: ["John", "Doe", "john.doe@example.com", true]
-         * 
+         *
+         * SP cqlPair = PLC.insert(props).into("account").build();
+         * // cqlPair.query():      INSERT INTO account (firstName, lastName, emailAddress, isActive) VALUES (?, ?, ?, ?)
+         * // cqlPair.parameters(): ["John", "Doe", "john.doe@example.com", true]
+         *
          * // With null values (will be included)
          * props.put("middleName", null);
-         * SP cqlPair2 = PLC.insert(props).into("account").pair();
+         * SP cqlPair2 = PLC.insert(props).into("account").build();
          * // Includes middleName with NULL value
          * }</pre>
          * 
@@ -8471,10 +8506,10 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * account.setLastName("Doe");
          * account.setEmailAddress("john.doe@example.com");
          * account.setCreatedDate(new Date());
-         * 
-         * SP cqlPair = PLC.insert(account).into("account").pair();
-         * // cqlPair.cql: INSERT INTO account (firstName, lastName, emailAddress, createdDate) VALUES (?, ?, ?, ?)
-         * // cqlPair.parameters: ["John", "Doe", "john.doe@example.com", Date object]
+         *
+         * SP cqlPair = PLC.insert(account).into("account").build();
+         * // cqlPair.query():      INSERT INTO account (firstName, lastName, emailAddress, createdDate) VALUES (?, ?, ?, ?)
+         * // cqlPair.parameters(): ["John", "Doe", "john.doe@example.com", Date object]
          * 
          * // Entity with @ReadOnly fields (will be excluded)
          * @Table("userProfile")
@@ -8509,15 +8544,15 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * account.setEmailAddress("john@example.com");
          * account.setCreatedDate(new Date());
          * account.setInternalNotes("VIP customer");
-         * 
+         *
          * Set<String> excluded = N.asSet("createdDate", "internalNotes");
-         * SP cqlPair = PLC.insert(account, excluded).into("account").pair();
-         * // cqlPair.cql: INSERT INTO account (firstName, lastName, emailAddress) VALUES (?, ?, ?)
-         * // cqlPair.parameters: ["John", "Doe", "john@example.com"]
-         * 
+         * SP cqlPair = PLC.insert(account, excluded).into("account").build();
+         * // cqlPair.query():      INSERT INTO account (firstName, lastName, emailAddress) VALUES (?, ?, ?)
+         * // cqlPair.parameters(): ["John", "Doe", "john@example.com"]
+         *
          * // Exclude all audit fields
          * Set<String> auditFields = N.asSet("createdBy", "createdDate", "modifiedBy", "modifiedDate");
-         * SP cqlPair2 = PLC.insert(account, auditFields).into("account").pair();
+         * SP cqlPair2 = PLC.insert(account, auditFields).into("account").build();
          * }</pre>
          * 
          * @param entity the entity object to insert
@@ -8656,12 +8691,16 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
         }
 
         /**
-         * Generates a MyCQL-style batch INSERT statement.
-         * 
-         * <p>This method creates an efficient batch insert statement with multiple value sets
-         * in a single INSERT statement. This is significantly more efficient than executing
-         * multiple individual INSERT statements. Property names maintain their camelCase format.</p>
-         * 
+         * Generates a multi-row batch INSERT statement.
+         *
+         * <p>This method creates a single INSERT statement that contains multiple value sets.
+         * Property names maintain their camelCase format.</p>
+         *
+         * <p><b>Note:</b> This is a Cassandra {@code CqlBuilder} but the generated SQL form
+         * (a single INSERT with multiple VALUES tuples) is not part of standard CQL; this
+         * method is provided for parity with the SQL builder and is marked {@code @Beta}.
+         * Use Cassandra BATCH statements when batching multiple INSERTs against Cassandra.</p>
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<Account> accounts = Arrays.asList(
@@ -8669,17 +8708,17 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *     new Account("Jane", "Smith", "jane@example.com"),
          *     new Account("Bob", "Johnson", "bob@example.com")
          * );
-         * 
-         * SP cqlPair = PLC.batchInsert(accounts).into("account").pair();
-         * // cqlPair.cql: INSERT INTO account (firstName, lastName, emailAddress) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?)
-         * // cqlPair.parameters: ["John", "Doe", "john@example.com", "Jane", "Smith", "jane@example.com", "Bob", "Johnson", "bob@example.com"]
-         * 
+         *
+         * SP cqlPair = PLC.batchInsert(accounts).into("account").build();
+         * // cqlPair.query():      INSERT INTO account (firstName, lastName, emailAddress) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?)
+         * // cqlPair.parameters(): ["John", "Doe", "john@example.com", "Jane", "Smith", "jane@example.com", "Bob", "Johnson", "bob@example.com"]
+         *
          * // With maps
          * List<Map<String, Object>> data = Arrays.asList(
          *     N.asMap("firstName", "John", "lastName", "Doe"),
          *     N.asMap("firstName", "Jane", "lastName", "Smith")
          * );
-         * SP cqlPair2 = PLC.batchInsert(data).into("account").pair();
+         * SP cqlPair2 = PLC.batchInsert(data).into("account").build();
          * }</pre>
          *
          * @param propsList collection of entities or property maps to insert
@@ -8754,12 +8793,12 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * account.setFirstName("John");
          * account.setLastName("Smith");
          * account.setModifiedDate(new Date());
-         * 
+         *
          * SP cqlPair = PLC.update("account", Account.class)
          *                 .set(account)
          *                 .where(Filters.eq("id", account.getId()))
-         *                 .pair();
-         * // cqlPair.cql: UPDATE account SET firstName = ?, lastName = ?, modifiedDate = ? WHERE id = ?
+         *                 .build();
+         * // cqlPair.query(): UPDATE account SET firstName = ?, lastName = ?, modifiedDate = ? WHERE id = ?
          * }</pre>
          * 
          * @param tableName the name of the table to update
@@ -8802,7 +8841,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * SP cqlPair = PLC.update(Account.class)
          *                 .set(account)
          *                 .where(Filters.eq("id", account.getId()))
-         *                 .pair();
+         *                 .build();
          * }</pre>
          * 
          * @param entityClass the entity class
@@ -8832,7 +8871,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * SP cqlPair = PLC.update(Account.class, excluded)
          *                 .set(account)
          *                 .where(Filters.eq("id", account.getId()))
-         *                 .pair();
+         *                 .build();
          * // createdDate excluded even though set in entity
          * 
          * // Exclude version control fields
@@ -9151,26 +9190,19 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * // Count query
-         * String cql = PLC.select("COUNT(*)")
+         * String cql = PLC.select("count(*)")
          *                 .from("account")
          *                 .where(Filters.eq("status", "active"))
          *                 .build().query();
          * // Output: SELECT count(*) FROM account WHERE status = ?
-         * 
-         * // Complex expression
-         * String cql2 = PLC.select("firstName || ' ' || lastName AS fullName")
-         *                  .from("account")
-         *                  .build().query();
-         * // Output: SELECT firstName || ' ' || lastName AS fullName FROM account
-         * 
-         * // Aggregate with grouping
-         * String cql3 = PLC.select("departmentId, COUNT(*) AS employeeCount")
+         *
+         * // Aggregate expression (CQL aggregation is limited; HAVING is NOT supported)
+         * String cql2 = PLC.select("count(*) AS employeeCount")
          *                  .from("employee")
-         *                  .groupBy("departmentId")
-         *                  .having(Filters.gt("COUNT(*)", 10))
+         *                  .where(Filters.eq("departmentId", 5))
          *                  .build().query();
          * }</pre>
-         * 
+         *
          * @param selectPart the select expression
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if selectPart is null or empty
@@ -9199,20 +9231,14 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *                 .where(Filters.eq("status", "active"))
          *                 .build().query();
          * // Output: SELECT id, firstName, lastName, email FROM account WHERE status = ?
-         * 
-         * // With table aliases
-         * String cql2 = PLC.select("a.id", "a.firstName", "o.orderId", "o.totalAmount")
+         *
+         * // With table alias (CQL does NOT support JOIN, but aliases can qualify columns)
+         * String cql2 = PLC.select("a.id", "a.firstName", "a.totalAmount")
          *                  .from("account a")
-         *                  .innerJoin("orders o").on("a.id = o.accountId")
-         *                  .build().query();
-         * 
-         * // Mixed columns and expressions
-         * String cql3 = PLC.select("id", "firstName", "lastName", 
-         *                          "YEAR(CURRENT_DATE) - YEAR(birthDate) AS age")
-         *                  .from("account")
+         *                  .where(Filters.eq("a.id", 1))
          *                  .build().query();
          * }</pre>
-         * 
+         *
          * @param propOrColumnNames the property or column names to select
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if propOrColumnNames is null or empty
@@ -9369,21 +9395,20 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *     private String orderNumber;
          *     private Customer customer;  // Nested entity
          * }
-         * 
+         *
          * // Without sub-entities
          * String cql = PLC.select(Order.class, false)
          *                 .from("orders")
          *                 .build().query();
          * // Output: SELECT id, orderNumber FROM orders
-         * 
-         * // With sub-entities
+         *
+         * // With sub-entities (note: Cassandra CQL does not support JOIN; nested-entity
+         * // properties are simply included in the projection)
          * String cql2 = PLC.select(Order.class, true)
-         *                  .from("orders o")
-         *                  .innerJoin("customers c").on("o.customerId = c.id")
+         *                  .from("orders")
          *                  .build().query();
-         * // Includes customer properties as well
          * }</pre>
-         * 
+         *
          * @param entityClass the entity class
          * @param includeSubEntityProperties Whether to include properties of nested entity objects
          * @return a new CqlBuilder instance for method chaining
@@ -9440,16 +9465,16 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *     private List<InvoiceItem> items;
          *     private byte[] pdfData;  // Large field
          * }
-         * 
-         * // Select with sub-entities but exclude large fields
+         *
+         * // Select with sub-entity properties but exclude large fields.
+         * // (Cassandra CQL has no JOIN; sub-entity properties are simply added to the projection.)
          * Set<String> excluded = N.asSet("pdfData", "items");
          * String cql = PLC.select(Invoice.class, true, excluded)
-         *                 .from("invoices i")
-         *                 .innerJoin("customers c").on("i.customerId = c.id")
+         *                 .from("invoices")
          *                 .build().query();
          * // Includes invoice and customer fields, but not pdfData or items
          * }</pre>
-         * 
+         *
          * @param entityClass the entity class
          * @param includeSubEntityProperties Whether to include properties of nested entity objects
          * @param excludedPropNames properties to exclude from selection
@@ -9505,10 +9530,11 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
         /**
          * Creates a SELECT FROM statement for an entity class with table alias.
-         * 
-         * <p>Table aliases are essential for joins and disambiguating column names
-         * when multiple tables are involved in the query.</p>
-         * 
+         *
+         * <p>The alias qualifies column references (for example, in WHERE conditions).
+         * Note that Cassandra CQL does not support JOIN; the alias only applies to
+         * the single FROM table.</p>
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * // Simple alias usage
@@ -9516,19 +9542,8 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *                 .where(Filters.eq("a.status", "active"))
          *                 .build().query();
          * // Output: SELECT a.id, a.firstName, a.lastName, a.email FROM account a WHERE a.status = ?
-         * 
-         * // With joins
-         * String cql2 = PLC.selectFrom(Order.class, "o")
-         *                  .innerJoin("customers c").on("o.customerId = c.id")
-         *                  .where(Filters.eq("c.country", "USA"))
-         *                  .build().query();
-         * 
-         * // Self-join
-         * String cql3 = PLC.selectFrom(Employee.class, "e1")
-         *                  .leftJoin("employee e2").on("e1.managerId = e2.id")
-         *                  .build().query();
          * }</pre>
-         * 
+         *
          * @param entityClass the entity class
          * @param alias the table alias
          * @return a new CqlBuilder instance for method chaining
@@ -9576,20 +9591,19 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
         /**
          * Creates a SELECT FROM statement with alias and sub-entity option.
-         * 
-         * <p>This method provides alias support along with sub-entity property inclusion.</p>
-         * 
+         *
+         * <p>This method provides alias support along with sub-entity property inclusion.
+         * Cassandra CQL has no JOIN; sub-entity properties are added to the projection
+         * but no additional tables are joined.</p>
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * // Query with related entities
          * String cql = PLC.selectFrom(Order.class, "o", true)
-         *                 .innerJoin("customers c").on("o.customerId = c.id")
-         *                 .innerJoin("addresses a").on("c.addressId = a.id")
-         *                 .where(Filters.eq("a.country", "USA"))
+         *                 .where(Filters.eq("o.status", "pending"))
          *                 .build().query();
-         * // Includes order and related entity properties with proper aliases
+         * // Includes order and embedded sub-entity properties with the "o" alias
          * }</pre>
-         * 
+         *
          * @param entityClass the entity class
          * @param alias the table alias
          * @param includeSubEntityProperties Whether to include properties of nested entity objects
@@ -9631,27 +9645,18 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
         /**
          * Creates a SELECT FROM statement with alias and excluded properties.
-         * 
+         *
          * <p>This method combines alias support with property exclusion for
          * precise control over the generated query.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * // Complex query with exclusions
          * Set<String> excluded = N.asSet("internalNotes", "debugInfo");
          * String cql = PLC.selectFrom(Order.class, "o", excluded)
-         *                 .innerJoin("customers c").on("o.customerId = c.id")
          *                 .where(Filters.between("o.orderDate", startDate, endDate))
          *                 .build().query();
-         * 
-         * // Multiple table query
-         * Set<String> sensitiveFields = N.asSet("ssn", "creditCard");
-         * String cql2 = PLC.selectFrom(Customer.class, "c", sensitiveFields)
-         *                  .leftJoin("orders o").on("c.id = o.customerId")
-         *                  .groupBy("c.id")
-         *                  .build().query();
          * }</pre>
-         * 
+         *
          * @param entityClass the entity class
          * @param alias the table alias
          * @param excludedPropNames properties to exclude from selection
@@ -9689,32 +9694,30 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
         /**
          * Creates a complete SELECT FROM statement with all options.
-         * 
+         *
          * <p>This method provides maximum flexibility for creating SELECT statements
          * with entity mapping, allowing control over aliases, sub-entity inclusion,
          * and property exclusions.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * // Comprehensive query example
-         * Set<String> excluded = N.asSet("password", "internalNotes", "customer.creditScore");
+         * // Comprehensive query example (Cassandra CQL: no JOIN, no HAVING)
+         * Set<String> excluded = N.asSet("password", "internalNotes");
          * String cql = PLC.selectFrom(Order.class, "o", true, excluded)
-         *                 .innerJoin("customers c").on("o.customerId = c.id")
-         *                 .leftJoin("shipping_addresses sa").on("o.shippingAddressId = sa.id")
          *                 .where(Filters.and(
          *                     Filters.eq("o.status", "pending"),
          *                     Filters.gt("o.totalAmount", 100)
          *                 ))
          *                 .orderBy("o.createdDate DESC")
          *                 .build().query();
-         * 
+         *
          * // Report query with specific field selection
          * Set<String> reportExcluded = N.asSet("id", "createdBy", "modifiedBy", "version");
          * String cql2 = PLC.selectFrom(SalesReport.class, "sr", false, reportExcluded)
          *                  .where(Filters.between("sr.reportDate", startDate, endDate))
          *                  .build().query();
          * }</pre>
-         * 
+         *
          * @param entityClass the entity class
          * @param alias the table alias
          * @param includeSubEntityProperties Whether to include properties of nested entity objects
@@ -10623,15 +10626,12 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * Map<String, String> aliases = new LinkedHashMap<>();
          * aliases.put("u.first_name", "firstName");
          * aliases.put("u.last_name", "lastName");
-         * aliases.put("COUNT(o.id)", "orderCount");
-         * 
+         *
          * String cql = NSB.select(aliases)
          *                 .from("users u")
-         *                 .leftJoin("orders o").on("u.id = o.user_id")
-         *                 .groupBy("u.id")
+         *                 .where(Filters.eq("u.id", 1))
          *                 .build().query();
-         * // SELECT u.first_name AS firstName, u.last_name AS lastName, COUNT(o.id) AS orderCount
-         * // FROM users u LEFT JOIN orders o ON u.id = o.user_id GROUP BY u.id
+         * // SELECT u.first_name AS firstName, u.last_name AS lastName FROM users u WHERE u.id = :id
          * }</pre>
          *
          * @param propOrColumnNameAliases map of column names/expressions to their aliases
@@ -10672,19 +10672,17 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
         /**
          * Creates a SELECT CQL builder for an entity class with optional sub-entity properties.
-         * 
+         *
          * <p>When includeSubEntityProperties is true, properties of nested entity types are also included
-         * in the selection, which is useful for fetching related data in a single query.</p>
+         * in the projection. Note that Cassandra CQL does not support JOIN, so sub-entity properties
+         * must be stored in the same table (for example as UDT columns).</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * // If User has an Address sub-entity
          * String cql = NSB.select(User.class, true)
-         *                 .from("users u")
-         *                 .leftJoin("addresses a").on("u.address_id = a.id")
+         *                 .from("users")
          *                 .build().query();
-         * // SELECT u.id, u.name, u.email, a.street, a.city, a.zip FROM users u
-         * // LEFT JOIN addresses a ON u.address_id = a.id
+         * // SELECT id, name, email, street, city, zip FROM users
          * }</pre>
          *
          * @param entityClass the entity class
@@ -10721,18 +10719,17 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
         /**
          * Creates a SELECT CQL builder with full control over entity property selection.
-         * 
+         *
          * <p>This method combines the ability to include sub-entity properties and exclude specific
          * properties, providing maximum flexibility in constructing SELECT statements.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * Set<String> exclude = N.asSet("user.password", "address.coordinates");
+         * Set<String> exclude = N.asSet("password");
          * String cql = NSB.select(User.class, true, exclude)
-         *                 .from("users u")
-         *                 .leftJoin("addresses a").on("u.address_id = a.id")
+         *                 .from("users")
          *                 .build().query();
-         * // Selects all User and Address properties except password and coordinates
+         * // Selects all User and embedded sub-entity properties except password
          * }</pre>
          *
          * @param entityClass the entity class
@@ -10776,17 +10773,16 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
         /**
          * Creates a complete SELECT...FROM CQL builder with a table alias.
-         * 
-         * <p>This method allows specifying a table alias for use in joins and qualified column references.</p>
+         *
+         * <p>This method allows specifying a table alias for qualifying column references.
+         * Cassandra CQL does not support JOIN, so the alias applies to the single FROM table only.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = NSB.selectFrom(User.class, "u")
-         *                 .leftJoin("orders o").on("u.id = o.user_id")
-         *                 .where(Filters.isNotNull("o.id"))
+         *                 .where(Filters.eq("u.active", true))
          *                 .build().query();
-         * // SELECT u.id, u.name, u.email FROM users u
-         * // LEFT JOIN orders o ON u.id = o.user_id WHERE o.id IS NOT NULL
+         * // SELECT u.id, u.name, u.email FROM users u WHERE u.active = :active
          * }</pre>
          *
          * @param entityClass the entity class
@@ -10800,17 +10796,15 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
         /**
          * Creates a SELECT...FROM CQL builder with sub-entity property inclusion.
-         * 
-         * <p>When includeSubEntityProperties is true, the method automatically handles joining
-         * related tables for nested entities.</p>
+         *
+         * <p>When includeSubEntityProperties is true, properties of nested entity types are added
+         * to the projection. Cassandra CQL does not support JOIN, so sub-entity properties must
+         * be stored in the same row (for example as UDT or collection columns).</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * // Automatically includes joins for sub-entities
          * String cql = NSB.selectFrom(Order.class, true).build().query();
-         * // May generate: SELECT o.*, c.*, p.* FROM orders o
-         * // LEFT JOIN customers c ON o.customer_id = c.id
-         * // LEFT JOIN products p ON o.product_id = p.id
+         * // Projects Order columns plus columns of any embedded sub-entities
          * }</pre>
          *
          * @param entityClass the entity class
@@ -14212,20 +14206,19 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
         /**
          * Creates a SELECT FROM CQL builder for the specified entity class with table alias.
-         * The alias is used to qualify column names in complex queries with joins.
-         * 
+         * The alias is used to qualify column names. Cassandra CQL does not support JOIN,
+         * so the alias applies only to the single FROM table.
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = NLC.selectFrom(Account.class, "a")
-         *                 .innerJoin("orders o", Filters.eq("a.id", "o.accountId"))
          *                 .where(Filters.eq("a.status", "active"))
          *                 .build().query();
-         * // Output: SELECT a.id, a.firstName, a.lastName, a.email, a.status, a.balance 
-         * //         FROM account a 
-         * //         INNER JOIN orders o ON a.id = o.accountId 
+         * // Output: SELECT a.id, a.firstName, a.lastName, a.email, a.status, a.balance
+         * //         FROM account a
          * //         WHERE a.status = :status
          * }</pre>
-         * 
+         *
          * @param entityClass the entity class
          * @param alias the table alias
          * @return a new CqlBuilder instance configured for SELECT FROM operation
@@ -14237,21 +14230,18 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
         /**
          * Creates a SELECT FROM CQL builder for the specified entity class with sub-entity option.
-         * When sub-entity properties are included, the appropriate JOIN clauses are automatically generated.
-         * 
+         * When sub-entity properties are included, their columns are added to the projection.
+         * Cassandra CQL does not support JOIN; sub-entity properties must be stored in the
+         * same row (for example as UDT or collection columns).
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * // Assuming Order has an Account sub-entity
          * String cql = NLC.selectFrom(Order.class, true)
          *                 .where(Filters.gt("amount", 100))
          *                 .build().query();
-         * // Output: SELECT o.id, o.orderNumber, o.amount, o.status, 
-         * //                a.id AS "account.id", a.firstName AS "account.firstName", a.lastName AS "account.lastName"
-         * //         FROM orders o 
-         * //         LEFT JOIN account a ON o.accountId = a.id
-         * //         WHERE o.amount > :amount
+         * // Projects Order columns plus any embedded sub-entity columns
          * }</pre>
-         * 
+         *
          * @param entityClass the entity class
          * @param includeSubEntityProperties if true, properties of sub-entities will be included
          * @return a new CqlBuilder instance configured for SELECT FROM operation
@@ -14264,19 +14254,16 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
         /**
          * Creates a SELECT FROM CQL builder with table alias and sub-entity option.
          * This method provides control over both table aliasing and sub-entity inclusion.
-         * 
+         * Cassandra CQL does not support JOIN; the alias applies to the single FROM table.
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = NLC.selectFrom(Order.class, "ord", true)
          *                 .where(Filters.between("orderDate", startDate, endDate))
          *                 .build().query();
-         * // Output: SELECT ord.id, ord.orderNumber, ord.amount, ord.status,
-         * //                acc.id AS "account.id", acc.firstName AS "account.firstName"
-         * //         FROM orders ord
-         * //         LEFT JOIN account acc ON ord.accountId = acc.id
-         * //         WHERE orderDate BETWEEN :minOrderDate AND :maxOrderDate
+         * // Projects ord.* plus embedded sub-entity columns, qualified with the "ord" alias
          * }</pre>
-         * 
+         *
          * @param entityClass the entity class
          * @param alias the table alias
          * @param includeSubEntityProperties if true, properties of sub-entities will be included
@@ -14311,21 +14298,19 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
         /**
          * Creates a SELECT FROM CQL builder with table alias and excluded properties.
-         * This method combines table aliasing with property exclusion for complex queries.
-         * 
+         * This method combines table aliasing with property exclusion.
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = Set.of("password", "securityAnswer");
          * String cql = NLC.selectFrom(Account.class, "acc", excluded)
-         *                 .innerJoin("orders o", Filters.eq("acc.id", "o.accountId"))
-         *                 .where(Filters.gt("o.amount", 1000))
+         *                 .where(Filters.eq("acc.id", 1))
          *                 .build().query();
          * // Output: SELECT acc.id, acc.firstName, acc.lastName, acc.email, acc.status, acc.balance
          * //         FROM account acc
-         * //         INNER JOIN orders o ON acc.id = o.accountId
-         * //         WHERE o.amount > :amount
+         * //         WHERE acc.id = :id
          * }</pre>
-         * 
+         *
          * @param entityClass the entity class
          * @param alias the table alias
          * @param excludedPropNames properties to exclude from selection
@@ -14339,20 +14324,16 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
         /**
          * Creates a SELECT FROM CQL builder with sub-entity option and excluded properties.
          * This method allows inclusion of sub-entity properties while excluding specific fields.
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = Set.of("account.password", "internalNotes");
          * String cql = NLC.selectFrom(Order.class, true, excluded)
          *                 .where(Filters.eq("status", "COMPLETED"))
          *                 .build().query();
-         * // Output: SELECT o.id, o.orderNumber, o.amount, o.status,
-         * //                a.id AS "account.id", a.firstName AS "account.firstName", a.lastName AS "account.lastName"
-         * //         FROM orders o
-         * //         LEFT JOIN account a ON o.accountId = a.id
-         * //         WHERE o.status = :status
+         * // Projects Order plus embedded sub-entity columns minus the excluded names
          * }</pre>
-         * 
+         *
          * @param entityClass the entity class
          * @param includeSubEntityProperties if true, properties of sub-entities will be included
          * @param excludedPropNames properties to exclude from selection
@@ -14366,8 +14347,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
         /**
          * Creates a SELECT FROM CQL builder with full control over all options.
          * This is the most comprehensive method for creating SELECT queries with entity classes.
-         * When includeSubEntityProperties is true, appropriate JOIN clauses are automatically generated.
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = Set.of("password", "account.internalId");
@@ -14378,14 +14358,12 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *                 ))
          *                 .orderBy("o.orderDate DESC")
          *                 .build().query();
-         * // Output: SELECT o.id, o.orderNumber, o.amount, o.status, o.orderDate,
-         * //                a.id AS "account.id", a.firstName AS "account.firstName", a.lastName AS "account.lastName"
+         * // Output: SELECT o.id, o.orderNumber, o.amount, o.status, o.orderDate, ...
          * //         FROM orders o
-         * //         LEFT JOIN account a ON o.accountId = a.id
          * //         WHERE o.status = :status AND o.amount > :amount
          * //         ORDER BY o.orderDate DESC
          * }</pre>
-         * 
+         *
          * @param entityClass the entity class
          * @param alias the table alias
          * @param includeSubEntityProperties if true, properties of sub-entities will be included
@@ -14408,22 +14386,15 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
         /**
          * Creates a COUNT(*) CQL builder for the specified table.
          * This is a convenience method for creating simple count queries.
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = NLC.count("account")
          *                 .where(Filters.eq("status", "active"))
          *                 .build().query();
          * // Output: SELECT count(*) FROM account WHERE status = :status
-         * 
-         * // Can also be used with joins
-         * String cql2 = NLC.count("account a")
-         *                  .innerJoin("orders o", Filters.eq("a.id", "o.accountId"))
-         *                  .where(Filters.gt("o.amount", 1000))
-         *                  .build().query();
-         * // Output: SELECT count(*) FROM account a INNER JOIN orders o ON a.id = o.accountId WHERE o.amount > :amount
          * }</pre>
-         * 
+         *
          * @param tableName the name of the table to count rows from
          * @return a new CqlBuilder instance configured for COUNT operation
          * @throws IllegalArgumentException if tableName is null or empty

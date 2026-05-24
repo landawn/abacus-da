@@ -47,13 +47,13 @@ public class MongoDBExecutorTest extends AbstractNoSQLTest {
     static final MongoDatabase mongoDB = mongoClient.getDatabase("test");
     static final String collectionName = "account";
     static final MongoDB dbExecutor = new MongoDB(mongoDB);
-    static final MongoCollectionExecutor collExecutor = dbExecutor.collExecutor(collectionName);
-    static final AsyncMongoCollectionExecutor asyncCollExecutor = collExecutor.async();
+    static final MongoCollectionExecutor collectionExecutor = dbExecutor.collectionExecutor(collectionName);
+    static final AsyncMongoCollectionExecutor asyncCollExecutor = collectionExecutor.async();
 
     @Test
     public void test_collection() {
         Account account = createAccount();
-        collExecutor.insertOne(account);
+        collectionExecutor.insertOne(account);
 
         MongoCollection<Account> collection = dbExecutor.collection(collectionName, Account.class);
 
@@ -65,9 +65,9 @@ public class MongoDBExecutorTest extends AbstractNoSQLTest {
     @Test
     public void test_util() {
         Account account = createAccount();
-        collExecutor.insertOne(account);
+        collectionExecutor.insertOne(account);
 
-        MongoCollection<Document> collection = collExecutor.coll();
+        MongoCollection<Document> collection = collectionExecutor.mongoCollection();
 
         Bson filter = new Document("lastName", account.getLastName());
         FindIterable<Document> findIterable = collection.find(filter);
@@ -95,78 +95,78 @@ public class MongoDBExecutorTest extends AbstractNoSQLTest {
 
     @Test
     public void test_distinct() {
-        collExecutor.coll().drop();
+        collectionExecutor.mongoCollection().drop();
 
         Account account = createAccount();
-        collExecutor.insertOne(account);
-        collExecutor.insertOne(createAccount());
+        collectionExecutor.insertOne(account);
+        collectionExecutor.insertOne(createAccount());
         account.setId(generateId());
-        collExecutor.insertOne(account);
+        collectionExecutor.insertOne(account);
 
-        List<String> firstNameList = collExecutor.distinct("firstName", String.class).toList();
+        List<String> firstNameList = collectionExecutor.distinct("firstName", String.class).toList();
         N.println(firstNameList);
 
-        collExecutor.deleteMany(Filters.eq("firstName", account.getFirstName()));
+        collectionExecutor.deleteMany(Filters.eq("firstName", account.getFirstName()));
     }
 
     @Test
     public void test_groupBy() {
-        collExecutor.coll().drop();
+        collectionExecutor.mongoCollection().drop();
 
         Account account = createAccount();
-        collExecutor.insertOne(account);
-        collExecutor.insertOne(createAccount());
+        collectionExecutor.insertOne(account);
+        collectionExecutor.insertOne(createAccount());
         account.setId(generateId());
-        collExecutor.insertOne(account);
+        collectionExecutor.insertOne(account);
         account.setId(generateId());
         account.setFirstName("firstName123");
-        collExecutor.insertOne(account);
+        collectionExecutor.insertOne(account);
 
-        collExecutor.groupBy("firstName").println();
+        collectionExecutor.groupBy("firstName").println();
 
-        collExecutor.groupByAndCount("firstName").println();
+        collectionExecutor.groupByAndCount("firstName").println();
 
-        collExecutor.groupBy(N.asList("firstName")).println();
+        collectionExecutor.groupBy(N.asList("firstName")).println();
 
-        collExecutor.groupByAndCount(N.asList("firstName")).println();
+        collectionExecutor.groupByAndCount(N.asList("firstName")).println();
 
-        collExecutor.groupBy(N.asList("firstName", "lastName")).println();
+        collectionExecutor.groupBy(N.asList("firstName", "lastName")).println();
 
-        collExecutor.groupByAndCount(N.asList("firstName", "lastName")).println();
+        collectionExecutor.groupByAndCount(N.asList("firstName", "lastName")).println();
 
-        collExecutor.deleteMany(Filters.eq("firstName", account.getFirstName()));
+        collectionExecutor.deleteMany(Filters.eq("firstName", account.getFirstName()));
     }
 
     @Test
     public void test_aggregate() {
-        collExecutor.coll().drop();
+        collectionExecutor.mongoCollection().drop();
 
         Account account = createAccount();
-        collExecutor.insertOne(account);
-        collExecutor.insertOne(createAccount());
+        collectionExecutor.insertOne(account);
+        collectionExecutor.insertOne(createAccount());
         account.setId(generateId());
-        collExecutor.insertOne(account);
+        collectionExecutor.insertOne(account);
 
         List<Bson> pipeline = N.toList();
 
         pipeline.add(fromJson("{$match : {firstName : '" + account.getFirstName() + "'}}", Bson.class));
         pipeline.add(fromJson("{$group : {_id : $firstName, total : {$sum : $status}}}", Bson.class));
 
-        List<Document> resultList = collExecutor.aggregate(pipeline).toList();
+        List<Document> resultList = collectionExecutor.aggregate(pipeline).toList();
         N.println(resultList);
 
-        collExecutor.deleteMany(Filters.eq("firstName", account.getFirstName()));
+        collectionExecutor.deleteMany(Filters.eq("firstName", account.getFirstName()));
     }
 
     @Test
     public void test_mapReduce() {
-        collExecutor.coll().drop();
+        collectionExecutor.mongoCollection().drop();
 
         Account account = createAccount();
-        collExecutor.insertOne(account);
-        collExecutor.insertOne(createAccount());
+        collectionExecutor.insertOne(account);
+        collectionExecutor.insertOne(createAccount());
         account.setId(generateId());
-        collExecutor.insertOne(account);
+        collectionExecutor.insertOne(account);
 
         List<Bson> pipeline = N.toList();
         pipeline.add(fromJson("{$match : {firstName : '" + account.getFirstName() + "'}}", Bson.class));
@@ -175,150 +175,150 @@ public class MongoDBExecutorTest extends AbstractNoSQLTest {
         String mapFunction = "function() {emit(this.firstName, this.status)}";
         String reduceFunction = "function(key, values) { return Array.sum(values)}";
 
-        List<Document> resultList = collExecutor.mapReduce(mapFunction, reduceFunction).toList();
+        List<Document> resultList = collectionExecutor.mapReduce(mapFunction, reduceFunction).toList();
         N.println(resultList);
 
-        List<Map<String, Object>> mapList = collExecutor.mapReduce(mapFunction, reduceFunction, Clazz.PROPS_MAP).toList();
+        List<Map<String, Object>> mapList = collectionExecutor.mapReduce(mapFunction, reduceFunction, Clazz.PROPS_MAP).toList();
         N.println(mapList);
 
-        collExecutor.deleteMany(Filters.eq("firstName", account.getFirstName()));
+        collectionExecutor.deleteMany(Filters.eq("firstName", account.getFirstName()));
     }
 
     @Test
     public void test_exist_count_get() {
-        collExecutor.deleteMany(Filters.ne("lastName", Strings.uuid()));
+        collectionExecutor.deleteMany(Filters.ne("lastName", Strings.uuid()));
 
         Account account = createAccount();
-        collExecutor.insertOne(account);
+        collectionExecutor.insertOne(account);
 
-        Document doc = collExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
+        Document doc = collectionExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
         ObjectId objectId = doc.getObjectId(_ID);
 
-        assertTrue(collExecutor.exists(objectId.toString()));
-        assertTrue(collExecutor.exists(objectId));
+        assertTrue(collectionExecutor.exists(objectId.toString()));
+        assertTrue(collectionExecutor.exists(objectId));
 
-        assertTrue(collExecutor.exists(Filters.eq(_ID, objectId)));
-        assertFalse(collExecutor.exists(Filters.ne(_ID, objectId)));
-        assertTrue(collExecutor.exists(Filters.eq("lastName", account.getLastName())));
+        assertTrue(collectionExecutor.exists(Filters.eq(_ID, objectId)));
+        assertFalse(collectionExecutor.exists(Filters.ne(_ID, objectId)));
+        assertTrue(collectionExecutor.exists(Filters.eq("lastName", account.getLastName())));
 
-        assertEquals(1, collExecutor.count(Filters.eq(_ID, objectId)));
-        assertEquals(0, collExecutor.count(Filters.ne(_ID, objectId)));
-        assertEquals(1, collExecutor.count(Filters.eq("lastName", account.getLastName())));
+        assertEquals(1, collectionExecutor.count(Filters.eq(_ID, objectId)));
+        assertEquals(0, collectionExecutor.count(Filters.ne(_ID, objectId)));
+        assertEquals(1, collectionExecutor.count(Filters.eq("lastName", account.getLastName())));
 
-        assertEquals(objectId, collExecutor.gett(objectId.toString()).getObjectId(_ID));
-        assertEquals(objectId, collExecutor.gett(objectId).getObjectId(_ID));
+        assertEquals(objectId, collectionExecutor.gett(objectId.toString()).getObjectId(_ID));
+        assertEquals(objectId, collectionExecutor.gett(objectId).getObjectId(_ID));
 
         String firstName = account.getFirstName();
-        assertEquals(firstName, collExecutor.gett(objectId.toString(), Account.class).getFirstName());
-        assertEquals(firstName, collExecutor.gett(objectId, Account.class).getFirstName());
+        assertEquals(firstName, collectionExecutor.gett(objectId.toString(), Account.class).getFirstName());
+        assertEquals(firstName, collectionExecutor.gett(objectId, Account.class).getFirstName());
 
-        List<Document> result = collExecutor.list(Filters.eq("lastName", account.getLastName()), Document.class);
+        List<Document> result = collectionExecutor.list(Filters.eq("lastName", account.getLastName()), Document.class);
 
         N.println(result);
 
-        collExecutor.deleteOne(objectId);
+        collectionExecutor.deleteOne(objectId);
     }
 
     @Test
     public void test_exist_count_get_2() {
-        collExecutor.deleteMany(Filters.ne("lastName", Strings.uuid()));
+        collectionExecutor.deleteMany(Filters.ne("lastName", Strings.uuid()));
 
         Account account = createAccount();
-        collExecutor.insertOne(account);
+        collectionExecutor.insertOne(account);
 
-        Document doc = collExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
+        Document doc = collectionExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
         ObjectId objectId = doc.getObjectId(_ID);
 
-        assertTrue(collExecutor.exists(objectId.toString()));
-        assertTrue(collExecutor.exists(objectId));
+        assertTrue(collectionExecutor.exists(objectId.toString()));
+        assertTrue(collectionExecutor.exists(objectId));
 
-        assertTrue(collExecutor.exists(Filters.eq(_ID, objectId)));
-        assertFalse(collExecutor.exists(Filters.ne(_ID, objectId)));
-        assertTrue(collExecutor.exists(Filters.eq("lastName", account.getLastName())));
+        assertTrue(collectionExecutor.exists(Filters.eq(_ID, objectId)));
+        assertFalse(collectionExecutor.exists(Filters.ne(_ID, objectId)));
+        assertTrue(collectionExecutor.exists(Filters.eq("lastName", account.getLastName())));
 
-        assertEquals(1, collExecutor.count(Filters.eq(_ID, objectId)));
-        assertEquals(0, collExecutor.count(Filters.ne(_ID, objectId)));
-        assertEquals(1, collExecutor.count(Filters.eq("lastName", account.getLastName())));
+        assertEquals(1, collectionExecutor.count(Filters.eq(_ID, objectId)));
+        assertEquals(0, collectionExecutor.count(Filters.ne(_ID, objectId)));
+        assertEquals(1, collectionExecutor.count(Filters.eq("lastName", account.getLastName())));
 
-        assertEquals(objectId, collExecutor.gett(objectId.toString()).getObjectId(_ID));
-        assertEquals(objectId, collExecutor.gett(objectId).getObjectId(_ID));
+        assertEquals(objectId, collectionExecutor.gett(objectId.toString()).getObjectId(_ID));
+        assertEquals(objectId, collectionExecutor.gett(objectId).getObjectId(_ID));
 
         String firstName = account.getFirstName();
-        assertEquals(firstName, collExecutor.gett(objectId.toString(), Account.class).getFirstName());
-        assertEquals(firstName, collExecutor.gett(objectId, Account.class).getFirstName());
+        assertEquals(firstName, collectionExecutor.gett(objectId.toString(), Account.class).getFirstName());
+        assertEquals(firstName, collectionExecutor.gett(objectId, Account.class).getFirstName());
 
-        List<Document> result = collExecutor.list(Filters.eq("lastName", account.getLastName()), Document.class);
+        List<Document> result = collectionExecutor.list(Filters.eq("lastName", account.getLastName()), Document.class);
 
         N.println(result);
 
-        collExecutor.deleteOne(objectId);
+        collectionExecutor.deleteOne(objectId);
     }
 
     @Test
     public void test_insertOne() {
-        collExecutor.deleteMany(Filters.ne("lastName", Strings.uuid()));
+        collectionExecutor.deleteMany(Filters.ne("lastName", Strings.uuid()));
 
         Map<String, Object> m = N.asMap("lastName", Strings.uuid(), "firstName", Strings.uuid());
         m.put("props", N.asMap("prop1", 1, "prop2", 2));
 
-        collExecutor.insertOne(m);
+        collectionExecutor.insertOne(m);
 
-        Document doc = collExecutor.findFirst(Filters.eq("lastName", m.get("lastName"))).orElse(null);
+        Document doc = collectionExecutor.findFirst(Filters.eq("lastName", m.get("lastName"))).orElse(null);
         N.println(doc);
 
-        collExecutor.deleteMany(Filters.eq("lastName", m.get("lastName")));
+        collectionExecutor.deleteMany(Filters.eq("lastName", m.get("lastName")));
     }
 
     @Test
     public void test_query() {
-        collExecutor.deleteMany(Filters.ne("lastName", Strings.uuid()));
+        collectionExecutor.deleteMany(Filters.ne("lastName", Strings.uuid()));
 
         Account account = createAccount();
-        collExecutor.insertOne(account);
+        collectionExecutor.insertOne(account);
 
-        Document doc = collExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
+        Document doc = collectionExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
         N.println(doc);
 
         ObjectId objectId = doc.getObjectId(MongoDB._ID);
         Bson filter = Filters.eq("firstName", account.getFirstName());
 
-        assertEquals(objectId, collExecutor.findFirst(filter).orElse(null).getObjectId(_ID));
-        assertEquals(account.getFirstName(), collExecutor.findFirst(filter).orElse(null).get("firstName"));
-        assertEquals(account.getFirstName(), collExecutor.findFirst(filter, Account.class).orElse(null).getFirstName());
+        assertEquals(objectId, collectionExecutor.findFirst(filter).orElse(null).getObjectId(_ID));
+        assertEquals(account.getFirstName(), collectionExecutor.findFirst(filter).orElse(null).get("firstName"));
+        assertEquals(account.getFirstName(), collectionExecutor.findFirst(filter, Account.class).orElse(null).getFirstName());
 
-        List<Document> docList = collExecutor.list(filter);
+        List<Document> docList = collectionExecutor.list(filter);
         assertEquals(account.getFirstName(), docList.get(0).get("firstName"));
 
-        docList = collExecutor.list(N.asList("lastName"), filter, Document.class);
+        docList = collectionExecutor.list(N.asList("lastName"), filter, Document.class);
 
-        collExecutor.list(N.asList("lastName"), filter, String.class).forEach(Fn.println());
+        collectionExecutor.list(N.asList("lastName"), filter, String.class).forEach(Fn.println());
 
         assertNull(docList.get(0).get("firstName"));
         assertEquals(account.getLastName(), docList.get(0).get("lastName"));
 
-        List<Account> accountList = collExecutor.list(filter, Account.class);
+        List<Account> accountList = collectionExecutor.list(filter, Account.class);
         assertEquals(account.getFirstName(), accountList.get(0).getFirstName());
 
-        accountList = collExecutor.list(N.asList("lastName"), filter, Account.class);
+        accountList = collectionExecutor.list(N.asList("lastName"), filter, Account.class);
 
         assertNull(accountList.get(0).getFirstName());
         assertEquals(account.getLastName(), accountList.get(0).getLastName());
 
-        Dataset dataset = collExecutor.query(filter);
+        Dataset dataset = collectionExecutor.query(filter);
         assertEquals(account.getFirstName(), dataset.get("firstName"));
         assertTrue(dataset.get("birthDate") instanceof Date);
 
-        dataset = collExecutor.query(N.asList("lastName", "birthDate"), filter, Document.class);
+        dataset = collectionExecutor.query(N.asList("lastName", "birthDate"), filter, Document.class);
 
         assertFalse(dataset.containsColumn("firstName"));
         assertEquals(account.getLastName(), dataset.get("lastName"));
         assertTrue(dataset.get("birthDate") instanceof Date);
 
-        dataset = collExecutor.query(filter, Account.class);
+        dataset = collectionExecutor.query(filter, Account.class);
         assertEquals(account.getFirstName(), dataset.get("firstName"));
         assertTrue(dataset.get("birthDate") instanceof Date);
 
-        dataset = collExecutor.query(N.asList("lastName", "birthDate"), filter, Account.class);
+        dataset = collectionExecutor.query(N.asList("lastName", "birthDate"), filter, Account.class);
 
         assertFalse(dataset.containsColumn("firstName"));
         N.println(dataset);
@@ -327,50 +327,50 @@ public class MongoDBExecutorTest extends AbstractNoSQLTest {
         // ########################################################################
         Bson projection = Projections.include("id", "firstName", "lastName");
 
-        assertEquals(objectId, collExecutor.findFirst(filter).orElse(null).getObjectId(_ID));
-        assertEquals(account.getFirstName(), collExecutor.findFirst(filter).orElse(null).get("firstName"));
-        assertEquals(account.getFirstName(), collExecutor.findFirst(projection, filter, null, Account.class).orElse(null).getFirstName());
+        assertEquals(objectId, collectionExecutor.findFirst(filter).orElse(null).getObjectId(_ID));
+        assertEquals(account.getFirstName(), collectionExecutor.findFirst(filter).orElse(null).get("firstName"));
+        assertEquals(account.getFirstName(), collectionExecutor.findFirst(projection, filter, null, Account.class).orElse(null).getFirstName());
 
-        docList = collExecutor.list(filter);
+        docList = collectionExecutor.list(filter);
         assertEquals(account.getFirstName(), docList.get(0).get("firstName"));
 
         projection = Projections.include("id", "lastName");
-        docList = collExecutor.list(projection, filter, null, Document.class);
+        docList = collectionExecutor.list(projection, filter, null, Document.class);
 
         assertNull(docList.get(0).get("firstName"));
         assertEquals(account.getLastName(), docList.get(0).get("lastName"));
 
-        accountList = collExecutor.list(filter, Account.class);
+        accountList = collectionExecutor.list(filter, Account.class);
         assertEquals(account.getFirstName(), accountList.get(0).getFirstName());
 
-        accountList = collExecutor.list(projection, filter, null, Account.class);
+        accountList = collectionExecutor.list(projection, filter, null, Account.class);
 
         assertNull(accountList.get(0).getFirstName());
         assertEquals(account.getLastName(), accountList.get(0).getLastName());
 
-        dataset = collExecutor.query(filter);
+        dataset = collectionExecutor.query(filter);
         assertEquals(account.getFirstName(), dataset.get("firstName"));
         assertTrue(dataset.get("birthDate") instanceof Date);
 
         projection = Projections.include("id", "lastName", "birthDate");
-        dataset = collExecutor.query(projection, filter, null, Document.class);
+        dataset = collectionExecutor.query(projection, filter, null, Document.class);
 
         assertFalse(dataset.containsColumn("firstName"));
         assertEquals(account.getLastName(), dataset.get("lastName"));
         assertTrue(dataset.get("birthDate") instanceof Date);
 
-        dataset = collExecutor.query(filter, Account.class);
+        dataset = collectionExecutor.query(filter, Account.class);
         assertEquals(account.getFirstName(), dataset.get("firstName"));
         assertTrue(dataset.get("birthDate") instanceof Date);
 
-        dataset = collExecutor.query(projection, filter, null, Account.class);
+        dataset = collectionExecutor.query(projection, filter, null, Account.class);
 
         assertTrue(dataset.containsColumn("firstName"));
         N.println(dataset);
         assertEquals(account.getLastName(), dataset.get("lastName"));
 
         // ===================
-        assertEquals(objectId, collExecutor.queryForSingleValue(_ID, filter, ObjectId.class).get());
+        assertEquals(objectId, collectionExecutor.queryForSingleValue(_ID, filter, ObjectId.class).get());
     }
 
     /**
@@ -484,52 +484,52 @@ public class MongoDBExecutorTest extends AbstractNoSQLTest {
 
     @Test
     public void test_query_2() {
-        collExecutor.deleteMany(Filters.ne("lastName", Strings.uuid()));
+        collectionExecutor.deleteMany(Filters.ne("lastName", Strings.uuid()));
 
         Account account = createAccount();
-        collExecutor.insertOne(account);
+        collectionExecutor.insertOne(account);
 
-        Document doc = collExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
+        Document doc = collectionExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
         N.println(doc);
 
         ObjectId objectId = doc.getObjectId(MongoDB._ID);
         Bson filter = Filters.eq("firstName", account.getFirstName());
 
-        assertEquals(objectId, collExecutor.findFirst(filter).orElse(null).getObjectId(_ID));
-        assertEquals(account.getFirstName(), collExecutor.findFirst(filter).orElse(null).get("firstName"));
-        assertEquals(account.getFirstName(), collExecutor.findFirst(filter, Account.class).orElse(null).getFirstName());
+        assertEquals(objectId, collectionExecutor.findFirst(filter).orElse(null).getObjectId(_ID));
+        assertEquals(account.getFirstName(), collectionExecutor.findFirst(filter).orElse(null).get("firstName"));
+        assertEquals(account.getFirstName(), collectionExecutor.findFirst(filter, Account.class).orElse(null).getFirstName());
 
-        List<Document> docList = collExecutor.list(filter);
+        List<Document> docList = collectionExecutor.list(filter);
         assertEquals(account.getFirstName(), docList.get(0).get("firstName"));
 
-        docList = collExecutor.list(N.asList("lastName"), filter, Document.class);
+        docList = collectionExecutor.list(N.asList("lastName"), filter, Document.class);
 
         assertNull(docList.get(0).get("firstName"));
         assertEquals(account.getLastName(), docList.get(0).get("lastName"));
 
-        List<Account> accountList = collExecutor.list(filter, Account.class);
+        List<Account> accountList = collectionExecutor.list(filter, Account.class);
         assertEquals(account.getFirstName(), accountList.get(0).getFirstName());
 
-        accountList = collExecutor.list(N.asList("lastName"), filter, Account.class);
+        accountList = collectionExecutor.list(N.asList("lastName"), filter, Account.class);
 
         assertNull(accountList.get(0).getFirstName());
         assertEquals(account.getLastName(), accountList.get(0).getLastName());
 
-        Dataset dataset = collExecutor.query(filter);
+        Dataset dataset = collectionExecutor.query(filter);
         assertEquals(account.getFirstName(), dataset.get("firstName"));
         assertTrue(dataset.get("birthDate") instanceof Date);
 
-        dataset = collExecutor.query(N.asList("lastName", "birthDate"), filter, Document.class);
+        dataset = collectionExecutor.query(N.asList("lastName", "birthDate"), filter, Document.class);
 
         assertFalse(dataset.containsColumn("firstName"));
         assertEquals(account.getLastName(), dataset.get("lastName"));
         assertTrue(dataset.get("birthDate") instanceof Date);
 
-        dataset = collExecutor.query(filter, Account.class);
+        dataset = collectionExecutor.query(filter, Account.class);
         assertEquals(account.getFirstName(), dataset.get("firstName"));
         assertTrue(dataset.get("birthDate") instanceof Date);
 
-        dataset = collExecutor.query(N.asList("lastName", "birthDate"), filter, Account.class);
+        dataset = collectionExecutor.query(N.asList("lastName", "birthDate"), filter, Account.class);
 
         assertFalse(dataset.containsColumn("firstName"));
         N.println(dataset);
@@ -538,50 +538,50 @@ public class MongoDBExecutorTest extends AbstractNoSQLTest {
         // ########################################################################
         Bson projection = Projections.include("id", "firstName", "lastName");
 
-        assertEquals(objectId, collExecutor.findFirst(filter).orElse(null).getObjectId(_ID));
-        assertEquals(account.getFirstName(), collExecutor.findFirst(filter).orElse(null).get("firstName"));
-        assertEquals(account.getFirstName(), collExecutor.findFirst(projection, filter, null, Account.class).orElse(null).getFirstName());
+        assertEquals(objectId, collectionExecutor.findFirst(filter).orElse(null).getObjectId(_ID));
+        assertEquals(account.getFirstName(), collectionExecutor.findFirst(filter).orElse(null).get("firstName"));
+        assertEquals(account.getFirstName(), collectionExecutor.findFirst(projection, filter, null, Account.class).orElse(null).getFirstName());
 
-        docList = collExecutor.list(filter);
+        docList = collectionExecutor.list(filter);
         assertEquals(account.getFirstName(), docList.get(0).get("firstName"));
 
         projection = Projections.include("id", "lastName");
-        docList = collExecutor.list(projection, filter, null, Document.class);
+        docList = collectionExecutor.list(projection, filter, null, Document.class);
 
         assertNull(docList.get(0).get("firstName"));
         assertEquals(account.getLastName(), docList.get(0).get("lastName"));
 
-        accountList = collExecutor.list(filter, Account.class);
+        accountList = collectionExecutor.list(filter, Account.class);
         assertEquals(account.getFirstName(), accountList.get(0).getFirstName());
 
-        accountList = collExecutor.list(projection, filter, null, Account.class);
+        accountList = collectionExecutor.list(projection, filter, null, Account.class);
 
         assertNull(accountList.get(0).getFirstName());
         assertEquals(account.getLastName(), accountList.get(0).getLastName());
 
-        dataset = collExecutor.query(filter);
+        dataset = collectionExecutor.query(filter);
         assertEquals(account.getFirstName(), dataset.get("firstName"));
         assertTrue(dataset.get("birthDate") instanceof Date);
 
         projection = Projections.include("id", "lastName", "birthDate");
-        dataset = collExecutor.query(projection, filter, null, Document.class);
+        dataset = collectionExecutor.query(projection, filter, null, Document.class);
 
         assertFalse(dataset.containsColumn("firstName"));
         assertEquals(account.getLastName(), dataset.get("lastName"));
         assertTrue(dataset.get("birthDate") instanceof Date);
 
-        dataset = collExecutor.query(filter, Account.class);
+        dataset = collectionExecutor.query(filter, Account.class);
         assertEquals(account.getFirstName(), dataset.get("firstName"));
         assertTrue(dataset.get("birthDate") instanceof Date);
 
-        dataset = collExecutor.query(projection, filter, null, Account.class);
+        dataset = collectionExecutor.query(projection, filter, null, Account.class);
 
         assertTrue(dataset.containsColumn("firstName"));
         N.println(dataset);
         assertEquals(account.getLastName(), dataset.get("lastName"));
 
         // ===================
-        assertEquals(objectId, collExecutor.queryForSingleValue(_ID, filter, ObjectId.class).get());
+        assertEquals(objectId, collectionExecutor.queryForSingleValue(_ID, filter, ObjectId.class).get());
     }
 
     /**
@@ -693,294 +693,294 @@ public class MongoDBExecutorTest extends AbstractNoSQLTest {
 
     @Test
     public void test_updateOne() {
-        collExecutor.deleteMany(Filters.ne("lastName", Strings.uuid()));
+        collectionExecutor.deleteMany(Filters.ne("lastName", Strings.uuid()));
 
         Account account = createAccount();
-        collExecutor.insertOne(account);
+        collectionExecutor.insertOne(account);
 
-        Document doc = collExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
+        Document doc = collectionExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
         N.println(doc);
 
         ObjectId objectId = doc.getObjectId(MongoDB._ID);
 
         // =======================================================================================
         String newFirstName = Strings.uuid();
-        collExecutor.updateOne(objectId, N.asMap("firstName", newFirstName));
-        Account dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(objectId, N.asMap("firstName", newFirstName));
+        Account dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateOne(objectId, MongoDB.toDocument("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(objectId, MongoDB.toDocument("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateOne(objectId, MongoDB.toBSONObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(objectId, MongoDB.toBSONObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateOne(objectId, MongoDB.toDBObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(objectId, MongoDB.toDBObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
         Account tmp = new Account();
         tmp.setFirstName(newFirstName);
-        collExecutor.updateOne(objectId, tmp);
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(objectId, tmp);
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         // =======================================================================================
         newFirstName = Strings.uuid();
-        collExecutor.updateOne(objectId.toString(), N.asMap("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(objectId.toString(), N.asMap("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateOne(objectId.toString(), MongoDB.toDocument("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(objectId.toString(), MongoDB.toDocument("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateOne(objectId.toString(), MongoDB.toBSONObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(objectId.toString(), MongoDB.toBSONObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateOne(objectId.toString(), MongoDB.toDBObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(objectId.toString(), MongoDB.toDBObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
         tmp = new Account();
         tmp.setFirstName(newFirstName);
-        collExecutor.updateOne(objectId.toString(), tmp);
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(objectId.toString(), tmp);
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         // =======================================================================================
         Bson filter = Filters.eq(_ID, objectId);
         newFirstName = Strings.uuid();
-        collExecutor.updateMany(filter, N.asMap("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateMany(filter, N.asMap("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateMany(filter, MongoDB.toDocument("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateMany(filter, MongoDB.toDocument("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateMany(filter, MongoDB.toBSONObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateMany(filter, MongoDB.toBSONObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateMany(filter, MongoDB.toDBObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateMany(filter, MongoDB.toDBObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
         tmp = new Account();
         tmp.setFirstName(newFirstName);
-        collExecutor.updateMany(filter, tmp);
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateMany(filter, tmp);
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         // =======================================================================================
         filter = Filters.eq("lastName", account.getLastName());
         newFirstName = Strings.uuid();
-        collExecutor.updateMany(filter, N.asMap("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateMany(filter, N.asMap("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateMany(filter, MongoDB.toDocument("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateMany(filter, MongoDB.toDocument("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateMany(filter, MongoDB.toBSONObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateMany(filter, MongoDB.toBSONObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateMany(filter, MongoDB.toDBObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateMany(filter, MongoDB.toDBObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
         tmp = new Account();
         tmp.setFirstName(newFirstName);
-        collExecutor.updateMany(filter, tmp);
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateMany(filter, tmp);
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         // =======================================================================================
         filter = Filters.eq("lastName", account.getLastName());
         newFirstName = Strings.uuid();
-        collExecutor.updateOne(filter, N.asMap("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(filter, N.asMap("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateOne(filter, MongoDB.toDocument("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(filter, MongoDB.toDocument("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateOne(filter, MongoDB.toBSONObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(filter, MongoDB.toBSONObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateOne(filter, MongoDB.toDBObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(filter, MongoDB.toDBObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateOne(filter, MongoDB.toDBObject("$set", MongoDB.toDocument("firstName", newFirstName)));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(filter, MongoDB.toDBObject("$set", MongoDB.toDocument("firstName", newFirstName)));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateOne(filter, MongoDB.toDocument("$set", MongoDB.toDBObject("firstName", newFirstName)));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(filter, MongoDB.toDocument("$set", MongoDB.toDBObject("firstName", newFirstName)));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
         tmp = new Account();
         tmp.setFirstName(newFirstName);
-        collExecutor.updateOne(filter, tmp);
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(filter, tmp);
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         //++++++++++++++++++++++++++++++++++++++++++++++ replace.
 
         // =======================================================================================
         newFirstName = Strings.uuid();
-        collExecutor.replaceOne(objectId, N.asMap("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(objectId, N.asMap("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.replaceOne(objectId, MongoDB.toDocument("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(objectId, MongoDB.toDocument("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.replaceOne(objectId, MongoDB.toBSONObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(objectId, MongoDB.toBSONObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.replaceOne(objectId, MongoDB.toDBObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(objectId, MongoDB.toDBObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
         tmp = new Account();
         tmp.setFirstName(newFirstName);
-        collExecutor.replaceOne(objectId, tmp);
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(objectId, tmp);
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         // =======================================================================================
         newFirstName = Strings.uuid();
-        collExecutor.replaceOne(objectId.toString(), N.asMap("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(objectId.toString(), N.asMap("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.replaceOne(objectId.toString(), MongoDB.toDocument("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(objectId.toString(), MongoDB.toDocument("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.replaceOne(objectId.toString(), MongoDB.toBSONObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(objectId.toString(), MongoDB.toBSONObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.replaceOne(objectId.toString(), MongoDB.toDBObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(objectId.toString(), MongoDB.toDBObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
         tmp = new Account();
         tmp.setFirstName(newFirstName);
-        collExecutor.replaceOne(objectId.toString(), tmp);
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(objectId.toString(), tmp);
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         // =======================================================================================
         filter = Filters.eq(_ID, objectId);
         newFirstName = Strings.uuid();
-        collExecutor.replaceOne(filter, N.asMap("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(filter, N.asMap("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.replaceOne(filter, MongoDB.toDocument("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(filter, MongoDB.toDocument("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.replaceOne(filter, MongoDB.toBSONObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(filter, MongoDB.toBSONObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.replaceOne(filter, MongoDB.toDBObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(filter, MongoDB.toDBObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
         tmp = new Account();
         tmp.setFirstName(newFirstName);
-        collExecutor.replaceOne(filter, tmp);
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(filter, tmp);
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
         //++++++++++++++++++++++++++++++++++++++++++++++ delete.
 
         // =======================================================================================
         account.setId(generateId());
-        collExecutor.insertOne(account);
-        doc = collExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
+        collectionExecutor.insertOne(account);
+        doc = collectionExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
         objectId = doc.getObjectId(MongoDB._ID);
-        collExecutor.deleteOne(objectId);
-        assertNull(collExecutor.gett(objectId));
+        collectionExecutor.deleteOne(objectId);
+        assertNull(collectionExecutor.gett(objectId));
 
-        collExecutor.insertOne(account);
-        doc = collExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
+        collectionExecutor.insertOne(account);
+        doc = collectionExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
         objectId = doc.getObjectId(MongoDB._ID);
-        collExecutor.deleteOne(objectId.toHexString());
-        assertNull(collExecutor.gett(objectId));
+        collectionExecutor.deleteOne(objectId.toHexString());
+        assertNull(collectionExecutor.gett(objectId));
 
-        collExecutor.insertOne(account);
-        doc = collExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
+        collectionExecutor.insertOne(account);
+        doc = collectionExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
         objectId = doc.getObjectId(MongoDB._ID);
         filter = Filters.eq(_ID, objectId);
-        N.println(collExecutor.list(filter));
-        collExecutor.deleteMany(filter);
-        assertEquals(0, collExecutor.list(filter).size());
+        N.println(collectionExecutor.list(filter));
+        collectionExecutor.deleteMany(filter);
+        assertEquals(0, collectionExecutor.list(filter).size());
 
-        collExecutor.insertOne(account);
-        doc = collExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
+        collectionExecutor.insertOne(account);
+        doc = collectionExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
         objectId = doc.getObjectId(MongoDB._ID);
         filter = Filters.eq("lastName", account.getLastName());
-        N.println(collExecutor.list(filter));
-        collExecutor.deleteMany(filter);
-        assertEquals(0, collExecutor.list(filter).size());
+        N.println(collectionExecutor.list(filter));
+        collectionExecutor.deleteMany(filter);
+        assertEquals(0, collectionExecutor.list(filter).size());
 
-        collExecutor.insertOne(account);
-        doc = collExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
+        collectionExecutor.insertOne(account);
+        doc = collectionExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
         objectId = doc.getObjectId(MongoDB._ID);
         filter = Filters.eq("lastName", account.getLastName());
-        N.println(collExecutor.list(filter));
-        collExecutor.deleteOne(filter);
-        assertEquals(0, collExecutor.list(filter).size());
+        N.println(collectionExecutor.list(filter));
+        collectionExecutor.deleteOne(filter);
+        assertEquals(0, collectionExecutor.list(filter).size());
     }
 
     /**
@@ -1282,284 +1282,284 @@ public class MongoDBExecutorTest extends AbstractNoSQLTest {
 
     @Test
     public void test_update_2() {
-        collExecutor.deleteMany(Filters.ne("lastName", Strings.uuid()));
+        collectionExecutor.deleteMany(Filters.ne("lastName", Strings.uuid()));
 
         Account account = createAccount();
-        collExecutor.insertOne(account);
+        collectionExecutor.insertOne(account);
 
-        Document doc = collExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
+        Document doc = collectionExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
         N.println(doc);
 
         ObjectId objectId = doc.getObjectId(MongoDB._ID);
 
         // =======================================================================================
         String newFirstName = Strings.uuid();
-        collExecutor.updateOne(objectId, N.asMap("firstName", newFirstName));
-        Account dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(objectId, N.asMap("firstName", newFirstName));
+        Account dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateOne(objectId, MongoDB.toDocument("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(objectId, MongoDB.toDocument("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateOne(objectId, MongoDB.toBSONObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(objectId, MongoDB.toBSONObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateOne(objectId, MongoDB.toDBObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(objectId, MongoDB.toDBObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
         Account tmp = new Account();
         tmp.setFirstName(newFirstName);
-        collExecutor.updateOne(objectId, tmp);
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(objectId, tmp);
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         // =======================================================================================
         newFirstName = Strings.uuid();
-        collExecutor.updateOne(objectId.toString(), N.asMap("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(objectId.toString(), N.asMap("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateOne(objectId.toString(), MongoDB.toDocument("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(objectId.toString(), MongoDB.toDocument("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateOne(objectId.toString(), MongoDB.toBSONObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(objectId.toString(), MongoDB.toBSONObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateOne(objectId.toString(), MongoDB.toDBObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(objectId.toString(), MongoDB.toDBObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
         tmp = new Account();
         tmp.setFirstName(newFirstName);
-        collExecutor.updateOne(objectId.toString(), tmp);
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(objectId.toString(), tmp);
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         // =======================================================================================
         Bson filter = Filters.eq(_ID, objectId);
         newFirstName = Strings.uuid();
-        collExecutor.updateMany(filter, N.asMap("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateMany(filter, N.asMap("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateMany(filter, MongoDB.toDocument("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateMany(filter, MongoDB.toDocument("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateMany(filter, MongoDB.toBSONObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateMany(filter, MongoDB.toBSONObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateMany(filter, MongoDB.toDBObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateMany(filter, MongoDB.toDBObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
         tmp = new Account();
         tmp.setFirstName(newFirstName);
-        collExecutor.updateMany(filter, tmp);
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateMany(filter, tmp);
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         // =======================================================================================
         filter = Filters.eq("lastName", account.getLastName());
         newFirstName = Strings.uuid();
-        collExecutor.updateMany(filter, N.asMap("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateMany(filter, N.asMap("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateMany(filter, MongoDB.toDocument("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateMany(filter, MongoDB.toDocument("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateMany(filter, MongoDB.toBSONObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateMany(filter, MongoDB.toBSONObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateMany(filter, MongoDB.toDBObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateMany(filter, MongoDB.toDBObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
         tmp = new Account();
         tmp.setFirstName(newFirstName);
-        collExecutor.updateMany(filter, tmp);
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateMany(filter, tmp);
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         // =======================================================================================
         filter = Filters.eq("lastName", account.getLastName());
         newFirstName = Strings.uuid();
-        collExecutor.updateOne(filter, N.asMap("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(filter, N.asMap("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateOne(filter, MongoDB.toDocument("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(filter, MongoDB.toDocument("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateOne(filter, MongoDB.toBSONObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(filter, MongoDB.toBSONObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.updateOne(filter, MongoDB.toDBObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(filter, MongoDB.toDBObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
         tmp = new Account();
         tmp.setFirstName(newFirstName);
-        collExecutor.updateOne(filter, tmp);
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.updateOne(filter, tmp);
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         //++++++++++++++++++++++++++++++++++++++++++++++ replace.
 
         // =======================================================================================
         newFirstName = Strings.uuid();
-        collExecutor.replaceOne(objectId, N.asMap("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(objectId, N.asMap("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.replaceOne(objectId, MongoDB.toDocument("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(objectId, MongoDB.toDocument("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.replaceOne(objectId, MongoDB.toBSONObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(objectId, MongoDB.toBSONObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.replaceOne(objectId, MongoDB.toDBObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(objectId, MongoDB.toDBObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
         tmp = new Account();
         tmp.setFirstName(newFirstName);
-        collExecutor.replaceOne(objectId, tmp);
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(objectId, tmp);
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         // =======================================================================================
         newFirstName = Strings.uuid();
-        collExecutor.replaceOne(objectId.toString(), N.asMap("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(objectId.toString(), N.asMap("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.replaceOne(objectId.toString(), MongoDB.toDocument("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(objectId.toString(), MongoDB.toDocument("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.replaceOne(objectId.toString(), MongoDB.toBSONObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(objectId.toString(), MongoDB.toBSONObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.replaceOne(objectId.toString(), MongoDB.toDBObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(objectId.toString(), MongoDB.toDBObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
         tmp = new Account();
         tmp.setFirstName(newFirstName);
-        collExecutor.replaceOne(objectId.toString(), tmp);
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(objectId.toString(), tmp);
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         // =======================================================================================
         filter = Filters.eq(_ID, objectId);
         newFirstName = Strings.uuid();
-        collExecutor.replaceOne(filter, N.asMap("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(filter, N.asMap("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.replaceOne(filter, MongoDB.toDocument("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(filter, MongoDB.toDocument("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.replaceOne(filter, MongoDB.toBSONObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(filter, MongoDB.toBSONObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
-        collExecutor.replaceOne(filter, MongoDB.toDBObject("firstName", newFirstName));
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(filter, MongoDB.toDBObject("firstName", newFirstName));
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
 
         newFirstName = Strings.uuid();
         tmp = new Account();
         tmp.setFirstName(newFirstName);
-        collExecutor.replaceOne(filter, tmp);
-        dbAccount = collExecutor.gett(objectId, Account.class);
+        collectionExecutor.replaceOne(filter, tmp);
+        dbAccount = collectionExecutor.gett(objectId, Account.class);
         assertEquals(newFirstName, dbAccount.getFirstName());
         //++++++++++++++++++++++++++++++++++++++++++++++ delete.
 
         // =======================================================================================
         account.setId(generateId());
-        collExecutor.insertOne(account);
-        doc = collExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
+        collectionExecutor.insertOne(account);
+        doc = collectionExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
         objectId = doc.getObjectId(MongoDB._ID);
-        collExecutor.deleteOne(objectId);
-        assertNull(collExecutor.gett(objectId));
+        collectionExecutor.deleteOne(objectId);
+        assertNull(collectionExecutor.gett(objectId));
 
-        collExecutor.insertOne(account);
-        doc = collExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
+        collectionExecutor.insertOne(account);
+        doc = collectionExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
         objectId = doc.getObjectId(MongoDB._ID);
-        collExecutor.deleteOne(objectId.toHexString());
-        assertNull(collExecutor.gett(objectId));
+        collectionExecutor.deleteOne(objectId.toHexString());
+        assertNull(collectionExecutor.gett(objectId));
 
-        collExecutor.insertOne(account);
-        doc = collExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
+        collectionExecutor.insertOne(account);
+        doc = collectionExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
         objectId = doc.getObjectId(MongoDB._ID);
         filter = Filters.eq(_ID, objectId);
-        N.println(collExecutor.list(filter));
-        collExecutor.deleteMany(filter);
-        assertEquals(0, collExecutor.list(filter).size());
+        N.println(collectionExecutor.list(filter));
+        collectionExecutor.deleteMany(filter);
+        assertEquals(0, collectionExecutor.list(filter).size());
 
-        collExecutor.insertOne(account);
-        doc = collExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
+        collectionExecutor.insertOne(account);
+        doc = collectionExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
         objectId = doc.getObjectId(MongoDB._ID);
         filter = Filters.eq("lastName", account.getLastName());
-        N.println(collExecutor.list(filter));
-        collExecutor.deleteMany(filter);
-        assertEquals(0, collExecutor.list(filter).size());
+        N.println(collectionExecutor.list(filter));
+        collectionExecutor.deleteMany(filter);
+        assertEquals(0, collectionExecutor.list(filter).size());
 
-        collExecutor.insertOne(account);
-        doc = collExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
+        collectionExecutor.insertOne(account);
+        doc = collectionExecutor.findFirst(Filters.eq("lastName", account.getLastName())).orElse(null);
         objectId = doc.getObjectId(MongoDB._ID);
         filter = Filters.eq("lastName", account.getLastName());
-        N.println(collExecutor.list(filter));
-        collExecutor.deleteOne(filter);
-        assertEquals(0, collExecutor.list(filter).size());
+        N.println(collectionExecutor.list(filter));
+        collectionExecutor.deleteOne(filter);
+        assertEquals(0, collectionExecutor.list(filter).size());
     }
 
     /**
@@ -1912,17 +1912,17 @@ public class MongoDBExecutorTest extends AbstractNoSQLTest {
         Account account4 = createAccount();
         Account account5 = createAccount();
 
-        assertEquals(5, collExecutor.bulkInsert(N.asList(account, account2, account3, MongoDB.toDocument(account4), MongoDB.toDocument(account5))));
+        assertEquals(5, collectionExecutor.bulkInsert(N.asList(account, account2, account3, MongoDB.toDocument(account4), MongoDB.toDocument(account5))));
     }
 
     public void test_01() {
-        collExecutor.deleteMany(Filters.eq("title", "A blog post"));
+        collectionExecutor.deleteMany(Filters.eq("title", "A blog post"));
 
         Map<String, Object> m = N.fromJson("{\"title\" : \"A blog post\",\n" + "\"content\" : \"...\",\n" + "\"comments\" : [\n" + "{\n"
                 + "\"name\" : \"joe\",\n" + "\"email\" : \"joe@example.com\",\n" + "\"content\" : \"nice post.\"\n" + "}\n" + "]}", Map.class);
-        collExecutor.insertOne(m);
+        collectionExecutor.insertOne(m);
 
-        N.println(collExecutor.list(Filters.eq("title", "A blog post"), Map.class));
+        N.println(collectionExecutor.list(Filters.eq("title", "A blog post"), Map.class));
     }
 
 }

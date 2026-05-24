@@ -26,12 +26,16 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.cql.AsyncResultSet;
 import com.datastax.oss.driver.api.core.cql.BoundStatement;
+import com.datastax.oss.driver.api.core.cql.ColumnDefinition;
 import com.datastax.oss.driver.api.core.cql.ColumnDefinitions;
 import com.datastax.oss.driver.api.core.cql.PreparedStatement;
 import com.datastax.oss.driver.api.core.cql.ResultSet;
 import com.datastax.oss.driver.api.core.cql.Row;
 import com.datastax.oss.driver.api.core.cql.Statement;
+import com.datastax.oss.driver.api.core.type.DataType;
+import com.datastax.oss.driver.api.core.type.codec.TypeCodec;
 import com.datastax.oss.driver.api.core.type.codec.registry.MutableCodecRegistry;
+import com.datastax.oss.protocol.internal.ProtocolConstants;
 import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.da.cassandra.CassandraExecutor.StatementSettings;
 import com.landawn.abacus.exception.DuplicateResultException;
@@ -69,6 +73,15 @@ public class CassandraExecutor01Test extends TestBase {
 
     @Mock
     private ColumnDefinitions mockColumnDefinitions;
+
+    @Mock
+    private ColumnDefinition mockColumnDef;
+
+    @Mock
+    private DataType mockDataType;
+
+    @Mock
+    private TypeCodec<Object> mockTypeCodec;
 
     private CassandraExecutor executor;
 
@@ -133,6 +146,9 @@ public class CassandraExecutor01Test extends TestBase {
         when(mockResultSet.all()).thenReturn(rows);
         when(mockResultSet.getColumnDefinitions()).thenReturn(mockColumnDefinitions);
         when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
+        when(mockColumnDef.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("id"));
+        when(mockRow.getColumnDefinitions()).thenReturn(mockColumnDefinitions);
 
         // Test with Row class
         List<Row> rowList = CassandraExecutor.toList(mockResultSet, Row.class);
@@ -187,8 +203,10 @@ public class CassandraExecutor01Test extends TestBase {
         // Setup mock data
         when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
         when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
         when(mockSession.execute(any(Statement.class))).thenReturn(mockResultSet);
         when(mockResultSet.iterator()).thenReturn(Arrays.asList(mockRow).iterator());
+        when(mockRow.getColumnDefinitions()).thenReturn(mockColumnDefinitions);
 
         // Test gett with selectPropNames and whereClause
         TestEntity result = executor.gett(TestEntity.class, Arrays.asList("id", "name"), Filters.eq("id", 1L));
@@ -196,10 +214,11 @@ public class CassandraExecutor01Test extends TestBase {
     }
 
     @Test
-    public void testQueryForSingleResult() {
+    public void testqueryForSingleValue() {
         // Setup mock data
         when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
         when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
         when(mockSession.execute(any(Statement.class))).thenReturn(mockResultSet);
         when(mockResultSet.one()).thenReturn(mockRow);
         when(mockRow.getObject(0)).thenReturn("test");
@@ -214,6 +233,7 @@ public class CassandraExecutor01Test extends TestBase {
         // Setup mock data
         when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
         when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
         when(mockSession.execute(any(Statement.class))).thenReturn(mockResultSet);
         when(mockResultSet.one()).thenReturn(mockRow);
         when(mockRow.getObject(0)).thenReturn("test");
@@ -228,8 +248,10 @@ public class CassandraExecutor01Test extends TestBase {
         // Setup mock data
         when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
         when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
         when(mockSession.execute(any(Statement.class))).thenReturn(mockResultSet);
         when(mockResultSet.one()).thenReturn(mockRow);
+        when(mockRow.getColumnDefinitions()).thenReturn(mockColumnDefinitions);
 
         Optional<TestEntity> result = executor.findFirst(TestEntity.class, "SELECT * FROM test WHERE id = ?", 1L);
         assertTrue(result.isPresent());
@@ -265,6 +287,12 @@ public class CassandraExecutor01Test extends TestBase {
         // Setup mock data
         when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
         when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
+        when(mockColumnDef.getType()).thenReturn(mockDataType);
+        when(mockDataType.getProtocolCode()).thenReturn(ProtocolConstants.DataType.BIGINT);
+        when(mockCodecRegistry.codecFor(any(DataType.class))).thenReturn(mockTypeCodec);
         when(mockSession.execute(any(Statement.class))).thenReturn(mockResultSet);
 
         // Test execute with query only
@@ -306,10 +334,10 @@ public class CassandraExecutor01Test extends TestBase {
         // Setup mock data
         when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
         when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(CompletableFuture.completedFuture(mockAsyncResultSet));
-        when(mockResultSet.iterator()).thenReturn(Arrays.asList(mockRow).iterator());
 
-        ContinuableFuture<Optional<TestEntity>> future = executor.asyncGet(TestEntity.class, Arrays.asList("id"), Filters.eq("id", 1L));
+        ContinuableFuture<Optional<TestEntity>> future = executor.async().get(TestEntity.class, Arrays.asList("id"), Filters.eq("id", 1L));
         assertNotNull(future);
     }
 
@@ -318,23 +346,21 @@ public class CassandraExecutor01Test extends TestBase {
         // Setup mock data
         when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
         when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(CompletableFuture.completedFuture(mockAsyncResultSet));
-        when(mockResultSet.iterator()).thenReturn(Arrays.asList(mockRow).iterator());
 
-        ContinuableFuture<TestEntity> future = executor.asyncGett(TestEntity.class, Arrays.asList("id"), Filters.eq("id", 1L));
+        ContinuableFuture<TestEntity> future = executor.async().gett(TestEntity.class, Arrays.asList("id"), Filters.eq("id", 1L));
         assertNotNull(future);
     }
 
     @Test
-    public void testAsyncQueryForSingleResult() {
+    public void testAsyncqueryForSingleValue() {
         // Setup mock data
         when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
         when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(CompletableFuture.completedFuture(mockAsyncResultSet));
-        when(mockResultSet.one()).thenReturn(mockRow);
-        when(mockRow.getObject(0)).thenReturn("test");
 
-        ContinuableFuture<Nullable<String>> future = executor.asyncQueryForSingleResult(String.class, "SELECT name FROM test", new Object[0]);
+        ContinuableFuture<Nullable<String>> future = executor.async().queryForSingleValue(String.class, "SELECT name FROM test", new Object[0]);
         assertNotNull(future);
     }
 
@@ -344,10 +370,8 @@ public class CassandraExecutor01Test extends TestBase {
         when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
         when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(CompletableFuture.completedFuture(mockAsyncResultSet));
-        when(mockResultSet.one()).thenReturn(mockRow);
-        when(mockRow.getObject(0)).thenReturn("test");
 
-        ContinuableFuture<Optional<String>> future = executor.asyncQueryForSingleNonNull(String.class, "SELECT name FROM test", new Object[0]);
+        ContinuableFuture<Optional<String>> future = executor.async().queryForSingleNonNull(String.class, "SELECT name FROM test", new Object[0]);
         assertNotNull(future);
     }
 
@@ -357,9 +381,8 @@ public class CassandraExecutor01Test extends TestBase {
         when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
         when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(CompletableFuture.completedFuture(mockAsyncResultSet));
-        when(mockResultSet.one()).thenReturn(mockRow);
 
-        ContinuableFuture<Optional<TestEntity>> future = executor.asyncFindFirst(TestEntity.class, "SELECT * FROM test", new Object[0]);
+        ContinuableFuture<Optional<TestEntity>> future = executor.async().findFirst(TestEntity.class, "SELECT * FROM test", new Object[0]);
         assertNotNull(future);
     }
 
@@ -369,14 +392,13 @@ public class CassandraExecutor01Test extends TestBase {
         when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
         when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(CompletableFuture.completedFuture(mockAsyncResultSet));
-        when(mockResultSet.iterator()).thenReturn(Arrays.asList(mockRow).iterator());
 
         // Test asyncStream with query and parameters
-        ContinuableFuture<Stream<Object[]>> future1 = executor.asyncStream("SELECT * FROM test", new Object[0]);
+        ContinuableFuture<Stream<Object[]>> future1 = executor.async().stream("SELECT * FROM test", new Object[0]);
         assertNotNull(future1);
 
         // Test asyncStream with BiFunction rowMapper
-        ContinuableFuture<Stream<TestEntity>> future2 = executor.asyncStream("SELECT * FROM test", (columnDefs, row) -> new TestEntity(), new Object[0]);
+        ContinuableFuture<Stream<TestEntity>> future2 = executor.async().stream("SELECT * FROM test", (columnDefs, row) -> new TestEntity(), new Object[0]);
         assertNotNull(future2);
     }
 
@@ -384,9 +406,8 @@ public class CassandraExecutor01Test extends TestBase {
     public void testAsyncStreamWithStatement() {
         // Setup mock data
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(CompletableFuture.completedFuture(mockAsyncResultSet));
-        when(mockResultSet.iterator()).thenReturn(Arrays.asList(mockRow).iterator());
 
-        ContinuableFuture<Stream<TestEntity>> future = executor.asyncStream(mockBoundStatement, (columnDefs, row) -> new TestEntity());
+        ContinuableFuture<Stream<TestEntity>> future = executor.async().stream(mockBoundStatement, (columnDefs, row) -> new TestEntity());
         assertNotNull(future);
     }
 
@@ -395,24 +416,30 @@ public class CassandraExecutor01Test extends TestBase {
         // Setup mock data
         when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
         when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
+        when(mockColumnDef.getType()).thenReturn(mockDataType);
+        when(mockDataType.getProtocolCode()).thenReturn(ProtocolConstants.DataType.BIGINT);
+        when(mockCodecRegistry.codecFor(any(DataType.class))).thenReturn(mockTypeCodec);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(CompletableFuture.completedFuture(mockAsyncResultSet));
 
         // Test asyncExecute with query only
-        ContinuableFuture<ResultSet> future1 = executor.asyncExecute("SELECT * FROM test");
+        ContinuableFuture<ResultSet> future1 = executor.async().execute("SELECT * FROM test");
         assertNotNull(future1);
 
         // Test asyncExecute with parameters
-        ContinuableFuture<ResultSet> future2 = executor.asyncExecute("SELECT * FROM test WHERE id = ?", 1L);
+        ContinuableFuture<ResultSet> future2 = executor.async().execute("SELECT * FROM test WHERE id = ?", 1L);
         assertNotNull(future2);
 
         // Test asyncExecute with Map parameters
         Map<String, Object> params = new HashMap<>();
         params.put("id", 1L);
-        ContinuableFuture<ResultSet> future3 = executor.asyncExecute("SELECT * FROM test WHERE id = :id", params);
+        ContinuableFuture<ResultSet> future3 = executor.async().execute("SELECT * FROM test WHERE id = :id", params);
         assertNotNull(future3);
 
         // Test asyncExecute with Statement
-        ContinuableFuture<ResultSet> future4 = executor.asyncExecute(mockBoundStatement);
+        ContinuableFuture<ResultSet> future4 = executor.async().execute(mockBoundStatement);
         assertNotNull(future4);
     }
 
@@ -426,7 +453,7 @@ public class CassandraExecutor01Test extends TestBase {
         params.put("firstName", "John");
 
         final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
-                () -> executor.asyncExecute("SELECT * FROM test WHERE first_name = :firstName AND last_name = :lastName", params));
+                () -> executor.async().execute("SELECT * FROM test WHERE first_name = :firstName AND last_name = :lastName", params));
 
         assertTrue(ex.getMessage().contains("Missing required parameter"));
     }
@@ -442,8 +469,6 @@ public class CassandraExecutor01Test extends TestBase {
     public void testUDTCodec() {
         // Test UDTCodec creation
         com.datastax.oss.driver.api.core.type.UserDefinedType mockUDT = mock(com.datastax.oss.driver.api.core.type.UserDefinedType.class);
-        when(mockUDT.getFieldNames()).thenReturn(Arrays.asList(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("id"),
-                com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("name")));
 
         CassandraExecutor.UDTCodec<TestEntity> codec = CassandraExecutor.UDTCodec.create(mockUDT, TestEntity.class);
         assertNotNull(codec);

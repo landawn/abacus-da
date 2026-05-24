@@ -118,7 +118,7 @@ import com.mongodb.client.result.UpdateResult;
  *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
- * MongoCollectionExecutor executor = mongoDB.collExecutor("users");
+ * MongoCollectionExecutor executor = mongoDB.collectionExecutor("users");
  * 
  * // Basic CRUD operations:
  * Document user = new Document("name", "John").append("age", 30);
@@ -190,14 +190,14 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollection<Document> collection = executor.coll();
+     * MongoCollection<Document> collection = executor.mongoCollection();
      * collection.withWriteConcern(WriteConcern.MAJORITY).insertOne(document);
      * }</pre>
      *
      * @return the underlying MongoCollection instance
      * @see MongoCollection
      */
-    public MongoCollection<Document> coll() {
+    public MongoCollection<Document> mongoCollection() {
         return coll;
     }
 
@@ -205,17 +205,18 @@ public final class MongoCollectionExecutor {
      * Returns an asynchronous version of this executor for non-blocking operations.
      *
      * <p>The async executor provides the same functionality as this synchronous executor but
-     * returns {@code CompletableFuture} instances for all operations, enabling non-blocking
+     * returns {@code ContinuableFuture} instances for all operations, enabling non-blocking
      * execution and reactive programming patterns.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AsyncMongoCollectionExecutor asyncExecutor = executor.async();
-     * CompletableFuture<List<Document>> future = asyncExecutor.find("{status: 'active'}");
+     * ContinuableFuture<List<Document>> future = asyncExecutor.list(Filters.eq("status", "active"));
      * }</pre>
      *
      * @return an AsyncMongoCollectionExecutor for asynchronous operations
-     * @see java.util.concurrent.CompletableFuture
+     * @see AsyncMongoCollectionExecutor
+     * @see com.landawn.abacus.util.ContinuableFuture
      */
     public AsyncMongoCollectionExecutor async() {
         return asyncCollExecutor;
@@ -283,7 +284,7 @@ public final class MongoCollectionExecutor {
      * boolean hasRecentUsers = executor.exists("{createdAt: {$gte: ISODate('2023-01-01')}}");
      * }</pre>
      *
-     * @param filter the query filter to match documents against (null for all documents)
+     * @param filter the query filter to match documents against; {@code null} is treated as an empty filter (matches all documents)
      * @return {@code true} if any documents match the filter, {@code false} otherwise
      * @throws com.mongodb.MongoException if the database operation fails
      * @see com.mongodb.client.model.Filters
@@ -329,7 +330,7 @@ public final class MongoCollectionExecutor {
      * long adultUsers = executor.count("{age: {$gte: 18}}");
      * }</pre>
      *
-     * @param filter the query filter to count matching documents (null for all documents)
+     * @param filter the query filter to count matching documents; {@code null} is treated as an empty filter (counts all documents)
      * @return the number of documents matching the filter
      * @throws com.mongodb.MongoException if the database operation fails
      * @see com.mongodb.client.model.Filters
@@ -351,7 +352,7 @@ public final class MongoCollectionExecutor {
      * long limitedCount = executor.count(Filters.exists("email"), options);
      * }</pre>
      *
-     * @param filter the query filter to count matching documents (null for all documents)
+     * @param filter the query filter to count matching documents; {@code null} is treated as an empty filter (counts all documents)
      * @param options additional options for the count operation (null uses defaults)
      * @return the number of documents matching the filter within the specified constraints
      * @throws com.mongodb.MongoException if the database operation fails
@@ -2536,7 +2537,8 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param obj the object to insert - can be Document, {@code Map<String, Object>}, or entity class with getter/setter methods
-     * @throws IllegalArgumentException if obj is null
+     * @throws NullPointerException if obj is null
+     * @throws IllegalArgumentException if obj is not a Document, Map, or bean class with getter/setter methods
      * @throws com.mongodb.MongoWriteException if the insert operation fails
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #insertOne(Object, InsertOneOptions)
@@ -2565,7 +2567,8 @@ public final class MongoCollectionExecutor {
      *
      * @param obj the object to insert - can be Document, {@code Map<String, Object>}, or entity class with getter/setter methods
      * @param options additional options for the insert operation (null uses defaults)
-     * @throws IllegalArgumentException if obj is null
+     * @throws NullPointerException if obj is null
+     * @throws IllegalArgumentException if obj is not a Document, Map, or bean class with getter/setter methods
      * @throws com.mongodb.MongoWriteException if the insert operation fails
      * @throws com.mongodb.MongoException if the database operation fails
      * @see InsertOneOptions

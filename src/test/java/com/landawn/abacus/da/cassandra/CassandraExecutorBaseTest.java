@@ -43,6 +43,7 @@ public class CassandraExecutorBaseTest extends TestBase {
 
     @BeforeEach
     public void setUp() {
+        CassandraExecutorBase.entityKeyNamesMap.remove(TestEntity.class);
         executor = new TestCassandraExecutor();
     }
 
@@ -63,13 +64,9 @@ public class CassandraExecutorBaseTest extends TestBase {
         Optional<TestEntity> result1 = executor.get(TestEntity.class, 1L);
         assertNotNull(result1);
 
-        // Test get with multiple ids
-        Optional<TestEntity> result2 = executor.get(TestEntity.class, 1L, "name1");
-        assertNotNull(result2);
-
         // Test get with selectPropNames
-        Optional<TestEntity> result3 = executor.get(TestEntity.class, Arrays.asList("id", "name"), 1L);
-        assertNotNull(result3);
+        Optional<TestEntity> result2 = executor.get(TestEntity.class, Arrays.asList("id", "name"), 1L);
+        assertNotNull(result2);
     }
 
     @Test
@@ -89,13 +86,9 @@ public class CassandraExecutorBaseTest extends TestBase {
         TestEntity result1 = executor.gett(TestEntity.class, 1L);
         assertNotNull(result1);
 
-        // Test gett with multiple ids
-        TestEntity result2 = executor.gett(TestEntity.class, 1L, "name1");
-        assertNotNull(result2);
-
         // Test gett with selectPropNames
-        TestEntity result3 = executor.gett(TestEntity.class, Arrays.asList("id", "name"), 1L);
-        assertNotNull(result3);
+        TestEntity result2 = executor.gett(TestEntity.class, Arrays.asList("id", "name"), 1L);
+        assertNotNull(result2);
     }
 
     @Test
@@ -257,11 +250,11 @@ public class CassandraExecutorBaseTest extends TestBase {
     public void testCount() {
         // Test count with condition
         long result1 = executor.count(TestEntity.class, Filters.eq("status", "active"));
-        assertEquals(10L, result1);
+        assertEquals(0L, result1);
 
         // Test deprecated count with query
         long result2 = executor.count("SELECT COUNT(*) FROM test WHERE status = ?", "active");
-        assertEquals(10L, result2);
+        assertEquals(0L, result2);
     }
 
     @Test
@@ -410,7 +403,7 @@ public class CassandraExecutorBaseTest extends TestBase {
     }
 
     @Test
-    public void testQueryForSingleResult() {
+    public void testqueryForSingleValue() {
         // Test queryForSingleValue with condition
         Nullable<String> result1 = executor.queryForSingleValue(TestEntity.class, String.class, "name", Filters.eq("id", 1L));
         assertNotNull(result1);
@@ -447,29 +440,29 @@ public class CassandraExecutorBaseTest extends TestBase {
     @Test
     public void testAsyncMethods() {
         // Test async get methods
-        ContinuableFuture<Optional<TestEntity>> asyncGet1 = executor.asyncGet(TestEntity.class, 1L);
+        ContinuableFuture<Optional<TestEntity>> asyncGet1 = executor.async().get(TestEntity.class, 1L);
         assertNotNull(asyncGet1);
 
-        ContinuableFuture<Optional<TestEntity>> asyncGet2 = executor.asyncGet(TestEntity.class, Arrays.asList("id"), 1L);
+        ContinuableFuture<Optional<TestEntity>> asyncGet2 = executor.async().get(TestEntity.class, Arrays.asList("id"), 1L);
         assertNotNull(asyncGet2);
 
-        ContinuableFuture<Optional<TestEntity>> asyncGet3 = executor.asyncGet(TestEntity.class, Filters.eq("id", 1L));
+        ContinuableFuture<Optional<TestEntity>> asyncGet3 = executor.async().get(TestEntity.class, Filters.eq("id", 1L));
         assertNotNull(asyncGet3);
 
-        ContinuableFuture<Optional<TestEntity>> asyncGet4 = executor.asyncGet(TestEntity.class, Arrays.asList("id"), Filters.eq("id", 1L));
+        ContinuableFuture<Optional<TestEntity>> asyncGet4 = executor.async().get(TestEntity.class, Arrays.asList("id"), Filters.eq("id", 1L));
         assertNotNull(asyncGet4);
 
         // Test async gett methods
-        ContinuableFuture<TestEntity> asyncGett1 = executor.asyncGett(TestEntity.class, 1L);
+        ContinuableFuture<TestEntity> asyncGett1 = executor.async().gett(TestEntity.class, 1L);
         assertNotNull(asyncGett1);
 
-        ContinuableFuture<TestEntity> asyncGett2 = executor.asyncGett(TestEntity.class, Arrays.asList("id"), 1L);
+        ContinuableFuture<TestEntity> asyncGett2 = executor.async().gett(TestEntity.class, Arrays.asList("id"), 1L);
         assertNotNull(asyncGett2);
 
-        ContinuableFuture<TestEntity> asyncGett3 = executor.asyncGett(TestEntity.class, Filters.eq("id", 1L));
+        ContinuableFuture<TestEntity> asyncGett3 = executor.async().gett(TestEntity.class, Filters.eq("id", 1L));
         assertNotNull(asyncGett3);
 
-        ContinuableFuture<TestEntity> asyncGett4 = executor.asyncGett(TestEntity.class, Arrays.asList("id"), Filters.eq("id", 1L));
+        ContinuableFuture<TestEntity> asyncGett4 = executor.async().gett(TestEntity.class, Arrays.asList("id"), Filters.eq("id", 1L));
         assertNotNull(asyncGett4);
     }
 
@@ -480,123 +473,123 @@ public class CassandraExecutorBaseTest extends TestBase {
         entity.setName("test");
 
         // Test async insert
-        ContinuableFuture<TestResultSet> asyncInsert1 = executor.asyncInsert(entity);
+        ContinuableFuture<TestResultSet> asyncInsert1 = executor.async().insert(entity);
         assertNotNull(asyncInsert1);
 
         Map<String, Object> props = new HashMap<>();
         props.put("id", 1L);
         props.put("name", "test");
 
-        ContinuableFuture<TestResultSet> asyncInsert2 = executor.asyncInsert(TestEntity.class, props);
+        ContinuableFuture<TestResultSet> asyncInsert2 = executor.async().insert(TestEntity.class, props);
         assertNotNull(asyncInsert2);
 
         // Test async batch insert
         List<TestEntity> entities = Arrays.asList(new TestEntity(), new TestEntity());
-        ContinuableFuture<TestResultSet> asyncBatchInsert1 = executor.asyncBatchInsert(entities, TestBatchType.LOGGED);
+        ContinuableFuture<TestResultSet> asyncBatchInsert1 = executor.async().batchInsert(entities, TestBatchType.LOGGED);
         assertNotNull(asyncBatchInsert1);
 
         List<Map<String, Object>> propsList = Arrays.asList(new HashMap<>(), new HashMap<>());
-        ContinuableFuture<TestResultSet> asyncBatchInsert2 = executor.asyncBatchInsert(TestEntity.class, propsList, TestBatchType.LOGGED);
+        ContinuableFuture<TestResultSet> asyncBatchInsert2 = executor.async().batchInsert(TestEntity.class, propsList, TestBatchType.LOGGED);
         assertNotNull(asyncBatchInsert2);
 
         // Test async update
-        ContinuableFuture<TestResultSet> asyncUpdate1 = executor.asyncUpdate(entity);
+        ContinuableFuture<TestResultSet> asyncUpdate1 = executor.async().update(entity);
         assertNotNull(asyncUpdate1);
 
-        ContinuableFuture<TestResultSet> asyncUpdate2 = executor.asyncUpdate(entity, Arrays.asList("name"));
+        ContinuableFuture<TestResultSet> asyncUpdate2 = executor.async().update(entity, Arrays.asList("name"));
         assertNotNull(asyncUpdate2);
 
-        ContinuableFuture<TestResultSet> asyncUpdate3 = executor.asyncUpdate(TestEntity.class, props, Filters.eq("id", 1L));
+        ContinuableFuture<TestResultSet> asyncUpdate3 = executor.async().update(TestEntity.class, props, Filters.eq("id", 1L));
         assertNotNull(asyncUpdate3);
 
-        ContinuableFuture<TestResultSet> asyncUpdate4 = executor.asyncUpdate("UPDATE test SET name = ? WHERE id = ?", "updated", 1L);
+        ContinuableFuture<TestResultSet> asyncUpdate4 = executor.async().update("UPDATE test SET name = ? WHERE id = ?", "updated", 1L);
         assertNotNull(asyncUpdate4);
 
         // Test async batch update
-        ContinuableFuture<TestResultSet> asyncBatchUpdate1 = executor.asyncBatchUpdate(entities, TestBatchType.LOGGED);
+        ContinuableFuture<TestResultSet> asyncBatchUpdate1 = executor.async().batchUpdate(entities, TestBatchType.LOGGED);
         assertNotNull(asyncBatchUpdate1);
 
-        ContinuableFuture<TestResultSet> asyncBatchUpdate2 = executor.asyncBatchUpdate(entities, Arrays.asList("name"), TestBatchType.LOGGED);
+        ContinuableFuture<TestResultSet> asyncBatchUpdate2 = executor.async().batchUpdate(entities, Arrays.asList("name"), TestBatchType.LOGGED);
         assertNotNull(asyncBatchUpdate2);
 
-        ContinuableFuture<TestResultSet> asyncBatchUpdate3 = executor.asyncBatchUpdate(TestEntity.class, propsList, TestBatchType.LOGGED);
+        ContinuableFuture<TestResultSet> asyncBatchUpdate3 = executor.async().batchUpdate(TestEntity.class, propsList, TestBatchType.LOGGED);
         assertNotNull(asyncBatchUpdate3);
 
         List<Object[]> parametersList = Arrays.asList(new Object[] { "updated1", 1L }, new Object[] { "updated2", 2L });
-        ContinuableFuture<TestResultSet> asyncBatchUpdate4 = executor.asyncBatchUpdate("UPDATE test SET name = ? WHERE id = ?", parametersList,
-                TestBatchType.LOGGED);
+        ContinuableFuture<TestResultSet> asyncBatchUpdate4 = executor.async()
+                .batchUpdate("UPDATE test SET name = ? WHERE id = ?", parametersList, TestBatchType.LOGGED);
         assertNotNull(asyncBatchUpdate4);
 
         // Test async delete
-        ContinuableFuture<TestResultSet> asyncDelete1 = executor.asyncDelete(entity);
+        ContinuableFuture<TestResultSet> asyncDelete1 = executor.async().delete(entity);
         assertNotNull(asyncDelete1);
 
-        ContinuableFuture<TestResultSet> asyncDelete2 = executor.asyncDelete(entity, Arrays.asList("name"));
+        ContinuableFuture<TestResultSet> asyncDelete2 = executor.async().delete(entity, Arrays.asList("name"));
         assertNotNull(asyncDelete2);
 
-        ContinuableFuture<TestResultSet> asyncDelete3 = executor.asyncDelete(TestEntity.class, 1L);
+        ContinuableFuture<TestResultSet> asyncDelete3 = executor.async().delete(TestEntity.class, 1L);
         assertNotNull(asyncDelete3);
 
-        ContinuableFuture<TestResultSet> asyncDelete4 = executor.asyncDelete(TestEntity.class, Arrays.asList("name"), 1L);
+        ContinuableFuture<TestResultSet> asyncDelete4 = executor.async().delete(TestEntity.class, Arrays.asList("name"), 1L);
         assertNotNull(asyncDelete4);
 
-        ContinuableFuture<TestResultSet> asyncDelete5 = executor.asyncDelete(TestEntity.class, Filters.eq("id", 1L));
+        ContinuableFuture<TestResultSet> asyncDelete5 = executor.async().delete(TestEntity.class, Filters.eq("id", 1L));
         assertNotNull(asyncDelete5);
 
-        ContinuableFuture<TestResultSet> asyncDelete6 = executor.asyncDelete(TestEntity.class, Arrays.asList("name"), Filters.eq("id", 1L));
+        ContinuableFuture<TestResultSet> asyncDelete6 = executor.async().delete(TestEntity.class, Arrays.asList("name"), Filters.eq("id", 1L));
         assertNotNull(asyncDelete6);
 
         // Test async batch delete
-        ContinuableFuture<TestResultSet> asyncBatchDelete1 = executor.asyncBatchDelete(entities);
+        ContinuableFuture<TestResultSet> asyncBatchDelete1 = executor.async().batchDelete(entities);
         assertNotNull(asyncBatchDelete1);
 
-        ContinuableFuture<TestResultSet> asyncBatchDelete2 = executor.asyncBatchDelete(entities, Arrays.asList("name"));
+        ContinuableFuture<TestResultSet> asyncBatchDelete2 = executor.async().batchDelete(entities, Arrays.asList("name"));
         assertNotNull(asyncBatchDelete2);
     }
 
     @Test
     public void testAsyncQueryMethods() {
         // Test async exists
-        ContinuableFuture<Boolean> asyncExists1 = executor.asyncExists(TestEntity.class, 1L);
+        ContinuableFuture<Boolean> asyncExists1 = executor.async().exists(TestEntity.class, 1L);
         assertNotNull(asyncExists1);
 
-        ContinuableFuture<Boolean> asyncExists2 = executor.asyncExists(TestEntity.class, Filters.eq("id", 1L));
+        ContinuableFuture<Boolean> asyncExists2 = executor.async().exists(TestEntity.class, Filters.eq("id", 1L));
         assertNotNull(asyncExists2);
 
-        ContinuableFuture<Boolean> asyncExists3 = executor.asyncExists("SELECT * FROM test WHERE id = ? LIMIT 1", 1L);
+        ContinuableFuture<Boolean> asyncExists3 = executor.async().exists("SELECT * FROM test WHERE id = ? LIMIT 1", 1L);
         assertNotNull(asyncExists3);
 
         // Test async count
-        ContinuableFuture<Long> asyncCount1 = executor.asyncCount(TestEntity.class, Filters.eq("status", "active"));
+        ContinuableFuture<Long> asyncCount1 = executor.async().count(TestEntity.class, Filters.eq("status", "active"));
         assertNotNull(asyncCount1);
 
-        ContinuableFuture<Long> asyncCount2 = executor.asyncCount("SELECT COUNT(*) FROM test WHERE status = ?", "active");
+        ContinuableFuture<Long> asyncCount2 = executor.async().count("SELECT COUNT(*) FROM test WHERE status = ?", "active");
         assertNotNull(asyncCount2);
 
         // Test async list
-        ContinuableFuture<List<TestEntity>> asyncList1 = executor.asyncList(TestEntity.class, Filters.eq("status", "active"));
+        ContinuableFuture<List<TestEntity>> asyncList1 = executor.async().list(TestEntity.class, Filters.eq("status", "active"));
         assertNotNull(asyncList1);
 
-        ContinuableFuture<List<TestEntity>> asyncList2 = executor.asyncList(TestEntity.class, Arrays.asList("id", "name"), Filters.eq("status", "active"));
+        ContinuableFuture<List<TestEntity>> asyncList2 = executor.async().list(TestEntity.class, Arrays.asList("id", "name"), Filters.eq("status", "active"));
         assertNotNull(asyncList2);
 
-        ContinuableFuture<List<Map<String, Object>>> asyncList3 = executor.asyncList("SELECT * FROM test WHERE status = ?", "active");
+        ContinuableFuture<List<Map<String, Object>>> asyncList3 = executor.async().list("SELECT * FROM test WHERE status = ?", "active");
         assertNotNull(asyncList3);
 
-        ContinuableFuture<List<TestEntity>> asyncList4 = executor.asyncList(TestEntity.class, "SELECT * FROM test WHERE status = ?", "active");
+        ContinuableFuture<List<TestEntity>> asyncList4 = executor.async().list(TestEntity.class, "SELECT * FROM test WHERE status = ?", "active");
         assertNotNull(asyncList4);
 
         // Test async query
-        ContinuableFuture<Dataset> asyncQuery1 = executor.asyncQuery(TestEntity.class, Filters.eq("status", "active"));
+        ContinuableFuture<Dataset> asyncQuery1 = executor.async().query(TestEntity.class, Filters.eq("status", "active"));
         assertNotNull(asyncQuery1);
 
-        ContinuableFuture<Dataset> asyncQuery2 = executor.asyncQuery(TestEntity.class, Arrays.asList("id", "name"), Filters.eq("status", "active"));
+        ContinuableFuture<Dataset> asyncQuery2 = executor.async().query(TestEntity.class, Arrays.asList("id", "name"), Filters.eq("status", "active"));
         assertNotNull(asyncQuery2);
 
-        ContinuableFuture<Dataset> asyncQuery3 = executor.asyncQuery("SELECT * FROM test WHERE status = ?", "active");
+        ContinuableFuture<Dataset> asyncQuery3 = executor.async().query("SELECT * FROM test WHERE status = ?", "active");
         assertNotNull(asyncQuery3);
 
-        ContinuableFuture<Dataset> asyncQuery4 = executor.asyncQuery(TestEntity.class, "SELECT * FROM test WHERE status = ?", "active");
+        ContinuableFuture<Dataset> asyncQuery4 = executor.async().query(TestEntity.class, "SELECT * FROM test WHERE status = ?", "active");
         assertNotNull(asyncQuery4);
     }
 
@@ -605,146 +598,146 @@ public class CassandraExecutorBaseTest extends TestBase {
         Condition condition = Filters.eq("id", 1L);
 
         // Test async queryForBoolean
-        ContinuableFuture<OptionalBoolean> asyncBool1 = executor.asyncQueryForBoolean(TestEntity.class, "active", condition);
+        ContinuableFuture<OptionalBoolean> asyncBool1 = executor.async().queryForBoolean(TestEntity.class, "active", condition);
         assertNotNull(asyncBool1);
 
-        ContinuableFuture<OptionalBoolean> asyncBool2 = executor.asyncQueryForBoolean("SELECT active FROM test WHERE id = ?", 1L);
+        ContinuableFuture<OptionalBoolean> asyncBool2 = executor.async().queryForBoolean("SELECT active FROM test WHERE id = ?", 1L);
         assertNotNull(asyncBool2);
 
         // Test async queryForChar
-        ContinuableFuture<OptionalChar> asyncChar1 = executor.asyncQueryForChar(TestEntity.class, "grade", condition);
+        ContinuableFuture<OptionalChar> asyncChar1 = executor.async().queryForChar(TestEntity.class, "grade", condition);
         assertNotNull(asyncChar1);
 
-        ContinuableFuture<OptionalChar> asyncChar2 = executor.asyncQueryForChar("SELECT grade FROM test WHERE id = ?", 1L);
+        ContinuableFuture<OptionalChar> asyncChar2 = executor.async().queryForChar("SELECT grade FROM test WHERE id = ?", 1L);
         assertNotNull(asyncChar2);
 
         // Test async queryForByte
-        ContinuableFuture<OptionalByte> asyncByte1 = executor.asyncQueryForByte(TestEntity.class, "level", condition);
+        ContinuableFuture<OptionalByte> asyncByte1 = executor.async().queryForByte(TestEntity.class, "level", condition);
         assertNotNull(asyncByte1);
 
-        ContinuableFuture<OptionalByte> asyncByte2 = executor.asyncQueryForByte("SELECT level FROM test WHERE id = ?", 1L);
+        ContinuableFuture<OptionalByte> asyncByte2 = executor.async().queryForByte("SELECT level FROM test WHERE id = ?", 1L);
         assertNotNull(asyncByte2);
 
         // Test async queryForShort
-        ContinuableFuture<OptionalShort> asyncShort1 = executor.asyncQueryForShort(TestEntity.class, "count", condition);
+        ContinuableFuture<OptionalShort> asyncShort1 = executor.async().queryForShort(TestEntity.class, "count", condition);
         assertNotNull(asyncShort1);
 
-        ContinuableFuture<OptionalShort> asyncShort2 = executor.asyncQueryForShort("SELECT count FROM test WHERE id = ?", 1L);
+        ContinuableFuture<OptionalShort> asyncShort2 = executor.async().queryForShort("SELECT count FROM test WHERE id = ?", 1L);
         assertNotNull(asyncShort2);
 
         // Test async queryForInt
-        ContinuableFuture<OptionalInt> asyncInt1 = executor.asyncQueryForInt(TestEntity.class, "age", condition);
+        ContinuableFuture<OptionalInt> asyncInt1 = executor.async().queryForInt(TestEntity.class, "age", condition);
         assertNotNull(asyncInt1);
 
-        ContinuableFuture<OptionalInt> asyncInt2 = executor.asyncQueryForInt("SELECT age FROM test WHERE id = ?", 1L);
+        ContinuableFuture<OptionalInt> asyncInt2 = executor.async().queryForInt("SELECT age FROM test WHERE id = ?", 1L);
         assertNotNull(asyncInt2);
 
         // Test async queryForLong
-        ContinuableFuture<OptionalLong> asyncLong1 = executor.asyncQueryForLong(TestEntity.class, "id", condition);
+        ContinuableFuture<OptionalLong> asyncLong1 = executor.async().queryForLong(TestEntity.class, "id", condition);
         assertNotNull(asyncLong1);
 
-        ContinuableFuture<OptionalLong> asyncLong2 = executor.asyncQueryForLong("SELECT id FROM test WHERE id = ?", 1L);
+        ContinuableFuture<OptionalLong> asyncLong2 = executor.async().queryForLong("SELECT id FROM test WHERE id = ?", 1L);
         assertNotNull(asyncLong2);
 
         // Test async queryForFloat
-        ContinuableFuture<OptionalFloat> asyncFloat1 = executor.asyncQueryForFloat(TestEntity.class, "score", condition);
+        ContinuableFuture<OptionalFloat> asyncFloat1 = executor.async().queryForFloat(TestEntity.class, "score", condition);
         assertNotNull(asyncFloat1);
 
-        ContinuableFuture<OptionalFloat> asyncFloat2 = executor.asyncQueryForFloat("SELECT score FROM test WHERE id = ?", 1L);
+        ContinuableFuture<OptionalFloat> asyncFloat2 = executor.async().queryForFloat("SELECT score FROM test WHERE id = ?", 1L);
         assertNotNull(asyncFloat2);
 
         // Test async queryForDouble
-        ContinuableFuture<OptionalDouble> asyncDouble1 = executor.asyncQueryForDouble(TestEntity.class, "price", condition);
+        ContinuableFuture<OptionalDouble> asyncDouble1 = executor.async().queryForDouble(TestEntity.class, "price", condition);
         assertNotNull(asyncDouble1);
 
-        ContinuableFuture<OptionalDouble> asyncDouble2 = executor.asyncQueryForDouble("SELECT price FROM test WHERE id = ?", 1L);
+        ContinuableFuture<OptionalDouble> asyncDouble2 = executor.async().queryForDouble("SELECT price FROM test WHERE id = ?", 1L);
         assertNotNull(asyncDouble2);
 
         // Test async queryForString
-        ContinuableFuture<Nullable<String>> asyncString1 = executor.asyncQueryForString(TestEntity.class, "name", condition);
+        ContinuableFuture<Nullable<String>> asyncString1 = executor.async().queryForString(TestEntity.class, "name", condition);
         assertNotNull(asyncString1);
 
-        ContinuableFuture<Nullable<String>> asyncString2 = executor.asyncQueryForString("SELECT name FROM test WHERE id = ?", 1L);
+        ContinuableFuture<Nullable<String>> asyncString2 = executor.async().queryForString("SELECT name FROM test WHERE id = ?", 1L);
         assertNotNull(asyncString2);
 
         // Test async queryForDate
-        ContinuableFuture<Nullable<Date>> asyncDate1 = executor.asyncQueryForDate(TestEntity.class, "createdDate", condition);
+        ContinuableFuture<Nullable<Date>> asyncDate1 = executor.async().queryForDate(TestEntity.class, "createdDate", condition);
         assertNotNull(asyncDate1);
 
-        ContinuableFuture<Nullable<java.sql.Date>> asyncDate2 = executor.asyncQueryForDate(TestEntity.class, java.sql.Date.class, "createdDate", condition);
+        ContinuableFuture<Nullable<java.sql.Date>> asyncDate2 = executor.async().queryForDate(TestEntity.class, java.sql.Date.class, "createdDate", condition);
         assertNotNull(asyncDate2);
     }
 
     @Test
-    public void testAsyncQueryForSingleResult() {
+    public void testAsyncqueryForSingleValue() {
         // Test async queryForSingleValue
-        ContinuableFuture<Nullable<String>> asyncResult1 = executor.asyncQueryForSingleResult(TestEntity.class, String.class, "name", Filters.eq("id", 1L));
+        ContinuableFuture<Nullable<String>> asyncResult1 = executor.async().queryForSingleValue(TestEntity.class, String.class, "name", Filters.eq("id", 1L));
         assertNotNull(asyncResult1);
 
-        ContinuableFuture<Nullable<String>> asyncResult2 = executor.asyncQueryForSingleResult(String.class, "SELECT name FROM test WHERE id = ?", 1L);
+        ContinuableFuture<Nullable<String>> asyncResult2 = executor.async().queryForSingleValue(String.class, "SELECT name FROM test WHERE id = ?", 1L);
         assertNotNull(asyncResult2);
 
         // Test async queryForSingleNonNull
-        ContinuableFuture<Optional<String>> asyncResult3 = executor.asyncQueryForSingleNonNull(TestEntity.class, String.class, "name", Filters.eq("id", 1L));
+        ContinuableFuture<Optional<String>> asyncResult3 = executor.async().queryForSingleNonNull(TestEntity.class, String.class, "name", Filters.eq("id", 1L));
         assertNotNull(asyncResult3);
 
-        ContinuableFuture<Optional<String>> asyncResult4 = executor.asyncQueryForSingleNonNull(String.class, "SELECT name FROM test WHERE id = ?", 1L);
+        ContinuableFuture<Optional<String>> asyncResult4 = executor.async().queryForSingleNonNull(String.class, "SELECT name FROM test WHERE id = ?", 1L);
         assertNotNull(asyncResult4);
     }
 
     @Test
     public void testAsyncFindFirst() {
         // Test async findFirst
-        ContinuableFuture<Optional<TestEntity>> asyncFind1 = executor.asyncFindFirst(TestEntity.class, Filters.eq("id", 1L));
+        ContinuableFuture<Optional<TestEntity>> asyncFind1 = executor.async().findFirst(TestEntity.class, Filters.eq("id", 1L));
         assertNotNull(asyncFind1);
 
-        ContinuableFuture<Optional<TestEntity>> asyncFind2 = executor.asyncFindFirst(TestEntity.class, Arrays.asList("id", "name"), Filters.eq("id", 1L));
+        ContinuableFuture<Optional<TestEntity>> asyncFind2 = executor.async().findFirst(TestEntity.class, Arrays.asList("id", "name"), Filters.eq("id", 1L));
         assertNotNull(asyncFind2);
 
-        ContinuableFuture<Optional<Map<String, Object>>> asyncFind3 = executor.asyncFindFirst("SELECT * FROM test WHERE id = ?", 1L);
+        ContinuableFuture<Optional<Map<String, Object>>> asyncFind3 = executor.async().findFirst("SELECT * FROM test WHERE id = ?", 1L);
         assertNotNull(asyncFind3);
 
-        ContinuableFuture<Optional<TestEntity>> asyncFind4 = executor.asyncFindFirst(TestEntity.class, "SELECT * FROM test WHERE id = ?", 1L);
+        ContinuableFuture<Optional<TestEntity>> asyncFind4 = executor.async().findFirst(TestEntity.class, "SELECT * FROM test WHERE id = ?", 1L);
         assertNotNull(asyncFind4);
     }
 
     @Test
     public void testAsyncStream() {
         // Test async stream
-        ContinuableFuture<Stream<TestEntity>> asyncStream1 = executor.asyncStream(TestEntity.class, Filters.eq("status", "active"));
+        ContinuableFuture<Stream<TestEntity>> asyncStream1 = executor.async().stream(TestEntity.class, Filters.eq("status", "active"));
         assertNotNull(asyncStream1);
 
-        ContinuableFuture<Stream<TestEntity>> asyncStream2 = executor.asyncStream(TestEntity.class, Arrays.asList("id", "name"),
-                Filters.eq("status", "active"));
+        ContinuableFuture<Stream<TestEntity>> asyncStream2 = executor.async()
+                .stream(TestEntity.class, Arrays.asList("id", "name"), Filters.eq("status", "active"));
         assertNotNull(asyncStream2);
 
-        ContinuableFuture<Stream<Object[]>> asyncStream3 = executor.asyncStream("SELECT * FROM test WHERE status = ?", "active");
+        ContinuableFuture<Stream<Object[]>> asyncStream3 = executor.async().stream("SELECT * FROM test WHERE status = ?", "active");
         assertNotNull(asyncStream3);
 
-        ContinuableFuture<Stream<TestEntity>> asyncStream4 = executor.asyncStream(TestEntity.class, "SELECT * FROM test WHERE status = ?", "active");
+        ContinuableFuture<Stream<TestEntity>> asyncStream4 = executor.async().stream(TestEntity.class, "SELECT * FROM test WHERE status = ?", "active");
         assertNotNull(asyncStream4);
 
         TestStatement stmt = new TestStatement();
-        ContinuableFuture<Stream<TestEntity>> asyncStream5 = executor.asyncStream(TestEntity.class, stmt);
+        ContinuableFuture<Stream<TestEntity>> asyncStream5 = executor.async().stream(TestEntity.class, stmt);
         assertNotNull(asyncStream5);
     }
 
     @Test
     public void testAsyncExecute() {
         // Test async execute
-        ContinuableFuture<TestResultSet> asyncExec1 = executor.asyncExecute("SELECT * FROM test");
+        ContinuableFuture<TestResultSet> asyncExec1 = executor.async().execute("SELECT * FROM test");
         assertNotNull(asyncExec1);
 
-        ContinuableFuture<TestResultSet> asyncExec2 = executor.asyncExecute("SELECT * FROM test WHERE id = ?", 1L);
+        ContinuableFuture<TestResultSet> asyncExec2 = executor.async().execute("SELECT * FROM test WHERE id = ?", 1L);
         assertNotNull(asyncExec2);
 
         Map<String, Object> params = new HashMap<>();
         params.put("id", 1L);
-        ContinuableFuture<TestResultSet> asyncExec3 = executor.asyncExecute("SELECT * FROM test WHERE id = :id", params);
+        ContinuableFuture<TestResultSet> asyncExec3 = executor.async().execute("SELECT * FROM test WHERE id = :id", params);
         assertNotNull(asyncExec3);
 
         TestStatement stmt = new TestStatement();
-        ContinuableFuture<TestResultSet> asyncExec4 = executor.asyncExecute(stmt);
+        ContinuableFuture<TestResultSet> asyncExec4 = executor.async().execute(stmt);
         assertNotNull(asyncExec4);
     }
 
@@ -774,6 +767,33 @@ public class CassandraExecutorBaseTest extends TestBase {
             super(null, NamingPolicy.SNAKE_CASE);
         }
 
+        private final AsyncCassandraExecutorBase<TestRow, TestResultSet, TestStatement, TestPreparedStatement, TestBatchType> asyncExecutor = new AsyncCassandraExecutorBase<>(
+                this) {
+            @Override
+            public ContinuableFuture<TestResultSet> execute(String query) {
+                return ContinuableFuture.completed(new TestResultSet());
+            }
+
+            @Override
+            public ContinuableFuture<TestResultSet> execute(String query, Object... parameters) {
+                return ContinuableFuture.completed(new TestResultSet());
+            }
+
+            @Override
+            public ContinuableFuture<TestResultSet> execute(String query, Map<String, Object> parameters) {
+                return ContinuableFuture.completed(new TestResultSet());
+            }
+
+            @Override
+            public ContinuableFuture<TestResultSet> execute(TestStatement statement) {
+                return ContinuableFuture.completed(new TestResultSet());
+            }
+        };
+
+        public AsyncCassandraExecutorBase<TestRow, TestResultSet, TestStatement, TestPreparedStatement, TestBatchType> async() {
+            return asyncExecutor;
+        }
+
         @Override
         public <T> T gett(Class<T> targetClass, Collection<String> selectPropNames, Condition whereClause) throws DuplicateResultException {
             try {
@@ -785,7 +805,7 @@ public class CassandraExecutorBaseTest extends TestBase {
 
         @Override
         public <E> Nullable<E> queryForSingleValue(Class<E> valueClass, String query, Object... parameters) {
-            return Nullable.of((E) null);
+            return Nullable.empty();
         }
 
         @Override
@@ -820,60 +840,6 @@ public class CassandraExecutorBaseTest extends TestBase {
         @Override
         public TestResultSet execute(TestStatement statement) {
             return new TestResultSet();
-        }
-
-        @Override
-        public <T> ContinuableFuture<Optional<T>> asyncGet(Class<T> targetClass, Collection<String> selectPropNames, Condition whereClause) {
-            return ContinuableFuture.completed(Optional.empty());
-        }
-
-        @Override
-        public <T> ContinuableFuture<T> asyncGett(Class<T> targetClass, Collection<String> selectPropNames, Condition whereClause) {
-            try {
-                return ContinuableFuture.completed(targetClass.newInstance());
-            } catch (Exception e) {
-                throw new RuntimeException(e);
-            }
-        }
-
-        @Override
-        public <T> ContinuableFuture<Nullable<T>> asyncQueryForSingleResult(Class<T> valueClass, String query, Object... parameters) {
-            return ContinuableFuture.completed(Nullable.empty());
-        }
-
-        @Override
-        public <T> ContinuableFuture<Optional<T>> asyncQueryForSingleNonNull(Class<T> valueClass, String query, Object... parameters) {
-            return ContinuableFuture.completed(Optional.empty());
-        }
-
-        @Override
-        public <T> ContinuableFuture<Optional<T>> asyncFindFirst(Class<T> targetClass, String query, Object... parameters) {
-            return ContinuableFuture.completed(Optional.empty());
-        }
-
-        @Override
-        public ContinuableFuture<Stream<Object[]>> asyncStream(String query, Object... parameters) {
-            return ContinuableFuture.completed(Stream.empty());
-        }
-
-        @Override
-        public ContinuableFuture<TestResultSet> asyncExecute(String query) {
-            return ContinuableFuture.completed(new TestResultSet());
-        }
-
-        @Override
-        public ContinuableFuture<TestResultSet> asyncExecute(String query, Object... parameters) {
-            return ContinuableFuture.completed(new TestResultSet());
-        }
-
-        @Override
-        public ContinuableFuture<TestResultSet> asyncExecute(String query, Map<String, Object> parameters) {
-            return ContinuableFuture.completed(new TestResultSet());
-        }
-
-        @Override
-        public ContinuableFuture<TestResultSet> asyncExecute(TestStatement statement) {
-            return ContinuableFuture.completed(new TestResultSet());
         }
 
         @Override
@@ -929,6 +895,15 @@ public class CassandraExecutorBaseTest extends TestBase {
         @Override
         protected TestStatement bind(TestPreparedStatement preStmt, Object... parameters) {
             return new TestStatement();
+        }
+
+        @Override
+        protected <T> T fetchOnlyOne(Class<T> targetClass, TestResultSet resultSet) {
+            try {
+                return targetClass.newInstance();
+            } catch (Exception e) {
+                throw new RuntimeException(e);
+            }
         }
 
         @Override

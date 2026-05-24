@@ -57,7 +57,7 @@ public class MongoCollectionMapperTest extends TestBase {
 
     @Test
     public void testCollExecutor() {
-        MongoCollectionExecutor result = mapper.collExecutor();
+        MongoCollectionExecutor result = mapper.collectionExecutor();
         assertEquals(mockExecutor, result);
     }
 
@@ -475,7 +475,7 @@ public class MongoCollectionMapperTest extends TestBase {
     }
 
     @Test
-    public void testQueryForSingleResult() {
+    public void testqueryForSingleValue() {
         String propName = "customField";
         Bson filter = new Document("key", "value");
         String value = "custom value";

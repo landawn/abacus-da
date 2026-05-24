@@ -282,7 +282,9 @@ public final class HBaseExecutor implements AutoCloseable {
      * @param cls the entity class with getter/setter methods for which to register the row key property
      * @param rowKeyPropertyName the name of the property to use as the row key
      * @throws IllegalArgumentException if the specified class doesn't have getter or setter methods
-     *         for the specified property, or if the property type is {@link HBaseColumn}
+     *         for the specified property, or if the property type is {@link HBaseColumn} (directly,
+     *         or as a single-arg generic such as {@code Collection<HBaseColumn>}, or as the value type
+     *         of a two-arg generic such as {@code Map<?, HBaseColumn>})
      * @see com.landawn.abacus.annotation.Id
      * @deprecated Define or annotate the key/id field using {@code @Id} annotation instead.
      */
@@ -583,8 +585,9 @@ public final class HBaseExecutor implements AutoCloseable {
      * @param <T> the target type
      * @param result the HBase Result to convert
      * @param targetClass the target class - can be entity classes with getter/setter methods
-     *                   or basic single value types (String, Integer, Date, etc.)
-     * @return the converted entity, or the default value if the result is empty
+     *                   or basic single value types (String, Integer, Date, etc.). Map types are not supported.
+     * @return the converted entity, or the type's default value if the result is empty
+     * @throws IllegalArgumentException if {@code targetClass} is a Map type, or if a non-bean result contains more than one cell
      * @throws UncheckedIOException if an I/O error occurs during conversion
      * @see Result
      */
@@ -1453,7 +1456,9 @@ public final class HBaseExecutor implements AutoCloseable {
      * @param tableName the name of the HBase table
      * @param gets the list of Get operations to execute
      * @param targetType the class to convert each result to
-     * @return a list of converted objects of the specified type
+     * @return a list of converted objects of the specified type. Empty results (rows that
+     *         did not exist) are skipped, so the returned list may contain fewer elements
+     *         than {@code gets} and does not necessarily correspond positionally to it.
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see #get(String, List)
      * @see #toEntity(Result, Class)
@@ -1491,7 +1496,9 @@ public final class HBaseExecutor implements AutoCloseable {
      * @param tableName the name of the HBase table
      * @param anyGets the collection of AnyGet operations to execute
      * @param targetType the class to convert each result to
-     * @return a list of converted objects of the specified type
+     * @return a list of converted objects of the specified type. Empty results (rows that
+     *         did not exist) are skipped, so the returned list may contain fewer elements
+     *         than {@code anyGets} and does not necessarily correspond positionally to it.
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see AnyGet
      * @see #get(String, List, Class)
@@ -2149,7 +2156,7 @@ public final class HBaseExecutor implements AutoCloseable {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param rowKey the row key
+     * @param rowKey the row key (any object type, will be converted to bytes)
      * @param family the column family name
      * @param qualifier the column qualifier name
      * @param amount the amount to increment (can be negative for decrementing)
@@ -2168,7 +2175,7 @@ public final class HBaseExecutor implements AutoCloseable {
      * for the increment operation.</p>
      *
      * @param tableName the name of the HBase table
-     * @param rowKey the row key
+     * @param rowKey the row key (any object type, will be converted to bytes)
      * @param family the column family name
      * @param qualifier the column qualifier name
      * @param amount the amount to increment (can be negative for decrementing)
@@ -2253,6 +2260,7 @@ public final class HBaseExecutor implements AutoCloseable {
      * @param tableName the name of the HBase table
      * @param rowKey the row key to identify which region server to connect to
      * @return the CoprocessorRpcChannel for the specified row's region
+     * @throws UncheckedIOException if an I/O error occurs while obtaining the underlying {@link Table}
      * @see CoprocessorRpcChannel
      */
     public CoprocessorRpcChannel coprocessorService(final String tableName, final Object rowKey) {
@@ -2604,8 +2612,12 @@ public final class HBaseExecutor implements AutoCloseable {
         /**
          * Retrieves multiple entities by their row keys.
          *
+         * <p>Row keys that do not exist in the table are skipped — the returned list
+         * may contain fewer elements than {@code rowKeys} and the order does not
+         * necessarily correspond positionally to the input collection.</p>
+         *
          * @param rowKeys the collection of row keys to retrieve
-         * @return a list of entity objects corresponding to the row keys
+         * @return a list of entity objects for the row keys that were found
          * @throws UncheckedIOException if an I/O error occurs during the operation
          */
         public List<T> get(final Collection<? extends K> rowKeys) throws UncheckedIOException {
@@ -2936,6 +2948,7 @@ public final class HBaseExecutor implements AutoCloseable {
          *
          * @param rowKey the row key to identify which region server to connect to
          * @return the CoprocessorRpcChannel for the specified row's region
+         * @throws UncheckedIOException if an I/O error occurs while obtaining the underlying {@link Table}
          * @see CoprocessorRpcChannel
          */
         public CoprocessorRpcChannel coprocessorService(final Object rowKey) {

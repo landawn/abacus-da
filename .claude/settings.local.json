@@ -14,7 +14,9 @@
       "Bash(for file in src/main/java/com/landawn/abacus/da/aws/dynamodb/*.java src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/*.java)",
       "Bash(done)",
       "PowerShell(mvn *)",
-      "PowerShell(Remove-Item *)"
+      "PowerShell(Remove-Item *)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\haiyangl\" -Filter \"ContinuableFuture.java\" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 5 | ForEach-Object { $_.FullName })",
+      "PowerShell(Select-String -Path \"C:\\\\Users\\\\haiyangl\\\\Landawn\\\\abacus-common\\\\src\\\\main\\\\java\\\\com\\\\landawn\\\\abacus\\\\util\\\\stream\\\\Stream.java\" -Pattern \"first\\\\\\(\\\\\\)\" | Select-Object -First 3 | ForEach-Object { $_.Line })"
     ],
     "deny": [],
     "ask": []

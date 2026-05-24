@@ -86,7 +86,7 @@ import com.mongodb.client.result.UpdateResult;
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * AsyncMongoCollectionExecutor async = executor.async();
- * 
+ *
  * // Non-blocking existence check:
  * ContinuableFuture<Boolean> existsFuture = async.exists("507f1f77bcf86cd799439011");
  * existsFuture.thenRunAsync(exists -> {
@@ -94,20 +94,15 @@ import com.mongodb.client.result.UpdateResult;
  *         System.out.println("Document found");
  *     }
  * });
- * 
- * // Chained operations:
- * async.findFirst(Filters.eq("status", "pending"))
- *      .thenCompose(doc -> doc.isPresent() ?
- *          async.updateOne(doc.get(), Updates.set("status", "processing")) :
- *          ContinuableFuture.completedFuture(null))
- *      .thenRunAsync(result -> System.out.println("Update completed"));
  *
- * // Parallel operations:
- * ContinuableFuture<Void> allOps = ContinuableFuture.allOf(
- *     async.count(Filters.eq("active", true)),
- *     async.findFirst(Filters.eq("priority", "high")),
- *     async.estimatedDocumentCount()
- * );
+ * // Wait synchronously for a result when needed:
+ * Optional<Document> doc = async.findFirst(Filters.eq("status", "pending")).get();
+ *
+ * // Fire several independent operations in parallel and join the futures:
+ * ContinuableFuture<Long> countFuture = async.count(Filters.eq("active", true));
+ * ContinuableFuture<Optional<Document>> findFuture = async.findFirst(Filters.eq("priority", "high"));
+ * long activeCount = countFuture.get();
+ * Optional<Document> highPriority = findFuture.get();
  * }</pre>
  *
  * @see MongoCollectionExecutor
@@ -124,12 +119,12 @@ import com.mongodb.client.result.UpdateResult;
  */
 public final class AsyncMongoCollectionExecutor {
 
-    private final MongoCollectionExecutor collExecutor;
+    private final MongoCollectionExecutor collectionExecutor;
 
     private final AsyncExecutor asyncExecutor;
 
-    AsyncMongoCollectionExecutor(final MongoCollectionExecutor collExecutor, final AsyncExecutor asyncExecutor) {
-        this.collExecutor = collExecutor;
+    AsyncMongoCollectionExecutor(final MongoCollectionExecutor collectionExecutor, final AsyncExecutor asyncExecutor) {
+        this.collectionExecutor = collectionExecutor;
         this.asyncExecutor = asyncExecutor;
     }
 
@@ -151,7 +146,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see MongoCollectionExecutor
      */
     public MongoCollectionExecutor sync() {
-        return collExecutor;
+        return collectionExecutor;
     }
 
     /**
@@ -173,7 +168,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #exists(ObjectId)
      */
     public ContinuableFuture<Boolean> exists(final String objectId) {
-        return asyncExecutor.execute(() -> collExecutor.exists(objectId));
+        return asyncExecutor.execute(() -> collectionExecutor.exists(objectId));
     }
 
     /**
@@ -196,7 +191,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see ContinuableFuture
      */
     public ContinuableFuture<Boolean> exists(final ObjectId objectId) {
-        return asyncExecutor.execute(() -> collExecutor.exists(objectId));
+        return asyncExecutor.execute(() -> collectionExecutor.exists(objectId));
     }
 
     /**
@@ -213,12 +208,12 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param filter the query filter to match documents against
      * @return a ContinuableFuture that completes with {@code true} if matching documents exist, {@code false} otherwise
-     * @throws IllegalArgumentException if filter is null (propagated through future)
+     * @throws NullPointerException if filter is null (propagated through future, thrown by the underlying MongoDB driver)
      * @see com.mongodb.client.model.Filters
      * @see ContinuableFuture
      */
     public ContinuableFuture<Boolean> exists(final Bson filter) {
-        return asyncExecutor.execute(() -> collExecutor.exists(filter));
+        return asyncExecutor.execute(() -> collectionExecutor.exists(filter));
     }
 
     /**
@@ -238,7 +233,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #count(Bson)
      */
     public ContinuableFuture<Long> count() {
-        return asyncExecutor.execute((Callable<Long>) collExecutor::count);
+        return asyncExecutor.execute((Callable<Long>) collectionExecutor::count);
     }
 
     /**
@@ -256,12 +251,12 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param filter the query filter to count matching documents
      * @return a ContinuableFuture that completes with the count of matching documents
-     * @throws IllegalArgumentException if filter is null (propagated through future)
+     * @throws NullPointerException if filter is null (propagated through future, thrown by the underlying MongoDB driver)
      * @see com.mongodb.client.model.Filters
      * @see ContinuableFuture
      */
     public ContinuableFuture<Long> count(final Bson filter) {
-        return asyncExecutor.execute(() -> collExecutor.count(filter));
+        return asyncExecutor.execute(() -> collectionExecutor.count(filter));
     }
 
     /**
@@ -280,12 +275,12 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to count matching documents
      * @param options additional options for the count operation (null uses defaults)
      * @return a ContinuableFuture that completes with the count within the specified constraints
-     * @throws IllegalArgumentException if filter is null (propagated through future)
+     * @throws NullPointerException if filter is null (propagated through future, thrown by the underlying MongoDB driver)
      * @see CountOptions
      * @see ContinuableFuture
      */
     public ContinuableFuture<Long> count(final Bson filter, final CountOptions options) {
-        return asyncExecutor.execute(() -> collExecutor.count(filter, options));
+        return asyncExecutor.execute(() -> collectionExecutor.count(filter, options));
     }
 
     /**
@@ -310,7 +305,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #get(ObjectId)
      */
     public ContinuableFuture<Optional<Document>> get(final String objectId) {
-        return asyncExecutor.execute(() -> collExecutor.get(objectId));
+        return asyncExecutor.execute(() -> collectionExecutor.get(objectId));
     }
 
     /**
@@ -335,7 +330,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see Document
      */
     public ContinuableFuture<Optional<Document>> get(final ObjectId objectId) {
-        return asyncExecutor.execute(() -> collExecutor.get(objectId));
+        return asyncExecutor.execute(() -> collectionExecutor.get(objectId));
     }
 
     /**
@@ -360,14 +355,14 @@ public final class AsyncMongoCollectionExecutor {
      * @see #get(ObjectId, Class)
      */
     public <T> ContinuableFuture<Optional<T>> get(final String objectId, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.get(objectId, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.get(objectId, rowType));
     }
 
     /**
      * Asynchronously retrieves and converts a document by its ObjectId with automatic type conversion.
      *
      * <p>This method performs non-blocking document retrieval using the native ObjectId and converts
-     * the result to the specified target type. It supports entity classes, collections, and primitive types.
+     * the result to the specified target type. It supports entity classes, Map types, and primitive types.
      * The operation is executed on the configured thread pool.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -386,7 +381,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #get(ObjectId, Collection, Class)
      */
     public <T> ContinuableFuture<Optional<T>> get(final ObjectId objectId, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.get(objectId, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.get(objectId, rowType));
     }
 
     /**
@@ -413,7 +408,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #get(ObjectId, Collection, Class)
      */
     public <T> ContinuableFuture<Optional<T>> get(final String objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.get(objectId, selectPropNames, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.get(objectId, selectPropNames, rowType));
     }
 
     /**
@@ -442,7 +437,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Projections
      */
     public <T> ContinuableFuture<Optional<T>> get(final ObjectId objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.get(objectId, selectPropNames, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.get(objectId, selectPropNames, rowType));
     }
 
     /**
@@ -471,7 +466,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #gett(ObjectId)
      */
     public ContinuableFuture<Document> gett(final String objectId) {
-        return asyncExecutor.execute(() -> collExecutor.gett(objectId));
+        return asyncExecutor.execute(() -> collectionExecutor.gett(objectId));
     }
 
     /**
@@ -500,7 +495,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #gett(String)
      */
     public ContinuableFuture<Document> gett(final ObjectId objectId) {
-        return asyncExecutor.execute(() -> collExecutor.gett(objectId));
+        return asyncExecutor.execute(() -> collectionExecutor.gett(objectId));
     }
 
     /**
@@ -530,7 +525,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #gett(ObjectId, Class)
      */
     public <T> ContinuableFuture<T> gett(final String objectId, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.gett(objectId, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.gett(objectId, rowType));
     }
 
     /**
@@ -561,7 +556,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #gett(String, Class)
      */
     public <T> ContinuableFuture<T> gett(final ObjectId objectId, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.gett(objectId, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.gett(objectId, rowType));
     }
 
     /**
@@ -593,7 +588,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #gett(ObjectId, Collection, Class)
      */
     public <T> ContinuableFuture<T> gett(final String objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.gett(objectId, selectPropNames, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.gett(objectId, selectPropNames, rowType));
     }
 
     /**
@@ -627,7 +622,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Projections
      */
     public <T> ContinuableFuture<T> gett(final ObjectId objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.gett(objectId, selectPropNames, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.gett(objectId, selectPropNames, rowType));
     }
 
     /**
@@ -653,7 +648,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Filters
      */
     public ContinuableFuture<Optional<Document>> findFirst(final Bson filter) {
-        return asyncExecutor.execute(() -> collExecutor.findFirst(filter));
+        return asyncExecutor.execute(() -> collectionExecutor.findFirst(filter));
     }
 
     /**
@@ -679,7 +674,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #findFirst(Collection, Bson, Class)
      */
     public <T> ContinuableFuture<Optional<T>> findFirst(final Bson filter, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.findFirst(filter, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.findFirst(filter, rowType));
     }
 
     /**
@@ -707,7 +702,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #findFirst(Collection, Bson, Bson, Class)
      */
     public <T> ContinuableFuture<Optional<T>> findFirst(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.findFirst(selectPropNames, filter, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.findFirst(selectPropNames, filter, rowType));
     }
 
     /**
@@ -736,7 +731,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #findFirst(Collection, Bson, Class)
      */
     public <T> ContinuableFuture<Optional<T>> findFirst(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.findFirst(selectPropNames, filter, sort, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.findFirst(selectPropNames, filter, sort, rowType));
     }
 
     /**
@@ -765,7 +760,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Sorts
      */
     public <T> ContinuableFuture<Optional<T>> findFirst(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.findFirst(projection, filter, sort, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.findFirst(projection, filter, sort, rowType));
     }
 
     /**
@@ -791,7 +786,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Filters
      */
     public ContinuableFuture<List<Document>> list(final Bson filter) {
-        return asyncExecutor.execute(() -> collExecutor.list(filter));
+        return asyncExecutor.execute(() -> collectionExecutor.list(filter));
     }
 
     /**
@@ -817,7 +812,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #list(Collection, Bson, Class)
      */
     public <T> ContinuableFuture<List<T>> list(final Bson filter, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.list(filter, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.list(filter, rowType));
     }
 
     /**
@@ -844,7 +839,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #list(Bson, Class)
      */
     public <T> ContinuableFuture<List<T>> list(final Bson filter, final int offset, final int count, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.list(filter, offset, count, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.list(filter, offset, count, rowType));
     }
 
     /**
@@ -871,7 +866,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #list(Bson, Class)
      */
     public <T> ContinuableFuture<List<T>> list(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.list(selectPropNames, filter, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.list(selectPropNames, filter, rowType));
     }
 
     /**
@@ -901,7 +896,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public <T> ContinuableFuture<List<T>> list(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count,
             final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.list(selectPropNames, filter, offset, count, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.list(selectPropNames, filter, offset, count, rowType));
     }
 
     /**
@@ -929,7 +924,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Sorts
      */
     public <T> ContinuableFuture<List<T>> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.list(selectPropNames, filter, sort, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.list(selectPropNames, filter, sort, rowType));
     }
 
     /**
@@ -959,7 +954,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public <T> ContinuableFuture<List<T>> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.list(selectPropNames, filter, sort, offset, count, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.list(selectPropNames, filter, sort, offset, count, rowType));
     }
 
     /**
@@ -988,7 +983,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Sorts
      */
     public <T> ContinuableFuture<List<T>> list(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.list(projection, filter, sort, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.list(projection, filter, sort, rowType));
     }
 
     /**
@@ -1019,7 +1014,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public <T> ContinuableFuture<List<T>> list(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.list(projection, filter, sort, offset, count, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.list(projection, filter, sort, offset, count, rowType));
     }
 
     /**
@@ -1038,12 +1033,12 @@ public final class AsyncMongoCollectionExecutor {
      * @param propName the name of the boolean property to retrieve
      * @param filter the query filter to match documents
      * @return a ContinuableFuture that completes with OptionalBoolean containing the value if present
-     * @throws IllegalArgumentException if propName or filter is null (propagated through future)
+     * @throws IllegalArgumentException if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see OptionalBoolean
      */
     public ContinuableFuture<OptionalBoolean> queryForBoolean(final String propName, final Bson filter) {
-        return asyncExecutor.execute(() -> collExecutor.queryForBoolean(propName, filter));
+        return asyncExecutor.execute(() -> collectionExecutor.queryForBoolean(propName, filter));
     }
 
     /**
@@ -1062,12 +1057,12 @@ public final class AsyncMongoCollectionExecutor {
      * @param propName the name of the character property to retrieve
      * @param filter the query filter to match documents
      * @return a ContinuableFuture that completes with OptionalChar containing the value if present
-     * @throws IllegalArgumentException if propName or filter is null (propagated through future)
+     * @throws IllegalArgumentException if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see OptionalChar
      */
     public ContinuableFuture<OptionalChar> queryForChar(final String propName, final Bson filter) {
-        return asyncExecutor.execute(() -> collExecutor.queryForChar(propName, filter));
+        return asyncExecutor.execute(() -> collectionExecutor.queryForChar(propName, filter));
     }
 
     /**
@@ -1086,12 +1081,12 @@ public final class AsyncMongoCollectionExecutor {
      * @param propName the name of the byte property to retrieve
      * @param filter the query filter to match documents
      * @return a ContinuableFuture that completes with OptionalByte containing the value if present
-     * @throws IllegalArgumentException if propName or filter is null (propagated through future)
+     * @throws IllegalArgumentException if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see OptionalByte
      */
     public ContinuableFuture<OptionalByte> queryForByte(final String propName, final Bson filter) {
-        return asyncExecutor.execute(() -> collExecutor.queryForByte(propName, filter));
+        return asyncExecutor.execute(() -> collectionExecutor.queryForByte(propName, filter));
     }
 
     /**
@@ -1110,12 +1105,12 @@ public final class AsyncMongoCollectionExecutor {
      * @param propName the name of the short property to retrieve
      * @param filter the query filter to match documents
      * @return a ContinuableFuture that completes with OptionalShort containing the value if present
-     * @throws IllegalArgumentException if propName or filter is null (propagated through future)
+     * @throws IllegalArgumentException if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see OptionalShort
      */
     public ContinuableFuture<OptionalShort> queryForShort(final String propName, final Bson filter) {
-        return asyncExecutor.execute(() -> collExecutor.queryForShort(propName, filter));
+        return asyncExecutor.execute(() -> collectionExecutor.queryForShort(propName, filter));
     }
 
     /**
@@ -1134,12 +1129,12 @@ public final class AsyncMongoCollectionExecutor {
      * @param propName the name of the integer property to retrieve
      * @param filter the query filter to match documents
      * @return a ContinuableFuture that completes with OptionalInt containing the value if present
-     * @throws IllegalArgumentException if propName or filter is null (propagated through future)
+     * @throws IllegalArgumentException if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see OptionalInt
      */
     public ContinuableFuture<OptionalInt> queryForInt(final String propName, final Bson filter) {
-        return asyncExecutor.execute(() -> collExecutor.queryForInt(propName, filter));
+        return asyncExecutor.execute(() -> collectionExecutor.queryForInt(propName, filter));
     }
 
     /**
@@ -1158,12 +1153,12 @@ public final class AsyncMongoCollectionExecutor {
      * @param propName the name of the long property to retrieve
      * @param filter the query filter to match documents
      * @return a ContinuableFuture that completes with OptionalLong containing the value if present
-     * @throws IllegalArgumentException if propName or filter is null (propagated through future)
+     * @throws IllegalArgumentException if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see OptionalLong
      */
     public ContinuableFuture<OptionalLong> queryForLong(final String propName, final Bson filter) {
-        return asyncExecutor.execute(() -> collExecutor.queryForLong(propName, filter));
+        return asyncExecutor.execute(() -> collectionExecutor.queryForLong(propName, filter));
     }
 
     /**
@@ -1181,13 +1176,13 @@ public final class AsyncMongoCollectionExecutor {
      * @param propName the name of the float property to retrieve
      * @param filter the query filter to match documents
      * @return a ContinuableFuture that completes with OptionalFloat containing the value if present
-     * @throws IllegalArgumentException if propName or filter is null (propagated through future)
+     * @throws IllegalArgumentException if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see OptionalFloat
      * @see #queryForDouble(String, Bson)
      */
     public ContinuableFuture<OptionalFloat> queryForFloat(final String propName, final Bson filter) {
-        return asyncExecutor.execute(() -> collExecutor.queryForFloat(propName, filter));
+        return asyncExecutor.execute(() -> collectionExecutor.queryForFloat(propName, filter));
     }
 
     /**
@@ -1205,13 +1200,13 @@ public final class AsyncMongoCollectionExecutor {
      * @param propName the name of the double property to retrieve
      * @param filter the query filter to match documents
      * @return a ContinuableFuture that completes with OptionalDouble containing the value if present
-     * @throws IllegalArgumentException if propName or filter is null (propagated through future)
+     * @throws IllegalArgumentException if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see OptionalDouble
      * @see #queryForFloat(String, Bson)
      */
     public ContinuableFuture<OptionalDouble> queryForDouble(final String propName, final Bson filter) {
-        return asyncExecutor.execute(() -> collExecutor.queryForDouble(propName, filter));
+        return asyncExecutor.execute(() -> collectionExecutor.queryForDouble(propName, filter));
     }
 
     /**
@@ -1229,12 +1224,12 @@ public final class AsyncMongoCollectionExecutor {
      * @param propName the name of the string property to retrieve
      * @param filter the query filter to match documents
      * @return a ContinuableFuture that completes with Nullable containing the string value if present
-     * @throws IllegalArgumentException if propName or filter is null (propagated through future)
+     * @throws IllegalArgumentException if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Nullable
      */
     public ContinuableFuture<Nullable<String>> queryForString(final String propName, final Bson filter) {
-        return asyncExecutor.execute(() -> collExecutor.queryForString(propName, filter));
+        return asyncExecutor.execute(() -> collectionExecutor.queryForString(propName, filter));
     }
 
     /**
@@ -1252,14 +1247,14 @@ public final class AsyncMongoCollectionExecutor {
      * @param propName the name of the Date property to retrieve
      * @param filter the query filter to match documents
      * @return a ContinuableFuture that completes with Nullable containing the Date value if present
-     * @throws IllegalArgumentException if propName or filter is null (propagated through future)
+     * @throws IllegalArgumentException if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Nullable
      * @see Date
      * @see #queryForDate(String, Bson, Class)
      */
     public ContinuableFuture<Nullable<Date>> queryForDate(final String propName, final Bson filter) {
-        return asyncExecutor.execute(() -> collExecutor.queryForDate(propName, filter));
+        return asyncExecutor.execute(() -> collectionExecutor.queryForDate(propName, filter));
     }
 
     /**
@@ -1276,16 +1271,16 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the specific Date subclass type
      * @param propName the name of the Date property to retrieve
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (null matches all)
      * @param valueType the Class object representing the Date subclass type
      * @return a ContinuableFuture that completes with Nullable containing the typed Date value if present
-     * @throws IllegalArgumentException if any parameter is null (propagated through future)
+     * @throws IllegalArgumentException if propName or valueType is null or empty (propagated through future)
      * @throws ClassCastException if the value cannot be cast to the specified type (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #queryForDate(String, Bson)
      */
     public <T extends Date> ContinuableFuture<Nullable<T>> queryForDate(final String propName, final Bson filter, final Class<T> valueType) {
-        return asyncExecutor.execute(() -> collExecutor.queryForDate(propName, filter, valueType));
+        return asyncExecutor.execute(() -> collectionExecutor.queryForDate(propName, filter, valueType));
     }
 
     /**
@@ -1302,16 +1297,16 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <V> the type of the value to retrieve
      * @param propName the name of the property to retrieve
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (null matches all)
      * @param valueType the Class object representing the value type
      * @return a ContinuableFuture that completes with Nullable containing the typed value if present
-     * @throws IllegalArgumentException if any parameter is null (propagated through future)
+     * @throws IllegalArgumentException if propName or valueType is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Nullable
      * @see #queryForSingleNonNull(String, Bson, Class)
      */
     public <V> ContinuableFuture<Nullable<V>> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType) {
-        return asyncExecutor.execute(() -> collExecutor.queryForSingleValue(propName, filter, valueType));
+        return asyncExecutor.execute(() -> collectionExecutor.queryForSingleValue(propName, filter, valueType));
     }
 
     /**
@@ -1328,16 +1323,16 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <V> the type of the value to retrieve
      * @param propName the name of the property to retrieve
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (null matches all)
      * @param valueType the Class object representing the value type
      * @return a ContinuableFuture that completes with Optional containing the non-null value if present
-     * @throws IllegalArgumentException if any parameter is null (propagated through future)
+     * @throws IllegalArgumentException if propName or valueType is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Optional
      * @see #queryForSingleValue(String, Bson, Class)
      */
     public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final String propName, final Bson filter, final Class<V> valueType) {
-        return asyncExecutor.execute(() -> collExecutor.queryForSingleNonNull(propName, filter, valueType));
+        return asyncExecutor.execute(() -> collectionExecutor.queryForSingleNonNull(propName, filter, valueType));
     }
 
     /**
@@ -1360,7 +1355,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #query(Bson, Class)
      */
     public ContinuableFuture<Dataset> query(final Bson filter) {
-        return asyncExecutor.execute(() -> collExecutor.query(filter));
+        return asyncExecutor.execute(() -> collectionExecutor.query(filter));
     }
 
     /**
@@ -1385,7 +1380,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #query(Bson)
      */
     public <T> ContinuableFuture<Dataset> query(final Bson filter, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.query(filter, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.query(filter, rowType));
     }
 
     /**
@@ -1412,7 +1407,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #query(Bson, Class)
      */
     public <T> ContinuableFuture<Dataset> query(final Bson filter, final int offset, final int count, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.query(filter, offset, count, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.query(filter, offset, count, rowType));
     }
 
     /**
@@ -1438,7 +1433,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Projections
      */
     public <T> ContinuableFuture<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.query(selectPropNames, filter, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.query(selectPropNames, filter, rowType));
     }
 
     /**
@@ -1466,7 +1461,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public <T> ContinuableFuture<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count,
             final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.query(selectPropNames, filter, offset, count, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.query(selectPropNames, filter, offset, count, rowType));
     }
 
     /**
@@ -1494,7 +1489,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Sorts
      */
     public <T> ContinuableFuture<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.query(selectPropNames, filter, sort, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.query(selectPropNames, filter, sort, rowType));
     }
 
     /**
@@ -1524,7 +1519,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public <T> ContinuableFuture<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.query(selectPropNames, filter, sort, offset, count, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.query(selectPropNames, filter, sort, offset, count, rowType));
     }
 
     /**
@@ -1555,7 +1550,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Projections
      */
     public <T> ContinuableFuture<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.query(projection, filter, sort, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.query(projection, filter, sort, rowType));
     }
 
     /**
@@ -1587,7 +1582,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public <T> ContinuableFuture<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.query(projection, filter, sort, offset, count, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.query(projection, filter, sort, offset, count, rowType));
     }
 
     /**
@@ -1611,7 +1606,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see Document
      */
     public ContinuableFuture<Stream<Document>> stream(final Bson filter) {
-        return asyncExecutor.execute(() -> collExecutor.stream(filter));
+        return asyncExecutor.execute(() -> collectionExecutor.stream(filter));
     }
 
     /**
@@ -1637,7 +1632,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see Stream
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Bson filter, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.stream(filter, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.stream(filter, rowType));
     }
 
     /**
@@ -1663,7 +1658,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see Stream
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Bson filter, final int offset, final int count, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.stream(filter, offset, count, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.stream(filter, offset, count, rowType));
     }
 
     /**
@@ -1688,7 +1683,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see Stream
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.stream(selectPropNames, filter, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.stream(selectPropNames, filter, rowType));
     }
 
     /**
@@ -1717,7 +1712,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count,
             final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.stream(selectPropNames, filter, offset, count, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.stream(selectPropNames, filter, offset, count, rowType));
     }
 
     /**
@@ -1745,7 +1740,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Sorts
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.stream(selectPropNames, filter, sort, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.stream(selectPropNames, filter, sort, rowType));
     }
 
     /**
@@ -1775,7 +1770,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset,
             final int count, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.stream(selectPropNames, filter, sort, offset, count, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.stream(selectPropNames, filter, sort, offset, count, rowType));
     }
 
     /**
@@ -1804,7 +1799,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Projections
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.stream(projection, filter, sort, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.stream(projection, filter, sort, rowType));
     }
 
     /**
@@ -1839,7 +1834,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.stream(projection, filter, sort, offset, count, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.stream(projection, filter, sort, offset, count, rowType));
     }
 
     /**
@@ -1861,7 +1856,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #watch(Class)
      */
     public ContinuableFuture<ChangeStreamIterable<Document>> watch() {
-        return asyncExecutor.execute((Callable<ChangeStreamIterable<Document>>) collExecutor::watch);
+        return asyncExecutor.execute((Callable<ChangeStreamIterable<Document>>) collectionExecutor::watch);
     }
 
     /**
@@ -1886,7 +1881,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #watch()
      */
     public <T> ContinuableFuture<ChangeStreamIterable<T>> watch(final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.watch(rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.watch(rowType));
     }
 
     /**
@@ -1912,7 +1907,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Aggregates
      */
     public ContinuableFuture<ChangeStreamIterable<Document>> watch(final List<? extends Bson> pipeline) {
-        return asyncExecutor.execute(() -> collExecutor.watch(pipeline));
+        return asyncExecutor.execute(() -> collectionExecutor.watch(pipeline));
     }
 
     /**
@@ -1940,7 +1935,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Aggregates
      */
     public <T> ContinuableFuture<ChangeStreamIterable<T>> watch(final List<? extends Bson> pipeline, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.watch(pipeline, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.watch(pipeline, rowType));
     }
 
     /**
@@ -1957,25 +1952,17 @@ public final class AsyncMongoCollectionExecutor {
      * Document userDoc = new Document("name", "John")
      *                      .append("email", "john@example.com")
      *                      .append("age", 30);
-     * 
+     *
      * async.insertOne(userDoc)
      *      .thenRunAsync(() -> {
      *          System.out.println("User inserted successfully");
      *          // The document's _id field is now populated
      *          ObjectId userId = userDoc.getObjectId("_id");
-     *      })
-     *      .exceptionally(throwable -> {
-     *          System.err.println("Insert failed: " + throwable.getMessage());
-     *          return null;
      *      });
-     * 
-     * // Insert an entity:
+     *
+     * // Insert an entity and wait for completion:
      * User user = new User("Jane", "jane@example.com", 25);
-     * async.insertOne(user)
-     *      .thenCompose(result -> {
-     *          // Chain with another operation
-     *          return sendWelcomeEmailAsync(user);
-     *      });
+     * async.insertOne(user).get();
      * }</pre>
      *
      * @param obj the object to insert - can be Document, {@code Map<String, Object>}, or entity class with getter/setter methods
@@ -1988,7 +1975,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public ContinuableFuture<Void> insertOne(final Object obj) {
         return asyncExecutor.execute(() -> {
-            collExecutor.insertOne(obj);
+            collectionExecutor.insertOne(obj);
             return null;
         });
     }
@@ -2004,13 +1991,9 @@ public final class AsyncMongoCollectionExecutor {
      * <pre>{@code
      * User newUser = new User("john", "john@example.com");
      * InsertOneOptions options = new InsertOneOptions().bypassDocumentValidation(true);
-     * 
+     *
      * async.insertOne(newUser, options)
-     *      .thenRunAsync(() -> System.out.println("User inserted with validation bypass"))
-     *      .exceptionally(throwable -> {
-     *          System.err.println("Insert failed: " + throwable.getMessage());
-     *          return null;
-     *      });
+     *      .thenRunAsync(() -> System.out.println("User inserted with validation bypass"));
      * }</pre>
      *
      * @param obj the object to insert, which will be converted to a Document
@@ -2023,7 +2006,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public ContinuableFuture<Void> insertOne(final Object obj, final InsertOneOptions options) {
         return asyncExecutor.execute(() -> {
-            collExecutor.insertOne(obj, options);
+            collectionExecutor.insertOne(obj, options);
             return null;
         });
     }
@@ -2042,13 +2025,9 @@ public final class AsyncMongoCollectionExecutor {
      *     new User("bob", "bob@example.com"),
      *     new User("charlie", "charlie@example.com")
      * );
-     * 
+     *
      * async.insertMany(users)
-     *      .thenRunAsync(() -> System.out.println("All users inserted successfully"))
-     *      .exceptionally(throwable -> {
-     *          System.err.println("Batch insert failed: " + throwable.getMessage());
-     *          return null;
-     *      });
+     *      .thenRunAsync(() -> System.out.println("All users inserted successfully"));
      * }</pre>
      *
      * @param objList the collection of objects to insert, each will be converted to a Document
@@ -2060,7 +2039,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public ContinuableFuture<Void> insertMany(final Collection<?> objList) {
         return asyncExecutor.execute(() -> {
-            collExecutor.insertMany(objList);
+            collectionExecutor.insertMany(objList);
             return null;
         });
     }
@@ -2078,13 +2057,9 @@ public final class AsyncMongoCollectionExecutor {
      * InsertManyOptions options = new InsertManyOptions()
      *     .ordered(false)  // Continue on errors
      *     .bypassDocumentValidation(true);
-     * 
+     *
      * async.insertMany(products, options)
-     *      .thenRunAsync(() -> System.out.println("Bulk product import completed"))
-     *      .exceptionally(throwable -> {
-     *          System.err.println("Some products failed to insert: " + throwable.getMessage());
-     *          return null;
-     *      });
+     *      .thenRunAsync(() -> System.out.println("Bulk product import completed"));
      * }</pre>
      *
      * @param objList the collection of objects to insert, each will be converted to a Document
@@ -2097,7 +2072,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     public ContinuableFuture<Void> insertMany(final Collection<?> objList, final InsertManyOptions options) {
         return asyncExecutor.execute(() -> {
-            collExecutor.insertMany(objList, options);
+            collectionExecutor.insertMany(objList, options);
             return null;
         });
     }
@@ -2133,7 +2108,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Updates
      */
     public ContinuableFuture<UpdateResult> updateOne(final String objectId, final Object update) {
-        return asyncExecutor.execute(() -> collExecutor.updateOne(objectId, update));
+        return asyncExecutor.execute(() -> collectionExecutor.updateOne(objectId, update));
     }
 
     /**
@@ -2169,7 +2144,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see ObjectId
      */
     public ContinuableFuture<UpdateResult> updateOne(final ObjectId objectId, final Object update) {
-        return asyncExecutor.execute(() -> collExecutor.updateOne(objectId, update));
+        return asyncExecutor.execute(() -> collectionExecutor.updateOne(objectId, update));
     }
 
     /**
@@ -2204,7 +2179,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see com.mongodb.client.model.Updates
      */
     public ContinuableFuture<UpdateResult> updateOne(final Bson filter, final Object update) {
-        return asyncExecutor.execute(() -> collExecutor.updateOne(filter, update));
+        return asyncExecutor.execute(() -> collectionExecutor.updateOne(filter, update));
     }
 
     /**
@@ -2222,15 +2197,15 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param filter the query filter to select the document to update
      * @param update the update specification
-     * @param options the options to apply to the update operation
+     * @param options the options to apply to the update operation (null uses defaults)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
-     * @throws IllegalArgumentException if any parameter is null (propagated through future)
+     * @throws IllegalArgumentException if filter or update is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see UpdateOptions
      * @see UpdateResult
      */
     public ContinuableFuture<UpdateResult> updateOne(final Bson filter, final Object update, final UpdateOptions options) {
-        return asyncExecutor.execute(() -> collExecutor.updateOne(filter, update, options));
+        return asyncExecutor.execute(() -> collectionExecutor.updateOne(filter, update, options));
     }
 
     /**
@@ -2257,7 +2232,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see UpdateResult
      */
     public ContinuableFuture<UpdateResult> updateOne(final Bson filter, final Collection<?> objList) {
-        return asyncExecutor.execute(() -> collExecutor.updateOne(filter, objList));
+        return asyncExecutor.execute(() -> collectionExecutor.updateOne(filter, objList));
     }
 
     /**
@@ -2280,14 +2255,14 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param filter the query filter to select the document to update
      * @param objList the collection of update operations to apply
-     * @param options the options to apply to the update operation
+     * @param options the options to apply to the update operation (null uses defaults)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if filter or objList is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see UpdateResult
      */
     public ContinuableFuture<UpdateResult> updateOne(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
-        return asyncExecutor.execute(() -> collExecutor.updateOne(filter, objList, options));
+        return asyncExecutor.execute(() -> collectionExecutor.updateOne(filter, objList, options));
     }
 
     /**
@@ -2305,14 +2280,10 @@ public final class AsyncMongoCollectionExecutor {
      *     Updates.set("status", "archived"),
      *     Updates.set("archivedAt", new Date())
      * );
-     * 
+     *
      * async.updateMany(filter, update)
      *      .thenRunAsync(result -> {
      *          System.out.println("Archived " + result.getModifiedCount() + " users");
-     *      })
-     *      .exceptionally(throwable -> {
-     *          System.err.println("Archive operation failed: " + throwable.getMessage());
-     *          return null;
      *      });
      * }</pre>
      *
@@ -2326,7 +2297,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #updateOne(Bson, Object)
      */
     public ContinuableFuture<UpdateResult> updateMany(final Bson filter, final Object update) {
-        return asyncExecutor.execute(() -> collExecutor.updateMany(filter, update));
+        return asyncExecutor.execute(() -> collectionExecutor.updateMany(filter, update));
     }
 
     /**
@@ -2345,13 +2316,13 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param filter the query filter to select documents to update
      * @param update the update specification (can be update operators or replacement document)
-     * @param options the options to apply to the update operation
+     * @param options the options to apply to the update operation (null uses defaults)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
-     * @throws IllegalArgumentException if any parameter is null (propagated through future)
+     * @throws IllegalArgumentException if filter or update is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      */
     public ContinuableFuture<UpdateResult> updateMany(final Bson filter, final Object update, final UpdateOptions options) {
-        return asyncExecutor.execute(() -> collExecutor.updateMany(filter, update, options));
+        return asyncExecutor.execute(() -> collectionExecutor.updateMany(filter, update, options));
     }
 
     /**
@@ -2378,7 +2349,7 @@ public final class AsyncMongoCollectionExecutor {
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      */
     public ContinuableFuture<UpdateResult> updateMany(final Bson filter, final Collection<?> objList) {
-        return asyncExecutor.execute(() -> collExecutor.updateMany(filter, objList));
+        return asyncExecutor.execute(() -> collectionExecutor.updateMany(filter, objList));
     }
 
     /**
@@ -2401,13 +2372,13 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param filter the query filter to select documents to update
      * @param objList the collection of update operations to apply
-     * @param options the options to apply to the update operation
+     * @param options the options to apply to the update operation (null uses defaults)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if filter or objList is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      */
     public ContinuableFuture<UpdateResult> updateMany(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
-        return asyncExecutor.execute(() -> collExecutor.updateMany(filter, objList, options));
+        return asyncExecutor.execute(() -> collectionExecutor.updateMany(filter, objList, options));
     }
 
     /**
@@ -2435,7 +2406,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #replaceOne(Bson, Object)
      */
     public ContinuableFuture<UpdateResult> replaceOne(final String objectId, final Object replacement) {
-        return asyncExecutor.execute(() -> collExecutor.replaceOne(objectId, replacement));
+        return asyncExecutor.execute(() -> collectionExecutor.replaceOne(objectId, replacement));
     }
 
     /**
@@ -2463,7 +2434,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #replaceOne(Bson, Object)
      */
     public ContinuableFuture<UpdateResult> replaceOne(final ObjectId objectId, final Object replacement) {
-        return asyncExecutor.execute(() -> collExecutor.replaceOne(objectId, replacement));
+        return asyncExecutor.execute(() -> collectionExecutor.replaceOne(objectId, replacement));
     }
 
     /**
@@ -2503,7 +2474,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #updateOne(Bson, Object)
      */
     public ContinuableFuture<UpdateResult> replaceOne(final Bson filter, final Object replacement) {
-        return asyncExecutor.execute(() -> collExecutor.replaceOne(filter, replacement));
+        return asyncExecutor.execute(() -> collectionExecutor.replaceOne(filter, replacement));
     }
 
     /**
@@ -2523,16 +2494,16 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param filter the query filter to select the document to replace
      * @param replacement the replacement document (will preserve the original _id)
-     * @param options the options to apply to the replace operation
+     * @param options the options to apply to the replace operation (null uses defaults)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
-     * @throws IllegalArgumentException if filter, replacement, or options is null (propagated through future)
+     * @throws IllegalArgumentException if filter or replacement is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see UpdateResult
      * @see ReplaceOptions
      * @see #replaceOne(Bson, Object)
      */
     public ContinuableFuture<UpdateResult> replaceOne(final Bson filter, final Object replacement, final ReplaceOptions options) {
-        return asyncExecutor.execute(() -> collExecutor.replaceOne(filter, replacement, options));
+        return asyncExecutor.execute(() -> collectionExecutor.replaceOne(filter, replacement, options));
     }
 
     /**
@@ -2545,7 +2516,7 @@ public final class AsyncMongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * String userId = "507f1f77bcf86cd799439011";
-     * 
+     *
      * async.deleteOne(userId)
      *      .thenRunAsync(result -> {
      *          if (result.getDeletedCount() > 0) {
@@ -2553,10 +2524,6 @@ public final class AsyncMongoCollectionExecutor {
      *          } else {
      *              System.out.println("No user found with ID: " + userId);
      *          }
-     *      })
-     *      .exceptionally(throwable -> {
-     *          System.err.println("Delete operation failed: " + throwable.getMessage());
-     *          return null;
      *      });
      * }</pre>
      *
@@ -2569,7 +2536,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #deleteOne(Bson)
      */
     public ContinuableFuture<DeleteResult> deleteOne(final String objectId) {
-        return asyncExecutor.execute(() -> collExecutor.deleteOne(objectId));
+        return asyncExecutor.execute(() -> collectionExecutor.deleteOne(objectId));
     }
 
     /**
@@ -2595,7 +2562,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #deleteOne(Bson)
      */
     public ContinuableFuture<DeleteResult> deleteOne(final ObjectId objectId) {
-        return asyncExecutor.execute(() -> collExecutor.deleteOne(objectId));
+        return asyncExecutor.execute(() -> collectionExecutor.deleteOne(objectId));
     }
 
     /**
@@ -2621,7 +2588,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #deleteMany(Bson)
      */
     public ContinuableFuture<DeleteResult> deleteOne(final Bson filter) {
-        return asyncExecutor.execute(() -> collExecutor.deleteOne(filter));
+        return asyncExecutor.execute(() -> collectionExecutor.deleteOne(filter));
     }
 
     /**
@@ -2639,16 +2606,16 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param filter the query filter to select the document for deletion
-     * @param options the options to apply to the delete operation
+     * @param options the options to apply to the delete operation (null uses defaults)
      * @return a ContinuableFuture that completes with DeleteResult containing operation details
-     * @throws IllegalArgumentException if filter or options is null (propagated through future)
+     * @throws IllegalArgumentException if filter is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see DeleteResult
      * @see DeleteOptions
      * @see #deleteOne(Bson)
      */
     public ContinuableFuture<DeleteResult> deleteOne(final Bson filter, final DeleteOptions options) {
-        return asyncExecutor.execute(() -> collExecutor.deleteOne(filter, options));
+        return asyncExecutor.execute(() -> collectionExecutor.deleteOne(filter, options));
     }
 
     /**
@@ -2663,16 +2630,12 @@ public final class AsyncMongoCollectionExecutor {
      * // Delete all expired sessions:
      * Date thirtyDaysAgo = Date.from(Instant.now().minus(30, ChronoUnit.DAYS));
      * Bson filter = Filters.lt("lastAccessed", thirtyDaysAgo);
-     * 
+     *
      * async.deleteMany(filter)
      *      .thenRunAsync(result -> {
      *          System.out.println("Deleted " + result.getDeletedCount() + " expired sessions");
-     *      })
-     *      .exceptionally(throwable -> {
-     *          System.err.println("Cleanup operation failed: " + throwable.getMessage());
-     *          return null;
      *      });
-     * 
+     *
      * // Delete all documents with specific status:
      * async.deleteMany(Filters.eq("status", "temporary"))
      *      .thenRunAsync(result -> {
@@ -2691,7 +2654,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #deleteOne(Bson)
      */
     public ContinuableFuture<DeleteResult> deleteMany(final Bson filter) {
-        return asyncExecutor.execute(() -> collExecutor.deleteMany(filter));
+        return asyncExecutor.execute(() -> collectionExecutor.deleteMany(filter));
     }
 
     /**
@@ -2709,16 +2672,16 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param filter the query filter to select documents for deletion
-     * @param options the options to apply to the delete operation
+     * @param options the options to apply to the delete operation (null uses defaults)
      * @return a ContinuableFuture that completes with DeleteResult containing operation details
-     * @throws IllegalArgumentException if filter or options is null (propagated through future)
+     * @throws IllegalArgumentException if filter is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see DeleteResult
      * @see DeleteOptions
      * @see #deleteMany(Bson)
      */
     public ContinuableFuture<DeleteResult> deleteMany(final Bson filter, final DeleteOptions options) {
-        return asyncExecutor.execute(() -> collExecutor.deleteMany(filter, options));
+        return asyncExecutor.execute(() -> collectionExecutor.deleteMany(filter, options));
     }
 
     /**
@@ -2744,7 +2707,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #bulkWrite(List)
      */
     public ContinuableFuture<Integer> bulkInsert(final Collection<?> entities) {
-        return asyncExecutor.execute(() -> collExecutor.bulkInsert(entities));
+        return asyncExecutor.execute(() -> collectionExecutor.bulkInsert(entities));
     }
 
     /**
@@ -2762,16 +2725,16 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param entities the collection of documents to insert
-     * @param options the options to apply to the bulk insert operation
+     * @param options the options to apply to the bulk insert operation (null uses defaults)
      * @return a ContinuableFuture that completes with the number of documents inserted
-     * @throws IllegalArgumentException if entities is null or empty, or options is null (propagated through future)
+     * @throws IllegalArgumentException if entities is null or empty (propagated through future)
      * @throws com.mongodb.MongoBulkWriteException if the bulk operation fails (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see BulkWriteOptions
      * @see #bulkInsert(Collection)
      */
     public ContinuableFuture<Integer> bulkInsert(final Collection<?> entities, final BulkWriteOptions options) {
-        return asyncExecutor.execute(() -> collExecutor.bulkInsert(entities, options));
+        return asyncExecutor.execute(() -> collectionExecutor.bulkInsert(entities, options));
     }
 
     /**
@@ -2802,7 +2765,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #bulkWrite(List, BulkWriteOptions)
      */
     public ContinuableFuture<BulkWriteResult> bulkWrite(final List<? extends WriteModel<? extends Document>> requests) {
-        return asyncExecutor.execute(() -> collExecutor.bulkWrite(requests));
+        return asyncExecutor.execute(() -> collectionExecutor.bulkWrite(requests));
     }
 
     /**
@@ -2822,9 +2785,9 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param requests the list of write operations to perform
-     * @param options the options to apply to the bulk write operation
+     * @param options the options to apply to the bulk write operation (null uses defaults)
      * @return a ContinuableFuture that completes with BulkWriteResult containing operation details
-     * @throws IllegalArgumentException if requests is null or empty, or options is null (propagated through future)
+     * @throws IllegalArgumentException if requests is null or empty (propagated through future)
      * @throws com.mongodb.MongoBulkWriteException if the bulk operation fails (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see BulkWriteResult
@@ -2832,7 +2795,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #bulkWrite(List)
      */
     public ContinuableFuture<BulkWriteResult> bulkWrite(final List<? extends WriteModel<? extends Document>> requests, final BulkWriteOptions options) {
-        return asyncExecutor.execute(() -> collExecutor.bulkWrite(requests, options));
+        return asyncExecutor.execute(() -> collectionExecutor.bulkWrite(requests, options));
     }
 
     /**
@@ -2858,7 +2821,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #findOneAndUpdate(Bson, Object, Class)
      */
     public ContinuableFuture<Document> findOneAndUpdate(final Bson filter, final Object update) {
-        return asyncExecutor.execute(() -> collExecutor.findOneAndUpdate(filter, update));
+        return asyncExecutor.execute(() -> collectionExecutor.findOneAndUpdate(filter, update));
     }
 
     /**
@@ -2885,7 +2848,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #findOneAndUpdate(Bson, Object, FindOneAndUpdateOptions, Class)
      */
     public <T> ContinuableFuture<T> findOneAndUpdate(final Bson filter, final Object update, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.findOneAndUpdate(filter, update, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.findOneAndUpdate(filter, update, rowType));
     }
 
     /**
@@ -2906,15 +2869,15 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param filter the query filter to find the document
      * @param update the update operations to apply
-     * @param options the options to apply to the operation
+     * @param options the options to apply to the operation (null uses defaults)
      * @return a ContinuableFuture that completes with the found document, or {@code null} if no document matches
-     * @throws IllegalArgumentException if filter, update, or options is null (propagated through future)
+     * @throws IllegalArgumentException if filter or update is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see FindOneAndUpdateOptions
      * @see #findOneAndUpdate(Bson, Object)
      */
     public ContinuableFuture<Document> findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options) {
-        return asyncExecutor.execute(() -> collExecutor.findOneAndUpdate(filter, update, options));
+        return asyncExecutor.execute(() -> collectionExecutor.findOneAndUpdate(filter, update, options));
     }
 
     /**
@@ -2934,16 +2897,16 @@ public final class AsyncMongoCollectionExecutor {
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
      * @param update the update operations to apply
-     * @param options the options to apply to the operation
+     * @param options the options to apply to the operation (null uses defaults)
      * @param rowType the class to deserialize the result document into
      * @return a ContinuableFuture that completes with the found document as the specified type, or {@code null} if no document matches
-     * @throws IllegalArgumentException if any parameter is null (propagated through future)
+     * @throws IllegalArgumentException if filter, update, or rowType is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see FindOneAndUpdateOptions
      * @see #findOneAndUpdate(Bson, Object, Class)
      */
     public <T> ContinuableFuture<T> findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.findOneAndUpdate(filter, update, options, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.findOneAndUpdate(filter, update, options, rowType));
     }
 
     /**
@@ -2969,7 +2932,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #findOneAndUpdate(Bson, Collection, FindOneAndUpdateOptions)
      */
     public ContinuableFuture<Document> findOneAndUpdate(final Bson filter, final Collection<?> objList) {
-        return asyncExecutor.execute(() -> collExecutor.findOneAndUpdate(filter, objList));
+        return asyncExecutor.execute(() -> collectionExecutor.findOneAndUpdate(filter, objList));
     }
 
     /**
@@ -2995,7 +2958,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #findOneAndUpdate(Bson, Collection)
      */
     public <T> ContinuableFuture<T> findOneAndUpdate(final Bson filter, final Collection<?> objList, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.findOneAndUpdate(filter, objList, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.findOneAndUpdate(filter, objList, rowType));
     }
 
     /**
@@ -3014,15 +2977,15 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param filter the query filter to find the document
      * @param objList the collection of update operations to apply
-     * @param options the options to apply to the operation
+     * @param options the options to apply to the operation (null uses defaults)
      * @return a ContinuableFuture that completes with the found document, or {@code null} if no document matches
-     * @throws IllegalArgumentException if any parameter is null or objList is empty (propagated through future)
+     * @throws IllegalArgumentException if filter or objList is null or objList is empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see FindOneAndUpdateOptions
      * @see #findOneAndUpdate(Bson, Collection)
      */
     public ContinuableFuture<Document> findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options) {
-        return asyncExecutor.execute(() -> collExecutor.findOneAndUpdate(filter, objList, options));
+        return asyncExecutor.execute(() -> collectionExecutor.findOneAndUpdate(filter, objList, options));
     }
 
     /**
@@ -3042,17 +3005,17 @@ public final class AsyncMongoCollectionExecutor {
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
      * @param objList the collection of update operations to apply
-     * @param options the options to apply to the operation
+     * @param options the options to apply to the operation (null uses defaults)
      * @param rowType the class to deserialize the result document into
      * @return a ContinuableFuture that completes with the found document as the specified type, or {@code null} if no document matches
-     * @throws IllegalArgumentException if any parameter is null or objList is empty (propagated through future)
+     * @throws IllegalArgumentException if filter, objList, or rowType is null or objList is empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see FindOneAndUpdateOptions
      * @see #findOneAndUpdate(Bson, Collection, Class)
      */
     public <T> ContinuableFuture<T> findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options,
             final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.findOneAndUpdate(filter, objList, options, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.findOneAndUpdate(filter, objList, options, rowType));
     }
 
     /**
@@ -3077,7 +3040,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #findOneAndReplace(Bson, Object, FindOneAndReplaceOptions)
      */
     public ContinuableFuture<Document> findOneAndReplace(final Bson filter, final Object replacement) {
-        return asyncExecutor.execute(() -> collExecutor.findOneAndReplace(filter, replacement));
+        return asyncExecutor.execute(() -> collectionExecutor.findOneAndReplace(filter, replacement));
     }
 
     /**
@@ -3103,7 +3066,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #findOneAndReplace(Bson, Object)
      */
     public <T> ContinuableFuture<T> findOneAndReplace(final Bson filter, final Object replacement, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.findOneAndReplace(filter, replacement, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.findOneAndReplace(filter, replacement, rowType));
     }
 
     /**
@@ -3124,15 +3087,15 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param filter the query filter to find the document
      * @param replacement the replacement document
-     * @param options the options to apply to the operation
+     * @param options the options to apply to the operation (null uses defaults)
      * @return a ContinuableFuture that completes with the found document, or {@code null} if no document matches
-     * @throws IllegalArgumentException if any parameter is null (propagated through future)
+     * @throws IllegalArgumentException if filter or replacement is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see FindOneAndReplaceOptions
      * @see #findOneAndReplace(Bson, Object)
      */
     public ContinuableFuture<Document> findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options) {
-        return asyncExecutor.execute(() -> collExecutor.findOneAndReplace(filter, replacement, options));
+        return asyncExecutor.execute(() -> collectionExecutor.findOneAndReplace(filter, replacement, options));
     }
 
     /**
@@ -3151,17 +3114,17 @@ public final class AsyncMongoCollectionExecutor {
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
      * @param replacement the replacement document
-     * @param options the options to apply to the operation
+     * @param options the options to apply to the operation (null uses defaults)
      * @param rowType the class to deserialize the result document into
      * @return a ContinuableFuture that completes with the found document as the specified type, or {@code null} if no document matches
-     * @throws IllegalArgumentException if any parameter is null (propagated through future)
+     * @throws IllegalArgumentException if filter, replacement, or rowType is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see FindOneAndReplaceOptions
      * @see #findOneAndReplace(Bson, Object, Class)
      */
     public <T> ContinuableFuture<T> findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options,
             final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.findOneAndReplace(filter, replacement, options, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.findOneAndReplace(filter, replacement, options, rowType));
     }
 
     /**
@@ -3185,7 +3148,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #deleteOne(Bson)
      */
     public ContinuableFuture<Document> findOneAndDelete(final Bson filter) {
-        return asyncExecutor.execute(() -> collExecutor.findOneAndDelete(filter));
+        return asyncExecutor.execute(() -> collectionExecutor.findOneAndDelete(filter));
     }
 
     /**
@@ -3209,7 +3172,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #findOneAndDelete(Bson)
      */
     public <T> ContinuableFuture<T> findOneAndDelete(final Bson filter, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.findOneAndDelete(filter, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.findOneAndDelete(filter, rowType));
     }
 
     /**
@@ -3229,15 +3192,15 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param filter the query filter to find the document
-     * @param options the options to apply to the operation
+     * @param options the options to apply to the operation (null uses defaults)
      * @return a ContinuableFuture that completes with the deleted document, or {@code null} if no document matches
-     * @throws IllegalArgumentException if filter or options is null (propagated through future)
+     * @throws IllegalArgumentException if filter is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see FindOneAndDeleteOptions
      * @see #findOneAndDelete(Bson)
      */
     public ContinuableFuture<Document> findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options) {
-        return asyncExecutor.execute(() -> collExecutor.findOneAndDelete(filter, options));
+        return asyncExecutor.execute(() -> collectionExecutor.findOneAndDelete(filter, options));
     }
 
     /**
@@ -3255,16 +3218,16 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
-     * @param options the options to apply to the operation
+     * @param options the options to apply to the operation (null uses defaults)
      * @param rowType the class to deserialize the result document into
      * @return a ContinuableFuture that completes with the deleted document as the specified type, or {@code null} if no document matches
-     * @throws IllegalArgumentException if any parameter is null (propagated through future)
+     * @throws IllegalArgumentException if filter or rowType is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see FindOneAndDeleteOptions
      * @see #findOneAndDelete(Bson, Class)
      */
     public <T> ContinuableFuture<T> findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.findOneAndDelete(filter, options, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.findOneAndDelete(filter, options, rowType));
     }
 
     /**
@@ -3289,7 +3252,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #distinct(String, Bson, Class)
      */
     public <T> ContinuableFuture<Stream<T>> distinct(final String fieldName, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.distinct(fieldName, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.distinct(fieldName, rowType));
     }
 
     /**
@@ -3315,7 +3278,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see #distinct(String, Class)
      */
     public <T> ContinuableFuture<Stream<T>> distinct(final String fieldName, final Bson filter, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.distinct(fieldName, filter, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.distinct(fieldName, filter, rowType));
     }
 
     /**
@@ -3337,13 +3300,13 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param pipeline the aggregation pipeline to execute
      * @return a ContinuableFuture that completes with a Stream of result Documents
-     * @throws IllegalArgumentException if pipeline is null or empty (propagated through future)
+     * @throws IllegalArgumentException if pipeline is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #aggregate(List, Class)
      * @see com.mongodb.client.model.Aggregates
      */
     public ContinuableFuture<Stream<Document>> aggregate(final List<? extends Bson> pipeline) {
-        return asyncExecutor.execute(() -> collExecutor.aggregate(pipeline));
+        return asyncExecutor.execute(() -> collectionExecutor.aggregate(pipeline));
     }
 
     /**
@@ -3367,13 +3330,13 @@ public final class AsyncMongoCollectionExecutor {
      * @param pipeline the aggregation pipeline to execute
      * @param rowType the class to deserialize the result documents into
      * @return a ContinuableFuture that completes with a Stream of result objects
-     * @throws IllegalArgumentException if pipeline is null or empty, or rowType is null (propagated through future)
+     * @throws IllegalArgumentException if pipeline or rowType is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #aggregate(List)
      * @see com.mongodb.client.model.Aggregates
      */
     public <T> ContinuableFuture<Stream<T>> aggregate(final List<? extends Bson> pipeline, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.aggregate(pipeline, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.aggregate(pipeline, rowType));
     }
 
     /**
@@ -3398,7 +3361,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     @Beta
     public ContinuableFuture<Stream<Document>> groupBy(final String fieldName) {
-        return asyncExecutor.execute(() -> collExecutor.groupBy(fieldName));
+        return asyncExecutor.execute(() -> collectionExecutor.groupBy(fieldName));
     }
 
     /**
@@ -3423,7 +3386,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     @Beta
     public ContinuableFuture<Stream<Document>> groupBy(final Collection<String> fieldNames) {
-        return asyncExecutor.execute(() -> collExecutor.groupBy(fieldNames));
+        return asyncExecutor.execute(() -> collectionExecutor.groupBy(fieldNames));
     }
 
     /**
@@ -3462,7 +3425,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     @Beta
     public ContinuableFuture<Stream<Document>> groupByAndCount(final String fieldName) {
-        return asyncExecutor.execute(() -> collExecutor.groupByAndCount(fieldName));
+        return asyncExecutor.execute(() -> collectionExecutor.groupByAndCount(fieldName));
     }
 
     /**
@@ -3504,7 +3467,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     @Beta
     public ContinuableFuture<Stream<Document>> groupByAndCount(final Collection<String> fieldNames) {
-        return asyncExecutor.execute(() -> collExecutor.groupByAndCount(fieldNames));
+        return asyncExecutor.execute(() -> collectionExecutor.groupByAndCount(fieldNames));
     }
 
     /**
@@ -3532,7 +3495,7 @@ public final class AsyncMongoCollectionExecutor {
      */
     @Deprecated
     public ContinuableFuture<Stream<Document>> mapReduce(final String mapFunction, final String reduceFunction) {
-        return asyncExecutor.execute(() -> collExecutor.mapReduce(mapFunction, reduceFunction));
+        return asyncExecutor.execute(() -> collectionExecutor.mapReduce(mapFunction, reduceFunction));
     }
 
     /**
@@ -3560,6 +3523,6 @@ public final class AsyncMongoCollectionExecutor {
      */
     @Deprecated
     public <T> ContinuableFuture<Stream<T>> mapReduce(final String mapFunction, final String reduceFunction, final Class<T> rowType) {
-        return asyncExecutor.execute(() -> collExecutor.mapReduce(mapFunction, reduceFunction, rowType));
+        return asyncExecutor.execute(() -> collectionExecutor.mapReduce(mapFunction, reduceFunction, rowType));
     }
 }

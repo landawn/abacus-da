@@ -99,7 +99,7 @@ import reactor.core.publisher.Mono;
  * }
  * 
  * // Create reactive mapper:
- * MongoCollectionMapper<User> userMapper = reactiveMongoDB.collMapper("users", User.class);
+ * MongoCollectionMapper<User> userMapper = reactiveMongoDB.collectionMapper("users", User.class);
  * 
  * // Reactive type-safe operations with Project Reactor:
  * userMapper.insertOne(new User("John", "john@example.com"));
@@ -146,18 +146,18 @@ import reactor.core.publisher.Mono;
  */
 public final class MongoCollectionMapper<T> {
 
-    private final MongoCollectionExecutor collExecutor;
+    private final MongoCollectionExecutor collectionExecutor;
 
     private final Class<T> rowType;
 
     /**
      * Package-private constructor for creating a reactive MongoDB collection mapper.
      *
-     * @param collExecutor the reactive collection executor to use for operations
+     * @param collectionExecutor the reactive collection executor to use for operations
      * @param resultClass the Class representing the entity type for mapping operations
      */
-    MongoCollectionMapper(final MongoCollectionExecutor collExecutor, final Class<T> resultClass) {
-        this.collExecutor = collExecutor;
+    MongoCollectionMapper(final MongoCollectionExecutor collectionExecutor, final Class<T> resultClass) {
+        this.collectionExecutor = collectionExecutor;
         rowType = resultClass;
     }
 
@@ -170,8 +170,8 @@ public final class MongoCollectionMapper<T> {
      * @return the reactive MongoCollectionExecutor instance
      * @see MongoCollectionExecutor
      */
-    public MongoCollectionExecutor collExecutor() {
-        return collExecutor;
+    public MongoCollectionExecutor collectionExecutor() {
+        return collectionExecutor;
     }
 
     /**
@@ -182,7 +182,7 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> userMapper = reactiveMongoDB.collMapper("users", User.class);
+     * MongoCollectionMapper<User> userMapper = reactiveMongoDB.collectionMapper("users", User.class);
      *
      * Mono<Boolean> existsMono = userMapper.exists("507f1f77bcf86cd799439011");
      * existsMono.subscribe(
@@ -192,12 +192,11 @@ public final class MongoCollectionMapper<T> {
      *
      * @param objectId the string representation of the ObjectId to check for existence
      * @return a Mono that emits {@code true} if a document with the specified ObjectId exists, {@code false} otherwise
-     * @throws IllegalArgumentException if objectId is null or empty
-     * @throws org.bson.BsonInvalidOperationException if objectId string is not a valid ObjectId format
+     * @throws IllegalArgumentException if objectId is null or empty, or if it is not a valid ObjectId hex string
      * @see ObjectId
      */
     public Mono<Boolean> exists(final String objectId) {
-        return collExecutor.exists(objectId);
+        return collectionExecutor.exists(objectId);
     }
 
     /**
@@ -222,7 +221,7 @@ public final class MongoCollectionMapper<T> {
      * @see ObjectId
      */
     public Mono<Boolean> exists(final ObjectId objectId) {
-        return collExecutor.exists(objectId);
+        return collectionExecutor.exists(objectId);
     }
 
     /**
@@ -248,7 +247,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Filters
      */
     public Mono<Boolean> exists(final Bson filter) {
-        return collExecutor.exists(filter);
+        return collectionExecutor.exists(filter);
     }
 
     /**
@@ -269,7 +268,7 @@ public final class MongoCollectionMapper<T> {
      * @return a Mono that emits the total count of documents in the collection
      */
     public Mono<Long> count() {
-        return collExecutor.count();
+        return collectionExecutor.count();
     }
 
     /**
@@ -295,7 +294,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Filters
      */
     public Mono<Long> count(final Bson filter) {
-        return collExecutor.count(filter);
+        return collectionExecutor.count(filter);
     }
 
     /**
@@ -323,7 +322,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Filters
      */
     public Mono<Long> count(final Bson filter, final CountOptions options) {
-        return collExecutor.count(filter, options);
+        return collectionExecutor.count(filter, options);
     }
 
     /**
@@ -345,12 +344,11 @@ public final class MongoCollectionMapper<T> {
      *
      * @param objectId the string representation of the ObjectId to search for
      * @return a Mono that emits the found entity, or empty if no document matches the ObjectId
-     * @throws IllegalArgumentException if objectId is null or empty
-     * @throws org.bson.BsonInvalidOperationException if objectId string is not a valid ObjectId format
+     * @throws IllegalArgumentException if objectId is null or empty, or if it is not a valid ObjectId hex string
      * @see ObjectId
      */
     public Mono<T> get(final String objectId) {
-        return collExecutor.get(objectId, rowType);
+        return collectionExecutor.get(objectId, rowType);
     }
 
     /**
@@ -376,7 +374,7 @@ public final class MongoCollectionMapper<T> {
      * @see ObjectId
      */
     public Mono<T> get(final ObjectId objectId) {
-        return collExecutor.get(objectId, rowType);
+        return collectionExecutor.get(objectId, rowType);
     }
 
     /**
@@ -399,13 +397,12 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the string representation of the ObjectId to search for
      * @param selectPropNames the collection of field names to include in the projection
      * @return a Mono that emits the projected entity, or empty if no document matches the ObjectId
-     * @throws IllegalArgumentException if objectId is null/empty or selectPropNames is null
-     * @throws org.bson.BsonInvalidOperationException if objectId string is not a valid ObjectId format
+     * @throws IllegalArgumentException if objectId is null/empty, selectPropNames is null, or objectId is not a valid ObjectId hex string
      * @see ObjectId
      * @see com.mongodb.client.model.Projections
      */
     public Mono<T> get(final String objectId, final Collection<String> selectPropNames) {
-        return collExecutor.get(objectId, selectPropNames, rowType);
+        return collectionExecutor.get(objectId, selectPropNames, rowType);
     }
 
     /**
@@ -434,7 +431,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Projections
      */
     public Mono<T> get(final ObjectId objectId, final Collection<String> selectPropNames) {
-        return collExecutor.get(objectId, selectPropNames, rowType);
+        return collectionExecutor.get(objectId, selectPropNames, rowType);
     }
 
     /**
@@ -462,7 +459,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Filters
      */
     public Mono<T> findFirst(final Bson filter) {
-        return collExecutor.findFirst(filter, rowType);
+        return collectionExecutor.findFirst(filter, rowType);
     }
 
     /**
@@ -492,7 +489,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Projections
      */
     public Mono<T> findFirst(final Collection<String> selectPropNames, final Bson filter) {
-        return collExecutor.findFirst(selectPropNames, filter, rowType);
+        return collectionExecutor.findFirst(selectPropNames, filter, rowType);
     }
 
     /**
@@ -525,7 +522,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Sorts
      */
     public Mono<T> findFirst(final Collection<String> selectPropNames, final Bson filter, final Bson sort) {
-        return collExecutor.findFirst(selectPropNames, filter, sort, rowType);
+        return collectionExecutor.findFirst(selectPropNames, filter, sort, rowType);
     }
 
     /**
@@ -562,7 +559,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Sorts
      */
     public Mono<T> findFirst(final Bson projection, final Bson filter, final Bson sort) {
-        return collExecutor.findFirst(projection, filter, sort, rowType);
+        return collectionExecutor.findFirst(projection, filter, sort, rowType);
     }
 
     /**
@@ -593,7 +590,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Filters
      */
     public Flux<T> list(final Bson filter) {
-        return collExecutor.list(filter, rowType);
+        return collectionExecutor.list(filter, rowType);
     }
 
     /**
@@ -616,7 +613,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if filter is null, offset is negative, or count is non-positive
      */
     public Flux<T> list(final Bson filter, final int offset, final int count) {
-        return collExecutor.list(filter, offset, count, rowType);
+        return collectionExecutor.list(filter, offset, count, rowType);
     }
 
     /**
@@ -639,7 +636,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if selectPropNames is empty or filter is null
      */
     public Flux<T> list(final Collection<String> selectPropNames, final Bson filter) {
-        return collExecutor.list(selectPropNames, filter, rowType);
+        return collectionExecutor.list(selectPropNames, filter, rowType);
     }
 
     /**
@@ -664,7 +661,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if parameters are invalid
      */
     public Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count) {
-        return collExecutor.list(selectPropNames, filter, offset, count, rowType);
+        return collectionExecutor.list(selectPropNames, filter, offset, count, rowType);
     }
 
     /**
@@ -689,7 +686,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Sorts
      */
     public Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort) {
-        return collExecutor.list(selectPropNames, filter, sort, rowType);
+        return collectionExecutor.list(selectPropNames, filter, sort, rowType);
     }
 
     /**
@@ -715,7 +712,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if parameters are invalid
      */
     public Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count) {
-        return collExecutor.list(selectPropNames, filter, sort, offset, count, rowType);
+        return collectionExecutor.list(selectPropNames, filter, sort, offset, count, rowType);
     }
 
     /**
@@ -741,7 +738,7 @@ public final class MongoCollectionMapper<T> {
      * @see com.mongodb.client.model.Projections
      */
     public Flux<T> list(final Bson projection, final Bson filter, final Bson sort) {
-        return collExecutor.list(projection, filter, sort, rowType);
+        return collectionExecutor.list(projection, filter, sort, rowType);
     }
 
     /**
@@ -768,7 +765,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if required parameters are invalid
      */
     public Flux<T> list(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count) {
-        return collExecutor.list(projection, filter, sort, offset, count, rowType);
+        return collectionExecutor.list(projection, filter, sort, offset, count, rowType);
     }
 
     /**
@@ -791,7 +788,7 @@ public final class MongoCollectionMapper<T> {
      */
     @Beta
     public Mono<Boolean> queryForBoolean(final String propName, final Bson filter) {
-        return collExecutor.queryForBoolean(propName, filter);
+        return collectionExecutor.queryForBoolean(propName, filter);
     }
 
     /**
@@ -814,7 +811,7 @@ public final class MongoCollectionMapper<T> {
      */
     @Beta
     public Mono<Character> queryForChar(final String propName, final Bson filter) {
-        return collExecutor.queryForChar(propName, filter);
+        return collectionExecutor.queryForChar(propName, filter);
     }
 
     /**
@@ -837,7 +834,7 @@ public final class MongoCollectionMapper<T> {
      */
     @Beta
     public Mono<Byte> queryForByte(final String propName, final Bson filter) {
-        return collExecutor.queryForByte(propName, filter);
+        return collectionExecutor.queryForByte(propName, filter);
     }
 
     /**
@@ -860,7 +857,7 @@ public final class MongoCollectionMapper<T> {
      */
     @Beta
     public Mono<Short> queryForShort(final String propName, final Bson filter) {
-        return collExecutor.queryForShort(propName, filter);
+        return collectionExecutor.queryForShort(propName, filter);
     }
 
     /**
@@ -883,7 +880,7 @@ public final class MongoCollectionMapper<T> {
      */
     @Beta
     public Mono<Integer> queryForInt(final String propName, final Bson filter) {
-        return collExecutor.queryForInt(propName, filter);
+        return collectionExecutor.queryForInt(propName, filter);
     }
 
     /**
@@ -906,7 +903,7 @@ public final class MongoCollectionMapper<T> {
      */
     @Beta
     public Mono<Long> queryForLong(final String propName, final Bson filter) {
-        return collExecutor.queryForLong(propName, filter);
+        return collectionExecutor.queryForLong(propName, filter);
     }
 
     /**
@@ -929,7 +926,7 @@ public final class MongoCollectionMapper<T> {
      */
     @Beta
     public Mono<Float> queryForFloat(final String propName, final Bson filter) {
-        return collExecutor.queryForFloat(propName, filter);
+        return collectionExecutor.queryForFloat(propName, filter);
     }
 
     /**
@@ -952,7 +949,7 @@ public final class MongoCollectionMapper<T> {
      */
     @Beta
     public Mono<Double> queryForDouble(final String propName, final Bson filter) {
-        return collExecutor.queryForDouble(propName, filter);
+        return collectionExecutor.queryForDouble(propName, filter);
     }
 
     /**
@@ -975,7 +972,7 @@ public final class MongoCollectionMapper<T> {
      */
     @Beta
     public Mono<String> queryForString(final String propName, final Bson filter) {
-        return collExecutor.queryForString(propName, filter);
+        return collectionExecutor.queryForString(propName, filter);
     }
 
     /**
@@ -998,7 +995,7 @@ public final class MongoCollectionMapper<T> {
      */
     @Beta
     public Mono<Date> queryForDate(final String propName, final Bson filter) {
-        return collExecutor.queryForDate(propName, filter);
+        return collectionExecutor.queryForDate(propName, filter);
     }
 
     /**
@@ -1023,7 +1020,7 @@ public final class MongoCollectionMapper<T> {
      * @throws ClassCastException if the value cannot be converted to the specified type
      */
     public <P extends Date> Mono<P> queryForDate(final String propName, final Bson filter, final Class<P> valueType) {
-        return collExecutor.queryForDate(propName, filter, valueType);
+        return collectionExecutor.queryForDate(propName, filter, valueType);
     }
 
     /**
@@ -1049,7 +1046,7 @@ public final class MongoCollectionMapper<T> {
      * @throws ClassCastException if the value cannot be converted to the specified type
      */
     public <V> Mono<V> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType) {
-        return collExecutor.queryForSingleValue(propName, filter, valueType);
+        return collectionExecutor.queryForSingleValue(propName, filter, valueType);
     }
 
     /**
@@ -1072,7 +1069,7 @@ public final class MongoCollectionMapper<T> {
      * @see Dataset
      */
     public Mono<Dataset> query(final Bson filter) {
-        return collExecutor.query(filter, rowType);
+        return collectionExecutor.query(filter, rowType);
     }
 
     /**
@@ -1095,7 +1092,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if parameters are invalid
      */
     public Mono<Dataset> query(final Bson filter, final int offset, final int count) {
-        return collExecutor.query(filter, offset, count, rowType);
+        return collectionExecutor.query(filter, offset, count, rowType);
     }
 
     /**
@@ -1117,7 +1114,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if selectPropNames is empty or filter is null
      */
     public Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter) {
-        return collExecutor.query(selectPropNames, filter, rowType);
+        return collectionExecutor.query(selectPropNames, filter, rowType);
     }
 
     /**
@@ -1141,7 +1138,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if parameters are invalid
      */
     public Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count) {
-        return collExecutor.query(selectPropNames, filter, offset, count, rowType);
+        return collectionExecutor.query(selectPropNames, filter, offset, count, rowType);
     }
 
     /**
@@ -1165,7 +1162,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if required parameters are invalid
      */
     public Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort) {
-        return collExecutor.query(selectPropNames, filter, sort, rowType);
+        return collectionExecutor.query(selectPropNames, filter, sort, rowType);
     }
 
     /**
@@ -1191,7 +1188,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if parameters are invalid
      */
     public Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count) {
-        return collExecutor.query(selectPropNames, filter, sort, offset, count, rowType);
+        return collectionExecutor.query(selectPropNames, filter, sort, offset, count, rowType);
     }
 
     /**
@@ -1218,7 +1215,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if projection or filter is null
      */
     public Mono<Dataset> query(final Bson projection, final Bson filter, final Bson sort) {
-        return collExecutor.query(projection, filter, sort, rowType);
+        return collectionExecutor.query(projection, filter, sort, rowType);
     }
 
     /**
@@ -1244,7 +1241,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if required parameters are invalid
      */
     public Mono<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count) {
-        return collExecutor.query(projection, filter, sort, offset, count, rowType);
+        return collectionExecutor.query(projection, filter, sort, offset, count, rowType);
     }
 
     /**
@@ -1269,7 +1266,7 @@ public final class MongoCollectionMapper<T> {
      * @see #insertMany(Collection)
      */
     public Mono<InsertOneResult> insertOne(final T obj) {
-        return collExecutor.insertOne(obj);
+        return collectionExecutor.insertOne(obj);
     }
 
     /**
@@ -1296,7 +1293,7 @@ public final class MongoCollectionMapper<T> {
      * @see InsertOneOptions
      */
     public Mono<InsertOneResult> insertOne(final T obj, final InsertOneOptions options) {
-        return collExecutor.insertOne(obj, options);
+        return collectionExecutor.insertOne(obj, options);
     }
 
     /**
@@ -1320,7 +1317,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if objList is null or empty
      */
     public Mono<InsertManyResult> insertMany(final Collection<? extends T> objList) {
-        return collExecutor.insertMany(objList);
+        return collectionExecutor.insertMany(objList);
     }
 
     /**
@@ -1348,7 +1345,7 @@ public final class MongoCollectionMapper<T> {
      * @see InsertManyOptions
      */
     public Mono<InsertManyResult> insertMany(final Collection<? extends T> objList, final InsertManyOptions options) {
-        return collExecutor.insertMany(objList, options);
+        return collectionExecutor.insertMany(objList, options);
     }
 
     /**
@@ -1372,7 +1369,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if objectId or update is null, or if objectId is not a valid ObjectId format
      */
     public Mono<UpdateResult> updateOne(final String objectId, final T update) {
-        return collExecutor.updateOne(objectId, update);
+        return collectionExecutor.updateOne(objectId, update);
     }
 
     /**
@@ -1396,7 +1393,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if objectId or update is null
      */
     public Mono<UpdateResult> updateOne(final ObjectId objectId, final T update) {
-        return collExecutor.updateOne(objectId, update);
+        return collectionExecutor.updateOne(objectId, update);
     }
 
     /**
@@ -1420,7 +1417,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if filter or update is null
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final T update) {
-        return collExecutor.updateOne(filter, update);
+        return collectionExecutor.updateOne(filter, update);
     }
 
     /**
@@ -1446,7 +1443,7 @@ public final class MongoCollectionMapper<T> {
      * @see UpdateOptions
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final T update, final UpdateOptions options) {
-        return collExecutor.updateOne(filter, update, options);
+        return collectionExecutor.updateOne(filter, update, options);
     }
 
     /**
@@ -1468,7 +1465,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if filter or objList is null or empty
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final Collection<? extends T> objList) {
-        return collExecutor.updateOne(filter, objList);
+        return collectionExecutor.updateOne(filter, objList);
     }
 
     /**
@@ -1492,7 +1489,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if filter or objList is null or empty
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final Collection<? extends T> objList, final UpdateOptions options) {
-        return collExecutor.updateOne(filter, objList, options);
+        return collectionExecutor.updateOne(filter, objList, options);
     }
 
     /**
@@ -1517,7 +1514,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if filter or update is null
      */
     public Mono<UpdateResult> updateMany(final Bson filter, final T update) {
-        return collExecutor.updateMany(filter, update);
+        return collectionExecutor.updateMany(filter, update);
     }
 
     /**
@@ -1542,7 +1539,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if filter or update is null
      */
     public Mono<UpdateResult> updateMany(final Bson filter, final T update, final UpdateOptions options) {
-        return collExecutor.updateMany(filter, update, options);
+        return collectionExecutor.updateMany(filter, update, options);
     }
 
     /**
@@ -1564,7 +1561,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if filter or objList is null or empty
      */
     public Mono<UpdateResult> updateMany(final Bson filter, final Collection<? extends T> objList) {
-        return collExecutor.updateMany(filter, objList);
+        return collectionExecutor.updateMany(filter, objList);
     }
 
     /**
@@ -1588,7 +1585,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if filter or objList is null or empty
      */
     public Mono<UpdateResult> updateMany(final Bson filter, final Collection<? extends T> objList, final UpdateOptions options) {
-        return collExecutor.updateMany(filter, objList, options);
+        return collectionExecutor.updateMany(filter, objList, options);
     }
 
     /**
@@ -1610,7 +1607,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if objectId or replacement is null, or if objectId is not a valid ObjectId format
      */
     public Mono<UpdateResult> replaceOne(final String objectId, final T replacement) {
-        return collExecutor.replaceOne(objectId, replacement);
+        return collectionExecutor.replaceOne(objectId, replacement);
     }
 
     /**
@@ -1632,7 +1629,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if objectId or replacement is null
      */
     public Mono<UpdateResult> replaceOne(final ObjectId objectId, final T replacement) {
-        return collExecutor.replaceOne(objectId, replacement);
+        return collectionExecutor.replaceOne(objectId, replacement);
     }
 
     /**
@@ -1654,7 +1651,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if filter or replacement is null
      */
     public Mono<UpdateResult> replaceOne(final Bson filter, final T replacement) {
-        return collExecutor.replaceOne(filter, replacement);
+        return collectionExecutor.replaceOne(filter, replacement);
     }
 
     /**
@@ -1679,7 +1676,7 @@ public final class MongoCollectionMapper<T> {
      * @see ReplaceOptions
      */
     public Mono<UpdateResult> replaceOne(final Bson filter, final T replacement, final ReplaceOptions options) {
-        return collExecutor.replaceOne(filter, replacement, options);
+        return collectionExecutor.replaceOne(filter, replacement, options);
     }
 
     /**
@@ -1699,7 +1696,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if objectId is null, or if objectId is not a valid ObjectId format
      */
     public Mono<DeleteResult> deleteOne(final String objectId) {
-        return collExecutor.deleteOne(objectId);
+        return collectionExecutor.deleteOne(objectId);
     }
 
     /**
@@ -1720,7 +1717,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if objectId is null
      */
     public Mono<DeleteResult> deleteOne(final ObjectId objectId) {
-        return collExecutor.deleteOne(objectId);
+        return collectionExecutor.deleteOne(objectId);
     }
 
     /**
@@ -1741,7 +1738,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if filter is null
      */
     public Mono<DeleteResult> deleteOne(final Bson filter) {
-        return collExecutor.deleteOne(filter);
+        return collectionExecutor.deleteOne(filter);
     }
 
     /**
@@ -1766,7 +1763,7 @@ public final class MongoCollectionMapper<T> {
      * @see DeleteOptions
      */
     public Mono<DeleteResult> deleteOne(final Bson filter, final DeleteOptions options) {
-        return collExecutor.deleteOne(filter, options);
+        return collectionExecutor.deleteOne(filter, options);
     }
 
     /**
@@ -1787,7 +1784,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if filter is null
      */
     public Mono<DeleteResult> deleteMany(final Bson filter) {
-        return collExecutor.deleteMany(filter);
+        return collectionExecutor.deleteMany(filter);
     }
 
     /**
@@ -1812,7 +1809,7 @@ public final class MongoCollectionMapper<T> {
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public Mono<DeleteResult> deleteMany(final Bson filter, final DeleteOptions options) {
-        return collExecutor.deleteMany(filter, options);
+        return collectionExecutor.deleteMany(filter, options);
     }
 
     /**
@@ -1834,7 +1831,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if entities is null or empty
      */
     public Mono<Integer> bulkInsert(final Collection<? extends T> entities) {
-        return collExecutor.bulkInsert(entities);
+        return collectionExecutor.bulkInsert(entities);
     }
 
     /**
@@ -1852,12 +1849,12 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param entities the collection of entities to insert
-     * @param options configuration options for the bulk write operation
+     * @param options configuration options for the bulk write operation (may be null to use defaults)
      * @return a Mono emitting the count of successfully inserted documents
-     * @throws IllegalArgumentException if entities is null/empty or options is null
+     * @throws IllegalArgumentException if entities is null or empty
      */
     public Mono<Integer> bulkInsert(final Collection<? extends T> entities, final BulkWriteOptions options) {
-        return collExecutor.bulkInsert(entities, options);
+        return collectionExecutor.bulkInsert(entities, options);
     }
 
     /**
@@ -1882,7 +1879,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if requests is null or empty
      */
     public Mono<BulkWriteResult> bulkWrite(final List<? extends WriteModel<? extends Document>> requests) {
-        return collExecutor.bulkWrite(requests);
+        return collectionExecutor.bulkWrite(requests);
     }
 
     /**
@@ -1902,12 +1899,12 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param requests list of write operations to execute
-     * @param options configuration for the bulk write behavior
+     * @param options configuration for the bulk write behavior (may be null to use defaults)
      * @return a Mono emitting BulkWriteResult with operation statistics
-     * @throws IllegalArgumentException if requests is null/empty or options is null
+     * @throws IllegalArgumentException if requests is null or empty
      */
     public Mono<BulkWriteResult> bulkWrite(final List<? extends WriteModel<? extends Document>> requests, final BulkWriteOptions options) {
-        return collExecutor.bulkWrite(requests, options);
+        return collectionExecutor.bulkWrite(requests, options);
     }
 
     /**
@@ -1930,7 +1927,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if filter or update is null
      */
     public Mono<T> findOneAndUpdate(final Bson filter, final T update) {
-        return collExecutor.findOneAndUpdate(filter, update, rowType);
+        return collectionExecutor.findOneAndUpdate(filter, update, rowType);
     }
 
     /**
@@ -1956,7 +1953,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if any parameter is null
      */
     public Mono<T> findOneAndUpdate(final Bson filter, final T update, final FindOneAndUpdateOptions options) {
-        return collExecutor.findOneAndUpdate(filter, update, options, rowType);
+        return collectionExecutor.findOneAndUpdate(filter, update, options, rowType);
     }
 
     /**
@@ -1979,7 +1976,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if filter or objList is null/empty
      */
     public Mono<T> findOneAndUpdate(final Bson filter, final Collection<? extends T> objList) {
-        return collExecutor.findOneAndUpdate(filter, objList, rowType);
+        return collectionExecutor.findOneAndUpdate(filter, objList, rowType);
     }
 
     /**
@@ -2003,7 +2000,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if any parameter is null or objList is empty
      */
     public Mono<T> findOneAndUpdate(final Bson filter, final Collection<? extends T> objList, final FindOneAndUpdateOptions options) {
-        return collExecutor.findOneAndUpdate(filter, objList, options, rowType);
+        return collectionExecutor.findOneAndUpdate(filter, objList, options, rowType);
     }
 
     /**
@@ -2026,7 +2023,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if filter or replacement is null
      */
     public Mono<T> findOneAndReplace(final Bson filter, final T replacement) {
-        return collExecutor.findOneAndReplace(filter, replacement, rowType);
+        return collectionExecutor.findOneAndReplace(filter, replacement, rowType);
     }
 
     /**
@@ -2052,7 +2049,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if any parameter is null
      */
     public Mono<T> findOneAndReplace(final Bson filter, final T replacement, final FindOneAndReplaceOptions options) {
-        return collExecutor.findOneAndReplace(filter, replacement, options, rowType);
+        return collectionExecutor.findOneAndReplace(filter, replacement, options, rowType);
     }
 
     /**
@@ -2074,7 +2071,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if filter is null
      */
     public Mono<T> findOneAndDelete(final Bson filter) {
-        return collExecutor.findOneAndDelete(filter, rowType);
+        return collectionExecutor.findOneAndDelete(filter, rowType);
     }
 
     /**
@@ -2098,7 +2095,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if filter or options is null
      */
     public Mono<T> findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options) {
-        return collExecutor.findOneAndDelete(filter, options, rowType);
+        return collectionExecutor.findOneAndDelete(filter, options, rowType);
     }
 
     /**
@@ -2120,7 +2117,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if fieldName is null or empty
      */
     public Flux<T> distinct(final String fieldName) {
-        return collExecutor.distinct(fieldName, rowType);
+        return collectionExecutor.distinct(fieldName, rowType);
     }
 
     /**
@@ -2144,7 +2141,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if fieldName is null/empty or filter is null
      */
     public Flux<T> distinct(final String fieldName, final Bson filter) {
-        return collExecutor.distinct(fieldName, filter, rowType);
+        return collectionExecutor.distinct(fieldName, filter, rowType);
     }
 
     /**
@@ -2168,7 +2165,7 @@ public final class MongoCollectionMapper<T> {
      * @throws IllegalArgumentException if pipeline is null or empty
      */
     public Flux<T> aggregate(final List<? extends Bson> pipeline) {
-        return collExecutor.aggregate(pipeline, rowType);
+        return collectionExecutor.aggregate(pipeline, rowType);
     }
 
     /**
@@ -2191,7 +2188,7 @@ public final class MongoCollectionMapper<T> {
      */
     @Beta
     public Flux<T> groupBy(final String fieldName) {
-        return collExecutor.groupBy(fieldName, rowType);
+        return collectionExecutor.groupBy(fieldName, rowType);
     }
 
     /**
@@ -2215,7 +2212,7 @@ public final class MongoCollectionMapper<T> {
      */
     @Beta
     public Flux<T> groupBy(final Collection<String> fieldNames) {
-        return collExecutor.groupBy(fieldNames, rowType);
+        return collectionExecutor.groupBy(fieldNames, rowType);
     }
 
     /**
@@ -2238,7 +2235,7 @@ public final class MongoCollectionMapper<T> {
      */
     @Beta
     public Flux<T> groupByAndCount(final String fieldName) {
-        return collExecutor.groupByAndCount(fieldName, rowType);
+        return collectionExecutor.groupByAndCount(fieldName, rowType);
     }
 
     /**
@@ -2261,7 +2258,7 @@ public final class MongoCollectionMapper<T> {
      */
     @Beta
     public Flux<T> groupByAndCount(final Collection<String> fieldNames) {
-        return collExecutor.groupByAndCount(fieldNames, rowType);
+        return collectionExecutor.groupByAndCount(fieldNames, rowType);
     }
 
     /**
@@ -2287,6 +2284,6 @@ public final class MongoCollectionMapper<T> {
      */
     @Deprecated
     public Flux<T> mapReduce(final String mapFunction, final String reduceFunction) {
-        return collExecutor.mapReduce(mapFunction, reduceFunction, rowType);
+        return collectionExecutor.mapReduce(mapFunction, reduceFunction, rowType);
     }
 }

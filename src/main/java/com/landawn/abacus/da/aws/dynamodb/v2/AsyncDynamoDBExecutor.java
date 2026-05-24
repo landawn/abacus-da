@@ -1381,7 +1381,6 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * </ul>
      * 
      * <p><b>Usage Example with Update Expressions:</b></p>
-     * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * UpdateItemRequest request = UpdateItemRequest.builder()
      *     .tableName("Users")
@@ -2427,7 +2426,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          * 
          * @param entity the entity instance with key attributes set. Must not be null.
          * @return a CompletableFuture containing the retrieved entity, or null if not found
-         * @throws IllegalArgumentException if entity is null or missing key attributes
+         * @throws NullPointerException if {@code entity} is null
          */
         public CompletableFuture<T> getItem(final T entity) {
             return dynamoDBExecutor.getItem(tableName, createKey(entity), targetEntityClass);
@@ -2452,9 +2451,9 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          * 
          * @param entity the entity instance with key attributes set. Must not be null.
          * @param consistentRead true for strongly consistent reads, {@code false} for eventually consistent,
-         *                      null to use default behavior
+         *                      null to use AWS-default behavior
          * @return a CompletableFuture containing the retrieved entity, or null if not found
-         * @throws IllegalArgumentException if entity is null or missing key attributes
+         * @throws NullPointerException if {@code entity} is null
          */
         public CompletableFuture<T> getItem(final T entity, final Boolean consistentRead) {
             return dynamoDBExecutor.getItem(tableName, createKey(entity), consistentRead, targetEntityClass);
@@ -2545,7 +2544,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          * 
          * @param entities collection of entity instances with key attributes set. Must not be null.
          * @return a CompletableFuture containing a list of retrieved entities (may be fewer than requested)
-         * @throws IllegalArgumentException if entities is null or contains invalid key entities
+         * @throws NullPointerException if {@code entities} (or any element in it) is null
          */
         public CompletableFuture<List<T>> batchGetItem(final Collection<? extends T> entities) {
             return dynamoDBExecutor.batchGetItem(createKeys(entities), targetEntityClass).thenApply(batchGetItemResponse -> {
@@ -2580,7 +2579,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          * @param returnConsumedCapacity specifies the level of detail for consumed capacity.
          *                              Valid values: "INDEXES", "TOTAL", "NONE"
          * @return a CompletableFuture containing a list of retrieved entities
-         * @throws IllegalArgumentException if entities is null or contains invalid key entities
+         * @throws NullPointerException if {@code entities} (or any element in it) is null
          */
         public CompletableFuture<List<T>> batchGetItem(final Collection<? extends T> entities, final String returnConsumedCapacity) {
             return dynamoDBExecutor.batchGetItem(createKeys(entities), returnConsumedCapacity, targetEntityClass).thenApply(batchGetItemResponse -> {
@@ -2650,7 +2649,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          * 
          * @param entity the entity to save. Must not be null and must have all required attributes.
          * @return a CompletableFuture containing the PutItemResponse with operation metadata
-         * @throws IllegalArgumentException if entity is null or invalid
+         * @throws NullPointerException if {@code entity} is null
          */
         public CompletableFuture<PutItemResponse> putItem(final T entity) {
             return dynamoDBExecutor.putItem(tableName, toItem(entity, namingPolicy));
@@ -2679,7 +2678,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          * @param returnValues specifies which attributes to return. Valid values:
          *                    "NONE" (default), "ALL_OLD"
          * @return a CompletableFuture containing the PutItemResponse with specified return values
-         * @throws IllegalArgumentException if entity is null or returnValues is invalid
+         * @throws NullPointerException if {@code entity} is null
          */
         public CompletableFuture<PutItemResponse> putItem(final T entity, final String returnValues) {
             return dynamoDBExecutor.putItem(tableName, toItem(entity, namingPolicy), returnValues);
@@ -2748,7 +2747,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          * 
          * @param entities collection of entities to save. Must not be null or exceed batch limits.
          * @return a CompletableFuture containing the BatchWriteItemResponse with unprocessed items if any
-         * @throws IllegalArgumentException if entities is null or exceeds DynamoDB limits
+         * @throws NullPointerException if {@code entities} (or any element in it) is null
          */
         public CompletableFuture<BatchWriteItemResponse> batchPutItem(final Collection<? extends T> entities) {
             return dynamoDBExecutor.batchWriteItem(createBatchPutRequest(entities));
@@ -2785,7 +2784,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          * 
          * @param entity the entity instance with key and updated attributes set. Must not be null.
          * @return a CompletableFuture containing the UpdateItemResponse with operation metadata
-         * @throws IllegalArgumentException if entity is null or missing key attributes
+         * @throws NullPointerException if {@code entity} is null
          */
         public CompletableFuture<UpdateItemResponse> updateItem(final T entity) {
             return dynamoDBExecutor.updateItem(tableName, createKey(entity), toUpdateItem(entity, namingPolicy));
@@ -2815,7 +2814,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          * @param returnValues specifies which attributes to return. Valid values:
          *                    "NONE", "ALL_OLD", "UPDATED_OLD", "ALL_NEW", "UPDATED_NEW"
          * @return a CompletableFuture containing the UpdateItemResponse with specified return values
-         * @throws IllegalArgumentException if entity is null or returnValues is invalid
+         * @throws NullPointerException if {@code entity} is null
          */
         public CompletableFuture<UpdateItemResponse> updateItem(final T entity, final String returnValues) {
             return dynamoDBExecutor.updateItem(tableName, createKey(entity), toUpdateItem(entity, namingPolicy), returnValues);
@@ -2870,7 +2869,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          * 
          * @param entity the entity instance with key attributes set. Must not be null.
          * @return a CompletableFuture containing the DeleteItemResponse with operation metadata
-         * @throws IllegalArgumentException if entity is null or missing key attributes
+         * @throws NullPointerException if {@code entity} is null
          */
         public CompletableFuture<DeleteItemResponse> deleteItem(final T entity) {
             return dynamoDBExecutor.deleteItem(tableName, createKey(entity));
@@ -2900,7 +2899,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          * @param returnValues specifies which attributes to return. Valid values:
          *                    "NONE" (default), "ALL_OLD"
          * @return a CompletableFuture containing the DeleteItemResponse with specified return values
-         * @throws IllegalArgumentException if entity is null or returnValues is invalid
+         * @throws NullPointerException if {@code entity} is null
          */
         public CompletableFuture<DeleteItemResponse> deleteItem(final T entity, final String returnValues) {
             return dynamoDBExecutor.deleteItem(tableName, createKey(entity), returnValues);
@@ -2994,7 +2993,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          * 
          * @param entities collection of entities with key attributes set. Must not be null.
          * @return a CompletableFuture containing the BatchWriteItemResponse with unprocessed items if any
-         * @throws IllegalArgumentException if entities is null or exceeds DynamoDB limits
+         * @throws NullPointerException if {@code entities} (or any element in it) is null
          */
         public CompletableFuture<BatchWriteItemResponse> batchDeleteItem(final Collection<? extends T> entities) {
             return dynamoDBExecutor.batchWriteItem(createBatchDeleteRequest(entities));

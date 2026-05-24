@@ -114,28 +114,28 @@ public class DynamoDBExecutor01Test extends TestBase {
 
     @Test
     public void testAttrValueOfNull() {
-        AttributeValue result = DynamoDBExecutor.attrValueOf(null);
+        AttributeValue result = DynamoDBExecutor.toAttributeValue(null);
         assertNotNull(result);
         assertTrue(result.getNULL());
     }
 
     @Test
     public void testAttrValueOfString() {
-        AttributeValue result = DynamoDBExecutor.attrValueOf("test");
+        AttributeValue result = DynamoDBExecutor.toAttributeValue("test");
         assertNotNull(result);
         assertEquals("test", result.getS());
     }
 
     @Test
     public void testAttrValueOfNumber() {
-        AttributeValue result = DynamoDBExecutor.attrValueOf(123);
+        AttributeValue result = DynamoDBExecutor.toAttributeValue(123);
         assertNotNull(result);
         assertEquals("123", result.getN());
     }
 
     @Test
     public void testAttrValueOfBoolean() {
-        AttributeValue result = DynamoDBExecutor.attrValueOf(true);
+        AttributeValue result = DynamoDBExecutor.toAttributeValue(true);
         assertNotNull(result);
         assertTrue(result.getBOOL());
     }
@@ -143,22 +143,22 @@ public class DynamoDBExecutor01Test extends TestBase {
     @Test
     public void testAttrValueOfByteBuffer() {
         ByteBuffer buffer = ByteBuffer.wrap(new byte[] { 1, 2, 3 });
-        AttributeValue result = DynamoDBExecutor.attrValueOf(buffer);
+        AttributeValue result = DynamoDBExecutor.toAttributeValue(buffer);
         assertNotNull(result);
         assertEquals(buffer, result.getB());
     }
 
     @Test
-    public void testAttrValueUpdateOf() {
-        AttributeValueUpdate result = DynamoDBExecutor.attrValueUpdateOf("test");
+    public void testtoAttributeValueUpdate() {
+        AttributeValueUpdate result = DynamoDBExecutor.toAttributeValueUpdate("test");
         assertNotNull(result);
         assertEquals("test", result.getValue().getS());
         assertEquals(AttributeAction.PUT, result.getAction());
     }
 
     @Test
-    public void testAttrValueUpdateOfWithAction() {
-        AttributeValueUpdate result = DynamoDBExecutor.attrValueUpdateOf("test", AttributeAction.DELETE);
+    public void testtoAttributeValueUpdateWithAction() {
+        AttributeValueUpdate result = DynamoDBExecutor.toAttributeValueUpdate("test", AttributeAction.DELETE);
         assertNotNull(result);
         assertEquals("test", result.getValue().getS());
         assertEquals(AttributeAction.DELETE, result.getAction());
@@ -1353,11 +1353,7 @@ public class DynamoDBExecutor01Test extends TestBase {
         ArgumentCaptor<Map<String, List<WriteRequest>>> captor = ArgumentCaptor.forClass(Map.class);
         verify(mockDynamoDBClient).batchWriteItem(captor.capture());
 
-        Map<String, AttributeValue> writtenItem = captor.getValue()
-                .get("TestTable")
-                .get(0)
-                .getPutRequest()
-                .getItem();
+        Map<String, AttributeValue> writtenItem = captor.getValue().get("TestTable").get(0).getPutRequest().getItem();
 
         // With SNAKE_CASE the attribute must be "first_name", not the CAMEL_CASE "firstName".
         assertTrue(writtenItem.containsKey("first_name"), "Expected snake_case attribute name 'first_name' but got: " + writtenItem.keySet());
