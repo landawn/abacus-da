@@ -5,7 +5,7 @@
 
 	<groupId>com.landawn.abacus</groupId>
 	<artifactId>abacus-da-all</artifactId>
-	<version>2.7.0</version>
+	<version>2.7.1</version>
 	<packaging>jar</packaging>
 	<name>abacus-da-all</name>
 	<description>abacus jdbc</description>
