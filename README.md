@@ -1,7 +1,7 @@
 # abacus-da
 
-[![Maven Central](https://img.shields.io/maven-central/v/com.landawn.abacus/abacus-da.svg)](https://central.sonatype.com/artifact/com.landawn.abacus/abacus-da/2.7.1)
-[![Javadocs](https://img.shields.io/badge/javadoc-2.7.1-brightgreen.svg)](https://www.javadoc.io/doc/com.landawn.abacus/abacus-da/2.7.1/index.html)
+[![Maven Central](https://img.shields.io/maven-central/v/com.landawn.abacus/abacus-da-all.svg)](https://central.sonatype.com/artifact/com.landawn.abacus/abacus-da-all/2.7.1)
+[![Javadocs](https://img.shields.io/badge/javadoc-2.7.1-brightgreen.svg)](https://www.javadoc.io/doc/com.landawn.abacus/abacus-da-all/2.7.1/index.html)
 
 abacus-da is a data access toolkit for working with NoSQL databases, search engines, cloud data services, and big-data platforms through consistent, high-level APIs.
 It wraps vendor SDKs with executor-style APIs for CRUD, queries, mapping, bulk operations, async/reactive access, and dataset-oriented processing so application code stays smaller and more uniform across backends.
@@ -18,12 +18,17 @@ It includes integrations for:
 
 ## Download/Installation & [Changes](https://github.com/landawn/abacus-da/blob/master/CHANGES.md):
 
-* [Maven](http://search.maven.org/#search%7Cga%7C1%7Cg%3A%22com.landawn%22)
+* [Maven](https://central.sonatype.com/artifact/com.landawn.abacus/abacus-da-all/2.7.1)
 
 * Gradle:
 ```gradle
 // JDK 17 or above:
-implementation 'com.landawn.abacus:abacus-da:2.0'
+implementation 'com.landawn.abacus:abacus-da-all:2.7.1'
+implementation 'com.landawn.abacus:abacus-da-mongodb:2.7.1'
+implementation 'com.landawn.abacus:abacus-da-cassandra:2.7.1'
+implementation 'com.landawn.abacus:abacus-da-aws:2.7.1'
+implementation 'com.landawn.abacus:abacus-da-gcp:2.7.1'
+implementation 'com.landawn.abacus:abacus-da-azure:2.7.1'
 ```
 
 
