@@ -29,10 +29,10 @@ It includes integrations for:
 implementation 'com.landawn.abacus:abacus-da-all:2.7.1'
 implementation 'com.landawn.abacus:abacus-da-mongodb:2.7.1'
 implementation 'com.landawn.abacus:abacus-da-cassandra:2.7.1'
-implementation 'com.landawn.abacus:abacus-da-hbase:2.7.1'
 implementation 'com.landawn.abacus:abacus-da-aws:2.7.1'
 implementation 'com.landawn.abacus:abacus-da-gcp:2.7.1'
 implementation 'com.landawn.abacus:abacus-da-azure:2.7.1'
+implementation 'com.landawn.abacus:abacus-da-hbase:2.7.1'
 ```
 
 The Neo4j, search (Elasticsearch/Solr/Lucene), Hadoop, Spark, and Blink integrations are bundled only in `abacus-da-all` — there are no separately-published artifacts for them.
