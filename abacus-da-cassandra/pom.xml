@@ -43,10 +43,6 @@
 			<artifactId>java-driver-core</artifactId>
 		</dependency>
 		<dependency>
-			<groupId>org.apache.cassandra</groupId>
-			<artifactId>java-driver-mapper-runtime</artifactId>
-		</dependency>
-		<dependency>
 			<groupId>com.datastax.cassandra</groupId>
 			<artifactId>cassandra-driver-core</artifactId>
 		</dependency>
@@ -55,7 +51,7 @@
 			<artifactId>cassandra-driver-mapping</artifactId>
 		</dependency>
 		<dependency>
-			<groupId>io.dropwizard.metrics</groupId>
+			<groupId>com.codahale.metrics</groupId>
 			<artifactId>metrics-core</artifactId>
 		</dependency>
 	</dependencies>
