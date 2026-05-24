@@ -533,4 +533,511 @@ public class HBaseExecutorStaticTest extends TestBase {
             // simply verify no exception was thrown.
         }
     }
+
+    // ---------------------------------------------------------------------
+    // exists(String, List<Get>) and exists(String, Collection<AnyGet>)
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void testExists_listOfGet_delegatesToTable() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+        when(table.exists(org.mockito.ArgumentMatchers.<List<org.apache.hadoop.hbase.client.Get>> any()))
+                .thenReturn(new boolean[] { true, false });
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            org.apache.hadoop.hbase.client.Get g1 = new org.apache.hadoop.hbase.client.Get(Bytes.toBytes("k1"));
+            org.apache.hadoop.hbase.client.Get g2 = new org.apache.hadoop.hbase.client.Get(Bytes.toBytes("k2"));
+            List<Boolean> result = executor.exists("tbl", Arrays.asList(g1, g2));
+            assertEquals(2, result.size());
+            assertEquals(Boolean.TRUE, result.get(0));
+        }
+    }
+
+    @Test
+    public void testExists_collectionOfAnyGet_delegatesToTable() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+        when(table.exists(org.mockito.ArgumentMatchers.<List<org.apache.hadoop.hbase.client.Get>> any())).thenReturn(new boolean[] { true });
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            List<Boolean> result = executor.exists("tbl", Arrays.asList(AnyGet.of("k")));
+            assertEquals(1, result.size());
+            assertEquals(Boolean.TRUE, result.get(0));
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // get(String, List<Get>), get(String, AnyGet), batch overloads
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void testGet_listOfGet_returnsListOfResults() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+
+        Cell c = new KeyValue(Bytes.toBytes("k"), Bytes.toBytes("info"), Bytes.toBytes("user_name"), Bytes.toBytes("A"));
+        Result[] results = new Result[] { Result.create(Arrays.<Cell> asList(c)) };
+        when(table.get(org.mockito.ArgumentMatchers.<List<org.apache.hadoop.hbase.client.Get>> any())).thenReturn(results);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            List<Result> got = executor.get("tbl", Arrays.asList(new org.apache.hadoop.hbase.client.Get(Bytes.toBytes("k"))));
+            assertEquals(1, got.size());
+        }
+    }
+
+    @Test
+    public void testGet_anyGet_returnsResult() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+
+        Cell c = new KeyValue(Bytes.toBytes("k"), Bytes.toBytes("info"), Bytes.toBytes("user_name"), Bytes.toBytes("A"));
+        Result expected = Result.create(Arrays.<Cell> asList(c));
+        when(table.get(any(org.apache.hadoop.hbase.client.Get.class))).thenReturn(expected);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            assertSame(expected, executor.get("tbl", AnyGet.of("k")));
+        }
+    }
+
+    @Test
+    public void testGet_collectionOfAnyGet_returnsListOfResults() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+
+        Cell c = new KeyValue(Bytes.toBytes("k"), Bytes.toBytes("info"), Bytes.toBytes("user_name"), Bytes.toBytes("A"));
+        Result[] results = new Result[] { Result.create(Arrays.<Cell> asList(c)) };
+        when(table.get(org.mockito.ArgumentMatchers.<List<org.apache.hadoop.hbase.client.Get>> any())).thenReturn(results);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            List<Result> got = executor.get("tbl", Arrays.asList(AnyGet.of("k")));
+            assertEquals(1, got.size());
+        }
+    }
+
+    @Test
+    public void testGet_getWithTargetType_convertsResult() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+
+        Cell c = new KeyValue(Bytes.toBytes("rk1"), Bytes.toBytes("info"), Bytes.toBytes("user_name"), Bytes.toBytes("Alice"));
+        Result result = Result.create(Arrays.<Cell> asList(c));
+        when(table.get(any(org.apache.hadoop.hbase.client.Get.class))).thenReturn(result);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            Bean bean = executor.get("tbl", new org.apache.hadoop.hbase.client.Get(Bytes.toBytes("rk1")), Bean.class);
+            assertNotNull(bean);
+            assertEquals("rk1", bean.getId());
+            assertEquals("Alice", bean.getName());
+        }
+    }
+
+    @Test
+    public void testGet_anyGetWithTargetType_convertsResult() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+
+        Cell c = new KeyValue(Bytes.toBytes("rk1"), Bytes.toBytes("info"), Bytes.toBytes("user_name"), Bytes.toBytes("Bob"));
+        Result result = Result.create(Arrays.<Cell> asList(c));
+        when(table.get(any(org.apache.hadoop.hbase.client.Get.class))).thenReturn(result);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            Bean bean = executor.get("tbl", AnyGet.of("rk1"), Bean.class);
+            assertNotNull(bean);
+            assertEquals("Bob", bean.getName());
+        }
+    }
+
+    @Test
+    public void testGet_listOfGetWithTargetType_convertsAll() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+
+        Cell c1 = new KeyValue(Bytes.toBytes("r1"), Bytes.toBytes("info"), Bytes.toBytes("user_name"), Bytes.toBytes("A"));
+        Cell c2 = new KeyValue(Bytes.toBytes("r2"), Bytes.toBytes("info"), Bytes.toBytes("user_name"), Bytes.toBytes("B"));
+        Result[] results = new Result[] { Result.create(Arrays.<Cell> asList(c1)), Result.create(Arrays.<Cell> asList(c2)) };
+        when(table.get(org.mockito.ArgumentMatchers.<List<org.apache.hadoop.hbase.client.Get>> any())).thenReturn(results);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            List<Bean> beans = executor.get("tbl",
+                    Arrays.asList(new org.apache.hadoop.hbase.client.Get(Bytes.toBytes("r1")), new org.apache.hadoop.hbase.client.Get(Bytes.toBytes("r2"))),
+                    Bean.class);
+            assertEquals(2, beans.size());
+        }
+    }
+
+    @Test
+    public void testGet_collectionOfAnyGetWithTargetType_convertsAll() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+
+        Cell c1 = new KeyValue(Bytes.toBytes("r1"), Bytes.toBytes("info"), Bytes.toBytes("user_name"), Bytes.toBytes("A"));
+        Result[] results = new Result[] { Result.create(Arrays.<Cell> asList(c1)) };
+        when(table.get(org.mockito.ArgumentMatchers.<List<org.apache.hadoop.hbase.client.Get>> any())).thenReturn(results);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            List<Bean> beans = executor.get("tbl", Arrays.asList(AnyGet.of("r1")), Bean.class);
+            assertEquals(1, beans.size());
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // put(String, List<Put>) and delete batch
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void testPut_listOfPut_delegatesToTable() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            org.apache.hadoop.hbase.client.Put p1 = new org.apache.hadoop.hbase.client.Put(Bytes.toBytes("k1"));
+            p1.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
+            executor.put("tbl", Arrays.asList(p1));
+            verify(table).put(org.mockito.ArgumentMatchers.<List<org.apache.hadoop.hbase.client.Put>> any());
+        }
+    }
+
+    @Test
+    public void testDelete_listOfDelete_delegatesToTable() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            org.apache.hadoop.hbase.client.Delete d1 = new org.apache.hadoop.hbase.client.Delete(Bytes.toBytes("k1"));
+            executor.delete("tbl", Arrays.asList(d1));
+            verify(table).delete(org.mockito.ArgumentMatchers.<List<org.apache.hadoop.hbase.client.Delete>> any());
+        }
+    }
+
+    @Test
+    public void testDelete_collectionOfAnyDelete_delegatesToTable() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            executor.delete("tbl", Arrays.asList(AnyDelete.of("k1"), AnyDelete.of("k2")));
+            verify(table).delete(org.mockito.ArgumentMatchers.<List<org.apache.hadoop.hbase.client.Delete>> any());
+        }
+    }
+
+    @Test
+    public void testPut_collectionOfAnyPut_delegatesToTable() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            executor.put("tbl", Arrays.asList(AnyPut.of("k1").addColumn("cf", "q", "v"), AnyPut.of("k2").addColumn("cf", "q", "v")));
+            verify(table).put(org.mockito.ArgumentMatchers.<List<org.apache.hadoop.hbase.client.Put>> any());
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // mutateRow / append / increment (native and Any variants)
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void testMutateRow_rowMutations_delegatesToTable() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            org.apache.hadoop.hbase.client.RowMutations rm = new org.apache.hadoop.hbase.client.RowMutations(Bytes.toBytes("rk"));
+            org.apache.hadoop.hbase.client.Put put = new org.apache.hadoop.hbase.client.Put(Bytes.toBytes("rk"));
+            put.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
+            rm.add(put);
+            executor.mutateRow("tbl", rm);
+            verify(table).mutateRow(rm);
+        }
+    }
+
+    @Test
+    public void testMutateRow_anyRowMutations_delegatesToTable() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            org.apache.hadoop.hbase.client.Put put = new org.apache.hadoop.hbase.client.Put(Bytes.toBytes("rk"));
+            put.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
+            AnyRowMutations rm = AnyRowMutations.of("rk").add(put);
+            executor.mutateRow("tbl", rm);
+            verify(table).mutateRow(rm.val());
+        }
+    }
+
+    @Test
+    public void testAppend_native_delegatesToTable() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+
+        Cell c = new KeyValue(Bytes.toBytes("rk"), Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
+        Result expected = Result.create(Arrays.<Cell> asList(c));
+        when(table.append(any(org.apache.hadoop.hbase.client.Append.class))).thenReturn(expected);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            org.apache.hadoop.hbase.client.Append a = new org.apache.hadoop.hbase.client.Append(Bytes.toBytes("rk"));
+            a.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
+            assertSame(expected, executor.append("tbl", a));
+        }
+    }
+
+    @Test
+    public void testAppend_anyAppend_delegatesToTable() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+
+        Cell c = new KeyValue(Bytes.toBytes("rk"), Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
+        Result expected = Result.create(Arrays.<Cell> asList(c));
+        when(table.append(any(org.apache.hadoop.hbase.client.Append.class))).thenReturn(expected);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            AnyAppend a = AnyAppend.of("rk").addColumn("cf", "q", "v");
+            assertSame(expected, executor.append("tbl", a));
+        }
+    }
+
+    @Test
+    public void testIncrement_native_delegatesToTable() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+
+        Cell c = new KeyValue(Bytes.toBytes("rk"), Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes(42L));
+        Result expected = Result.create(Arrays.<Cell> asList(c));
+        when(table.increment(any(org.apache.hadoop.hbase.client.Increment.class))).thenReturn(expected);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            org.apache.hadoop.hbase.client.Increment inc = new org.apache.hadoop.hbase.client.Increment(Bytes.toBytes("rk"));
+            inc.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), 1L);
+            assertSame(expected, executor.increment("tbl", inc));
+        }
+    }
+
+    @Test
+    public void testIncrement_anyIncrement_delegatesToTable() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+
+        Cell c = new KeyValue(Bytes.toBytes("rk"), Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes(99L));
+        Result expected = Result.create(Arrays.<Cell> asList(c));
+        when(table.increment(any(org.apache.hadoop.hbase.client.Increment.class))).thenReturn(expected);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            AnyIncrement inc = AnyIncrement.of("rk").addColumn("cf", "q", 1L);
+            assertSame(expected, executor.increment("tbl", inc));
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // incrementColumnValue overloads
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void testIncrementColumnValue_stringFamily_delegatesToTable() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+
+        when(table.incrementColumnValue(any(byte[].class), any(byte[].class), any(byte[].class), org.mockito.ArgumentMatchers.anyLong())).thenReturn(7L);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            assertEquals(7L, executor.incrementColumnValue("tbl", "rk", "cf", "q", 1L));
+        }
+    }
+
+    @Test
+    public void testIncrementColumnValue_stringFamily_withDurability() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+
+        when(table.incrementColumnValue(any(byte[].class), any(byte[].class), any(byte[].class), org.mockito.ArgumentMatchers.anyLong(),
+                any(org.apache.hadoop.hbase.client.Durability.class))).thenReturn(8L);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            assertEquals(8L, executor.incrementColumnValue("tbl", "rk", "cf", "q", 1L, org.apache.hadoop.hbase.client.Durability.SYNC_WAL));
+        }
+    }
+
+    @Test
+    public void testIncrementColumnValue_byteArrayFamily_delegatesToTable() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+
+        when(table.incrementColumnValue(any(byte[].class), any(byte[].class), any(byte[].class), org.mockito.ArgumentMatchers.anyLong())).thenReturn(9L);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            assertEquals(9L, executor.incrementColumnValue("tbl", "rk", Bytes.toBytes("cf"), Bytes.toBytes("q"), 1L));
+        }
+    }
+
+    @Test
+    public void testIncrementColumnValue_byteArrayFamily_withDurability() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+
+        when(table.incrementColumnValue(any(byte[].class), any(byte[].class), any(byte[].class), org.mockito.ArgumentMatchers.anyLong(),
+                any(org.apache.hadoop.hbase.client.Durability.class))).thenReturn(10L);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            assertEquals(10L,
+                    executor.incrementColumnValue("tbl", "rk", Bytes.toBytes("cf"), Bytes.toBytes("q"), 1L, org.apache.hadoop.hbase.client.Durability.SKIP_WAL));
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // coprocessorService(String, Object) -- channel returned, table closed
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void testCoprocessorService_byRowKey_delegatesToTable() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+
+        org.apache.hadoop.hbase.ipc.CoprocessorRpcChannel ch = mock(org.apache.hadoop.hbase.ipc.CoprocessorRpcChannel.class);
+        when(table.coprocessorService(any(byte[].class))).thenReturn(ch);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            assertSame(ch, executor.coprocessorService("tbl", "rk"));
+            verify(table, times(1)).close();
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Convenience scan overloads: returned Stream is non-null and closable.
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void testScan_byTableAndFamilyString_returnsStream() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        when(conn.getAdmin()).thenReturn(admin);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            try (var stream = executor.scan("tbl", "info")) {
+                assertNotNull(stream);
+            }
+        }
+    }
+
+    @Test
+    public void testScan_byTableAndFamilyByteArray_returnsStream() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        when(conn.getAdmin()).thenReturn(admin);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            try (var stream = executor.scan("tbl", Bytes.toBytes("info"))) {
+                assertNotNull(stream);
+            }
+        }
+    }
+
+    @Test
+    public void testScan_byTableAndAnyScan_returnsStream() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        when(conn.getAdmin()).thenReturn(admin);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            try (var stream = executor.scan("tbl", AnyScan.create().addFamily("info"))) {
+                assertNotNull(stream);
+            }
+        }
+    }
+
+    @Test
+    public void testScan_byTableAndAnyScanWithTargetType_returnsStream() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        when(conn.getAdmin()).thenReturn(admin);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            try (var stream = executor.scan("tbl", AnyScan.create().addFamily("info"), Bean.class)) {
+                assertNotNull(stream);
+            }
+        }
+    }
+
+    @Test
+    public void testScan_byTableFamilyAndTargetType_returnsStream() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        when(conn.getAdmin()).thenReturn(admin);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            try (var stream = executor.scan("tbl", "info", Bean.class)) {
+                assertNotNull(stream);
+            }
+        }
+    }
 }

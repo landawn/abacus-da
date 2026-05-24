@@ -6,6 +6,7 @@ import static org.mockito.Mockito.when;
 
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Date;
 import java.util.List;
 
@@ -34,6 +35,9 @@ import com.landawn.abacus.util.stream.Stream;
 import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.model.BulkWriteOptions;
 import com.mongodb.client.model.CountOptions;
+import com.mongodb.client.model.DeleteOptions;
+import com.mongodb.client.model.FindOneAndDeleteOptions;
+import com.mongodb.client.model.FindOneAndReplaceOptions;
 import com.mongodb.client.model.FindOneAndUpdateOptions;
 import com.mongodb.client.model.InsertManyOptions;
 import com.mongodb.client.model.InsertOneOptions;
@@ -714,6 +718,455 @@ public class MongoCollectionMapperTest extends TestBase {
         Stream<TestEntity> result = mapper.mapReduce(mapFunction, reduceFunction);
         Assertions.assertNotNull(result);
         verify(mockCollExecutor).mapReduce(mapFunction, reduceFunction, TestEntity.class);
+    }
+
+    // ---- coverage gaps: get/gett with projection, findFirst/list/query/stream variants, etc. ----
+
+    @Test
+    public void testGetWithObjectIdAndSelectPropNames() {
+        ObjectId objectId = new ObjectId();
+        Collection<String> select = Arrays.asList("name");
+        when(mockCollExecutor.get(objectId, select, TestEntity.class)).thenReturn(com.landawn.abacus.util.u.Optional.<TestEntity> empty());
+
+        com.landawn.abacus.util.u.Optional<TestEntity> result = mapper.get(objectId, select);
+        Assertions.assertNotNull(result);
+        verify(mockCollExecutor).get(objectId, select, TestEntity.class);
+    }
+
+    @Test
+    public void testGettWithObjectId() {
+        ObjectId objectId = new ObjectId();
+        TestEntity entity = new TestEntity();
+        when(mockCollExecutor.gett(objectId, TestEntity.class)).thenReturn(entity);
+
+        TestEntity result = mapper.gett(objectId);
+        Assertions.assertSame(entity, result);
+        verify(mockCollExecutor).gett(objectId, TestEntity.class);
+    }
+
+    @Test
+    public void testGettWithStringObjectIdAndSelectPropNames() {
+        String objectId = "507f1f77bcf86cd799439011";
+        Collection<String> select = Arrays.asList("name");
+        TestEntity entity = new TestEntity();
+        when(mockCollExecutor.gett(objectId, select, TestEntity.class)).thenReturn(entity);
+
+        TestEntity result = mapper.gett(objectId, select);
+        Assertions.assertSame(entity, result);
+        verify(mockCollExecutor).gett(objectId, select, TestEntity.class);
+    }
+
+    @Test
+    public void testGettWithObjectIdAndSelectPropNames() {
+        ObjectId objectId = new ObjectId();
+        Collection<String> select = Arrays.asList("name");
+        TestEntity entity = new TestEntity();
+        when(mockCollExecutor.gett(objectId, select, TestEntity.class)).thenReturn(entity);
+
+        TestEntity result = mapper.gett(objectId, select);
+        Assertions.assertSame(entity, result);
+        verify(mockCollExecutor).gett(objectId, select, TestEntity.class);
+    }
+
+    @Test
+    public void testFindFirstWithSelectAndFilter() {
+        Collection<String> select = Arrays.asList("name");
+        Document filter = new Document("a", 1);
+        when(mockCollExecutor.findFirst(select, filter, TestEntity.class)).thenReturn(com.landawn.abacus.util.u.Optional.<TestEntity> empty());
+
+        com.landawn.abacus.util.u.Optional<TestEntity> result = mapper.findFirst(select, filter);
+        Assertions.assertNotNull(result);
+        verify(mockCollExecutor).findFirst(select, filter, TestEntity.class);
+    }
+
+    @Test
+    public void testFindFirstWithSelectFilterAndSort() {
+        Collection<String> select = Arrays.asList("name");
+        Document filter = new Document("a", 1);
+        Document sort = new Document("a", 1);
+        when(mockCollExecutor.findFirst(select, filter, sort, TestEntity.class)).thenReturn(com.landawn.abacus.util.u.Optional.<TestEntity> empty());
+
+        com.landawn.abacus.util.u.Optional<TestEntity> result = mapper.findFirst(select, filter, sort);
+        Assertions.assertNotNull(result);
+        verify(mockCollExecutor).findFirst(select, filter, sort, TestEntity.class);
+    }
+
+    @Test
+    public void testFindFirstWithProjectionFilterAndSort() {
+        Document proj = new Document("name", 1);
+        Document filter = new Document("a", 1);
+        Document sort = new Document("a", 1);
+        when(mockCollExecutor.findFirst(proj, filter, sort, TestEntity.class)).thenReturn(com.landawn.abacus.util.u.Optional.<TestEntity> empty());
+
+        com.landawn.abacus.util.u.Optional<TestEntity> result = mapper.findFirst(proj, filter, sort);
+        Assertions.assertNotNull(result);
+        verify(mockCollExecutor).findFirst(proj, filter, sort, TestEntity.class);
+    }
+
+    @Test
+    public void testListWithSelectAndFilter() {
+        Collection<String> select = Arrays.asList("name");
+        Document filter = new Document("a", 1);
+        List<TestEntity> result = Arrays.asList(new TestEntity());
+        when(mockCollExecutor.list(select, filter, TestEntity.class)).thenReturn(result);
+
+        Assertions.assertSame(result, mapper.list(select, filter));
+        verify(mockCollExecutor).list(select, filter, TestEntity.class);
+    }
+
+    @Test
+    public void testListWithSelectFilterOffsetCount() {
+        Collection<String> select = Arrays.asList("name");
+        Document filter = new Document("a", 1);
+        List<TestEntity> result = Arrays.asList(new TestEntity());
+        when(mockCollExecutor.list(select, filter, 0, 10, TestEntity.class)).thenReturn(result);
+
+        Assertions.assertSame(result, mapper.list(select, filter, 0, 10));
+        verify(mockCollExecutor).list(select, filter, 0, 10, TestEntity.class);
+    }
+
+    @Test
+    public void testListWithSelectFilterAndSort() {
+        Collection<String> select = Arrays.asList("name");
+        Document filter = new Document("a", 1);
+        Document sort = new Document("a", 1);
+        List<TestEntity> result = Arrays.asList(new TestEntity());
+        when(mockCollExecutor.list(select, filter, sort, TestEntity.class)).thenReturn(result);
+
+        Assertions.assertSame(result, mapper.list(select, filter, sort));
+        verify(mockCollExecutor).list(select, filter, sort, TestEntity.class);
+    }
+
+    @Test
+    public void testListWithSelectFilterSortOffsetCount() {
+        Collection<String> select = Arrays.asList("name");
+        Document filter = new Document("a", 1);
+        Document sort = new Document("a", 1);
+        List<TestEntity> result = Arrays.asList(new TestEntity());
+        when(mockCollExecutor.list(select, filter, sort, 0, 10, TestEntity.class)).thenReturn(result);
+
+        Assertions.assertSame(result, mapper.list(select, filter, sort, 0, 10));
+        verify(mockCollExecutor).list(select, filter, sort, 0, 10, TestEntity.class);
+    }
+
+    @Test
+    public void testListWithProjectionFilterAndSort() {
+        Document proj = new Document("name", 1);
+        Document filter = new Document("a", 1);
+        Document sort = new Document("a", 1);
+        List<TestEntity> result = Arrays.asList(new TestEntity());
+        when(mockCollExecutor.list(proj, filter, sort, TestEntity.class)).thenReturn(result);
+
+        Assertions.assertSame(result, mapper.list(proj, filter, sort));
+        verify(mockCollExecutor).list(proj, filter, sort, TestEntity.class);
+    }
+
+    @Test
+    public void testListWithProjectionFilterSortOffsetCount() {
+        Document proj = new Document("name", 1);
+        Document filter = new Document("a", 1);
+        Document sort = new Document("a", 1);
+        List<TestEntity> result = Arrays.asList(new TestEntity());
+        when(mockCollExecutor.list(proj, filter, sort, 0, 10, TestEntity.class)).thenReturn(result);
+
+        Assertions.assertSame(result, mapper.list(proj, filter, sort, 0, 10));
+        verify(mockCollExecutor).list(proj, filter, sort, 0, 10, TestEntity.class);
+    }
+
+    @Test
+    public void testQueryForDateWithValueType() {
+        Document filter = new Document("a", 1);
+        java.sql.Timestamp ts = new java.sql.Timestamp(System.currentTimeMillis());
+        when(mockCollExecutor.queryForDate("p", filter, java.sql.Timestamp.class)).thenReturn(Nullable.of(ts));
+
+        Nullable<java.sql.Timestamp> result = mapper.queryForDate("p", filter, java.sql.Timestamp.class);
+        Assertions.assertSame(ts, result.orElse(null));
+        verify(mockCollExecutor).queryForDate("p", filter, java.sql.Timestamp.class);
+    }
+
+    @Test
+    public void testQueryWithFilterOffsetCount() {
+        Document filter = new Document("a", 1);
+        Dataset ds = N.newEmptyDataset(Arrays.asList("id"));
+        when(mockCollExecutor.query(filter, 0, 10, TestEntity.class)).thenReturn(ds);
+
+        Assertions.assertSame(ds, mapper.query(filter, 0, 10));
+        verify(mockCollExecutor).query(filter, 0, 10, TestEntity.class);
+    }
+
+    @Test
+    public void testQueryWithSelectAndFilter() {
+        Collection<String> select = Arrays.asList("name");
+        Document filter = new Document("a", 1);
+        Dataset ds = N.newEmptyDataset(Arrays.asList("id"));
+        when(mockCollExecutor.query(select, filter, TestEntity.class)).thenReturn(ds);
+
+        Assertions.assertSame(ds, mapper.query(select, filter));
+        verify(mockCollExecutor).query(select, filter, TestEntity.class);
+    }
+
+    @Test
+    public void testQueryWithSelectFilterOffsetCount() {
+        Collection<String> select = Arrays.asList("name");
+        Document filter = new Document("a", 1);
+        Dataset ds = N.newEmptyDataset(Arrays.asList("id"));
+        when(mockCollExecutor.query(select, filter, 0, 10, TestEntity.class)).thenReturn(ds);
+
+        Assertions.assertSame(ds, mapper.query(select, filter, 0, 10));
+        verify(mockCollExecutor).query(select, filter, 0, 10, TestEntity.class);
+    }
+
+    @Test
+    public void testQueryWithSelectFilterAndSort() {
+        Collection<String> select = Arrays.asList("name");
+        Document filter = new Document("a", 1);
+        Document sort = new Document("a", 1);
+        Dataset ds = N.newEmptyDataset(Arrays.asList("id"));
+        when(mockCollExecutor.query(select, filter, sort, TestEntity.class)).thenReturn(ds);
+
+        Assertions.assertSame(ds, mapper.query(select, filter, sort));
+        verify(mockCollExecutor).query(select, filter, sort, TestEntity.class);
+    }
+
+    @Test
+    public void testQueryWithSelectFilterSortOffsetCount() {
+        Collection<String> select = Arrays.asList("name");
+        Document filter = new Document("a", 1);
+        Document sort = new Document("a", 1);
+        Dataset ds = N.newEmptyDataset(Arrays.asList("id"));
+        when(mockCollExecutor.query(select, filter, sort, 0, 10, TestEntity.class)).thenReturn(ds);
+
+        Assertions.assertSame(ds, mapper.query(select, filter, sort, 0, 10));
+        verify(mockCollExecutor).query(select, filter, sort, 0, 10, TestEntity.class);
+    }
+
+    @Test
+    public void testQueryWithProjectionFilterAndSort() {
+        Document proj = new Document("name", 1);
+        Document filter = new Document("a", 1);
+        Document sort = new Document("a", 1);
+        Dataset ds = N.newEmptyDataset(Arrays.asList("id"));
+        when(mockCollExecutor.query(proj, filter, sort, TestEntity.class)).thenReturn(ds);
+
+        Assertions.assertSame(ds, mapper.query(proj, filter, sort));
+        verify(mockCollExecutor).query(proj, filter, sort, TestEntity.class);
+    }
+
+    @Test
+    public void testQueryWithProjectionFilterSortOffsetCount() {
+        Document proj = new Document("name", 1);
+        Document filter = new Document("a", 1);
+        Document sort = new Document("a", 1);
+        Dataset ds = N.newEmptyDataset(Arrays.asList("id"));
+        when(mockCollExecutor.query(proj, filter, sort, 0, 10, TestEntity.class)).thenReturn(ds);
+
+        Assertions.assertSame(ds, mapper.query(proj, filter, sort, 0, 10));
+        verify(mockCollExecutor).query(proj, filter, sort, 0, 10, TestEntity.class);
+    }
+
+    @Test
+    public void testStreamWithFilterOffsetCount() {
+        Document filter = new Document("a", 1);
+        Stream<TestEntity> s = Stream.of(new TestEntity());
+        when(mockCollExecutor.stream(filter, 0, 10, TestEntity.class)).thenReturn(s);
+
+        Assertions.assertSame(s, mapper.stream(filter, 0, 10));
+        verify(mockCollExecutor).stream(filter, 0, 10, TestEntity.class);
+    }
+
+    @Test
+    public void testStreamWithSelectAndFilter() {
+        Collection<String> select = Arrays.asList("name");
+        Document filter = new Document("a", 1);
+        Stream<TestEntity> s = Stream.of(new TestEntity());
+        when(mockCollExecutor.stream(select, filter, TestEntity.class)).thenReturn(s);
+
+        Assertions.assertSame(s, mapper.stream(select, filter));
+        verify(mockCollExecutor).stream(select, filter, TestEntity.class);
+    }
+
+    @Test
+    public void testStreamWithSelectFilterOffsetCount() {
+        Collection<String> select = Arrays.asList("name");
+        Document filter = new Document("a", 1);
+        Stream<TestEntity> s = Stream.of(new TestEntity());
+        when(mockCollExecutor.stream(select, filter, 0, 10, TestEntity.class)).thenReturn(s);
+
+        Assertions.assertSame(s, mapper.stream(select, filter, 0, 10));
+        verify(mockCollExecutor).stream(select, filter, 0, 10, TestEntity.class);
+    }
+
+    @Test
+    public void testStreamWithSelectFilterAndSort() {
+        Collection<String> select = Arrays.asList("name");
+        Document filter = new Document("a", 1);
+        Document sort = new Document("a", 1);
+        Stream<TestEntity> s = Stream.of(new TestEntity());
+        when(mockCollExecutor.stream(select, filter, sort, TestEntity.class)).thenReturn(s);
+
+        Assertions.assertSame(s, mapper.stream(select, filter, sort));
+        verify(mockCollExecutor).stream(select, filter, sort, TestEntity.class);
+    }
+
+    @Test
+    public void testStreamWithSelectFilterSortOffsetCount() {
+        Collection<String> select = Arrays.asList("name");
+        Document filter = new Document("a", 1);
+        Document sort = new Document("a", 1);
+        Stream<TestEntity> s = Stream.of(new TestEntity());
+        when(mockCollExecutor.stream(select, filter, sort, 0, 10, TestEntity.class)).thenReturn(s);
+
+        Assertions.assertSame(s, mapper.stream(select, filter, sort, 0, 10));
+        verify(mockCollExecutor).stream(select, filter, sort, 0, 10, TestEntity.class);
+    }
+
+    @Test
+    public void testStreamWithProjectionFilterAndSort() {
+        Document proj = new Document("name", 1);
+        Document filter = new Document("a", 1);
+        Document sort = new Document("a", 1);
+        Stream<TestEntity> s = Stream.of(new TestEntity());
+        when(mockCollExecutor.stream(proj, filter, sort, TestEntity.class)).thenReturn(s);
+
+        Assertions.assertSame(s, mapper.stream(proj, filter, sort));
+        verify(mockCollExecutor).stream(proj, filter, sort, TestEntity.class);
+    }
+
+    @Test
+    public void testStreamWithProjectionFilterSortOffsetCount() {
+        Document proj = new Document("name", 1);
+        Document filter = new Document("a", 1);
+        Document sort = new Document("a", 1);
+        Stream<TestEntity> s = Stream.of(new TestEntity());
+        when(mockCollExecutor.stream(proj, filter, sort, 0, 10, TestEntity.class)).thenReturn(s);
+
+        Assertions.assertSame(s, mapper.stream(proj, filter, sort, 0, 10));
+        verify(mockCollExecutor).stream(proj, filter, sort, 0, 10, TestEntity.class);
+    }
+
+    @Test
+    public void testUpdateOneWithCollectionAndOptions() {
+        Document filter = new Document("a", 1);
+        Collection<TestEntity> objList = Arrays.asList(new TestEntity());
+        UpdateOptions options = new UpdateOptions();
+        UpdateResult ur = mock(UpdateResult.class);
+        when(mockCollExecutor.updateOne(filter, objList, options)).thenReturn(ur);
+
+        Assertions.assertSame(ur, mapper.updateOne(filter, objList, options));
+        verify(mockCollExecutor).updateOne(filter, objList, options);
+    }
+
+    @Test
+    public void testUpdateManyWithCollection() {
+        Document filter = new Document("a", 1);
+        Collection<TestEntity> objList = Arrays.asList(new TestEntity());
+        UpdateResult ur = mock(UpdateResult.class);
+        when(mockCollExecutor.updateMany(filter, objList)).thenReturn(ur);
+
+        Assertions.assertSame(ur, mapper.updateMany(filter, objList));
+        verify(mockCollExecutor).updateMany(filter, objList);
+    }
+
+    @Test
+    public void testUpdateManyWithCollectionAndOptions() {
+        Document filter = new Document("a", 1);
+        Collection<TestEntity> objList = Arrays.asList(new TestEntity());
+        UpdateOptions options = new UpdateOptions();
+        UpdateResult ur = mock(UpdateResult.class);
+        when(mockCollExecutor.updateMany(filter, objList, options)).thenReturn(ur);
+
+        Assertions.assertSame(ur, mapper.updateMany(filter, objList, options));
+        verify(mockCollExecutor).updateMany(filter, objList, options);
+    }
+
+    @Test
+    public void testReplaceOneWithObjectId() {
+        ObjectId objectId = new ObjectId();
+        TestEntity replacement = new TestEntity();
+        UpdateResult ur = mock(UpdateResult.class);
+        when(mockCollExecutor.replaceOne(objectId, replacement)).thenReturn(ur);
+
+        Assertions.assertSame(ur, mapper.replaceOne(objectId, replacement));
+        verify(mockCollExecutor).replaceOne(objectId, replacement);
+    }
+
+    @Test
+    public void testDeleteOneWithFilterAndOptions() {
+        Document filter = new Document("a", 1);
+        DeleteOptions opts = new DeleteOptions();
+        DeleteResult dr = mock(DeleteResult.class);
+        when(mockCollExecutor.deleteOne(filter, opts)).thenReturn(dr);
+
+        Assertions.assertSame(dr, mapper.deleteOne(filter, opts));
+        verify(mockCollExecutor).deleteOne(filter, opts);
+    }
+
+    @Test
+    public void testDeleteManyWithFilterAndOptions() {
+        Document filter = new Document("a", 1);
+        DeleteOptions opts = new DeleteOptions();
+        DeleteResult dr = mock(DeleteResult.class);
+        when(mockCollExecutor.deleteMany(filter, opts)).thenReturn(dr);
+
+        Assertions.assertSame(dr, mapper.deleteMany(filter, opts));
+        verify(mockCollExecutor).deleteMany(filter, opts);
+    }
+
+    @Test
+    public void testBulkWriteWithOptions() {
+        List<WriteModel<? extends Document>> requests = Collections.<WriteModel<? extends Document>> emptyList();
+        BulkWriteOptions opts = new BulkWriteOptions();
+        BulkWriteResult br = mock(BulkWriteResult.class);
+        when(mockCollExecutor.bulkWrite(requests, opts)).thenReturn(br);
+
+        Assertions.assertSame(br, mapper.bulkWrite(requests, opts));
+        verify(mockCollExecutor).bulkWrite(requests, opts);
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithCollection() {
+        Document filter = new Document("a", 1);
+        Collection<TestEntity> objList = Arrays.asList(new TestEntity());
+        TestEntity entity = new TestEntity();
+        when(mockCollExecutor.findOneAndUpdate(filter, objList, TestEntity.class)).thenReturn(entity);
+
+        Assertions.assertSame(entity, mapper.findOneAndUpdate(filter, objList));
+        verify(mockCollExecutor).findOneAndUpdate(filter, objList, TestEntity.class);
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithCollectionAndOptions() {
+        Document filter = new Document("a", 1);
+        Collection<TestEntity> objList = Arrays.asList(new TestEntity());
+        FindOneAndUpdateOptions opts = new FindOneAndUpdateOptions();
+        TestEntity entity = new TestEntity();
+        when(mockCollExecutor.findOneAndUpdate(filter, objList, opts, TestEntity.class)).thenReturn(entity);
+
+        Assertions.assertSame(entity, mapper.findOneAndUpdate(filter, objList, opts));
+        verify(mockCollExecutor).findOneAndUpdate(filter, objList, opts, TestEntity.class);
+    }
+
+    @Test
+    public void testFindOneAndReplaceWithOptions() {
+        Document filter = new Document("a", 1);
+        TestEntity replacement = new TestEntity();
+        FindOneAndReplaceOptions opts = new FindOneAndReplaceOptions();
+        TestEntity entity = new TestEntity();
+        when(mockCollExecutor.findOneAndReplace(filter, replacement, opts, TestEntity.class)).thenReturn(entity);
+
+        Assertions.assertSame(entity, mapper.findOneAndReplace(filter, replacement, opts));
+        verify(mockCollExecutor).findOneAndReplace(filter, replacement, opts, TestEntity.class);
+    }
+
+    @Test
+    public void testFindOneAndDeleteWithOptions() {
+        Document filter = new Document("a", 1);
+        FindOneAndDeleteOptions opts = new FindOneAndDeleteOptions();
+        TestEntity entity = new TestEntity();
+        when(mockCollExecutor.findOneAndDelete(filter, opts, TestEntity.class)).thenReturn(entity);
+
+        Assertions.assertSame(entity, mapper.findOneAndDelete(filter, opts));
+        verify(mockCollExecutor).findOneAndDelete(filter, opts, TestEntity.class);
     }
 
     // Test entity class

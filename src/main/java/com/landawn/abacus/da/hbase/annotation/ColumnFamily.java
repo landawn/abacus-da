@@ -22,12 +22,18 @@ import java.lang.annotation.RetentionPolicy;
 import java.lang.annotation.Target;
 
 /**
- * Specifies the column family name for HBase table mapping in entity classes or fields.
- * 
- * <p>This annotation can be applied to both types (classes) and fields to control how 
- * Java objects are mapped to HBase column families and columns. When applied to a class,
- * all fields in that class will be mapped to the specified column family. When applied
- * to a field, only that field will use the specified column family name.</p>
+ * Marks an entity class or field as belonging to a specific HBase column family. Applied by the
+ * abacus-da HBase mapping layer (see {@link com.landawn.abacus.da.hbase.HBaseExecutor}) when
+ * translating between Java objects and HBase {@link org.apache.hadoop.hbase.client.Put} /
+ * {@link org.apache.hadoop.hbase.client.Get} / {@link org.apache.hadoop.hbase.client.Result}
+ * cells.
+ *
+ * <p><strong>Target:</strong> {@link ElementType#TYPE} and {@link ElementType#FIELD}. Apply to a
+ * class to set a default column family for all of its fields; apply to a field to override the
+ * class-level setting for that single field.</p>
+ *
+ * <p><strong>Retention:</strong> {@link RetentionPolicy#RUNTIME} — the abacus-da reflection
+ * machinery reads this annotation at runtime during entity-to-HBase mapping.</p>
  *
  * <h2>Usage Patterns</h2>
  *

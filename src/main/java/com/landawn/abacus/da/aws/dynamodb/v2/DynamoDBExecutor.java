@@ -1602,9 +1602,15 @@ public final class DynamoDBExecutor implements AutoCloseable {
     /**
      * Extracts a Dataset from a QueryResponse.
      *
-     * @param queryResult the QueryResponse containing the items to convert
-     * @return a Dataset containing the extracted data, never null
-     * @see #extractData(QueryResponse, int, int) for pagination support
+     * <p><b>Single page only:</b> This method materializes only the items present in the supplied
+     * {@code queryResult}. It does <i>not</i> follow {@code lastEvaluatedKey} or fetch additional
+     * pages — use {@link #query(QueryRequest)} for transparent pagination.</p>
+     *
+     * @param queryResult the QueryResponse containing the items to convert. Must not be {@code null}.
+     * @return a Dataset containing the items from this single response page, never {@code null};
+     *         empty when the response carries no items
+     * @throws NullPointerException if {@code queryResult} is {@code null}
+     * @see #extractData(QueryResponse, int, int) for offset/count slicing on the same single page
      */
     public static Dataset extractData(final QueryResponse queryResult) {
         return extractData(queryResult, 0, Integer.MAX_VALUE);
@@ -1629,9 +1635,15 @@ public final class DynamoDBExecutor implements AutoCloseable {
     /**
      * Extracts a Dataset from a ScanResponse.
      *
-     * @param scanResult the ScanResponse containing the items to convert
-     * @return a Dataset containing the extracted data, never null
-     * @see #extractData(ScanResponse, int, int) for pagination support
+     * <p><b>Single page only:</b> This method materializes only the items present in the supplied
+     * {@code scanResult}. It does <i>not</i> follow {@code lastEvaluatedKey} or fetch additional
+     * pages — use the streaming {@code scan(...)} overloads when you need every matching item.</p>
+     *
+     * @param scanResult the ScanResponse containing the items to convert. Must not be {@code null}.
+     * @return a Dataset containing the items from this single response page, never {@code null};
+     *         empty when the response carries no items
+     * @throws NullPointerException if {@code scanResult} is {@code null}
+     * @see #extractData(ScanResponse, int, int) for offset/count slicing on the same single page
      */
     public static Dataset extractData(final ScanResponse scanResult) {
         return extractData(scanResult, 0, Integer.MAX_VALUE);
@@ -1914,7 +1926,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param <T> the type of the entity to convert to
      * @param getItemRequest the complete request with all parameters. Must not be null.
      * @param targetClass the class to convert the result to. Must not be null.
-     * @return an instance of targetClass containing the item data, or null if the item doesn't exist
+     * @return an instance of {@code targetClass} containing the item data, or {@code null} for
+     *         reference types when the item doesn't exist (primitive {@code targetClass} returns its
+     *         default value such as {@code 0} or {@code false})
      * @throws IllegalArgumentException if any parameter is null or targetClass is unsupported
      */
     public <T> T getItem(final GetItemRequest getItemRequest, final Class<T> targetClass) {
@@ -2682,7 +2696,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *
      * <p>This method performs a query operation using AWS SDK v2 and returns the results as a list of entities
      * of the specified target class. If the query result is paginated and no exclusive start key was set on the
-     * request, this method automatically fetches and aggregates all remaining pages.</p>
+     * request, this method automatically fetches and aggregates all remaining pages. When the caller has
+     * already set {@code exclusiveStartKey}, only the single returned page is materialized.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2697,7 +2712,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param <T> the type of the entities to convert to
      * @param queryRequest the QueryRequest containing the table name and query parameters. Must not be null.
      * @param targetClass the class of the entities to convert to. Must not be null.
-     * @return a list of entities of the specified target class. Never null.
+     * @return a list of entities aggregated across all pages (when pagination is auto-driven),
+     *         never {@code null}; empty when the query matches nothing
      * @throws IllegalArgumentException if queryRequest or targetClass is null
      */
     public <T> List<T> list(final QueryRequest queryRequest, final Class<T> targetClass) {
@@ -2771,6 +2787,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *
      * <p>This method performs a query operation using AWS SDK v2 and returns the results as a Dataset.</p>
      *
+     * <p><b>Automatic pagination:</b> When the caller has not set {@code exclusiveStartKey} on the
+     * request, all pages are fetched and concatenated into the returned Dataset. If the caller did
+     * set {@code exclusiveStartKey}, only the single page returned by DynamoDB is materialized.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * QueryRequest queryRequest = QueryRequest.builder()
@@ -2782,7 +2802,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * }</pre>
      *
      * @param queryRequest the QueryRequest containing the table name and query parameters. Must not be null.
-     * @return a Dataset containing the items retrieved by the query. Never null.
+     * @return a Dataset containing the items retrieved by the query, never {@code null}; empty when
+     *         the query matches nothing
      * @throws IllegalArgumentException if queryRequest is null
      */
     public Dataset query(final QueryRequest queryRequest) {

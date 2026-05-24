@@ -149,7 +149,10 @@ public final class AsyncHBaseExecutor {
      *
      * @param tableName the name of the HBase table to check
      * @param gets the list of Get operations specifying the rows to check
-     * @return a ContinuableFuture containing a list of boolean values indicating existence
+     * @return a ContinuableFuture whose value is a {@code List<Boolean>} in the same order as
+     *         {@code gets}; the i-th entry is {@code true} if the i-th Get would match one or
+     *         more cells, {@code false} otherwise. Wraps {@link HBaseExecutor#exists(String, List)}.
+     * @see HBaseExecutor#exists(String, List)
      * @see Get
      */
     public ContinuableFuture<List<Boolean>> exists(final String tableName, final List<Get> gets) {
@@ -239,7 +242,10 @@ public final class AsyncHBaseExecutor {
      *
      * @param tableName the name of the HBase table to retrieve from
      * @param gets the list of Get operations specifying the rows and columns to retrieve
-     * @return a ContinuableFuture containing a list of Result objects with the retrieved data
+     * @return a ContinuableFuture whose value is a {@code List<Result>} in the same order as
+     *         {@code gets}; rows that do not exist are represented by {@linkplain Result#isEmpty() empty}
+     *         Result entries. Wraps {@link HBaseExecutor#get(String, List)}.
+     * @see HBaseExecutor#get(String, List)
      * @see Get
      * @see Result
      */
@@ -288,11 +294,17 @@ public final class AsyncHBaseExecutor {
     /**
      * Asynchronously retrieves multiple rows and converts them to the specified type.
      *
+     * <p>Unlike {@link #get(String, List)}, rows that do not exist (empty Results) are
+     * <i>skipped</i>, so the resulting list may contain fewer elements than {@code gets}
+     * and does not necessarily correspond positionally to it.</p>
+     *
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to retrieve from
      * @param gets the list of Get operations specifying the rows to retrieve
-     * @param targetClass the class to convert each result to
-     * @return a ContinuableFuture containing a list of converted objects
+     * @param targetClass the class to convert each non-empty result to
+     * @return a ContinuableFuture whose value is a {@code List<T>} of converted objects,
+     *         with empty/missing rows skipped. Wraps {@link HBaseExecutor#get(String, List, Class)}.
+     * @see HBaseExecutor#get(String, List, Class)
      * @see Get
      */
     public <T> ContinuableFuture<List<T>> get(final String tableName, final List<Get> gets, final Class<T> targetClass) {
@@ -316,11 +328,17 @@ public final class AsyncHBaseExecutor {
     /**
      * Asynchronously retrieves multiple rows using AnyGet builders and converts them to the specified type.
      *
+     * <p>Unlike {@link #get(String, Collection)}, rows that do not exist (empty Results) are
+     * <i>skipped</i>, so the resulting list may contain fewer elements than {@code anyGets}
+     * and does not necessarily correspond positionally to it.</p>
+     *
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to retrieve from
      * @param anyGets the collection of AnyGet builders specifying the rows
-     * @param targetClass the class to convert each result to
-     * @return a ContinuableFuture containing a list of converted objects
+     * @param targetClass the class to convert each non-empty result to
+     * @return a ContinuableFuture whose value is a {@code List<T>} of converted objects,
+     *         with empty/missing rows skipped. Wraps {@link HBaseExecutor#get(String, Collection, Class)}.
+     * @see HBaseExecutor#get(String, Collection, Class)
      * @see AnyGet
      */
     public <T> ContinuableFuture<List<T>> get(final String tableName, final Collection<AnyGet> anyGets, final Class<T> targetClass) {

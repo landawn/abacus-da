@@ -18,8 +18,10 @@ import java.util.function.Function;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import com.landawn.abacus.annotation.Id;
 import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.exception.DuplicateResultException;
+import com.landawn.abacus.query.AbstractQueryBuilder.SP;
 import com.landawn.abacus.query.Filters;
 import com.landawn.abacus.query.condition.Condition;
 import com.landawn.abacus.util.ContinuableFuture;
@@ -773,8 +775,288 @@ public class CassandraExecutorBaseTest extends TestBase {
         assertThrows(NullPointerException.class, () -> exec.async().findFirst(String.class, "SELECT name FROM t WHERE id = ?", 1L).get());
     }
 
+    // ---------------------------------------------------------------------
+    //  Coverage gap fillers: idsToCondition / entityToCondition /
+    //  prepareInsert / prepareUpdate / prepareDelete / prepareQuery
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void testIdsToCondition_singleKey() {
+        // Single key -> simple equality
+        Condition cond = TestCassandraExecutor.exposedIdsToCondition(TestEntity.class, 1L);
+        assertNotNull(cond);
+        assertTrue(cond.toString().contains("id"));
+    }
+
+    @Test
+    public void testIdsToCondition_compositeKey() {
+        // Multi-key entity with matching id count -> AND condition
+        Condition cond = TestCassandraExecutor.exposedIdsToCondition(CompositeKeyEntity.class, "u1", "s1");
+        assertNotNull(cond);
+        assertTrue(cond.toString().toLowerCase().contains("and"));
+    }
+
+    @Test
+    public void testIdsToCondition_idCountMismatch_throwsIAE() {
+        // Provide more ids than registered keys (single-key entity) -> IAE
+        assertThrows(IllegalArgumentException.class, () -> TestCassandraExecutor.exposedIdsToCondition(TestEntity.class, 1L, 2L));
+    }
+
+    @Test
+    public void testIdsToCondition_emptyIds_throwsIAE() {
+        assertThrows(IllegalArgumentException.class, () -> TestCassandraExecutor.exposedIdsToCondition(TestEntity.class));
+    }
+
+    @Test
+    public void testEntityToCondition_singleKey() {
+        TestEntity e = new TestEntity();
+        e.setId(99L);
+        Condition cond = TestCassandraExecutor.exposedEntityToCondition(e);
+        assertNotNull(cond);
+        assertTrue(cond.toString().contains("id"));
+    }
+
+    @Test
+    public void testEntityToCondition_singleKey_nullValue_throwsIAE() {
+        TestEntity e = new TestEntity();
+        // id is null
+        assertThrows(IllegalArgumentException.class, () -> TestCassandraExecutor.exposedEntityToCondition(e));
+    }
+
+    @Test
+    public void testEntityToCondition_compositeKey() {
+        CompositeKeyEntity e = new CompositeKeyEntity();
+        e.setUserId("u1");
+        e.setSessionId("s1");
+        Condition cond = TestCassandraExecutor.exposedEntityToCondition(e);
+        assertNotNull(cond);
+        assertTrue(cond.toString().toLowerCase().contains("and"));
+    }
+
+    @Test
+    public void testEntityToCondition_compositeKey_missingValue_throwsIAE() {
+        CompositeKeyEntity e = new CompositeKeyEntity();
+        e.setUserId("u1");
+        // sessionId is null -> IAE
+        assertThrows(IllegalArgumentException.class, () -> TestCassandraExecutor.exposedEntityToCondition(e));
+    }
+
+    @Test
+    public void testEntityToCondition_collection_singleKey() {
+        TestEntity a = new TestEntity();
+        a.setId(1L);
+        TestEntity b = new TestEntity();
+        b.setId(2L);
+        Condition cond = TestCassandraExecutor.exposedEntityToConditionCollection(TestEntity.class, Arrays.asList(a, b));
+        assertNotNull(cond);
+        assertTrue(cond.toString().toLowerCase().contains("in"));
+    }
+
+    @Test
+    public void testEntityToCondition_collection_compositeKey() {
+        CompositeKeyEntity a = new CompositeKeyEntity();
+        a.setUserId("u1");
+        a.setSessionId("s1");
+        CompositeKeyEntity b = new CompositeKeyEntity();
+        b.setUserId("u2");
+        b.setSessionId("s2");
+        Condition cond = TestCassandraExecutor.exposedEntityToConditionCollection(CompositeKeyEntity.class, Arrays.asList(a, b));
+        assertNotNull(cond);
+        // Composite-key collection -> OR over per-entity AND clauses
+        assertTrue(cond.toString().toLowerCase().contains("or"));
+    }
+
+    @Test
+    public void testEntityToCondition_collection_emptyCollection_throwsIAE() {
+        assertThrows(IllegalArgumentException.class,
+                () -> TestCassandraExecutor.exposedEntityToConditionCollection(TestEntity.class, new ArrayList<>()));
+    }
+
+    @Test
+    public void testPrepareInsert_entity_snakeCase() {
+        TestEntity e = new TestEntity();
+        e.setId(1L);
+        e.setName("nm");
+        SP sp = executor.exposedPrepareInsert(e);
+        assertNotNull(sp);
+        assertNotNull(sp.query());
+        assertTrue(sp.query().toUpperCase().contains("INSERT"));
+    }
+
+    @Test
+    public void testPrepareInsert_propsMap_snakeCase() {
+        Map<String, Object> props = new HashMap<>();
+        props.put("id", 1L);
+        props.put("name", "nm");
+        SP sp = executor.exposedPrepareInsert(TestEntity.class, props);
+        assertNotNull(sp);
+        assertTrue(sp.query().toUpperCase().contains("INSERT"));
+    }
+
+    @Test
+    public void testPrepareUpdate_entityWithProps() {
+        TestEntity e = new TestEntity();
+        e.setId(1L);
+        e.setName("u1");
+        SP sp = executor.exposedPrepareUpdate(e, Arrays.asList("name"));
+        assertNotNull(sp);
+        assertTrue(sp.query().toUpperCase().contains("UPDATE"));
+    }
+
+    @Test
+    public void testPrepareUpdate_classMapCondition() {
+        Map<String, Object> props = new HashMap<>();
+        props.put("name", "x");
+        SP sp = executor.exposedPrepareUpdate(TestEntity.class, props, Filters.eq("id", 1L));
+        assertNotNull(sp);
+        assertTrue(sp.query().toUpperCase().contains("UPDATE"));
+    }
+
+    @Test
+    public void testPrepareUpdate_classMapNullCondition() {
+        Map<String, Object> props = new HashMap<>();
+        props.put("name", "x");
+        SP sp = executor.exposedPrepareUpdate(TestEntity.class, props, null);
+        assertNotNull(sp);
+        assertTrue(sp.query().toUpperCase().contains("UPDATE"));
+    }
+
+    @Test
+    public void testPrepareDelete_withPropNames() {
+        SP sp = executor.exposedPrepareDelete(TestEntity.class, Arrays.asList("name"), Filters.eq("id", 1L));
+        assertNotNull(sp);
+        assertTrue(sp.query().toUpperCase().contains("DELETE"));
+    }
+
+    @Test
+    public void testPrepareDelete_noPropNames() {
+        SP sp = executor.exposedPrepareDelete(TestEntity.class, null, Filters.eq("id", 1L));
+        assertNotNull(sp);
+        assertTrue(sp.query().toUpperCase().contains("DELETE"));
+    }
+
+    @Test
+    public void testPrepareDelete_nullCondition() {
+        SP sp = executor.exposedPrepareDelete(TestEntity.class, null, null);
+        assertNotNull(sp);
+        assertTrue(sp.query().toUpperCase().contains("DELETE"));
+    }
+
+    @Test
+    public void testPrepareQuery_allProps() {
+        SP sp = executor.exposedPrepareQuery(TestEntity.class, null, Filters.eq("id", 1L), 0);
+        assertNotNull(sp);
+        assertTrue(sp.query().toUpperCase().contains("SELECT"));
+    }
+
+    @Test
+    public void testPrepareQuery_selectProps_withLimit() {
+        SP sp = executor.exposedPrepareQuery(TestEntity.class, Arrays.asList("id", "name"), Filters.eq("id", 1L), 5);
+        assertNotNull(sp);
+        String q = sp.query().toUpperCase();
+        assertTrue(q.contains("SELECT"));
+        assertTrue(q.contains("LIMIT"));
+    }
+
+    @Test
+    public void testPrepareQuery_nullCondition_noLimit() {
+        SP sp = executor.exposedPrepareQuery(TestEntity.class, null, null, 0);
+        assertNotNull(sp);
+        assertTrue(sp.query().toUpperCase().contains("SELECT"));
+    }
+
+    @Test
+    public void testParseCql_passThrough() {
+        // parseCql() through the executor; defaults (no cqlMapper) -> ParsedCql.parse
+        com.landawn.abacus.da.cassandra.ParsedCql parsed = executor.exposedParseCql("SELECT * FROM t WHERE id = ?");
+        assertNotNull(parsed);
+        assertEquals(1, parsed.parameterCount());
+    }
+
+    @Test
+    public void testGetKeyNameSet_returnsSet() {
+        // exercise getKeyNameSet (overlap with getKeyNames, but distinct accessor)
+        java.util.Set<String> set = CassandraExecutorBase.getKeyNameSet(TestEntity.class);
+        assertNotNull(set);
+        assertTrue(set.contains("id"));
+    }
+
+    // Composite-key entity for entityToCondition / idsToCondition tests
+    public static class CompositeKeyEntity {
+        @Id
+        private String userId;
+        @Id
+        private String sessionId;
+        private String value;
+
+        public String getUserId() {
+            return userId;
+        }
+
+        public void setUserId(String userId) {
+            this.userId = userId;
+        }
+
+        public String getSessionId() {
+            return sessionId;
+        }
+
+        public void setSessionId(String sessionId) {
+            this.sessionId = sessionId;
+        }
+
+        public String getValue() {
+            return value;
+        }
+
+        public void setValue(String value) {
+            this.value = value;
+        }
+    }
+
     // Test implementation of CassandraExecutorBase
     private static class TestCassandraExecutor extends CassandraExecutorBase<TestRow, TestResultSet, TestStatement, TestPreparedStatement, TestBatchType> {
+
+        // Expose protected static helpers for tests
+        public static Condition exposedIdsToCondition(Class<?> targetClass, Object... ids) {
+            return CassandraExecutorBase.idsToCondition(targetClass, ids);
+        }
+
+        public static Condition exposedEntityToCondition(Object entity) {
+            return CassandraExecutorBase.entityToCondition(entity);
+        }
+
+        public static Condition exposedEntityToConditionCollection(Class<?> entityClass, Collection<?> entities) {
+            return CassandraExecutorBase.entityToCondition(entityClass, entities);
+        }
+
+        public SP exposedPrepareInsert(Object entity) {
+            return prepareInsert(entity);
+        }
+
+        public SP exposedPrepareInsert(Class<?> targetClass, Map<String, Object> props) {
+            return prepareInsert(targetClass, props);
+        }
+
+        public SP exposedPrepareUpdate(Object entity, Collection<String> propNamesToUpdate) {
+            return prepareUpdate(entity, propNamesToUpdate);
+        }
+
+        public SP exposedPrepareUpdate(Class<?> targetClass, Map<String, Object> props, Condition whereClause) {
+            return prepareUpdate(targetClass, props, whereClause);
+        }
+
+        public SP exposedPrepareDelete(Class<?> targetClass, Collection<String> propNamesToDelete, Condition whereClause) {
+            return prepareDelete(targetClass, propNamesToDelete, whereClause);
+        }
+
+        public SP exposedPrepareQuery(Class<?> targetClass, Collection<String> selectPropNames, Condition whereClause, int count) {
+            return prepareQuery(targetClass, selectPropNames, whereClause, count);
+        }
+
+        public com.landawn.abacus.da.cassandra.ParsedCql exposedParseCql(String cql) {
+            return parseCql(cql);
+        }
 
         public TestCassandraExecutor() {
             super(null, NamingPolicy.SNAKE_CASE);

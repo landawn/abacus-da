@@ -163,11 +163,12 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Opens a new Neo4j session.
+     * Opens a new Neo4j session directly from the underlying {@link SessionFactory}.
      * <p>
-     * This method creates a new session directly from the SessionFactory.
-     * Note that sessions obtained this way are not managed by the executor's
-     * connection pool and must be closed manually.
+     * Sessions obtained this way are <i>not</i> tracked by this executor's session pool. The
+     * caller is responsible for releasing per-session state (e.g. by calling {@link Session#clear()})
+     * when finished. Prefer {@link #run(Consumer)} or {@link #call(Function)}, which acquire a
+     * pooled session and return it automatically.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1713,8 +1714,9 @@ public final class Neo4jExecutor {
      *
      * @param cypher the Cypher query string with named parameter placeholders
      * @param parameters the named parameters for the query
-     * @return a Stream of result maps, each representing a query result row
-     * @throws IllegalArgumentException if cypher is null or parameters is null
+     * @return a Stream of result maps, each representing a query result row; close the stream to
+     *         release the underlying session back to the pool
+     * @throws IllegalArgumentException if cypher is null
      * @see #query(Class, String, Map)
      * @see #queryForObject(Class, String, Map)
      */
@@ -1733,17 +1735,21 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Executes a Cypher query with read-only optimization and returns the results as a stream of maps.
+     * Executes a Cypher query with a read-only hint and returns the results as a stream of maps.
      * <p>
      * This method executes a Cypher query with named parameters and returns each
-     * result row as a {@code Map<String, Object>}. The readOnly flag allows the database
-     * to optimize query execution for read-only operations. The stream is lazily
-     * evaluated and automatically manages the session lifecycle.
-     * 
+     * result row as a {@code Map<String, Object>}. The {@code readOnly} flag is forwarded to the
+     * underlying OGM session so the driver can route the request to a read replica or otherwise
+     * optimize execution; pass {@code false} for queries that mutate the graph. The stream is
+     * lazily evaluated and the session is returned to the pool when the stream is closed.
+     *
      * @param cypher the Cypher query string with named parameter placeholders
      * @param parameters the named parameters for the query
-     * @param readOnly {@code true} if the query is read-only and can be optimized accordingly
-     * @return a stream of result maps, each representing a query result row
+     * @param readOnly {@code true} if the query is read-only and can be routed/optimized as such;
+     *                 must be {@code false} for queries that write to the graph
+     * @return a Stream of result maps, each representing a query result row; close the stream to
+     *         release the underlying session
+     * @throws IllegalArgumentException if cypher is null
      * @see #query(String, Map)
      * @see #query(Class, String, Map)
      */
@@ -1805,7 +1811,8 @@ public final class Neo4jExecutor {
      * @param objectType the target class for result conversion (entity class with getter/setter methods, Map.class, or supported basic types)
      * @param cypher the Cypher query string with named parameter placeholders
      * @param parameters the named parameters for the query
-     * @return a Stream of result objects of the specified type
+     * @return a Stream of result objects of the specified type; close the stream to release the
+     *         underlying session back to the pool
      * @throws IllegalArgumentException if objectType or cypher is null
      * @see #queryForObject(Class, String, Map)
      * @see #query(String, Map)

@@ -116,6 +116,10 @@ public abstract class MongoDBBase {
             new GeneralCodecRegistry());
     private static final Map<Class<?>, Method> classIdSetMethodPool = new ConcurrentHashMap<>();
 
+    /**
+     * Protected no-arg constructor for subclasses; this class is not intended to be instantiated
+     * directly. Use a concrete subclass such as {@link MongoDB}.
+     */
     protected MongoDBBase() {
     }
 
@@ -1481,6 +1485,11 @@ public abstract class MongoDBBase {
         }
     }
 
+    /**
+     * Internal {@link CodecRegistry} that lazily creates and caches {@link GeneralCodec} instances
+     * for arbitrary Java types. Combined with the MongoDB default codec registry, this allows
+     * arbitrary bean classes (and other types) to be (de)serialized to/from BSON.
+     */
     static class GeneralCodecRegistry implements CodecRegistry {
 
         /** The Constant pool. */
@@ -1511,6 +1520,12 @@ public abstract class MongoDBBase {
         }
     }
 
+    /**
+     * Generic {@link Codec} that encodes bean-style entities as BSON documents (via
+     * {@link MongoDBBase#toDocument(Object)}) and other types as their {@link N#stringOf(Object)}
+     * string form. Decoding mirrors this: entity classes are read as Documents and then mapped to
+     * the bean, while other types are read as strings and parsed via {@link N#valueOf(String, Class)}.
+     */
     static class GeneralCodec<T> implements Codec<T> {
 
         /** The Constant documentCodec. */

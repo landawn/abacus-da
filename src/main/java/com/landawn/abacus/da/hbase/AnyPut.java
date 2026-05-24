@@ -139,46 +139,101 @@ public final class AnyPut extends AnyMutation<AnyPut> {
 
     private final Put put;
 
+    /**
+     * Package-private constructor backing {@link #of(Object)}.
+     *
+     * @param rowKey the row key, converted to bytes via {@link HBaseExecutor#toRowBytes(Object)}
+     */
     AnyPut(final Object rowKey) {
         super(new Put(toRowBytes(rowKey)));
         put = (Put) mutation;
     }
 
+    /**
+     * Package-private constructor backing {@link #of(Object, long)}.
+     *
+     * @param rowKey the row key, converted to bytes
+     * @param timestamp the timestamp assigned to all cells added to this Put
+     */
     AnyPut(final Object rowKey, final long timestamp) {
         super(new Put(toRowBytes(rowKey), timestamp));
         put = (Put) mutation;
     }
 
+    /**
+     * Package-private constructor backing {@link #of(Object, int, int)}.
+     *
+     * @param rowKey the row key whose byte representation is sliced
+     * @param rowOffset the starting offset (0-based) within the row key bytes
+     * @param rowLength the number of bytes to use from the row key starting at offset
+     */
     AnyPut(final Object rowKey, final int rowOffset, final int rowLength) {
         super(new Put(toRowBytes(rowKey), rowOffset, rowLength));
         put = (Put) mutation;
     }
 
+    /**
+     * Package-private constructor backing {@link #of(Object, int, int, long)}.
+     *
+     * @param rowKey the row key whose byte representation is sliced
+     * @param rowOffset the starting offset (0-based) within the row key bytes
+     * @param rowLength the number of bytes to use from the row key starting at offset
+     * @param timestamp the timestamp assigned to all cells added to this Put
+     */
     AnyPut(final Object rowKey, final int rowOffset, final int rowLength, final long timestamp) {
         super(new Put(toRowBytes(rowKey), rowOffset, rowLength, timestamp));
         put = (Put) mutation;
     }
 
+    /**
+     * Package-private constructor backing {@link #of(Object, boolean)}.
+     *
+     * @param rowKey the row key, converted to bytes
+     * @param rowIsImmutable when true, the row key byte array is treated as immutable and not defensively copied
+     */
     AnyPut(final Object rowKey, final boolean rowIsImmutable) {
         super(new Put(toRowBytes(rowKey), rowIsImmutable));
         put = (Put) mutation;
     }
 
+    /**
+     * Package-private constructor backing {@link #of(Object, long, boolean)}.
+     *
+     * @param rowKey the row key, converted to bytes
+     * @param timestamp the timestamp assigned to all cells added to this Put
+     * @param rowIsImmutable when true, the row key byte array is treated as immutable and not defensively copied
+     */
     AnyPut(final Object rowKey, final long timestamp, final boolean rowIsImmutable) {
         super(new Put(toRowBytes(rowKey), timestamp, rowIsImmutable));
         put = (Put) mutation;
     }
 
+    /**
+     * Package-private constructor backing {@link #of(ByteBuffer)}.
+     *
+     * @param rowKey the row key as a ByteBuffer; bytes from current position to limit are used
+     */
     AnyPut(final ByteBuffer rowKey) {
         super(new Put(rowKey));
         put = (Put) mutation;
     }
 
+    /**
+     * Package-private constructor backing {@link #of(ByteBuffer, long)}.
+     *
+     * @param rowKey the row key as a ByteBuffer; bytes from current position to limit are used
+     * @param timestamp the timestamp assigned to all cells added to this Put
+     */
     AnyPut(final ByteBuffer rowKey, final long timestamp) {
         super(new Put(rowKey, timestamp));
         put = (Put) mutation;
     }
 
+    /**
+     * Package-private constructor backing {@link #of(Put)}. Creates a deep copy of the given Put.
+     *
+     * @param putToCopy the existing HBase Put to deep-copy
+     */
     AnyPut(final Put putToCopy) {
         super(new Put(putToCopy));
         put = (Put) mutation;
@@ -361,9 +416,9 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *                          .addColumn("data", "value", "sample");
      * }</pre>
      *
-     * @param rowKey the row key as a ByteBuffer; must not be null and must have remaining bytes
+     * @param rowKey the row key as a ByteBuffer; must not be null
      * @return a new AnyPut instance configured for the ByteBuffer row key
-     * @throws IllegalArgumentException if rowKey is null or has no remaining bytes
+     * @throws NullPointerException if {@code rowKey} is null (raised by the wrapped {@link Put#Put(ByteBuffer)} constructor)
      * @see #of(ByteBuffer, long)
      * @see #of(Object)
      */
@@ -389,10 +444,11 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *                                     .addColumn("events", "action", "login");
      * }</pre>
      *
-     * @param rowKey the row key as a ByteBuffer; must not be null and must have remaining bytes
+     * @param rowKey the row key as a ByteBuffer; must not be null
      * @param timestamp the timestamp for all cells in this put operation (milliseconds since epoch)
      * @return a new AnyPut instance with ByteBuffer row key and timestamp control
-     * @throws IllegalArgumentException if rowKey is null, has no remaining bytes, or timestamp is negative
+     * @throws NullPointerException if {@code rowKey} is null (raised by the wrapped {@link Put#Put(ByteBuffer, long)} constructor)
+     * @throws IllegalArgumentException if {@code timestamp} is negative
      * @see #of(ByteBuffer)
      * @see #of(Object, long)
      */
@@ -1105,11 +1161,12 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * AnyPut put = AnyPut.of("user123").add(cell);
      * }</pre>
      *
-     * @param kv the Cell object to add to this put operation; must not be null and must have same row key
+     * @param kv the Cell object to add to this put operation; must not be null and must have the same row key as this put
      * @return this AnyPut instance for method chaining
-     * @throws IOException if an I/O error occurs while adding the cell
-     * @throws IllegalArgumentException if the cell's row key doesn't match this put's row key
+     * @throws IOException if the cell's row key does not match this put's row key, or the cell type
+     *         is not a put-type cell (thrown by the underlying {@link Put#add(Cell)})
      * @see Cell
+     * @see Put#add(Cell)
      * @see #addColumn(String, String, Object)
      */
     public AnyPut add(final Cell kv) throws IOException {
@@ -1199,9 +1256,9 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * table.put(puts);   // Batch put with native HBase API
      * }</pre>
      *
-     * @param entities the collection of entities and/or AnyPut instances to convert; must not be null
-     * @return a list of native HBase Put objects
-     * @throws IllegalArgumentException if entities is null or any entity lacks required row key
+     * @param entities the collection of entities and/or AnyPut instances to convert; must not be null and must not contain null elements
+     * @return a list of native HBase Put objects, in iteration order of {@code entities}
+     * @throws IllegalArgumentException if {@code entities} is null, an element is null, or an entity lacks the required row key property
      * @see #toPut(Collection, NamingPolicy)
      * @see #create(Collection)
      * @see Put
@@ -1234,10 +1291,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * table.put(puts);   // All column names will be in snake_case
      * }</pre>
      *
-     * @param entities the collection of entities and/or AnyPut instances to convert; must not be null
+     * @param entities the collection of entities and/or AnyPut instances to convert; must not be null and must not contain null elements
      * @param namingPolicy the naming policy for property-to-column name conversion; must not be null
-     * @return a list of native HBase Put objects
-     * @throws IllegalArgumentException if entities or namingPolicy is null
+     * @return a list of native HBase Put objects, in iteration order of {@code entities}
+     * @throws IllegalArgumentException if {@code entities} or {@code namingPolicy} is null, an element is null, or an entity lacks the required row key property
      * @see #toPut(Collection)
      * @see #create(Collection, NamingPolicy)
      * @see NamingPolicy

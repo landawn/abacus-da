@@ -360,9 +360,15 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      * since the Unix epoch. This is useful for controlling the order of operations, importing historical
      * data, or ensuring consistent timestamps across multiple operations.</p>
      *
+     * <p><b>Note:</b> The string is appended as-is into the generated CQL; no unit conversion is
+     * performed here. The caller is responsible for supplying a value in microseconds (unlike the
+     * {@link #usingTimestamp(long)} and {@link #usingTimestamp(Date)} overloads which convert
+     * milliseconds to microseconds internally).</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * String timestamp = String.valueOf(System.currentTimeMillis());
+     * // Caller must supply microseconds when using this overload:
+     * String timestamp = String.valueOf(System.currentTimeMillis() * 1000L);
      * String cql = PSC.insert("id", "name", "createdAt")
      *                 .into("users")
      *                 .values(123, "John", new Date())
@@ -4715,10 +4721,23 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      */
     public static class PSB extends CqlBuilder {
 
+        /**
+         * Constructs a new PSB instance with {@link NamingPolicy#NO_CHANGE} naming policy
+         * and parameterized CQL policy ({@code ?} placeholders).
+         *
+         * <p>This constructor is package-private and should not be called directly. Use the
+         * static factory methods like {@link #select(String...)}, {@link #insert(String...)},
+         * etc. instead.</p>
+         */
         PSB() {
             super(NamingPolicy.NO_CHANGE, SQLPolicy.PARAMETERIZED_SQL);
         }
 
+        /**
+         * Creates a new instance of PSB for internal use by the static factory methods.
+         *
+         * @return a new PSB instance
+         */
         protected static PSB createInstance() {
             return new PSB();
         }
@@ -5911,10 +5930,23 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      */
     public static class PSC extends CqlBuilder {
 
+        /**
+         * Constructs a new PSC instance with {@link NamingPolicy#SNAKE_CASE} naming policy
+         * and parameterized CQL policy ({@code ?} placeholders).
+         *
+         * <p>This constructor is package-private and should not be called directly. Use the
+         * static factory methods like {@link #select(String...)}, {@link #insert(String...)},
+         * etc. instead.</p>
+         */
         PSC() {
             super(NamingPolicy.SNAKE_CASE, SQLPolicy.PARAMETERIZED_SQL);
         }
 
+        /**
+         * Creates a new instance of PSC for internal use by the static factory methods.
+         *
+         * @return a new PSC instance
+         */
         protected static PSC createInstance() {
             return new PSC();
         }
@@ -7159,10 +7191,23 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      */
     public static class PAC extends CqlBuilder {
 
+        /**
+         * Constructs a new PAC instance with {@link NamingPolicy#SCREAMING_SNAKE_CASE} naming
+         * policy and parameterized CQL policy ({@code ?} placeholders).
+         *
+         * <p>This constructor is package-private and should not be called directly. Use the
+         * static factory methods like {@link #select(String...)}, {@link #insert(String...)},
+         * etc. instead.</p>
+         */
         PAC() {
             super(NamingPolicy.SCREAMING_SNAKE_CASE, SQLPolicy.PARAMETERIZED_SQL);
         }
 
+        /**
+         * Creates a new instance of PAC for internal use by the static factory methods.
+         *
+         * @return a new PAC instance
+         */
         protected static PAC createInstance() {
             return new PAC();
         }
@@ -8365,10 +8410,24 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      */
     public static class PLC extends CqlBuilder {
 
+        /**
+         * Constructs a new PLC instance with {@link NamingPolicy#CAMEL_CASE} naming policy
+         * (no column name conversion is performed) and parameterized CQL policy ({@code ?}
+         * placeholders).
+         *
+         * <p>This constructor is package-private and should not be called directly. Use the
+         * static factory methods like {@link #select(String...)}, {@link #insert(String...)},
+         * etc. instead.</p>
+         */
         PLC() {
             super(NamingPolicy.CAMEL_CASE, SQLPolicy.PARAMETERIZED_SQL);
         }
 
+        /**
+         * Creates a new instance of PLC for internal use by the static factory methods.
+         *
+         * @return a new PLC instance
+         */
         protected static PLC createInstance() {
             return new PLC();
         }
@@ -11082,6 +11141,11 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
             return true;
         }
 
+        /**
+         * Creates a new instance of NSC for internal use by the static factory methods.
+         *
+         * @return a new NSC instance
+         */
         protected static NSC createInstance() {
             return new NSC();
         }
@@ -12163,15 +12227,34 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      */
     public static class NAC extends CqlBuilder {
 
+        /**
+         * Constructs a new NAC instance with {@link NamingPolicy#SCREAMING_SNAKE_CASE} naming
+         * policy and named CQL policy ({@code :paramName} placeholders).
+         *
+         * <p>This constructor is package-private and should not be called directly. Use the
+         * static factory methods like {@link #select(String...)}, {@link #insert(String...)},
+         * etc. instead.</p>
+         */
         NAC() {
             super(NamingPolicy.SCREAMING_SNAKE_CASE, SQLPolicy.NAMED_SQL);
         }
 
+        /**
+         * Indicates whether this builder generates named CQL parameters.
+         *
+         * @return {@code true}, indicating this builder uses named CQL parameters
+         *         (e.g. {@code :paramName}) rather than positional {@code ?} placeholders
+         */
         @Override
         protected boolean isNamedSql() {
             return true;
         }
 
+        /**
+         * Creates a new instance of NAC for internal use by the static factory methods.
+         *
+         * @return a new NAC instance
+         */
         protected static NAC createInstance() {
             return new NAC();
         }
@@ -13299,6 +13382,15 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      */
     public static class NLC extends CqlBuilder {
 
+        /**
+         * Constructs a new NLC instance with {@link NamingPolicy#CAMEL_CASE} naming policy
+         * (no column-name transformation is performed) and named CQL policy ({@code :paramName}
+         * placeholders).
+         *
+         * <p>This constructor is package-private and should not be called directly. Use the
+         * static factory methods like {@link #select(String...)}, {@link #insert(String...)},
+         * etc. instead.</p>
+         */
         NLC() {
             super(NamingPolicy.CAMEL_CASE, SQLPolicy.NAMED_SQL);
         }

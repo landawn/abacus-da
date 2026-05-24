@@ -28,26 +28,26 @@ import org.apache.hadoop.hbase.security.access.Permission;
 import org.apache.hadoop.hbase.security.visibility.Authorizations;
 
 /**
- * Abstract base wrapper for HBase {@code Query} operations that simplifies data retrieval
- * by providing automatic type conversion, advanced filtering capabilities, and comprehensive
- * query configuration management. This class serves as the foundation for all HBase query
- * operations including Get and Scan operations.
+ * Abstract base wrapper for HBase {@link Query} operations — the read-side counterpart of
+ * {@link AnyMutation}. Concrete subclasses are {@link AnyGet} and {@link AnyScan}.
  *
- * <p>This wrapper eliminates the complexity of manual byte array conversions while providing
- * access to advanced HBase query features such as filtering, consistency control, authorization,
- * replica selection, and column family loading strategies.</p>
+ * <p>This class exposes the read-time controls that are common to both single-row Gets and
+ * multi-row Scans: server-side {@link Filter}s, {@link Consistency} level, {@link Authorizations},
+ * row-level ACLs, replica targeting, {@link IsolationLevel}, the load-column-families-on-demand
+ * hint, and per-family time ranges. String family / qualifier names are converted to byte arrays
+ * via {@link HBaseExecutor}.</p>
  *
- * <h3>Key Features:</h3>
+ * <h3>Key features</h3>
  * <ul>
- * <li><strong>Type Safety</strong>: Automatic conversion between Java objects and HBase byte arrays</li>
- * <li><strong>Advanced Filtering</strong>: Server-side filter application with full Filter API support</li>
- * <li><strong>Consistency Control</strong>: Strong vs. timeline consistency options for read operations</li>
- * <li><strong>Security Integration</strong>: Authorization and visibility label support</li>
- * <li><strong>Performance Tuning</strong>: Column family loading, replica selection, and isolation control</li>
- * <li><strong>Time-based Queries</strong>: Per-column-family time range support</li>
+ * <li><strong>Server-side filtering</strong>: any {@link Filter} or {@code FilterList}.</li>
+ * <li><strong>Consistency control</strong>: strong reads from the primary, or timeline-consistent
+ *     reads from any replica.</li>
+ * <li><strong>Security</strong>: visibility-label {@link Authorizations} and ACL bytes.</li>
+ * <li><strong>Performance tuning</strong>: on-demand column-family loading, explicit replica id,
+ *     {@link IsolationLevel}, and per-family time ranges.</li>
  * </ul>
  *
- * <h3>Common Usage Patterns:</h3>
+ * <h3>Common usage patterns</h3>
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * // Basic query with filtering
@@ -57,7 +57,7 @@ import org.apache.hadoop.hbase.security.visibility.Authorizations;
  *
  * // Performance-optimized query
  * anyQuery.setLoadColumnFamiliesOnDemand(true)
- *         .setReplicaId(1)  // Read from specific replica
+ *         .setReplicaId(1)  // Read from a specific replica
  *         .setIsolationLevel(IsolationLevel.READ_COMMITTED);
  *
  * // Time-range filtering per column family
@@ -65,19 +65,20 @@ import org.apache.hadoop.hbase.security.visibility.Authorizations;
  * anyQuery.setColumnFamilyTimeRange("metrics", startTime, System.currentTimeMillis());
  * }</pre>
  *
- * <h3>Consistency Levels:</h3>
+ * <h3>Consistency levels (see {@link Consistency})</h3>
  * <ul>
- * <li><strong>STRONG</strong>: Read from primary replica, strongest consistency</li>
- * <li><strong>TIMELINE</strong>: Read from any replica, eventual consistency</li>
+ * <li><strong>STRONG</strong>: read from the primary region replica only.</li>
+ * <li><strong>TIMELINE</strong>: read from any replica; results may be slightly stale.</li>
  * </ul>
  *
- * <h3>Isolation Levels:</h3>
+ * <h3>Isolation levels (see {@link IsolationLevel})</h3>
  * <ul>
- * <li><strong>READ_COMMITTED</strong>: Only see committed data (default)</li>
- * <li><strong>READ_UNCOMMITTED</strong>: See committed and uncommitted data</li>
+ * <li><strong>READ_COMMITTED</strong>: only committed data is visible (default).</li>
+ * <li><strong>READ_UNCOMMITTED</strong>: in-flight writes are also visible.</li>
  * </ul>
  *
- * @param <AQ> the concrete subtype of AnyQuery for method chaining
+ * @param <AQ> the concrete subtype of {@code AnyQuery}; declared so fluent setters can return
+ *             {@code AQ} and preserve the concrete type during chaining
  * @see AnyOperationWithAttributes
  * @see Query
  * @see AnyGet
@@ -91,10 +92,12 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
     protected final Query query;
 
     /**
-     * Constructs a new AnyQuery wrapper around the specified HBase Query.
+     * Constructs a new {@code AnyQuery} that delegates to the supplied HBase {@link Query}. The
+     * wrapped query is also passed to the {@link AnyOperationWithAttributes} constructor as the
+     * underlying operation.
      *
-     * @param query the HBase Query to wrap; must not be null
-     * @throws IllegalArgumentException if query is null
+     * @param query the HBase {@link Query} to wrap; must not be {@code null}
+     * @throws IllegalArgumentException if {@code query} is {@code null}
      */
     protected AnyQuery(final Query query) {
         super(query);
@@ -102,14 +105,10 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
     }
 
     /**
-     * Returns the server-side filter currently applied to this query.
-     * <p>
-     * Filters enable server-side data filtering, reducing network traffic and
-     * improving query performance by processing filtering logic on the HBase
-     * region servers before returning results to the client.
-     * </p>
+     * Returns the server-side {@link Filter} currently attached to this query, or {@code null} if
+     * none has been set.
      *
-     * @return the current Filter, or null if no filter is set
+     * @return the current {@link Filter}, or {@code null} if no filter is set
      * @see #setFilter(Filter)
      * @see Filter
      */
@@ -118,20 +117,17 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
     }
 
     /**
-     * Applies a server-side filter to this query to reduce network traffic and improve performance.
-     * <p>
-     * Filters are evaluated on the HBase region servers before results are sent to the client,
-     * which significantly reduces network overhead and improves query performance. The filter
-     * is applied AFTER all standard HBase checks (TTL, column matching, deletes, and version limits).
-     * </p>
+     * Attaches a server-side {@link Filter} to this query, replacing any previous filter. The
+     * filter is evaluated after HBase's standard TTL / column-matching / delete-marker / version
+     * checks.
      *
-     * <p><strong>Common Filter Types:</strong></p>
+     * <p><strong>Common filter types:</strong></p>
      * <ul>
-     * <li><strong>SingleColumnValueFilter</strong>: Filter rows based on column values</li>
-     * <li><strong>PrefixFilter</strong>: Match rows with specific row key prefixes</li>
-     * <li><strong>ColumnPrefixFilter</strong>: Match columns with specific prefixes</li>
-     * <li><strong>FilterList</strong>: Combine multiple filters with AND/OR logic</li>
-     * <li><strong>PageFilter</strong>: Limit the number of rows returned</li>
+     * <li><strong>SingleColumnValueFilter</strong>: filter rows based on a column value</li>
+     * <li><strong>PrefixFilter</strong>: match rows by row-key prefix</li>
+     * <li><strong>ColumnPrefixFilter</strong>: match columns by qualifier prefix</li>
+     * <li><strong>FilterList</strong>: combine filters with AND/OR logic</li>
+     * <li><strong>PageFilter</strong>: cap the number of rows returned</li>
      * </ul>
      *
      * <p><b>Usage Examples:</b></p>
@@ -151,8 +147,8 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * query.setFilter(filterList);
      * }</pre>
      *
-     * @param filter the Filter to apply on the server side; can be null to clear any existing filter
-     * @return this query instance for method chaining
+     * @param filter the {@link Filter} to apply; pass {@code null} to clear any existing filter
+     * @return this query instance, to allow fluent method chaining
      * @see #getFilter()
      * @see Filter
      */
@@ -163,15 +159,11 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
     }
 
     /**
-     * Returns the authorization labels for this query operation.
-     * <p>
-     * Authorizations specify which visibility labels the current user possesses,
-     * determining which cells with visibility restrictions can be accessed by this query.
-     * This is part of HBase's cell-level security model.
-     * </p>
+     * Returns the visibility {@link Authorizations} attached to this query. Cells whose
+     * visibility expression is not satisfied by this set are filtered out by the server.
      *
-     * @return the current Authorizations, or null if not set
-     * @throws DeserializationException if authorization data cannot be deserialized
+     * @return the {@link Authorizations} previously set, or {@code null} if none has been set
+     * @throws DeserializationException if the stored authorizations cannot be deserialized by HBase
      * @see #setAuthorizations(Authorizations)
      * @see Authorizations
      */
@@ -180,12 +172,8 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
     }
 
     /**
-     * Sets the authorization labels that this query can access.
-     * <p>
-     * Authorizations define which visibility-labeled cells can be returned by this query.
-     * Only cells with visibility labels that match the provided authorizations will be
-     * included in the query results. This enables fine-grained, cell-level access control.
-     * </p>
+     * Sets the visibility labels this query is allowed to read. Cells whose visibility
+     * expression is not satisfied by these labels are filtered out by the server.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -194,8 +182,8 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * query.setAuthorizations(auths);
      * }</pre>
      *
-     * @param authorizations the authorization labels to apply to this query
-     * @return this query instance for method chaining
+     * @param authorizations the {@link Authorizations} to apply
+     * @return this query instance, to allow fluent method chaining
      * @see #getAuthorizations()
      * @see Authorizations
      */
@@ -206,14 +194,11 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
     }
 
     /**
-     * Returns the serialized Access Control List (ACL) for this query operation.
-     * <p>
-     * The ACL defines which users and groups have specific permissions to perform
-     * this query operation. The returned byte array contains the serialized
-     * representation of the permission structure.
-     * </p>
+     * Returns the serialized Access Control List attached to this query. The bytes are the
+     * protobuf-serialized form of the user-to-permission map written by
+     * {@link #setACL(String, Permission)} or {@link #setACL(Map)}.
      *
-     * @return the serialized ACL for this query operation, or null if no ACL has been set
+     * @return the serialized ACL bytes, or {@code null} if no ACL has been set
      * @see #setACL(String, Permission)
      * @see #setACL(Map)
      * @see Permission
@@ -223,12 +208,8 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
     }
 
     /**
-     * Sets Access Control List permissions for a specific user on this query operation.
-     * <p>
-     * This method grants specific permissions to a single user for executing this query.
-     * The permissions control what actions the user can perform, such as reading data
-     * from the table.
-     * </p>
+     * Grants the specified {@link Permission} to a single user on this query. Existing ACL
+     * settings on the query are replaced.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -236,10 +217,9 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * query.setACL("alice", new Permission(Permission.Action.READ));
      * }</pre>
      *
-     * @param user the username to grant permissions to; must not be null
-     * @param perms the Permission object defining what actions are allowed
-     * @return this query instance for method chaining
-     * @throws IllegalArgumentException if user is null
+     * @param user the username to grant permissions to
+     * @param perms the {@link Permission} defining the allowed actions
+     * @return this query instance, to allow fluent method chaining
      * @see #getACL()
      * @see #setACL(Map)
      * @see Permission
@@ -251,12 +231,8 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
     }
 
     /**
-     * Sets Access Control List permissions for multiple users on this query operation.
-     * <p>
-     * This method allows setting permissions for multiple users in a single call.
-     * Each entry in the map specifies a username and the corresponding permissions
-     * that user should have for executing this query.
-     * </p>
+     * Grants the specified {@link Permission}s to multiple users on this query. Existing ACL
+     * settings on the query are replaced.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -266,9 +242,8 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * query.setACL(acl);
      * }</pre>
      *
-     * @param perms a map of usernames to their corresponding Permission objects; must not be null
-     * @return this query instance for method chaining
-     * @throws IllegalArgumentException if perms is null
+     * @param perms a map of username to {@link Permission}
+     * @return this query instance, to allow fluent method chaining
      * @see #getACL()
      * @see #setACL(String, Permission)
      * @see Permission
@@ -280,16 +255,13 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
     }
 
     /**
-     * Returns the consistency level set for this query operation.
-     * <p>
-     * Consistency levels determine the trade-off between read performance and data freshness:
-     * </p>
+     * Returns the {@link Consistency} level configured for this query.
      * <ul>
-     * <li><strong>STRONG</strong>: Always read from primary replica, strongest consistency</li>
-     * <li><strong>TIMELINE</strong>: May read from secondary replicas, eventual consistency</li>
+     * <li><strong>STRONG</strong>: always read from the primary region replica.</li>
+     * <li><strong>TIMELINE</strong>: may read from any replica; the result can be stale.</li>
      * </ul>
      *
-     * @return the current consistency level for this query
+     * @return the current consistency level
      * @see #setConsistency(Consistency)
      * @see Consistency
      */
@@ -298,19 +270,16 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
     }
 
     /**
-     * Sets the consistency level for this query to control read behavior.
-     * <p>
-     * This setting determines whether the query should prioritize consistency or availability:
-     * </p>
+     * Sets the {@link Consistency} level for this query.
      * <ul>
-     * <li><strong>STRONG</strong>: Reads from primary replica only, may be slower but always consistent</li>
-     * <li><strong>TIMELINE</strong>: Reads from any available replica, faster but potentially stale data</li>
+     * <li><strong>STRONG</strong>: reads from the primary replica only — slower but always consistent.</li>
+     * <li><strong>TIMELINE</strong>: reads from any available replica — faster but potentially stale.</li>
      * </ul>
-     * 
-     * <p>Use TIMELINE consistency with {@link #setReplicaId(int)} for reading from specific replicas.</p>
      *
-     * @param consistency the consistency level to apply to this query
-     * @return this query instance for method chaining
+     * <p>Combine with {@link #setReplicaId(int)} to pin a TIMELINE read to a specific replica.</p>
+     *
+     * @param consistency the consistency level to apply
+     * @return this query instance, to allow fluent method chaining
      * @see #getConsistency()
      * @see #setReplicaId(int)
      * @see Consistency
@@ -322,14 +291,11 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
     }
 
     /**
-     * Returns the region replica ID from which this query will fetch data.
-     * <p>
-     * Replica IDs allow reading from specific replicas in a replicated HBase setup.
-     * This can be useful for load balancing read operations or when you need to read
-     * from a geographically closer replica.
-     * </p>
+     * Returns the region replica id this query is pinned to, or {@code -1} when none has been
+     * pinned (in which case the read is satisfied by the primary, or by any replica when
+     * {@link Consistency#TIMELINE} is in effect).
      *
-     * @return the region replica ID, or -1 if not set (reads from primary)
+     * @return the pinned replica id, or {@code -1} if none
      * @see #setReplicaId(int)
      * @see #setConsistency(Consistency)
      */
@@ -338,19 +304,9 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
     }
 
     /**
-     * Specifies the region replica ID from which this query should fetch data.
-     * <p>
-     * <strong>Expert API:</strong> This is an advanced feature that should only be used
-     * if you understand HBase replication architecture. Use this together with
-     * {@code setConsistency(Consistency.TIMELINE)} to enable reads from secondary replicas.
-     * </p>
-     * 
-     * <p><strong>Use Cases:</strong></p>
-     * <ul>
-     * <li><strong>Load Distribution</strong>: Spread read load across multiple replicas</li>
-     * <li><strong>Geographic Optimization</strong>: Read from geographically closer replicas</li>
-     * <li><strong>Failover Scenarios</strong>: Continue reading when primary replica is unavailable</li>
-     * </ul>
+     * Pins this query to a specific region replica id. Intended for advanced use cases such as
+     * spreading read load across replicas or reading from a geographically closer replica;
+     * normally combined with {@link #setConsistency(Consistency)} of {@link Consistency#TIMELINE}.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -358,8 +314,8 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      *      .setReplicaId(1);   // Read from replica 1 instead of primary (0)
      * }</pre>
      *
-     * @param id the replica ID to read from (0 = primary, 1+ = secondary replicas)
-     * @return this query instance for method chaining
+     * @param id the replica id to read from ({@code 0} = primary; {@code 1+} = secondaries)
+     * @return this query instance, to allow fluent method chaining
      * @see #getReplicaId()
      * @see #setConsistency(Consistency)
      * @see Consistency#TIMELINE
@@ -371,16 +327,15 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
     }
 
     /**
-     * Returns the isolation level set for this query operation.
-     * <p>
-     * Isolation levels control which data versions are visible during query execution:
-     * </p>
+     * Returns the {@link IsolationLevel} configured for this query.
      * <ul>
-     * <li><strong>READ_COMMITTED</strong>: Only see committed data (default, safer)</li>
-     * <li><strong>READ_UNCOMMITTED</strong>: See both committed and uncommitted data (faster, less safe)</li>
+     * <li><strong>READ_COMMITTED</strong>: only committed data is visible (default).</li>
+     * <li><strong>READ_UNCOMMITTED</strong>: also includes in-flight writes that have not yet
+     *     been committed.</li>
      * </ul>
      *
-     * @return the isolation level for this query; defaults to READ_COMMITTED if not explicitly set
+     * @return the isolation level; defaults to {@link IsolationLevel#READ_COMMITTED} when none
+     *         has been set explicitly
      * @see #setIsolationLevel(IsolationLevel)
      * @see IsolationLevel
      */
@@ -389,22 +344,16 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
     }
 
     /**
-     * Sets the isolation level for this query to control transaction visibility.
-     * <p>
-     * Isolation levels determine what data this query can see during concurrent operations:
-     * </p>
+     * Sets the {@link IsolationLevel} for this query, controlling whether in-flight (uncommitted)
+     * writes are visible.
      * <ul>
-     * <li><strong>READ_COMMITTED</strong>: Only returns data from committed transactions,
-     *     providing stronger consistency but potentially missing recent writes</li>
-     * <li><strong>READ_UNCOMMITTED</strong>: Returns data from both committed and uncommitted transactions,
-     *     providing faster reads but potentially seeing data that may be rolled back</li>
+     * <li><strong>READ_COMMITTED</strong>: only committed data is visible — stronger guarantee.</li>
+     * <li><strong>READ_UNCOMMITTED</strong>: also includes in-flight writes — may see data that
+     *     is subsequently rolled back.</li>
      * </ul>
-     * 
-     * <p><strong>Use READ_UNCOMMITTED carefully:</strong> While it can improve performance,
-     * it may return data that hasn't been fully committed and could be subject to rollback.</p>
      *
-     * @param level the isolation level to apply to this query
-     * @return this query instance for method chaining
+     * @param level the isolation level to apply
+     * @return this query instance, to allow fluent method chaining
      * @see #getIsolationLevel()
      * @see IsolationLevel
      */
@@ -415,14 +364,12 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
     }
 
     /**
-     * Returns the raw loadColumnFamiliesOnDemand setting for this query.
-     * <p>
-     * This method returns the exact value that was set, which can be null if the setting
-     * was never configured. Use {@link #doLoadColumnFamiliesOnDemand()} to get the
-     * effective boolean value that will be used.
-     * </p>
+     * Returns the raw {@code loadColumnFamiliesOnDemand} setting as it was supplied to
+     * {@link #setLoadColumnFamiliesOnDemand(boolean)} — or {@code null} when the setting has not
+     * been explicitly configured. Use {@link #doLoadColumnFamiliesOnDemand()} to get the effective
+     * {@code boolean} value after server-side defaults are applied.
      *
-     * @return the loadColumnFamiliesOnDemand setting, or null if not explicitly set
+     * @return the raw setting, or {@code null} if it has not been set
      * @see #setLoadColumnFamiliesOnDemand(boolean)
      * @see #doLoadColumnFamiliesOnDemand()
      */
@@ -470,7 +417,7 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      *
      * @param value {@code true} to enable on-demand column family loading;
      *              {@code false} to load all column families upfront (default)
-     * @return this query instance for method chaining
+     * @return this query instance, to allow fluent method chaining
      * @see #doLoadColumnFamiliesOnDemand()
      * @see #getLoadColumnFamiliesOnDemandValue()
      */
@@ -481,12 +428,9 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
     }
 
     /**
-     * Returns whether on-demand column family loading is enabled for this query.
-     * <p>
-     * This method returns the effective boolean value that will be used, taking into
-     * account both explicit settings and cluster defaults. On-demand loading can
-     * significantly improve performance when you're filtering on specific columns.
-     * </p>
+     * Returns the effective {@code boolean} value of the {@code loadColumnFamiliesOnDemand}
+     * setting after any cluster defaults are applied. Unlike
+     * {@link #getLoadColumnFamiliesOnDemandValue()}, this method never returns {@code null}.
      *
      * @return {@code true} if on-demand column family loading is enabled, {@code false} otherwise
      * @see #setLoadColumnFamiliesOnDemand(boolean)
@@ -497,14 +441,10 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
     }
 
     /**
-     * Returns the per-column-family time ranges set for this query.
-     * <p>
-     * Column family time ranges allow specifying different time windows for different
-     * column families within the same query. This enables fine-grained temporal filtering
-     * when different column families have different update patterns or time requirements.
-     * </p>
+     * Returns the per-column-family time ranges set on this query. Keys are family names as
+     * byte arrays; values are the {@link TimeRange} restrictions applied to those families.
      *
-     * @return a Map of column family names to their TimeRange objects; never null but may be empty
+     * @return the per-family time-range map; never {@code null} but may be empty
      * @see #setColumnFamilyTimeRange(String, long, long)
      * @see TimeRange
      */
@@ -544,11 +484,13 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      *        System.currentTimeMillis());
      * }</pre>
      *
-     * @param cf the column family name to apply the time range filter to; must not be null
-     * @param minStamp minimum timestamp value in milliseconds, inclusive
-     * @param maxStamp maximum timestamp value in milliseconds, exclusive
-     * @return this query instance for method chaining
-     * @throws IllegalArgumentException if minStamp or maxStamp is negative, or maxStamp is less than minStamp
+     * @param cf the column-family name; converted to bytes via
+     *           {@link HBaseExecutor#toFamilyQualifierBytes(String)}
+     * @param minStamp minimum timestamp, in milliseconds, inclusive
+     * @param maxStamp maximum timestamp, in milliseconds, exclusive
+     * @return this query instance, to allow fluent method chaining
+     * @throws IllegalArgumentException if {@code minStamp} or {@code maxStamp} is negative or if
+     *         {@code maxStamp < minStamp}
      * @see #setColumnFamilyTimeRange(byte[], long, long)
      * @see #getColumnFamilyTimeRange()
      * @see TimeRange
@@ -583,11 +525,12 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * query.setColumnFamilyTimeRange(cfBytes, startTime, endTime);
      * }</pre>
      *
-     * @param cf the column family name as a byte array; must not be null
-     * @param minStamp minimum timestamp value in milliseconds, inclusive
-     * @param maxStamp maximum timestamp value in milliseconds, exclusive
-     * @return this query instance for method chaining
-     * @throws IllegalArgumentException if minStamp or maxStamp is negative, or maxStamp is less than minStamp
+     * @param cf the column-family name as a byte array
+     * @param minStamp minimum timestamp, in milliseconds, inclusive
+     * @param maxStamp maximum timestamp, in milliseconds, exclusive
+     * @return this query instance, to allow fluent method chaining
+     * @throws IllegalArgumentException if {@code minStamp} or {@code maxStamp} is negative or if
+     *         {@code maxStamp < minStamp}
      * @see #setColumnFamilyTimeRange(String, long, long)
      * @see #getColumnFamilyTimeRange()
      * @see TimeRange

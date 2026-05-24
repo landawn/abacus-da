@@ -22,21 +22,26 @@ import org.apache.hadoop.hbase.client.Operation;
 import com.landawn.abacus.exception.UncheckedIOException;
 
 /**
- * Abstract base class that provides a wrapper around HBase's {@code Operation} class to simplify
- * operations by reducing the need for manual conversion between bytes and String/Object types.
- * <p>
- * This class serves as the foundation for various HBase operation wrapper classes in the
- * abacus-da library, providing common functionality for operation fingerprinting, serialization,
- * and string representation.
- * </p>
+ * Abstract base class that wraps an HBase {@link Operation} and exposes its
+ * fingerprint / map / JSON / string representations through a simpler API that does not require
+ * callers to convert between byte arrays and Java {@link String}s or {@link Object}s.
+ *
+ * <p>This class is the root of the {@code AnyOperation} hierarchy in the abacus-da library and
+ * supplies the common metadata-introspection methods (fingerprint, {@code toMap}, {@code toJson},
+ * {@code toString}) that every concrete operation wrapper inherits. Mutation-specific or
+ * query-specific behaviour is added by the subclasses {@link AnyOperationWithAttributes},
+ * {@link AnyMutation}, and {@link AnyQuery}.</p>
  *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * AnyGet anyGet = AnyGet.of("user123");
  * Map<String, Object> fingerprint = anyGet.getFingerprint();
+ * String json = anyGet.toJson();
  * }</pre>
  *
- * @param <AO> the concrete subtype of AnyOperation, enabling method chaining with proper return types
+ * @param <AO> the concrete subtype of {@code AnyOperation}; declared so subclasses (such as
+ *             {@link AnyOperationWithAttributes}) can return {@code AO} from fluent setters and
+ *             preserve the concrete type during method chaining
  * @see <a href="http://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
  * @see org.apache.hadoop.hbase.client.Operation
  */
@@ -45,10 +50,12 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
     protected final Operation op;
 
     /**
-     * Constructs a new AnyOperation wrapper around the specified HBase Operation.
+     * Constructs a new {@code AnyOperation} that delegates to the supplied HBase {@link Operation}.
+     * The wrapped operation is stored in the {@code op} field and used by every other method on
+     * this class.
      *
-     * @param op the HBase Operation to wrap; must not be null
-     * @throws IllegalArgumentException if op is null
+     * @param op the HBase {@link Operation} to wrap; must not be {@code null}
+     * @throws IllegalArgumentException if {@code op} is {@code null}
      */
     protected AnyOperation(final Operation op) {
         if (op == null) {
@@ -58,62 +65,58 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
     }
 
     /**
-     * Returns a map containing the fingerprint of this operation, which includes
-     * key characteristics that uniquely identify the operation type and structure.
-     * <p>
-     * The fingerprint typically includes information such as operation type,
-     * target table, row key, and other identifying attributes.
-     * </p>
+     * Returns the fingerprint of this operation as supplied by the underlying HBase
+     * {@link Operation#getFingerprint()}. The fingerprint captures the structural shape of the
+     * operation (such as the affected column families) but does not include row keys, qualifier
+     * values, or other potentially high-cardinality identifiers; it is meant to group operations
+     * with the same schema for metrics and monitoring rather than to uniquely identify them.
      *
-     * @return a Map containing key-value pairs representing the operation's fingerprint;
-     *         never null but may be empty
+     * @return the fingerprint map produced by HBase; never {@code null} but may be empty
+     * @see #toMap()
      */
     public Map<String, Object> getFingerprint() {
         return op.getFingerprint();
     }
 
     /**
-     * Converts this operation to a Map representation containing all operation details.
-     * <p>
-     * This method provides a comprehensive view of the operation's structure and data,
-     * including all columns, values, and metadata. The resulting map can be useful
-     * for debugging, logging, or serialization purposes.
-     * </p>
+     * Converts this operation to a {@link Map} representation containing all operation details,
+     * up to HBase's default column limit (see {@link #toMap(int)} for an explicit limit). The
+     * resulting map combines the {@linkplain #getFingerprint() fingerprint} with row-, column-,
+     * and value-level details and is intended for debugging, logging, or serialization.
      *
-     * @return a Map representation of this operation containing all operation details;
-     *         never null but may be empty
+     * @return a {@code Map} representation of this operation; never {@code null}
+     * @see #toMap(int)
+     * @see #getFingerprint()
      */
     public Map<String, Object> toMap() {
         return op.toMap();
     }
 
     /**
-     * Converts this operation to a Map representation with a limit on the number of columns included.
-     * <p>
-     * This method is similar to {@link #toMap()} but allows limiting the number of columns
-     * included in the output, which can be useful for large operations where you want to
-     * avoid overwhelming output or improve performance.
-     * </p>
+     * Converts this operation to a {@link Map} representation, capping the number of columns
+     * included per family at {@code maxCols}. This is the explicit-limit counterpart to
+     * {@link #toMap()} and is useful for very large operations where the full map would be
+     * impractical to log or serialize.
      *
-     * @param maxCols the maximum number of columns to include in the map representation
-     * @return a Map representation of this operation with at most maxCols columns;
-     *         never null but may be empty
+     * @param maxCols the maximum number of columns to include per family in the map representation
+     * @return a {@code Map} representation of this operation with at most {@code maxCols} columns
+     *         per family; never {@code null}
+     * @see #toMap()
      */
     public Map<String, Object> toMap(final int maxCols) {
         return op.toMap(maxCols);
     }
 
     /**
-     * Converts this operation to a JSON string representation.
-     * <p>
-     * This method serializes the entire operation structure to JSON format,
-     * which is useful for logging, debugging, or network transmission. The JSON
-     * includes all operation details such as row key, column families, qualifiers,
-     * and values.
-     * </p>
+     * Serializes this operation to a JSON string by delegating to
+     * {@link Operation#toJSON()}. The JSON includes the operation's row key, column families,
+     * qualifiers, values, and other details, and is intended for logging, debugging, or network
+     * transmission. The underlying {@link IOException} thrown by HBase is wrapped as an
+     * {@link UncheckedIOException}.
      *
-     * @return a JSON string representation of this operation; never null
-     * @throws UncheckedIOException if an I/O error occurs during JSON serialization
+     * @return a JSON string representation of this operation; never {@code null}
+     * @throws UncheckedIOException if HBase's JSON serialization throws an {@link IOException}
+     * @see #toJson(int)
      */
     public String toJson() {
         try {
@@ -124,17 +127,15 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
     }
 
     /**
-     * Converts this operation to a JSON string representation with a limit on the number of columns.
-     * <p>
-     * This method is similar to {@link #toJson()} but allows limiting the number of columns
-     * included in the JSON output. This can be useful for large operations where you want
-     * more manageable output or improved performance.
-     * </p>
+     * Serializes this operation to a JSON string, capping the number of columns included per
+     * family at {@code maxCols}. The explicit-limit counterpart to {@link #toJson()}; useful for
+     * very large operations where the full JSON would be impractical to log.
      *
-     * @param maxCols the maximum number of columns to include in the JSON representation
-     * @return a JSON string representation of this operation with at most maxCols columns;
-     *         never null
-     * @throws UncheckedIOException if an I/O error occurs during JSON serialization
+     * @param maxCols the maximum number of columns to include per family in the JSON representation
+     * @return a JSON string representation of this operation with at most {@code maxCols} columns
+     *         per family; never {@code null}
+     * @throws UncheckedIOException if HBase's JSON serialization throws an {@link IOException}
+     * @see #toJson()
      */
     public String toJson(final int maxCols) {
         try {
@@ -168,14 +169,11 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
     //    }
 
     /**
-     * Returns a string representation of this operation.
-     * <p>
-     * This method provides a human-readable string representation of the operation,
-     * including all relevant details. The format is determined by the underlying
-     * HBase Operation's toString() implementation.
-     * </p>
+     * Returns a human-readable string representation of this operation. The exact format is
+     * delegated to the underlying HBase {@link Operation#toString()} implementation.
      *
-     * @return a string representation of this operation; never null
+     * @return a string representation of this operation; never {@code null}
+     * @see #toString(int)
      */
     @Override
     public String toString() {
@@ -183,16 +181,14 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
     }
 
     /**
-     * Returns a string representation of this operation with a limit on the number of columns.
-     * <p>
-     * This method is similar to {@link #toString()} but allows limiting the number of columns
-     * included in the string representation. This can help manage output size for operations
-     * with many columns.
-     * </p>
+     * Returns a human-readable string representation of this operation, capping the number of
+     * columns included per family at {@code maxCols}. Useful for limiting log output for very
+     * large operations.
      *
-     * @param maxCols the maximum number of columns to include in the string representation
-     * @return a string representation of this operation with at most maxCols columns;
-     *         never null
+     * @param maxCols the maximum number of columns to include per family in the string representation
+     * @return a string representation of this operation with at most {@code maxCols} columns
+     *         per family; never {@code null}
+     * @see #toString()
      */
     public String toString(final int maxCols) {
         return op.toString(maxCols);

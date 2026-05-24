@@ -2928,4 +2928,899 @@ public class CqlBuilderTest extends TestBase {
         assertNotNull(NSC.deleteFrom("t").where(Filters.eq("id", 1)).build().query());
         assertNotNull(NSC.count("t").build().query());
     }
+
+    // ---------------------------------------------------------------------------------------------
+    // PSC (SNAKE_CASE + PARAMETERIZED_SQL): snake_case columns + '?' placeholders.
+    // ---------------------------------------------------------------------------------------------
+
+    @Test
+    public void testPSC_insertString() {
+        final String cql = PSC.insert("firstName").into("account").build().query();
+        assertEquals("INSERT INTO account (first_name) VALUES (?)", cql);
+    }
+
+    @Test
+    public void testPSC_insertStringArray() {
+        final String cql = PSC.insert("firstName", "lastName").into("account").build().query();
+        assertEquals("INSERT INTO account (first_name, last_name) VALUES (?, ?)", cql);
+    }
+
+    @Test
+    public void testPSC_insertCollection() {
+        final String cql = PSC.insert(N.asList("firstName", "lastName")).into("account").build().query();
+        assertEquals("INSERT INTO account (first_name, last_name) VALUES (?, ?)", cql);
+    }
+
+    @Test
+    public void testPSC_insertMap() {
+        final Map<String, Object> props = N.asMap("firstName", Filters.QME);
+        final String cql = PSC.insert(props).into("account").build().query();
+        assertEquals("INSERT INTO account (first_name) VALUES (?)", cql);
+    }
+
+    @Test
+    public void testPSC_insertEntity() {
+        final Account a = new Account();
+        a.setFirstName("John");
+        final String cql = PSC.insert(a).into("account").build().query();
+        assertTrue(cql.startsWith("INSERT INTO account"), cql);
+        assertTrue(cql.contains("first_name"), cql);
+        assertTrue(cql.contains("?"), cql);
+    }
+
+    @Test
+    public void testPSC_insertEntityWithExcluded() {
+        final Account a = new Account();
+        a.setFirstName("John");
+        a.setLastName("Doe");
+        final String cql = PSC.insert(a, N.asSet("lastName")).into("account").build().query();
+        assertTrue(cql.contains("first_name"), cql);
+        assertTrue(!cql.contains("last_name"), cql);
+    }
+
+    @Test
+    public void testPSC_insertClass() {
+        final String cql = PSC.insert(Account.class).into("account").build().query();
+        assertTrue(cql.startsWith("INSERT INTO account"), cql);
+        assertTrue(cql.contains("first_name"), cql);
+    }
+
+    @Test
+    public void testPSC_insertClassWithExcluded() {
+        final String cql = PSC.insert(Account.class, N.asSet("firstName")).into("account").build().query();
+        assertTrue(!cql.contains("first_name"), cql);
+    }
+
+    @Test
+    public void testPSC_insertIntoClass() {
+        final String cql = PSC.insertInto(Users.class).build().query();
+        assertTrue(cql.startsWith("INSERT INTO simplex.users"), cql);
+    }
+
+    @Test
+    public void testPSC_insertIntoClassWithExcluded() {
+        final String cql = PSC.insertInto(Users.class, N.asSet("createdTime")).build().query();
+        assertTrue(!cql.contains("created_time"), cql);
+    }
+
+    @Test
+    public void testPSC_batchInsert() {
+        final String cql = PSC.batchInsert(N.asList(N.asMap("firstName", "a"), N.asMap("firstName", "b"))).into("account").build().query();
+        assertTrue(cql.startsWith("INSERT INTO account"), cql);
+        assertTrue(cql.contains("first_name"), cql);
+    }
+
+    @Test
+    public void testPSC_updateString() {
+        final String cql = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).build().query();
+        assertEquals("UPDATE account SET first_name = ? WHERE id = ?", cql);
+    }
+
+    @Test
+    public void testPSC_updateStringClass() {
+        final String cql = PSC.update("account", Account.class).set("firstName").where(Filters.eq("id", 1)).build().query();
+        assertTrue(cql.startsWith("UPDATE account SET first_name"), cql);
+    }
+
+    @Test
+    public void testPSC_updateClass() {
+        final String cql = PSC.update(Account.class).set("firstName").where(Filters.eq("id", 1)).build().query();
+        assertTrue(cql.contains("UPDATE"), cql);
+        assertTrue(cql.contains("first_name"), cql);
+    }
+
+    @Test
+    public void testPSC_updateClassWithExcluded() {
+        final String cql = PSC.update(Account.class, N.asSet("id", "createTime")).where(Filters.eq("id", 1)).build().query();
+        assertTrue(cql.contains("UPDATE"), cql);
+        assertTrue(!cql.contains("SET id"), cql);
+    }
+
+    @Test
+    public void testPSC_deleteString() {
+        final String cql = PSC.delete("firstName").from("account").where(Filters.eq("id", 1)).build().query();
+        assertEquals("DELETE first_name FROM account WHERE id = ?", cql);
+    }
+
+    @Test
+    public void testPSC_deleteStringArray() {
+        final String cql = PSC.delete("firstName", "lastName").from("account").where(Filters.eq("id", 1)).build().query();
+        assertEquals("DELETE first_name, last_name FROM account WHERE id = ?", cql);
+    }
+
+    @Test
+    public void testPSC_deleteCollection() {
+        final String cql = PSC.delete(N.asList("firstName", "lastName")).from("account").where(Filters.eq("id", 1)).build().query();
+        assertEquals("DELETE first_name, last_name FROM account WHERE id = ?", cql);
+    }
+
+    @Test
+    public void testPSC_deleteClass() {
+        final String cql = PSC.delete(Account.class).from("account").where(Filters.eq("id", 1)).build().query();
+        assertTrue(cql.startsWith("DELETE "), cql);
+        assertTrue(cql.contains("FROM account"), cql);
+    }
+
+    @Test
+    public void testPSC_deleteClassWithExcluded() {
+        final String cql = PSC.delete(Account.class, N.asSet("firstName")).from("account").where(Filters.eq("id", 1)).build().query();
+        assertTrue(cql.startsWith("DELETE "), cql);
+        assertTrue(!cql.contains(" first_name"), cql);
+    }
+
+    @Test
+    public void testPSC_deleteFromString() {
+        final String cql = PSC.deleteFrom("account").where(Filters.eq("id", 1)).build().query();
+        assertEquals("DELETE FROM account WHERE id = ?", cql);
+    }
+
+    @Test
+    public void testPSC_deleteFromStringClass() {
+        final String cql = PSC.deleteFrom("account", Account.class).where(Filters.eq("id", 1)).build().query();
+        assertTrue(cql.startsWith("DELETE FROM account"), cql);
+    }
+
+    @Test
+    public void testPSC_deleteFromClass() {
+        final String cql = PSC.deleteFrom(Users.class).build().query();
+        assertEquals("DELETE FROM simplex.users", cql);
+    }
+
+    @Test
+    public void testPSC_selectString() {
+        // SNAKE_CASE select produces "snake AS \"camel\"" aliasing.
+        final String cql = PSC.select("firstName").from("account").build().query();
+        assertEquals("SELECT first_name AS \"firstName\" FROM account", cql);
+    }
+
+    @Test
+    public void testPSC_selectStringArray() {
+        final String cql = PSC.select("firstName", "lastName").from("account").build().query();
+        assertEquals("SELECT first_name AS \"firstName\", last_name AS \"lastName\" FROM account", cql);
+    }
+
+    @Test
+    public void testPSC_selectCollection() {
+        final String cql = PSC.select(N.asList("firstName", "lastName")).from("account").build().query();
+        assertEquals("SELECT first_name AS \"firstName\", last_name AS \"lastName\" FROM account", cql);
+    }
+
+    @Test
+    public void testPSC_selectMap() {
+        final String cql = PSC.select(N.asMap("firstName", "fn")).from("account").build().query();
+        assertTrue(cql.startsWith("SELECT first_name"), cql);
+        assertTrue(cql.contains("\"fn\""), cql);
+    }
+
+    @Test
+    public void testPSC_selectClass() {
+        final String cql = PSC.select(Account.class).from("account").build().query();
+        assertTrue(cql.startsWith("SELECT "), cql);
+        assertTrue(cql.contains("first_name"), cql);
+    }
+
+    @Test
+    public void testPSC_selectClassWithSubEntities() {
+        final String cql = PSC.select(Account.class, false).from("account").build().query();
+        assertTrue(cql.startsWith("SELECT "), cql);
+    }
+
+    @Test
+    public void testPSC_selectClassWithExcluded() {
+        final String cql = PSC.select(Account.class, N.asSet("firstName")).from("account").build().query();
+        assertTrue(!cql.contains(" first_name"), cql);
+    }
+
+    @Test
+    public void testPSC_selectClassFull() {
+        final String cql = PSC.select(Account.class, false, N.asSet("firstName")).from("account").build().query();
+        assertTrue(!cql.contains(" first_name"), cql);
+    }
+
+    @Test
+    public void testPSC_selectFromClass() {
+        final String cql = PSC.selectFrom(Users.class).build().query();
+        assertTrue(cql.startsWith("SELECT "), cql);
+        assertTrue(cql.contains("FROM simplex.users"), cql);
+    }
+
+    @Test
+    public void testPSC_selectFromClassWithAlias() {
+        final String cql = PSC.selectFrom(Users.class, "u").build().query();
+        assertTrue(cql.contains("FROM simplex.users u"), cql);
+    }
+
+    @Test
+    public void testPSC_selectFromClassWithSubEntities() {
+        final String cql = PSC.selectFrom(Account.class, false).build().query();
+        assertTrue(cql.startsWith("SELECT "), cql);
+    }
+
+    @Test
+    public void testPSC_selectFromClassWithExcluded() {
+        final String cql = PSC.selectFrom(Account.class, N.asSet("firstName")).build().query();
+        assertTrue(!cql.contains(" first_name"), cql);
+    }
+
+    @Test
+    public void testPSC_selectFromClassAliasSubEntities() {
+        final String cql = PSC.selectFrom(Users.class, "u", false).build().query();
+        assertTrue(cql.contains("FROM simplex.users u"), cql);
+    }
+
+    @Test
+    public void testPSC_selectFromClassAliasExcluded() {
+        final String cql = PSC.selectFrom(Users.class, "u", N.asSet("createdTime")).build().query();
+        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        assertTrue(!cql.contains("created_time"), cql);
+    }
+
+    @Test
+    public void testPSC_selectFromClassSubEntitiesExcluded() {
+        final String cql = PSC.selectFrom(Account.class, false, N.asSet("firstName")).build().query();
+        assertTrue(!cql.contains(" first_name"), cql);
+    }
+
+    @Test
+    public void testPSC_selectFromClassFull() {
+        final String cql = PSC.selectFrom(Users.class, "u", false, N.asSet("createdTime")).build().query();
+        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        assertTrue(!cql.contains("created_time"), cql);
+    }
+
+    @Test
+    public void testPSC_countString() {
+        final String cql = PSC.count("account").where(Filters.eq("id", 1)).build().query();
+        assertEquals("SELECT count(*) FROM account WHERE id = ?", cql);
+    }
+
+    @Test
+    public void testPSC_countClass() {
+        final String cql = PSC.count(Users.class).build().query();
+        assertEquals("SELECT count(*) FROM simplex.users", cql);
+    }
+
+    @Test
+    public void testPSC_parse() {
+        final String cql = PSC.parse(Filters.eq("firstName", "John"), Account.class).build().query();
+        assertTrue(cql.contains("first_name"), cql);
+        assertTrue(cql.contains("?"), cql);
+    }
+
+    @Test
+    public void testPSC_insert_EmptyString() {
+        assertThrows(IllegalArgumentException.class, () -> PSC.insert(""));
+    }
+
+    @Test
+    public void testPSC_chainBuildable() {
+        // Smoke test: every public factory must reach createInstance() and build() must return a usable query.
+        assertNotNull(PSC.select("a").from("t").build().query());
+        assertNotNull(PSC.insert("a").into("t").build().query());
+        assertNotNull(PSC.update("t").set("a").where(Filters.eq("id", 1)).build().query());
+        assertNotNull(PSC.deleteFrom("t").where(Filters.eq("id", 1)).build().query());
+        assertNotNull(PSC.count("t").build().query());
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // SCCB (SNAKE_CASE + RAW_SQL): snake_case columns, inlined literal values.
+    // ---------------------------------------------------------------------------------------------
+
+    @Test
+    public void testSCCB_insertString() {
+        final String cql = SCCB.insert("firstName").into("account").build().query();
+        assertTrue(cql.startsWith("INSERT INTO account"), cql);
+        assertTrue(cql.contains("first_name"), cql);
+    }
+
+    @Test
+    public void testSCCB_insertStringArray() {
+        final String cql = SCCB.insert("firstName", "lastName").into("account").build().query();
+        assertTrue(cql.contains("first_name") && cql.contains("last_name"), cql);
+    }
+
+    @Test
+    public void testSCCB_insertCollection() {
+        final String cql = SCCB.insert(N.asList("firstName")).into("account").build().query();
+        assertTrue(cql.contains("first_name"), cql);
+    }
+
+    @Test
+    public void testSCCB_insertMap() {
+        final String cql = SCCB.insert(N.asMap("firstName", "John")).into("account").build().query();
+        assertTrue(cql.contains("first_name"), cql);
+        assertTrue(cql.contains("'John'"), cql);
+    }
+
+    @Test
+    public void testSCCB_insertEntity() {
+        final Account a = new Account();
+        a.setFirstName("John");
+        final String cql = SCCB.insert(a).into("account").build().query();
+        assertTrue(cql.contains("first_name"), cql);
+        assertTrue(cql.contains("'John'"), cql);
+    }
+
+    @Test
+    public void testSCCB_insertEntityWithExcluded() {
+        final Account a = new Account();
+        a.setFirstName("J");
+        a.setLastName("D");
+        final String cql = SCCB.insert(a, N.asSet("lastName")).into("account").build().query();
+        assertTrue(!cql.contains("last_name"), cql);
+    }
+
+    @Test
+    public void testSCCB_insertClass() {
+        final String cql = SCCB.insert(Account.class).into("account").build().query();
+        assertTrue(cql.contains("first_name"), cql);
+    }
+
+    @Test
+    public void testSCCB_insertClassWithExcluded() {
+        final String cql = SCCB.insert(Account.class, N.asSet("firstName")).into("account").build().query();
+        assertTrue(!cql.contains("first_name"), cql);
+    }
+
+    @Test
+    public void testSCCB_insertIntoClass() {
+        final String cql = SCCB.insertInto(Users.class).build().query();
+        assertTrue(cql.startsWith("INSERT INTO simplex.users"), cql);
+    }
+
+    @Test
+    public void testSCCB_insertIntoClassWithExcluded() {
+        final String cql = SCCB.insertInto(Users.class, N.asSet("createdTime")).build().query();
+        assertTrue(!cql.contains("created_time"), cql);
+    }
+
+    @Test
+    public void testSCCB_batchInsert() {
+        final String cql = SCCB.batchInsert(N.asList(N.asMap("firstName", "a"))).into("account").build().query();
+        assertTrue(cql.contains("first_name"), cql);
+        assertTrue(cql.contains("'a'"), cql);
+    }
+
+    @Test
+    public void testSCCB_updateString() {
+        // RAW_SQL inlines values; identifiers in set() are snake-cased per naming policy.
+        final String cql = SCCB.update("account").set("firstName = 'X'").where(Filters.eq("id", 1)).build().query();
+        assertEquals("UPDATE account SET first_name = 'X' WHERE id = 1", cql);
+    }
+
+    @Test
+    public void testSCCB_updateStringClass() {
+        final String cql = SCCB.update("account", Account.class).set("firstName = 'X'").build().query();
+        assertEquals("UPDATE account SET first_name = 'X'", cql);
+    }
+
+    @Test
+    public void testSCCB_updateClass() {
+        final String cql = SCCB.update(Account.class).set(N.asMap("firstName", "X")).where(Filters.eq("id", 1)).build().query();
+        assertTrue(cql.contains("first_name"), cql);
+    }
+
+    @Test
+    public void testSCCB_updateClassWithExcluded() {
+        final String cql = SCCB.update(Account.class, N.asSet("id")).set(N.asMap("firstName", "X")).build().query();
+        assertTrue(cql.contains("UPDATE"), cql);
+    }
+
+    @Test
+    public void testSCCB_deleteString() {
+        final String cql = SCCB.delete("firstName").from("account").build().query();
+        assertEquals("DELETE first_name FROM account", cql);
+    }
+
+    @Test
+    public void testSCCB_deleteStringArray() {
+        final String cql = SCCB.delete("firstName", "lastName").from("account").build().query();
+        assertEquals("DELETE first_name, last_name FROM account", cql);
+    }
+
+    @Test
+    public void testSCCB_deleteCollection() {
+        final String cql = SCCB.delete(N.asList("firstName")).from("account").build().query();
+        assertTrue(cql.contains("first_name"), cql);
+    }
+
+    @Test
+    public void testSCCB_deleteClass() {
+        final String cql = SCCB.delete(Account.class).from("account").build().query();
+        assertTrue(cql.startsWith("DELETE "), cql);
+    }
+
+    @Test
+    public void testSCCB_deleteClassWithExcluded() {
+        final String cql = SCCB.delete(Account.class, N.asSet("firstName")).from("account").build().query();
+        assertTrue(!cql.contains("first_name"), cql);
+    }
+
+    @Test
+    public void testSCCB_deleteFromString() {
+        final String cql = SCCB.deleteFrom("account").where(Filters.eq("id", 1)).build().query();
+        assertEquals("DELETE FROM account WHERE id = 1", cql);
+    }
+
+    @Test
+    public void testSCCB_deleteFromStringClass() {
+        final String cql = SCCB.deleteFrom("account", Account.class).build().query();
+        assertEquals("DELETE FROM account", cql);
+    }
+
+    @Test
+    public void testSCCB_deleteFromClass() {
+        final String cql = SCCB.deleteFrom(Users.class).build().query();
+        assertEquals("DELETE FROM simplex.users", cql);
+    }
+
+    @Test
+    public void testSCCB_selectString() {
+        final String cql = SCCB.select("firstName").from("account").build().query();
+        assertTrue(cql.contains("first_name"), cql);
+    }
+
+    @Test
+    public void testSCCB_selectStringArray() {
+        final String cql = SCCB.select("firstName", "lastName").from("account").build().query();
+        assertTrue(cql.contains("first_name") && cql.contains("last_name"), cql);
+    }
+
+    @Test
+    public void testSCCB_selectCollection() {
+        final String cql = SCCB.select(N.asList("firstName")).from("account").build().query();
+        assertTrue(cql.contains("first_name"), cql);
+    }
+
+    @Test
+    public void testSCCB_selectMap() {
+        final String cql = SCCB.select(N.asMap("firstName", "fn")).from("account").build().query();
+        assertTrue(cql.contains("first_name"), cql);
+        assertTrue(cql.contains("\"fn\""), cql);
+    }
+
+    @Test
+    public void testSCCB_selectClass() {
+        final String cql = SCCB.select(Account.class).from("account").build().query();
+        assertTrue(cql.contains("first_name"), cql);
+    }
+
+    @Test
+    public void testSCCB_selectClassWithSubEntities() {
+        final String cql = SCCB.select(Account.class, false).from("account").build().query();
+        assertTrue(cql.startsWith("SELECT "), cql);
+    }
+
+    @Test
+    public void testSCCB_selectClassWithExcluded() {
+        final String cql = SCCB.select(Account.class, N.asSet("firstName")).from("account").build().query();
+        assertTrue(!cql.contains("first_name"), cql);
+    }
+
+    @Test
+    public void testSCCB_selectClassFull() {
+        final String cql = SCCB.select(Account.class, false, N.asSet("firstName")).from("account").build().query();
+        assertTrue(!cql.contains("first_name"), cql);
+    }
+
+    @Test
+    public void testSCCB_selectFromClass() {
+        final String cql = SCCB.selectFrom(Users.class).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
+    }
+
+    @Test
+    public void testSCCB_selectFromClassWithAlias() {
+        final String cql = SCCB.selectFrom(Users.class, "u").build().query();
+        assertTrue(cql.contains("FROM simplex.users u"), cql);
+    }
+
+    @Test
+    public void testSCCB_selectFromClassWithSubEntities() {
+        final String cql = SCCB.selectFrom(Account.class, false).build().query();
+        assertTrue(cql.startsWith("SELECT "), cql);
+    }
+
+    @Test
+    public void testSCCB_selectFromClassWithExcluded() {
+        final String cql = SCCB.selectFrom(Account.class, N.asSet("firstName")).build().query();
+        assertTrue(!cql.contains("first_name"), cql);
+    }
+
+    @Test
+    public void testSCCB_selectFromClassAliasSubEntities() {
+        final String cql = SCCB.selectFrom(Users.class, "u", false).build().query();
+        assertTrue(cql.contains("FROM simplex.users u"), cql);
+    }
+
+    @Test
+    public void testSCCB_selectFromClassAliasExcluded() {
+        final String cql = SCCB.selectFrom(Users.class, "u", N.asSet("createdTime")).build().query();
+        assertTrue(!cql.contains("created_time"), cql);
+    }
+
+    @Test
+    public void testSCCB_selectFromClassSubEntitiesExcluded() {
+        final String cql = SCCB.selectFrom(Account.class, false, N.asSet("firstName")).build().query();
+        assertTrue(!cql.contains("first_name"), cql);
+    }
+
+    @Test
+    public void testSCCB_selectFromClassFull() {
+        final String cql = SCCB.selectFrom(Users.class, "u", false, N.asSet("createdTime")).build().query();
+        assertTrue(!cql.contains("created_time"), cql);
+    }
+
+    @Test
+    public void testSCCB_countString() {
+        final String cql = SCCB.count("account").build().query();
+        assertEquals("SELECT count(*) FROM account", cql);
+    }
+
+    @Test
+    public void testSCCB_countClass() {
+        final String cql = SCCB.count(Users.class).build().query();
+        assertEquals("SELECT count(*) FROM simplex.users", cql);
+    }
+
+    @Test
+    public void testSCCB_parse() {
+        final String cql = SCCB.parse(Filters.eq("firstName", "John"), Account.class).build().query();
+        assertTrue(cql.contains("first_name"), cql);
+        // RAW_SQL inlines the value.
+        assertTrue(cql.contains("'John'"), cql);
+    }
+
+    @Test
+    public void testSCCB_insert_EmptyString() {
+        assertThrows(IllegalArgumentException.class, () -> SCCB.insert(""));
+    }
+
+    @Test
+    public void testSCCB_chainBuildable() {
+        // Smoke test for SCCB createInstance() reach via every public factory.
+        assertNotNull(SCCB.select("a").from("t").build().query());
+        assertNotNull(SCCB.insert("a").into("t").build().query());
+        assertNotNull(SCCB.update("t").set("a = 'x'").build().query());
+        assertNotNull(SCCB.deleteFrom("t").build().query());
+        assertNotNull(SCCB.count("t").build().query());
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // LCCB (CAMEL_CASE + RAW_SQL): camelCase columns, inlined literal values.
+    // ---------------------------------------------------------------------------------------------
+
+    @Test
+    public void testLCCB_insertString() {
+        final String cql = LCCB.insert("firstName").into("account").build().query();
+        assertTrue(cql.startsWith("INSERT INTO account"), cql);
+        assertTrue(cql.contains("firstName"), cql);
+    }
+
+    @Test
+    public void testLCCB_insertStringArray() {
+        final String cql = LCCB.insert("firstName", "lastName").into("account").build().query();
+        assertTrue(cql.contains("firstName") && cql.contains("lastName"), cql);
+    }
+
+    @Test
+    public void testLCCB_insertCollection() {
+        final String cql = LCCB.insert(N.asList("firstName")).into("account").build().query();
+        assertTrue(cql.contains("firstName"), cql);
+    }
+
+    @Test
+    public void testLCCB_insertMap() {
+        final String cql = LCCB.insert(N.asMap("firstName", "John")).into("account").build().query();
+        assertTrue(cql.contains("firstName"), cql);
+        assertTrue(cql.contains("'John'"), cql);
+    }
+
+    @Test
+    public void testLCCB_insertEntity() {
+        final Account a = new Account();
+        a.setFirstName("John");
+        final String cql = LCCB.insert(a).into("account").build().query();
+        assertTrue(cql.contains("firstName"), cql);
+        assertTrue(cql.contains("'John'"), cql);
+    }
+
+    @Test
+    public void testLCCB_insertEntityWithExcluded() {
+        final Account a = new Account();
+        a.setFirstName("J");
+        a.setLastName("D");
+        final String cql = LCCB.insert(a, N.asSet("lastName")).into("account").build().query();
+        assertTrue(!cql.contains("lastName"), cql);
+    }
+
+    @Test
+    public void testLCCB_insertClass() {
+        final String cql = LCCB.insert(Account.class).into("account").build().query();
+        assertTrue(cql.contains("firstName"), cql);
+    }
+
+    @Test
+    public void testLCCB_insertClassWithExcluded() {
+        final String cql = LCCB.insert(Account.class, N.asSet("firstName")).into("account").build().query();
+        assertTrue(!cql.contains("firstName"), cql);
+    }
+
+    @Test
+    public void testLCCB_insertIntoClass() {
+        final String cql = LCCB.insertInto(Users.class).build().query();
+        assertTrue(cql.startsWith("INSERT INTO simplex.users"), cql);
+    }
+
+    @Test
+    public void testLCCB_insertIntoClassWithExcluded() {
+        final String cql = LCCB.insertInto(Users.class, N.asSet("createdTime")).build().query();
+        assertTrue(!cql.contains("createdTime"), cql);
+    }
+
+    @Test
+    public void testLCCB_batchInsert() {
+        final String cql = LCCB.batchInsert(N.asList(N.asMap("firstName", "a"))).into("account").build().query();
+        assertTrue(cql.contains("firstName"), cql);
+        assertTrue(cql.contains("'a'"), cql);
+    }
+
+    @Test
+    public void testLCCB_updateString() {
+        // RAW_SQL inlines values; CAMEL_CASE keeps identifier casing.
+        final String cql = LCCB.update("account").set("firstName = 'X'").where(Filters.eq("id", 1)).build().query();
+        assertEquals("UPDATE account SET firstName = 'X' WHERE id = 1", cql);
+    }
+
+    @Test
+    public void testLCCB_updateStringClass() {
+        final String cql = LCCB.update("account", Account.class).set("firstName = 'X'").build().query();
+        assertEquals("UPDATE account SET firstName = 'X'", cql);
+    }
+
+    @Test
+    public void testLCCB_updateClass() {
+        final String cql = LCCB.update(Account.class).set(N.asMap("firstName", "X")).where(Filters.eq("id", 1)).build().query();
+        assertTrue(cql.contains("firstName"), cql);
+    }
+
+    @Test
+    public void testLCCB_updateClassWithExcluded() {
+        final String cql = LCCB.update(Account.class, N.asSet("id")).set(N.asMap("firstName", "X")).build().query();
+        assertTrue(cql.contains("UPDATE"), cql);
+    }
+
+    @Test
+    public void testLCCB_deleteString() {
+        final String cql = LCCB.delete("firstName").from("account").build().query();
+        assertEquals("DELETE firstName FROM account", cql);
+    }
+
+    @Test
+    public void testLCCB_deleteStringArray() {
+        final String cql = LCCB.delete("firstName", "lastName").from("account").build().query();
+        assertEquals("DELETE firstName, lastName FROM account", cql);
+    }
+
+    @Test
+    public void testLCCB_deleteCollection() {
+        final String cql = LCCB.delete(N.asList("firstName")).from("account").build().query();
+        assertTrue(cql.contains("firstName"), cql);
+    }
+
+    @Test
+    public void testLCCB_deleteClass() {
+        final String cql = LCCB.delete(Account.class).from("account").build().query();
+        assertTrue(cql.startsWith("DELETE "), cql);
+    }
+
+    @Test
+    public void testLCCB_deleteClassWithExcluded() {
+        final String cql = LCCB.delete(Account.class, N.asSet("firstName")).from("account").build().query();
+        assertTrue(!cql.contains(" firstName"), cql);
+    }
+
+    @Test
+    public void testLCCB_deleteFromString() {
+        final String cql = LCCB.deleteFrom("account").where(Filters.eq("id", 1)).build().query();
+        assertEquals("DELETE FROM account WHERE id = 1", cql);
+    }
+
+    @Test
+    public void testLCCB_deleteFromStringClass() {
+        final String cql = LCCB.deleteFrom("account", Account.class).build().query();
+        assertEquals("DELETE FROM account", cql);
+    }
+
+    @Test
+    public void testLCCB_deleteFromClass() {
+        final String cql = LCCB.deleteFrom(Users.class).build().query();
+        assertEquals("DELETE FROM simplex.users", cql);
+    }
+
+    @Test
+    public void testLCCB_selectString() {
+        final String cql = LCCB.select("firstName").from("account").build().query();
+        assertTrue(cql.contains("firstName"), cql);
+    }
+
+    @Test
+    public void testLCCB_selectStringArray() {
+        final String cql = LCCB.select("firstName", "lastName").from("account").build().query();
+        assertTrue(cql.contains("firstName") && cql.contains("lastName"), cql);
+    }
+
+    @Test
+    public void testLCCB_selectCollection() {
+        final String cql = LCCB.select(N.asList("firstName")).from("account").build().query();
+        assertTrue(cql.contains("firstName"), cql);
+    }
+
+    @Test
+    public void testLCCB_selectMap() {
+        final String cql = LCCB.select(N.asMap("firstName", "fn")).from("account").build().query();
+        assertTrue(cql.contains("firstName"), cql);
+        assertTrue(cql.contains("\"fn\""), cql);
+    }
+
+    @Test
+    public void testLCCB_selectClass() {
+        final String cql = LCCB.select(Account.class).from("account").build().query();
+        assertTrue(cql.contains("firstName"), cql);
+    }
+
+    @Test
+    public void testLCCB_selectClassWithSubEntities() {
+        final String cql = LCCB.select(Account.class, false).from("account").build().query();
+        assertTrue(cql.startsWith("SELECT "), cql);
+    }
+
+    @Test
+    public void testLCCB_selectClassWithExcluded() {
+        final String cql = LCCB.select(Account.class, N.asSet("firstName")).from("account").build().query();
+        assertTrue(!cql.contains(" firstName"), cql);
+    }
+
+    @Test
+    public void testLCCB_selectClassFull() {
+        final String cql = LCCB.select(Account.class, false, N.asSet("firstName")).from("account").build().query();
+        assertTrue(!cql.contains(" firstName"), cql);
+    }
+
+    @Test
+    public void testLCCB_selectFromClass() {
+        final String cql = LCCB.selectFrom(Users.class).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
+    }
+
+    @Test
+    public void testLCCB_selectFromClassWithAlias() {
+        final String cql = LCCB.selectFrom(Users.class, "u").build().query();
+        assertTrue(cql.contains("FROM simplex.users u"), cql);
+    }
+
+    @Test
+    public void testLCCB_selectFromClassWithSubEntities() {
+        final String cql = LCCB.selectFrom(Account.class, false).build().query();
+        assertTrue(cql.startsWith("SELECT "), cql);
+    }
+
+    @Test
+    public void testLCCB_selectFromClassWithExcluded() {
+        final String cql = LCCB.selectFrom(Account.class, N.asSet("firstName")).build().query();
+        assertTrue(!cql.contains(" firstName"), cql);
+    }
+
+    @Test
+    public void testLCCB_selectFromClassAliasSubEntities() {
+        final String cql = LCCB.selectFrom(Users.class, "u", false).build().query();
+        assertTrue(cql.contains("FROM simplex.users u"), cql);
+    }
+
+    @Test
+    public void testLCCB_selectFromClassAliasExcluded() {
+        final String cql = LCCB.selectFrom(Users.class, "u", N.asSet("createdTime")).build().query();
+        assertTrue(!cql.contains("createdTime"), cql);
+    }
+
+    @Test
+    public void testLCCB_selectFromClassSubEntitiesExcluded() {
+        final String cql = LCCB.selectFrom(Account.class, false, N.asSet("firstName")).build().query();
+        assertTrue(!cql.contains(" firstName"), cql);
+    }
+
+    @Test
+    public void testLCCB_selectFromClassFull() {
+        final String cql = LCCB.selectFrom(Users.class, "u", false, N.asSet("createdTime")).build().query();
+        assertTrue(!cql.contains("createdTime"), cql);
+    }
+
+    @Test
+    public void testLCCB_countString() {
+        final String cql = LCCB.count("account").build().query();
+        assertEquals("SELECT count(*) FROM account", cql);
+    }
+
+    @Test
+    public void testLCCB_countClass() {
+        final String cql = LCCB.count(Users.class).build().query();
+        assertEquals("SELECT count(*) FROM simplex.users", cql);
+    }
+
+    @Test
+    public void testLCCB_parse() {
+        final String cql = LCCB.parse(Filters.eq("firstName", "John"), Account.class).build().query();
+        assertTrue(cql.contains("firstName"), cql);
+        // RAW_SQL inlines the value.
+        assertTrue(cql.contains("'John'"), cql);
+    }
+
+    @Test
+    public void testLCCB_insert_EmptyString() {
+        assertThrows(IllegalArgumentException.class, () -> LCCB.insert(""));
+    }
+
+    @Test
+    public void testLCCB_chainBuildable() {
+        // Smoke test for LCCB createInstance() reach via every public factory.
+        assertNotNull(LCCB.select("a").from("t").build().query());
+        assertNotNull(LCCB.insert("a").into("t").build().query());
+        assertNotNull(LCCB.update("t").set("a = 'x'").build().query());
+        assertNotNull(LCCB.deleteFrom("t").build().query());
+        assertNotNull(LCCB.count("t").build().query());
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // CqlBuilder (top-level): repeatPlaceholders, repeatQM, deprecated/edge-case behavior.
+    // ---------------------------------------------------------------------------------------------
+
+    @Test
+    public void testCqlBuilder_repeatPlaceholders_zero() {
+        // Zero placeholders produces an empty string.
+        final String s = CqlBuilder.repeatPlaceholders(0);
+        assertEquals("", s);
+    }
+
+    @Test
+    public void testCqlBuilder_repeatPlaceholders_one() {
+        final String s = CqlBuilder.repeatPlaceholders(1);
+        assertEquals("?", s);
+    }
+
+    @Test
+    public void testCqlBuilder_repeatPlaceholders_many() {
+        final String s = CqlBuilder.repeatPlaceholders(5);
+        assertEquals("?, ?, ?, ?, ?", s);
+    }
+
+    @Test
+    public void testCqlBuilder_repeatPlaceholders_Negative() {
+        assertThrows(IllegalArgumentException.class, () -> CqlBuilder.repeatPlaceholders(-1));
+    }
+
+    @Test
+    public void testCqlBuilder_repeatQM_DeprecatedAliasDelegates() {
+        // Deprecated alias must produce the same output as repeatPlaceholders.
+        assertEquals(CqlBuilder.repeatPlaceholders(3), CqlBuilder.repeatQM(3));
+    }
 }

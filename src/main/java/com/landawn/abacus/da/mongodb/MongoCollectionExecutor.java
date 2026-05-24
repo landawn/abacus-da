@@ -176,6 +176,16 @@ public final class MongoCollectionExecutor {
 
     private final AsyncMongoCollectionExecutor asyncCollExecutor;
 
+    /**
+     * Package-private constructor used by {@link MongoDB#collectionExecutor(MongoCollection)} and friends.
+     *
+     * <p>Instances are not intended to be created directly by user code; obtain one from the parent
+     * {@link MongoDB} instance instead.</p>
+     *
+     * @param coll the underlying MongoDB collection to operate on
+     * @param asyncExecutor the executor used by the associated {@link AsyncMongoCollectionExecutor}
+     *        for non-blocking calls
+     */
     MongoCollectionExecutor(final MongoCollection<Document> coll, final AsyncExecutor asyncExecutor) {
         this.coll = coll;
         asyncCollExecutor = new AsyncMongoCollectionExecutor(this, asyncExecutor);
@@ -284,8 +294,10 @@ public final class MongoCollectionExecutor {
      * boolean hasRecentUsers = executor.exists("{createdAt: {$gte: ISODate('2023-01-01')}}");
      * }</pre>
      *
-     * @param filter the query filter to match documents against; {@code null} is treated as an empty filter (matches all documents)
+     * @param filter the query filter to match documents against (must not be {@code null} — the
+     *               underlying driver will throw {@link NullPointerException})
      * @return {@code true} if any documents match the filter, {@code false} otherwise
+     * @throws NullPointerException if filter is {@code null}
      * @throws com.mongodb.MongoException if the database operation fails
      * @see com.mongodb.client.model.Filters
      */
@@ -330,8 +342,11 @@ public final class MongoCollectionExecutor {
      * long adultUsers = executor.count("{age: {$gte: 18}}");
      * }</pre>
      *
-     * @param filter the query filter to count matching documents; {@code null} is treated as an empty filter (counts all documents)
+     * @param filter the query filter to count matching documents (must not be {@code null} — the
+     *               underlying driver will throw {@link NullPointerException}; use {@link #count()} for
+     *               an unfiltered count)
      * @return the number of documents matching the filter
+     * @throws NullPointerException if filter is {@code null}
      * @throws com.mongodb.MongoException if the database operation fails
      * @see com.mongodb.client.model.Filters
      * @see #count(Bson, CountOptions)
@@ -352,9 +367,12 @@ public final class MongoCollectionExecutor {
      * long limitedCount = executor.count(Filters.exists("email"), options);
      * }</pre>
      *
-     * @param filter the query filter to count matching documents; {@code null} is treated as an empty filter (counts all documents)
+     * @param filter the query filter to count matching documents (must not be {@code null} — the
+     *               underlying driver will throw {@link NullPointerException}; use {@link #count()} for
+     *               an unfiltered count)
      * @param options additional options for the count operation (null uses defaults)
      * @return the number of documents matching the filter within the specified constraints
+     * @throws NullPointerException if filter is {@code null}
      * @throws com.mongodb.MongoException if the database operation fails
      * @see CountOptions
      * @see com.mongodb.client.model.Filters
@@ -1154,13 +1172,13 @@ public final class MongoCollectionExecutor {
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents
      * or fields are ignored.</p>
      *
-     * <p><b>Empty vs. present semantics:</b> {@code OptionalBoolean.empty()} is returned when no document
-     * matches the filter <i>or</i> when the matched document has no field named {@code propName} (the
-     * underlying {@code Nullable} is empty, which {@code mapToBoolean} forwards as an empty
-     * {@code OptionalBoolean}). When the field is present and convertible, the returned
-     * {@code OptionalBoolean} is <i>present</i> and holds the converted value. Use
+     * <p><b>Empty vs. present semantics:</b> {@code OptionalBoolean.empty()} is returned <i>only</i> when no
+     * document matches the filter. When a document is matched but has no field named {@code propName} (or
+     * the stored value is BSON null), the underlying {@code Nullable.of(null)} is unboxed via
+     * {@link ToBooleanFunction#UNBOX} to the primitive default {@code false}, so the returned
+     * {@code OptionalBoolean} is <i>present</i> and holds {@code false}. Use
      * {@link #queryForSingleValue(String, Bson, Class)} with {@code Boolean.class} if you need to
-     * distinguish "no document / missing field" from a real {@code false} value.</p>
+     * distinguish a missing/null field from a real {@code false} value.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1172,9 +1190,9 @@ public final class MongoCollectionExecutor {
      *
      * @param propName the name of the field to retrieve the boolean value from
      * @param filter BSON filter criteria to match documents (null matches all)
-     * @return a <i>present</i> {@code OptionalBoolean} holding the converted field value when a document
-     *         is matched and the field is present; {@code OptionalBoolean.empty()} when no document matches
-     *         or the field is absent
+     * @return a <i>present</i> {@code OptionalBoolean} holding the converted field value (or {@code false}
+     *         for a missing/null field) when a document is matched; {@code OptionalBoolean.empty()} when no
+     *         document matches the filter
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1190,12 +1208,13 @@ public final class MongoCollectionExecutor {
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents
      * or fields are ignored.</p>
      *
-     * <p><b>Empty vs. present semantics:</b> {@code OptionalChar.empty()} is returned when no document
-     * matches the filter <i>or</i> when the matched document has no field named {@code propName}. When the
-     * field is present and convertible to {@link Character}, the returned {@code OptionalChar} is
-     * <i>present</i> and holds the converted value. Use {@link #queryForSingleValue(String, Bson, Class)}
-     * with {@code Character.class} if you need to distinguish "no document / missing field" from a real
-     * {@code (char) 0}.</p>
+     * <p><b>Empty vs. present semantics:</b> {@code OptionalChar.empty()} is returned <i>only</i> when no
+     * document matches the filter. When a document is matched but has no field named {@code propName} (or
+     * the stored value is BSON null), the underlying {@code Nullable.of(null)} is unboxed via
+     * {@link ToCharFunction#UNBOX} to the primitive default {@code (char) 0}, so the returned
+     * {@code OptionalChar} is <i>present</i> and holds {@code (char) 0}. Use
+     * {@link #queryForSingleValue(String, Bson, Class)} with {@code Character.class} if you need to
+     * distinguish a missing/null field from a real {@code (char) 0}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1205,9 +1224,9 @@ public final class MongoCollectionExecutor {
      *
      * @param propName the name of the field to retrieve the character value from
      * @param filter BSON filter criteria to match documents (null matches all)
-     * @return a <i>present</i> {@code OptionalChar} holding the converted field value when a document is
-     *         matched and the field is present; {@code OptionalChar.empty()} when no document matches or
-     *         the field is absent
+     * @return a <i>present</i> {@code OptionalChar} holding the converted field value (or {@code (char) 0}
+     *         for a missing/null field) when a document is matched; {@code OptionalChar.empty()} when no
+     *         document matches the filter
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1223,11 +1242,13 @@ public final class MongoCollectionExecutor {
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents
      * or fields are ignored.</p>
      *
-     * <p><b>Empty vs. present semantics:</b> {@code OptionalByte.empty()} is returned when no document
-     * matches the filter <i>or</i> when the matched document has no field named {@code propName}. When the
-     * field is present and convertible to {@link Byte}, the returned {@code OptionalByte} is <i>present</i>
-     * and holds the converted value. Use {@link #queryForSingleValue(String, Bson, Class)} with
-     * {@code Byte.class} if you need to distinguish "no document / missing field" from a real {@code 0}.</p>
+     * <p><b>Empty vs. present semantics:</b> {@code OptionalByte.empty()} is returned <i>only</i> when no
+     * document matches the filter. When a document is matched but has no field named {@code propName} (or
+     * the stored value is BSON null), the underlying {@code Nullable.of(null)} is unboxed via
+     * {@link ToByteFunction#UNBOX} to the primitive default {@code (byte) 0}, so the returned
+     * {@code OptionalByte} is <i>present</i> and holds {@code (byte) 0}. Use
+     * {@link #queryForSingleValue(String, Bson, Class)} with {@code Byte.class} if you need to
+     * distinguish a missing/null field from a real {@code 0}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1237,9 +1258,9 @@ public final class MongoCollectionExecutor {
      *
      * @param propName the name of the field to retrieve the byte value from
      * @param filter BSON filter criteria to match documents (null matches all)
-     * @return a <i>present</i> {@code OptionalByte} holding the converted field value when a document is
-     *         matched and the field is present; {@code OptionalByte.empty()} when no document matches or
-     *         the field is absent
+     * @return a <i>present</i> {@code OptionalByte} holding the converted field value (or {@code (byte) 0}
+     *         for a missing/null field) when a document is matched; {@code OptionalByte.empty()} when no
+     *         document matches the filter
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1255,12 +1276,13 @@ public final class MongoCollectionExecutor {
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents
      * or fields are ignored.</p>
      *
-     * <p><b>Empty vs. present semantics:</b> {@code OptionalShort.empty()} is returned when no document
-     * matches the filter <i>or</i> when the matched document has no field named {@code propName}. When the
-     * field is present and convertible to {@link Short}, the returned {@code OptionalShort} is
-     * <i>present</i> and holds the converted value. Use {@link #queryForSingleValue(String, Bson, Class)}
-     * with {@code Short.class} if you need to distinguish "no document / missing field" from a real
-     * {@code 0}.</p>
+     * <p><b>Empty vs. present semantics:</b> {@code OptionalShort.empty()} is returned <i>only</i> when no
+     * document matches the filter. When a document is matched but has no field named {@code propName} (or
+     * the stored value is BSON null), the underlying {@code Nullable.of(null)} is unboxed via
+     * {@link ToShortFunction#UNBOX} to the primitive default {@code (short) 0}, so the returned
+     * {@code OptionalShort} is <i>present</i> and holds {@code (short) 0}. Use
+     * {@link #queryForSingleValue(String, Bson, Class)} with {@code Short.class} if you need to
+     * distinguish a missing/null field from a real {@code 0}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1272,9 +1294,9 @@ public final class MongoCollectionExecutor {
      *
      * @param propName the name of the field to retrieve the short value from
      * @param filter BSON filter criteria to match documents (null matches all)
-     * @return a <i>present</i> {@code OptionalShort} holding the converted field value when a document is
-     *         matched and the field is present; {@code OptionalShort.empty()} when no document matches or
-     *         the field is absent
+     * @return a <i>present</i> {@code OptionalShort} holding the converted field value (or
+     *         {@code (short) 0} for a missing/null field) when a document is matched;
+     *         {@code OptionalShort.empty()} when no document matches the filter
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1290,12 +1312,13 @@ public final class MongoCollectionExecutor {
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents
      * or fields are ignored. Commonly used for count or numeric-aggregate fields.</p>
      *
-     * <p><b>Empty vs. present semantics:</b> {@code OptionalInt.empty()} is returned when no document
-     * matches the filter <i>or</i> when the matched document has no field named {@code propName}. When the
-     * field is present and convertible to {@link Integer}, the returned {@code OptionalInt} is
-     * <i>present</i> and holds the converted value. Use {@link #queryForSingleValue(String, Bson, Class)}
-     * with {@code Integer.class} if you need to distinguish "no document / missing field" from a real
-     * {@code 0}.</p>
+     * <p><b>Empty vs. present semantics:</b> {@code OptionalInt.empty()} is returned <i>only</i> when no
+     * document matches the filter. When a document is matched but has no field named {@code propName} (or
+     * the stored value is BSON null), the underlying {@code Nullable.of(null)} is unboxed via
+     * {@link ToIntFunction#UNBOX} to the primitive default {@code 0}, so the returned
+     * {@code OptionalInt} is <i>present</i> and holds {@code 0}. Use
+     * {@link #queryForSingleValue(String, Bson, Class)} with {@code Integer.class} if you need to
+     * distinguish a missing/null field from a real {@code 0}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1305,9 +1328,9 @@ public final class MongoCollectionExecutor {
      *
      * @param propName the name of the field to retrieve the integer value from
      * @param filter BSON filter criteria to match documents (null matches all)
-     * @return a <i>present</i> {@code OptionalInt} holding the converted field value when a document is
-     *         matched and the field is present; {@code OptionalInt.empty()} when no document matches or
-     *         the field is absent
+     * @return a <i>present</i> {@code OptionalInt} holding the converted field value (or {@code 0} for a
+     *         missing/null field) when a document is matched; {@code OptionalInt.empty()} when no document
+     *         matches the filter
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1323,11 +1346,13 @@ public final class MongoCollectionExecutor {
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents
      * or fields are ignored.</p>
      *
-     * <p><b>Empty vs. present semantics:</b> {@code OptionalLong.empty()} is returned when no document
-     * matches the filter <i>or</i> when the matched document has no field named {@code propName}. When the
-     * field is present and convertible to {@link Long}, the returned {@code OptionalLong} is <i>present</i>
-     * and holds the converted value. Use {@link #queryForSingleValue(String, Bson, Class)} with
-     * {@code Long.class} if you need to distinguish "no document / missing field" from a real {@code 0L}.</p>
+     * <p><b>Empty vs. present semantics:</b> {@code OptionalLong.empty()} is returned <i>only</i> when no
+     * document matches the filter. When a document is matched but has no field named {@code propName} (or
+     * the stored value is BSON null), the underlying {@code Nullable.of(null)} is unboxed via
+     * {@link ToLongFunction#UNBOX} to the primitive default {@code 0L}, so the returned
+     * {@code OptionalLong} is <i>present</i> and holds {@code 0L}. Use
+     * {@link #queryForSingleValue(String, Bson, Class)} with {@code Long.class} if you need to
+     * distinguish a missing/null field from a real {@code 0L}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1337,9 +1362,9 @@ public final class MongoCollectionExecutor {
      *
      * @param propName the name of the field to retrieve the long value from
      * @param filter BSON filter criteria to match documents (null matches all)
-     * @return a <i>present</i> {@code OptionalLong} holding the converted field value when a document is
-     *         matched and the field is present; {@code OptionalLong.empty()} when no document matches or
-     *         the field is absent
+     * @return a <i>present</i> {@code OptionalLong} holding the converted field value (or {@code 0L} for a
+     *         missing/null field) when a document is matched; {@code OptionalLong.empty()} when no document
+     *         matches the filter
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1355,12 +1380,13 @@ public final class MongoCollectionExecutor {
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents
      * or fields are ignored.</p>
      *
-     * <p><b>Empty vs. present semantics:</b> {@code OptionalFloat.empty()} is returned when no document
-     * matches the filter <i>or</i> when the matched document has no field named {@code propName}. When the
-     * field is present and convertible to {@link Float}, the returned {@code OptionalFloat} is
-     * <i>present</i> and holds the converted value. Use {@link #queryForSingleValue(String, Bson, Class)}
-     * with {@code Float.class} if you need to distinguish "no document / missing field" from a real
-     * {@code 0.0f}.</p>
+     * <p><b>Empty vs. present semantics:</b> {@code OptionalFloat.empty()} is returned <i>only</i> when no
+     * document matches the filter. When a document is matched but has no field named {@code propName} (or
+     * the stored value is BSON null), the underlying {@code Nullable.of(null)} is unboxed via
+     * {@link ToFloatFunction#UNBOX} to the primitive default {@code 0.0f}, so the returned
+     * {@code OptionalFloat} is <i>present</i> and holds {@code 0.0f}. Use
+     * {@link #queryForSingleValue(String, Bson, Class)} with {@code Float.class} if you need to
+     * distinguish a missing/null field from a real {@code 0.0f}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1370,9 +1396,9 @@ public final class MongoCollectionExecutor {
      *
      * @param propName the name of the field to retrieve the float value from
      * @param filter BSON filter criteria to match documents (null matches all)
-     * @return a <i>present</i> {@code OptionalFloat} holding the converted field value when a document is
-     *         matched and the field is present; {@code OptionalFloat.empty()} when no document matches or
-     *         the field is absent
+     * @return a <i>present</i> {@code OptionalFloat} holding the converted field value (or {@code 0.0f}
+     *         for a missing/null field) when a document is matched; {@code OptionalFloat.empty()} when no
+     *         document matches the filter
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1388,12 +1414,13 @@ public final class MongoCollectionExecutor {
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents
      * or fields are ignored.</p>
      *
-     * <p><b>Empty vs. present semantics:</b> {@code OptionalDouble.empty()} is returned when no document
-     * matches the filter <i>or</i> when the matched document has no field named {@code propName}. When the
-     * field is present and convertible to {@link Double}, the returned {@code OptionalDouble} is
-     * <i>present</i> and holds the converted value. Use {@link #queryForSingleValue(String, Bson, Class)}
-     * with {@code Double.class} if you need to distinguish "no document / missing field" from a real
-     * {@code 0.0d}.</p>
+     * <p><b>Empty vs. present semantics:</b> {@code OptionalDouble.empty()} is returned <i>only</i> when no
+     * document matches the filter. When a document is matched but has no field named {@code propName} (or
+     * the stored value is BSON null), the underlying {@code Nullable.of(null)} is unboxed via
+     * {@link ToDoubleFunction#UNBOX} to the primitive default {@code 0.0d}, so the returned
+     * {@code OptionalDouble} is <i>present</i> and holds {@code 0.0d}. Use
+     * {@link #queryForSingleValue(String, Bson, Class)} with {@code Double.class} if you need to
+     * distinguish a missing/null field from a real {@code 0.0d}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1403,9 +1430,9 @@ public final class MongoCollectionExecutor {
      *
      * @param propName the name of the field to retrieve the double value from
      * @param filter BSON filter criteria to match documents (null matches all)
-     * @return a <i>present</i> {@code OptionalDouble} holding the converted field value when a document is
-     *         matched and the field is present; {@code OptionalDouble.empty()} when no document matches or
-     *         the field is absent
+     * @return a <i>present</i> {@code OptionalDouble} holding the converted field value (or {@code 0.0d}
+     *         for a missing/null field) when a document is matched; {@code OptionalDouble.empty()} when no
+     *         document matches the filter
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1421,12 +1448,12 @@ public final class MongoCollectionExecutor {
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents
      * or fields are ignored.</p>
      *
-     * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned when no document matches
-     * the filter <i>or</i> when the matched document has no field named {@code propName}. When the document
-     * matches and the field is present, the returned {@code Nullable} is <i>present</i> and holds the
-     * converted value — which itself may be {@code null} if the stored field value is null
-     * ({@code Nullable.of(null)}). {@link Nullable} preserves the distinction between "missing" and
-     * "present-but-null"; callers can use {@link Nullable#isPresent()} and {@link Nullable#isNotNull()}
+     * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned <i>only</i> when no
+     * document matches the filter. When a document matches, the returned {@code Nullable} is
+     * <i>present</i> and holds the converted value — which itself may be {@code null} if the field is
+     * absent on the matched document or the stored field value is null ({@code Nullable.of(null)}).
+     * {@link Nullable} preserves the distinction between "no document matched" and "document matched but
+     * value is null"; callers can use {@link Nullable#isPresent()} and {@link Nullable#isNotNull()}
      * accordingly.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -1437,9 +1464,9 @@ public final class MongoCollectionExecutor {
      *
      * @param propName the name of the field to retrieve the string value from
      * @param filter BSON filter criteria to match documents (null matches all)
-     * @return a <i>present</i> {@code Nullable<String>} holding the field value (possibly {@code null})
-     *         when a document is matched and the field is present; {@code Nullable.empty()} when no
-     *         document matches or the field is absent
+     * @return a <i>present</i> {@code Nullable<String>} holding the field value (possibly {@code null}
+     *         for a missing/null field) when a document is matched; {@code Nullable.empty()} when no
+     *         document matches the filter
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1455,11 +1482,11 @@ public final class MongoCollectionExecutor {
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents
      * or fields are ignored.</p>
      *
-     * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned when no document matches
-     * the filter <i>or</i> when the matched document has no field named {@code propName}. When the document
-     * matches and the field is present, the returned {@code Nullable} is <i>present</i> and holds the
-     * converted value — which itself may be {@code null} if the stored field value is null
-     * ({@code Nullable.of(null)}), preserving the distinction between "missing" and "present-but-null".</p>
+     * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned <i>only</i> when no
+     * document matches the filter. When a document matches, the returned {@code Nullable} is
+     * <i>present</i> and holds the converted value — which itself may be {@code null} if the field is
+     * absent on the matched document or the stored field value is null ({@code Nullable.of(null)}),
+     * preserving the distinction between "no document matched" and "document matched but value is null".</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1469,9 +1496,9 @@ public final class MongoCollectionExecutor {
      *
      * @param propName the name of the field to retrieve the Date value from
      * @param filter BSON filter criteria to match documents (null matches all)
-     * @return a <i>present</i> {@code Nullable<Date>} holding the field value (possibly {@code null}) when
-     *         a document is matched and the field is present; {@code Nullable.empty()} when no document
-     *         matches or the field is absent
+     * @return a <i>present</i> {@code Nullable<Date>} holding the field value (possibly {@code null} for
+     *         a missing/null field) when a document is matched; {@code Nullable.empty()} when no document
+     *         matches the filter
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForDate(String, Bson, Class)
@@ -1489,11 +1516,11 @@ public final class MongoCollectionExecutor {
      * or fields are ignored. Use this overload when you need a specific {@code Date} implementation such as
      * {@link java.sql.Date}, {@link java.sql.Timestamp}, or a custom {@code Date} subclass.</p>
      *
-     * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned when no document matches
-     * the filter <i>or</i> when the matched document has no field named {@code propName}. When the document
-     * matches and the field is present, the returned {@code Nullable} is <i>present</i> and holds the
-     * converted value — which itself may be {@code null} if the stored field value is null
-     * ({@code Nullable.of(null)}), preserving the distinction between "missing" and "present-but-null".</p>
+     * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned <i>only</i> when no
+     * document matches the filter. When a document matches, the returned {@code Nullable} is
+     * <i>present</i> and holds the converted value — which itself may be {@code null} if the field is
+     * absent on the matched document or the stored field value is null ({@code Nullable.of(null)}),
+     * preserving the distinction between "no document matched" and "document matched but value is null".</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1508,8 +1535,8 @@ public final class MongoCollectionExecutor {
      * @param filter BSON filter criteria to match documents (null matches all)
      * @param rowType the specific Date class to convert the value to
      * @return a <i>present</i> {@code Nullable<T>} holding the converted field value (possibly
-     *         {@code null}) when a document is matched and the field is present; {@code Nullable.empty()}
-     *         when no document matches or the field is absent
+     *         {@code null} for a missing/null field) when a document is matched; {@code Nullable.empty()}
+     *         when no document matches the filter
      * @throws IllegalArgumentException if propName or rowType is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForDate(String, Bson)
@@ -1526,14 +1553,15 @@ public final class MongoCollectionExecutor {
      * or fields are ignored. This is the foundational method used by the primitive {@code queryForXxx}
      * convenience methods.</p>
      *
-     * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned when no document matches
-     * the filter <i>or</i> when the matched document has no field named {@code propName} (the Mongo
-     * implementation treats both cases as "empty document"). When a matching document carries the field,
-     * the returned {@code Nullable} is <i>present</i> and holds the converted value — which itself may be
-     * {@code null} if the stored value is null ({@code Nullable.of(null)}). {@link Nullable} preserves the
-     * distinction between "no document / missing field" and "field present but null"; use
+     * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned <i>only</i> when no
+     * document matches the filter ({@code findIterable.first()} yields {@code null}). When a document
+     * matches, the returned {@code Nullable} is <i>present</i> and holds the converted value — which
+     * itself may be {@code null} when the field is absent on the matched document or the stored value is
+     * BSON null ({@code Nullable.of(null)}). {@link Nullable} therefore preserves the distinction between
+     * "no document matched" and "document matched but value is null"; use
      * {@link #queryForSingleNonNull(String, Bson, Class)} when you want {@code null} field values to be
-     * collapsed into {@code Optional.empty()}.</p>
+     * collapsed into {@code Optional.empty()} (note that {@code queryForSingleNonNull} throws NPE on a
+     * matched-but-null payload — see that method for details).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1548,8 +1576,8 @@ public final class MongoCollectionExecutor {
      * @param filter BSON filter criteria to match documents (null matches all)
      * @param valueType the target type for conversion of the field value
      * @return a <i>present</i> {@code Nullable<V>} holding the converted field value (possibly
-     *         {@code null}) when a document is matched and carries the field; {@code Nullable.empty()}
-     *         when no document matches or the field is absent
+     *         {@code null} for a missing/null field) when a document is matched; {@code Nullable.empty()}
+     *         when no document matches the filter
      * @throws IllegalArgumentException if propName or valueType is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForSingleNonNull(String, Bson, Class)

@@ -435,11 +435,14 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Finds the first entity matching the specified filter reactively.
+     * Finds the first entity matching the specified filter in a reactive manner.
      *
-     * <p>This method provides a reactive way to retrieve the first document that matches the given
-     * filter criteria and automatically convert it to the mapped entity type. The operation completes
-     * when the first matching document is found or when it's determined that no matching documents exist.</p>
+     * <p>Retrieves the first document that matches the given filter criteria and automatically
+     * converts it to the mapped entity type {@code T}.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> on subscription, the returned {@code Mono} emits the
+     * first matching document decoded as {@code T} and then completes, or completes <i>empty</i>
+     * when no document matches the filter.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -453,10 +456,12 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param filter the query filter to match documents
-     * @return a Mono that emits the first matching entity, or empty if no documents match the filter
+     * @return a {@code Mono} that emits the first matching entity decoded as {@code T}, or
+     *         completes empty when no document matches the filter
      * @throws IllegalArgumentException if filter is null
      * @see Bson
      * @see com.mongodb.client.model.Filters
+     * @see MongoCollectionExecutor#findFirst(Bson, Class)
      */
     public Mono<T> findFirst(final Bson filter) {
         return collectionExecutor.findFirst(filter, rowType);
@@ -1133,7 +1138,6 @@ public final class MongoCollectionMapper<T> {
      * @return a {@code Mono} that emits the typed {@code Date} value on subscription, or completes
      *         empty when no document matches or the field is missing/null
      * @throws IllegalArgumentException if {@code propName} or {@code valueType} is null (signalled via {@code Mono})
-     * @throws ClassCastException if the value cannot be converted to the specified type
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForDate(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1172,7 +1176,6 @@ public final class MongoCollectionMapper<T> {
      * @return a {@code Mono} that emits the converted field value on subscription, or completes empty
      *         when no document matches or the field is missing/null
      * @throws IllegalArgumentException if {@code propName} or {@code valueType} is null (signalled via {@code Mono})
-     * @throws ClassCastException if the value cannot be converted to the specified type
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see MongoCollectionExecutor#queryForSingleValue(String, Bson, Class)
      */
@@ -1181,11 +1184,16 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Queries all matching documents and returns them as a Dataset.
+     * Queries all matching documents and returns them as a single {@link Dataset}.
      *
-     * <p>Retrieves all documents matching the filter and returns them as a Dataset,
-     * which provides tabular data manipulation capabilities. Useful for data analysis
-     * and reporting scenarios.</p>
+     * <p>On subscription, the matching documents are collected into one {@code Dataset} whose
+     * column layout is derived from the mapper's row type {@code T}, emitted once, and then the
+     * {@code Mono} completes. Even when no documents match, the {@code Mono} emits an empty
+     * {@code Dataset} rather than completing empty.</p>
+     *
+     * <p><b>Note:</b> all matching documents are materialised into memory before the {@code
+     * Dataset} is emitted, so this is not suitable for very large result sets — use
+     * {@link #list(Bson)} (streaming {@code Flux}) instead in that case.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1195,9 +1203,11 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param filter the query filter to match documents
-     * @return a Mono that emits a Dataset containing all matching documents
+     * @return a {@code Mono} that, on subscription, emits exactly one {@code Dataset} containing
+     *         all matching documents (possibly empty), then completes
      * @throws IllegalArgumentException if filter is null
      * @see Dataset
+     * @see MongoCollectionExecutor#query(Bson, Class)
      */
     public Mono<Dataset> query(final Bson filter) {
         return collectionExecutor.query(filter, rowType);
@@ -1944,12 +1954,13 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Performs a bulk insert of multiple entities into the collection.
+     * Performs a bulk insert of multiple entities into the collection in a reactive manner.
      *
-     * <p>Efficiently inserts a collection of entities in a single batch operation.
-     * This method is optimized for inserting large volumes of data and provides
-     * better performance than individual inserts for multiple documents.</p>
-     * 
+     * <p>Each entity is wrapped in an {@link com.mongodb.client.model.InsertOneModel} and
+     * submitted as a single bulk write. Delegates to
+     * {@link MongoCollectionExecutor#bulkInsert(Collection)}, which extracts the inserted-count
+     * from the underlying {@link BulkWriteResult}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<User> newUsers = Arrays.asList(user1, user2, user3);
@@ -1958,8 +1969,12 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param entities the collection of entities to insert (must not be null or empty)
-     * @return a Mono emitting the count of successfully inserted documents
+     * @return a {@code Mono} that, on subscription, emits exactly one {@code Integer} with the
+     *         count of successfully inserted documents, then completes
      * @throws IllegalArgumentException if entities is null or empty
+     * @throws com.mongodb.MongoBulkWriteException if the bulk write reports any per-document
+     *         failures (signalled via {@code Mono})
+     * @see MongoCollectionExecutor#bulkInsert(Collection)
      */
     public Mono<Integer> bulkInsert(final Collection<? extends T> entities) {
         return collectionExecutor.bulkInsert(entities);
@@ -2039,12 +2054,17 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Atomically finds and updates a single document.
+     * Atomically finds and updates a single document, returning it as the mapper's entity type.
      *
-     * <p>Locates the first document matching the filter and applies the update atomically,
-     * returning the document either before or after the modification based on default
-     * settings. This operation prevents race conditions in concurrent environments.</p>
-     * 
+     * <p>Locates the first document matching the filter and applies the update atomically. By
+     * default the driver returns the document <i>before</i> the update; use the
+     * {@link FindOneAndUpdateOptions}-overload to request the post-update document. This
+     * operation prevents race conditions in concurrent environments.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> on subscription, the returned {@code Mono} emits the
+     * matched document decoded as {@code T} and then completes, or completes <i>empty</i> when no
+     * document matches the filter (no update is performed in that case).</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * User updatedUser = new User().setStatus("active");
@@ -2054,8 +2074,10 @@ public final class MongoCollectionMapper<T> {
      *
      * @param filter the query filter to identify the document to update
      * @param update the entity containing update values
-     * @return a Mono emitting the found document (before or after update based on defaults)
+     * @return a {@code Mono} that emits the matched document (before update) decoded as {@code T},
+     *         or completes empty when no document matches
      * @throws IllegalArgumentException if filter or update is null
+     * @see MongoCollectionExecutor#findOneAndUpdate(Bson, Object, Class)
      */
     public Mono<T> findOneAndUpdate(final Bson filter, final T update) {
         return collectionExecutor.findOneAndUpdate(filter, update, rowType);
@@ -2135,12 +2157,19 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Atomically finds and replaces a single document.
+     * Atomically finds and replaces a single document, returning it as the mapper's entity type.
      *
-     * <p>Locates the first document matching the filter and replaces it entirely with
-     * the provided replacement document. Unlike update operations, this completely
-     * overwrites the existing document while preserving the _id field.</p>
-     * 
+     * <p>Locates the first document matching the filter and replaces it entirely with the
+     * provided replacement document. Unlike update operations, this completely overwrites the
+     * existing document while preserving the {@code _id} field. By default the driver returns
+     * the document <i>before</i> replacement; use the {@link FindOneAndReplaceOptions}-overload
+     * to request the post-replacement document.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> on subscription, the returned {@code Mono} emits the
+     * matched document (before replacement) decoded as {@code T} and then completes, or completes
+     * <i>empty</i> when no document matches the filter and the operation is not configured to
+     * upsert.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * User newUser = new User("John", "john@example.com", "active");
@@ -2150,8 +2179,10 @@ public final class MongoCollectionMapper<T> {
      *
      * @param filter the query filter to identify the document to replace
      * @param replacement the complete replacement document
-     * @return a Mono emitting the replaced document (before replacement by default)
+     * @return a {@code Mono} that emits the matched document (before replacement) decoded as
+     *         {@code T}, or completes empty when no document matches the filter
      * @throws IllegalArgumentException if filter or replacement is null
+     * @see MongoCollectionExecutor#findOneAndReplace(Bson, Object, Class)
      */
     public Mono<T> findOneAndReplace(final Bson filter, final T replacement) {
         return collectionExecutor.findOneAndReplace(filter, replacement, rowType);
@@ -2184,22 +2215,28 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Atomically finds and deletes a single document.
+     * Atomically finds and deletes a single document, returning it as the mapper's entity type.
      *
      * <p>Locates the first document matching the filter and removes it from the collection
-     * atomically, returning the deleted document. This ensures the document is retrieved
-     * before deletion in a single atomic operation.</p>
-     * 
+     * atomically. This ensures the document is retrieved before deletion in a single atomic
+     * operation.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> on subscription, the returned {@code Mono} emits the
+     * just-deleted document decoded as {@code T} and then completes, or completes <i>empty</i>
+     * when no document matches the filter (nothing is deleted in that case).</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * userMapper.findOneAndDelete(Filters.eq("status", "deleted"))
-     *     .subscribe(deletedUser -> 
+     *     .subscribe(deletedUser ->
      *         System.out.println("Removed user: " + deletedUser.getName()));
      * }</pre>
      *
      * @param filter the query filter to identify the document to delete
-     * @return a Mono emitting the deleted document
+     * @return a {@code Mono} that emits the deleted document decoded as {@code T}, or completes
+     *         empty when no document matches the filter
      * @throws IllegalArgumentException if filter is null
+     * @see MongoCollectionExecutor#findOneAndDelete(Bson, Class)
      */
     public Mono<T> findOneAndDelete(final Bson filter) {
         return collectionExecutor.findOneAndDelete(filter, rowType);
@@ -2230,46 +2267,61 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Returns distinct values for a specified field across the collection.
+     * Returns distinct values for a specified field across the collection, decoded as the mapper's
+     * entity type {@code T}.
      *
-     * <p>Retrieves all unique values of the specified field from all documents in
-     * the collection. This is useful for getting lists of unique categories, tags,
-     * or any other field where duplicate values should be eliminated.</p>
-     * 
+     * <p>Retrieves all unique values of the specified field from all documents in the collection.
+     * The driver decodes each raw BSON value to the mapper's row type {@code T}; this only makes
+     * sense when {@code T} is a scalar type that matches the field's BSON type (for example,
+     * a mapper of {@code String.class} reading a {@code String} field). For typical entity-mapper
+     * use (where {@code T} is a POJO), prefer {@link MongoCollectionExecutor#distinct(String, Class)}
+     * to specify the actual value type of the field.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * userMapper.distinct("country")
+     * // Mapper bound to String.class (or use the executor directly for typed scalar values):
+     * userMapper.collectionExecutor().distinct("country", String.class)
      *     .collectList()
      *     .subscribe(countries -> System.out.println("Countries: " + countries));
      * }</pre>
      *
      * @param fieldName the name of the field to get distinct values for
-     * @return a Flux emitting distinct values of the specified field
-     * @throws IllegalArgumentException if fieldName is null or empty
+     * @return a {@code Flux} that, on subscription, emits each distinct value of the field decoded
+     *         as {@code T}, then completes; completes empty if no documents are present
+     * @throws IllegalArgumentException if fieldName is null or empty (signalled via {@code Flux})
+     * @throws org.bson.codecs.configuration.CodecConfigurationException if the BSON value cannot be
+     *         decoded as {@code T} (signalled via {@code Flux} error)
+     * @see MongoCollectionExecutor#distinct(String, Class)
      */
     public Flux<T> distinct(final String fieldName) {
         return collectionExecutor.distinct(fieldName, rowType);
     }
 
     /**
-     * Returns distinct values for a field with filtering.
+     * Returns distinct values for a field among documents matching the filter, decoded as the
+     * mapper's entity type {@code T}.
      *
-     * <p>Retrieves unique values of the specified field from documents matching
-     * the provided filter. This allows for conditional distinct operations, such as
-     * getting unique values only from active records or within a date range.</p>
-     * 
+     * <p>Retrieves unique values of the specified field from documents matching the filter. The
+     * same decoding caveat as {@link #distinct(String)} applies: the BSON value of each distinct
+     * field is decoded as {@code T}, so this is only appropriate when {@code T} is a scalar type
+     * matching the field's BSON type.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson filter = Filters.eq("status", "active");
-     * userMapper.distinct("department", filter)
+     * userMapper.collectionExecutor().distinct("department", filter, String.class)
      *     .collectList()
      *     .subscribe(depts -> System.out.println("Active departments: " + depts));
      * }</pre>
      *
      * @param fieldName the name of the field to get distinct values for
      * @param filter the query filter to apply before extracting distinct values
-     * @return a Flux emitting distinct values from filtered documents
-     * @throws IllegalArgumentException if fieldName is null/empty or filter is null
+     * @return a {@code Flux} that, on subscription, emits each distinct value of the field decoded
+     *         as {@code T}, then completes; completes empty if no documents match the filter
+     * @throws IllegalArgumentException if fieldName is null/empty or filter is null (signalled via {@code Flux})
+     * @throws org.bson.codecs.configuration.CodecConfigurationException if the BSON value cannot be
+     *         decoded as {@code T} (signalled via {@code Flux} error)
+     * @see MongoCollectionExecutor#distinct(String, Bson, Class)
      */
     public Flux<T> distinct(final String fieldName, final Bson filter) {
         return collectionExecutor.distinct(fieldName, filter, rowType);
@@ -2393,12 +2445,13 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Executes a map-reduce operation on the collection (Deprecated).
+     * Executes a map-reduce operation on the collection, decoding each emitted result document as
+     * the mapper's row type {@code T}.
      *
-     * <p>Performs map-reduce operations using JavaScript functions for complex
-     * data processing. This method is deprecated in favor of the aggregation
-     * framework which provides better performance and more features.</p>
-     * 
+     * <p>Performs a map-reduce operation using the supplied JavaScript map and reduce functions
+     * and emits each output document, decoded to the mapper's entity type, on the returned
+     * {@link Flux}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * String mapFunction = "function() { emit(this.category, 1); }";
@@ -2407,11 +2460,14 @@ public final class MongoCollectionMapper<T> {
      *     .subscribe(result -> System.out.println("Map-reduce result: " + result));
      * }</pre>
      *
-     * @param mapFunction JavaScript function to map documents
-     * @param reduceFunction JavaScript function to reduce mapped values
-     * @return a Flux emitting map-reduce results
+     * @param mapFunction the JavaScript map function; must not be null
+     * @param reduceFunction the JavaScript reduce function; must not be null
+     * @return a {@code Flux} that, on subscription, emits each map-reduce output document decoded
+     *         as {@code T}, then completes; completes empty when the operation produces no output
      * @throws IllegalArgumentException if mapFunction or reduceFunction is null
-     * @deprecated Use {@link #aggregate(List)} with aggregation pipeline instead.
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
+     * @deprecated Map-reduce is deprecated in MongoDB 5.0+. Use {@link #aggregate(List)} with an
+     *             aggregation pipeline instead.
      */
     @Deprecated
     public Flux<T> mapReduce(final String mapFunction, final String reduceFunction) {

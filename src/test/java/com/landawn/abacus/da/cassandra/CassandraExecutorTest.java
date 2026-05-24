@@ -1185,6 +1185,223 @@ public class CassandraExecutorTest extends TestBase {
         assertTrue(str.contains("123"));
     }
 
+    // ---------------------------------------------------------------------
+    //  Coverage gap fillers: batchInsert/Update with Map propsList, query, etc.
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void test_batchInsert_withMapPropsList() {
+        // Exercises prepareBatchInsertStatement(Class, Collection<Map>, BatchType) - 0% coverage
+        // Users has @Table("simplex.users") so the keyspace is resolved.
+        UUID id1 = UUID.randomUUID();
+        UUID id2 = UUID.randomUUID();
+        List<Map<String, Object>> propsList = N.asList(N.asMap("id", (Object) id1),
+                N.asMap("id", (Object) id2));
+        try {
+            ResultSet rs = cassandraExecutor.batchInsert(Users.class, propsList, BatchType.LOGGED);
+            assertNotNull(rs);
+            assertTrue(cassandraExecutor.exists("SELECT * FROM simplex.users WHERE id = ?", id1));
+            assertTrue(cassandraExecutor.exists("SELECT * FROM simplex.users WHERE id = ?", id2));
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.users WHERE id = ?", id1);
+            cassandraExecutor.execute("DELETE FROM simplex.users WHERE id = ?", id2);
+        }
+    }
+
+    @Test
+    public void test_batchUpdate_withMapPropsList() {
+        // Exercises prepareBatchUpdateStatement(Class, Collection<Map>, BatchType) - 0% coverage
+        UUID id1 = UUID.randomUUID();
+        UUID id2 = UUID.randomUUID();
+        cassandraExecutor.execute("INSERT INTO simplex.users (id, someDate) VALUES (?, ?)", id1, "d-before1");
+        cassandraExecutor.execute("INSERT INTO simplex.users (id, someDate) VALUES (?, ?)", id2, "d-before2");
+        try {
+            List<Map<String, Object>> propsList = N.asList(N.asMap("id", (Object) id1, "someDate", (Object) "d-after1"),
+                    N.asMap("id", (Object) id2, "someDate", (Object) "d-after2"));
+            ResultSet rs = cassandraExecutor.batchUpdate(Users.class, propsList, BatchType.LOGGED);
+            assertNotNull(rs);
+            assertEquals("d-after1",
+                    cassandraExecutor.queryForSingleValue(String.class, "SELECT someDate FROM simplex.users WHERE id = ?", id1).orElse(null));
+            assertEquals("d-after2",
+                    cassandraExecutor.queryForSingleValue(String.class, "SELECT someDate FROM simplex.users WHERE id = ?", id2).orElse(null));
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.users WHERE id = ?", id1);
+            cassandraExecutor.execute("DELETE FROM simplex.users WHERE id = ?", id2);
+        }
+    }
+
+    @Test
+    public void test_batchUpdate_withQueryAndParametersList() {
+        // Exercises prepareBatchUpdateStatement(String, Collection, BatchType) - 0% coverage
+        UUID id1 = UUID.randomUUID();
+        UUID id2 = UUID.randomUUID();
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id1, "x");
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id2, "y");
+        try {
+            List<Object[]> params = N.asList(new Object[] { "u1", id1 }, new Object[] { "u2", id2 });
+            ResultSet rs = cassandraExecutor.batchUpdate("UPDATE simplex.songs SET title = ? WHERE id = ?", params, BatchType.LOGGED);
+            assertNotNull(rs);
+            assertEquals("u1", cassandraExecutor.queryForSingleValue(String.class, "SELECT title FROM simplex.songs WHERE id = ?", id1).orElse(null));
+            assertEquals("u2", cassandraExecutor.queryForSingleValue(String.class, "SELECT title FROM simplex.songs WHERE id = ?", id2).orElse(null));
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id1);
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id2);
+        }
+    }
+
+    @Test
+    public void test_batchInsert_emptyEntities_throwsIAE() {
+        assertThrows(IllegalArgumentException.class, () -> cassandraExecutor.batchInsert(N.<Users> emptyList(), BatchType.LOGGED));
+    }
+
+    @Test
+    public void test_batchInsert_emptyPropsList_throwsIAE() {
+        assertThrows(IllegalArgumentException.class,
+                () -> cassandraExecutor.batchInsert(Users.class, N.<Map<String, Object>> emptyList(), BatchType.LOGGED));
+    }
+
+    @Test
+    public void test_batchUpdate_emptyPropsList_throwsIAE() {
+        assertThrows(IllegalArgumentException.class,
+                () -> cassandraExecutor.batchUpdate(Users.class, N.<Map<String, Object>> emptyList(), BatchType.LOGGED));
+    }
+
+    @Test
+    public void test_batchUpdate_emptyQueryParams_throwsIAE() {
+        assertThrows(IllegalArgumentException.class, () -> cassandraExecutor.batchUpdate("UPDATE simplex.songs SET title = ? WHERE id = ?",
+                N.emptyList(), BatchType.LOGGED));
+    }
+
+    // ---------------------------------------------------------------------
+    //  configStatement(Statement) coverage - executor created with StatementSettings
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void test_configStatement_appliedViaCustomSettings() {
+        // Build settings exercising the consistency / fetchSize / timeout / tracing branches.
+        StatementSettings settings = StatementSettings.builder()
+                .consistency(ConsistencyLevel.ONE)
+                .fetchSize(10)
+                .timeout(Duration.ofSeconds(5))
+                .traceQuery(Boolean.FALSE)
+                .build();
+        CassandraExecutor exec = new CassandraExecutor(cassandraExecutor.session(), settings);
+        UUID id = UUID.randomUUID();
+        exec.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "cfgT");
+        try {
+            // Run a select to ensure configStatement is exercised on a bound stmt path.
+            assertTrue(exec.exists("SELECT * FROM simplex.songs WHERE id = ?", id));
+            // Exercise configStatement on a BatchStatement via batchUpdate(String, ...).
+            UUID b1 = UUID.randomUUID();
+            UUID b2 = UUID.randomUUID();
+            exec.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", b1, "b1");
+            exec.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", b2, "b2");
+            List<Object[]> params = N.asList(new Object[] { "b1-new", b1 }, new Object[] { "b2-new", b2 });
+            assertNotNull(exec.batchUpdate("UPDATE simplex.songs SET title = ? WHERE id = ?", params, BatchType.LOGGED));
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", b1);
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", b2);
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
+        }
+    }
+
+    @Test
+    public void test_configStatement_withSerialConsistency() {
+        // Cover the serialConsistency branch of configStatement.
+        StatementSettings settings = StatementSettings.builder().serialConsistency(ConsistencyLevel.LOCAL_SERIAL).build();
+        CassandraExecutor exec = new CassandraExecutor(cassandraExecutor.session(), settings);
+        // Plain SELECT - just confirms the configured stmt executes.
+        ResultSet rs = exec.execute("SELECT id FROM simplex.songs LIMIT 1");
+        assertNotNull(rs);
+    }
+
+    // ---------------------------------------------------------------------
+    //  readRow / createRowMapper coverage - exercise object[], collection,
+    //  and single-column-with-conversion lambda branches.
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void test_list_withObjectArrayClass() {
+        UUID id = UUID.randomUUID();
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "oa");
+        try {
+            // Use list(Object[].class, ...) which exercises the isObjectArray branch in createRowMapper/readRow.
+            List<Object[]> rows = cassandraExecutor.list(Object[].class, "SELECT id, title FROM simplex.songs WHERE id = ?", id);
+            assertEquals(1, rows.size());
+            assertEquals(2, rows.get(0).length);
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
+        }
+    }
+
+    @Test
+    public void test_list_withListClass() {
+        UUID id = UUID.randomUUID();
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "lc");
+        try {
+            // Use list(List.class, ...) which exercises the isCollection branch.
+            List<List> rows = (List) cassandraExecutor.list(List.class, "SELECT id, title FROM simplex.songs WHERE id = ?", id);
+            assertEquals(1, rows.size());
+            assertEquals(2, rows.get(0).size());
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
+        }
+    }
+
+    @Test
+    public void test_stream_withMapClass() {
+        // Stream with Map.class exercises the isMap branch in createRowMapper.
+        UUID id = UUID.randomUUID();
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "stM");
+        try {
+            long count = cassandraExecutor.stream(Map.class, "SELECT id, title FROM simplex.songs WHERE id = ?", id).count();
+            assertEquals(1L, count);
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
+        }
+    }
+
+    @Test
+    public void test_stream_withObjectArrayClass() {
+        UUID id = UUID.randomUUID();
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "stOA");
+        try {
+            long count = cassandraExecutor.stream(Object[].class, "SELECT id, title FROM simplex.songs WHERE id = ?", id).count();
+            assertEquals(1L, count);
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
+        }
+    }
+
+    @Test
+    public void test_stream_withStringClass_singleColumn() {
+        // Exercises the single-column-conversion lambda branch (rowClass=String, value=UUID -> N.convert).
+        UUID id = UUID.randomUUID();
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "stC");
+        try {
+            List<String> titles = cassandraExecutor.stream(String.class, "SELECT title FROM simplex.songs WHERE id = ?", id).toList();
+            assertEquals(1, titles.size());
+            assertEquals("stC", titles.get(0));
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
+        }
+    }
+
+    @Test
+    public void test_list_singleColumn_typeConversion() {
+        // Exercises N.convert path in single-column row mapper: UUID -> String conversion.
+        UUID id = UUID.randomUUID();
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "convT");
+        try {
+            // Force a conversion: the column is a UUID, but request String back.
+            List<String> ids = cassandraExecutor.list(String.class, "SELECT id FROM simplex.songs WHERE id = ?", id);
+            assertEquals(1, ids.size());
+            assertEquals(id.toString(), ids.get(0));
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
+        }
+    }
+
     private Users createUser() {
         Users user = new Users();
         user.setId(UUID.randomUUID());

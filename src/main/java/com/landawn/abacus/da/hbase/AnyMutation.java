@@ -31,26 +31,27 @@ import org.apache.hadoop.hbase.security.access.Permission;
 import org.apache.hadoop.hbase.security.visibility.CellVisibility;
 
 /**
- * Abstract base wrapper for HBase {@code Mutation} operations that simplifies data modification
- * by providing automatic type conversion, fluent API design, and comprehensive mutation management.
- * This class serves as the foundation for all HBase mutation operations including Put, Delete, 
- * Append, and Increment operations.
+ * Abstract base wrapper for HBase {@link Mutation} operations. Concrete subclasses include
+ * {@link AnyPut}, {@link AnyDelete}, {@link AnyAppend}, and {@link AnyIncrement}.
  *
- * <p>This wrapper eliminates the complexity of manual byte array conversions while providing
- * access to advanced HBase mutation features such as durability control, timestamp management,
- * cell visibility, access control, and TTL (Time-To-Live) settings.</p>
+ * <p>This class implements {@link Row}, so any concrete mutation can be passed directly to HBase
+ * batch APIs that accept {@code Row} instances. It exposes the common mutation-level controls —
+ * durability, timestamp, cluster ids, cell visibility, ACLs, TTL, and family-map / cell
+ * inspection — without forcing callers to deal with byte arrays.</p>
  *
- * <h3>Key Features:</h3>
+ * <h3>Key features</h3>
  * <ul>
- * <li><strong>Type Safety</strong>: Automatic conversion between Java objects and HBase byte arrays</li>
- * <li><strong>Fluent API</strong>: Method chaining for readable mutation construction</li>
- * <li><strong>Advanced Controls</strong>: Durability, visibility, ACL, and TTL management</li>
- * <li><strong>Cell Management</strong>: Direct access to mutation cells and family maps</li>
- * <li><strong>Metadata Support</strong>: Timestamp, cluster ID, and fingerprint access</li>
- * <li><strong>Performance Optimization</strong>: Efficient handling of large mutation operations</li>
+ * <li><strong>Automatic conversion</strong>: {@link String} family/qualifier names and arbitrary
+ *     {@link Object} values are converted to byte arrays via {@link HBaseExecutor}.</li>
+ * <li><strong>Fluent API</strong>: every setter returns {@code this} (typed as {@code AM}) for
+ *     method chaining.</li>
+ * <li><strong>Advanced controls</strong>: durability level, cell visibility expressions,
+ *     per-user / per-map ACLs, and TTL.</li>
+ * <li><strong>Cell inspection</strong>: {@link #has}, {@link #get}, {@link #getFamilyCellMap},
+ *     {@link #cellScanner}, {@link #size}, {@link #numFamilies}, and {@link #isEmpty}.</li>
  * </ul>
  *
- * <h3>Common Usage Patterns:</h3>
+ * <h3>Common usage patterns</h3>
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * // Basic mutation with durability control
@@ -60,22 +61,23 @@ import org.apache.hadoop.hbase.security.visibility.CellVisibility;
  *
  * // Security and visibility controls
  * anyMutation.setCellVisibility(new CellVisibility("SECRET&DEPT_A"))
- *           .setACL("admin", Permission.Action.READ);
+ *           .setACL("admin", new Permission(Permission.Action.READ));
  *
  * // Query existing mutation data
  * boolean hasColumn = anyMutation.has("family", "qualifier");
  * List<Cell> cells = anyMutation.get("family", "qualifier");
  * }</pre>
  *
- * <h3>Durability Levels:</h3>
+ * <h3>Durability levels (see {@link Durability})</h3>
  * <ul>
- * <li><strong>SKIP_WAL</strong>: Fastest, no durability guarantee</li>
- * <li><strong>ASYNC_WAL</strong>: Fast, asynchronous write-ahead log</li>
- * <li><strong>SYNC_WAL</strong>: Default, synchronous write-ahead log</li>
- * <li><strong>FSYNC_WAL</strong>: Strongest durability, forces disk sync</li>
+ * <li><strong>SKIP_WAL</strong>: fastest, no durability guarantee</li>
+ * <li><strong>ASYNC_WAL</strong>: fast, asynchronous write-ahead log</li>
+ * <li><strong>SYNC_WAL</strong>: default, synchronous write-ahead log</li>
+ * <li><strong>FSYNC_WAL</strong>: strongest, forces filesystem sync</li>
  * </ul>
  *
- * @param <AM> the concrete subtype of AnyMutation for method chaining
+ * @param <AM> the concrete subtype of {@code AnyMutation}; declared so fluent setters can return
+ *             {@code AM} and preserve the concrete type during chaining
  * @see AnyOperationWithAttributes
  * @see Mutation
  * @see AnyPut
@@ -89,10 +91,12 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     protected final Mutation mutation;
 
     /**
-     * Constructs a new AnyMutation wrapper around the specified HBase Mutation.
+     * Constructs a new {@code AnyMutation} that delegates to the supplied HBase {@link Mutation}.
+     * The wrapped mutation is also passed to the {@link AnyOperationWithAttributes} constructor as
+     * the underlying operation.
      *
-     * @param mutation the HBase Mutation to wrap; must not be null
-     * @throws IllegalArgumentException if mutation is null
+     * @param mutation the HBase {@link Mutation} to wrap; must not be {@code null}
+     * @throws IllegalArgumentException if {@code mutation} is {@code null}
      */
     protected AnyMutation(final Mutation mutation) {
         super(mutation);
@@ -103,33 +107,26 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Returns a CellScanner for iterating over all cells in this mutation.
-     * <p>
-     * The CellScanner provides efficient access to all cells contained in this mutation,
-     * allowing for inspection or processing of the mutation's data without converting
-     * to higher-level data structures. This is useful for debugging, logging, or
-     * custom processing of mutation contents.
-     * </p>
+     * Returns a {@link CellScanner} over every cell this mutation will write. Lower-overhead than
+     * materializing the family map; useful for inspection, debugging, or forwarding the cells to
+     * other HBase APIs.
      *
-     * @return a CellScanner for all cells in this mutation; never null
+     * @return a {@link CellScanner} over the cells contained in this mutation; never {@code null}
      * @see CellScanner
      * @see Cell
+     * @see #getFamilyCellMap()
      */
     public CellScanner cellScanner() {
         return mutation.cellScanner();
     }
 
     /**
-     * Compiles the column family (schema) information into a Map for debugging and analysis.
-     * <p>
-     * This method provides a structured view of the mutation's schema characteristics,
-     * including column families, qualifiers, and other identifying attributes. The returned
-     * map is particularly useful for debugging, logging, and administration tools that need
-     * to analyze mutation structure without processing the actual cell data.
-     * </p>
+     * Returns the fingerprint for this mutation, overriding {@link AnyOperation#getFingerprint()}
+     * with the {@link Mutation}-specific implementation. The fingerprint includes the set of
+     * column families touched by this mutation but excludes per-cell data such as qualifiers,
+     * values, and the row key.
      *
-     * @return a Map containing the mutation's fingerprint with column family information;
-     *         never null but may be empty
+     * @return the fingerprint map produced by HBase; never {@code null} but may be empty
      * @see #toMap()
      */
     @Override
@@ -138,14 +135,12 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Returns the durability level set for this mutation.
-     * <p>
-     * Durability determines how strongly this mutation is persisted to disk.
-     * Higher durability levels provide stronger guarantees against data loss
-     * but may impact performance.
-     * </p>
+     * Returns the durability level currently set for this mutation. The level determines how
+     * strongly the mutation is persisted to the write-ahead log; higher levels reduce the risk of
+     * data loss at the cost of throughput.
      *
-     * @return the current durability level for this mutation
+     * @return the current durability level (defaults to {@link Durability#USE_DEFAULT} when none
+     *         has been set explicitly, meaning the table-level default is applied)
      * @see #setDurability(Durability)
      * @see Durability
      */
@@ -154,19 +149,18 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Sets the durability level for this mutation to control persistence guarantees.
-     * <p>
-     * Durability levels provide a trade-off between performance and data safety:
-     * </p>
+     * Sets the durability level for this mutation, trading throughput against persistence
+     * guarantees. The supported levels are:
      * <ul>
-     * <li><strong>SKIP_WAL</strong>: Fastest, bypasses write-ahead log (data loss risk)</li>
-     * <li><strong>ASYNC_WAL</strong>: Fast, asynchronous write-ahead log</li>
-     * <li><strong>SYNC_WAL</strong>: Default, synchronous write-ahead log</li>
-     * <li><strong>FSYNC_WAL</strong>: Strongest, forces filesystem sync</li>
+     * <li><strong>SKIP_WAL</strong>: fastest, bypasses the write-ahead log (data-loss risk)</li>
+     * <li><strong>ASYNC_WAL</strong>: fast, asynchronous WAL append</li>
+     * <li><strong>SYNC_WAL</strong>: synchronous WAL append</li>
+     * <li><strong>FSYNC_WAL</strong>: strongest, forces filesystem sync</li>
+     * <li><strong>USE_DEFAULT</strong>: use the table-level setting</li>
      * </ul>
      *
-     * @param d the durability level to apply to this mutation
-     * @return this mutation instance for method chaining
+     * @param d the durability level to apply
+     * @return this mutation instance, to allow fluent method chaining
      * @see #getDurability()
      * @see Durability
      */
@@ -177,17 +171,17 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Returns the complete family-to-cell mapping for this mutation.
-     * <p>
-     * This method provides access to the internal structure of the mutation,
-     * organized as a NavigableMap where keys are column family names (as byte arrays)
-     * and values are lists of Cell objects. This is useful for advanced processing,
-     * debugging, or when you need direct access to the mutation's cell structure.
-     * </p>
+     * Returns the underlying family-to-cell map. Keys are column-family names as byte arrays;
+     * values are the lists of {@link Cell}s belonging to each family. The returned map is the
+     * live map held by the wrapped {@link Mutation}, so mutating it changes the mutation;
+     * prefer the family-specific {@link #get(String, String)} or the dedicated subclass APIs for
+     * normal use.
      *
-     * @return a NavigableMap of column families to their respective Cell lists; never null
+     * @return the family-to-cell {@link NavigableMap} held by the wrapped mutation; never
+     *         {@code null}, but may be empty
      * @see Cell
      * @see #get(String, String)
+     * @see #cellScanner()
      */
     public NavigableMap<byte[], List<Cell>> getFamilyCellMap() {
         return mutation.getFamilyCellMap();
@@ -221,14 +215,13 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     //    }
 
     /**
-     * Returns the timestamp set for this mutation.
-     * <p>
-     * The timestamp determines the version of the data being written. If not explicitly
-     * set, HBase will use the current server time. Timestamps are used for versioning,
-     * conflict resolution, and time-based queries.
-     * </p>
+     * Returns the timestamp set on this mutation. The timestamp becomes the version of every
+     * cell written by the mutation. When no timestamp has been set explicitly, HBase returns
+     * {@code HConstants.LATEST_TIMESTAMP} and assigns the current server time when the mutation
+     * is applied.
      *
-     * @return the timestamp for this mutation, or {@code HConstants.LATEST_TIMESTAMP} if not explicitly set (server will assign the current time)
+     * @return the timestamp for this mutation, or {@code HConstants.LATEST_TIMESTAMP} when none
+     *         has been set explicitly
      * @see #setTimestamp(long)
      */
     public long getTimestamp() {
@@ -236,19 +229,12 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Sets the timestamp for this mutation to control data versioning.
-     * <p>
-     * The timestamp determines when this data version was created and is crucial for:
-     * </p>
-     * <ul>
-     * <li><strong>Version Control</strong>: Multiple versions of the same cell</li>
-     * <li><strong>Time-based Queries</strong>: Querying data as of a specific time</li>
-     * <li><strong>Conflict Resolution</strong>: Newer timestamps typically win</li>
-     * <li><strong>Data Lifecycle</strong>: TTL and compaction decisions</li>
-     * </ul>
+     * Sets the timestamp that will be applied to every cell already added to (and added
+     * subsequently to) this mutation. The timestamp drives versioning, time-based queries, and
+     * TTL / compaction decisions on the server.
      *
-     * @param timestamp the timestamp to assign to this mutation (milliseconds since epoch)
-     * @return this mutation instance for method chaining
+     * @param timestamp the timestamp to assign, in milliseconds since the epoch
+     * @return this mutation instance, to allow fluent method chaining
      * @see #getTimestamp()
      * @see System#currentTimeMillis()
      */
@@ -259,14 +245,11 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Returns the list of cluster IDs that have consumed this mutation.
-     * <p>
-     * Cluster IDs are used in multi-cluster replication scenarios to track which
-     * clusters have already processed this mutation. This prevents infinite loops
-     * in bidirectional replication and helps ensure data consistency across clusters.
-     * </p>
+     * Returns the list of cluster UUIDs that have already consumed this mutation. Used by HBase
+     * replication to suppress loops when a mutation is replicated between bidirectionally linked
+     * clusters.
      *
-     * @return a list of cluster UUIDs that have consumed this mutation; may be null or empty
+     * @return the list of cluster UUIDs; may be empty
      * @see #setClusterIds(List)
      * @see UUID
      */
@@ -275,16 +258,11 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Marks that the clusters with the given cluster IDs have consumed this mutation.
-     * <p>
-     * This method is primarily used by HBase replication infrastructure to prevent
-     * replication loops in multi-cluster deployments. When a mutation is replicated
-     * to other clusters, those cluster IDs are added to prevent the mutation from
-     * being replicated back to the originating cluster.
-     * </p>
+     * Records the set of clusters that have already consumed this mutation. Used internally by
+     * HBase replication to suppress loops; ordinary client code rarely needs to call this.
      *
-     * @param clusterIds the list of cluster UUIDs that have consumed this mutation
-     * @return this mutation instance for method chaining
+     * @param clusterIds the cluster UUIDs to record
+     * @return this mutation instance, to allow fluent method chaining
      * @see #getClusterIds()
      * @see UUID
      */
@@ -295,15 +273,13 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Returns the cell visibility expression associated with this mutation.
-     * <p>
-     * Cell visibility expressions define which users or groups can access the data
-     * in this mutation. The expression is evaluated by HBase's visibility label system
-     * to determine read access permissions.
-     * </p>
+     * Returns the cell visibility expression attached to this mutation. The expression is the
+     * label-algebra string evaluated by HBase's visibility-label subsystem to gate cell-level read
+     * access (e.g. {@code "SECRET&DEPT_A"}).
      *
-     * @return the cell visibility expression, or null if not set
-     * @throws DeserializationException if the visibility expression cannot be deserialized
+     * @return the {@link CellVisibility} previously set, or {@code null} if none has been set
+     * @throws DeserializationException if the stored visibility expression cannot be deserialized
+     *         by HBase
      * @see #setCellVisibility(CellVisibility)
      * @see CellVisibility
      */
@@ -312,22 +288,19 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Sets the visibility expression that controls access to cells in this mutation.
-     * <p>
-     * Cell visibility provides fine-grained access control at the cell level using
-     * boolean expressions of visibility labels. Only users with the required labels
-     * can read cells that match the visibility expression.
-     * </p>
-     * 
-     * <p><strong>Expression Examples:</strong></p>
+     * Attaches a cell-visibility expression that will be applied to every cell written by this
+     * mutation. The expression uses HBase's label algebra; only users whose authorization tokens
+     * satisfy the expression will be able to read the cells.
+     *
+     * <p><strong>Expression examples:</strong></p>
      * <ul>
-     * <li><code>"PUBLIC"</code> - Accessible to users with PUBLIC label</li>
-     * <li><code>"SECRET&amp;DEPT_A"</code> - Requires both SECRET and DEPT_A labels</li>
-     * <li><code>"(SECRET|CONFIDENTIAL)&amp;DEPT_A"</code> - Complex boolean expression</li>
+     * <li><code>"PUBLIC"</code> - accessible to users with the {@code PUBLIC} label</li>
+     * <li><code>"SECRET&amp;DEPT_A"</code> - requires both {@code SECRET} and {@code DEPT_A}</li>
+     * <li><code>"(SECRET|CONFIDENTIAL)&amp;DEPT_A"</code> - combined boolean expression</li>
      * </ul>
      *
-     * @param expression the visibility expression to apply to cells in this mutation
-     * @return this mutation instance for method chaining
+     * @param expression the {@link CellVisibility} expression to apply
+     * @return this mutation instance, to allow fluent method chaining
      * @see #getCellVisibility()
      * @see CellVisibility
      */
@@ -338,14 +311,11 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Returns the serialized Access Control List (ACL) for this operation.
-     * <p>
-     * The ACL defines which users and groups have specific permissions on the data
-     * affected by this mutation. The returned byte array contains the serialized
-     * representation of the permission structure.
-     * </p>
+     * Returns the serialized Access Control List attached to this mutation. The bytes are the
+     * protobuf-serialized form of the user-to-permission map written by
+     * {@link #setACL(String, Permission)} or {@link #setACL(Map)}.
      *
-     * @return the serialized ACL for this operation, or null if none has been set
+     * @return the serialized ACL bytes, or {@code null} if no ACL has been set
      * @see #setACL(String, Permission)
      * @see #setACL(Map)
      * @see Permission
@@ -355,17 +325,12 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Sets Access Control List permissions for a specific user on this mutation.
-     * <p>
-     * This method grants specific permissions to a single user for the data affected
-     * by this mutation. The permissions control what actions the user can perform
-     * on the data (read, write, execute, create, admin).
-     * </p>
+     * Grants the specified {@link Permission} to a single user on the data written by this
+     * mutation. Existing ACL settings on the mutation are replaced.
      *
-     * @param user the username to grant permissions to; must not be null
-     * @param perms the Permission object defining what actions are allowed
-     * @return this mutation instance for method chaining
-     * @throws IllegalArgumentException if user is null
+     * @param user the username to grant permissions to
+     * @param perms the {@link Permission} defining the allowed actions
+     * @return this mutation instance, to allow fluent method chaining
      * @see #getACL()
      * @see #setACL(Map)
      * @see Permission
@@ -377,13 +342,9 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Sets Access Control List permissions for multiple users on this mutation.
-     * <p>
-     * This method allows setting permissions for multiple users in a single call.
-     * Each entry in the map specifies a username and the corresponding permissions
-     * that user should have on the data affected by this mutation.
-     * </p>
-     * 
+     * Grants the specified {@link Permission}s to multiple users on the data written by this
+     * mutation. Existing ACL settings on the mutation are replaced.
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * import org.apache.hadoop.hbase.security.access.Permission;
@@ -396,9 +357,8 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * mutation.setACL(acl);
      * }</pre>
      *
-     * @param perms a map of usernames to their corresponding Permission objects
-     * @return this mutation instance for method chaining
-     * @throws IllegalArgumentException if perms is null
+     * @param perms a map of username to {@link Permission}
+     * @return this mutation instance, to allow fluent method chaining
      * @see #getACL()
      * @see #setACL(String, Permission)
      * @see Permission
@@ -410,14 +370,11 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Returns the Time-To-Live (TTL) value set for this mutation, in milliseconds.
-     * <p>
-     * TTL determines how long the data written by this mutation should be retained
-     * in HBase before being automatically deleted. This is useful for implementing
-     * data lifecycle policies and preventing storage from growing indefinitely.
-     * </p>
+     * Returns the Time-To-Live (TTL), in milliseconds, that will be attached to cells written by
+     * this mutation. When no TTL has been set, HBase returns {@link Long#MAX_VALUE}, meaning the
+     * column-family-level TTL (or none) applies.
      *
-     * @return the TTL for this mutation in milliseconds, or Long.MAX_VALUE if not set
+     * @return the TTL in milliseconds, or {@link Long#MAX_VALUE} if not set
      * @see #setTTL(long)
      */
     public long getTTL() {
@@ -425,16 +382,10 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Sets the Time-To-Live (TTL) for data written by this mutation, in milliseconds.
-     * <p>
-     * TTL provides automatic data expiration, which is useful for:
-     * </p>
-     * <ul>
-     * <li><strong>Session Data</strong>: Automatically expire user sessions</li>
-     * <li><strong>Cache Data</strong>: Implement time-based cache invalidation</li>
-     * <li><strong>Temporary Data</strong>: Auto-cleanup of temporary or intermediate data</li>
-     * <li><strong>Compliance</strong>: Meet data retention requirements</li>
-     * </ul>
+     * Sets the Time-To-Live (TTL), in milliseconds, for cells written by this mutation. Cells
+     * older than their TTL are eligible for removal during the next major compaction. The
+     * effective TTL on a cell is the minimum of the per-mutation TTL set here and the column
+     * family's TTL.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -445,8 +396,8 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * mutation.setTTL(2592000000L);   // 30 days in milliseconds
      * }</pre>
      *
-     * @param ttl the TTL for data written by this mutation, in milliseconds
-     * @return this mutation instance for method chaining
+     * @param ttl the TTL to apply, in milliseconds
+     * @return this mutation instance, to allow fluent method chaining
      * @see #getTTL()
      */
     public AM setTTL(final long ttl) {
@@ -456,12 +407,10 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Retrieves all Cell objects that match the specified column family and qualifier.
-     * <p>
-     * This method searches through the mutation's family map and returns all cells
-     * (KeyValue objects) that match both the family and qualifier. This is useful for
-     * inspecting what values will be written to a specific column before executing the mutation.
-     * </p>
+     * Returns every {@link Cell} already queued by this mutation that matches the given column
+     * family and qualifier. The family and qualifier names are converted to bytes via
+     * {@link HBaseExecutor#toFamilyQualifierBytes(String)}. Use this to inspect what will be
+     * written before the mutation is sent.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -474,10 +423,9 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * System.out.println("Number of versions: " + cells.size());
      * }</pre>
      *
-     * @param family the column family name; automatically converted to bytes
-     * @param qualifier the column qualifier name; automatically converted to bytes
-     * @return a list of Cell objects matching the family and qualifier; returns an empty
-     *         list if no cells match or if the family doesn't exist
+     * @param family the column-family name
+     * @param qualifier the column-qualifier name
+     * @return a (possibly empty) list of matching {@link Cell}s; never {@code null}
      * @see #get(byte[], byte[])
      * @see #has(String, String)
      * @see Cell
@@ -487,16 +435,11 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Retrieves all Cell objects that match the specified column family and qualifier using byte arrays.
-     * <p>
-     * This is the byte array variant of {@link #get(String, String)}. Use this method when you
-     * already have the family and qualifier as byte arrays to avoid additional conversion overhead.
-     * </p>
+     * Byte-array variant of {@link #get(String, String)}.
      *
-     * @param family the column family name as a byte array
-     * @param qualifier the column qualifier name as a byte array
-     * @return a list of Cell objects matching the family and qualifier; returns an empty
-     *         list if no cells match or if the family doesn't exist
+     * @param family the column-family name as a byte array
+     * @param qualifier the column-qualifier name as a byte array
+     * @return a (possibly empty) list of matching {@link Cell}s; never {@code null}
      * @see #get(String, String)
      * @see #has(byte[], byte[])
      * @see Cell
@@ -506,12 +449,9 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Checks if this mutation contains any cells for the specified column family and qualifier.
-     * <p>
-     * This is a convenience method to quickly check whether this mutation will affect a
-     * specific column without retrieving the actual cell data. Both the family and qualifier
-     * must match for this method to return true.
-     * </p>
+     * Returns {@code true} if at least one {@link Cell} already queued by this mutation matches
+     * the given family and qualifier. The family and qualifier names are converted to bytes via
+     * {@link HBaseExecutor#toFamilyQualifierBytes(String)}.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -523,10 +463,9 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * }
      * }</pre>
      *
-     * @param family the column family name; automatically converted to bytes
-     * @param qualifier the column qualifier name; automatically converted to bytes
-     * @return {@code true} if this mutation contains at least one cell for the given
-     *         family and qualifier; {@code false} otherwise
+     * @param family the column-family name
+     * @param qualifier the column-qualifier name
+     * @return {@code true} if at least one matching cell is present; {@code false} otherwise
      * @see #has(String, String, long)
      * @see #has(String, String, Object)
      * @see #get(String, String)
@@ -536,13 +475,8 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Checks if this mutation contains a cell with the specified family, qualifier, and timestamp.
-     * <p>
-     * This method provides more precise checking than {@link #has(String, String)} by also
-     * matching the timestamp. All three parameters (family, qualifier, and timestamp) must
-     * match exactly for this method to return true. This is useful when working with multiple
-     * versions of the same column.
-     * </p>
+     * Returns {@code true} if a queued {@link Cell} matches the given family, qualifier, and
+     * timestamp. All three components must match exactly.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -556,11 +490,10 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * }
      * }</pre>
      *
-     * @param family the column family name; automatically converted to bytes
-     * @param qualifier the column qualifier name; automatically converted to bytes
-     * @param ts the timestamp in milliseconds since epoch
-     * @return {@code true} if this mutation contains a cell matching all three parameters;
-     *         {@code false} otherwise
+     * @param family the column-family name
+     * @param qualifier the column-qualifier name
+     * @param ts the cell timestamp, in milliseconds since the epoch
+     * @return {@code true} if a matching cell is queued; {@code false} otherwise
      * @see #has(String, String)
      * @see #has(String, String, long, Object)
      */
@@ -569,12 +502,9 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Checks if this mutation contains a cell with the specified family, qualifier, and value.
-     * <p>
-     * This method checks whether this mutation will write a specific value to a specific column.
-     * All three parameters (family, qualifier, and value) must match exactly for this method
-     * to return true. The value is automatically converted to bytes for comparison.
-     * </p>
+     * Returns {@code true} if a queued {@link Cell} matches the given family, qualifier, and
+     * value. The value is converted to bytes via {@link HBaseExecutor#toValueBytes(Object)}
+     * before comparison.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -590,11 +520,10 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * boolean hasBob = put.has("profile", "name", "Bob");
      * }</pre>
      *
-     * @param family the column family name; automatically converted to bytes
-     * @param qualifier the column qualifier name; automatically converted to bytes
-     * @param value the value to check for; automatically converted to bytes for comparison
-     * @return {@code true} if this mutation contains a cell matching the family, qualifier,
-     *         and value; {@code false} otherwise
+     * @param family the column-family name
+     * @param qualifier the column-qualifier name
+     * @param value the value to look for; encoded via {@link HBaseExecutor#toValueBytes(Object)}
+     * @return {@code true} if a matching cell is queued; {@code false} otherwise
      * @see #has(String, String)
      * @see #has(String, String, long, Object)
      */
@@ -603,12 +532,8 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Checks if this mutation contains a cell with the specified family, qualifier, timestamp, and value.
-     * <p>
-     * This is the most specific version of the has() methods, requiring all four parameters
-     * to match exactly. This is useful when you need to verify the presence of a specific
-     * versioned value in the mutation.
-     * </p>
+     * Returns {@code true} if a queued {@link Cell} matches all four of family, qualifier,
+     * timestamp, and value. The value is converted via {@link HBaseExecutor#toValueBytes(Object)}.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -625,12 +550,11 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * boolean hasDifferentTs = put.has("profile", "name", timestamp - 1000, "Alice");
      * }</pre>
      *
-     * @param family the column family name; automatically converted to bytes
-     * @param qualifier the column qualifier name; automatically converted to bytes
-     * @param ts the timestamp in milliseconds since epoch
-     * @param value the value to check for; automatically converted to bytes for comparison
-     * @return {@code true} if this mutation contains a cell matching all four parameters;
-     *         {@code false} otherwise
+     * @param family the column-family name
+     * @param qualifier the column-qualifier name
+     * @param ts the cell timestamp, in milliseconds since the epoch
+     * @param value the value to look for; encoded via {@link HBaseExecutor#toValueBytes(Object)}
+     * @return {@code true} if a matching cell is queued; {@code false} otherwise
      * @see #has(String, String)
      * @see #has(String, String, long)
      * @see #has(String, String, Object)
@@ -640,16 +564,11 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Checks if this mutation contains any cells for the specified column family and qualifier using byte arrays.
-     * <p>
-     * This is the byte array variant of {@link #has(String, String)}. Use this method when you
-     * already have the family and qualifier as byte arrays to avoid additional conversion overhead.
-     * </p>
+     * Byte-array variant of {@link #has(String, String)}.
      *
-     * @param family the column family name as a byte array
-     * @param qualifier the column qualifier name as a byte array
-     * @return {@code true} if this mutation contains at least one cell for the given
-     *         family and qualifier; {@code false} otherwise
+     * @param family the column-family name as a byte array
+     * @param qualifier the column-qualifier name as a byte array
+     * @return {@code true} if at least one matching cell is queued; {@code false} otherwise
      * @see #has(String, String)
      * @see #has(byte[], byte[], long)
      */
@@ -658,17 +577,12 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Checks if this mutation contains a cell with the specified family, qualifier, and timestamp using byte arrays.
-     * <p>
-     * This is the byte array variant of {@link #has(String, String, long)}. Use this method when you
-     * already have the family and qualifier as byte arrays to avoid additional conversion overhead.
-     * </p>
+     * Byte-array variant of {@link #has(String, String, long)}.
      *
-     * @param family the column family name as a byte array
-     * @param qualifier the column qualifier name as a byte array
-     * @param ts the timestamp in milliseconds since epoch
-     * @return {@code true} if this mutation contains a cell matching all three parameters;
-     *         {@code false} otherwise
+     * @param family the column-family name as a byte array
+     * @param qualifier the column-qualifier name as a byte array
+     * @param ts the cell timestamp, in milliseconds since the epoch
+     * @return {@code true} if a matching cell is queued; {@code false} otherwise
      * @see #has(String, String, long)
      * @see #has(byte[], byte[], long, byte[])
      */
@@ -677,17 +591,12 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Checks if this mutation contains a cell with the specified family, qualifier, and value using byte arrays.
-     * <p>
-     * This is the byte array variant of {@link #has(String, String, Object)}. Use this method when you
-     * already have the family, qualifier, and value as byte arrays to avoid additional conversion overhead.
-     * </p>
+     * Byte-array variant of {@link #has(String, String, Object)}.
      *
-     * @param family the column family name as a byte array
-     * @param qualifier the column qualifier name as a byte array
-     * @param value the value to check for as a byte array
-     * @return {@code true} if this mutation contains a cell matching the family, qualifier,
-     *         and value; {@code false} otherwise
+     * @param family the column-family name as a byte array
+     * @param qualifier the column-qualifier name as a byte array
+     * @param value the value to look for as a byte array
+     * @return {@code true} if a matching cell is queued; {@code false} otherwise
      * @see #has(String, String, Object)
      * @see #has(byte[], byte[], long, byte[])
      */
@@ -696,19 +605,13 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Checks if this mutation contains a cell with the specified family, qualifier, timestamp, and value using byte arrays.
-     * <p>
-     * This is the byte array variant of {@link #has(String, String, long, Object)}. Use this method when you
-     * already have all parameters as byte arrays to avoid additional conversion overhead. All four parameters
-     * must match exactly for this method to return true.
-     * </p>
+     * Byte-array variant of {@link #has(String, String, long, Object)}.
      *
-     * @param family the column family name as a byte array
-     * @param qualifier the column qualifier name as a byte array
-     * @param ts the timestamp in milliseconds since epoch
-     * @param value the value to check for as a byte array
-     * @return {@code true} if this mutation contains a cell matching all four parameters;
-     *         {@code false} otherwise
+     * @param family the column-family name as a byte array
+     * @param qualifier the column-qualifier name as a byte array
+     * @param ts the cell timestamp, in milliseconds since the epoch
+     * @param value the value to look for as a byte array
+     * @return {@code true} if a matching cell is queued; {@code false} otherwise
      * @see #has(String, String, long, Object)
      * @see #has(byte[], byte[])
      */
@@ -717,13 +620,10 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Returns the row key for this mutation as a byte array.
-     * <p>
-     * The row key uniquely identifies the row in HBase that this mutation will affect.
-     * All cells in this mutation belong to this row.
-     * </p>
+     * Returns the row key this mutation targets. Implementation of {@link Row#getRow()} —
+     * every cell queued in this mutation belongs to this row.
      *
-     * @return the row key as a byte array; never null
+     * @return the row key as a byte array; never {@code null}
      */
     @Override
     public byte[] getRow() {
@@ -731,11 +631,8 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Checks if this mutation is empty (contains no cells).
-     * <p>
-     * An empty mutation has no cells to write and will have no effect when executed.
-     * This can be useful for validation before attempting to execute the mutation.
-     * </p>
+     * Returns {@code true} when this mutation has no queued cells (and therefore would be a no-op
+     * if executed).
      *
      * @return {@code true} if this mutation contains no cells; {@code false} otherwise
      * @see #size()
@@ -745,11 +642,9 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Returns the total number of Cell objects (KeyValue objects) in this mutation.
-     * <p>
-     * This count includes all cells across all column families. For example, if you
-     * add 3 columns to one family and 2 columns to another family, size() will return 5.
-     * </p>
+     * Returns the total number of {@link Cell}s queued in this mutation, summed across all
+     * families. For example, three columns in one family plus two columns in another family
+     * yields {@code 5}.
      *
      * @return the total number of cells in this mutation
      * @see #isEmpty()
@@ -760,12 +655,9 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Returns the number of column families affected by this mutation.
-     * <p>
-     * This returns the count of distinct column families that have at least one cell
-     * in this mutation. For example, if you add cells to "cf1" and "cf2", this method
-     * returns 2, regardless of how many cells are in each family.
-     * </p>
+     * Returns the number of distinct column families that contain at least one queued cell. For
+     * example, queueing cells in {@code "cf1"} and {@code "cf2"} yields {@code 2}, regardless of
+     * how many cells are in each.
      *
      * @return the number of column families in this mutation
      * @see #size()
@@ -775,26 +667,24 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Returns the approximate heap size occupied by this mutation in bytes.
-     * <p>
-     * This method provides an estimate of the memory footprint of this mutation,
-     * including the row key, all cells, and internal data structures. This can be
-     * useful for memory management and batch size optimization.
-     * </p>
+     * Returns the approximate heap footprint of this mutation in bytes, including the row key,
+     * queued cells, and internal data structures. Useful for sizing batches.
      *
-     * @return the approximate heap size in bytes
+     * @return the approximate on-heap size, in bytes
      */
     public long heapSize() {
         return mutation.heapSize();
     }
 
     /**
-     * Compares this mutation with another Row operation for ordering.
+     * Compares this mutation with another {@link Row} by row key. Implementation of
+     * {@link Row#compareTo(Row)}, delegated to the wrapped {@link Mutation}.
      *
-     * @param d the Row operation to compare with
-     * @return a negative integer, zero, or positive integer as this object is less than, equal to, or greater than the specified object
-     * @deprecated As of release 2.0.0, this will be removed in HBase 3.0.0.
-     *             Use {@link Row#COMPARATOR} instead
+     * @param d the other {@link Row} to compare with
+     * @return a negative integer, zero, or a positive integer as this row key is less than,
+     *         equal to, or greater than the other row's key
+     * @deprecated As of HBase 2.0.0; will be removed in HBase 3.0.0. Use {@link Row#COMPARATOR}
+     *             instead.
      */
     @Override
     @Deprecated

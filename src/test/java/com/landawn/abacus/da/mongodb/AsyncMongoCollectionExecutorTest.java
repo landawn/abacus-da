@@ -1,7 +1,9 @@
 package com.landawn.abacus.da.mongodb;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.Arrays;
@@ -1103,6 +1105,719 @@ public class AsyncMongoCollectionExecutorTest extends TestBase {
 
         ContinuableFuture<Stream<TestEntity>> result = asyncExecutor.mapReduce("map", "reduce", TestEntity.class);
         Assertions.assertNotNull(result.get());
+    }
+
+    // ---- lambda coverage: actually run the Callable so the inner lambda bodies execute ----
+
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    private void stubRunCallable() {
+        doAnswer(invocation -> {
+            Callable callable = invocation.getArgument(0);
+            return ContinuableFuture.completed(callable.call());
+        }).when(mockAsyncExecutor).execute(any(Callable.class));
+    }
+
+    @Test
+    public void testExistsWithStringObjectId_LambdaRuns() throws Exception {
+        stubRunCallable();
+        String objectId = "507f1f77bcf86cd799439011";
+        when(mockCollExecutor.exists(objectId)).thenReturn(true);
+
+        ContinuableFuture<Boolean> result = asyncExecutor.exists(objectId);
+        Assertions.assertTrue(result.get());
+        verify(mockCollExecutor).exists(objectId);
+    }
+
+    @Test
+    public void testExistsWithObjectId_LambdaRuns() throws Exception {
+        stubRunCallable();
+        ObjectId objectId = new ObjectId();
+        when(mockCollExecutor.exists(objectId)).thenReturn(false);
+
+        ContinuableFuture<Boolean> result = asyncExecutor.exists(objectId);
+        Assertions.assertFalse(result.get());
+    }
+
+    @Test
+    public void testExistsWithFilter_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("name", "test");
+        when(mockCollExecutor.exists(filter)).thenReturn(true);
+
+        ContinuableFuture<Boolean> result = asyncExecutor.exists(filter);
+        Assertions.assertTrue(result.get());
+    }
+
+    @Test
+    public void testCount_LambdaRuns() throws Exception {
+        stubRunCallable();
+        when(mockCollExecutor.count()).thenReturn(42L);
+
+        ContinuableFuture<Long> result = asyncExecutor.count();
+        Assertions.assertEquals(42L, result.get());
+    }
+
+    @Test
+    public void testCountWithFilter_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("x", 1);
+        when(mockCollExecutor.count(filter)).thenReturn(7L);
+
+        ContinuableFuture<Long> result = asyncExecutor.count(filter);
+        Assertions.assertEquals(7L, result.get());
+    }
+
+    @Test
+    public void testCountWithFilterAndOptions_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("x", 1);
+        CountOptions options = new CountOptions();
+        when(mockCollExecutor.count(filter, options)).thenReturn(3L);
+
+        ContinuableFuture<Long> result = asyncExecutor.count(filter, options);
+        Assertions.assertEquals(3L, result.get());
+    }
+
+    @Test
+    public void testGetStringObjectId_LambdaRuns() throws Exception {
+        stubRunCallable();
+        String objectId = "507f1f77bcf86cd799439011";
+        when(mockCollExecutor.get(objectId)).thenReturn(Optional.<Document> empty());
+
+        ContinuableFuture<Optional<Document>> result = asyncExecutor.get(objectId);
+        Assertions.assertNotNull(result.get());
+    }
+
+    @Test
+    public void testGetObjectId_LambdaRuns() throws Exception {
+        stubRunCallable();
+        ObjectId objectId = new ObjectId();
+        when(mockCollExecutor.get(objectId)).thenReturn(Optional.<Document> empty());
+
+        ContinuableFuture<Optional<Document>> result = asyncExecutor.get(objectId);
+        Assertions.assertNotNull(result.get());
+    }
+
+    @Test
+    public void testGetStringObjectIdRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        String objectId = "507f1f77bcf86cd799439011";
+        when(mockCollExecutor.get(objectId, TestEntity.class)).thenReturn(Optional.<TestEntity> empty());
+
+        ContinuableFuture<Optional<TestEntity>> result = asyncExecutor.get(objectId, TestEntity.class);
+        Assertions.assertNotNull(result.get());
+    }
+
+    @Test
+    public void testGetObjectIdRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        ObjectId objectId = new ObjectId();
+        when(mockCollExecutor.get(objectId, TestEntity.class)).thenReturn(Optional.<TestEntity> empty());
+
+        ContinuableFuture<Optional<TestEntity>> result = asyncExecutor.get(objectId, TestEntity.class);
+        Assertions.assertNotNull(result.get());
+    }
+
+    @Test
+    public void testGetStringObjectIdSelectPropsRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        String objectId = "507f1f77bcf86cd799439011";
+        List<String> selectProps = Arrays.asList("name");
+        when(mockCollExecutor.get(objectId, selectProps, TestEntity.class)).thenReturn(Optional.<TestEntity> empty());
+
+        ContinuableFuture<Optional<TestEntity>> result = asyncExecutor.get(objectId, selectProps, TestEntity.class);
+        Assertions.assertNotNull(result.get());
+    }
+
+    @Test
+    public void testGetObjectIdSelectPropsRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        ObjectId objectId = new ObjectId();
+        List<String> selectProps = Arrays.asList("name");
+        when(mockCollExecutor.get(objectId, selectProps, TestEntity.class)).thenReturn(Optional.<TestEntity> empty());
+
+        ContinuableFuture<Optional<TestEntity>> result = asyncExecutor.get(objectId, selectProps, TestEntity.class);
+        Assertions.assertNotNull(result.get());
+    }
+
+    @Test
+    public void testGettStringObjectId_LambdaRuns() throws Exception {
+        stubRunCallable();
+        String objectId = "507f1f77bcf86cd799439011";
+        when(mockCollExecutor.gett(objectId)).thenReturn(null);
+
+        ContinuableFuture<Document> result = asyncExecutor.gett(objectId);
+        Assertions.assertNull(result.get());
+    }
+
+    @Test
+    public void testGettObjectId_LambdaRuns() throws Exception {
+        stubRunCallable();
+        ObjectId objectId = new ObjectId();
+        when(mockCollExecutor.gett(objectId)).thenReturn(null);
+
+        ContinuableFuture<Document> result = asyncExecutor.gett(objectId);
+        Assertions.assertNull(result.get());
+    }
+
+    @Test
+    public void testGettStringObjectIdRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        String objectId = "507f1f77bcf86cd799439011";
+        TestEntity entity = new TestEntity();
+        when(mockCollExecutor.gett(objectId, TestEntity.class)).thenReturn(entity);
+
+        ContinuableFuture<TestEntity> result = asyncExecutor.gett(objectId, TestEntity.class);
+        Assertions.assertSame(entity, result.get());
+    }
+
+    @Test
+    public void testGettObjectIdRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        ObjectId objectId = new ObjectId();
+        TestEntity entity = new TestEntity();
+        when(mockCollExecutor.gett(objectId, TestEntity.class)).thenReturn(entity);
+
+        ContinuableFuture<TestEntity> result = asyncExecutor.gett(objectId, TestEntity.class);
+        Assertions.assertSame(entity, result.get());
+    }
+
+    @Test
+    public void testGettStringObjectIdSelectPropsRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        String objectId = "507f1f77bcf86cd799439011";
+        List<String> selectProps = Arrays.asList("name");
+        TestEntity entity = new TestEntity();
+        when(mockCollExecutor.gett(objectId, selectProps, TestEntity.class)).thenReturn(entity);
+
+        ContinuableFuture<TestEntity> result = asyncExecutor.gett(objectId, selectProps, TestEntity.class);
+        Assertions.assertSame(entity, result.get());
+    }
+
+    @Test
+    public void testGettObjectIdSelectPropsRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        ObjectId objectId = new ObjectId();
+        List<String> selectProps = Arrays.asList("name");
+        TestEntity entity = new TestEntity();
+        when(mockCollExecutor.gett(objectId, selectProps, TestEntity.class)).thenReturn(entity);
+
+        ContinuableFuture<TestEntity> result = asyncExecutor.gett(objectId, selectProps, TestEntity.class);
+        Assertions.assertSame(entity, result.get());
+    }
+
+    @Test
+    public void testQueryForPrimitives_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("k", "v");
+        when(mockCollExecutor.queryForBoolean("p", filter)).thenReturn(OptionalBoolean.of(true));
+        when(mockCollExecutor.queryForChar("p", filter)).thenReturn(OptionalChar.of('a'));
+        when(mockCollExecutor.queryForByte("p", filter)).thenReturn(OptionalByte.of((byte) 1));
+        when(mockCollExecutor.queryForShort("p", filter)).thenReturn(OptionalShort.of((short) 1));
+        when(mockCollExecutor.queryForInt("p", filter)).thenReturn(OptionalInt.of(1));
+        when(mockCollExecutor.queryForLong("p", filter)).thenReturn(OptionalLong.of(1L));
+        when(mockCollExecutor.queryForFloat("p", filter)).thenReturn(OptionalFloat.of(1f));
+        when(mockCollExecutor.queryForDouble("p", filter)).thenReturn(OptionalDouble.of(1d));
+        when(mockCollExecutor.queryForString("p", filter)).thenReturn(Nullable.of("s"));
+
+        Assertions.assertTrue(asyncExecutor.queryForBoolean("p", filter).get().orElse(false));
+        Assertions.assertEquals('a', asyncExecutor.queryForChar("p", filter).get().orElse('z'));
+        Assertions.assertEquals((byte) 1, asyncExecutor.queryForByte("p", filter).get().orElse((byte) 0));
+        Assertions.assertEquals((short) 1, asyncExecutor.queryForShort("p", filter).get().orElse((short) 0));
+        Assertions.assertEquals(1, asyncExecutor.queryForInt("p", filter).get().orElse(0));
+        Assertions.assertEquals(1L, asyncExecutor.queryForLong("p", filter).get().orElse(0L));
+        Assertions.assertEquals(1f, asyncExecutor.queryForFloat("p", filter).get().orElse(0f));
+        Assertions.assertEquals(1d, asyncExecutor.queryForDouble("p", filter).get().orElse(0d));
+        Assertions.assertEquals("s", asyncExecutor.queryForString("p", filter).get().orElse(null));
+    }
+
+    @Test
+    public void testQueryForDate_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("k", "v");
+        Date d = new Date();
+        when(mockCollExecutor.queryForDate("p", filter)).thenReturn(Nullable.of(d));
+
+        Assertions.assertSame(d, asyncExecutor.queryForDate("p", filter).get().orElse(null));
+    }
+
+    @Test
+    public void testQueryForDateWithValueType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("k", "v");
+        java.sql.Timestamp ts = new java.sql.Timestamp(System.currentTimeMillis());
+        when(mockCollExecutor.queryForDate("p", filter, java.sql.Timestamp.class)).thenReturn(Nullable.of(ts));
+
+        Assertions.assertSame(ts, asyncExecutor.queryForDate("p", filter, java.sql.Timestamp.class).get().orElse(null));
+    }
+
+    @Test
+    public void testQueryForSingleValue_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("k", "v");
+        when(mockCollExecutor.queryForSingleValue("p", filter, String.class)).thenReturn(Nullable.of("hello"));
+
+        Assertions.assertEquals("hello", asyncExecutor.queryForSingleValue("p", filter, String.class).get().orElse(null));
+    }
+
+    @Test
+    public void testQueryForSingleNonNull_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("k", "v");
+        when(mockCollExecutor.queryForSingleNonNull("p", filter, String.class)).thenReturn(Optional.of("hello"));
+
+        Assertions.assertEquals("hello", asyncExecutor.queryForSingleNonNull("p", filter, String.class).get().orElse(null));
+    }
+
+    @Test
+    public void testQueryWithProjFilterSortRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document proj = new Document("name", 1);
+        Document filter = new Document("k", "v");
+        Document sort = new Document("name", 1);
+        Dataset dataset = N.newEmptyDataset(Arrays.asList("id"));
+        when(mockCollExecutor.query(proj, filter, sort, TestEntity.class)).thenReturn(dataset);
+
+        ContinuableFuture<Dataset> result = asyncExecutor.query(proj, filter, sort, TestEntity.class);
+        Assertions.assertSame(dataset, result.get());
+    }
+
+    @Test
+    public void testQueryWithProjFilterSortOffsetCountRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document proj = new Document("name", 1);
+        Document filter = new Document("k", "v");
+        Document sort = new Document("name", 1);
+        Dataset dataset = N.newEmptyDataset(Arrays.asList("id"));
+        when(mockCollExecutor.query(proj, filter, sort, 0, 5, TestEntity.class)).thenReturn(dataset);
+
+        ContinuableFuture<Dataset> result = asyncExecutor.query(proj, filter, sort, 0, 5, TestEntity.class);
+        Assertions.assertSame(dataset, result.get());
+    }
+
+    @Test
+    public void testQueryWithSelectFilterRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        List<String> select = Arrays.asList("id");
+        Document filter = new Document("k", "v");
+        Dataset dataset = N.newEmptyDataset(Arrays.asList("id"));
+        when(mockCollExecutor.query(select, filter, TestEntity.class)).thenReturn(dataset);
+
+        ContinuableFuture<Dataset> result = asyncExecutor.query(select, filter, TestEntity.class);
+        Assertions.assertSame(dataset, result.get());
+    }
+
+    @Test
+    public void testQueryWithSelectFilterOffsetCountRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        List<String> select = Arrays.asList("id");
+        Document filter = new Document("k", "v");
+        Dataset dataset = N.newEmptyDataset(Arrays.asList("id"));
+        when(mockCollExecutor.query(select, filter, 0, 5, TestEntity.class)).thenReturn(dataset);
+
+        ContinuableFuture<Dataset> result = asyncExecutor.query(select, filter, 0, 5, TestEntity.class);
+        Assertions.assertSame(dataset, result.get());
+    }
+
+    @Test
+    public void testQueryWithSelectFilterSortRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        List<String> select = Arrays.asList("id");
+        Document filter = new Document("k", "v");
+        Document sort = new Document("k", 1);
+        Dataset dataset = N.newEmptyDataset(Arrays.asList("id"));
+        when(mockCollExecutor.query(select, filter, sort, TestEntity.class)).thenReturn(dataset);
+
+        ContinuableFuture<Dataset> result = asyncExecutor.query(select, filter, sort, TestEntity.class);
+        Assertions.assertSame(dataset, result.get());
+    }
+
+    @Test
+    public void testQueryWithSelectFilterSortOffsetCountRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        List<String> select = Arrays.asList("id");
+        Document filter = new Document("k", "v");
+        Document sort = new Document("k", 1);
+        Dataset dataset = N.newEmptyDataset(Arrays.asList("id"));
+        when(mockCollExecutor.query(select, filter, sort, 0, 5, TestEntity.class)).thenReturn(dataset);
+
+        ContinuableFuture<Dataset> result = asyncExecutor.query(select, filter, sort, 0, 5, TestEntity.class);
+        Assertions.assertSame(dataset, result.get());
+    }
+
+    @Test
+    public void testStreamWithSelectFilterRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        List<String> select = Arrays.asList("id");
+        Document filter = new Document("k", "v");
+        Stream<TestEntity> stream = Stream.of(new TestEntity());
+        when(mockCollExecutor.stream(select, filter, TestEntity.class)).thenReturn(stream);
+
+        ContinuableFuture<Stream<TestEntity>> result = asyncExecutor.stream(select, filter, TestEntity.class);
+        Assertions.assertSame(stream, result.get());
+    }
+
+    @Test
+    public void testStreamWithSelectFilterOffsetCountRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        List<String> select = Arrays.asList("id");
+        Document filter = new Document("k", "v");
+        Stream<TestEntity> stream = Stream.of(new TestEntity());
+        when(mockCollExecutor.stream(select, filter, 0, 5, TestEntity.class)).thenReturn(stream);
+
+        ContinuableFuture<Stream<TestEntity>> result = asyncExecutor.stream(select, filter, 0, 5, TestEntity.class);
+        Assertions.assertSame(stream, result.get());
+    }
+
+    @Test
+    public void testStreamWithSelectFilterSortRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        List<String> select = Arrays.asList("id");
+        Document filter = new Document("k", "v");
+        Document sort = new Document("k", 1);
+        Stream<TestEntity> stream = Stream.of(new TestEntity());
+        when(mockCollExecutor.stream(select, filter, sort, TestEntity.class)).thenReturn(stream);
+
+        ContinuableFuture<Stream<TestEntity>> result = asyncExecutor.stream(select, filter, sort, TestEntity.class);
+        Assertions.assertSame(stream, result.get());
+    }
+
+    @Test
+    public void testStreamWithSelectFilterSortOffsetCountRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        List<String> select = Arrays.asList("id");
+        Document filter = new Document("k", "v");
+        Document sort = new Document("k", 1);
+        Stream<TestEntity> stream = Stream.of(new TestEntity());
+        when(mockCollExecutor.stream(select, filter, sort, 0, 5, TestEntity.class)).thenReturn(stream);
+
+        ContinuableFuture<Stream<TestEntity>> result = asyncExecutor.stream(select, filter, sort, 0, 5, TestEntity.class);
+        Assertions.assertSame(stream, result.get());
+    }
+
+    @Test
+    public void testStreamWithProjFilterSortRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document proj = new Document("k", 1);
+        Document filter = new Document("k", "v");
+        Document sort = new Document("k", 1);
+        Stream<TestEntity> stream = Stream.of(new TestEntity());
+        when(mockCollExecutor.stream(proj, filter, sort, TestEntity.class)).thenReturn(stream);
+
+        ContinuableFuture<Stream<TestEntity>> result = asyncExecutor.stream(proj, filter, sort, TestEntity.class);
+        Assertions.assertSame(stream, result.get());
+    }
+
+    @Test
+    public void testStreamWithProjFilterSortOffsetCountRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document proj = new Document("k", 1);
+        Document filter = new Document("k", "v");
+        Document sort = new Document("k", 1);
+        Stream<TestEntity> stream = Stream.of(new TestEntity());
+        when(mockCollExecutor.stream(proj, filter, sort, 0, 5, TestEntity.class)).thenReturn(stream);
+
+        ContinuableFuture<Stream<TestEntity>> result = asyncExecutor.stream(proj, filter, sort, 0, 5, TestEntity.class);
+        Assertions.assertSame(stream, result.get());
+    }
+
+    @Test
+    public void testInsertOne_LambdaRuns() throws Exception {
+        stubRunCallable();
+        TestEntity entity = new TestEntity();
+
+        ContinuableFuture<Void> result = asyncExecutor.insertOne(entity);
+        result.get();
+        verify(mockCollExecutor).insertOne(entity);
+    }
+
+    @Test
+    public void testInsertOneWithOptions_LambdaRuns() throws Exception {
+        stubRunCallable();
+        TestEntity entity = new TestEntity();
+        InsertOneOptions opts = new InsertOneOptions();
+
+        ContinuableFuture<Void> result = asyncExecutor.insertOne(entity, opts);
+        result.get();
+        verify(mockCollExecutor).insertOne(entity, opts);
+    }
+
+    @Test
+    public void testInsertMany_LambdaRuns() throws Exception {
+        stubRunCallable();
+        List<TestEntity> entities = Arrays.asList(new TestEntity());
+
+        ContinuableFuture<Void> result = asyncExecutor.insertMany(entities);
+        result.get();
+        verify(mockCollExecutor).insertMany(entities);
+    }
+
+    @Test
+    public void testInsertManyWithOptions_LambdaRuns() throws Exception {
+        stubRunCallable();
+        List<TestEntity> entities = Arrays.asList(new TestEntity());
+        InsertManyOptions opts = new InsertManyOptions();
+
+        ContinuableFuture<Void> result = asyncExecutor.insertMany(entities, opts);
+        result.get();
+        verify(mockCollExecutor).insertMany(entities, opts);
+    }
+
+    @Test
+    public void testUpdateOneWithFilterAndOptions_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("k", "v");
+        Document update = new Document("$set", new Document("k", "w"));
+        UpdateOptions opts = new UpdateOptions();
+        UpdateResult ur = mock(UpdateResult.class);
+        when(mockCollExecutor.updateOne(filter, update, opts)).thenReturn(ur);
+
+        Assertions.assertSame(ur, asyncExecutor.updateOne(filter, update, opts).get());
+    }
+
+    @Test
+    public void testUpdateOneWithFilterAndCollection_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("k", "v");
+        List<TestEntity> objList = Arrays.asList(new TestEntity());
+        UpdateResult ur = mock(UpdateResult.class);
+        when(mockCollExecutor.updateOne(filter, objList)).thenReturn(ur);
+
+        Assertions.assertSame(ur, asyncExecutor.updateOne(filter, objList).get());
+    }
+
+    @Test
+    public void testUpdateOneWithFilterCollectionAndOptions_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("k", "v");
+        List<TestEntity> objList = Arrays.asList(new TestEntity());
+        UpdateOptions opts = new UpdateOptions();
+        UpdateResult ur = mock(UpdateResult.class);
+        when(mockCollExecutor.updateOne(filter, objList, opts)).thenReturn(ur);
+
+        Assertions.assertSame(ur, asyncExecutor.updateOne(filter, objList, opts).get());
+    }
+
+    @Test
+    public void testUpdateManyWithOptions_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("k", "v");
+        Document update = new Document("$set", new Document("k", "w"));
+        UpdateOptions opts = new UpdateOptions();
+        UpdateResult ur = mock(UpdateResult.class);
+        when(mockCollExecutor.updateMany(filter, update, opts)).thenReturn(ur);
+
+        Assertions.assertSame(ur, asyncExecutor.updateMany(filter, update, opts).get());
+    }
+
+    @Test
+    public void testUpdateManyWithCollection_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("k", "v");
+        List<TestEntity> objList = Arrays.asList(new TestEntity());
+        UpdateResult ur = mock(UpdateResult.class);
+        when(mockCollExecutor.updateMany(filter, objList)).thenReturn(ur);
+
+        Assertions.assertSame(ur, asyncExecutor.updateMany(filter, objList).get());
+    }
+
+    @Test
+    public void testUpdateManyWithCollectionAndOptions_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("k", "v");
+        List<TestEntity> objList = Arrays.asList(new TestEntity());
+        UpdateOptions opts = new UpdateOptions();
+        UpdateResult ur = mock(UpdateResult.class);
+        when(mockCollExecutor.updateMany(filter, objList, opts)).thenReturn(ur);
+
+        Assertions.assertSame(ur, asyncExecutor.updateMany(filter, objList, opts).get());
+    }
+
+    @Test
+    public void testReplaceOneWithObjectId_LambdaRuns() throws Exception {
+        stubRunCallable();
+        ObjectId objectId = new ObjectId();
+        Document replacement = new Document("k", "v");
+        UpdateResult ur = mock(UpdateResult.class);
+        when(mockCollExecutor.replaceOne(objectId, replacement)).thenReturn(ur);
+
+        Assertions.assertSame(ur, asyncExecutor.replaceOne(objectId, replacement).get());
+    }
+
+    @Test
+    public void testReplaceOneWithFilterAndOptions_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("k", "v");
+        Document replacement = new Document("k", "v");
+        ReplaceOptions opts = new ReplaceOptions();
+        UpdateResult ur = mock(UpdateResult.class);
+        when(mockCollExecutor.replaceOne(filter, replacement, opts)).thenReturn(ur);
+
+        Assertions.assertSame(ur, asyncExecutor.replaceOne(filter, replacement, opts).get());
+    }
+
+    @Test
+    public void testDeleteOneWithFilterAndOptions_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("k", "v");
+        DeleteOptions opts = new DeleteOptions();
+        DeleteResult dr = mock(DeleteResult.class);
+        when(mockCollExecutor.deleteOne(filter, opts)).thenReturn(dr);
+
+        Assertions.assertSame(dr, asyncExecutor.deleteOne(filter, opts).get());
+    }
+
+    @Test
+    public void testDeleteManyWithFilterAndOptions_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("k", "v");
+        DeleteOptions opts = new DeleteOptions();
+        DeleteResult dr = mock(DeleteResult.class);
+        when(mockCollExecutor.deleteMany(filter, opts)).thenReturn(dr);
+
+        Assertions.assertSame(dr, asyncExecutor.deleteMany(filter, opts).get());
+    }
+
+    @Test
+    public void testBulkWrite_LambdaRuns() throws Exception {
+        stubRunCallable();
+        List<WriteModel<? extends Document>> requests = Collections.emptyList();
+        BulkWriteResult br = mock(BulkWriteResult.class);
+        when(mockCollExecutor.bulkWrite(requests)).thenReturn(br);
+
+        Assertions.assertSame(br, asyncExecutor.bulkWrite(requests).get());
+    }
+
+    @Test
+    public void testBulkWriteWithOptions_LambdaRuns() throws Exception {
+        stubRunCallable();
+        List<WriteModel<? extends Document>> requests = Collections.emptyList();
+        BulkWriteOptions opts = new BulkWriteOptions();
+        BulkWriteResult br = mock(BulkWriteResult.class);
+        when(mockCollExecutor.bulkWrite(requests, opts)).thenReturn(br);
+
+        Assertions.assertSame(br, asyncExecutor.bulkWrite(requests, opts).get());
+    }
+
+    @Test
+    public void testFindOneAndUpdateRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("k", "v");
+        Document update = new Document("$set", new Document("k", "w"));
+        TestEntity entity = new TestEntity();
+        when(mockCollExecutor.findOneAndUpdate(filter, update, TestEntity.class)).thenReturn(entity);
+
+        Assertions.assertSame(entity, asyncExecutor.findOneAndUpdate(filter, update, TestEntity.class).get());
+    }
+
+    @Test
+    public void testFindOneAndUpdateOptionsRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("k", "v");
+        Document update = new Document("$set", new Document("k", "w"));
+        FindOneAndUpdateOptions opts = new FindOneAndUpdateOptions();
+        TestEntity entity = new TestEntity();
+        when(mockCollExecutor.findOneAndUpdate(filter, update, opts, TestEntity.class)).thenReturn(entity);
+
+        Assertions.assertSame(entity, asyncExecutor.findOneAndUpdate(filter, update, opts, TestEntity.class).get());
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithCollection_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("k", "v");
+        List<TestEntity> objList = Arrays.asList(new TestEntity());
+        Document doc = new Document();
+        when(mockCollExecutor.findOneAndUpdate(filter, objList)).thenReturn(doc);
+
+        Assertions.assertSame(doc, asyncExecutor.findOneAndUpdate(filter, objList).get());
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithCollectionRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("k", "v");
+        List<TestEntity> objList = Arrays.asList(new TestEntity());
+        TestEntity entity = new TestEntity();
+        when(mockCollExecutor.findOneAndUpdate(filter, objList, TestEntity.class)).thenReturn(entity);
+
+        Assertions.assertSame(entity, asyncExecutor.findOneAndUpdate(filter, objList, TestEntity.class).get());
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithCollectionAndOptions_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("k", "v");
+        List<TestEntity> objList = Arrays.asList(new TestEntity());
+        FindOneAndUpdateOptions opts = new FindOneAndUpdateOptions();
+        Document doc = new Document();
+        when(mockCollExecutor.findOneAndUpdate(filter, objList, opts)).thenReturn(doc);
+
+        Assertions.assertSame(doc, asyncExecutor.findOneAndUpdate(filter, objList, opts).get());
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithCollectionOptionsAndRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("k", "v");
+        List<TestEntity> objList = Arrays.asList(new TestEntity());
+        FindOneAndUpdateOptions opts = new FindOneAndUpdateOptions();
+        TestEntity entity = new TestEntity();
+        when(mockCollExecutor.findOneAndUpdate(filter, objList, opts, TestEntity.class)).thenReturn(entity);
+
+        Assertions.assertSame(entity, asyncExecutor.findOneAndUpdate(filter, objList, opts, TestEntity.class).get());
+    }
+
+    @Test
+    public void testFindOneAndReplaceRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("k", "v");
+        Document replacement = new Document("k", "x");
+        TestEntity entity = new TestEntity();
+        when(mockCollExecutor.findOneAndReplace(filter, replacement, TestEntity.class)).thenReturn(entity);
+
+        Assertions.assertSame(entity, asyncExecutor.findOneAndReplace(filter, replacement, TestEntity.class).get());
+    }
+
+    @Test
+    public void testFindOneAndReplaceOptionsRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("k", "v");
+        Document replacement = new Document("k", "x");
+        FindOneAndReplaceOptions opts = new FindOneAndReplaceOptions();
+        TestEntity entity = new TestEntity();
+        when(mockCollExecutor.findOneAndReplace(filter, replacement, opts, TestEntity.class)).thenReturn(entity);
+
+        Assertions.assertSame(entity, asyncExecutor.findOneAndReplace(filter, replacement, opts, TestEntity.class).get());
+    }
+
+    @Test
+    public void testFindOneAndDeleteOptionsRowType_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Document filter = new Document("k", "v");
+        FindOneAndDeleteOptions opts = new FindOneAndDeleteOptions();
+        TestEntity entity = new TestEntity();
+        when(mockCollExecutor.findOneAndDelete(filter, opts, TestEntity.class)).thenReturn(entity);
+
+        Assertions.assertSame(entity, asyncExecutor.findOneAndDelete(filter, opts, TestEntity.class).get());
+    }
+
+    @Test
+    public void testDistinct_LambdaRuns() throws Exception {
+        stubRunCallable();
+        Stream<String> s = Stream.of("a", "b");
+        when(mockCollExecutor.distinct("f", String.class)).thenReturn(s);
+
+        Assertions.assertSame(s, asyncExecutor.distinct("f", String.class).get());
+    }
+
+    @Test
+    public void testWatch_LambdaRuns() throws Exception {
+        stubRunCallable();
+        ChangeStreamIterable<Document> csi = mock(ChangeStreamIterable.class);
+        when(mockCollExecutor.watch()).thenReturn(csi);
+
+        Assertions.assertSame(csi, asyncExecutor.watch().get());
     }
 
     // Test entity class for testing

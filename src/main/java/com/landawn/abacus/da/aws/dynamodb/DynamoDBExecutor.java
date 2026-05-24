@@ -1491,8 +1491,11 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
     /**
      * Converts a QueryResult to a list of entities of the specified type.
-     * This method extracts all items from the query result and converts them to the target class.
-     * 
+     *
+     * <p>This method extracts items only from the supplied {@code queryResult} and converts
+     * them to {@code targetClass}. It does <i>not</i> follow {@code LastEvaluatedKey} —
+     * for transparent pagination across pages use {@link #list(QueryRequest, Class)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * QueryResult result = dynamoDBClient.query(queryRequest);
@@ -1501,8 +1504,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *
      * @param <T> the target entity type
      * @param queryResult the QueryResult from a DynamoDB query operation
-     * @param targetClass entity classes with getter/setter methods or basic single value type (Primitive/String/Date...)
-     * @return list of converted entities
+     * @param targetClass entity class with getter/setter methods, a {@code Map} class, an object array
+     *                    class, a {@code Collection} class, or a single-value type for single-column rows
+     * @return list of converted entities from this response page only; empty when the response has no items
      */
     public static <T> List<T> toList(final QueryResult queryResult, final Class<T> targetClass) {
         return toList(queryResult, 0, Integer.MAX_VALUE, targetClass);
@@ -1533,8 +1537,11 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
     /**
      * Converts a ScanResult to a list of entities of the specified type.
-     * This method extracts all items from the scan result and converts them to the target class.
-     * 
+     *
+     * <p>This method extracts items only from the supplied {@code scanResult} and converts
+     * them to {@code targetClass}. It does <i>not</i> follow {@code LastEvaluatedKey} —
+     * use the streaming {@code scan(...)} overloads when you need every matching item.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ScanResult result = dynamoDBClient.scan(scanRequest);
@@ -1543,8 +1550,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *
      * @param <T> the target entity type
      * @param scanResult the ScanResult from a DynamoDB scan operation
-     * @param targetClass entity classes with getter/setter methods or basic single value type (Primitive/String/Date...)
-     * @return list of converted entities
+     * @param targetClass entity class with getter/setter methods, a {@code Map} class, an object array
+     *                    class, a {@code Collection} class, or a single-value type for single-column rows
+     * @return list of converted entities from this response page only; empty when the response has no items
      */
     public static <T> List<T> toList(final ScanResult scanResult, final Class<T> targetClass) {
         return toList(scanResult, 0, Integer.MAX_VALUE, targetClass);
@@ -1617,16 +1625,22 @@ public final class DynamoDBExecutor implements AutoCloseable {
     /**
      * Extracts data from a QueryResult into a Dataset for tabular operations.
      * Datasets provide column-oriented data manipulation capabilities.
-     * 
+     *
+     * <p><b>Single page only:</b> This method operates exclusively on the items already in the
+     * supplied {@code queryResult}. It does <i>not</i> follow {@code LastEvaluatedKey} or fetch
+     * subsequent pages — use {@link #query(QueryRequest)} for transparent pagination.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * QueryResult result = dynamoDBClient.query(queryRequest);
      * Dataset dataset = DynamoDBExecutor.extractData(result);
      * dataset.println();   // Print as table
      * }</pre>
-     * 
-     * @param queryResult the QueryResult to extract data from
-     * @return a Dataset containing the query results in tabular format
+     *
+     * @param queryResult the QueryResult to extract data from. Must not be {@code null}.
+     * @return a Dataset containing the items from this single response page in tabular format;
+     *         empty when the response carries no items
+     * @throws NullPointerException if {@code queryResult} is {@code null}
      */
     public static Dataset extractData(final QueryResult queryResult) {
         return extractData(queryResult, 0, Integer.MAX_VALUE);
@@ -1656,7 +1670,12 @@ public final class DynamoDBExecutor implements AutoCloseable {
     /**
      * Extracts data from a ScanResult into a Dataset for tabular operations.
      * Datasets provide SQL-like operations and easy data export capabilities.
-     * 
+     *
+     * <p><b>Single page only:</b> This method operates exclusively on the items already in the
+     * supplied {@code scanResult}. It does <i>not</i> follow {@code LastEvaluatedKey} or fetch
+     * subsequent pages — use {@link #scan(ScanRequest)} (which streams with automatic pagination)
+     * if you need every matching item.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ScanResult result = dynamoDBClient.scan(scanRequest);
@@ -1664,8 +1683,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * dataset.toCsv(new File("data.csv"));
      * }</pre>
      *
-     * @param scanResult the ScanResult to extract data from
-     * @return a Dataset containing the scan results in tabular format
+     * @param scanResult the ScanResult to extract data from. Must not be {@code null}.
+     * @return a Dataset containing the items from this single response page in tabular format;
+     *         empty when the response carries no items
+     * @throws NullPointerException if {@code scanResult} is {@code null}
      */
     public static Dataset extractData(final ScanResult scanResult) {
         return extractData(scanResult, 0, Integer.MAX_VALUE);
@@ -2530,11 +2551,18 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
     /**
      * Executes a DynamoDB query and returns results as a list of entities.
-     * 
+     *
      * <p>This method performs a Query operation and converts results to a list of
      * the specified target class. It supports both maps and entity classes with
      * getter/setter methods for attribute access.</p>
-     * 
+     *
+     * <p><b>Automatic pagination:</b> If the first response carries a non-empty
+     * {@code lastEvaluatedKey} <i>and</i> the caller did not set {@code exclusiveStartKey} on the
+     * request, this method transparently issues follow-up queries (cloning the request and
+     * advancing {@code exclusiveStartKey}) until every page has been read, and returns the
+     * concatenated results. If the caller did set {@code exclusiveStartKey}, only the single
+     * page is returned — pagination is deferred to the caller.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * QueryRequest request = new QueryRequest()
@@ -2543,7 +2571,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *     .withExpressionAttributeValues(Map.of(
      *         ":region", toAttributeValue("US-WEST")
      *     ));
-     * 
+     *
      * List<Sale> sales = executor.list(request, Sale.class);
      * sales.forEach(System.out::println);   // Print each sale object
      * }</pre>
@@ -2551,7 +2579,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param <T> the type of objects to return
      * @param queryRequest the query parameters. Must not be {@code null}.
      * @param targetClass the class to convert retrieved items to. Must not be {@code null}.
-     * @return a list of converted items, never {@code null}
+     * @return a list of converted items aggregated across all pages (when pagination is auto-driven),
+     *         never {@code null}; empty when the query matches nothing
      */
     public <T> List<T> list(final QueryRequest queryRequest, final Class<T> targetClass) {
         final QueryResult queryResult = dynamoDBClient.query(queryRequest);
@@ -2655,8 +2684,14 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * sales.toCsv(new File("sales.csv"));
      * }</pre>
      * 
+     * <p><b>Automatic pagination:</b> When the caller has not set {@code exclusiveStartKey} on
+     * the request, all pages are fetched and concatenated into the returned Dataset. If the
+     * caller did set {@code exclusiveStartKey}, only the single page returned by DynamoDB is
+     * materialized.</p>
+     *
      * @param queryRequest the query parameters. Must not be {@code null}.
-     * @return a {@link Dataset} containing all query results in tabular format
+     * @return a {@link Dataset} containing all query results in tabular format, never {@code null};
+     *         empty when the query matches nothing
      * @throws IllegalArgumentException if queryRequest is null
      * @see #query(QueryRequest, Class) for typed Dataset operations
      */
@@ -3335,6 +3370,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * The key values are automatically extracted from each entity's ID fields. This is significantly
          * more efficient than making individual getItem calls for each entity.</p>
          *
+         * <p>DynamoDB limits batch get operations to 100 items per request; this method does NOT split
+         * larger collections automatically — the caller is responsible for batching to stay within the
+         * service limit.</p>
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<User> userStubs = Arrays.asList(user1, user2, user3);
@@ -3343,7 +3382,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * }</pre>
          *
          * @param entities collection of entities containing the key values to search for, must not be {@code null}
-         * @return list of retrieved entities from DynamoDB; empty list if none found, never {@code null}
+         * @return list of retrieved entities from DynamoDB for this mapper's table; empty list if none
+         *         found or if the response had no items for this table, never {@code null}
          * @throws IllegalArgumentException if entities is {@code null}
          */
         public List<T> batchGetItem(final Collection<? extends T> entities) {

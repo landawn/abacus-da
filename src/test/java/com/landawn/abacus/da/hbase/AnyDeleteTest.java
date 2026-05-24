@@ -371,4 +371,21 @@ public class AnyDeleteTest extends TestBase {
         // Original should still have only 1 family
         assertEquals(1, orig.getFamilyCellMap().size());
     }
+
+    // ---------------------------------------------------------------------
+    // add(Cell) -- exercise the residual uncovered method.
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void testAddCell_acceptsDeleteMarkerCell() throws Exception {
+        byte[] row = Bytes.toBytes("rk");
+        // Construct a delete-family marker cell using KeyValue with Type.DeleteFamily.
+        Cell deleteMarker = new org.apache.hadoop.hbase.KeyValue(row, Bytes.toBytes("cf"), null, org.apache.hadoop.hbase.HConstants.LATEST_TIMESTAMP,
+                org.apache.hadoop.hbase.KeyValue.Type.DeleteFamily);
+
+        AnyDelete delete = AnyDelete.of("rk");
+        AnyDelete returned = delete.add(deleteMarker);
+        assertSame(delete, returned);
+        assertEquals(1, delete.numFamilies());
+    }
 }

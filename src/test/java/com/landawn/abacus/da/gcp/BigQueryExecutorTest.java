@@ -1497,6 +1497,207 @@ public class BigQueryExecutorTest extends TestBase {
         assertSame(another, exec.bigQuery());
     }
 
+    // ---------- Coverage gap fillers: readRow / extractData / stream / execute ----------
+
+    // readRow Collection branch (via toList with List class)
+    @Test
+    public void testToList_AsCollectionClass() throws Exception {
+        Field f1 = Field.of("id", StandardSQLTypeName.INT64);
+        Field f2 = Field.of("name", StandardSQLTypeName.STRING);
+        FieldList fields = FieldList.of(f1, f2);
+        Schema schema = Schema.of(fields);
+
+        List<FieldValueList> rows = new ArrayList<>();
+        rows.add(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "n")), fields));
+
+        when(mockTableResult.getTotalRows()).thenReturn(1L);
+        when(mockTableResult.getSchema()).thenReturn(schema);
+        when(mockTableResult.iterateAll()).thenReturn(rows);
+
+        @SuppressWarnings({ "unchecked", "rawtypes" })
+        List<List> result = BigQueryExecutor.toList(mockTableResult, (Class) List.class);
+        assertEquals(1, result.size());
+        assertEquals(2, result.get(0).size());
+    }
+
+    // readRow Map branch via toList with Map class
+    @Test
+    public void testToList_AsMapClass() throws Exception {
+        Field f1 = Field.of("id", StandardSQLTypeName.INT64);
+        FieldList fields = FieldList.of(f1);
+        Schema schema = Schema.of(fields);
+
+        List<FieldValueList> rows = new ArrayList<>();
+        rows.add(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "42")), fields));
+
+        when(mockTableResult.getTotalRows()).thenReturn(1L);
+        when(mockTableResult.getSchema()).thenReturn(schema);
+        when(mockTableResult.iterateAll()).thenReturn(rows);
+
+        @SuppressWarnings({ "unchecked", "rawtypes" })
+        List<Map> result = BigQueryExecutor.toList(mockTableResult, (Class) Map.class);
+        assertEquals(1, result.size());
+        assertEquals("42", result.get(0).get("id"));
+    }
+
+    // readRow single-value branch
+    @Test
+    public void testToList_AsSingleValueClass() throws Exception {
+        Field f1 = Field.of("id", StandardSQLTypeName.INT64);
+        FieldList fields = FieldList.of(f1);
+        Schema schema = Schema.of(fields);
+
+        List<FieldValueList> rows = new ArrayList<>();
+        rows.add(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "100")), fields));
+        rows.add(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "200")), fields));
+
+        when(mockTableResult.getTotalRows()).thenReturn(2L);
+        when(mockTableResult.getSchema()).thenReturn(schema);
+        when(mockTableResult.iterateAll()).thenReturn(rows);
+
+        List<Long> result = BigQueryExecutor.toList(mockTableResult, Long.class);
+        assertEquals(2, result.size());
+        assertEquals(Long.valueOf(100L), result.get(0));
+        assertEquals(Long.valueOf(200L), result.get(1));
+    }
+
+    // toList with null schema returns empty list
+    @Test
+    public void testToList_NullSchema() throws Exception {
+        when(mockTableResult.getTotalRows()).thenReturn(5L);
+        when(mockTableResult.getSchema()).thenReturn(null);
+
+        List<TestEntity> result = BigQueryExecutor.toList(mockTableResult, TestEntity.class);
+        assertNotNull(result);
+        assertEquals(0, result.size());
+    }
+
+    // extractData with null schema returns empty Dataset
+    @Test
+    public void testExtractData_NullSchemaReturnsEmpty() {
+        when(mockTableResult.getTotalRows()).thenReturn(0L);
+        when(mockTableResult.getSchema()).thenReturn(null);
+
+        Dataset ds = BigQueryExecutor.extractData(mockTableResult, TestEntity.class);
+        assertNotNull(ds);
+        assertEquals(0, ds.size());
+    }
+
+    // extractData Map class branch
+    @Test
+    public void testExtractData_AsMapClass() throws Exception {
+        Field f1 = Field.of("id", StandardSQLTypeName.INT64);
+        Field f2 = Field.of("name", StandardSQLTypeName.STRING);
+        FieldList fields = FieldList.of(f1, f2);
+        Schema schema = Schema.of(fields);
+
+        List<FieldValueList> rows = new ArrayList<>();
+        rows.add(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "x")), fields));
+
+        when(mockTableResult.getTotalRows()).thenReturn(1L);
+        when(mockTableResult.getSchema()).thenReturn(schema);
+        when(mockTableResult.iterateAll()).thenReturn(rows);
+
+        Dataset ds = BigQueryExecutor.extractData(mockTableResult, Map.class);
+        assertNotNull(ds);
+        assertEquals(1, ds.size());
+        assertTrue(ds.containsColumn("id"));
+    }
+
+    // extractData with null target class
+    @Test
+    public void testExtractData_NullTargetClass() throws Exception {
+        Field f1 = Field.of("id", StandardSQLTypeName.INT64);
+        FieldList fields = FieldList.of(f1);
+        Schema schema = Schema.of(fields);
+
+        List<FieldValueList> rows = new ArrayList<>();
+        rows.add(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "55")), fields));
+
+        when(mockTableResult.getTotalRows()).thenReturn(1L);
+        when(mockTableResult.getSchema()).thenReturn(schema);
+        when(mockTableResult.iterateAll()).thenReturn(rows);
+
+        Dataset ds = BigQueryExecutor.extractData(mockTableResult, null);
+        assertNotNull(ds);
+        assertEquals(1, ds.size());
+    }
+
+    // entityToCondition: null entity throws (NPE because delete dereferences before reaching entityToCondition)
+    @Test
+    public void testEntityToCondition_NullEntityThrows() {
+        // delete(null).getClass() triggers NPE before entityToCondition is invoked.
+        assertThrows(NullPointerException.class, () -> executor.delete((Object) null));
+    }
+
+    // entityToCondition: empty key throws
+    @Test
+    public void testEntityToCondition_EmptyKeyThrows() {
+        TestEntityWithStringKey entity = new TestEntityWithStringKey();
+        entity.setId(""); // empty string -> no value
+        assertThrows(IllegalArgumentException.class, () -> executor.delete(entity));
+    }
+
+    // idsToCondition: empty ids throws
+    @Test
+    public void testIdsToCondition_EmptyIdsThrows() {
+        assertThrows(IllegalArgumentException.class, () -> executor.exists(TestEntity.class, new Object[0]));
+    }
+
+    // idsToCondition: more ids than keys throws
+    @Test
+    public void testIdsToCondition_TooManyIdsThrows() {
+        assertThrows(IllegalArgumentException.class, () -> executor.exists(TestEntity.class, 1, 2, 3));
+    }
+
+    // stream(Class, QueryJobConfiguration) returns rows
+    @Test
+    public void testStream_WithClassAndQueryConfig() throws Exception {
+        Field f1 = Field.of("id", StandardSQLTypeName.INT64);
+        Field f2 = Field.of("name", StandardSQLTypeName.STRING);
+        FieldList fields = FieldList.of(f1, f2);
+
+        List<FieldValueList> rows = new ArrayList<>();
+        rows.add(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "9"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "John")), fields));
+
+        when(mockTableResult.iterateAll()).thenReturn(rows);
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        QueryJobConfiguration config = QueryJobConfiguration.newBuilder("SELECT id, name FROM t").build();
+        Stream<TestEntity> stream = executor.stream(TestEntity.class, config);
+        List<TestEntity> collected = stream.toList();
+        assertEquals(1, collected.size());
+        assertEquals(9, collected.get(0).getId());
+    }
+
+    // stream(QueryJobConfiguration) returns raw FieldValueList
+    @Test
+    public void testStream_RawFieldValueList() throws Exception {
+        Field f1 = Field.of("id", StandardSQLTypeName.INT64);
+        FieldList fields = FieldList.of(f1);
+
+        List<FieldValueList> rows = new ArrayList<>();
+        rows.add(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "11")), fields));
+
+        when(mockTableResult.iterateAll()).thenReturn(rows);
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        QueryJobConfiguration config = QueryJobConfiguration.newBuilder("SELECT id FROM t").build();
+        Stream<FieldValueList> stream = executor.stream(config);
+        List<FieldValueList> collected = stream.toList();
+        assertEquals(1, collected.size());
+    }
+
+    // execute(String, Object...) with positional parameters
+    @Test
+    public void testExecute_WithParameters() throws Exception {
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        TableResult result = executor.execute("SELECT * FROM t WHERE id = ?", 42);
+        assertNotNull(result);
+        verify(mockBigQuery).query(any(QueryJobConfiguration.class));
+    }
+
     // Entity with a String id used to exercise entityToCondition's empty/null-key error paths.
     public static class TestEntityWithStringKey {
         private String id;

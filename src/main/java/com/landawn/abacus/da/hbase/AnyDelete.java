@@ -399,11 +399,12 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
     }
 
     /**
-     * Marks a specific cell for deletion.
+     * Adds an existing delete-marker Cell to this delete operation.
      *
-     * <p>This advanced method allows you to add a specific cell deletion to the AnyDelete operation.
-     * The cell must be of type "delete" and will be included in the delete operation. This is useful
-     * when working with custom cell processing or when migrating delete markers between operations.</p>
+     * <p>This advanced method delegates to {@link Delete#add(Cell)}. The supplied cell must
+     * represent a delete tombstone (i.e. its type must be one of {@code Delete},
+     * {@code DeleteColumn}, {@code DeleteFamily}, or {@code DeleteFamilyVersion}) and its
+     * row key must match this delete's row key.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -412,11 +413,13 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *                            .add(deleteMarker);
      * }</pre>
      *
-     * @param kv An existing Cell object representing the deletion marker; must be of type "delete"
+     * @param kv an existing Cell representing a delete marker; must be a delete-type cell
+     *           whose row matches this delete's row
      * @return this AnyDelete instance for method chaining
-     * @throws IOException if an I/O error occurs while adding the cell
-     * @throws IllegalArgumentException if the cell is not a valid delete marker
+     * @throws IOException if the cell is not a delete-type cell, or if its row key does not
+     *         match this delete's row key (thrown by the underlying {@link Delete#add(Cell)})
      * @see Cell
+     * @see Delete#add(Cell)
      */
     public AnyDelete add(final Cell kv) throws IOException {
         delete.add(kv);
@@ -868,9 +871,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * table.delete(deletes);   // Batch delete with native HBase API
      * }</pre>
      *
-     * @param anyDeletes the collection of AnyDelete instances to convert; must not be null
-     * @return a list of native HBase Delete objects
-     * @throws IllegalArgumentException if anyDeletes is null
+     * @param anyDeletes the collection of AnyDelete instances to convert; must not be null and must not contain null elements
+     * @return a list of native HBase Delete objects, in iteration order of {@code anyDeletes}
+     * @throws IllegalArgumentException if {@code anyDeletes} is null, or any element of {@code anyDeletes} is null
      * @see Delete
      * @see HBaseExecutor#delete(String, Collection)
      */

@@ -257,15 +257,17 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     }
 
     /**
-     * Creates a new AnyScan instance wrapping an existing HBase Scan object.
-     * <p>
-     * This factory method allows you to wrap an existing HBase Scan object
-     * with the convenient AnyScan interface.
-     * </p>
+     * Creates a new AnyScan that wraps (does not copy) an existing HBase Scan object.
+     *
+     * <p>The returned AnyScan stores the supplied Scan by reference. Subsequent mutations
+     * performed through the returned AnyScan are applied to the same underlying Scan and
+     * are therefore visible to any other code that retains a reference to the original.
+     * If isolation is required, copy the Scan before calling this method (for example via
+     * {@code new Scan(originalScan)}).</p>
      *
      * @param scan the HBase Scan object to wrap; must not be null
-     * @return a new AnyScan instance wrapping the provided scan
-     * @throws NullPointerException if {@code scan} is null (raised on first subsequent dereference of the wrapped Scan)
+     * @return a new AnyScan instance that wraps the provided Scan by reference
+     * @throws NullPointerException if {@code scan} is null (raised on the first subsequent dereference of the wrapped Scan)
      */
     public static AnyScan of(final Scan scan) {
         return new AnyScan(scan);
@@ -627,13 +629,12 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     }
 
     /**
-     * Sets the scan to retrieve cells with the exact specified timestamp.
-     * <p>
-     * This is a convenience method that sets both minimum and maximum timestamps
-     * to the same value, effectively filtering for cells with this exact timestamp.
-     * Note that the default maximum versions to return is 1; if your time range spans
-     * multiple versions, you may need to call {@link #readVersions(int)} to increase this.
-     * </p>
+     * Restricts the scan to cells with exactly the specified timestamp.
+     *
+     * <p>Delegates to {@link Scan#setTimestamp(long)}, which configures the time range as
+     * {@code [timestamp, timestamp + 1)} — i.e. only cells stamped with {@code timestamp} are
+     * returned. The default maximum versions returned is 1; if you need every version that
+     * happens to share this timestamp, also call {@link #readVersions(int)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -878,13 +879,16 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     }
 
     /**
-     * Sets the row prefix filter.
+     * Sets the row prefix filter via start/stop rows (misnomer; see {@code @deprecated}).
      *
-     * @param rowPrefix the row prefix to use for filtering
+     * <p>Despite the name, no {@link Filter} is installed: this method delegates to
+     * {@link Scan#setRowPrefixFilter(byte[])}, which configures startRow and stopRow to bracket
+     * all keys with the given prefix.</p>
+     *
+     * @param rowPrefix the row prefix; converted to bytes via {@link HBaseExecutor#toRowKeyBytes(Object)}
      * @return this AnyScan instance for method chaining
-     * @deprecated Since 2.5.0, will be removed in 4.0.0. The name of this method is considered to be
-     *             confusing as it does not use a {@link Filter} but uses setting the startRow and
-     *             stopRow instead. Use {@link #setStartStopRowForPrefixScan(byte[])} instead.
+     * @deprecated Since HBase 2.5.0, will be removed in 4.0.0. The name is considered misleading
+     *             because no {@link Filter} is used. Use {@link #setStartStopRowForPrefixScan(byte[])} instead.
      */
     @Deprecated
     public AnyScan setRowPrefixFilter(final Object rowPrefix) {
@@ -894,11 +898,11 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     }
 
     /**
-     * Sets the start and stop rows for scanning all rows with a specific prefix.
-     * <p>
-     * This method configures the scan to retrieve all rows that start with the specified
-     * prefix. It's an optimized way to scan rows with a common prefix without using filters.
-     * </p>
+     * Sets the start and stop rows to scan every row whose key begins with the given prefix.
+     *
+     * <p>This is an optimized prefix scan that translates the supplied prefix into an
+     * inclusive start row and a lexicographically computed exclusive stop row, avoiding the
+     * cost of a server-side filter. Delegates to {@link Scan#setStartStopRowForPrefixScan(byte[])}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -906,9 +910,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * AnyScan scan = AnyScan.create().setStartStopRowForPrefixScan(prefix);
      * }</pre>
      *
-     * @param rowPrefix the row key prefix to scan for
+     * @param rowPrefix the row key prefix; passed through {@link HBaseExecutor#toRowKeyBytes(Object)} (a {@code byte[]} input is returned as-is)
      * @return this AnyScan instance for method chaining
-     * @see #setRowPrefixFilter(Object)
+     * @see Scan#setStartStopRowForPrefixScan(byte[])
      */
     public AnyScan setStartStopRowForPrefixScan(final byte[] rowPrefix) {
         scan.setStartStopRowForPrefixScan(toRowKeyBytes(rowPrefix));

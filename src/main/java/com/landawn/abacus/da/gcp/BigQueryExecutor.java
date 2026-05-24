@@ -74,20 +74,21 @@ import com.landawn.abacus.util.stream.Stream;
  * A comprehensive executor for Google Cloud BigQuery operations, providing high-level abstractions
  * for SQL query execution, data manipulation, and BigQuery-specific features.
  * <p>
- * This executor supports BigQuery's SQL dialect and provides seamless integration with Google Cloud BigQuery
- * services including dataset operations, table management, job execution, and streaming inserts.
+ * This executor supports BigQuery's Standard SQL dialect and is designed for ad-hoc query execution
+ * and DML (INSERT/UPDATE/DELETE) workloads driven from POJOs or property maps. It does <i>not</i>
+ * wrap BigQuery's streaming insert ({@code tabledata.insertAll}) or its administrative dataset/table
+ * APIs; reach for {@link #bigQuery()} when those are needed.
  *
  * <h2>Key Features</h2>
  * <h3>Core Capabilities:</h3>
  * <ul>
- *   <li>Standard SQL query execution with parameter binding</li>
- *   <li>Dataset and table operations (create, read, update, delete)</li>
- *   <li>Job management and asynchronous query execution</li>
- *   <li>Streaming data inserts and batch processing</li>
- *   <li>Support for BigQuery data types and nested structures</li>
- *   <li>Automatic conversion between Java objects and BigQuery data</li>
- *   <li>Multiple naming policy support (snake_case, camelCase, etc.)</li>
- *   <li>Partitioned table support and query optimization</li>
+ *   <li>Standard SQL query execution with positional parameter binding</li>
+ *   <li>POJO-driven INSERT/UPDATE/DELETE built on top of {@link SqlBuilder}</li>
+ *   <li>Result mapping to entities, {@link Dataset}s, {@code Map}s, arrays, collections,
+ *       and scalar values</li>
+ *   <li>{@link Stream}-based result processing for large result sets</li>
+ *   <li>Support for BigQuery data types and nested {@link FieldValueList} structures</li>
+ *   <li>Configurable naming policy for mapping Java property names to column names</li>
  * </ul>
  * 
  * <h3>Naming Policy Support:</h3>
@@ -123,11 +124,9 @@ import com.landawn.abacus.util.stream.Stream;
  * 
  * <h3>BigQuery-Specific Features:</h3>
  * <ul>
- *   <li>Support for ARRAY and STRUCT data types</li>
- *   <li>Partitioned and clustered table operations</li>
- *   <li>Query job configuration and optimization</li>
- *   <li>Streaming insert capabilities</li>
- *   <li>DML and DDL statement execution</li>
+ *   <li>Reads ARRAY and STRUCT result values via nested {@link FieldValueList} handling</li>
+ *   <li>Direct {@link QueryJobConfiguration} execution for advanced job control</li>
+ *   <li>Arbitrary DML and DDL statement execution via {@link #execute(String, Object...)}</li>
  * </ul>
  * 
  * @see com.google.cloud.bigquery.BigQuery

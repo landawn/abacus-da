@@ -588,9 +588,12 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <ul>
      * <li>Retrieves multiple items in a single network round-trip</li>
      * <li>Non-blocking execution reduces thread pool pressure</li>
-     * <li>Automatic handling of unprocessed items through pagination</li>
      * <li>Cost-efficient compared to individual GetItem calls</li>
      * </ul>
+     *
+     * <p><b>Unprocessed keys:</b> DynamoDB may return some keys as unprocessed when batch limits
+     * are reached or throttling occurs. This method does NOT automatically retry unprocessed keys —
+     * inspect the underlying {@link BatchGetItemRequest}/response and re-issue if needed.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1601,7 +1604,8 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * 
      * <p><b>Pagination Behavior:</b></p>
      * <ul>
-     * <li>Automatically fetches all pages of results</li>
+     * <li>Automatically fetches all pages of results when {@code exclusiveStartKey} is NOT set on
+     *     the request; if the caller has set it, only the single page returned is materialized</li>
      * <li>Continues until no more items are available</li>
      * <li>All results loaded into memory at once</li>
      * <li>May timeout for very large result sets</li>
@@ -1737,6 +1741,10 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     });
      * }</pre>
      * 
+     * <p><b>Automatic pagination:</b> When the caller has not set {@code exclusiveStartKey} on the
+     * request, all pages are fetched and concatenated into the returned Dataset; if it was set,
+     * only the single page returned by DynamoDB is materialized.</p>
+     *
      * @param queryRequest the QueryRequest with query parameters. Must not be null.
      * @param targetClass the class to convert results to, or {@code null}/a Map type for raw results
      * @return a CompletableFuture containing a typed Dataset with query results

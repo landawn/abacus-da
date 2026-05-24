@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
@@ -1602,6 +1603,498 @@ public class DynamoDBExecutor01Test extends TestBase {
         Stream<TestEntity> stream = executor.stream(req, TestEntity.class);
         assertNotNull(stream);
         assertEquals(1, stream.count());
+    }
+
+    // ===== Coverage gap fillers for toValue / readRow / createRowMapper / Mapper request paths =====
+
+    // toValue: BOOL, SS, NS, BS, L, M, and null with target class default-value branches.
+    @Test
+    public void testToValue_BoolViaToMap() {
+        Map<String, AttributeValue> item = new HashMap<>();
+        item.put("flag", new AttributeValue().withBOOL(Boolean.TRUE));
+        Map<String, Object> result = DynamoDBExecutor.toMap(item);
+        assertEquals(Boolean.TRUE, result.get("flag"));
+    }
+
+    @Test
+    public void testToValue_BinaryByteBufferViaToMap() {
+        ByteBuffer buf = ByteBuffer.wrap(new byte[] { 9, 8, 7 });
+        Map<String, AttributeValue> item = new HashMap<>();
+        item.put("b", new AttributeValue().withB(buf));
+        Map<String, Object> result = DynamoDBExecutor.toMap(item);
+        assertEquals(buf, result.get("b"));
+    }
+
+    @Test
+    public void testToValue_StringSetViaToMap() {
+        Map<String, AttributeValue> item = new HashMap<>();
+        item.put("ss", new AttributeValue().withSS("a", "b"));
+        Map<String, Object> result = DynamoDBExecutor.toMap(item);
+        assertNotNull(result.get("ss"));
+        assertEquals(2, ((List<?>) result.get("ss")).size());
+    }
+
+    @Test
+    public void testToValue_NumberSetViaToMap() {
+        Map<String, AttributeValue> item = new HashMap<>();
+        item.put("ns", new AttributeValue().withNS("1", "2", "3"));
+        Map<String, Object> result = DynamoDBExecutor.toMap(item);
+        assertEquals(3, ((List<?>) result.get("ns")).size());
+    }
+
+    @Test
+    public void testToValue_ListViaToMap() {
+        AttributeValue listAttr = new AttributeValue().withL(new AttributeValue().withS("x"), new AttributeValue().withN("5"));
+        Map<String, AttributeValue> item = new HashMap<>();
+        item.put("l", listAttr);
+        Map<String, Object> result = DynamoDBExecutor.toMap(item);
+        List<?> list = (List<?>) result.get("l");
+        assertEquals(2, list.size());
+        assertEquals("x", list.get(0));
+    }
+
+    @Test
+    public void testToValue_MapViaToMap() {
+        Map<String, AttributeValue> nested = new HashMap<>();
+        nested.put("k", new AttributeValue().withS("v"));
+        Map<String, AttributeValue> item = new HashMap<>();
+        item.put("m", new AttributeValue().withM(nested));
+        Map<String, Object> result = DynamoDBExecutor.toMap(item);
+        Map<?, ?> innerMap = (Map<?, ?>) result.get("m");
+        assertEquals("v", innerMap.get("k"));
+    }
+
+    @Test
+    public void testToValue_NullAttributeViaToMap() {
+        Map<String, AttributeValue> item = new HashMap<>();
+        item.put("nullVal", new AttributeValue().withNULL(Boolean.TRUE));
+        Map<String, Object> result = DynamoDBExecutor.toMap(item);
+        assertNull(result.get("nullVal"));
+    }
+
+    // toItem(Object, NamingPolicy) Map branch (camel-case and non-camel-case branches)
+    @Test
+    public void testToItem_FromMapWithSnakeCase() {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("firstName", "John");
+        map.put("lastName", "Doe");
+        Map<String, AttributeValue> result = DynamoDBExecutor.toItem(map, NamingPolicy.SNAKE_CASE);
+        assertEquals("John", result.get("first_name").getS());
+        assertEquals("Doe", result.get("last_name").getS());
+    }
+
+    @Test
+    public void testToItem_UnsupportedTypeThrows() {
+        // String entity is not a bean, not a Map, not an Object[]
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toItem("notSupported", NamingPolicy.CAMEL_CASE));
+    }
+
+    // toUpdateItem: bean + map + array + unsupported branches
+    @Test
+    public void testToUpdateItem_FromMapCamelCase() {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("name", "Alice");
+        Map<String, AttributeValueUpdate> result = DynamoDBExecutor.toUpdateItem(map);
+        assertEquals("Alice", result.get("name").getValue().getS());
+    }
+
+    @Test
+    public void testToUpdateItem_FromMapSnakeCase() {
+        Map<String, Object> map = new LinkedHashMap<>();
+        map.put("firstName", "John");
+        Map<String, AttributeValueUpdate> result = DynamoDBExecutor.toUpdateItem(map, NamingPolicy.SNAKE_CASE);
+        assertEquals("John", result.get("first_name").getValue().getS());
+    }
+
+    @Test
+    public void testToUpdateItem_FromObjectArray() {
+        Object[] arr = { "key1", "v1", "key2", 2 };
+        Map<String, AttributeValueUpdate> result = DynamoDBExecutor.toUpdateItem(arr);
+        assertEquals(2, result.size());
+        assertEquals("v1", result.get("key1").getValue().getS());
+        assertEquals("2", result.get("key2").getValue().getN());
+    }
+
+    @Test
+    public void testToUpdateItem_UnsupportedTypeThrows() {
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toUpdateItem("notSupported"));
+    }
+
+    // toEntity: null item branch and column-name mapping branches
+    @Test
+    public void testToEntity_NullItemReturnsNull() {
+        TestEntity result = DynamoDBExecutor.toEntity((Map<String, AttributeValue>) null, TestEntity.class);
+        assertNull(result);
+    }
+
+    // readRow / createRowMapper branches: Object[], Collection, Map, single-value
+    @Test
+    public void testToList_AsObjectArrayClass() {
+        QueryResult qr = new QueryResult();
+        Map<String, AttributeValue> r = new LinkedHashMap<>();
+        r.put("a", new AttributeValue().withS("x"));
+        r.put("b", new AttributeValue().withS("y"));
+        qr.setItems(List.of(r));
+
+        List<Object[]> result = DynamoDBExecutor.toList(qr, Object[].class);
+        assertEquals(1, result.size());
+        assertEquals(2, result.get(0).length);
+    }
+
+    @Test
+    public void testToList_AsCollectionClass() {
+        QueryResult qr = new QueryResult();
+        Map<String, AttributeValue> r = new LinkedHashMap<>();
+        r.put("a", new AttributeValue().withS("x"));
+        r.put("b", new AttributeValue().withS("y"));
+        qr.setItems(List.of(r));
+
+        @SuppressWarnings({ "unchecked", "rawtypes" })
+        List<List> result = DynamoDBExecutor.toList(qr, (Class) List.class);
+        assertEquals(1, result.size());
+        assertEquals(2, result.get(0).size());
+    }
+
+    @Test
+    public void testToList_AsMapClass() {
+        QueryResult qr = new QueryResult();
+        Map<String, AttributeValue> r = new LinkedHashMap<>();
+        r.put("a", new AttributeValue().withS("x"));
+        qr.setItems(List.of(r));
+
+        @SuppressWarnings({ "unchecked", "rawtypes" })
+        List<Map> result = DynamoDBExecutor.toList(qr, (Class) Map.class);
+        assertEquals(1, result.size());
+        assertEquals("x", result.get(0).get("a"));
+    }
+
+    @Test
+    public void testToList_AsSingleValueClass() {
+        QueryResult qr = new QueryResult();
+        Map<String, AttributeValue> r = new LinkedHashMap<>();
+        r.put("v", new AttributeValue().withS("hello"));
+        qr.setItems(List.of(r));
+
+        List<String> result = DynamoDBExecutor.toList(qr, String.class);
+        assertEquals(1, result.size());
+        assertEquals("hello", result.get(0));
+    }
+
+    @Test
+    public void testToList_SingleValueClassMultiColumn_Throws() {
+        QueryResult qr = new QueryResult();
+        Map<String, AttributeValue> r = new LinkedHashMap<>();
+        r.put("a", new AttributeValue().withS("1"));
+        r.put("b", new AttributeValue().withS("2"));
+        qr.setItems(List.of(r));
+
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toList(qr, String.class));
+    }
+
+    // toList with negative offset/count
+    @Test
+    public void testToList_NegativeOffsetThrows() {
+        QueryResult qr = new QueryResult();
+        qr.setItems(new ArrayList<>());
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toList(qr, -1, 0, TestEntity.class));
+    }
+
+    // extractData edge cases
+    @Test
+    public void testExtractData_EmptyItems() {
+        Dataset ds = DynamoDBExecutor.extractData(new QueryResult().withItems(new ArrayList<>()));
+        assertNotNull(ds);
+        assertEquals(0, ds.size());
+    }
+
+    @Test
+    public void testExtractData_OffsetBeyondSize() {
+        QueryResult qr = new QueryResult();
+        qr.setItems(List.of(Map.of("id", new AttributeValue().withS("1"))));
+        Dataset ds = DynamoDBExecutor.extractData(qr, 5, 10);
+        assertNotNull(ds);
+        assertEquals(0, ds.size());
+    }
+
+    @Test
+    public void testExtractData_NegativeOffsetThrows() {
+        QueryResult qr = new QueryResult().withItems(List.of(Map.of("id", new AttributeValue().withS("1"))));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.extractData(qr, -1, 1));
+    }
+
+    // toMap with empty array
+    @Test
+    public void testToMap_EmptyArray() {
+        Map<String, Object> result = DynamoDBExecutor.toMap(new Object[0]);
+        assertNotNull(result);
+        assertEquals(0, result.size());
+    }
+
+    @Test
+    public void testToMap_OddArrayThrows() {
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toMap(new Object[] { "k1", "v1", "k2" }));
+    }
+
+    // ===== Mapper additional coverage =====
+
+    // Mapper.getItem(entity, consistentRead) - new overload not yet tested
+    @Test
+    public void testMapperGetItemWithConsistentRead() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        TestEntity entity = new TestEntity();
+        entity.setId("123");
+
+        GetItemResult res = new GetItemResult().withItem(Map.of("id", new AttributeValue().withS("123")));
+        when(mockDynamoDBClient.getItem(eq("TestTable"), any(Map.class), eq(Boolean.TRUE))).thenReturn(res);
+
+        TestEntity result = mapper.getItem(entity, Boolean.TRUE);
+        assertNotNull(result);
+        assertEquals("123", result.getId());
+    }
+
+    // Mapper.getItem(Map<String, AttributeValue>)
+    @Test
+    public void testMapperGetItemByKey() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        Map<String, AttributeValue> key = Map.of("id", new AttributeValue().withS("abc"));
+        GetItemResult res = new GetItemResult().withItem(Map.of("id", new AttributeValue().withS("abc")));
+        when(mockDynamoDBClient.getItem(eq("TestTable"), eq(key))).thenReturn(res);
+
+        TestEntity result = mapper.getItem(key);
+        assertNotNull(result);
+        assertEquals("abc", result.getId());
+    }
+
+    // Mapper.getItem(GetItemRequest) with no tableName set (defaults to mapper's tableName)
+    @Test
+    public void testMapperGetItemRequest_NoTableNameSet() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        GetItemRequest req = new GetItemRequest().withKey(Map.of("id", new AttributeValue().withS("x")));
+        when(mockDynamoDBClient.getItem(any(GetItemRequest.class))).thenReturn(new GetItemResult().withItem(Map.of("id", new AttributeValue().withS("x"))));
+
+        TestEntity result = mapper.getItem(req);
+        assertNotNull(result);
+        assertEquals("TestTable", req.getTableName());
+    }
+
+    // Mapper.putItem(entity, returnValues)
+    @Test
+    public void testMapperPutItemWithReturnValues() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        TestEntity entity = new TestEntity();
+        entity.setId("p1");
+        when(mockDynamoDBClient.putItem(eq("TestTable"), any(Map.class), eq("ALL_OLD"))).thenReturn(new PutItemResult());
+
+        PutItemResult result = mapper.putItem(entity, "ALL_OLD");
+        assertNotNull(result);
+    }
+
+    // Mapper.putItem(PutItemRequest) with no tableName set
+    @Test
+    public void testMapperPutItemRequest_NoTableNameSet() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        PutItemRequest req = new PutItemRequest().withItem(Map.of("id", new AttributeValue().withS("p2")));
+        when(mockDynamoDBClient.putItem(any(PutItemRequest.class))).thenReturn(new PutItemResult());
+
+        PutItemResult result = mapper.putItem(req);
+        assertNotNull(result);
+        assertEquals("TestTable", req.getTableName());
+    }
+
+    // Mapper.updateItem(entity, returnValues)
+    @Test
+    public void testMapperUpdateItemWithReturnValues() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        TestEntity entity = new TestEntity();
+        entity.setId("u1");
+        entity.setName("updated");
+        when(mockDynamoDBClient.updateItem(eq("TestTable"), any(Map.class), any(Map.class), eq("ALL_NEW"))).thenReturn(new UpdateItemResult());
+
+        UpdateItemResult result = mapper.updateItem(entity, "ALL_NEW");
+        assertNotNull(result);
+    }
+
+    // Mapper.updateItem(UpdateItemRequest) with no tableName set
+    @Test
+    public void testMapperUpdateItemRequest_NoTableNameSet() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        UpdateItemRequest req = new UpdateItemRequest().withKey(Map.of("id", new AttributeValue().withS("u2")));
+        when(mockDynamoDBClient.updateItem(any(UpdateItemRequest.class))).thenReturn(new UpdateItemResult());
+
+        UpdateItemResult result = mapper.updateItem(req);
+        assertNotNull(result);
+        assertEquals("TestTable", req.getTableName());
+    }
+
+    // Mapper.deleteItem(entity, returnValues)
+    @Test
+    public void testMapperDeleteItemWithReturnValues() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        TestEntity entity = new TestEntity();
+        entity.setId("d1");
+        when(mockDynamoDBClient.deleteItem(eq("TestTable"), any(Map.class), eq("ALL_OLD"))).thenReturn(new DeleteItemResult());
+
+        DeleteItemResult result = mapper.deleteItem(entity, "ALL_OLD");
+        assertNotNull(result);
+    }
+
+    // Mapper.deleteItem(Map<String, AttributeValue>)
+    @Test
+    public void testMapperDeleteItemByKey() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        Map<String, AttributeValue> key = Map.of("id", new AttributeValue().withS("d2"));
+        when(mockDynamoDBClient.deleteItem(eq("TestTable"), eq(key))).thenReturn(new DeleteItemResult());
+
+        DeleteItemResult result = mapper.deleteItem(key);
+        assertNotNull(result);
+    }
+
+    // Mapper.deleteItem(DeleteItemRequest)
+    @Test
+    public void testMapperDeleteItemRequest_NoTableNameSet() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        DeleteItemRequest req = new DeleteItemRequest().withKey(Map.of("id", new AttributeValue().withS("d3")));
+        when(mockDynamoDBClient.deleteItem(any(DeleteItemRequest.class))).thenReturn(new DeleteItemResult());
+
+        DeleteItemResult result = mapper.deleteItem(req);
+        assertNotNull(result);
+        assertEquals("TestTable", req.getTableName());
+    }
+
+    // Mapper.batchGetItem(BatchGetItemRequest)
+    @Test
+    public void testMapperBatchGetItemRequest() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        BatchGetItemRequest req = new BatchGetItemRequest()
+                .withRequestItems(Map.of("TestTable", new KeysAndAttributes().withKeys(List.of(Map.of("id", new AttributeValue().withS("b1"))))));
+        BatchGetItemResult res = new BatchGetItemResult()
+                .withResponses(Map.of("TestTable", List.of(Map.of("id", new AttributeValue().withS("b1")))));
+        when(mockDynamoDBClient.batchGetItem(req)).thenReturn(res);
+
+        List<TestEntity> result = mapper.batchGetItem(req);
+        assertNotNull(result);
+        assertEquals(1, result.size());
+    }
+
+    // Mapper.batchGetItem with empty responses returns empty list
+    @Test
+    public void testMapperBatchGetItem_EmptyResponses() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        BatchGetItemResult emptyRes = new BatchGetItemResult();
+        when(mockDynamoDBClient.batchGetItem(any(Map.class))).thenReturn(emptyRes);
+
+        List<TestEntity> result = mapper.batchGetItem(List.of());
+        assertNotNull(result);
+        assertEquals(0, result.size());
+    }
+
+    // Mapper.batchGetItem(Collection, returnConsumedCapacity)
+    @Test
+    public void testMapperBatchGetItemWithReturnConsumedCapacity() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        TestEntity e1 = new TestEntity();
+        e1.setId("1");
+
+        BatchGetItemResult res = new BatchGetItemResult()
+                .withResponses(Map.of("TestTable", List.of(Map.of("id", new AttributeValue().withS("1")))));
+        when(mockDynamoDBClient.batchGetItem(any(Map.class), eq("TOTAL"))).thenReturn(res);
+
+        List<TestEntity> result = mapper.batchGetItem(List.of(e1), "TOTAL");
+        assertNotNull(result);
+        assertEquals(1, result.size());
+    }
+
+    // Mapper.batchWriteItem(BatchWriteItemRequest)
+    @Test
+    public void testMapperBatchWriteItemRequest_NoTableNameSet() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        BatchWriteItemRequest req = new BatchWriteItemRequest()
+                .withRequestItems(Map.of("TestTable", List.of(new WriteRequest().withPutRequest(new PutRequest().withItem(Map.of("id", new AttributeValue().withS("b1")))))));
+        when(mockDynamoDBClient.batchWriteItem(req)).thenReturn(new BatchWriteItemResult());
+
+        BatchWriteItemResult result = mapper.batchWriteItem(req);
+        assertNotNull(result);
+    }
+
+    // Mapper.scan(attributesToGet) overload
+    @Test
+    public void testMapperScanWithAttributes() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        ScanResult res = new ScanResult().withItems(List.of(Map.of("id", new AttributeValue().withS("s1"))));
+        when(mockDynamoDBClient.scan(any(ScanRequest.class))).thenReturn(res);
+
+        Stream<TestEntity> stream = mapper.scan(List.of("id"));
+        assertNotNull(stream);
+        assertEquals(1, stream.count());
+    }
+
+    // Mapper.scan(scanFilter)
+    @Test
+    public void testMapperScanWithFilter() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        ScanResult res = new ScanResult().withItems(List.of(Map.of("id", new AttributeValue().withS("s2"))));
+        when(mockDynamoDBClient.scan(any(ScanRequest.class))).thenReturn(res);
+
+        Stream<TestEntity> stream = mapper.scan(Filters.eq("status", "active"));
+        assertNotNull(stream);
+        assertEquals(1, stream.count());
+    }
+
+    // Mapper.scan(attributesToGet, scanFilter)
+    @Test
+    public void testMapperScanWithAttrsAndFilter() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        ScanResult res = new ScanResult().withItems(List.of(Map.of("id", new AttributeValue().withS("s3"))));
+        when(mockDynamoDBClient.scan(any(ScanRequest.class))).thenReturn(res);
+
+        Stream<TestEntity> stream = mapper.scan(List.of("id"), Filters.eq("status", "active"));
+        assertNotNull(stream);
+        assertEquals(1, stream.count());
+    }
+
+    // ===== package-private putItem overloads (Object entity) =====
+    @Test
+    public void testPutItem_StringObjectEntity() {
+        TestEntity entity = new TestEntity();
+        entity.setId("po1");
+        when(mockDynamoDBClient.putItem(eq("TestTable"), any(Map.class))).thenReturn(new PutItemResult());
+
+        PutItemResult result = executor.putItem("TestTable", (Object) entity);
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testPutItem_StringObjectEntityReturnValues() {
+        TestEntity entity = new TestEntity();
+        entity.setId("po2");
+        when(mockDynamoDBClient.putItem(eq("TestTable"), any(Map.class), eq("ALL_OLD"))).thenReturn(new PutItemResult());
+
+        PutItemResult result = executor.putItem("TestTable", (Object) entity, "ALL_OLD");
+        assertNotNull(result);
+    }
+
+    // ===== toEntities (package-private) - reached via batchGetItem with Class =====
+    @Test
+    public void testBatchGetItem_WithClassDoesNotThrowOnEmpty() {
+        Map<String, KeysAndAttributes> req = Map.of("TestTable",
+                new KeysAndAttributes().withKeys(List.of(Map.of("id", new AttributeValue().withS("1")))));
+        when(mockDynamoDBClient.batchGetItem(req)).thenReturn(new BatchGetItemResult());
+
+        Map<String, List<TestEntity>> result = executor.batchGetItem(req, TestEntity.class);
+        assertNotNull(result);
+        assertEquals(0, result.size());
+    }
+
+    // ===== checkEntityClass invocation: query(QueryRequest, Map.class) avoids it; pass a Map class instead =====
+    @Test
+    public void testQueryWithClass_MapBranch() {
+        QueryRequest req = new QueryRequest().withTableName("TestTable");
+        QueryResult res = new QueryResult().withItems(List.of(Map.of("id", new AttributeValue().withS("1"))));
+        when(mockDynamoDBClient.query(any(QueryRequest.class))).thenReturn(res);
+
+        Dataset ds = executor.query(req, com.landawn.abacus.util.Clazz.PROPS_MAP);
+        assertNotNull(ds);
+        assertEquals(1, ds.size());
     }
 
     @com.landawn.abacus.annotation.Table(name = "TestTable")

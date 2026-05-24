@@ -123,6 +123,13 @@ public final class AsyncMongoCollectionExecutor {
 
     private final AsyncExecutor asyncExecutor;
 
+    /**
+     * Package-private constructor used by {@link MongoCollectionExecutor}; instances are not intended
+     * to be created directly by user code. Obtain one via {@link MongoCollectionExecutor#async()}.
+     *
+     * @param collectionExecutor the synchronous executor to delegate each MongoDB call to
+     * @param asyncExecutor the {@link AsyncExecutor} on which the underlying blocking operations are run
+     */
     AsyncMongoCollectionExecutor(final MongoCollectionExecutor collectionExecutor, final AsyncExecutor asyncExecutor) {
         this.collectionExecutor = collectionExecutor;
         this.asyncExecutor = asyncExecutor;

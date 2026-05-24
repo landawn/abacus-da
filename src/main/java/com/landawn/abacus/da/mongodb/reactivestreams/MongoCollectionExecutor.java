@@ -173,10 +173,13 @@ public final class MongoCollectionExecutor {
     /**
      * Returns the underlying reactive MongoDB collection for advanced operations.
      *
-     * <p>This method provides direct access to the MongoDB reactive streams driver's {@code MongoCollection}
-     * object, allowing for advanced reactive operations not directly exposed by this executor.</p>
+     * <p>This method provides direct access to the MongoDB reactive streams driver's
+     * {@link com.mongodb.reactivestreams.client.MongoCollection} object, allowing for advanced
+     * reactive operations not directly exposed by this executor. The returned collection is the
+     * same instance passed to this executor at construction time and is pre-configured with the
+     * framework's codec registry.</p>
      *
-     * @return the reactive MongoDB collection instance
+     * @return the reactive MongoDB collection instance backing this executor
      * @see com.mongodb.reactivestreams.client.MongoCollection
      */
     public MongoCollection<Document> coll() {
@@ -263,23 +266,28 @@ public final class MongoCollectionExecutor {
     }
 
     /**
-     * Counts all documents in the collection reactively.
+     * Counts all documents in the collection in a reactive manner.
      *
-     * <p>This method provides a reactive way to count all documents in the collection.
-     * The operation is performed asynchronously and the count is emitted when available.</p>
-     * 
+     * <p>Delegates to the reactive driver's
+     * {@link com.mongodb.reactivestreams.client.MongoCollection#countDocuments()
+     * countDocuments()}, which is an accurate (full-scan) count rather than the metadata estimate
+     * returned by {@link #estimatedDocumentCount()}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Mono<Long> countMono = executor.count();
-     * 
+     *
      * countMono.subscribe(
      *     count -> System.out.println("Total documents: " + count),
      *     error -> System.err.println("Error counting documents: " + error)
      * );
      * }</pre>
      *
-     * @return a Mono that emits the total count of documents in the collection
+     * @return a {@code Mono} that, on subscription, emits exactly one {@code Long} with the total
+     *         count of documents in the collection, then completes
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see com.mongodb.reactivestreams.client.MongoCollection#countDocuments()
+     * @see #estimatedDocumentCount()
      */
     public Mono<Long> count() {
         return Mono.from(coll.countDocuments());
@@ -393,15 +401,21 @@ public final class MongoCollectionExecutor {
     }
 
     /**
-     * Retrieves a single document by its ObjectId string reactively.
+     * Retrieves a single document by its ObjectId string in a reactive manner.
      *
-     * <p>This method provides a reactive way to retrieve a document using its string ObjectId representation.
-     * The operation completes when the document is found or determined to be missing.</p>
-     * 
+     * <p>This method provides a reactive way to retrieve a document using its string ObjectId
+     * representation. The ObjectId string is parsed eagerly (before subscription), so an invalid
+     * hex string surfaces as a thrown {@link IllegalArgumentException} at call time rather than
+     * as a {@code Mono} error signal.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> on subscription, the returned {@code Mono} emits the
+     * matching {@link Document} and then completes, or completes <i>empty</i> if no document has
+     * the specified ObjectId.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Mono<Document> docMono = executor.get("507f1f77bcf86cd799439011");
-     * 
+     *
      * docMono.subscribe(
      *     doc -> System.out.println("Found: " + doc.toJson()),
      *     error -> System.err.println("Error: " + error),
@@ -410,26 +424,32 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param objectId the ObjectId as a string to search for
-     * @return a Mono that emits the found document, or empty if no document matches the ObjectId
-     * @throws IllegalArgumentException if objectId is null or empty, or if it is not a valid ObjectId hex string
+     * @return a {@code Mono} that emits the found document on subscription, or completes empty
+     *         when no document matches the ObjectId
+     * @throws IllegalArgumentException if objectId is null or empty, or if it is not a valid
+     *         ObjectId hex string (thrown synchronously by the {@link ObjectId} constructor)
      * @see Document
      * @see ObjectId
+     * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#get(String)
      */
     public Mono<Document> get(final String objectId) {
         return get(createObjectId(objectId));
     }
 
     /**
-     * Retrieves a single document by its ObjectId reactively.
+     * Retrieves a single document by its ObjectId in a reactive manner.
      *
-     * <p>This method provides a reactive way to retrieve a document using a typed ObjectId.
-     * Returns the document as a MongoDB Document object.</p>
-     * 
+     * <p>This method provides a reactive way to retrieve a document using a typed ObjectId.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> on subscription, the returned {@code Mono} emits the
+     * matching {@link Document} and then completes, or completes <i>empty</i> if no document has
+     * the specified ObjectId.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ObjectId userId = new ObjectId("507f1f77bcf86cd799439011");
      * Mono<Document> docMono = executor.get(userId);
-     * 
+     *
      * docMono.subscribe(
      *     doc -> processDocument(doc),
      *     error -> handleError(error)
@@ -437,7 +457,8 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param objectId the ObjectId to search for
-     * @return a Mono that emits the found document, or empty if no document matches the ObjectId
+     * @return a {@code Mono} that emits the found document on subscription, or completes empty
+     *         when no document matches the ObjectId
      * @throws IllegalArgumentException if objectId is null
      * @see Document
      * @see ObjectId
@@ -707,10 +728,12 @@ public final class MongoCollectionExecutor {
     }
 
     /**
-     * Lists all documents matching the specified filter.
+     * Lists all documents matching the specified filter as a reactive {@link Flux} of
+     * {@link Document}.
      *
-     * <p>Returns a reactive stream of all documents that match the given filter criteria.
-     * Documents are returned as MongoDB Document objects without type conversion.</p>
+     * <p>Documents are returned as MongoDB {@code Document} objects without type conversion. The
+     * underlying {@link com.mongodb.reactivestreams.client.FindPublisher} is wrapped in a
+     * {@code Flux}; each subscriber gets an independent cursor.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -718,8 +741,11 @@ public final class MongoCollectionExecutor {
      * Flux<Document> activeDocuments = executor.list(filter);
      * }</pre>
      *
-     * @param filter the query filter to match documents against
-     * @return a Flux that emits all matching documents
+     * @param filter the query filter to match documents against (null matches all)
+     * @return a {@code Flux} that, on subscription, emits each matching document, then completes;
+     *         completes empty when no documents match
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
+     * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#list(Bson)
      */
     public Flux<Document> list(final Bson filter) {
         return list(filter, Document.class);
@@ -1334,18 +1360,28 @@ public final class MongoCollectionExecutor {
     }
 
     /**
-     * Executes a query and returns results as a Dataset.
+     * Executes a query and returns the results as a {@link Dataset} of {@link Document} rows.
      *
-     * <p>Performs a query with the specified filter and returns all matching documents
-     * wrapped in a Dataset structure, which provides tabular data manipulation capabilities.</p>
+     * <p>Performs a find operation with the specified filter; on subscription, the matching
+     * documents are collected into a single {@code Dataset} (which provides tabular data
+     * manipulation capabilities) that is emitted once and then the {@code Mono} completes. Even
+     * when no documents match, the {@code Mono} emits an empty {@code Dataset} rather than
+     * completing empty.</p>
+     *
+     * <p><b>Note:</b> all matching documents are materialised into memory before the {@code
+     * Dataset} is emitted, so this is not suitable for very large result sets — use
+     * {@link #list(Bson)} (streaming {@code Flux}) instead in that case.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Mono<Dataset> dataset = executor.query(Filters.eq("status", "active"));
      * }</pre>
      *
-     * @param filter the query filter to match documents against
-     * @return a Mono that emits a Dataset containing all matching documents
+     * @param filter the query filter to match documents against (null matches all)
+     * @return a {@code Mono} that, on subscription, emits exactly one {@code Dataset} containing
+     *         all matching documents (possibly empty), then completes
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#query(Bson)
      */
     public Mono<Dataset> query(final Bson filter) {
         return query(filter, Document.class);
@@ -1593,10 +1629,14 @@ public final class MongoCollectionExecutor {
     }
 
     /**
-     * Creates a change stream to watch for changes in the collection.
+     * Opens a change stream watching for changes in the collection.
      *
-     * <p>Returns a reactive publisher that emits change events as they occur in the collection.
-     * This is useful for real-time monitoring and reactive processing of database changes.</p>
+     * <p>Returns a hot, long-lived {@link ChangeStreamPublisher} that emits a
+     * {@link com.mongodb.client.model.changestream.ChangeStreamDocument}-wrapped {@link Document}
+     * for each change event as it occurs in the collection. Unlike the {@code Mono}/{@code Flux}
+     * returned by other reactive methods, the change-stream {@code Publisher} does not naturally
+     * complete — it stays open until the subscription is cancelled or the cursor is invalidated.
+     * Use {@code Flux.from(...)} to integrate with Reactor.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1604,7 +1644,8 @@ public final class MongoCollectionExecutor {
      * Flux.from(changeStream).subscribe(change -> processChange(change));
      * }</pre>
      *
-     * @return a ChangeStreamPublisher that emits change events as Documents
+     * @return a {@link ChangeStreamPublisher} that emits each change event as it occurs
+     * @see com.mongodb.reactivestreams.client.MongoCollection#watch()
      */
     public ChangeStreamPublisher<Document> watch() {
         return coll.watch();
@@ -1675,11 +1716,11 @@ public final class MongoCollectionExecutor {
     }
 
     /**
-     * Inserts a single document into the collection reactively.
+     * Inserts a single document into the collection in a reactive manner.
      *
-     * <p>Inserts the provided object as a document in the collection. The object can be
-     * a Document, Map, or an entity class with getter/setter methods. Returns the result
-     * of the insert operation.</p>
+     * <p>Inserts the provided object as a document in the collection. The object can be a
+     * {@link Document}, {@link java.util.Map}, or an entity class with getter/setter methods
+     * (non-Document inputs are converted via {@code MongoDBBase.toDocument}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1687,8 +1728,14 @@ public final class MongoCollectionExecutor {
      * Mono<InsertOneResult> result = executor.insertOne(newUser);
      * }</pre>
      *
-     * @param obj the object to insert (Document/Map/entity class)
-     * @return a Mono that emits the InsertOneResult containing operation details
+     * @param obj the object to insert (Document/Map/entity class); must not be null
+     * @return a {@code Mono} that, on subscription, emits exactly one {@link InsertOneResult}
+     *         describing the operation, then completes
+     * @throws IllegalArgumentException if obj is null
+     * @throws com.mongodb.MongoWriteException if the insert violates a unique constraint or
+     *         document validation (signalled via {@code Mono})
+     * @see #insertOne(Object, InsertOneOptions)
+     * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#insertOne(Object)
      */
     public Mono<InsertOneResult> insertOne(final Object obj) {
         return insertOne(obj, null);
@@ -2375,11 +2422,14 @@ public final class MongoCollectionExecutor {
     }
 
     /**
-     * Performs bulk insert of multiple documents.
+     * Performs a bulk insert of multiple documents in a reactive manner.
      *
-     * <p>Inserts multiple documents in a single bulk operation. This method is significantly
-     * more efficient than inserting documents one by one, especially for large datasets.
-     * The operation is atomic at the document level but not for the entire batch.</p>
+     * <p>Inserts each entity as an {@link InsertOneModel} via {@link #bulkWrite(List)} and emits
+     * only the {@code getInsertedCount()} from the underlying {@link BulkWriteResult}. The
+     * operation is atomic at the document level but not for the entire batch — by default
+     * (ordered=true) the driver stops at the first failing document; pass an unordered
+     * {@link BulkWriteOptions} via {@link #bulkInsert(Collection, BulkWriteOptions)} to continue
+     * after errors.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2391,9 +2441,13 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param entities collection of documents or entities to insert; must not be null or empty
-     * @return a Mono that emits the count of successfully inserted documents
+     * @return a {@code Mono} that, on subscription, emits exactly one {@code Integer} with the
+     *         count of successfully inserted documents, then completes
      * @throws IllegalArgumentException if entities is null or empty
+     * @throws com.mongodb.MongoBulkWriteException if the bulk write reports any per-document
+     *         failures (signalled via {@code Mono})
      * @see #bulkInsert(Collection, BulkWriteOptions)
+     * @see #bulkWrite(List)
      */
     public Mono<Integer> bulkInsert(final Collection<?> entities) {
         return bulkInsert(entities, null);
@@ -2496,11 +2550,15 @@ public final class MongoCollectionExecutor {
     }
 
     /**
-     * Atomically finds and updates a single document.
+     * Atomically finds and updates a single document in a reactive manner.
      *
-     * <p>Finds a document matching the filter and updates it atomically. Returns the document
-     * either before or after the update depending on options. This operation is atomic,
+     * <p>Finds a document matching the filter and updates it atomically. The operation is atomic,
      * preventing race conditions in concurrent environments.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> on subscription, the returned {@code Mono} emits the
+     * document <i>before</i> the update (the default for this overload) and then completes; if no
+     * document matches the filter and the operation is not configured to upsert, the {@code Mono}
+     * completes <i>empty</i> without emitting.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2510,10 +2568,13 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param filter the query filter to find the document; must not be null
-     * @param update the update operations to apply; must not be null
-     * @return a Mono that emits the found document (before or after update based on default options)
+     * @param update the update specification (Bson/Document/Map/entity class); must not be null.
+     *               If it does not already begin with an update operator, it is wrapped in {@code $set}.
+     * @return a {@code Mono} that emits the matched document (before update) on subscription, or
+     *         completes empty when no document matches the filter
      * @throws IllegalArgumentException if filter or update is null
      * @see #findOneAndUpdate(Bson, Object, FindOneAndUpdateOptions)
+     * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#findOneAndUpdate(Bson, Object)
      */
     public Mono<Document> findOneAndUpdate(final Bson filter, final Object update) {
         return findOneAndUpdate(filter, update, (FindOneAndUpdateOptions) null);
@@ -2721,11 +2782,16 @@ public final class MongoCollectionExecutor {
     }
 
     /**
-     * Atomically finds and replaces a single document.
+     * Atomically finds and replaces a single document in a reactive manner.
      *
      * <p>Finds a document matching the filter and replaces it entirely with the replacement
-     * document. The operation is atomic, preventing race conditions. The _id field is
+     * document. The operation is atomic, preventing race conditions. The {@code _id} field is
      * preserved from the original document.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> on subscription, the returned {@code Mono} emits the
+     * matched document <i>before</i> replacement (the default for this overload) and then
+     * completes; if no document matches the filter and the operation is not configured to upsert,
+     * the {@code Mono} completes <i>empty</i> without emitting.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2735,10 +2801,12 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param filter the query filter to find the document; must not be null
-     * @param replacement the replacement document; must not be null
-     * @return a Mono that emits the found document (before replacement by default)
+     * @param replacement the replacement document (Document/Map/entity class); must not be null
+     * @return a {@code Mono} that emits the matched document (before replacement) on subscription,
+     *         or completes empty when no document matches the filter
      * @throws IllegalArgumentException if filter or replacement is null
      * @see #findOneAndReplace(Bson, Object, FindOneAndReplaceOptions)
+     * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#findOneAndReplace(Bson, Object)
      */
     public Mono<Document> findOneAndReplace(final Bson filter, final Object replacement) {
         return findOneAndReplace(filter, replacement, (FindOneAndReplaceOptions) null);
@@ -2831,11 +2899,14 @@ public final class MongoCollectionExecutor {
     }
 
     /**
-     * Atomically finds and deletes a single document.
+     * Atomically finds and deletes a single document in a reactive manner.
      *
-     * <p>Finds a document matching the filter and deletes it atomically, returning the
-     * deleted document. This operation is atomic, ensuring the document is retrieved
-     * and deleted in a single operation without race conditions.</p>
+     * <p>Finds a document matching the filter and deletes it atomically. This operation is atomic,
+     * ensuring the document is retrieved and deleted in a single operation without race conditions.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> on subscription, the returned {@code Mono} emits the
+     * just-deleted document and then completes, or completes <i>empty</i> when no document matches
+     * the filter (nothing is deleted in that case).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2844,9 +2915,11 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param filter the query filter to find the document to delete; must not be null
-     * @return a Mono that emits the deleted document
+     * @return a {@code Mono} that emits the deleted document on subscription, or completes empty
+     *         when no document matches the filter
      * @throws IllegalArgumentException if filter is null
      * @see #findOneAndDelete(Bson, FindOneAndDeleteOptions)
+     * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#findOneAndDelete(Bson)
      */
     public Mono<Document> findOneAndDelete(final Bson filter) {
         return findOneAndDelete(filter, (FindOneAndDeleteOptions) null);
@@ -2978,7 +3051,7 @@ public final class MongoCollectionExecutor {
     }
 
     /**
-     * Executes an aggregation pipeline.
+     * Executes an aggregation pipeline in a reactive manner.
      *
      * <p>Processes documents through an aggregation pipeline consisting of multiple stages.
      * Aggregation pipelines enable complex data processing including filtering, grouping,
@@ -2993,26 +3066,30 @@ public final class MongoCollectionExecutor {
      * Flux<Document> results = executor.aggregate(pipeline);
      * }</pre>
      *
-     * @param pipeline the aggregation pipeline stages; must not be null or empty
-     * @return a Flux that emits the aggregation results as Documents
-     * @throws IllegalArgumentException if pipeline is null or empty
+     * @param pipeline the aggregation pipeline stages; must not be null
+     * @return a {@code Flux} that, on subscription, emits each output document produced by the
+     *         pipeline, then completes; completes empty if the pipeline yields no documents
+     * @throws IllegalArgumentException if pipeline is null
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
      * @see #aggregate(List, Class)
+     * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#aggregate(List)
      */
     public Flux<Document> aggregate(final List<? extends Bson> pipeline) {
         return aggregate(pipeline, Document.class);
     }
 
     /**
-     * Executes an aggregation pipeline returning results as a specific type.
+     * Executes an aggregation pipeline, decoding each output document as the specified type.
      *
-     * <p>Processes documents through an aggregation pipeline and maps results to the specified
-     * type. This method combines powerful aggregation capabilities with type-safe results.</p>
+     * <p>The pipeline is always executed against {@link Document} (so the framework codec
+     * registry is honoured) and each output document is then converted to {@code rowType} via
+     * the same row-conversion path used by {@code list(...)}/{@code findFirst(...)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<Bson> pipeline = Arrays.asList(
      *     Aggregates.match(Filters.gte("date", startDate)),
-     *     Aggregates.group("$userId", 
+     *     Aggregates.group("$userId",
      *         Accumulators.sum("totalSpent", "$amount"),
      *         Accumulators.avg("avgSpent", "$amount"))
      * );
@@ -3020,10 +3097,13 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type of the aggregation results
-     * @param pipeline the aggregation pipeline stages; must not be null or empty
-     * @param rowType the class to deserialize results into; must not be null
-     * @return a Flux that emits the aggregation results mapped to the specified type
-     * @throws IllegalArgumentException if pipeline is null/empty or rowType is null
+     * @param pipeline the aggregation pipeline stages; must not be null
+     * @param rowType an entity class with getter/setter methods, {@code Map.class}, or a basic
+     *                single-value type; must not be null
+     * @return a {@code Flux} that, on subscription, emits each pipeline output document decoded
+     *         as {@code T}, then completes; completes empty when the pipeline yields no documents
+     * @throws IllegalArgumentException if pipeline or rowType is null
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
      */
     public <T> Flux<T> aggregate(final List<? extends Bson> pipeline, final Class<T> rowType) {
         return Flux.from(coll.aggregate(pipeline, Document.class)).map(toEntity(rowType));

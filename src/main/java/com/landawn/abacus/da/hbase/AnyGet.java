@@ -141,10 +141,11 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
     }
 
     /**
-     * Constructs a new AnyGet instance by wrapping an existing Get object.
-     * All configuration from the original Get is preserved.
+     * Constructs a new AnyGet instance that wraps (does not copy) an existing Get object.
+     * The supplied Get is stored by reference; subsequent mutations through this AnyGet
+     * (or directly on the original Get) are visible on both.
      *
-     * @param get the existing HBase Get object to wrap
+     * @param get the existing HBase Get object to wrap; must not be null
      */
     AnyGet(final Get get) {
         super(get);
@@ -217,9 +218,9 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *                    .addFamily("profile");
      * }</pre>
      * 
-     * @param rowKey the row key as a ByteBuffer, must not be null and must have remaining bytes
+     * @param rowKey the row key as a ByteBuffer; must not be null
      * @return a new AnyGet instance configured for the specified row
-     * @throws IllegalArgumentException if rowKey is null or has no remaining bytes
+     * @throws NullPointerException if {@code rowKey} is null (raised by the wrapped {@link org.apache.hadoop.hbase.client.Get#Get(ByteBuffer)} constructor)
      * @see #of(Object)
      * @see java.nio.ByteBuffer
      */
@@ -228,25 +229,27 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
     }
 
     /**
-     * Creates a new AnyGet instance by copying an existing HBase Get operation.
-     * 
-     * <p>This factory method creates a new AnyGet instance that wraps a copy of the
-     * provided HBase Get object. All configuration, column specifications, and
-     * attributes from the original get are preserved. This is useful for converting
-     * existing HBase Get objects to the AnyGet wrapper for additional functionality.</p>
+     * Creates a new AnyGet instance that wraps (does not copy) an existing HBase Get operation.
+     *
+     * <p>This factory method creates a new AnyGet instance that holds a reference to the
+     * provided HBase Get object. Subsequent mutations performed through the returned AnyGet
+     * are applied to the same underlying Get instance and are therefore visible to any other
+     * code that retains a reference to the original. If isolation is required, copy the Get
+     * before calling this method.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Get existingGet = new Get(Bytes.toBytes("user123"));
      * existingGet.addFamily(Bytes.toBytes("profile"));
-     * 
+     *
      * AnyGet get = AnyGet.of(existingGet)
      *                    .addColumn("stats", "login_count");
+     * // existingGet now also contains the "stats:login_count" column.
      * }</pre>
-     * 
-     * @param get the existing HBase Get object to copy
-     * @return a new AnyGet instance that wraps a copy of the specified get
-     * @throws IllegalArgumentException if get is null
+     *
+     * @param get the existing HBase Get object to wrap; must not be null
+     * @return a new AnyGet instance that wraps the specified Get by reference
+     * @throws NullPointerException if {@code get} is null (raised when the wrapped Get is first dereferenced)
      * @see org.apache.hadoop.hbase.client.Get
      * @see #val()
      */
@@ -513,11 +516,12 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
     }
 
     /**
-     * Sets a specific timestamp to retrieve cell versions from that exact point in time.
+     * Restricts this Get to cells stamped with exactly the specified timestamp.
      *
-     * <p>This method retrieves only the versions of cells that have the specified timestamp.
-     * This is useful when you need to retrieve data as it existed at a specific point in time,
-     * which is common in temporal database scenarios or audit trail implementations.</p>
+     * <p>Delegates to {@link Get#setTimestamp(long)}, which configures the time range as
+     * {@code [timestamp, timestamp + 1)} — i.e. only cells stamped with {@code timestamp} are
+     * returned. This is useful for point-in-time queries, snapshot reads, or audit-trail
+     * lookups of a specific version.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -530,7 +534,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *
      * @param timestamp the exact timestamp for which to retrieve cell versions
      * @return this AnyGet instance for method chaining
-     * @throws IllegalArgumentException if timestamp is negative
+     * @throws IllegalArgumentException if {@code timestamp} is negative
      * @see #setTimeRange(long, long)
      * @see #getTimeRange()
      */
@@ -963,8 +967,11 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * }</pre>
      *
      * @param anyGets the collection of AnyGet instances to convert; must not be null
-     * @return a list of native HBase Get objects (null elements in the input collection are skipped)
-     * @throws IllegalArgumentException if anyGets is null
+     *                (may contain null elements, which are silently skipped)
+     * @return a list of native HBase Get objects, in iteration order of {@code anyGets};
+     *         {@code null} elements in {@code anyGets} are skipped (so the returned list may
+     *         be shorter than {@code anyGets}). Returns an empty list when {@code anyGets} is empty.
+     * @throws IllegalArgumentException if {@code anyGets} is null
      * @see Get
      * @see HBaseExecutor#get(String, Collection)
      */

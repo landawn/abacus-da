@@ -1271,17 +1271,19 @@ public class CosmosContainerExecutor {
 
     /**
      * Executes a parameterized SQL query with additional options.
-     * 
+     *
      * <p>Extended parameterized query execution combining the safety of parameter binding
-     * with advanced query options. Provides the most comprehensive control over
-     * query behavior and performance characteristics.</p>
+     * with advanced query options such as partition-key scoping, parallelism, page size,
+     * or consistency level.</p>
      *
      * @param <T> the type of the items in the query result
-     * @param querySpec the SQL query specification with parameters
-     * @param options query options controlling execution behavior (can be null)
+     * @param querySpec the SQL query specification with bound parameters
+     * @param options query options controlling execution behavior (can be null for defaults)
      * @param classType the class type for deserializing the query results
      * @return a CosmosPagedIterable for iterating through query results
      * @throws CosmosException if the query fails or contains syntax errors
+     * @see SqlQuerySpec
+     * @see CosmosQueryRequestOptions
      */
     public <T> CosmosPagedIterable<T> queryItems(final SqlQuerySpec querySpec, final CosmosQueryRequestOptions options, final Class<T> classType) {
         return cosmosContainer.queryItems(querySpec, options, classType);

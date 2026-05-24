@@ -138,26 +138,60 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
 
     private final Append append;
 
+    /**
+     * Package-private constructor: prefer {@link #of(Object)}. Wraps a new HBase {@link Append}
+     * for the given row key, which is converted to bytes via {@link HBaseExecutor#toRowBytes(Object)}.
+     *
+     * @param rowKey the row key for the append operation
+     */
     AnyAppend(final Object rowKey) {
         super(new Append(toRowBytes(rowKey)));
         append = (Append) mutation;
     }
 
+    /**
+     * Package-private constructor: prefer {@link #of(byte[])}. Wraps a new HBase {@link Append}
+     * for the given byte-array row key.
+     *
+     * @param rowKey the row key as a byte array
+     */
     AnyAppend(final byte[] rowKey) {
         super(new Append(rowKey));
         append = (Append) mutation;
     }
 
+    /**
+     * Package-private constructor: prefer {@link #of(byte[], int, int)}. Wraps a new HBase
+     * {@link Append} that uses a slice of {@code rowKey} as its row key.
+     *
+     * @param rowKey the byte array containing the row key data
+     * @param rowOffset the starting position within {@code rowKey} (0-based)
+     * @param rowLength the number of bytes to use from {@code rowKey}
+     */
     AnyAppend(final byte[] rowKey, final int rowOffset, final int rowLength) {
         super(new Append(rowKey, rowOffset, rowLength));
         append = (Append) mutation;
     }
 
+    /**
+     * Package-private constructor: prefer {@link #of(byte[], long, NavigableMap)}. Wraps a new
+     * HBase {@link Append} pre-populated with the given family map and timestamp.
+     *
+     * @param rowKey the row key as a byte array
+     * @param timestamp the timestamp to apply to every cell in this append
+     * @param familyMap a pre-populated map of column families to their cells
+     */
     AnyAppend(final byte[] rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap) {
         super(new Append(rowKey, timestamp, familyMap));
         append = (Append) mutation;
     }
 
+    /**
+     * Package-private constructor: prefer {@link #of(Append)}. Wraps a fresh copy of an existing
+     * HBase {@link Append}, so subsequent modifications do not touch the original.
+     *
+     * @param appendToCopy the existing {@link Append} to copy
+     */
     AnyAppend(final Append appendToCopy) {
         super(new Append(appendToCopy));
         append = (Append) mutation;
@@ -337,8 +371,9 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      *
      * @param minStamp minimum timestamp value, inclusive
      * @param maxStamp maximum timestamp value, exclusive
-     * @return this AnyAppend instance for method chaining
-     * @throws IllegalArgumentException if minStamp is negative, maxStamp is negative, or maxStamp is less than minStamp
+     * @return this AnyAppend instance, to allow fluent method chaining
+     * @throws IllegalArgumentException if {@code minStamp} or {@code maxStamp} is negative or if
+     *         {@code maxStamp < minStamp}
      * @see #getTimeRange()
      * @see org.apache.hadoop.hbase.io.TimeRange
      */
@@ -392,8 +427,9 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      *                                  .setReturnResults(true);
      * }</pre>
      *
-     * @param returnResults true to return results, {@code false} to disable result return
-     * @return this AnyAppend instance for method chaining
+     * @param returnResults {@code true} (HBase default) to return the post-append values;
+     *                      {@code false} to skip the response payload and improve throughput
+     * @return this AnyAppend instance, to allow fluent method chaining
      * @see #isReturnResults()
      */
     public AnyAppend setReturnResults(final boolean returnResults) {
@@ -459,11 +495,10 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      *                             .addColumn(familyBytes, qualifierBytes, valueBytes);
      * }</pre>
      *
-     * @param family the column family name as a byte array, must not be null
-     * @param qualifier the column qualifier as a byte array, must not be null
-     * @param value the value to append to the specified column as a byte array
-     * @return this AnyAppend instance for method chaining
-     * @throws IllegalArgumentException if family or qualifier is null
+     * @param family the column-family name as a byte array
+     * @param qualifier the column-qualifier name as a byte array
+     * @param value the byte array to append to the existing cell value
+     * @return this AnyAppend instance, to allow fluent method chaining
      * @see #addColumn(String, String, Object)
      */
     public AnyAppend addColumn(final byte[] family, final byte[] qualifier, final byte[] value) {
@@ -488,11 +523,10 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * append.addColumn("settings", "theme", "dark");
      * }</pre>
      *
-     * @param family the column family name as a string, must not be null or empty
-     * @param qualifier the column qualifier as a string, must not be null or empty
-     * @param value the value to append, will be automatically converted to bytes
-     * @return this AnyAppend instance for method chaining
-     * @throws IllegalArgumentException if family or qualifier is null or empty
+     * @param family the column-family name; converted via {@link HBaseExecutor#toFamilyQualifierBytes(String)}
+     * @param qualifier the column-qualifier name; converted via {@link HBaseExecutor#toFamilyQualifierBytes(String)}
+     * @param value the value to append; converted via {@link HBaseExecutor#toValueBytes(Object)}
+     * @return this AnyAppend instance, to allow fluent method chaining
      * @see #addColumn(byte[], byte[], byte[])
      */
     public AnyAppend addColumn(final String family, final String qualifier, final Object value) {
@@ -526,9 +560,8 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * append.add(cell);
      * }</pre>
      *
-     * @param cell the Cell object to add to this append operation, must not be null
-     * @return this AnyAppend instance for method chaining
-     * @throws IllegalArgumentException if cell is null or has a different row key
+     * @param cell the {@link Cell} to add to this append operation
+     * @return this AnyAppend instance, to allow fluent method chaining
      * @see org.apache.hadoop.hbase.Cell
      * @see #addColumn(String, String, Object)
      */
@@ -539,12 +572,11 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
     }
 
     /**
-     * Sets a custom attribute for this append operation.
-     *
-     * <p>Attributes are key-value pairs that can be attached to HBase operations
-     * for custom processing, monitoring, or metadata purposes. These attributes
-     * are available to coprocessors and custom filters during operation execution.
-     * Common uses include operation tracing, custom validation, or feature flags.</p>
+     * Sets a custom attribute on this append, using a raw byte-array value (no automatic
+     * conversion). This is a separate overload from
+     * {@link AnyOperationWithAttributes#setAttribute(String, Object)} — supplying a {@code byte[]}
+     * here stores the bytes verbatim, whereas the {@code Object} overload routes through
+     * {@link HBaseExecutor#toValueBytes(Object)} and may re-encode the array.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -553,10 +585,9 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * append.setAttribute("priority", Bytes.toBytes("high"));
      * }</pre>
      *
-     * @param name the attribute name/key, must not be null or empty
-     * @param value the attribute value as a byte array, can be null
-     * @return this AnyAppend instance for method chaining
-     * @throws IllegalArgumentException if name is null or empty
+     * @param name the attribute name
+     * @param value the attribute value as a raw byte array; may be {@code null} to clear it
+     * @return this AnyAppend instance, to allow fluent method chaining
      * @see #getAttribute(String)
      */
     public AnyAppend setAttribute(final String name, final byte[] value) {

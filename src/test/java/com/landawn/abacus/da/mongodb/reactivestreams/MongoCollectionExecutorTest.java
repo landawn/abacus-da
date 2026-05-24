@@ -2116,6 +2116,36 @@ public class MongoCollectionExecutorTest extends TestBase {
         assertTrue(exec.coll() == mockCollection);
     }
 
+    // Covers executeQuery(projection, filter, sort, offset, 0) zero-count path which
+    // uses an always-false {$expr: false} filter instead of limit(0).
+    @Test
+    public void testQueryWithZeroCount_ReturnsEmpty() {
+        Bson filter = new Document("active", true);
+        Bson sort = new Document("name", 1);
+
+        when(mockCollection.find(any(Document.class))).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher);
+
+        Mono<Dataset> result = executor.query(Projections.include("name"), filter, sort, 0, 0, Document.class);
+
+        StepVerifier.create(result).expectNextMatches(ds -> ds.size() == 0).verifyComplete();
+    }
+
+    // Covers toBson(Object) for a driver-built update Bson (e.g. com.mongodb.client.model.Updates).
+    // These are not Document / BasicDBObject so must be returned as-is (no {$set: ...} wrapping).
+    @Test
+    public void testUpdateOneWithDriverBuiltUpdateBson() {
+        Bson filter = new Document("name", "test");
+        Bson update = com.mongodb.client.model.Updates.set("status", "active");
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        when(mockCollection.updateOne(eq(filter), eq(update))).thenReturn(publisher);
+
+        Mono<UpdateResult> result = executor.updateOne(filter, update);
+
+        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
+    }
+
     @SuppressWarnings("unchecked")
     @SafeVarargs
     private static <T> void stubEmits(final Publisher<T> publisher, final T... items) {

@@ -1206,8 +1206,8 @@ public final class HBaseExecutor implements AutoCloseable {
      *
      * @param tableName the name of the HBase table
      * @param gets the list of Get operations to test for existence
-     * @return a list of Boolean values corresponding to each Get operation, where {@code true}
-     *         indicates the Get would return results, {@code false} otherwise
+     * @return a list of Boolean values in the same order as {@code gets}, where the i-th entry
+     *         is {@code true} if the i-th Get would match one or more cells, {@code false} otherwise
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see Get
      */
@@ -1346,7 +1346,8 @@ public final class HBaseExecutor implements AutoCloseable {
      *
      * @param tableName the name of the HBase table
      * @param gets the list of Get operations to execute
-     * @return a list of Results corresponding to each Get operation; empty Results for rows that don't exist
+     * @return a list of Results in the same order as {@code gets}; entries for rows that
+     *         do not exist are present in the list but are {@linkplain Result#isEmpty() empty}
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see Get
      * @see Result
@@ -2324,7 +2325,8 @@ public final class HBaseExecutor implements AutoCloseable {
      * @param callable the callable to execute on each region
      * @param callback the callback to receive results from each region
      * @throws UncheckedIOException if an I/O error occurs during the operation
-     * @throws Exception if the coprocessor execution throws an exception
+     * @throws Exception if the coprocessor execution throws a checked exception other than {@link IOException}
+     *         (the original {@link Throwable} from the coprocessor is wrapped in a new {@link Exception})
      * @see Service
      * @see Batch.Call
      * @see Batch.Callback
@@ -2360,7 +2362,8 @@ public final class HBaseExecutor implements AutoCloseable {
      * @param responsePrototype the prototype for the response message
      * @return a map of region names (byte arrays) to their corresponding response messages
      * @throws UncheckedIOException if an I/O error occurs during the operation
-     * @throws Exception if the coprocessor execution throws an exception
+     * @throws Exception if the coprocessor execution throws a checked exception other than {@link IOException}
+     *         (the original {@link Throwable} from the coprocessor is wrapped in a new {@link Exception})
      * @see Message
      * @see Descriptors.MethodDescriptor
      */
@@ -2395,7 +2398,8 @@ public final class HBaseExecutor implements AutoCloseable {
      * @param responsePrototype the prototype for the response message
      * @param callback the callback to receive response messages from each region
      * @throws UncheckedIOException if an I/O error occurs during the operation
-     * @throws Exception if the coprocessor execution throws an exception
+     * @throws Exception if the coprocessor execution throws a checked exception other than {@link IOException}
+     *         (the original {@link Throwable} from the coprocessor is wrapped in a new {@link Exception})
      * @see Message
      * @see Descriptors.MethodDescriptor
      * @see Batch.Callback
@@ -2609,7 +2613,8 @@ public final class HBaseExecutor implements AutoCloseable {
          * Retrieves an entity by its row key.
          *
          * @param rowKey the row key of the entity to retrieve
-         * @return the entity object, or null if not found
+         * @return the entity object, or the type's default value (typically {@code null} for bean classes)
+         *         when no row matches the given key
          * @throws UncheckedIOException if an I/O error occurs during the operation
          */
         public T get(final K rowKey) throws UncheckedIOException {
