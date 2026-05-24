@@ -7,11 +7,17 @@ import java.util.Iterator;
 
 import org.junit.jupiter.api.Tag;
 
+import com.landawn.abacus.parser.JsonParser;
+import com.landawn.abacus.parser.ParserFactory;
+import com.landawn.abacus.parser.XmlParser;
 import com.landawn.abacus.type.Type;
+import com.landawn.abacus.util.Beans;
 import com.landawn.abacus.util.BiIterator;
+import com.landawn.abacus.util.Hex;
 import com.landawn.abacus.util.Iterators;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.Pair;
+import com.landawn.abacus.util.Strings;
 import com.landawn.abacus.util.TriIterator;
 import com.landawn.abacus.util.Triple;
 import com.landawn.abacus.util.TypeReference;
@@ -20,6 +26,18 @@ import com.landawn.abacus.util.TypeReference;
 public abstract class TestBase {
 
     public static final char[] NULL_CHAR_ARRAY = "null".toCharArray();
+    static final JsonParser jsonParser = ParserFactory.createJsonParser();
+    static final XmlParser xmlParser = ParserFactory.createXmlParser();
+
+    protected Account createAccount() {
+        Account account = Beans.newRandomBean(Account.class);
+        account.setId(generateId());
+        return account;
+    }
+
+    protected String generateId() {
+        return Hex.encodeToString(Strings.uuid().getBytes()).substring(0, 24);
+    }
 
     public static void assertHaveSameElements(boolean[] expected, boolean[] actual) {
         assertTrue(N.containsSameElements(expected, actual), "Expected: " + N.toString(expected) + ", Actual: " + N.toString(actual));

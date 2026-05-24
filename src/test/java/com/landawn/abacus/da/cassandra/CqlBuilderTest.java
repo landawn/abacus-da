@@ -12,7 +12,7 @@ import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 
-import com.landawn.abacus.da.AbstractNoSQLTest;
+import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.da.cassandra.CqlBuilder.ACCB;
 import com.landawn.abacus.da.cassandra.CqlBuilder.LCCB;
 import com.landawn.abacus.da.cassandra.CqlBuilder.NAC;
@@ -31,7 +31,7 @@ import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.Profiler;
 import com.landawn.abacus.util.Strings;
 
-public class CqlBuilderTest extends AbstractNoSQLTest {
+public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testUsingTimestampConvertsMillisToMicros() {

@@ -761,7 +761,6 @@ public class CassandraExecutorBaseTest extends TestBase {
         assertNotNull(result4);
     }
 
-
     @Test
     public void testAsyncFindFirst_nullMappedRow_throwsNullPointerException() throws Exception {
         final TestCassandraExecutor exec = new TestCassandraExecutor() {

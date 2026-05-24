@@ -753,8 +753,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         // Regression: cursor-leak fix for the multi-arg stream overload.
         final Collection<String> selectPropNames = java.util.Collections.singletonList("name");
         final Document filter = new Document("status", "active");
-        Assertions.assertThrows(IllegalArgumentException.class,
-                () -> executor.stream(selectPropNames, filter, (Bson) null, 0, 10, (Class<Document>) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.stream(selectPropNames, filter, (Bson) null, 0, 10, (Class<Document>) null));
 
         verify(mockCollection, org.mockito.Mockito.never()).find(any(Bson.class));
         verify(mockCollection, org.mockito.Mockito.never()).find();
@@ -765,8 +764,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         // Regression: cursor-leak fix for the Bson-projection stream overload.
         final Bson projection = com.mongodb.client.model.Projections.include("name");
         final Bson filter = new Document("status", "active");
-        Assertions.assertThrows(IllegalArgumentException.class,
-                () -> executor.stream(projection, filter, (Bson) null, 0, 10, (Class<Document>) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.stream(projection, filter, (Bson) null, 0, 10, (Class<Document>) null));
 
         verify(mockCollection, org.mockito.Mockito.never()).find(any(Bson.class));
         verify(mockCollection, org.mockito.Mockito.never()).find();

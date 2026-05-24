@@ -12,8 +12,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Date;
-import java.util.List;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
@@ -25,8 +25,8 @@ import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Test;
 
-import com.landawn.abacus.da.AbstractNoSQLTest;
 import com.landawn.abacus.da.Account;
+import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.util.Beans;
 import com.landawn.abacus.util.Clazz;
 import com.landawn.abacus.util.Dataset;
@@ -43,7 +43,7 @@ import com.mongodb.client.MongoDatabase;
 import com.mongodb.client.model.Filters;
 import com.mongodb.client.model.Projections;
 
-public class MongoDBExecutorTest extends AbstractNoSQLTest {
+public class MongoDBExecutorTest extends TestBase {
     static final MongoClient mongoClient = MongoClients.create(MongoClientSettings.builder().uuidRepresentation(UuidRepresentation.STANDARD).build());
     static final MongoDatabase mongoDB = mongoClient.getDatabase("test");
     static final String collectionName = "account";

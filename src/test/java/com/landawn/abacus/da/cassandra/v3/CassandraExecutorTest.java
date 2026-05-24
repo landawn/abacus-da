@@ -28,7 +28,7 @@ import com.datastax.driver.core.Cluster;
 import com.datastax.driver.core.CodecRegistry;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.Row;
-import com.landawn.abacus.da.AbstractNoSQLTest;
+import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.da.cassandra.CqlBuilder.LCCB;
 import com.landawn.abacus.da.cassandra.CqlBuilder.NLC;
 import com.landawn.abacus.da.cassandra.CqlBuilder.NSC;
@@ -46,7 +46,7 @@ import com.landawn.abacus.util.Fn;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.stream.Stream;
 
-public class CassandraExecutorTest extends AbstractNoSQLTest {
+public class CassandraExecutorTest extends TestBase {
 
     /*
     
@@ -649,8 +649,7 @@ public class CassandraExecutorTest extends AbstractNoSQLTest {
             cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", UUID.randomUUID());
             fail("Expected IllegalArgumentException for too-few parameters");
         } catch (IllegalArgumentException e) {
-            assertTrue(e.getMessage() == null || e.getMessage().toLowerCase().contains("parameter"),
-                    "Message should mention parameters: " + e.getMessage());
+            assertTrue(e.getMessage() == null || e.getMessage().toLowerCase().contains("parameter"), "Message should mention parameters: " + e.getMessage());
         } catch (ArrayIndexOutOfBoundsException e) {
             fail("Got AIOOBE instead of IllegalArgumentException: " + e);
         }
@@ -701,8 +700,7 @@ public class CassandraExecutorTest extends AbstractNoSQLTest {
         try {
             ParsedCql parsed = ParsedCql.parse("SELECT * FROM simplex.users WHERE id = #{}", null);
             // If we got here, no exception was thrown. Make sure no bogus empty-named param was created.
-            assertFalse(parsed.namedParameters().containsValue(""),
-                    "Empty-named parameter must not be silently registered: " + parsed.namedParameters());
+            assertFalse(parsed.namedParameters().containsValue(""), "Empty-named parameter must not be silently registered: " + parsed.namedParameters());
         } catch (IllegalArgumentException e) {
             // expected
         }
@@ -711,18 +709,15 @@ public class CassandraExecutorTest extends AbstractNoSQLTest {
     @Test
     public void test_ParsedCql_mixedStylesThrows() {
         // mix '?' and ':name'
-        assertThrows(IllegalArgumentException.class,
-                () -> ParsedCql.parse("SELECT * FROM simplex.users WHERE id = ? AND status = :st", null),
+        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("SELECT * FROM simplex.users WHERE id = ? AND status = :st", null),
                 "Mixed parameter styles should throw IAE");
 
         // mix '?' and '#{name}'
-        assertThrows(IllegalArgumentException.class,
-                () -> ParsedCql.parse("SELECT * FROM simplex.users WHERE id = ? AND status = #{st}", null),
+        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("SELECT * FROM simplex.users WHERE id = ? AND status = #{st}", null),
                 "Mixed '?' and '#{}' parameter styles should throw IAE");
 
         // mix ':name' and '#{name}'
-        assertThrows(IllegalArgumentException.class,
-                () -> ParsedCql.parse("SELECT * FROM simplex.users WHERE id = :id AND status = #{st}", null),
+        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("SELECT * FROM simplex.users WHERE id = :id AND status = #{st}", null),
                 "Mixed ':name' and '#{}' parameter styles should throw IAE");
     }
 
@@ -818,8 +813,7 @@ public class CassandraExecutorTest extends AbstractNoSQLTest {
     public void test_CqlMapper_addDuplicateIdThrows() {
         CqlMapper mapper = new CqlMapper();
         mapper.add("dup", "SELECT * FROM simplex.users WHERE id = ?", null);
-        assertThrows(IllegalArgumentException.class,
-                () -> mapper.add("dup", "SELECT * FROM simplex.users WHERE id = ?", null),
+        assertThrows(IllegalArgumentException.class, () -> mapper.add("dup", "SELECT * FROM simplex.users WHERE id = ?", null),
                 "Adding a duplicate id should throw");
     }
 

@@ -19,15 +19,15 @@ import com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient;
 import com.amazonaws.services.dynamodbv2.model.AttributeValue;
 import com.amazonaws.services.dynamodbv2.model.QueryRequest;
 import com.amazonaws.services.dynamodbv2.model.ScanRequest;
-import com.landawn.abacus.da.AbstractNoSQLTest;
 import com.landawn.abacus.da.Account;
+import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutor.Filters;
 import com.landawn.abacus.da.entity.AccountContact;
 import com.landawn.abacus.da.entity.AccountDevice;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.Strings;
 
-public class DynamoDBExecutorTest extends AbstractNoSQLTest {
+public class DynamoDBExecutorTest extends TestBase {
     static final DynamoDBExecutor dbExecutor;
     static {
         AWSCredentials awsCredentials = new BasicAWSCredentials("", "");

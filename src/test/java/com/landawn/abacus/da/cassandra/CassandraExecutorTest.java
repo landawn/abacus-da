@@ -25,7 +25,7 @@ import com.datastax.oss.driver.api.core.cql.ResultSet;
 import com.datastax.oss.driver.api.core.cql.Row;
 import com.datastax.oss.driver.api.core.type.codec.registry.MutableCodecRegistry;
 import com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry;
-import com.landawn.abacus.da.AbstractNoSQLTest;
+import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.da.cassandra.CassandraExecutor.UDTCodec;
 import com.landawn.abacus.da.cassandra.CqlBuilder.LCCB;
 import com.landawn.abacus.da.cassandra.CqlBuilder.NLC;
@@ -41,7 +41,7 @@ import com.landawn.abacus.util.Fn;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.stream.Stream;
 
-public class CassandraExecutorTest extends AbstractNoSQLTest {
+public class CassandraExecutorTest extends TestBase {
 
     /*
     

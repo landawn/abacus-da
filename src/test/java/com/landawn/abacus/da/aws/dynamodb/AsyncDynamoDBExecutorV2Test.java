@@ -817,8 +817,7 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
         NamingPolicyKeyEntity entity = new NamingPolicyKeyEntity();
         entity.setUserId("u-1");
 
-        when(mockDynamoDbAsyncClient.getItem(any(GetItemRequest.class)))
-                .thenReturn(CompletableFuture.completedFuture(GetItemResponse.builder().build()));
+        when(mockDynamoDbAsyncClient.getItem(any(GetItemRequest.class))).thenReturn(CompletableFuture.completedFuture(GetItemResponse.builder().build()));
 
         org.mockito.ArgumentCaptor<GetItemRequest> captor = org.mockito.ArgumentCaptor.forClass(GetItemRequest.class);
 
