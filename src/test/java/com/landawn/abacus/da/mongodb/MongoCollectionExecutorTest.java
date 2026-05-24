@@ -994,8 +994,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
         com.mongodb.client.model.FindOneAndUpdateOptions options = new com.mongodb.client.model.FindOneAndUpdateOptions();
         Document returnedDoc = new Document("a", 1);
-        when(mockCollection.findOneAndUpdate(any(Bson.class), anyList(), any(com.mongodb.client.model.FindOneAndUpdateOptions.class)))
-                .thenReturn(returnedDoc);
+        when(mockCollection.findOneAndUpdate(any(Bson.class), anyList(), any(com.mongodb.client.model.FindOneAndUpdateOptions.class))).thenReturn(returnedDoc);
 
         Document result = executor.findOneAndUpdate(filter, updates, options);
         Assertions.assertNotNull(result);
@@ -1007,8 +1006,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
         com.mongodb.client.model.FindOneAndUpdateOptions options = new com.mongodb.client.model.FindOneAndUpdateOptions();
         Document returnedDoc = new Document("a", 1);
-        when(mockCollection.findOneAndUpdate(any(Bson.class), anyList(), any(com.mongodb.client.model.FindOneAndUpdateOptions.class)))
-                .thenReturn(returnedDoc);
+        when(mockCollection.findOneAndUpdate(any(Bson.class), anyList(), any(com.mongodb.client.model.FindOneAndUpdateOptions.class))).thenReturn(returnedDoc);
 
         Document result = executor.findOneAndUpdate(filter, updates, options, Document.class);
         Assertions.assertNotNull(result);

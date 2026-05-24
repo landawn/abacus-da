@@ -1343,8 +1343,8 @@ public class BigQueryExecutorTest extends TestBase {
         Field f2 = Field.of("name", StandardSQLTypeName.STRING);
         FieldList fields = FieldList.of(f1, f2);
 
-        FieldValueList fvl = FieldValueList.of(
-                Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "9"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "Z")), fields);
+        FieldValueList fvl = FieldValueList
+                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "9"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "Z")), fields);
 
         Map<String, Object> map = BigQueryExecutor.toMap(fields, fvl, com.landawn.abacus.util.IntFunctions.ofLinkedHashMap());
         assertTrue(map instanceof LinkedHashMap);
@@ -1475,8 +1475,8 @@ public class BigQueryExecutorTest extends TestBase {
         FieldList fields = FieldList.of(f1, f2);
 
         List<FieldValueList> rows = new ArrayList<>();
-        rows.add(FieldValueList
-                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "10"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "Eve")), fields));
+        rows.add(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "10"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "Eve")),
+                fields));
 
         when(mockTableResult.iterateAll()).thenReturn(rows);
         when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);

@@ -1377,8 +1377,7 @@ public class DynamoDBExecutorV2Test extends TestBase {
     @Test
     public void testExtractDataFromScanResponse() {
         ScanResponse scanResponse = ScanResponse.builder()
-                .items(List.of(Map.of("id", AttributeValue.builder().s("1").build()),
-                        Map.of("id", AttributeValue.builder().s("2").build())))
+                .items(List.of(Map.of("id", AttributeValue.builder().s("1").build()), Map.of("id", AttributeValue.builder().s("2").build())))
                 .build();
 
         Dataset result = DynamoDBExecutor.extractData(scanResponse);
@@ -1390,8 +1389,7 @@ public class DynamoDBExecutorV2Test extends TestBase {
     @Test
     public void testExtractDataFromScanResponseWithOffsetCount() {
         ScanResponse scanResponse = ScanResponse.builder()
-                .items(List.of(Map.of("id", AttributeValue.builder().s("1").build()),
-                        Map.of("id", AttributeValue.builder().s("2").build()),
+                .items(List.of(Map.of("id", AttributeValue.builder().s("1").build()), Map.of("id", AttributeValue.builder().s("2").build()),
                         Map.of("id", AttributeValue.builder().s("3").build())))
                 .build();
 
@@ -1403,8 +1401,7 @@ public class DynamoDBExecutorV2Test extends TestBase {
     @Test
     public void testExtractDataFromQueryResponseWithOffsetCount() {
         QueryResponse queryResponse = QueryResponse.builder()
-                .items(List.of(Map.of("id", AttributeValue.builder().s("1").build()),
-                        Map.of("id", AttributeValue.builder().s("2").build()),
+                .items(List.of(Map.of("id", AttributeValue.builder().s("1").build()), Map.of("id", AttributeValue.builder().s("2").build()),
                         Map.of("id", AttributeValue.builder().s("3").build())))
                 .build();
 
@@ -1471,8 +1468,7 @@ public class DynamoDBExecutorV2Test extends TestBase {
     @Test
     public void testBatchGetItemWithRequest() {
         BatchGetItemRequest req = BatchGetItemRequest.builder()
-                .requestItems(Map.of("TestTable",
-                        KeysAndAttributes.builder().keys(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build()))
+                .requestItems(Map.of("TestTable", KeysAndAttributes.builder().keys(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build()))
                 .build();
         BatchGetItemResponse res = BatchGetItemResponse.builder()
                 .responses(Map.of("TestTable", List.of(Map.of("id", AttributeValue.builder().s("1").build()))))
@@ -1487,8 +1483,7 @@ public class DynamoDBExecutorV2Test extends TestBase {
     @Test
     public void testBatchGetItemWithRequestAndClass() {
         BatchGetItemRequest req = BatchGetItemRequest.builder()
-                .requestItems(Map.of("TestTable",
-                        KeysAndAttributes.builder().keys(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build()))
+                .requestItems(Map.of("TestTable", KeysAndAttributes.builder().keys(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build()))
                 .build();
         BatchGetItemResponse res = BatchGetItemResponse.builder()
                 .responses(Map.of("TestTable", List.of(Map.of("id", AttributeValue.builder().s("1").build()))))

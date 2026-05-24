@@ -833,10 +833,7 @@ public class CassandraExecutorTest extends TestBase {
         UUID id = UUID.randomUUID();
         cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "sTitle");
         try {
-            long count = cassandraExecutor.stream(
-                    "SELECT * FROM simplex.songs WHERE id = ?",
-                    (cds, r) -> r.getString("title"),
-                    id).count();
+            long count = cassandraExecutor.stream("SELECT * FROM simplex.songs WHERE id = ?", (cds, r) -> r.getString("title"), id).count();
             assertEquals(1L, count);
         } finally {
             cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
@@ -858,9 +855,8 @@ public class CassandraExecutorTest extends TestBase {
 
     @Test
     public void test_stream_nullRowMapper_throwsIAE() {
-        assertThrows(IllegalArgumentException.class,
-                () -> cassandraExecutor.stream("SELECT * FROM simplex.songs",
-                        (java.util.function.BiFunction<com.datastax.oss.driver.api.core.cql.ColumnDefinitions, Row, Object>) null));
+        assertThrows(IllegalArgumentException.class, () -> cassandraExecutor.stream("SELECT * FROM simplex.songs",
+                (java.util.function.BiFunction<com.datastax.oss.driver.api.core.cql.ColumnDefinitions, Row, Object>) null));
     }
 
     @Test

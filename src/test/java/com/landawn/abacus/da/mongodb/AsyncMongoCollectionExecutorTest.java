@@ -743,8 +743,8 @@ public class AsyncMongoCollectionExecutorTest extends TestBase {
         ChangeStreamIterable<TestEntity> changeStream = mock(ChangeStreamIterable.class);
         when(mockAsyncExecutor.execute(any(Callable.class))).thenReturn(ContinuableFuture.completed(changeStream));
 
-        ContinuableFuture<ChangeStreamIterable<TestEntity>> result =
-                asyncExecutor.watch(Arrays.asList(new Document("$match", new Document())), TestEntity.class);
+        ContinuableFuture<ChangeStreamIterable<TestEntity>> result = asyncExecutor.watch(Arrays.asList(new Document("$match", new Document())),
+                TestEntity.class);
         Assertions.assertNotNull(result.get());
     }
 
@@ -1080,7 +1080,7 @@ public class AsyncMongoCollectionExecutorTest extends TestBase {
 
     @Test
     public void testGroupByWithMultipleFields() throws Exception {
-        Stream<Document> stream = Stream.<Document>of(new Document("_id", "x"));
+        Stream<Document> stream = Stream.<Document> of(new Document("_id", "x"));
         when(mockAsyncExecutor.execute(any(Callable.class))).thenReturn(ContinuableFuture.completed(stream));
 
         ContinuableFuture<Stream<Document>> result = asyncExecutor.groupBy(Arrays.asList("category", "status"));
@@ -1089,7 +1089,7 @@ public class AsyncMongoCollectionExecutorTest extends TestBase {
 
     @Test
     public void testGroupByAndCountWithMultipleFields() throws Exception {
-        Stream<Document> stream = Stream.<Document>of(new Document("_id", "x").append("count", 1));
+        Stream<Document> stream = Stream.<Document> of(new Document("_id", "x").append("count", 1));
         when(mockAsyncExecutor.execute(any(Callable.class))).thenReturn(ContinuableFuture.completed(stream));
 
         ContinuableFuture<Stream<Document>> result = asyncExecutor.groupByAndCount(Arrays.asList("category", "status"));

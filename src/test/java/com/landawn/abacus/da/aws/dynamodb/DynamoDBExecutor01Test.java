@@ -1269,8 +1269,7 @@ public class DynamoDBExecutor01Test extends TestBase {
     public void testBatchGetItemWithReturnConsumedCapacity() {
         Map<String, KeysAndAttributes> requestItems = Map.of("TestTable",
                 new KeysAndAttributes().withKeys(List.of(Map.of("id", new AttributeValue().withS("1")))));
-        BatchGetItemResult res = new BatchGetItemResult().withResponses(Map.of("TestTable",
-                List.of(Map.of("id", new AttributeValue().withS("1")))));
+        BatchGetItemResult res = new BatchGetItemResult().withResponses(Map.of("TestTable", List.of(Map.of("id", new AttributeValue().withS("1")))));
         when(mockDynamoDBClient.batchGetItem(requestItems, "TOTAL")).thenReturn(res);
 
         Map<String, List<Map<String, Object>>> result = executor.batchGetItem(requestItems, "TOTAL");
@@ -1280,10 +1279,9 @@ public class DynamoDBExecutor01Test extends TestBase {
 
     @Test
     public void testBatchGetItemWithRequest() {
-        BatchGetItemRequest req = new BatchGetItemRequest().withRequestItems(Map.of("TestTable",
-                new KeysAndAttributes().withKeys(List.of(Map.of("id", new AttributeValue().withS("1"))))));
-        BatchGetItemResult res = new BatchGetItemResult().withResponses(Map.of("TestTable",
-                List.of(Map.of("id", new AttributeValue().withS("1")))));
+        BatchGetItemRequest req = new BatchGetItemRequest()
+                .withRequestItems(Map.of("TestTable", new KeysAndAttributes().withKeys(List.of(Map.of("id", new AttributeValue().withS("1"))))));
+        BatchGetItemResult res = new BatchGetItemResult().withResponses(Map.of("TestTable", List.of(Map.of("id", new AttributeValue().withS("1")))));
         when(mockDynamoDBClient.batchGetItem(req)).thenReturn(res);
 
         Map<String, List<Map<String, Object>>> result = executor.batchGetItem(req);
@@ -1293,10 +1291,9 @@ public class DynamoDBExecutor01Test extends TestBase {
 
     @Test
     public void testBatchGetItemWithRequestAndClass() {
-        BatchGetItemRequest req = new BatchGetItemRequest().withRequestItems(Map.of("TestTable",
-                new KeysAndAttributes().withKeys(List.of(Map.of("id", new AttributeValue().withS("1"))))));
-        BatchGetItemResult res = new BatchGetItemResult().withResponses(Map.of("TestTable",
-                List.of(Map.of("id", new AttributeValue().withS("1")))));
+        BatchGetItemRequest req = new BatchGetItemRequest()
+                .withRequestItems(Map.of("TestTable", new KeysAndAttributes().withKeys(List.of(Map.of("id", new AttributeValue().withS("1"))))));
+        BatchGetItemResult res = new BatchGetItemResult().withResponses(Map.of("TestTable", List.of(Map.of("id", new AttributeValue().withS("1")))));
         when(mockDynamoDBClient.batchGetItem(req)).thenReturn(res);
 
         Map<String, List<TestEntity>> result = executor.batchGetItem(req, TestEntity.class);
@@ -1309,8 +1306,7 @@ public class DynamoDBExecutor01Test extends TestBase {
     public void testBatchGetItemMapWithReturnConsumedCapacityAndClass() {
         Map<String, KeysAndAttributes> requestItems = Map.of("TestTable",
                 new KeysAndAttributes().withKeys(List.of(Map.of("id", new AttributeValue().withS("1")))));
-        BatchGetItemResult res = new BatchGetItemResult().withResponses(Map.of("TestTable",
-                List.of(Map.of("id", new AttributeValue().withS("1")))));
+        BatchGetItemResult res = new BatchGetItemResult().withResponses(Map.of("TestTable", List.of(Map.of("id", new AttributeValue().withS("1")))));
         when(mockDynamoDBClient.batchGetItem(requestItems, "TOTAL")).thenReturn(res);
 
         Map<String, List<TestEntity>> result = executor.batchGetItem(requestItems, "TOTAL", TestEntity.class);
@@ -1342,8 +1338,8 @@ public class DynamoDBExecutor01Test extends TestBase {
 
     @Test
     public void testBatchWriteItemWithRequest() {
-        BatchWriteItemRequest req = new BatchWriteItemRequest().withRequestItems(Map.of("TestTable",
-                List.of(new WriteRequest(new PutRequest(Map.of("id", new AttributeValue().withS("1")))))));
+        BatchWriteItemRequest req = new BatchWriteItemRequest()
+                .withRequestItems(Map.of("TestTable", List.of(new WriteRequest(new PutRequest(Map.of("id", new AttributeValue().withS("1")))))));
         BatchWriteItemResult res = new BatchWriteItemResult();
         when(mockDynamoDBClient.batchWriteItem(req)).thenReturn(res);
 
@@ -1364,7 +1360,8 @@ public class DynamoDBExecutor01Test extends TestBase {
     @Test
     public void testUpdateItemWithReturnValues() {
         Map<String, AttributeValue> key = Map.of("id", new AttributeValue().withS("1"));
-        Map<String, AttributeValueUpdate> upd = Map.of("name", new AttributeValueUpdate().withValue(new AttributeValue().withS("x")).withAction(AttributeAction.PUT));
+        Map<String, AttributeValueUpdate> upd = Map.of("name",
+                new AttributeValueUpdate().withValue(new AttributeValue().withS("x")).withAction(AttributeAction.PUT));
         UpdateItemResult res = new UpdateItemResult();
         when(mockDynamoDBClient.updateItem("TestTable", key, upd, "ALL_NEW")).thenReturn(res);
 
@@ -1447,8 +1444,7 @@ public class DynamoDBExecutor01Test extends TestBase {
     public void testListWithClassPaginates() {
         // list(QueryRequest, Class) covers the pagination branch as well.
         QueryRequest req = new QueryRequest().withTableName("TestTable");
-        QueryResult page1 = new QueryResult()
-                .withItems(List.of(Map.of("id", new AttributeValue().withS("1"))))
+        QueryResult page1 = new QueryResult().withItems(List.of(Map.of("id", new AttributeValue().withS("1"))))
                 .withLastEvaluatedKey(Map.of("id", new AttributeValue().withS("1")));
         QueryResult page2 = new QueryResult().withItems(List.of(Map.of("id", new AttributeValue().withS("2"))));
 
