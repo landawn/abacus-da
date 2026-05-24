@@ -5,7 +5,7 @@
 
 	<groupId>com.landawn.abacus</groupId>
 	<artifactId>abacus-da-parent</artifactId>
-	<version>2.7.1</version>
+	<version>${revision}</version>
 	<packaging>pom</packaging>
 	<name>abacus-da-parent</name>
 	<description>abacus da — parent aggregator</description>
@@ -42,6 +42,7 @@
 	</modules>
 
 	<properties>
+		<revision>2.7.1</revision>
 		<java.version>17</java.version>
 		<maven.compiler.source>17</maven.compiler.source>
 		<maven.compiler.target>17</maven.compiler.target>
@@ -444,6 +445,34 @@
 			publishing by central-publishing-maven-plugin under its own artifactId.
 		-->
 		<plugins>
+			<!--
+				CI-friendly versions: ${revision} is defined in the parent <properties>
+				and referenced from every <parent><version> in child poms. flatten-maven-plugin
+				resolves ${revision} into the deployed/installed pom (Maven Central rejects
+				unresolved property placeholders in published poms).
+			-->
+			<plugin>
+				<groupId>org.codehaus.mojo</groupId>
+				<artifactId>flatten-maven-plugin</artifactId>
+				<version>1.7.0</version>
+				<configuration>
+					<updatePomFile>true</updatePomFile>
+					<flattenMode>resolveCiFriendliesOnly</flattenMode>
+				</configuration>
+				<executions>
+					<execution>
+						<id>flatten</id>
+						<phase>process-resources</phase>
+						<goals><goal>flatten</goal></goals>
+					</execution>
+					<execution>
+						<id>flatten.clean</id>
+						<phase>clean</phase>
+						<goals><goal>clean</goal></goals>
+					</execution>
+				</executions>
+			</plugin>
+
 			<plugin>
 				<groupId>org.apache.maven.plugins</groupId>
 				<artifactId>maven-source-plugin</artifactId>

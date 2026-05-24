@@ -19,7 +19,8 @@
       "PowerShell(Select-String -Path \"C:\\\\Users\\\\haiyangl\\\\Landawn\\\\abacus-common\\\\src\\\\main\\\\java\\\\com\\\\landawn\\\\abacus\\\\util\\\\stream\\\\Stream.java\" -Pattern \"first\\\\\\(\\\\\\)\" | Select-Object -First 3 | ForEach-Object { $_.Line })",
       "PowerShell(Stop-Process *)",
       "PowerShell(Get-Content *)",
-      "PowerShell(Get-Command *)"
+      "PowerShell(Get-Command *)",
+      "PowerShell(if \\(Test-Path build.log\\) { \"Log size: $\\(\\(Get-Item build.log\\).Length\\) bytes\"; \\(Get-Content build.log | Measure-Object -Line\\).Lines; \"--- tail ---\"; Get-Content build.log -Tail 30 } else { \"no build.log\" })"
     ],
     "deny": [],
     "ask": []

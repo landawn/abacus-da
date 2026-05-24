@@ -6,7 +6,7 @@
 	<parent>
 		<groupId>com.landawn.abacus</groupId>
 		<artifactId>abacus-da-parent</artifactId>
-		<version>2.7.1</version>
+		<version>${revision}</version>
 		<relativePath>../pom.xml</relativePath>
 	</parent>
 
