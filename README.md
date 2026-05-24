@@ -1,8 +1,8 @@
 # abacus-da
 abacus-da is a data access toolkit for working with NoSQL databases, search engines, cloud data services, and big-data platforms through consistent, high-level APIs.
 
-[![Maven Central](https://img.shields.io/maven-central/v/com.landawn/abacus-da.svg)](https://maven-badges.herokuapp.com/maven-central/com.landawn/abacus-da/)
-[![Javadocs](https://img.shields.io/badge/javadoc-2.0-brightgreen.svg)](https://www.javadoc.io/doc/com.landawn/abacus-da/2.0/index.html)
+[![Maven Central](https://img.shields.io/maven-central/v/com.landawn.abacus/abacus-da.svg)](https://maven-badges.herokuapp.com/maven-central/com.landawn.abacus/abacus-da/)
+[![Javadocs](https://img.shields.io/badge/javadoc-2.0-brightgreen.svg)](https://www.javadoc.io/doc/com.landawn.abacus/abacus-da/2.0/index.html)
  
 It wraps vendor SDKs with executor-style APIs for CRUD, queries, mapping, bulk operations, async/reactive access, and dataset-oriented processing so application code stays smaller and more uniform across backends.
 
@@ -23,7 +23,7 @@ It includes integrations for:
 * Gradle:
 ```gradle
 // JDK 17 or above:
-implementation 'com.landawn:abacus-da:2.0'
+implementation 'com.landawn.abacus:abacus-da:2.0'
 ```
 
 

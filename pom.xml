@@ -3,11 +3,11 @@
 	xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
 	<modelVersion>4.0.0</modelVersion>
 
-	<groupId>com.landawn</groupId>
-	<artifactId>abacus-da</artifactId>
-	<version>2.1</version>
+	<groupId>com.landawn.abacus</groupId>
+	<artifactId>abacus-da-all</artifactId>
+	<version>2.7.0</version>
 	<packaging>jar</packaging>
-	<name>abacus-da</name>
+	<name>abacus-da-all</name>
 	<description>abacus jdbc</description>
 	<url>https://github.com/landawn/abacus-da</url>
 
@@ -45,16 +45,16 @@
 
 	<dependencies>
 		<dependency>
-			<groupId>com.landawn</groupId>
+			<groupId>com.landawn.abacus</groupId>
 			<artifactId>abacus-common</artifactId>
-			<version>7.7.1</version>
+			<version>7.7.2</version>
 			<scope>provided</scope>
 		</dependency>
 
 		<dependency>
-			<groupId>com.landawn</groupId>
+			<groupId>com.landawn.abacus</groupId>
 			<artifactId>abacus-query</artifactId>
-			<version>4.7.1</version>
+			<version>4.7.2</version>
 			<scope>provided</scope>
 		</dependency>
 
@@ -514,6 +514,288 @@
 						<goals>
 							<goal>sign</goal>
 						</goals>
+					</execution>
+				</executions>
+			</plugin>
+
+			<!--
+				Per-package JARs.
+
+				Each execution produces target/abacus-da-<pkg>-${project.version}.jar from
+				the matching package only. attach=false keeps these out of the default
+				project artifact set so the central-publishing plugin does NOT publish
+				them as classifiers on abacus-da-all. They are re-published below with
+				their own artifactId via deploy-file.
+			-->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-assembly-plugin</artifactId>
+				<version>3.7.1</version>
+				<executions>
+					<execution>
+						<id>jar-cassandra</id>
+						<phase>package</phase>
+						<goals><goal>single</goal></goals>
+						<configuration>
+							<attach>false</attach>
+							<appendAssemblyId>false</appendAssemblyId>
+							<finalName>abacus-da-cassandra-${project.version}</finalName>
+							<descriptors><descriptor>src/main/assembly/cassandra.xml</descriptor></descriptors>
+						</configuration>
+					</execution>
+					<execution>
+						<id>jar-mongodb</id>
+						<phase>package</phase>
+						<goals><goal>single</goal></goals>
+						<configuration>
+							<attach>false</attach>
+							<appendAssemblyId>false</appendAssemblyId>
+							<finalName>abacus-da-mongodb-${project.version}</finalName>
+							<descriptors><descriptor>src/main/assembly/mongodb.xml</descriptor></descriptors>
+						</configuration>
+					</execution>
+					<execution>
+						<id>jar-aws</id>
+						<phase>package</phase>
+						<goals><goal>single</goal></goals>
+						<configuration>
+							<attach>false</attach>
+							<appendAssemblyId>false</appendAssemblyId>
+							<finalName>abacus-da-aws-${project.version}</finalName>
+							<descriptors><descriptor>src/main/assembly/aws.xml</descriptor></descriptors>
+						</configuration>
+					</execution>
+					<execution>
+						<id>jar-gcp</id>
+						<phase>package</phase>
+						<goals><goal>single</goal></goals>
+						<configuration>
+							<attach>false</attach>
+							<appendAssemblyId>false</appendAssemblyId>
+							<finalName>abacus-da-gcp-${project.version}</finalName>
+							<descriptors><descriptor>src/main/assembly/gcp.xml</descriptor></descriptors>
+						</configuration>
+					</execution>
+					<execution>
+						<id>jar-azure</id>
+						<phase>package</phase>
+						<goals><goal>single</goal></goals>
+						<configuration>
+							<attach>false</attach>
+							<appendAssemblyId>false</appendAssemblyId>
+							<finalName>abacus-da-azure-${project.version}</finalName>
+							<descriptors><descriptor>src/main/assembly/azure.xml</descriptor></descriptors>
+						</configuration>
+					</execution>
+					<execution>
+						<id>jar-hbase</id>
+						<phase>package</phase>
+						<goals><goal>single</goal></goals>
+						<configuration>
+							<attach>false</attach>
+							<appendAssemblyId>false</appendAssemblyId>
+							<finalName>abacus-da-hbase-${project.version}</finalName>
+							<descriptors><descriptor>src/main/assembly/hbase.xml</descriptor></descriptors>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+
+			<!--
+				Install each per-package JAR as its own Maven artifact (separate artifactId)
+				into the local repository. generatePom=true produces a minimal POM with
+				just coords — enrich per-package POMs later if richer dependency metadata
+				is needed for downstream consumers.
+			-->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-install-plugin</artifactId>
+				<version>3.1.4</version>
+				<executions>
+					<execution>
+						<id>install-cassandra</id>
+						<phase>install</phase>
+						<goals><goal>install-file</goal></goals>
+						<configuration>
+							<file>${project.build.directory}/abacus-da-cassandra-${project.version}.jar</file>
+							<groupId>${project.groupId}</groupId>
+							<artifactId>abacus-da-cassandra</artifactId>
+							<version>${project.version}</version>
+							<packaging>jar</packaging>
+							<generatePom>true</generatePom>
+						</configuration>
+					</execution>
+					<execution>
+						<id>install-mongodb</id>
+						<phase>install</phase>
+						<goals><goal>install-file</goal></goals>
+						<configuration>
+							<file>${project.build.directory}/abacus-da-mongodb-${project.version}.jar</file>
+							<groupId>${project.groupId}</groupId>
+							<artifactId>abacus-da-mongodb</artifactId>
+							<version>${project.version}</version>
+							<packaging>jar</packaging>
+							<generatePom>true</generatePom>
+						</configuration>
+					</execution>
+					<execution>
+						<id>install-aws</id>
+						<phase>install</phase>
+						<goals><goal>install-file</goal></goals>
+						<configuration>
+							<file>${project.build.directory}/abacus-da-aws-${project.version}.jar</file>
+							<groupId>${project.groupId}</groupId>
+							<artifactId>abacus-da-aws</artifactId>
+							<version>${project.version}</version>
+							<packaging>jar</packaging>
+							<generatePom>true</generatePom>
+						</configuration>
+					</execution>
+					<execution>
+						<id>install-gcp</id>
+						<phase>install</phase>
+						<goals><goal>install-file</goal></goals>
+						<configuration>
+							<file>${project.build.directory}/abacus-da-gcp-${project.version}.jar</file>
+							<groupId>${project.groupId}</groupId>
+							<artifactId>abacus-da-gcp</artifactId>
+							<version>${project.version}</version>
+							<packaging>jar</packaging>
+							<generatePom>true</generatePom>
+						</configuration>
+					</execution>
+					<execution>
+						<id>install-azure</id>
+						<phase>install</phase>
+						<goals><goal>install-file</goal></goals>
+						<configuration>
+							<file>${project.build.directory}/abacus-da-azure-${project.version}.jar</file>
+							<groupId>${project.groupId}</groupId>
+							<artifactId>abacus-da-azure</artifactId>
+							<version>${project.version}</version>
+							<packaging>jar</packaging>
+							<generatePom>true</generatePom>
+						</configuration>
+					</execution>
+					<execution>
+						<id>install-hbase</id>
+						<phase>install</phase>
+						<goals><goal>install-file</goal></goals>
+						<configuration>
+							<file>${project.build.directory}/abacus-da-hbase-${project.version}.jar</file>
+							<groupId>${project.groupId}</groupId>
+							<artifactId>abacus-da-hbase</artifactId>
+							<version>${project.version}</version>
+							<packaging>jar</packaging>
+							<generatePom>true</generatePom>
+						</configuration>
+					</execution>
+				</executions>
+			</plugin>
+
+			<!--
+				Deploy each per-package JAR as its own artifactId.
+				With the central-publishing-maven-plugin (extensions=true) enabled, the
+				deploy phase is intercepted and these artifacts are staged for Maven
+				Central. NOTE: Central typically requires *-sources.jar and *-javadoc.jar
+				for each artifactId — those are not generated per-package here, so
+				publishing per-package artifacts to Central will likely fail validation
+				until those are added (or until you switch to a multi-module layout).
+			-->
+			<plugin>
+				<groupId>org.apache.maven.plugins</groupId>
+				<artifactId>maven-deploy-plugin</artifactId>
+				<version>3.1.4</version>
+				<executions>
+					<execution>
+						<id>deploy-cassandra</id>
+						<phase>deploy</phase>
+						<goals><goal>deploy-file</goal></goals>
+						<configuration>
+							<file>${project.build.directory}/abacus-da-cassandra-${project.version}.jar</file>
+							<repositoryId>central</repositoryId>
+							<url>${project.distributionManagement.repository.url}</url>
+							<groupId>${project.groupId}</groupId>
+							<artifactId>abacus-da-cassandra</artifactId>
+							<version>${project.version}</version>
+							<packaging>jar</packaging>
+							<generatePom>true</generatePom>
+						</configuration>
+					</execution>
+					<execution>
+						<id>deploy-mongodb</id>
+						<phase>deploy</phase>
+						<goals><goal>deploy-file</goal></goals>
+						<configuration>
+							<file>${project.build.directory}/abacus-da-mongodb-${project.version}.jar</file>
+							<repositoryId>central</repositoryId>
+							<url>${project.distributionManagement.repository.url}</url>
+							<groupId>${project.groupId}</groupId>
+							<artifactId>abacus-da-mongodb</artifactId>
+							<version>${project.version}</version>
+							<packaging>jar</packaging>
+							<generatePom>true</generatePom>
+						</configuration>
+					</execution>
+					<execution>
+						<id>deploy-aws</id>
+						<phase>deploy</phase>
+						<goals><goal>deploy-file</goal></goals>
+						<configuration>
+							<file>${project.build.directory}/abacus-da-aws-${project.version}.jar</file>
+							<repositoryId>central</repositoryId>
+							<url>${project.distributionManagement.repository.url}</url>
+							<groupId>${project.groupId}</groupId>
+							<artifactId>abacus-da-aws</artifactId>
+							<version>${project.version}</version>
+							<packaging>jar</packaging>
+							<generatePom>true</generatePom>
+						</configuration>
+					</execution>
+					<execution>
+						<id>deploy-gcp</id>
+						<phase>deploy</phase>
+						<goals><goal>deploy-file</goal></goals>
+						<configuration>
+							<file>${project.build.directory}/abacus-da-gcp-${project.version}.jar</file>
+							<repositoryId>central</repositoryId>
+							<url>${project.distributionManagement.repository.url}</url>
+							<groupId>${project.groupId}</groupId>
+							<artifactId>abacus-da-gcp</artifactId>
+							<version>${project.version}</version>
+							<packaging>jar</packaging>
+							<generatePom>true</generatePom>
+						</configuration>
+					</execution>
+					<execution>
+						<id>deploy-azure</id>
+						<phase>deploy</phase>
+						<goals><goal>deploy-file</goal></goals>
+						<configuration>
+							<file>${project.build.directory}/abacus-da-azure-${project.version}.jar</file>
+							<repositoryId>central</repositoryId>
+							<url>${project.distributionManagement.repository.url}</url>
+							<groupId>${project.groupId}</groupId>
+							<artifactId>abacus-da-azure</artifactId>
+							<version>${project.version}</version>
+							<packaging>jar</packaging>
+							<generatePom>true</generatePom>
+						</configuration>
+					</execution>
+					<execution>
+						<id>deploy-hbase</id>
+						<phase>deploy</phase>
+						<goals><goal>deploy-file</goal></goals>
+						<configuration>
+							<file>${project.build.directory}/abacus-da-hbase-${project.version}.jar</file>
+							<repositoryId>central</repositoryId>
+							<url>${project.distributionManagement.repository.url}</url>
+							<groupId>${project.groupId}</groupId>
+							<artifactId>abacus-da-hbase</artifactId>
+							<version>${project.version}</version>
+							<packaging>jar</packaging>
+							<generatePom>true</generatePom>
+						</configuration>
 					</execution>
 				</executions>
 			</plugin>

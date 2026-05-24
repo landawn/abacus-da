@@ -517,3 +517,43 @@ The newly added unit tests must follow the requirements below:
 After completing each batch, run only the newly added test methods. If any tests fail, fix them — updating the source code if the failure is caused by a bug, or correcting the test itself if the test is wrong.
 
 
+
+
+  ---
+  Task: Modify pom.xml to build and publish multiple JAR artifacts from a single module.
+
+  Source: ./src/main/java
+  Version placeholder: xxx = project version (e.g., ${project.version})
+
+  Artifacts to produce:
+
+  ┌───────────────────────────────────┬───────────────────────────────────────────────────────┐
+  │            Artifact ID            │                       Contents                        │
+  ├───────────────────────────────────┼───────────────────────────────────────────────────────┤
+  │ abacus-da-all-<version>.jar       │ All classes under ./src/main/java (primary artifact)  │
+  ├───────────────────────────────────┼───────────────────────────────────────────────────────┤
+  │ abacus-da-cassandra-<version>.jar │ Classes in package com.landawn.abacus.da.cassandra.** │
+  ├───────────────────────────────────┼───────────────────────────────────────────────────────┤
+  │ abacus-da-mongodb-<version>.jar   │ Classes in package com.landawn.abacus.da.mongodb.**   │
+  ├───────────────────────────────────┼───────────────────────────────────────────────────────┤
+  │ abacus-da-aws-<version>.jar       │ Classes in package com.landawn.abacus.da.aws.**       │
+  ├───────────────────────────────────┼───────────────────────────────────────────────────────┤
+  │ abacus-da-gcp-<version>.jar       │ Classes in package com.landawn.abacus.da.gcp.**       │
+  ├───────────────────────────────────┼───────────────────────────────────────────────────────┤
+  │ abacus-da-azure-<version>.jar     │ Classes in package com.landawn.abacus.da.azure.**     │
+  ├───────────────────────────────────┼───────────────────────────────────────────────────────┤
+  │ abacus-da-hbase-<version>.jar     │ Classes in package com.landawn.abacus.da.hbase.**     │
+  └───────────────────────────────────┴───────────────────────────────────────────────────────┘
+
+  Requirements:
+  1. All JARs must be built in a single mvn package run.
+  2. Each per-package JAR must include only the classes (and resources, if any) in its target package
+  and subpackages.
+  3. All JARs must be installed/deployed (mvn install / mvn deploy) alongside the primary artifact.
+  4. Each per-module JAR must be published as a separate Maven artifact with its own distinct artifactId
+   (not as a classifier on the primary artifact).
+  5. abacus-da-all must remain the primary artifact of this Maven module; the per-package JARs are
+  secondary/attached artifacts published under different artifactIds.
+  6. Preserve existing pom.xml configuration (dependencies, compiler settings, etc.); only add/modify
+  what's needed for multi-JAR packaging.
+  7. Generated source/javadoc JARs (if currently configured) should continue to work.
