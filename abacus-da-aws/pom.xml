@@ -13,7 +13,7 @@
 	<artifactId>abacus-da-aws</artifactId>
 	<packaging>jar</packaging>
 	<name>abacus-da-aws</name>
-	<description>abacus jdbc — AWS support (com.landawn.abacus.da.aws)</description>
+	<description>abacus da — AWS support (com.landawn.abacus.da.aws)</description>
 
 	<dependencies>
 		<dependency>

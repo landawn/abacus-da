@@ -13,7 +13,7 @@
 	<artifactId>abacus-da-all</artifactId>
 	<packaging>jar</packaging>
 	<name>abacus-da-all</name>
-	<description>abacus jdbc — full bundle (all packages)</description>
+	<description>abacus da — full bundle (all packages)</description>
 
 	<dependencies>
 		<dependency>

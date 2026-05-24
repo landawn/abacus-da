@@ -13,7 +13,7 @@
 	<artifactId>abacus-da-cassandra</artifactId>
 	<packaging>jar</packaging>
 	<name>abacus-da-cassandra</name>
-	<description>abacus jdbc — Cassandra support (com.landawn.abacus.da.cassandra)</description>
+	<description>abacus da — Cassandra support (com.landawn.abacus.da.cassandra)</description>
 
 	<dependencies>
 		<dependency>

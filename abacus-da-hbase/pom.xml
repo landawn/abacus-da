@@ -13,7 +13,7 @@
 	<artifactId>abacus-da-hbase</artifactId>
 	<packaging>jar</packaging>
 	<name>abacus-da-hbase</name>
-	<description>abacus jdbc — HBase support (com.landawn.abacus.da.hbase)</description>
+	<description>abacus da — HBase support (com.landawn.abacus.da.hbase)</description>
 
 	<dependencies>
 		<dependency>

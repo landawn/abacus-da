@@ -13,7 +13,7 @@
 	<artifactId>abacus-da-gcp</artifactId>
 	<packaging>jar</packaging>
 	<name>abacus-da-gcp</name>
-	<description>abacus jdbc — GCP support (com.landawn.abacus.da.gcp)</description>
+	<description>abacus da — GCP support (com.landawn.abacus.da.gcp)</description>
 
 	<dependencies>
 		<dependency>

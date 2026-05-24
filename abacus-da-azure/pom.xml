@@ -13,7 +13,7 @@
 	<artifactId>abacus-da-azure</artifactId>
 	<packaging>jar</packaging>
 	<name>abacus-da-azure</name>
-	<description>abacus jdbc — Azure support (com.landawn.abacus.da.azure)</description>
+	<description>abacus da — Azure support (com.landawn.abacus.da.azure)</description>
 
 	<dependencies>
 		<dependency>

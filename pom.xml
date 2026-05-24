@@ -8,7 +8,7 @@
 	<version>2.7.1</version>
 	<packaging>pom</packaging>
 	<name>abacus-da-parent</name>
-	<description>abacus jdbc — parent aggregator</description>
+	<description>abacus da — parent aggregator</description>
 	<url>https://github.com/landawn/abacus-da</url>
 
 	<licenses>

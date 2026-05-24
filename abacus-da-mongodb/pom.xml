@@ -13,7 +13,7 @@
 	<artifactId>abacus-da-mongodb</artifactId>
 	<packaging>jar</packaging>
 	<name>abacus-da-mongodb</name>
-	<description>abacus jdbc — MongoDB support (com.landawn.abacus.da.mongodb)</description>
+	<description>abacus da — MongoDB support (com.landawn.abacus.da.mongodb)</description>
 
 	<dependencies>
 		<dependency>
