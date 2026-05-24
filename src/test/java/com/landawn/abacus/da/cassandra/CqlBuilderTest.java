@@ -2588,4 +2588,344 @@ public class CqlBuilderTest extends TestBase {
         assertNotNull(NLC.select("a").from("t").build().query());
         assertNotNull(ACCB.select("a").from("t").build().query());
     }
+
+    // ---------------------------------------------------------------------------------------------
+    // NSC (SNAKE_CASE naming + NAMED_SQL): exercise all factory methods.
+    // Column names are converted to snake_case, named placeholders use original property names.
+    // ---------------------------------------------------------------------------------------------
+
+    @Test
+    public void testNSC_insertString() {
+        final String cql = NSC.insert("firstName").into("account").build().query();
+        assertTrue(cql.startsWith("INSERT INTO account"), cql);
+        // SNAKE_CASE policy: column name is converted, named param keeps the original identifier.
+        assertTrue(cql.contains("(first_name)"), cql);
+        assertTrue(cql.contains(":firstName"), cql);
+    }
+
+    @Test
+    public void testNSC_insertStringArray() {
+        final String cql = NSC.insert("firstName", "lastName").into("account").build().query();
+        assertEquals("INSERT INTO account (first_name, last_name) VALUES (:firstName, :lastName)", cql);
+    }
+
+    @Test
+    public void testNSC_insertCollection() {
+        final String cql = NSC.insert(N.asList("firstName", "lastName")).into("account").build().query();
+        assertEquals("INSERT INTO account (first_name, last_name) VALUES (:firstName, :lastName)", cql);
+    }
+
+    @Test
+    public void testNSC_insertMap() {
+        final Map<String, Object> props = N.asMap("firstName", Filters.QME, "lastName", Filters.QME);
+        final String cql = NSC.insert(props).into("account").build().query();
+        assertTrue(cql.startsWith("INSERT INTO account"), cql);
+        assertTrue(cql.contains("first_name"), cql);
+        assertTrue(cql.contains("last_name"), cql);
+    }
+
+    @Test
+    public void testNSC_insertEntity() {
+        final Account account = new Account();
+        account.setFirstName("John");
+        account.setLastName("Doe");
+        final String cql = NSC.insert(account).into("account").build().query();
+        assertTrue(cql.startsWith("INSERT INTO account"), cql);
+        assertTrue(cql.contains(":firstName") && cql.contains(":lastName"), cql);
+        assertTrue(cql.contains("first_name") && cql.contains("last_name"), cql);
+    }
+
+    @Test
+    public void testNSC_insertEntityWithExcluded() {
+        final Account account = new Account();
+        account.setFirstName("John");
+        account.setLastName("Doe");
+        final String cql = NSC.insert(account, N.asSet("lastName")).into("account").build().query();
+        assertTrue(cql.contains(":firstName"), cql);
+        assertTrue(!cql.contains(":lastName"), cql);
+    }
+
+    @Test
+    public void testNSC_insertClass() {
+        final String cql = NSC.insert(Account.class).into("account").build().query();
+        assertTrue(cql.startsWith("INSERT INTO account"), cql);
+        assertTrue(cql.contains(":firstName"), cql);
+    }
+
+    @Test
+    public void testNSC_insertClassWithExcluded() {
+        final String cql = NSC.insert(Account.class, N.asSet("firstName")).into("account").build().query();
+        assertTrue(!cql.contains(":firstName"), cql);
+        assertTrue(cql.contains(":lastName"), cql);
+    }
+
+    @Test
+    public void testNSC_insertIntoClass() {
+        final String cql = NSC.insertInto(Users.class).build().query();
+        assertTrue(cql.startsWith("INSERT INTO simplex.users"), cql);
+    }
+
+    @Test
+    public void testNSC_insertIntoClassWithExcluded() {
+        final String cql = NSC.insertInto(Users.class, N.asSet("createdTime")).build().query();
+        assertTrue(cql.startsWith("INSERT INTO simplex.users"), cql);
+        assertTrue(!cql.contains(":createdTime"), cql);
+    }
+
+    @Test
+    public void testNSC_batchInsert() {
+        final String cql = NSC.batchInsert(N.asList(N.asMap("firstName", "a"), N.asMap("firstName", "b"))).into("account").build().query();
+        assertTrue(cql.startsWith("INSERT INTO account"), cql);
+        assertTrue(cql.contains("first_name"), cql);
+    }
+
+    @Test
+    public void testNSC_updateString() {
+        final String cql = NSC.update("account").set("firstName").where(Filters.eq("id", 1)).build().query();
+        assertEquals("UPDATE account SET first_name = :firstName WHERE id = :id", cql);
+    }
+
+    @Test
+    public void testNSC_updateStringClass() {
+        final String cql = NSC.update("account", Account.class).set("firstName").where(Filters.eq("id", 1)).build().query();
+        assertTrue(cql.startsWith("UPDATE account SET first_name"), cql);
+    }
+
+    @Test
+    public void testNSC_updateClass() {
+        final String cql = NSC.update(Account.class).set("firstName").where(Filters.eq("id", 1)).build().query();
+        assertTrue(cql.contains("UPDATE"), cql);
+        assertTrue(cql.contains("first_name"), cql);
+    }
+
+    @Test
+    public void testNSC_updateClassWithExcluded() {
+        final String cql = NSC.update(Account.class, N.asSet("id", "createTime")).where(Filters.eq("id", 1)).build().query();
+        assertTrue(cql.contains("UPDATE"), cql);
+        assertTrue(!cql.contains("SET id"), cql);
+    }
+
+    @Test
+    public void testNSC_deleteString() {
+        final String cql = NSC.delete("firstName").from("account").where(Filters.eq("id", 1)).build().query();
+        assertEquals("DELETE first_name FROM account WHERE id = :id", cql);
+    }
+
+    @Test
+    public void testNSC_deleteStringArray() {
+        final String cql = NSC.delete("firstName", "lastName").from("account").where(Filters.eq("id", 1)).build().query();
+        assertEquals("DELETE first_name, last_name FROM account WHERE id = :id", cql);
+    }
+
+    @Test
+    public void testNSC_deleteCollection() {
+        final String cql = NSC.delete(N.asList("firstName", "lastName")).from("account").where(Filters.eq("id", 1)).build().query();
+        assertEquals("DELETE first_name, last_name FROM account WHERE id = :id", cql);
+    }
+
+    @Test
+    public void testNSC_deleteClass() {
+        final String cql = NSC.delete(Account.class).from("account").where(Filters.eq("id", 1)).build().query();
+        assertTrue(cql.startsWith("DELETE "), cql);
+        assertTrue(cql.contains("FROM account"), cql);
+    }
+
+    @Test
+    public void testNSC_deleteClassWithExcluded() {
+        final String cql = NSC.delete(Account.class, N.asSet("firstName")).from("account").where(Filters.eq("id", 1)).build().query();
+        assertTrue(cql.startsWith("DELETE "), cql);
+        assertTrue(!cql.contains(" first_name"), cql);
+    }
+
+    @Test
+    public void testNSC_deleteFromString() {
+        final String cql = NSC.deleteFrom("account").where(Filters.eq("id", 1)).build().query();
+        assertEquals("DELETE FROM account WHERE id = :id", cql);
+    }
+
+    @Test
+    public void testNSC_deleteFromStringClass() {
+        final String cql = NSC.deleteFrom("account", Account.class).where(Filters.eq("id", 1)).build().query();
+        assertTrue(cql.startsWith("DELETE FROM account"), cql);
+    }
+
+    @Test
+    public void testNSC_deleteFromClass() {
+        final String cql = NSC.deleteFrom(Users.class).where(Filters.eq("id", Filters.QME)).build().query();
+        assertTrue(cql.startsWith("DELETE FROM simplex.users"), cql);
+    }
+
+    @Test
+    public void testNSC_selectString() {
+        // SNAKE_CASE select produces "snake AS \"camel\"" so result objects can be mapped back.
+        final String cql = NSC.select("firstName").from("account").build().query();
+        assertEquals("SELECT first_name AS \"firstName\" FROM account", cql);
+    }
+
+    @Test
+    public void testNSC_selectStringArray() {
+        final String cql = NSC.select("firstName", "lastName").from("account").build().query();
+        assertEquals("SELECT first_name AS \"firstName\", last_name AS \"lastName\" FROM account", cql);
+    }
+
+    @Test
+    public void testNSC_selectCollection() {
+        final String cql = NSC.select(N.asList("firstName", "lastName")).from("account").build().query();
+        assertEquals("SELECT first_name AS \"firstName\", last_name AS \"lastName\" FROM account", cql);
+    }
+
+    @Test
+    public void testNSC_selectMap() {
+        final String cql = NSC.select(N.asMap("firstName", "fn")).from("account").build().query();
+        assertTrue(cql.startsWith("SELECT first_name"), cql);
+        assertTrue(cql.contains("\"fn\""), cql);
+    }
+
+    @Test
+    public void testNSC_selectClass() {
+        final String cql = NSC.select(Account.class).from("account").build().query();
+        assertTrue(cql.startsWith("SELECT "), cql);
+        assertTrue(cql.contains("first_name"), cql);
+    }
+
+    @Test
+    public void testNSC_selectClassWithSubEntities() {
+        final String cql = NSC.select(Account.class, false).from("account").build().query();
+        assertTrue(cql.startsWith("SELECT "), cql);
+    }
+
+    @Test
+    public void testNSC_selectClassWithExcluded() {
+        final String cql = NSC.select(Account.class, N.asSet("firstName")).from("account").build().query();
+        assertTrue(!cql.contains(" first_name"), cql);
+    }
+
+    @Test
+    public void testNSC_selectClassFull() {
+        final String cql = NSC.select(Account.class, false, N.asSet("firstName")).from("account").build().query();
+        assertTrue(!cql.contains(" first_name"), cql);
+    }
+
+    @Test
+    public void testNSC_selectFromClass() {
+        final String cql = NSC.selectFrom(Users.class).build().query();
+        assertTrue(cql.startsWith("SELECT "), cql);
+        assertTrue(cql.contains("FROM simplex.users"), cql);
+    }
+
+    @Test
+    public void testNSC_selectFromClassWithAlias() {
+        final String cql = NSC.selectFrom(Users.class, "u").build().query();
+        assertTrue(cql.contains("FROM simplex.users u"), cql);
+    }
+
+    @Test
+    public void testNSC_selectFromClassWithSubEntities() {
+        final String cql = NSC.selectFrom(Account.class, false).build().query();
+        assertTrue(cql.startsWith("SELECT "), cql);
+    }
+
+    @Test
+    public void testNSC_selectFromClassWithExcluded() {
+        final String cql = NSC.selectFrom(Account.class, N.asSet("firstName")).build().query();
+        assertTrue(!cql.contains(" first_name"), cql);
+    }
+
+    @Test
+    public void testNSC_selectFromClassAliasSubEntities() {
+        final String cql = NSC.selectFrom(Users.class, "u", false).build().query();
+        assertTrue(cql.contains("FROM simplex.users u"), cql);
+    }
+
+    @Test
+    public void testNSC_selectFromClassAliasExcluded() {
+        final String cql = NSC.selectFrom(Users.class, "u", N.asSet("createdTime")).build().query();
+        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        assertTrue(!cql.contains("created_time"), cql);
+    }
+
+    @Test
+    public void testNSC_selectFromClassSubEntitiesExcluded() {
+        final String cql = NSC.selectFrom(Account.class, false, N.asSet("firstName")).build().query();
+        assertTrue(!cql.contains(" first_name"), cql);
+    }
+
+    @Test
+    public void testNSC_selectFromClassFull() {
+        final String cql = NSC.selectFrom(Users.class, "u", false, N.asSet("createdTime")).build().query();
+        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        assertTrue(!cql.contains("created_time"), cql);
+    }
+
+    @Test
+    public void testNSC_countString() {
+        final String cql = NSC.count("account").where(Filters.eq("id", 1)).build().query();
+        assertEquals("SELECT count(*) FROM account WHERE id = :id", cql);
+    }
+
+    @Test
+    public void testNSC_countClass() {
+        final String cql = NSC.count(Users.class).where(Filters.eq("id", Filters.QME)).build().query();
+        assertTrue(cql.startsWith("SELECT count(*) FROM simplex.users"), cql);
+    }
+
+    @Test
+    public void testNSC_parse() {
+        final String cql = NSC.parse(Filters.eq("firstName", "John"), Account.class).build().query();
+        assertEquals("first_name = :firstName", cql.trim());
+    }
+
+    @Test
+    public void testNSC_isNamedSql() {
+        // Indirect: a NAMED_SQL builder must emit ':' placeholders, not '?'.
+        final String cql = NSC.select("a").from("t").where(Filters.eq("a", 1)).build().query();
+        assertTrue(cql.contains(":a"), cql);
+        assertTrue(!cql.contains("?"), cql);
+    }
+
+    @Test
+    public void testNSC_insert_EmptyString() {
+        assertThrows(IllegalArgumentException.class, () -> NSC.insert(""));
+    }
+
+    @Test
+    public void testNSC_insert_NullString() {
+        assertThrows(IllegalArgumentException.class, () -> NSC.insert((String) null));
+    }
+
+    @Test
+    public void testNSC_update_NullString() {
+        assertThrows(IllegalArgumentException.class, () -> NSC.update((String) null));
+    }
+
+    @Test
+    public void testNSC_deleteFrom_NullString() {
+        assertThrows(IllegalArgumentException.class, () -> NSC.deleteFrom((String) null));
+    }
+
+    @Test
+    public void testNSC_select_NullString() {
+        assertThrows(IllegalArgumentException.class, () -> NSC.select((String) null));
+    }
+
+    @Test
+    public void testNSC_parse_NullCondition() {
+        assertThrows(IllegalArgumentException.class, () -> NSC.parse(null, Account.class));
+    }
+
+    @Test
+    public void testNSC_count_NullClass() {
+        assertThrows(IllegalArgumentException.class, () -> NSC.count((Class<?>) null));
+    }
+
+    @Test
+    public void testNSC_chainBuildable() {
+        // Smoke test: createInstance() reached via every public factory, build returns usable query.
+        assertNotNull(NSC.select("a").from("t").build());
+        assertNotNull(NSC.select("a").from("t").build().query());
+        assertNotNull(NSC.insert("a").into("t").build().query());
+        assertNotNull(NSC.update("t").set("a").where(Filters.eq("id", 1)).build().query());
+        assertNotNull(NSC.deleteFrom("t").where(Filters.eq("id", 1)).build().query());
+        assertNotNull(NSC.count("t").build().query());
+    }
 }

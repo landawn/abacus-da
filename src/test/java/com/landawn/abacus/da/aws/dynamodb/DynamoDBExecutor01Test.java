@@ -752,6 +752,132 @@ public class DynamoDBExecutor01Test extends TestBase {
         assertEquals(13, result.size());
     }
 
+    // Individual ConditionBuilder operator tests for fine-grained coverage.
+    @Test
+    public void testConditionBuilderNe() {
+        Map<String, Condition> result = new ConditionBuilder().ne("name", "test").build();
+        assertEquals(1, result.size());
+        assertEquals(ComparisonOperator.NE.toString(), result.get("name").getComparisonOperator());
+    }
+
+    @Test
+    public void testConditionBuilderGt() {
+        Map<String, Condition> result = new ConditionBuilder().gt("age", 18).build();
+        assertEquals(ComparisonOperator.GT.toString(), result.get("age").getComparisonOperator());
+    }
+
+    @Test
+    public void testConditionBuilderGe() {
+        Map<String, Condition> result = new ConditionBuilder().ge("age", 18).build();
+        assertEquals(ComparisonOperator.GE.toString(), result.get("age").getComparisonOperator());
+    }
+
+    @Test
+    public void testConditionBuilderLt() {
+        Map<String, Condition> result = new ConditionBuilder().lt("age", 65).build();
+        assertEquals(ComparisonOperator.LT.toString(), result.get("age").getComparisonOperator());
+    }
+
+    @Test
+    public void testConditionBuilderLe() {
+        Map<String, Condition> result = new ConditionBuilder().le("age", 65).build();
+        assertEquals(ComparisonOperator.LE.toString(), result.get("age").getComparisonOperator());
+    }
+
+    @Test
+    public void testConditionBuilderBt() {
+        Map<String, Condition> result = new ConditionBuilder().bt("age", 18, 65).build();
+        assertEquals(ComparisonOperator.BETWEEN.toString(), result.get("age").getComparisonOperator());
+        assertEquals(2, result.get("age").getAttributeValueList().size());
+    }
+
+    @Test
+    public void testConditionBuilderIsNull() {
+        Map<String, Condition> result = new ConditionBuilder().isNull("optional").build();
+        assertEquals(ComparisonOperator.NULL.toString(), result.get("optional").getComparisonOperator());
+    }
+
+    @Test
+    public void testConditionBuilderNotNull() {
+        Map<String, Condition> result = new ConditionBuilder().notNull("required").build();
+        assertEquals(ComparisonOperator.NOT_NULL.toString(), result.get("required").getComparisonOperator());
+    }
+
+    @Test
+    public void testConditionBuilderContains() {
+        Map<String, Condition> result = new ConditionBuilder().contains("tags", "java").build();
+        assertEquals(ComparisonOperator.CONTAINS.toString(), result.get("tags").getComparisonOperator());
+    }
+
+    @Test
+    public void testConditionBuilderNotContains() {
+        Map<String, Condition> result = new ConditionBuilder().notContains("tags", "python").build();
+        assertEquals(ComparisonOperator.NOT_CONTAINS.toString(), result.get("tags").getComparisonOperator());
+    }
+
+    @Test
+    public void testConditionBuilderBeginsWith() {
+        Map<String, Condition> result = new ConditionBuilder().beginsWith("name", "John").build();
+        assertEquals(ComparisonOperator.BEGINS_WITH.toString(), result.get("name").getComparisonOperator());
+    }
+
+    @Test
+    public void testConditionBuilderInVarargs() {
+        Map<String, Condition> result = new ConditionBuilder().in("status", "active", "pending").build();
+        assertEquals(ComparisonOperator.IN.toString(), result.get("status").getComparisonOperator());
+        assertEquals(2, result.get("status").getAttributeValueList().size());
+    }
+
+    @Test
+    public void testConditionBuilderInCollection() {
+        List<String> values = List.of("active", "pending", "approved");
+        Map<String, Condition> result = new ConditionBuilder().in("status", values).build();
+        assertEquals(ComparisonOperator.IN.toString(), result.get("status").getComparisonOperator());
+        assertEquals(3, result.get("status").getAttributeValueList().size());
+    }
+
+    // Filters in() with empty collection edge case.
+    @Test
+    public void testFiltersInCollection_Empty() {
+        Map<String, Condition> result = Filters.in("status", List.of());
+        assertNotNull(result);
+        assertEquals(ComparisonOperator.IN.toString(), result.get("status").getComparisonOperator());
+        assertEquals(0, result.get("status").getAttributeValueList().size());
+    }
+
+    @Test
+    public void testFiltersInVarargs_SingleValue() {
+        Map<String, Condition> result = Filters.in("status", "active");
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals(1, result.get("status").getAttributeValueList().size());
+    }
+
+    @Test
+    public void testFiltersEq_AttributeValueContents() {
+        Map<String, Condition> result = Filters.eq("name", "abc");
+        assertEquals(1, result.get("name").getAttributeValueList().size());
+        assertEquals("abc", result.get("name").getAttributeValueList().get(0).getS());
+    }
+
+    @Test
+    public void testFiltersBt_AttributeValueContents() {
+        Map<String, Condition> result = Filters.bt("age", 18, 65);
+        assertEquals("18", result.get("age").getAttributeValueList().get(0).getN());
+        assertEquals("65", result.get("age").getAttributeValueList().get(1).getN());
+    }
+
+    @Test
+    public void testConditionBuilderBuild_NullifiesInternalState() {
+        // After build(), internal map is nulled; calling build() again returns null.
+        ConditionBuilder b = new ConditionBuilder().eq("x", 1);
+        Map<String, Condition> first = b.build();
+        assertNotNull(first);
+        assertEquals(1, first.size());
+        // Second call returns null per the implementation.
+        assertNull(b.build());
+    }
+
     // Tests for Mapper inner class
     @Test
     public void testMapperCreation() {

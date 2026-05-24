@@ -517,6 +517,96 @@ public class CosmosContainerExecutorTest extends TestBase {
         assertTrue(ex.getCause().getMessage().contains("expected 1 placeholders but found 2"));
     }
 
+    // Additional rewritePositionalParameters branch coverage: in-quote skipping, escaped quotes, multi-placeholder.
+
+    @Test
+    public void testRewritePositionalParameters_NoPlaceholders() throws Exception {
+        final Method method = CosmosContainerExecutor.class.getDeclaredMethod("rewritePositionalParameters", String.class, int.class);
+        method.setAccessible(true);
+        final String result = (String) method.invoke(null, "SELECT * FROM c WHERE c.id = 'static'", 0);
+        assertEquals("SELECT * FROM c WHERE c.id = 'static'", result);
+    }
+
+    @Test
+    public void testRewritePositionalParameters_MultiPlaceholder() throws Exception {
+        final Method method = CosmosContainerExecutor.class.getDeclaredMethod("rewritePositionalParameters", String.class, int.class);
+        method.setAccessible(true);
+        final String result = (String) method.invoke(null, "SELECT * FROM c WHERE c.a = ? AND c.b = ? AND c.c = ?", 3);
+        assertEquals("SELECT * FROM c WHERE c.a = @p0 AND c.b = @p1 AND c.c = @p2", result);
+    }
+
+    @Test
+    public void testRewritePositionalParameters_QuestionMarkInsideSingleQuotes() throws Exception {
+        // The '?' inside a single-quoted string literal must be preserved, not rewritten.
+        final Method method = CosmosContainerExecutor.class.getDeclaredMethod("rewritePositionalParameters", String.class, int.class);
+        method.setAccessible(true);
+        final String result = (String) method.invoke(null, "SELECT * FROM c WHERE c.name = 'a?b' AND c.id = ?", 1);
+        assertEquals("SELECT * FROM c WHERE c.name = 'a?b' AND c.id = @p0", result);
+    }
+
+    @Test
+    public void testRewritePositionalParameters_EscapedSingleQuote() throws Exception {
+        // '' is the SQL escape for a single quote and should not toggle the in-quote state.
+        final Method method = CosmosContainerExecutor.class.getDeclaredMethod("rewritePositionalParameters", String.class, int.class);
+        method.setAccessible(true);
+        final String result = (String) method.invoke(null, "SELECT * FROM c WHERE c.name = 'O''Brien' AND c.id = ?", 1);
+        assertEquals("SELECT * FROM c WHERE c.name = 'O''Brien' AND c.id = @p0", result);
+    }
+
+    @Test
+    public void testRewritePositionalParameters_FewerParametersThanPlaceholders() throws Exception {
+        // When parameterCount < total '?' found, the extras stay as '?' and we hit the mismatch error.
+        final Method method = CosmosContainerExecutor.class.getDeclaredMethod("rewritePositionalParameters", String.class, int.class);
+        method.setAccessible(true);
+        final InvocationTargetException ex = assertThrows(InvocationTargetException.class,
+                () -> method.invoke(null, "SELECT * FROM c WHERE a=? AND b=? AND c=?", 2));
+        assertTrue(ex.getCause() instanceof IllegalArgumentException);
+        assertTrue(ex.getCause().getMessage().contains("expected 2 placeholders but found 3"));
+    }
+
+    @Test
+    public void testStreamItemsWithSelectAndConditionAndNamingPolicy_ScreamingSnake() {
+        // Exercise SCREAMING_SNAKE_CASE branch in prepareQuery.
+        CosmosContainerExecutor executorWithPolicy = new CosmosContainerExecutor(mockCosmosContainer, NamingPolicy.SCREAMING_SNAKE_CASE);
+        List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"));
+        when(mockPagedIterable.stream()).thenReturn(items.stream());
+        when(mockCosmosContainer.queryItems(any(SqlQuerySpec.class), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
+
+        Stream<TestItem> stream = executorWithPolicy.streamItems(Arrays.asList("id"), Filters.eq("id", "1"), TestItem.class);
+
+        assertNotNull(stream);
+        assertEquals(1, stream.toList().size());
+    }
+
+    @Test
+    public void testStreamItemsWithSelectAndConditionAndNamingPolicy_CamelCase() {
+        // Exercise CAMEL_CASE branch in prepareQuery.
+        CosmosContainerExecutor executorWithPolicy = new CosmosContainerExecutor(mockCosmosContainer, NamingPolicy.CAMEL_CASE);
+        List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"));
+        when(mockPagedIterable.stream()).thenReturn(items.stream());
+        when(mockCosmosContainer.queryItems(any(SqlQuerySpec.class), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
+
+        Stream<TestItem> stream = executorWithPolicy.streamItems(Arrays.asList("id"), Filters.eq("id", "1"), TestItem.class);
+
+        assertNotNull(stream);
+        assertEquals(1, stream.toList().size());
+    }
+
+    @Test
+    public void testConstructorRejectsNullContainer() {
+        assertThrows(IllegalArgumentException.class, () -> new CosmosContainerExecutor(null));
+    }
+
+    @Test
+    public void testConstructorWithPolicyRejectsNullContainer() {
+        assertThrows(IllegalArgumentException.class, () -> new CosmosContainerExecutor(null, NamingPolicy.SNAKE_CASE));
+    }
+
+    @Test
+    public void testConstructorWithPolicyRejectsNullPolicy() {
+        assertThrows(IllegalArgumentException.class, () -> new CosmosContainerExecutor(mockCosmosContainer, (NamingPolicy) null));
+    }
+
     @Test
     public void testUnsupportedNamingPolicy() {
         // Create a mock naming policy that's not supported

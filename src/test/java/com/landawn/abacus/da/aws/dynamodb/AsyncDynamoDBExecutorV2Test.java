@@ -831,6 +831,407 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
         assertEquals("u-1", key.get("user_id").s());
     }
 
+    // Additional coverage for v2 async overloads.
+    @Test
+    public void testGetItemWithConsistentReadAndTargetClass() throws ExecutionException, InterruptedException {
+        Map<String, AttributeValue> key = Map.of("id", AttributeValue.builder().s("1").build());
+        GetItemResponse response = GetItemResponse.builder().item(Map.of("id", AttributeValue.builder().s("1").build())).build();
+        when(mockDynamoDbAsyncClient.getItem(any(GetItemRequest.class))).thenReturn(CompletableFuture.completedFuture(response));
+
+        CompletableFuture<TestEntity> future = asyncExecutor.getItem("TestTable", key, true, TestEntity.class);
+        TestEntity result = future.get();
+        assertNotNull(result);
+        assertEquals("1", result.getId());
+    }
+
+    @Test
+    public void testGetItemWithRequestAndTargetClass() throws ExecutionException, InterruptedException {
+        GetItemRequest request = GetItemRequest.builder().tableName("TestTable").key(Map.of("id", AttributeValue.builder().s("1").build())).build();
+        GetItemResponse response = GetItemResponse.builder().item(Map.of("id", AttributeValue.builder().s("1").build())).build();
+        when(mockDynamoDbAsyncClient.getItem(request)).thenReturn(CompletableFuture.completedFuture(response));
+
+        CompletableFuture<TestEntity> future = asyncExecutor.getItem(request, TestEntity.class);
+        TestEntity result = future.get();
+        assertNotNull(result);
+        assertEquals("1", result.getId());
+    }
+
+    @Test
+    public void testBatchGetItemWithTargetClass() throws ExecutionException, InterruptedException {
+        Map<String, KeysAndAttributes> requestItems = Map.of("TestTable",
+                KeysAndAttributes.builder().keys(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build());
+        BatchGetItemResponse response = BatchGetItemResponse.builder()
+                .responses(Map.of("TestTable", List.of(Map.of("id", AttributeValue.builder().s("1").build()))))
+                .build();
+        when(mockDynamoDbAsyncClient.batchGetItem(any(BatchGetItemRequest.class))).thenReturn(CompletableFuture.completedFuture(response));
+
+        CompletableFuture<Map<String, List<TestEntity>>> future = asyncExecutor.batchGetItem(requestItems, TestEntity.class);
+        Map<String, List<TestEntity>> result = future.get();
+        assertNotNull(result);
+        assertEquals(1, result.get("TestTable").size());
+    }
+
+    @Test
+    public void testBatchGetItemWithReturnConsumedCapacityAndTargetClass() throws ExecutionException, InterruptedException {
+        Map<String, KeysAndAttributes> requestItems = Map.of("TestTable", KeysAndAttributes.builder().build());
+        BatchGetItemResponse response = BatchGetItemResponse.builder().responses(new HashMap<>()).build();
+        when(mockDynamoDbAsyncClient.batchGetItem(any(BatchGetItemRequest.class))).thenReturn(CompletableFuture.completedFuture(response));
+
+        CompletableFuture<Map<String, List<TestEntity>>> future = asyncExecutor.batchGetItem(requestItems, "TOTAL", TestEntity.class);
+        assertNotNull(future.get());
+    }
+
+    @Test
+    public void testBatchGetItemWithRequest() throws ExecutionException, InterruptedException {
+        BatchGetItemRequest request = BatchGetItemRequest.builder()
+                .requestItems(Map.of("TestTable",
+                        KeysAndAttributes.builder().keys(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build()))
+                .build();
+        BatchGetItemResponse response = BatchGetItemResponse.builder()
+                .responses(Map.of("TestTable", List.of(Map.of("id", AttributeValue.builder().s("1").build()))))
+                .build();
+        when(mockDynamoDbAsyncClient.batchGetItem(request)).thenReturn(CompletableFuture.completedFuture(response));
+
+        CompletableFuture<Map<String, List<Map<String, Object>>>> future = asyncExecutor.batchGetItem(request);
+        Map<String, List<Map<String, Object>>> result = future.get();
+        assertNotNull(result);
+        assertEquals(1, result.get("TestTable").size());
+    }
+
+    @Test
+    public void testBatchGetItemWithRequestAndTargetClass() throws ExecutionException, InterruptedException {
+        BatchGetItemRequest request = BatchGetItemRequest.builder()
+                .requestItems(Map.of("TestTable",
+                        KeysAndAttributes.builder().keys(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build()))
+                .build();
+        BatchGetItemResponse response = BatchGetItemResponse.builder()
+                .responses(Map.of("TestTable", List.of(Map.of("id", AttributeValue.builder().s("1").build()))))
+                .build();
+        when(mockDynamoDbAsyncClient.batchGetItem(request)).thenReturn(CompletableFuture.completedFuture(response));
+
+        CompletableFuture<Map<String, List<TestEntity>>> future = asyncExecutor.batchGetItem(request, TestEntity.class);
+        Map<String, List<TestEntity>> result = future.get();
+        assertNotNull(result);
+        assertEquals(1, result.get("TestTable").size());
+    }
+
+    @Test
+    public void testPutItemWithRequest() throws ExecutionException, InterruptedException {
+        PutItemRequest request = PutItemRequest.builder().tableName("TestTable").item(Map.of("id", AttributeValue.builder().s("1").build())).build();
+        when(mockDynamoDbAsyncClient.putItem(request)).thenReturn(CompletableFuture.completedFuture(PutItemResponse.builder().build()));
+
+        CompletableFuture<PutItemResponse> future = asyncExecutor.putItem(request);
+        assertNotNull(future.get());
+    }
+
+    @Test
+    public void testBatchWriteItemWithRequest() throws ExecutionException, InterruptedException {
+        BatchWriteItemRequest request = BatchWriteItemRequest.builder()
+                .requestItems(Map.of("TestTable",
+                        List.of(WriteRequest.builder().putRequest(PutRequest.builder().item(Map.of("id", AttributeValue.builder().s("1").build())).build()).build())))
+                .build();
+        when(mockDynamoDbAsyncClient.batchWriteItem(request)).thenReturn(CompletableFuture.completedFuture(BatchWriteItemResponse.builder().build()));
+
+        CompletableFuture<BatchWriteItemResponse> future = asyncExecutor.batchWriteItem(request);
+        assertNotNull(future.get());
+    }
+
+    @Test
+    public void testUpdateItemWithRequest() throws ExecutionException, InterruptedException {
+        UpdateItemRequest request = UpdateItemRequest.builder().tableName("TestTable").key(Map.of("id", AttributeValue.builder().s("1").build())).build();
+        when(mockDynamoDbAsyncClient.updateItem(request)).thenReturn(CompletableFuture.completedFuture(UpdateItemResponse.builder().build()));
+
+        CompletableFuture<UpdateItemResponse> future = asyncExecutor.updateItem(request);
+        assertNotNull(future.get());
+    }
+
+    @Test
+    public void testDeleteItemWithRequest() throws ExecutionException, InterruptedException {
+        DeleteItemRequest request = DeleteItemRequest.builder().tableName("TestTable").key(Map.of("id", AttributeValue.builder().s("1").build())).build();
+        when(mockDynamoDbAsyncClient.deleteItem(request)).thenReturn(CompletableFuture.completedFuture(DeleteItemResponse.builder().build()));
+
+        CompletableFuture<DeleteItemResponse> future = asyncExecutor.deleteItem(request);
+        assertNotNull(future.get());
+    }
+
+    @Test
+    public void testStreamWithTargetClass() throws ExecutionException, InterruptedException {
+        QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
+        QueryResponse response = QueryResponse.builder().items(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build();
+        when(mockDynamoDbAsyncClient.query(any(QueryRequest.class))).thenReturn(CompletableFuture.completedFuture(response));
+
+        CompletableFuture<Stream<TestEntity>> future = asyncExecutor.stream(queryRequest, TestEntity.class);
+        Stream<TestEntity> stream = future.get();
+        assertNotNull(stream);
+        assertEquals(1, stream.count());
+    }
+
+    @Test
+    public void testScanWithAttributesToGetAndTargetClass() throws ExecutionException, InterruptedException {
+        ScanResponse response = ScanResponse.builder().items(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build();
+        when(mockDynamoDbAsyncClient.scan(any(ScanRequest.class))).thenReturn(CompletableFuture.completedFuture(response));
+
+        CompletableFuture<Stream<TestEntity>> future = asyncExecutor.scan("TestTable", List.of("id"), TestEntity.class);
+        Stream<TestEntity> stream = future.get();
+        assertNotNull(stream);
+        assertEquals(1, stream.count());
+    }
+
+    @Test
+    public void testScanWithScanFilterAndTargetClass() throws ExecutionException, InterruptedException {
+        ScanResponse response = ScanResponse.builder().items(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build();
+        when(mockDynamoDbAsyncClient.scan(any(ScanRequest.class))).thenReturn(CompletableFuture.completedFuture(response));
+
+        Map<String, Condition> scanFilter = new HashMap<>();
+        CompletableFuture<Stream<TestEntity>> future = asyncExecutor.scan("TestTable", scanFilter, TestEntity.class);
+        Stream<TestEntity> stream = future.get();
+        assertNotNull(stream);
+        assertEquals(1, stream.count());
+    }
+
+    @Test
+    public void testScanWithAttrsFilterAndTargetClass() throws ExecutionException, InterruptedException {
+        ScanResponse response = ScanResponse.builder().items(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build();
+        when(mockDynamoDbAsyncClient.scan(any(ScanRequest.class))).thenReturn(CompletableFuture.completedFuture(response));
+
+        Map<String, Condition> scanFilter = new HashMap<>();
+        CompletableFuture<Stream<TestEntity>> future = asyncExecutor.scan("TestTable", List.of("id"), scanFilter, TestEntity.class);
+        Stream<TestEntity> stream = future.get();
+        assertNotNull(stream);
+        assertEquals(1, stream.count());
+    }
+
+    @Test
+    public void testScanWithRequestAndTargetClass() throws ExecutionException, InterruptedException {
+        ScanRequest scanRequest = ScanRequest.builder().tableName("TestTable").build();
+        ScanResponse response = ScanResponse.builder().items(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build();
+        when(mockDynamoDbAsyncClient.scan(any(ScanRequest.class))).thenReturn(CompletableFuture.completedFuture(response));
+
+        CompletableFuture<Stream<TestEntity>> future = asyncExecutor.scan(scanRequest, TestEntity.class);
+        Stream<TestEntity> stream = future.get();
+        assertNotNull(stream);
+        assertEquals(1, stream.count());
+    }
+
+    // Mapper overload tests.
+    @Test
+    public void testMapperGetItemWithConsistentRead() throws ExecutionException, InterruptedException {
+        AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
+        TestEntity entity = new TestEntity();
+        entity.setId("1");
+
+        GetItemResponse response = GetItemResponse.builder().item(Map.of("id", AttributeValue.builder().s("1").build())).build();
+        when(mockDynamoDbAsyncClient.getItem(any(GetItemRequest.class))).thenReturn(CompletableFuture.completedFuture(response));
+
+        CompletableFuture<TestEntity> future = mapper.getItem(entity, true);
+        TestEntity result = future.get();
+        assertNotNull(result);
+        assertEquals("1", result.getId());
+    }
+
+    @Test
+    public void testMapperGetItemWithKey() throws ExecutionException, InterruptedException {
+        AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
+        Map<String, AttributeValue> key = Map.of("id", AttributeValue.builder().s("1").build());
+
+        GetItemResponse response = GetItemResponse.builder().item(Map.of("id", AttributeValue.builder().s("1").build())).build();
+        when(mockDynamoDbAsyncClient.getItem(any(GetItemRequest.class))).thenReturn(CompletableFuture.completedFuture(response));
+
+        CompletableFuture<TestEntity> future = mapper.getItem(key);
+        TestEntity result = future.get();
+        assertNotNull(result);
+        assertEquals("1", result.getId());
+    }
+
+    @Test
+    public void testMapperGetItemWithRequest() throws ExecutionException, InterruptedException {
+        AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
+        GetItemRequest request = GetItemRequest.builder().tableName("TestTable").key(Map.of("id", AttributeValue.builder().s("1").build())).build();
+
+        GetItemResponse response = GetItemResponse.builder().item(Map.of("id", AttributeValue.builder().s("1").build())).build();
+        when(mockDynamoDbAsyncClient.getItem(any(GetItemRequest.class))).thenReturn(CompletableFuture.completedFuture(response));
+
+        CompletableFuture<TestEntity> future = mapper.getItem(request);
+        TestEntity result = future.get();
+        assertNotNull(result);
+        assertEquals("1", result.getId());
+    }
+
+    @Test
+    public void testMapperBatchGetItemWithReturnConsumedCapacity() throws ExecutionException, InterruptedException {
+        AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
+        TestEntity entity = new TestEntity();
+        entity.setId("1");
+
+        BatchGetItemResponse response = BatchGetItemResponse.builder()
+                .responses(Map.of("TestTable", List.of(Map.of("id", AttributeValue.builder().s("1").build()))))
+                .build();
+        when(mockDynamoDbAsyncClient.batchGetItem(any(BatchGetItemRequest.class))).thenReturn(CompletableFuture.completedFuture(response));
+
+        CompletableFuture<List<TestEntity>> future = mapper.batchGetItem(List.of(entity), "TOTAL");
+        List<TestEntity> result = future.get();
+        assertNotNull(result);
+        assertEquals(1, result.size());
+    }
+
+    @Test
+    public void testMapperPutItemWithReturnValues() throws ExecutionException, InterruptedException {
+        AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
+        TestEntity entity = new TestEntity();
+        entity.setId("1");
+
+        when(mockDynamoDbAsyncClient.putItem(any(PutItemRequest.class))).thenReturn(CompletableFuture.completedFuture(PutItemResponse.builder().build()));
+
+        CompletableFuture<PutItemResponse> future = mapper.putItem(entity, "ALL_OLD");
+        assertNotNull(future.get());
+    }
+
+    @Test
+    public void testMapperUpdateItemWithReturnValues() throws ExecutionException, InterruptedException {
+        AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
+        TestEntity entity = new TestEntity();
+        entity.setId("1");
+
+        when(mockDynamoDbAsyncClient.updateItem(any(UpdateItemRequest.class))).thenReturn(CompletableFuture.completedFuture(UpdateItemResponse.builder().build()));
+
+        CompletableFuture<UpdateItemResponse> future = mapper.updateItem(entity, "ALL_NEW");
+        assertNotNull(future.get());
+    }
+
+    @Test
+    public void testMapperDeleteItemWithReturnValues() throws ExecutionException, InterruptedException {
+        AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
+        TestEntity entity = new TestEntity();
+        entity.setId("1");
+
+        when(mockDynamoDbAsyncClient.deleteItem(any(DeleteItemRequest.class))).thenReturn(CompletableFuture.completedFuture(DeleteItemResponse.builder().build()));
+
+        CompletableFuture<DeleteItemResponse> future = mapper.deleteItem(entity, "ALL_OLD");
+        assertNotNull(future.get());
+    }
+
+    @Test
+    public void testMapperDeleteItemWithKey() throws ExecutionException, InterruptedException {
+        AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
+        Map<String, AttributeValue> key = Map.of("id", AttributeValue.builder().s("1").build());
+
+        when(mockDynamoDbAsyncClient.deleteItem(any(DeleteItemRequest.class))).thenReturn(CompletableFuture.completedFuture(DeleteItemResponse.builder().build()));
+
+        CompletableFuture<DeleteItemResponse> future = mapper.deleteItem(key);
+        assertNotNull(future.get());
+    }
+
+    @Test
+    public void testMapperPutItemWithRequest() throws ExecutionException, InterruptedException {
+        AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
+        PutItemRequest request = PutItemRequest.builder().tableName("TestTable").item(Map.of("id", AttributeValue.builder().s("1").build())).build();
+
+        when(mockDynamoDbAsyncClient.putItem(any(PutItemRequest.class))).thenReturn(CompletableFuture.completedFuture(PutItemResponse.builder().build()));
+
+        CompletableFuture<PutItemResponse> future = mapper.putItem(request);
+        assertNotNull(future.get());
+    }
+
+    @Test
+    public void testMapperUpdateItemWithRequest() throws ExecutionException, InterruptedException {
+        AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
+        UpdateItemRequest request = UpdateItemRequest.builder().tableName("TestTable").key(Map.of("id", AttributeValue.builder().s("1").build())).build();
+
+        when(mockDynamoDbAsyncClient.updateItem(any(UpdateItemRequest.class))).thenReturn(CompletableFuture.completedFuture(UpdateItemResponse.builder().build()));
+
+        CompletableFuture<UpdateItemResponse> future = mapper.updateItem(request);
+        assertNotNull(future.get());
+    }
+
+    @Test
+    public void testMapperDeleteItemWithRequest() throws ExecutionException, InterruptedException {
+        AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
+        DeleteItemRequest request = DeleteItemRequest.builder().tableName("TestTable").key(Map.of("id", AttributeValue.builder().s("1").build())).build();
+
+        when(mockDynamoDbAsyncClient.deleteItem(any(DeleteItemRequest.class))).thenReturn(CompletableFuture.completedFuture(DeleteItemResponse.builder().build()));
+
+        CompletableFuture<DeleteItemResponse> future = mapper.deleteItem(request);
+        assertNotNull(future.get());
+    }
+
+    @Test
+    public void testMapperBatchGetItemWithRequest() throws ExecutionException, InterruptedException {
+        AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
+        BatchGetItemRequest request = BatchGetItemRequest.builder()
+                .requestItems(Map.of("TestTable",
+                        KeysAndAttributes.builder().keys(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build()))
+                .build();
+        BatchGetItemResponse response = BatchGetItemResponse.builder()
+                .responses(Map.of("TestTable", List.of(Map.of("id", AttributeValue.builder().s("1").build()))))
+                .build();
+        when(mockDynamoDbAsyncClient.batchGetItem(any(BatchGetItemRequest.class))).thenReturn(CompletableFuture.completedFuture(response));
+
+        CompletableFuture<List<TestEntity>> future = mapper.batchGetItem(request);
+        List<TestEntity> result = future.get();
+        assertNotNull(result);
+        assertEquals(1, result.size());
+    }
+
+    @Test
+    public void testMapperBatchWriteItemWithRequest() throws ExecutionException, InterruptedException {
+        AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
+        BatchWriteItemRequest request = BatchWriteItemRequest.builder()
+                .requestItems(Map.of("TestTable",
+                        List.of(WriteRequest.builder().putRequest(PutRequest.builder().item(Map.of("id", AttributeValue.builder().s("1").build())).build()).build())))
+                .build();
+
+        when(mockDynamoDbAsyncClient.batchWriteItem(any(BatchWriteItemRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(BatchWriteItemResponse.builder().build()));
+
+        CompletableFuture<BatchWriteItemResponse> future = mapper.batchWriteItem(request);
+        assertNotNull(future.get());
+    }
+
+    @Test
+    public void testMapperScanWithAttributesToGet() throws ExecutionException, InterruptedException {
+        AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
+        ScanResponse response = ScanResponse.builder().items(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build();
+        when(mockDynamoDbAsyncClient.scan(any(ScanRequest.class))).thenReturn(CompletableFuture.completedFuture(response));
+
+        CompletableFuture<Stream<TestEntity>> future = mapper.scan(List.of("id"));
+        Stream<TestEntity> stream = future.get();
+        assertNotNull(stream);
+        assertEquals(1, stream.count());
+    }
+
+    @Test
+    public void testMapperScanWithScanFilter() throws ExecutionException, InterruptedException {
+        AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
+        ScanResponse response = ScanResponse.builder().items(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build();
+        when(mockDynamoDbAsyncClient.scan(any(ScanRequest.class))).thenReturn(CompletableFuture.completedFuture(response));
+
+        Map<String, Condition> scanFilter = new HashMap<>();
+        CompletableFuture<Stream<TestEntity>> future = mapper.scan(scanFilter);
+        Stream<TestEntity> stream = future.get();
+        assertNotNull(stream);
+        assertEquals(1, stream.count());
+    }
+
+    @Test
+    public void testMapperScanWithAttrsAndScanFilter() throws ExecutionException, InterruptedException {
+        AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
+        ScanResponse response = ScanResponse.builder().items(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build();
+        when(mockDynamoDbAsyncClient.scan(any(ScanRequest.class))).thenReturn(CompletableFuture.completedFuture(response));
+
+        Map<String, Condition> scanFilter = new HashMap<>();
+        CompletableFuture<Stream<TestEntity>> future = mapper.scan(List.of("id"), scanFilter);
+        Stream<TestEntity> stream = future.get();
+        assertNotNull(stream);
+        assertEquals(1, stream.count());
+    }
+
+    @Test
+    public void testMapperGetItemWithWrongTableName() {
+        AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
+        GetItemRequest request = GetItemRequest.builder().tableName("WrongTable").key(Map.of("id", AttributeValue.builder().s("1").build())).build();
+        assertThrows(IllegalArgumentException.class, () -> mapper.getItem(request));
+    }
+
     @com.landawn.abacus.annotation.Table(name = "TestTable")
     private static class TestEntity {
         @com.landawn.abacus.annotation.Id

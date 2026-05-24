@@ -730,6 +730,113 @@ public class DynamoDBExecutorV2Test extends TestBase {
         assertEquals(5, result.get("numbers").attributeValueList().size());
     }
 
+    // Individual ConditionBuilder operator coverage tests.
+    @Test
+    public void testConditionBuilderNe() {
+        Map<String, Condition> result = Filters.builder().ne("name", "test").build();
+        assertEquals(ComparisonOperator.NE, result.get("name").comparisonOperator());
+    }
+
+    @Test
+    public void testConditionBuilderGt() {
+        Map<String, Condition> result = Filters.builder().gt("age", 18).build();
+        assertEquals(ComparisonOperator.GT, result.get("age").comparisonOperator());
+    }
+
+    @Test
+    public void testConditionBuilderGe() {
+        Map<String, Condition> result = Filters.builder().ge("age", 18).build();
+        assertEquals(ComparisonOperator.GE, result.get("age").comparisonOperator());
+    }
+
+    @Test
+    public void testConditionBuilderLt() {
+        Map<String, Condition> result = Filters.builder().lt("age", 65).build();
+        assertEquals(ComparisonOperator.LT, result.get("age").comparisonOperator());
+    }
+
+    @Test
+    public void testConditionBuilderLe() {
+        Map<String, Condition> result = Filters.builder().le("age", 65).build();
+        assertEquals(ComparisonOperator.LE, result.get("age").comparisonOperator());
+    }
+
+    @Test
+    public void testConditionBuilderBt() {
+        Map<String, Condition> result = Filters.builder().bt("age", 18, 65).build();
+        assertEquals(ComparisonOperator.BETWEEN, result.get("age").comparisonOperator());
+        assertEquals(2, result.get("age").attributeValueList().size());
+    }
+
+    @Test
+    public void testConditionBuilderIsNull() {
+        Map<String, Condition> result = Filters.builder().isNull("optional").build();
+        assertEquals(ComparisonOperator.NULL, result.get("optional").comparisonOperator());
+    }
+
+    @Test
+    public void testConditionBuilderNotNull() {
+        Map<String, Condition> result = Filters.builder().notNull("required").build();
+        assertEquals(ComparisonOperator.NOT_NULL, result.get("required").comparisonOperator());
+    }
+
+    @Test
+    public void testConditionBuilderContains() {
+        Map<String, Condition> result = Filters.builder().contains("tags", "java").build();
+        assertEquals(ComparisonOperator.CONTAINS, result.get("tags").comparisonOperator());
+    }
+
+    @Test
+    public void testConditionBuilderNotContains() {
+        Map<String, Condition> result = Filters.builder().notContains("tags", "python").build();
+        assertEquals(ComparisonOperator.NOT_CONTAINS, result.get("tags").comparisonOperator());
+    }
+
+    @Test
+    public void testConditionBuilderBeginsWith() {
+        Map<String, Condition> result = Filters.builder().beginsWith("name", "John").build();
+        assertEquals(ComparisonOperator.BEGINS_WITH, result.get("name").comparisonOperator());
+    }
+
+    @Test
+    public void testConditionBuilderInVarargsSingle() {
+        Map<String, Condition> result = Filters.builder().in("status", "active").build();
+        assertEquals(ComparisonOperator.IN, result.get("status").comparisonOperator());
+        assertEquals(1, result.get("status").attributeValueList().size());
+    }
+
+    @Test
+    public void testFiltersInCollection_Empty() {
+        Map<String, Condition> result = Filters.in("status", List.of());
+        assertNotNull(result);
+        assertEquals(ComparisonOperator.IN, result.get("status").comparisonOperator());
+        assertEquals(0, result.get("status").attributeValueList().size());
+    }
+
+    @Test
+    public void testFiltersEq_AttributeValueContents() {
+        Map<String, Condition> result = Filters.eq("name", "abc");
+        assertEquals(1, result.get("name").attributeValueList().size());
+        assertEquals("abc", result.get("name").attributeValueList().get(0).s());
+    }
+
+    @Test
+    public void testFiltersBt_AttributeValueContents() {
+        Map<String, Condition> result = Filters.bt("age", 18, 65);
+        assertEquals("18", result.get("age").attributeValueList().get(0).n());
+        assertEquals("65", result.get("age").attributeValueList().get(1).n());
+    }
+
+    @Test
+    public void testConditionBuilderBuild_NullifiesInternalState() {
+        // After build(), the internal map is nulled; calling build() again returns null.
+        ConditionBuilder b = Filters.builder().eq("x", 1);
+        Map<String, Condition> first = b.build();
+        assertNotNull(first);
+        assertEquals(1, first.size());
+        assertNull(b.build());
+    }
+
     // Tests for Mapper inner class
     @Test
     public void testMapperCreation() {
@@ -1130,6 +1237,173 @@ public class DynamoDBExecutorV2Test extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> {
             mapper.getItem(request);
         });
+    }
+
+    // Mapper request-based overload tests for additional coverage.
+    @Test
+    public void testMapperPutItemWithRequest() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+
+        PutItemRequest request = PutItemRequest.builder()
+                .tableName("TestTable")
+                .item(Map.of("id", AttributeValue.builder().s("123").build()))
+                .build();
+
+        when(mockDynamoDbClient.putItem(any(PutItemRequest.class))).thenReturn(PutItemResponse.builder().build());
+
+        PutItemResponse result = mapper.putItem(request);
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testMapperPutItemWithRequest_NoTableName() {
+        // When PutItemRequest omits the table name, the mapper should inject its own.
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+
+        PutItemRequest request = PutItemRequest.builder().item(Map.of("id", AttributeValue.builder().s("123").build())).build();
+
+        when(mockDynamoDbClient.putItem(any(PutItemRequest.class))).thenReturn(PutItemResponse.builder().build());
+
+        PutItemResponse result = mapper.putItem(request);
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testMapperUpdateItemWithRequest() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+
+        UpdateItemRequest request = UpdateItemRequest.builder()
+                .tableName("TestTable")
+                .key(Map.of("id", AttributeValue.builder().s("123").build()))
+                .build();
+
+        when(mockDynamoDbClient.updateItem(any(UpdateItemRequest.class))).thenReturn(UpdateItemResponse.builder().build());
+
+        UpdateItemResponse result = mapper.updateItem(request);
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testMapperDeleteItemWithRequest() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+
+        DeleteItemRequest request = DeleteItemRequest.builder()
+                .tableName("TestTable")
+                .key(Map.of("id", AttributeValue.builder().s("123").build()))
+                .build();
+
+        when(mockDynamoDbClient.deleteItem(any(DeleteItemRequest.class))).thenReturn(DeleteItemResponse.builder().build());
+
+        DeleteItemResponse result = mapper.deleteItem(request);
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testMapperBatchGetItemWithRequest() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+
+        BatchGetItemRequest request = BatchGetItemRequest.builder()
+                .requestItems(Map.of("TestTable",
+                        KeysAndAttributes.builder().keys(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build()))
+                .build();
+
+        when(mockDynamoDbClient.batchGetItem(any(BatchGetItemRequest.class))).thenReturn(
+                BatchGetItemResponse.builder().responses(Map.of("TestTable", List.of(Map.of("id", AttributeValue.builder().s("1").build())))).build());
+
+        List<TestEntity> result = mapper.batchGetItem(request);
+        assertNotNull(result);
+        assertEquals(1, result.size());
+    }
+
+    @Test
+    public void testMapperBatchWriteItemWithRequest() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+
+        BatchWriteItemRequest request = BatchWriteItemRequest.builder()
+                .requestItems(Map.of("TestTable",
+                        List.of(WriteRequest.builder().putRequest(PutRequest.builder().item(Map.of("id", AttributeValue.builder().s("1").build())).build()).build())))
+                .build();
+
+        when(mockDynamoDbClient.batchWriteItem(any(BatchWriteItemRequest.class))).thenReturn(BatchWriteItemResponse.builder().build());
+
+        BatchWriteItemResponse result = mapper.batchWriteItem(request);
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testMapperBatchWriteItemWithRequest_WrongTableName() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+
+        BatchWriteItemRequest request = BatchWriteItemRequest.builder()
+                .requestItems(Map.of("WrongTable",
+                        List.of(WriteRequest.builder().putRequest(PutRequest.builder().item(Map.of("id", AttributeValue.builder().s("1").build())).build()).build())))
+                .build();
+
+        assertThrows(IllegalArgumentException.class, () -> mapper.batchWriteItem(request));
+    }
+
+    @Test
+    public void testMapperBatchGetItem_EmptyResponse() {
+        // When the underlying batch response is empty the mapper returns an empty list, not null.
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        TestEntity entity = new TestEntity();
+        entity.setId("1");
+
+        when(mockDynamoDbClient.batchGetItem(any(BatchGetItemRequest.class)))
+                .thenReturn(BatchGetItemResponse.builder().responses(new HashMap<>()).build());
+
+        List<TestEntity> result = mapper.batchGetItem(List.of(entity));
+        assertNotNull(result);
+        assertEquals(0, result.size());
+    }
+
+    @Test
+    public void testMapperPutItemWithRequest_WrongTableName() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        PutItemRequest request = PutItemRequest.builder().tableName("WrongTable").item(Map.of("id", AttributeValue.builder().s("1").build())).build();
+        assertThrows(IllegalArgumentException.class, () -> mapper.putItem(request));
+    }
+
+    @Test
+    public void testMapperUpdateItemWithRequest_WrongTableName() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        UpdateItemRequest request = UpdateItemRequest.builder().tableName("WrongTable").key(Map.of("id", AttributeValue.builder().s("1").build())).build();
+        assertThrows(IllegalArgumentException.class, () -> mapper.updateItem(request));
+    }
+
+    @Test
+    public void testMapperDeleteItemWithRequest_WrongTableName() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        DeleteItemRequest request = DeleteItemRequest.builder().tableName("WrongTable").key(Map.of("id", AttributeValue.builder().s("1").build())).build();
+        assertThrows(IllegalArgumentException.class, () -> mapper.deleteItem(request));
+    }
+
+    @Test
+    public void testMapperListWithWrongTableName() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        QueryRequest queryRequest = QueryRequest.builder().tableName("WrongTable").build();
+        assertThrows(IllegalArgumentException.class, () -> mapper.list(queryRequest));
+    }
+
+    @Test
+    public void testMapperScanWithWrongTableName() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        ScanRequest scanRequest = ScanRequest.builder().tableName("WrongTable").build();
+        assertThrows(IllegalArgumentException.class, () -> mapper.scan(scanRequest));
+    }
+
+    @Test
+    public void testMapperGetItemWithRequest_NoTableName() {
+        // Mapper should auto-inject table name when request omits it.
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        GetItemRequest request = GetItemRequest.builder().key(Map.of("id", AttributeValue.builder().s("1").build())).build();
+
+        when(mockDynamoDbClient.getItem(any(GetItemRequest.class)))
+                .thenReturn(GetItemResponse.builder().item(Map.of("id", AttributeValue.builder().s("1").build())).build());
+
+        TestEntity result = mapper.getItem(request);
+        assertNotNull(result);
+        assertEquals("1", result.getId());
     }
 
     /**

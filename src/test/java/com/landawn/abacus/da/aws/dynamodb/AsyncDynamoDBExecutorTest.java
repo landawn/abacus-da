@@ -628,6 +628,76 @@ public class AsyncDynamoDBExecutorTest extends TestBase {
         verify(mockDynamoDBExecutor, times(1)).scan(tableName, attributesToGet, TestEntity.class);
     }
 
+    // Additional coverage for async overloads that delegate to sync counterparts.
+    @Test
+    public void testBatchGetItemWithReturnConsumedCapacityAndClass() throws InterruptedException, ExecutionException {
+        Map<String, KeysAndAttributes> requestItems = new HashMap<>();
+        requestItems.put("TestTable", new KeysAndAttributes());
+        Map<String, List<TestEntity>> expected = new HashMap<>();
+        when(mockDynamoDBExecutor.batchGetItem(requestItems, "TOTAL", TestEntity.class)).thenReturn(expected);
+
+        ContinuableFuture<Map<String, List<TestEntity>>> future = asyncExecutor.batchGetItem(requestItems, "TOTAL", TestEntity.class);
+        assertNotNull(future.get());
+        verify(mockDynamoDBExecutor, times(1)).batchGetItem(requestItems, "TOTAL", TestEntity.class);
+    }
+
+    @Test
+    public void testBatchGetItemWithRequestAndClass() throws InterruptedException, ExecutionException {
+        BatchGetItemRequest request = new BatchGetItemRequest();
+        Map<String, List<TestEntity>> expected = new HashMap<>();
+        when(mockDynamoDBExecutor.batchGetItem(request, TestEntity.class)).thenReturn(expected);
+
+        ContinuableFuture<Map<String, List<TestEntity>>> future = asyncExecutor.batchGetItem(request, TestEntity.class);
+        assertNotNull(future.get());
+        verify(mockDynamoDBExecutor, times(1)).batchGetItem(request, TestEntity.class);
+    }
+
+    @Test
+    public void testScanWithFilterAndClass() throws InterruptedException, ExecutionException {
+        Map<String, Condition> scanFilter = new HashMap<>();
+        TestEntity entity = new TestEntity();
+        entity.setId("123");
+        Stream<TestEntity> expected = Stream.of(entity);
+        when(mockDynamoDBExecutor.scan("TestTable", scanFilter, TestEntity.class)).thenReturn(expected);
+
+        ContinuableFuture<Stream<TestEntity>> future = asyncExecutor.scan("TestTable", scanFilter, TestEntity.class);
+        Stream<TestEntity> result = future.get();
+        assertNotNull(result);
+        assertEquals(1, result.count());
+        verify(mockDynamoDBExecutor, times(1)).scan("TestTable", scanFilter, TestEntity.class);
+    }
+
+    @Test
+    public void testScanWithAttrsFilterAndClass() throws InterruptedException, ExecutionException {
+        List<String> attrs = List.of("id");
+        Map<String, Condition> scanFilter = new HashMap<>();
+        TestEntity entity = new TestEntity();
+        entity.setId("123");
+        Stream<TestEntity> expected = Stream.of(entity);
+        when(mockDynamoDBExecutor.scan("TestTable", attrs, scanFilter, TestEntity.class)).thenReturn(expected);
+
+        ContinuableFuture<Stream<TestEntity>> future = asyncExecutor.scan("TestTable", attrs, scanFilter, TestEntity.class);
+        Stream<TestEntity> result = future.get();
+        assertNotNull(result);
+        assertEquals(1, result.count());
+        verify(mockDynamoDBExecutor, times(1)).scan("TestTable", attrs, scanFilter, TestEntity.class);
+    }
+
+    @Test
+    public void testScanWithRequestAndClass() throws InterruptedException, ExecutionException {
+        ScanRequest scanRequest = new ScanRequest();
+        TestEntity entity = new TestEntity();
+        entity.setId("123");
+        Stream<TestEntity> expected = Stream.of(entity);
+        when(mockDynamoDBExecutor.scan(scanRequest, TestEntity.class)).thenReturn(expected);
+
+        ContinuableFuture<Stream<TestEntity>> future = asyncExecutor.scan(scanRequest, TestEntity.class);
+        Stream<TestEntity> result = future.get();
+        assertNotNull(result);
+        assertEquals(1, result.count());
+        verify(mockDynamoDBExecutor, times(1)).scan(scanRequest, TestEntity.class);
+    }
+
     private static class TestEntity {
         private String id;
         private String name;
