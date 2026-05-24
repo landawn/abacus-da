@@ -14,6 +14,7 @@ import static org.mockito.Mockito.when;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
@@ -2134,6 +2135,236 @@ public class DynamoDBExecutorV2Test extends TestBase {
     public void testClose_NoThrow() {
         DynamoDBExecutor exec = new DynamoDBExecutor(mockDynamoDbClient);
         assertDoesNotThrow(exec::close);
+    }
+
+    // ===== readRow branches via getItem(GetItemRequest, Class) - exercise private readRow paths =====
+    @Test
+    public void testGetItemRequest_ReadRowAsObjectArrayClass() {
+        Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("a", AttributeValue.builder().s("x").build());
+        item.put("b", AttributeValue.builder().s("y").build());
+        when(mockDynamoDbClient.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(item).build());
+
+        GetItemRequest req = GetItemRequest.builder().tableName("T").key(Map.of("id", AttributeValue.builder().s("1").build())).build();
+        Object[] result = executor.getItem(req, Object[].class);
+        assertNotNull(result);
+        assertEquals(2, result.length);
+    }
+
+    @Test
+    public void testGetItemRequest_ReadRowAsCollectionClass() {
+        Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("a", AttributeValue.builder().s("x").build());
+        item.put("b", AttributeValue.builder().s("y").build());
+        when(mockDynamoDbClient.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(item).build());
+
+        GetItemRequest req = GetItemRequest.builder().tableName("T").key(Map.of("id", AttributeValue.builder().s("1").build())).build();
+        List<?> result = executor.<List<?>> getItem(req, (Class<List<?>>) (Class<?>) List.class);
+        assertNotNull(result);
+        assertEquals(2, result.size());
+    }
+
+    @Test
+    public void testGetItemRequest_ReadRowAsMapClass() {
+        Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("a", AttributeValue.builder().s("x").build());
+        when(mockDynamoDbClient.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(item).build());
+
+        GetItemRequest req = GetItemRequest.builder().tableName("T").key(Map.of("id", AttributeValue.builder().s("1").build())).build();
+        Map<?, ?> result = executor.<Map<?, ?>> getItem(req, (Class<Map<?, ?>>) (Class<?>) Map.class);
+        assertNotNull(result);
+        assertEquals("x", result.get("a"));
+    }
+
+    @Test
+    public void testGetItemRequest_ReadRowAsSingleValueClass() {
+        Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("v", AttributeValue.builder().s("hello").build());
+        when(mockDynamoDbClient.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(item).build());
+
+        GetItemRequest req = GetItemRequest.builder().tableName("T").key(Map.of("id", AttributeValue.builder().s("1").build())).build();
+        String result = executor.getItem(req, String.class);
+        assertEquals("hello", result);
+    }
+
+    @Test
+    public void testGetItemRequest_ReadRowAsSingleValueClass_MultiColumnThrows() {
+        Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("a", AttributeValue.builder().s("1").build());
+        item.put("b", AttributeValue.builder().s("2").build());
+        when(mockDynamoDbClient.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(item).build());
+
+        GetItemRequest req = GetItemRequest.builder().tableName("T").key(Map.of("id", AttributeValue.builder().s("1").build())).build();
+        assertThrows(IllegalArgumentException.class, () -> executor.getItem(req, String.class));
+    }
+
+    @Test
+    public void testGetItemRequest_ReadRowEmptyResponse_NullForBean() {
+        // GetItemResponse with no item triggers the "row == null" branch on readRow
+        when(mockDynamoDbClient.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().build());
+
+        GetItemRequest req = GetItemRequest.builder().tableName("T").key(Map.of("id", AttributeValue.builder().s("x").build())).build();
+        TestEntity result = executor.getItem(req, TestEntity.class);
+        assertNull(result);
+    }
+
+    @Test
+    public void testGetItemRequest_ReadRowEmptyResponse_DefaultForPrimitive() {
+        when(mockDynamoDbClient.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().build());
+
+        GetItemRequest req = GetItemRequest.builder().tableName("T").key(Map.of("id", AttributeValue.builder().s("x").build())).build();
+        Integer result = executor.getItem(req, int.class);
+        assertEquals(0, result);
+    }
+
+    // ===== toEntity dot-notation property branch =====
+    @Test
+    public void testToEntity_DotNotationPropName() {
+        Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("id", AttributeValue.builder().s("1").build());
+        item.put("unknown.path", AttributeValue.builder().s("val").build());
+
+        TestEntity result = DynamoDBExecutor.toEntity(item, TestEntity.class);
+        assertNotNull(result);
+        assertEquals("1", result.getId());
+    }
+
+    @Test
+    public void testToEntity_UnknownPropIgnored() {
+        Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("id", AttributeValue.builder().s("1").build());
+        item.put("noSuchField", AttributeValue.builder().s("x").build());
+
+        TestEntity result = DynamoDBExecutor.toEntity(item, TestEntity.class);
+        assertNotNull(result);
+        assertEquals("1", result.getId());
+    }
+
+    // ===== toValue fallthrough branches (empty string s/n, hasM) =====
+    @Test
+    public void testToValue_EmptyStringS_FallsThrough() {
+        Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("k", AttributeValue.builder().s("").build());
+        Map<String, Object> result = DynamoDBExecutor.toMap(item);
+        assertEquals("", result.get("k"));
+    }
+
+    @Test
+    public void testToValue_EmptyNumberN_FallsThrough() {
+        Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("k", AttributeValue.builder().n("").build());
+        Map<String, Object> result = DynamoDBExecutor.toMap(item);
+        assertEquals("", result.get("k"));
+    }
+
+    // TODO: testToValue_NestedMapBranch - AttributeValue.builder().m() wraps as UnmodifiableMap which N.newMap
+    // cannot instantiate. This branch is reached via the public API path but not testable in isolation.
+
+    @Test
+    public void testToValue_TargetClassConversion() {
+        Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("count", AttributeValue.builder().n("42").build());
+        when(mockDynamoDbClient.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(item).build());
+
+        GetItemRequest req = GetItemRequest.builder().tableName("T").key(Map.of("id", AttributeValue.builder().s("1").build())).build();
+        Integer result = executor.getItem(req, Integer.class);
+        assertEquals(42, result);
+    }
+
+    // ===== Constructor validation =====
+    @Test
+    public void testConstructor_NullClientThrows() {
+        assertThrows(IllegalArgumentException.class, () -> new DynamoDBExecutor(null));
+    }
+
+    // ===== mapper() with no @Table annotation should throw =====
+    @Test
+    public void testMapper_NoTableAnnotationThrows() {
+        assertThrows(IllegalArgumentException.class, () -> executor.mapper(V2NoTableEntity.class));
+    }
+
+    // TODO: v2 checkEntityClass is package-private and inaccessible from this test package
+    // TODO: v2 toItem(Collection), toUpdateItem(Collection), putItem(String, Object) are package-private
+    // and inaccessible from this test package - exercised indirectly via Mapper.batchPutItem/batchPutItem
+
+    // ===== Package-private static putItem/updateItem/deleteItem(String, Map ...) =====
+    @Test
+    public void testPutItem_StringMap_PackagePrivate() {
+        when(mockDynamoDbClient.putItem(any(PutItemRequest.class))).thenReturn(PutItemResponse.builder().build());
+        PutItemResponse result = executor.putItem("T", Map.of("id", AttributeValue.builder().s("1").build()));
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testUpdateItem_StringMapMap_PackagePrivate() {
+        when(mockDynamoDbClient.updateItem(any(UpdateItemRequest.class))).thenReturn(UpdateItemResponse.builder().build());
+        UpdateItemResponse result = executor.updateItem("T", Map.of("id", AttributeValue.builder().s("1").build()),
+                Map.of("name", AttributeValueUpdate.builder().value(AttributeValue.builder().s("x").build()).build()));
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testDeleteItem_StringMap_PackagePrivate() {
+        when(mockDynamoDbClient.deleteItem(any(DeleteItemRequest.class))).thenReturn(DeleteItemResponse.builder().build());
+        DeleteItemResponse result = executor.deleteItem("T", Map.of("id", AttributeValue.builder().s("1").build()));
+        assertNotNull(result);
+    }
+
+    // ===== package-private getItem(String, Map, Boolean) static overload =====
+    @Test
+    public void testGetItem_StringMapWithConsistentRead_PackagePrivate() {
+        Map<String, AttributeValue> item = Map.of("id", AttributeValue.builder().s("1").build());
+        when(mockDynamoDbClient.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().item(item).build());
+        Map<String, Object> result = executor.getItem("T", Map.of("id", AttributeValue.builder().s("1").build()), Boolean.TRUE);
+        assertNotNull(result);
+    }
+
+    // ===== toList(QueryResponse, offset, count, Class) and toList(ScanResponse, offset, count, Class) =====
+    @Test
+    public void testToList_QueryResponseOffsetCount() {
+        QueryResponse qr = QueryResponse.builder()
+                .items(List.of(Map.of("id", AttributeValue.builder().s("1").build()), Map.of("id", AttributeValue.builder().s("2").build()),
+                        Map.of("id", AttributeValue.builder().s("3").build())))
+                .build();
+        List<TestEntity> result = DynamoDBExecutor.toList(qr, 1, 2, TestEntity.class);
+        assertEquals(2, result.size());
+        assertEquals("2", result.get(0).getId());
+    }
+
+    @Test
+    public void testToList_ScanResponseOffsetCount() {
+        ScanResponse sr = ScanResponse.builder()
+                .items(List.of(Map.of("id", AttributeValue.builder().s("a").build()), Map.of("id", AttributeValue.builder().s("b").build()),
+                        Map.of("id", AttributeValue.builder().s("c").build())))
+                .build();
+        List<TestEntity> result = DynamoDBExecutor.toList(sr, 1, 1, TestEntity.class);
+        assertEquals(1, result.size());
+        assertEquals("b", result.get(0).getId());
+    }
+
+    // TODO: toList(List<Map>, offset, count, Class) is package-private in v2
+
+    // ===== asKey(Object[]) with mixed Object array =====
+    @Test
+    public void testAsKey_VarargsMixed() {
+        Map<String, AttributeValue> result = DynamoDBExecutor.asKey("k1", "v1", "k2", 42);
+        assertEquals(2, result.size());
+        assertEquals("v1", result.get("k1").s());
+        assertEquals("42", result.get("k2").n());
+    }
+
+    // Entity with no @Table to test mapper failure path
+    public static class V2NoTableEntity {
+        @com.landawn.abacus.annotation.Id
+        private String id;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(String id) {
+            this.id = id;
+        }
     }
 
     @com.landawn.abacus.annotation.Table(name = "TestTable")

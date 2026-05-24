@@ -981,6 +981,214 @@ public class CassandraExecutorBaseTest extends TestBase {
         assertTrue(set.contains("id"));
     }
 
+    // Coverage additions: Naming-policy branches for prepareInsert/Update/Delete/Query
+
+    @Test
+    public void testPrepareInsert_entity_screamingSnakeCase() {
+        TestCassandraExecutor scExec = new TestCassandraExecutor(NamingPolicy.SCREAMING_SNAKE_CASE);
+        TestEntity e = new TestEntity();
+        e.setId(1L);
+        e.setName("nm");
+        SP sp = scExec.exposedPrepareInsert(e);
+        assertNotNull(sp);
+        assertTrue(sp.query().toUpperCase().contains("INSERT"));
+    }
+
+    @Test
+    public void testPrepareInsert_entity_camelCase() {
+        TestCassandraExecutor ccExec = new TestCassandraExecutor(NamingPolicy.CAMEL_CASE);
+        TestEntity e = new TestEntity();
+        e.setId(1L);
+        e.setName("nm");
+        SP sp = ccExec.exposedPrepareInsert(e);
+        assertNotNull(sp);
+        assertTrue(sp.query().toUpperCase().contains("INSERT"));
+    }
+
+    @Test
+    public void testPrepareInsert_propsMap_screamingSnakeCase() {
+        TestCassandraExecutor scExec = new TestCassandraExecutor(NamingPolicy.SCREAMING_SNAKE_CASE);
+        Map<String, Object> props = new HashMap<>();
+        props.put("id", 1L);
+        props.put("name", "nm");
+        SP sp = scExec.exposedPrepareInsert(TestEntity.class, props);
+        assertNotNull(sp);
+        assertTrue(sp.query().toUpperCase().contains("INSERT"));
+    }
+
+    @Test
+    public void testPrepareInsert_propsMap_camelCase() {
+        TestCassandraExecutor ccExec = new TestCassandraExecutor(NamingPolicy.CAMEL_CASE);
+        Map<String, Object> props = new HashMap<>();
+        props.put("id", 1L);
+        props.put("name", "nm");
+        SP sp = ccExec.exposedPrepareInsert(TestEntity.class, props);
+        assertNotNull(sp);
+        assertTrue(sp.query().toUpperCase().contains("INSERT"));
+    }
+
+    @Test
+    public void testPrepareUpdate_entity_screamingSnakeCase() {
+        TestCassandraExecutor scExec = new TestCassandraExecutor(NamingPolicy.SCREAMING_SNAKE_CASE);
+        TestEntity e = new TestEntity();
+        e.setId(1L);
+        e.setName("u1");
+        SP sp = scExec.exposedPrepareUpdate(e, Arrays.asList("name"));
+        assertNotNull(sp);
+        assertTrue(sp.query().toUpperCase().contains("UPDATE"));
+    }
+
+    @Test
+    public void testPrepareUpdate_entity_camelCase() {
+        TestCassandraExecutor ccExec = new TestCassandraExecutor(NamingPolicy.CAMEL_CASE);
+        TestEntity e = new TestEntity();
+        e.setId(1L);
+        e.setName("u1");
+        SP sp = ccExec.exposedPrepareUpdate(e, Arrays.asList("name"));
+        assertNotNull(sp);
+        assertTrue(sp.query().toUpperCase().contains("UPDATE"));
+    }
+
+    @Test
+    public void testPrepareUpdate_classMapCondition_screamingSnakeCase() {
+        TestCassandraExecutor scExec = new TestCassandraExecutor(NamingPolicy.SCREAMING_SNAKE_CASE);
+        Map<String, Object> props = new HashMap<>();
+        props.put("name", "x");
+        SP sp = scExec.exposedPrepareUpdate(TestEntity.class, props, Filters.eq("id", 1L));
+        assertNotNull(sp);
+        assertTrue(sp.query().toUpperCase().contains("UPDATE"));
+    }
+
+    @Test
+    public void testPrepareUpdate_classMapCondition_camelCase() {
+        TestCassandraExecutor ccExec = new TestCassandraExecutor(NamingPolicy.CAMEL_CASE);
+        Map<String, Object> props = new HashMap<>();
+        props.put("name", "x");
+        SP sp = ccExec.exposedPrepareUpdate(TestEntity.class, props, Filters.eq("id", 1L));
+        assertNotNull(sp);
+        assertTrue(sp.query().toUpperCase().contains("UPDATE"));
+    }
+
+    @Test
+    public void testPrepareDelete_withPropNames_screamingSnakeCase() {
+        TestCassandraExecutor scExec = new TestCassandraExecutor(NamingPolicy.SCREAMING_SNAKE_CASE);
+        SP sp = scExec.exposedPrepareDelete(TestEntity.class, Arrays.asList("name"), Filters.eq("id", 1L));
+        assertNotNull(sp);
+        assertTrue(sp.query().toUpperCase().contains("DELETE"));
+    }
+
+    @Test
+    public void testPrepareDelete_withPropNames_camelCase() {
+        TestCassandraExecutor ccExec = new TestCassandraExecutor(NamingPolicy.CAMEL_CASE);
+        SP sp = ccExec.exposedPrepareDelete(TestEntity.class, Arrays.asList("name"), Filters.eq("id", 1L));
+        assertNotNull(sp);
+        assertTrue(sp.query().toUpperCase().contains("DELETE"));
+    }
+
+    @Test
+    public void testPrepareDelete_noPropNames_screamingSnakeCase() {
+        TestCassandraExecutor scExec = new TestCassandraExecutor(NamingPolicy.SCREAMING_SNAKE_CASE);
+        SP sp = scExec.exposedPrepareDelete(TestEntity.class, null, Filters.eq("id", 1L));
+        assertNotNull(sp);
+        assertTrue(sp.query().toUpperCase().contains("DELETE"));
+    }
+
+    @Test
+    public void testPrepareDelete_noPropNames_camelCase() {
+        TestCassandraExecutor ccExec = new TestCassandraExecutor(NamingPolicy.CAMEL_CASE);
+        SP sp = ccExec.exposedPrepareDelete(TestEntity.class, null, Filters.eq("id", 1L));
+        assertNotNull(sp);
+        assertTrue(sp.query().toUpperCase().contains("DELETE"));
+    }
+
+    @Test
+    public void testPrepareQuery_screamingSnakeCase_allProps() {
+        TestCassandraExecutor scExec = new TestCassandraExecutor(NamingPolicy.SCREAMING_SNAKE_CASE);
+        SP sp = scExec.exposedPrepareQuery(TestEntity.class, null, Filters.eq("id", 1L), 0);
+        assertNotNull(sp);
+        assertTrue(sp.query().toUpperCase().contains("SELECT"));
+    }
+
+    @Test
+    public void testPrepareQuery_camelCase_allProps() {
+        TestCassandraExecutor ccExec = new TestCassandraExecutor(NamingPolicy.CAMEL_CASE);
+        SP sp = ccExec.exposedPrepareQuery(TestEntity.class, null, Filters.eq("id", 1L), 0);
+        assertNotNull(sp);
+        assertTrue(sp.query().toUpperCase().contains("SELECT"));
+    }
+
+    @Test
+    public void testPrepareQuery_screamingSnakeCase_withSelectProps() {
+        TestCassandraExecutor scExec = new TestCassandraExecutor(NamingPolicy.SCREAMING_SNAKE_CASE);
+        SP sp = scExec.exposedPrepareQuery(TestEntity.class, Arrays.asList("id", "name"), Filters.eq("id", 1L), 5);
+        assertNotNull(sp);
+        String q = sp.query().toUpperCase();
+        assertTrue(q.contains("SELECT"));
+        assertTrue(q.contains("LIMIT"));
+    }
+
+    @Test
+    public void testPrepareQuery_camelCase_withSelectProps() {
+        TestCassandraExecutor ccExec = new TestCassandraExecutor(NamingPolicy.CAMEL_CASE);
+        SP sp = ccExec.exposedPrepareQuery(TestEntity.class, Arrays.asList("id", "name"), Filters.eq("id", 1L), 5);
+        assertNotNull(sp);
+        String q = sp.query().toUpperCase();
+        assertTrue(q.contains("SELECT"));
+        assertTrue(q.contains("LIMIT"));
+    }
+
+    // Coverage additions: prepareQuery(3-args) overload + parseCql with mapper
+
+    @Test
+    public void testPrepareQuery_threeArgsOverload() {
+        SP sp = executor.exposedPrepareQueryThreeArgs(TestEntity.class, null, Filters.eq("id", 1L));
+        assertNotNull(sp);
+        assertTrue(sp.query().toUpperCase().contains("SELECT"));
+    }
+
+    @Test
+    public void testParseCql_withMapper_passesThroughMapper() {
+        CqlMapper mapper = new CqlMapper();
+        mapper.add("findById", "SELECT * FROM t WHERE id = ?", new HashMap<>());
+        TestCassandraExecutor mapExec = new TestCassandraExecutor(mapper, NamingPolicy.SNAKE_CASE);
+        ParsedCql parsed = mapExec.exposedParseCql("findById");
+        assertNotNull(parsed);
+        assertEquals(1, parsed.parameterCount());
+    }
+
+    @Test
+    public void testParseCql_withMapper_fallbackToParse() {
+        CqlMapper mapper = new CqlMapper();
+        TestCassandraExecutor mapExec = new TestCassandraExecutor(mapper, NamingPolicy.SNAKE_CASE);
+        ParsedCql parsed = mapExec.exposedParseCql("SELECT * FROM t WHERE id = ?");
+        assertNotNull(parsed);
+        assertEquals(1, parsed.parameterCount());
+    }
+
+    // Coverage additions: idsToCondition / getKeyNames cached paths
+
+    @Test
+    public void testIdsToCondition_compositeKey_mismatch_throwsIAE() {
+        assertThrows(IllegalArgumentException.class,
+                () -> TestCassandraExecutor.exposedIdsToCondition(CompositeKeyEntity.class, "onlyOne"));
+    }
+
+    @Test
+    public void testGetKeyNames_repeatedCallReturnsSameCached() {
+        ImmutableList<String> first = CassandraExecutorBase.getKeyNames(TestEntity.class);
+        ImmutableList<String> second = CassandraExecutorBase.getKeyNames(TestEntity.class);
+        assertNotNull(first);
+        assertNotNull(second);
+        assertEquals(first.size(), second.size());
+    }
+
+    @Test
+    public void testGetKeyNameSet_repeatedCallReturnsSameCached() {
+        java.util.Set<String> first = CassandraExecutorBase.getKeyNameSet(TestEntity.class);
+        java.util.Set<String> second = CassandraExecutorBase.getKeyNameSet(TestEntity.class);
+        assertEquals(first.size(), second.size());
+    }
+
     // Composite-key entity for entityToCondition / idsToCondition tests
     public static class CompositeKeyEntity {
         @Id
@@ -1060,6 +1268,18 @@ public class CassandraExecutorBaseTest extends TestBase {
 
         public TestCassandraExecutor() {
             super(null, NamingPolicy.SNAKE_CASE);
+        }
+
+        public TestCassandraExecutor(NamingPolicy namingPolicy) {
+            super(null, namingPolicy);
+        }
+
+        public TestCassandraExecutor(CqlMapper cqlMapper, NamingPolicy namingPolicy) {
+            super(cqlMapper, namingPolicy);
+        }
+
+        public SP exposedPrepareQueryThreeArgs(Class<?> targetClass, Collection<String> selectPropNames, Condition whereClause) {
+            return prepareQuery(targetClass, selectPropNames, whereClause);
         }
 
         private final AsyncCassandraExecutorBase<TestRow, TestResultSet, TestStatement, TestPreparedStatement, TestBatchType> asyncExecutor = new AsyncCassandraExecutorBase<>(

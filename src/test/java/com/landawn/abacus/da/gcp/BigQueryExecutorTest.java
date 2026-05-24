@@ -1698,6 +1698,236 @@ public class BigQueryExecutorTest extends TestBase {
         verify(mockBigQuery).query(any(QueryJobConfiguration.class));
     }
 
+    // ===== readRow branches via stream(Class, QueryJobConfiguration) — hit ObjectArray, Collection, Map, single-value, bean =====
+    private List<FieldValueList> oneTwoColumnRow(Object v1, Object v2) {
+        Field f1 = Field.of("id", StandardSQLTypeName.INT64);
+        Field f2 = Field.of("name", StandardSQLTypeName.STRING);
+        FieldList fields = FieldList.of(f1, f2);
+        FieldValueList row = FieldValueList.of(
+                Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, String.valueOf(v1)), FieldValue.of(FieldValue.Attribute.PRIMITIVE, String.valueOf(v2))),
+                fields);
+        return Arrays.asList(row);
+    }
+
+    @Test
+    public void testStream_AsObjectArrayClass() throws Exception {
+        when(mockTableResult.iterateAll()).thenReturn(oneTwoColumnRow(1, "Alice"));
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        QueryJobConfiguration cfg = QueryJobConfiguration.newBuilder("SELECT id, name FROM t").build();
+        Stream<Object[]> stream = executor.stream(Object[].class, cfg);
+        List<Object[]> result = stream.toList();
+        assertEquals(1, result.size());
+        assertEquals(2, result.get(0).length);
+    }
+
+    @Test
+    public void testStream_AsCollectionClass() throws Exception {
+        when(mockTableResult.iterateAll()).thenReturn(oneTwoColumnRow(1, "Bob"));
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        QueryJobConfiguration cfg = QueryJobConfiguration.newBuilder("SELECT id, name FROM t").build();
+        @SuppressWarnings({ "unchecked", "rawtypes" })
+        Stream<List> stream = executor.stream((Class) List.class, cfg);
+        List<List> result = stream.toList();
+        assertEquals(1, result.size());
+        assertEquals(2, result.get(0).size());
+    }
+
+    @Test
+    public void testStream_AsMapClass() throws Exception {
+        when(mockTableResult.iterateAll()).thenReturn(oneTwoColumnRow(1, "Carol"));
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        QueryJobConfiguration cfg = QueryJobConfiguration.newBuilder("SELECT id, name FROM t").build();
+        @SuppressWarnings({ "unchecked", "rawtypes" })
+        Stream<Map> stream = executor.stream((Class) Map.class, cfg);
+        List<Map> result = stream.toList();
+        assertEquals(1, result.size());
+        assertNotNull(result.get(0).get("id"));
+    }
+
+    @Test
+    public void testStream_AsSingleValueClass() throws Exception {
+        Field f1 = Field.of("v", StandardSQLTypeName.STRING);
+        FieldList fields = FieldList.of(f1);
+        List<FieldValueList> rows = Arrays.asList(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "hello")), fields));
+        when(mockTableResult.iterateAll()).thenReturn(rows);
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        QueryJobConfiguration cfg = QueryJobConfiguration.newBuilder("SELECT v FROM t").build();
+        Stream<String> stream = executor.stream(String.class, cfg);
+        List<String> result = stream.toList();
+        assertEquals(1, result.size());
+        assertEquals("hello", result.get(0));
+    }
+
+    @Test
+    public void testStream_AsSingleValueClass_MultiColumnThrows() throws Exception {
+        when(mockTableResult.iterateAll()).thenReturn(oneTwoColumnRow(1, "X"));
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        QueryJobConfiguration cfg = QueryJobConfiguration.newBuilder("SELECT id, name FROM t").build();
+        Stream<String> stream = executor.stream(String.class, cfg);
+        assertThrows(IllegalArgumentException.class, () -> stream.toList());
+    }
+
+    // ===== readRow with FieldValueList of FieldValueList (nested) via stream Object[] =====
+    @Test
+    public void testStream_AsObjectArray_NestedFieldValueList() throws Exception {
+        Field inner1 = Field.of("a", StandardSQLTypeName.STRING);
+        FieldList innerFields = FieldList.of(inner1);
+        FieldValueList innerList = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "x")), innerFields);
+
+        Field outer = Field.newBuilder("s", StandardSQLTypeName.STRUCT, innerFields).build();
+        FieldList outerFields = FieldList.of(outer);
+        FieldValueList row = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.RECORD, innerList)), outerFields);
+
+        when(mockTableResult.iterateAll()).thenReturn(Arrays.asList(row));
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        QueryJobConfiguration cfg = QueryJobConfiguration.newBuilder("SELECT s FROM t").build();
+        Stream<Object[]> stream = executor.stream(Object[].class, cfg);
+        List<Object[]> result = stream.toList();
+        assertEquals(1, result.size());
+        // first column is a nested FieldValueList -> readRow recursively returns Object[]
+        assertTrue(result.get(0)[0] instanceof Object[]);
+    }
+
+    // ===== entityToCondition composite-key (multiple key fields) =====
+    @Test
+    public void testEntityToCondition_CompositeKey() throws Exception {
+        CompositeKeyEntity e = new CompositeKeyEntity();
+        e.setIdA("1");
+        e.setIdB("2");
+        e.setValue("v");
+        // delete(entity) invokes entityToCondition internally
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+        assertDoesNotThrowExt(() -> executor.delete(e));
+    }
+
+    @Test
+    public void testEntityToCondition_CompositeKey_NullValueThrows() {
+        CompositeKeyEntity e = new CompositeKeyEntity();
+        e.setIdA("1");
+        // idB is null
+        e.setValue("v");
+        assertThrows(IllegalArgumentException.class, () -> executor.delete(e));
+    }
+
+    // ===== idsToCondition composite-key =====
+    @Test
+    public void testIdsToCondition_CompositeKey() throws Exception {
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+        when(mockTableResult.getTotalRows()).thenReturn(0L);
+        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<>());
+        // exists(class, id1, id2) drives idsToCondition; non-matching id count throws else proceeds
+        assertDoesNotThrowExt(() -> executor.exists(CompositeKeyEntity.class, "1", "2"));
+    }
+
+    @Test
+    public void testIdsToCondition_CompositeKeyMismatchThrows() {
+        assertThrows(IllegalArgumentException.class, () -> executor.exists(CompositeKeyEntity.class, "1"));
+    }
+
+    // ===== getSchema(FieldValueList) - exercised via toMap(FieldValueList) =====
+    @Test
+    public void testGetSchema_FieldValueListWithSchema() {
+        Field f1 = Field.of("a", StandardSQLTypeName.STRING);
+        FieldList fields = FieldList.of(f1);
+        FieldValueList row = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "x")), fields);
+
+        Map<String, Object> result = BigQueryExecutor.toMap(row);
+        assertNotNull(result);
+        assertEquals("x", result.get("a"));
+    }
+
+    // ===== Constructor validation =====
+    @Test
+    public void testConstructor_NullBigQueryThrows() {
+        assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(null));
+    }
+
+    @Test
+    public void testConstructor_NullNamingPolicyThrows() {
+        assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(mockBigQuery, null));
+    }
+
+    // ===== extractData branches: value of type FieldValueList in column =====
+    @Test
+    public void testExtractData_NestedFieldValueListInColumn() {
+        Field innerF = Field.of("a", StandardSQLTypeName.STRING);
+        FieldList innerFields = FieldList.of(innerF);
+        FieldValueList innerList = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "x")), innerFields);
+        Field outer = Field.newBuilder("nested", StandardSQLTypeName.STRUCT, innerFields).build();
+        FieldList outerFields = FieldList.of(outer);
+        FieldValueList row = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.RECORD, innerList)), outerFields);
+
+        Schema schema = Schema.of(outer);
+        when(mockTableResult.getSchema()).thenReturn(schema);
+        when(mockTableResult.iterateAll()).thenReturn(Arrays.asList(row));
+        when(mockTableResult.getTotalRows()).thenReturn(1L);
+
+        // Use Map.class as target so columnClasses[i] is Map.class — branch hits readRow path
+        Dataset ds = BigQueryExecutor.extractData(mockTableResult, Map.class);
+        assertNotNull(ds);
+        assertEquals(1, ds.size());
+    }
+
+    // ===== prepareUpdate via update(entity) — exercises composite-key path =====
+    @Test
+    public void testUpdate_EntityWithCompositeKey() throws Exception {
+        CompositeKeyEntity e = new CompositeKeyEntity();
+        e.setIdA("1");
+        e.setIdB("2");
+        e.setValue("v");
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+        // Should not throw - composite key has both values set
+        assertDoesNotThrowExt(() -> executor.update(e));
+    }
+
+    // Helper: assertDoesNotThrow returns Object; here we wrap to handle checked exceptions cleanly
+    private static void assertDoesNotThrowExt(Runnable r) {
+        try {
+            r.run();
+        } catch (Throwable t) {
+            throw new AssertionError("Expected no exception, got: " + t, t);
+        }
+    }
+
+    // Composite-key entity (2 @Id fields) used to exercise composite-key branches
+    public static class CompositeKeyEntity {
+        @com.landawn.abacus.annotation.Id
+        private String idA;
+        @com.landawn.abacus.annotation.Id
+        private String idB;
+        private String value;
+
+        public String getIdA() {
+            return idA;
+        }
+
+        public void setIdA(String idA) {
+            this.idA = idA;
+        }
+
+        public String getIdB() {
+            return idB;
+        }
+
+        public void setIdB(String idB) {
+            this.idB = idB;
+        }
+
+        public String getValue() {
+            return value;
+        }
+
+        public void setValue(String value) {
+            this.value = value;
+        }
+    }
+
     // Entity with a String id used to exercise entityToCondition's empty/null-key error paths.
     public static class TestEntityWithStringKey {
         private String id;

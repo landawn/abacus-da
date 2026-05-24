@@ -1402,6 +1402,83 @@ public class CassandraExecutorTest extends TestBase {
         }
     }
 
+    // Coverage additions
+
+    @Test
+    public void test_execute_withBeanParam() {
+        Users user = createUser();
+        String sql = NSC.insertInto(Users.class).build().query();
+        cassandraExecutor.execute(sql, user);
+        try {
+            assertTrue(cassandraExecutor.exists("SELECT * FROM simplex.users WHERE id = ?", user.getId()));
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.users WHERE id = ?", user.getId());
+        }
+    }
+
+    @Test
+    public void test_execute_withBeanParam_missingPropertyThrowsIAE() {
+        Song s = new Song();
+        s.setId(UUID.randomUUID());
+        s.setTitle("t");
+        assertThrows(IllegalArgumentException.class,
+                () -> cassandraExecutor.execute("SELECT * FROM simplex.songs WHERE id = :nonExistentBeanProp", s));
+    }
+
+    @Test
+    public void test_list_singleColumn_noConversionNeeded() {
+        UUID id = UUID.randomUUID();
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "noConv");
+        try {
+            List<UUID> ids = cassandraExecutor.list(UUID.class, "SELECT id FROM simplex.songs WHERE id = ?", id);
+            assertEquals(1, ids.size());
+            assertEquals(id, ids.get(0));
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
+        }
+    }
+
+    @Test
+    public void test_toList_mapClass_columnsAsMap() {
+        UUID id = UUID.randomUUID();
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "asMap");
+        try {
+            ResultSet rs = cassandraExecutor.execute("SELECT id, title FROM simplex.songs WHERE id = ?", id);
+            @SuppressWarnings("rawtypes")
+            List<Map> rows = CassandraExecutor.toList(rs, Map.class);
+            assertEquals(1, rows.size());
+            assertEquals(2, rows.get(0).size());
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
+        }
+    }
+
+    @Test
+    public void test_execute_collectionArgWrappedInArray() {
+        UUID id = UUID.randomUUID();
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "collArg");
+        try {
+            ResultSet rs = cassandraExecutor.execute("SELECT * FROM simplex.songs WHERE id = ?", N.asList(id));
+            assertNotNull(rs.one());
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
+        }
+    }
+
+    @Test
+    public void test_extractData_listClassConversionForUuid() {
+        UUID id = UUID.randomUUID();
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "convForExtract");
+        try {
+            ResultSet rs = cassandraExecutor.execute("SELECT id FROM simplex.songs WHERE id = ?", id);
+            Dataset ds = CassandraExecutor.extractData(rs, String.class);
+            assertNotNull(ds);
+            assertEquals(1, ds.size());
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
+        }
+    }
+
     private Users createUser() {
         Users user = new Users();
         user.setId(UUID.randomUUID());
