@@ -42,10 +42,28 @@ import com.landawn.abacus.util.NamingPolicy;
 import com.landawn.abacus.util.Tuple.Tuple3;
 
 /**
- * A fluent builder wrapper for HBase {@link Put} operations that simplifies data insertion and updates
- * by providing automatic type conversion and object-relational mapping capabilities. This class eliminates
- * the complexity of manual byte array conversions and provides both programmatic and entity-based approaches
- * to building Put operations.
+ * A fluent builder wrapper around HBase {@link Put} that simplifies data insertion and updates by
+ * providing automatic type conversion and object-relational mapping. This class hides the manual
+ * byte-array conversions of the native {@link Put} API and offers both programmatic and
+ * entity-based construction.
+ *
+ * <h2>Cell-write semantics (overwrite vs versioning)</h2>
+ * <p>HBase stores each cell as a {@code (row, family, qualifier, timestamp)} tuple. The
+ * {@code addColumn}/{@code add} methods on this class accumulate cells in the underlying Put,
+ * which the server then applies as follows:</p>
+ * <ul>
+ *   <li>When two cells share the same {@code (row, family, qualifier, timestamp)}, the later one
+ *       replaces the earlier one (overwrite).</li>
+ *   <li>When two cells share the same key but differ in timestamp, both versions are stored
+ *       (subject to the column family's {@code VERSIONS} setting, which controls how many
+ *       historical versions HBase retains).</li>
+ *   <li>{@code addColumn(family, qualifier, value)} variants without an explicit timestamp use the
+ *       server's current time, so successive calls within a single millisecond may overwrite each
+ *       other.</li>
+ * </ul>
+ * <p>In short, repeated {@code addColumn} calls do <i>not</i> concatenate or merge values; for
+ * append-style semantics use {@link AnyAppend}, and for atomic counter increments use
+ * {@link AnyIncrement}.</p>
  *
  * <p>AnyPut supports multiple construction patterns:
  * <ul>
@@ -67,7 +85,8 @@ import com.landawn.abacus.util.Tuple.Tuple3;
  *                    .addColumn("prefs", "theme", "dark");
  *
  * // Timestamped data insertion
- * AnyPut timestampedPut = AnyPut.of("user123", System.currentTimeMillis())
+ * long timestamp = System.currentTimeMillis();
+ * AnyPut timestampedPut = AnyPut.of("user123", timestamp)
  *                               .addColumn("info", "name", timestamp, "John Doe")
  *                               .addColumn("activity", "lastLogin", timestamp, new Date());
  * }</pre>
@@ -109,28 +128,37 @@ import com.landawn.abacus.util.Tuple.Tuple3;
  * <li><strong>Batch Support</strong>: Efficient processing of collections of entities</li>
  * <li><strong>Versioning Control</strong>: Support for timestamped data with version management</li>
  * <li><strong>Naming Policies</strong>: Configurable property-to-column name mapping strategies</li>
- * <li><strong>Performance Optimization</strong>: Efficient byte array pooling and reuse</li>
+ * <li><strong>Performance Optimization</strong>: Reuses common family/qualifier byte arrays through {@link HBaseExecutor}'s internal pool</li>
  * </ul>
  *
  * <h3>Entity Mapping Rules:</h3>
  * <ul>
- * <li><strong>Row Key</strong>: Properties annotated with {@code @Id} become the row key</li>
- * <li><strong>Column Families</strong>: Default to property names unless {@code @ColumnFamily} is specified</li>
- * <li><strong>Column Qualifiers</strong>: Nested object properties become qualifiers</li>
- * <li><strong>Versioning</strong>: {@code HBaseColumn} objects support versioned data</li>
- * <li><strong>Collections</strong>: {@code HBaseColumn} collections support multi-version storage</li>
+ * <li><strong>Row Key</strong>: The single property registered via {@link HBaseExecutor#registerRowKeyProperty(Class, String)}
+ *     (or whose setter is otherwise discovered as the row-key setter) becomes the row key.</li>
+ * <li><strong>Column Families</strong>: Resolved from {@link ColumnFamily} annotations on the class
+ *     or individual properties; otherwise the property name is used.</li>
+ * <li><strong>Column Qualifiers</strong>: For nested bean properties, the bean's own property
+ *     names become qualifiers under the enclosing property's family.</li>
+ * <li><strong>Versioning</strong>: {@link HBaseColumn} property values are stored at their
+ *     embedded {@code version()} timestamp.</li>
+ * <li><strong>Collections / Maps</strong>: {@code Collection<HBaseColumn>} and
+ *     {@code Map<Long, HBaseColumn>} properties are expanded into one cell per element, each at
+ *     its own version, enabling multi-version storage.</li>
+ * <li><strong>Null values</strong>: Properties whose value is {@code null} are skipped.</li>
  * </ul>
  *
  * <h3>Performance Considerations:</h3>
  * <ul>
  * <li><strong>Batch Operations</strong>: Use {@code create(Collection)} for multiple entities</li>
  * <li><strong>Selective Mapping</strong>: Specify only needed properties to reduce data transfer</li>
- * <li><strong>Byte Array Pooling</strong>: Automatic reuse of common family/qualifier byte arrays</li>
- * <li><strong>Entity Validation</strong>: Early validation of entity structure and annotations</li>
+ * <li><strong>Byte Array Pooling</strong>: Family/qualifier strings are converted via {@link HBaseExecutor}'s shared interning cache</li>
+ * <li><strong>Entity Validation</strong>: Entity structure is validated when {@code create} is first called for a class</li>
  * </ul>
  *
  * @see Put
  * @see AnyMutation
+ * @see AnyAppend
+ * @see AnyIncrement
  * @see ColumnFamily
  * @see HBaseExecutor
  * @see <a href="http://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
@@ -264,12 +292,14 @@ public final class AnyPut extends AnyMutation<AnyPut> {
     }
 
     /**
-     * Creates a new AnyPut instance for the specified row key with timestamp-based version control.
+     * Creates a new AnyPut for the specified row key with a default timestamp applied to every
+     * cell that does not carry its own.
      *
-     * <p>This factory method creates a put operation with a specific timestamp for all cells.
-     * The timestamp determines the version of the data and is used for version ordering and
-     * time-based queries. Use this when you need to insert data with a specific point-in-time
-     * version, such as backdating data or implementing temporal database patterns.</p>
+     * <p>The {@code timestamp} becomes the Put's default cell timestamp: any
+     * {@code addColumn(family, qualifier, value)} call that does not specify a timestamp uses
+     * {@code timestamp}; calls that pass an explicit {@code ts} override it on a per-cell basis.
+     * Use this when you need to insert data with a specific point-in-time version, such as
+     * backdating data or implementing temporal-database patterns.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -280,9 +310,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * }</pre>
      *
      * @param rowKey the row key for the put operation, automatically converted to bytes
-     * @param timestamp the timestamp for all cells in this put operation (milliseconds since epoch)
-     * @return a new AnyPut instance with the specified timestamp
-     * @throws IllegalArgumentException if rowKey is null or timestamp is negative
+     * @param timestamp the default timestamp for cells added without an explicit timestamp
+     *                  (milliseconds since epoch)
+     * @return a new AnyPut configured with the specified default timestamp
+     * @throws IllegalArgumentException if {@code rowKey} is null or {@code timestamp} is negative
      * @see #of(Object)
      * @see #addColumn(String, String, long, Object)
      */
@@ -319,11 +350,12 @@ public final class AnyPut extends AnyMutation<AnyPut> {
     }
 
     /**
-     * Creates a new AnyPut instance using a subset of the row key with timestamp-based version control.
+     * Creates a new AnyPut using a subset of the row key's byte representation, with a default
+     * timestamp applied to every cell that does not carry its own.
      *
-     * <p>This advanced factory method combines partial row key extraction with timestamp-based version
-     * control, providing precise put capabilities for complex row key structures and time-partitioned data.
-     * All cells in this put operation will have the specified timestamp.</p>
+     * <p>Combines partial row-key extraction (see {@link #of(Object, int, int)}) with the
+     * default-timestamp behaviour described in {@link #of(Object, long)}, providing precise put
+     * capabilities for complex row-key structures and time-partitioned data.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -336,9 +368,11 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowKey the row key object whose byte representation will be sliced
      * @param rowOffset the starting position (0-based) within the row key bytes
      * @param rowLength the number of bytes to use from the row key, starting at offset
-     * @param timestamp the timestamp for all cells in this put operation (milliseconds since epoch)
-     * @return a new AnyPut instance with partial row key and timestamp control
-     * @throws IllegalArgumentException if parameters are invalid
+     * @param timestamp the default timestamp for cells added without an explicit timestamp
+     *                  (milliseconds since epoch)
+     * @return a new AnyPut configured with the partial row key and default timestamp
+     * @throws IllegalArgumentException if {@code rowKey} is null, {@code rowOffset}/{@code rowLength}
+     *         do not describe a valid sub-range of the row key bytes, or {@code timestamp} is negative
      * @see #of(Object, int, int)
      * @see #of(Object, long)
      */
@@ -376,11 +410,12 @@ public final class AnyPut extends AnyMutation<AnyPut> {
     }
 
     /**
-     * Creates a new AnyPut instance with timestamp and row immutability flag control.
+     * Creates a new AnyPut with a default cell timestamp and a row-immutability hint.
      *
-     * <p>This factory method combines timestamp-based version control with row key immutability
-     * optimization. Use this when you need both a specific timestamp for the put operation and
-     * can guarantee the row key bytes won't be modified, enabling maximum performance.</p>
+     * <p>Combines the default-timestamp behaviour of {@link #of(Object, long)} with the
+     * row-key immutability optimisation of {@link #of(Object, boolean)}. Use this when you need
+     * a specific default timestamp <i>and</i> can guarantee the row-key bytes won't be modified
+     * by the caller after construction.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -390,10 +425,12 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * }</pre>
      *
      * @param rowKey the row key for the put operation, automatically converted to bytes
-     * @param timestamp the timestamp for all cells in this put operation (milliseconds since epoch)
-     * @param rowIsImmutable true if the row key byte array is guaranteed to be immutable
-     * @return a new AnyPut instance with timestamp and immutability control
-     * @throws IllegalArgumentException if rowKey is null or timestamp is negative
+     * @param timestamp the default timestamp for cells added without an explicit timestamp
+     *                  (milliseconds since epoch)
+     * @param rowIsImmutable {@code true} if the row-key byte array is guaranteed not to be
+     *                       modified after this Put is created
+     * @return a new AnyPut with timestamp and immutability control
+     * @throws IllegalArgumentException if {@code rowKey} is null or {@code timestamp} is negative
      * @see #of(Object, boolean)
      * @see #of(Object, long)
      */
@@ -485,12 +522,15 @@ public final class AnyPut extends AnyMutation<AnyPut> {
     }
 
     /**
-     * Creates a new AnyPut instance from a Java entity object using default naming policy.
+     * Creates a new AnyPut from a Java entity object using the default camelCase naming policy.
      *
-     * <p>This factory method performs automatic object-to-HBase mapping by introspecting the entity's
-     * properties and converting them to HBase column families and qualifiers. The entity class must
-     * have a property annotated with {@code @Id} which becomes the row key. Properties are mapped
-     * to columns using camelCase naming convention by default.</p>
+     * <p>Performs automatic object-to-HBase mapping by introspecting the entity's properties and
+     * converting them to HBase column families and qualifiers. The entity class must have a row-key
+     * property — either annotated with {@code @Id} or registered via
+     * {@link HBaseExecutor#registerRowKeyProperty(Class, String)} — whose value becomes the HBase
+     * row key. Properties whose value is {@code null} are skipped. See the class-level "Entity
+     * Mapping Rules" section for full details, including how nested beans, {@link HBaseColumn}
+     * values, and {@code Collection}/{@code Map} of {@link HBaseColumn} are mapped.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -507,9 +547,11 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * AnyPut put = AnyPut.create(user);
      * }</pre>
      *
-     * @param entity the Java object to convert to a put operation; must not be null and must have an {@code @Id} property
-     * @return a new AnyPut instance with data from the entity
-     * @throws IllegalArgumentException if entity is null or lacks a row key property
+     * @param entity the Java object to convert to a put operation; must not be null and must
+     *               have a row-key property
+     * @return a new AnyPut populated from the entity
+     * @throws IllegalArgumentException if {@code entity} is null or its class lacks a row-key
+     *         property
      * @see #create(Object, NamingPolicy)
      * @see #create(Object, Collection)
      * @see ColumnFamily
@@ -886,12 +928,19 @@ public final class AnyPut extends AnyMutation<AnyPut> {
     }
 
     /**
-     * Adds a column with value to this put operation using string identifiers.
+     * Adds a single cell (column value) to this put using string identifiers.
      *
-     * <p>This is the most commonly used method for adding data to put operations. The family,
-     * qualifier, and value are automatically converted from their Java types to byte arrays
-     * using HBase's standard conversion mechanisms. The value can be any supported Java type
-     * including String, Integer, Long, Date, byte arrays, etc.</p>
+     * <p>The family, qualifier, and value are converted from their Java types to byte arrays using
+     * {@link HBaseExecutor}'s standard conversion mechanisms. The value can be any supported Java
+     * type — {@link String}, {@link Integer}, {@link Long}, {@link java.util.Date}, byte arrays, etc.</p>
+     *
+     * <p>This variant uses the timestamp the {@link Put} was constructed with (or
+     * {@code HConstants.LATEST_TIMESTAMP} if none was supplied, in which case the region server
+     * assigns the wall-clock time at flush). The same cell key is therefore reused on repeated
+     * calls within the same Put, which means a subsequent call with an identical
+     * {@code (family, qualifier)} pair <i>overwrites</i> the earlier cell rather than appending to
+     * it or creating a new version. To create multiple versions of the same column in one Put, use
+     * {@link #addColumn(String, String, long, Object)} with distinct timestamps.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -899,14 +948,16 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *     .addColumn("info", "name", "John Doe")      // String value
      *     .addColumn("info", "age", 30)               // Integer value
      *     .addColumn("stats", "balance", 1000.50)     // Double value
-     *     .addColumn("meta", "created", new Date());   // Date value
+     *     .addColumn("meta", "created", new Date());  // Date value
      * }</pre>
      *
      * @param family the column family name; must not be null or empty
-     * @param qualifier the column qualifier name; must not be null or empty
-     * @param value the value to store; automatically converted to bytes (can be null)
-     * @return this AnyPut instance for method chaining
-     * @throws IllegalArgumentException if family or qualifier is null or empty
+     * @param qualifier the column qualifier name; must not be null
+     * @param value the value to store; automatically converted to bytes ({@code null} is permitted
+     *              and stored as an empty value)
+     * @return this {@code AnyPut} instance, to allow fluent method chaining
+     * @throws IllegalArgumentException if {@code family} is null or empty (validated by the
+     *         underlying {@link Put})
      * @see #addColumn(String, String, long, Object)
      * @see #addColumn(byte[], byte[], byte[])
      */
@@ -917,12 +968,15 @@ public final class AnyPut extends AnyMutation<AnyPut> {
     }
 
     /**
-     * Adds a column with value and specific timestamp to this put operation.
+     * Adds a single cell (column value) with an explicit timestamp to this put.
      *
-     * <p>This method adds a column with an explicit timestamp, which determines the version of the
-     * data. The timestamp is used for version ordering and time-based queries. Use this when you
-     * need to insert data with a specific point-in-time version, such as backdating data or
-     * implementing event sourcing patterns.</p>
+     * <p>The explicit timestamp becomes part of the cell key, so this variant can be used to write
+     * multiple versions of the same {@code (family, qualifier)} pair in a single Put by calling it
+     * with distinct timestamps. If another call adds a cell with the same
+     * {@code (family, qualifier, ts)} tuple, the later call overwrites the earlier one.</p>
+     *
+     * <p>Use this method to insert data with a specific point-in-time version — for example, when
+     * backdating data or implementing event-sourcing patterns.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -933,11 +987,12 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * }</pre>
      *
      * @param family the column family name; must not be null or empty
-     * @param qualifier the column qualifier name; must not be null or empty
+     * @param qualifier the column qualifier name; must not be null
      * @param ts the timestamp for this cell (milliseconds since epoch); must be non-negative
-     * @param value the value to store; automatically converted to bytes (can be null)
-     * @return this AnyPut instance for method chaining
-     * @throws IllegalArgumentException if family or qualifier is null/empty, or timestamp is negative
+     * @param value the value to store; automatically converted to bytes ({@code null} is permitted)
+     * @return this {@code AnyPut} instance, to allow fluent method chaining
+     * @throws IllegalArgumentException if {@code family} is null or empty, or {@code ts} is
+     *         negative (validated by the underlying {@link Put})
      * @see #addColumn(String, String, Object)
      * @see #of(Object, long)
      */
@@ -948,11 +1003,18 @@ public final class AnyPut extends AnyMutation<AnyPut> {
     }
 
     /**
-     * Adds a column with value to this put operation using byte array identifiers.
+     * Adds a single cell (column value) to this put using raw byte-array identifiers.
      *
-     * <p>This method provides direct byte array access for maximum performance when you already
-     * have pre-converted byte arrays. Avoids the overhead of string-to-bytes conversion. Use this
-     * in performance-critical paths or when working with pre-encoded column identifiers and values.</p>
+     * <p>This method provides direct byte-array access for maximum performance when callers
+     * already have pre-converted byte arrays, avoiding the overhead of string-to-bytes conversion.
+     * Useful in performance-critical paths or when working with pre-encoded column identifiers and
+     * values.</p>
+     *
+     * <p>This variant uses the timestamp the Put was constructed with (or
+     * {@code HConstants.LATEST_TIMESTAMP} if none was supplied), so successive calls with the same
+     * {@code (family, qualifier)} pair overwrite the earlier cell rather than creating a new
+     * version. Use {@link #addColumn(byte[], byte[], long, byte[])} with distinct timestamps to
+     * write multiple versions in a single Put.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -962,11 +1024,13 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * AnyPut put = AnyPut.of("user123").addColumn(family, qualifier, value);
      * }</pre>
      *
-     * @param family the column family name as byte array; must not be null
-     * @param qualifier the column qualifier as byte array; must not be null
-     * @param value the value as byte array; can be null
-     * @return this AnyPut instance for method chaining
-     * @throws IllegalArgumentException if family or qualifier is null
+     * @param family the column family name as a byte array; must not be null or empty
+     * @param qualifier the column qualifier as a byte array; may be {@code null} to denote an
+     *                  empty qualifier
+     * @param value the value as a byte array; may be {@code null}
+     * @return this {@code AnyPut} instance, to allow fluent method chaining
+     * @throws IllegalArgumentException if {@code family} is null or empty (validated by the
+     *         underlying {@link Put})
      * @see #addColumn(String, String, Object)
      * @see #addColumn(byte[], byte[], long, byte[])
      */
@@ -977,11 +1041,13 @@ public final class AnyPut extends AnyMutation<AnyPut> {
     }
 
     /**
-     * Adds a column with value and timestamp using byte array identifiers.
+     * Adds a single cell with explicit timestamp to this put using raw byte-array identifiers.
      *
-     * <p>This method provides direct byte array access with timestamp control, offering maximum
-     * performance for time-versioned data when working with pre-encoded identifiers. Ideal for
-     * high-throughput scenarios with temporal data requirements.</p>
+     * <p>The explicit timestamp becomes part of the cell key, so this variant can write multiple
+     * versions of the same {@code (family, qualifier)} pair in one Put by calling it with
+     * distinct timestamps. If another call adds a cell with the same
+     * {@code (family, qualifier, ts)} tuple, the later call overwrites the earlier one. Ideal for
+     * high-throughput, time-versioned data ingestion with pre-encoded identifiers.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -992,12 +1058,13 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * AnyPut put = AnyPut.of("user123").addColumn(family, qualifier, timestamp, value);
      * }</pre>
      *
-     * @param family the column family name as byte array; must not be null
-     * @param qualifier the column qualifier as byte array; must not be null
+     * @param family the column family name as a byte array; must not be null or empty
+     * @param qualifier the column qualifier as a byte array; may be {@code null}
      * @param ts the timestamp for this cell (milliseconds since epoch); must be non-negative
-     * @param value the value as byte array; can be null
-     * @return this AnyPut instance for method chaining
-     * @throws IllegalArgumentException if family or qualifier is null, or timestamp is negative
+     * @param value the value as a byte array; may be {@code null}
+     * @return this {@code AnyPut} instance, to allow fluent method chaining
+     * @throws IllegalArgumentException if {@code family} is null or empty, or {@code ts} is
+     *         negative (validated by the underlying {@link Put})
      * @see #addColumn(byte[], byte[], byte[])
      * @see #addColumn(String, String, long, Object)
      */
@@ -1008,11 +1075,13 @@ public final class AnyPut extends AnyMutation<AnyPut> {
     }
 
     /**
-     * Adds a column with value and timestamp using ByteBuffer identifiers.
+     * Adds a single cell with explicit timestamp to this put using {@link ByteBuffer} qualifier
+     * and value.
      *
-     * <p>This method provides NIO ByteBuffer support for maximum efficiency in scenarios involving
-     * direct buffers or off-heap memory. Useful for high-performance applications that work with
-     * ByteBuffers to minimize memory copies and garbage collection pressure.</p>
+     * <p>Provides NIO {@link ByteBuffer} support for scenarios involving direct buffers or
+     * off-heap memory, minimising memory copies and GC pressure. The bytes between each buffer's
+     * current position and limit are used; the buffers' positions are not modified by this call
+     * (HBase reads them by absolute index).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1026,12 +1095,13 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * AnyPut put = AnyPut.of("user123").addColumn(familyBytes, qualifier, timestamp, value);
      * }</pre>
      *
-     * @param family the column family name as byte array; must not be null
-     * @param qualifier the column qualifier as ByteBuffer; must not be null and must have remaining bytes
+     * @param family the column family name as a byte array; must not be null or empty
+     * @param qualifier the column qualifier as a ByteBuffer; must not be null
      * @param ts the timestamp for this cell (milliseconds since epoch); must be non-negative
-     * @param value the value as ByteBuffer; must not be null and must have remaining bytes
-     * @return this AnyPut instance for method chaining
-     * @throws IllegalArgumentException if family or qualifier is null, buffers have no remaining bytes, or timestamp is negative
+     * @param value the value as a ByteBuffer; must not be null
+     * @return this {@code AnyPut} instance, to allow fluent method chaining
+     * @throws IllegalArgumentException if {@code family} is null/empty or {@code ts} is negative
+     *         (validated by the underlying {@link Put})
      * @see #addColumn(byte[], byte[], long, byte[])
      * @see ByteBuffer
      */
@@ -1140,12 +1210,13 @@ public final class AnyPut extends AnyMutation<AnyPut> {
     //    }
 
     /**
-     * Adds a pre-constructed Cell to this put operation.
+     * Adds a pre-constructed {@link Cell} to this put.
      *
-     * <p>This advanced method allows adding a fully constructed HBase Cell object directly to
-     * the put operation. This provides maximum flexibility and control over all cell attributes
-     * including timestamp, type, tags, and sequence ID. Use this when you need precise control
-     * over cell construction or when working with existing Cell objects from other operations.</p>
+     * <p>This advanced method allows adding a fully constructed HBase {@link Cell} directly to the
+     * Put, providing precise control over all cell attributes including timestamp, type, tags, and
+     * sequence id. Use this when you need exact control over cell construction or when handing
+     * cells received from another operation (for example, a scanner's {@code CellScanner}) into
+     * this Put.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1161,10 +1232,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * AnyPut put = AnyPut.of("user123").add(cell);
      * }</pre>
      *
-     * @param kv the Cell object to add to this put operation; must not be null and must have the same row key as this put
-     * @return this AnyPut instance for method chaining
-     * @throws IOException if the cell's row key does not match this put's row key, or the cell type
-     *         is not a put-type cell (thrown by the underlying {@link Put#add(Cell)})
+     * @param kv the Cell to add; must not be null and must have the same row key as this put
+     * @return this {@code AnyPut} instance, to allow fluent method chaining
+     * @throws IOException if the cell's row key does not match this Put's row key (thrown by the
+     *         underlying {@link Put#add(Cell)})
      * @see Cell
      * @see Put#add(Cell)
      * @see #addColumn(String, String, Object)

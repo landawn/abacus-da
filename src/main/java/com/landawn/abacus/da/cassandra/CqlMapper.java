@@ -39,12 +39,26 @@ import com.landawn.abacus.util.PropertiesUtil;
 import com.landawn.abacus.util.XmlUtil;
 
 /**
- * CQL Mapper for managing pre-configured CQL statements stored in XML files.
- * 
- * <p>The CqlMapper provides a convenient way to externalize and manage CQL (Cassandra Query Language)
- * statements by storing them in XML configuration files with short identifiers. This approach offers
- * several advantages:</p>
- * 
+ * Registry of named CQL (Cassandra Query Language) statements, optionally loaded from XML files.
+ *
+ * <p>{@code CqlMapper} maps short string identifiers to {@link ParsedCql} values, so application
+ * code can refer to queries by name (for example {@code "findAccountById"}) instead of embedding
+ * raw CQL strings. The XML loader recognizes a {@code <cqlMapper>} root with one or more
+ * {@code <cql id="...">...</cql>} children; the element text is the CQL statement and the
+ * remaining XML attributes are passed through to {@link ParsedCql} as a metadata
+ * {@code Map<String,String>} (typical entries include {@code timeout}, {@code consistency}, etc.).</p>
+ *
+ * <h2>Scope of "mapping"</h2>
+ * <p>The mapping performed by this class is <strong>id&nbsp;&rarr;&nbsp;CQL string</strong> only.
+ * {@code CqlMapper} does not perform Java&nbsp;&harr;&nbsp;CQL <em>type</em> conversion: that
+ * responsibility lies with {@link CassandraExecutor} and the underlying DataStax driver codecs,
+ * which translate Java values to and from CQL types ({@code text}, {@code int}, {@code timestamp},
+ * {@code uuid}, {@code list}, {@code map}, user-defined types, and so on) at bind / decode time.
+ * The CQL text returned from {@link #get(String)} is opaque to this class — it is held as
+ * configured and handed to the executor unchanged.</p>
+ *
+ * <p>Storing CQL externally in XML rather than inline in Java offers:</p>
+ *
  * <ul>
  * <li><strong>Separation of Concerns:</strong> Keeps CQL statements separate from Java code</li>
  * <li><strong>Maintainability:</strong> Easy to modify queries without recompiling code</li>
@@ -56,7 +70,6 @@ import com.landawn.abacus.util.XmlUtil;
  * <h2>XML Configuration Format</h2>
  * <h3>Structure</h3>
  * <p>CQL statements are configured in XML files using the following structure:</p>
- * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * <cqlMapper>
  *   <cql id="findAccountById" timeout="5000">
@@ -66,42 +79,44 @@ import com.landawn.abacus.util.XmlUtil;
  *     UPDATE account SET name = ? WHERE id = ?
  *   </cql>
  *   <cql id="insertUser">
- *     INSERT INTO users (id, name, email, created_at) 
+ *     INSERT INTO users (id, name, email, created_at)
  *     VALUES (:id, :name, :email, :created_at)
  *   </cql>
  * </cqlMapper>
  * }</pre>
- * 
+ *
  * <h3>Parameter Binding</h3>
- * <p>The mapper supports different parameter binding styles:</p>
+ * <p>The CQL stored in the mapper may use either of the binding styles supported by the underlying
+ * driver:</p>
  * <ul>
  * <li><strong>Positional parameters:</strong> {@code SELECT * FROM users WHERE id = ?}</li>
  * <li><strong>Named parameters:</strong> {@code SELECT * FROM users WHERE id = :userId}</li>
- * <li><strong>Mixed parameters:</strong> Not supported in the same statement (for example, mixing {@code ?} and {@code :userId})</li>
+ * <li><strong>Mixed parameters:</strong> Not supported within a single statement (for example,
+ *     do not combine {@code ?} and {@code :userId} in the same query).</li>
  * </ul>
- * 
+ *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * // Initialize mapper with XML file
  * CqlMapper mapper = new CqlMapper("classpath:cql-config.xml");
- * 
+ *
  * // Get parsed CQL statement
  * ParsedCql parsedCql = mapper.get("findAccountById");
  * String cql = parsedCql.originalCql();
- * 
+ *
  * // Add new CQL statement programmatically
  * Map<String, String> attributes = new HashMap<>();
  * attributes.put("timeout", "3000");
  * mapper.add("findUsersByStatus", "SELECT * FROM users WHERE status = ?", attributes);
- * 
+ *
  * // Save mapper to XML file
  * mapper.saveTo(new File("updated-cql-config.xml"));
  * }</pre>
- * 
+ *
  * <h3>Thread Safety</h3>
  * <p>This class is thread-safe for read operations after initialization. Concurrent modifications
  * (add/remove operations) should be externally synchronized.</p>
- * 
+ *
  * @see ParsedCql
  * @see CassandraExecutor
  * @see CassandraExecutorBase
@@ -187,7 +202,10 @@ public final class CqlMapper {
      * @param filePath single file path or multiple file paths separated by ',' or ';'
      * @throws UncheckedIOException if any file cannot be read
      * @throws ParsingException if any XML file is malformed
-     * @throws IllegalArgumentException if duplicate CQL IDs are found
+     * @throws IllegalArgumentException if duplicate CQL IDs are found, or if a {@code <cql>}
+     *         element is missing the required {@code id} attribute
+     * @throws RuntimeException if the required {@code <cqlMapper>} root element is missing from
+     *         an input file
      */
     public void loadFrom(final String filePath) throws UncheckedIOException {
         N.checkArgNotEmpty(filePath, "filePath");
@@ -369,7 +387,6 @@ public final class CqlMapper {
      * include all statements with their IDs and attributes.</p>
      * 
      * <p>The output format matches the input format expected by {@link #loadFrom(String)}:</p>
-     * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * <?xml version="1.0" encoding="UTF-8"?>
      * <cqlMapper>
@@ -381,9 +398,13 @@ public final class CqlMapper {
      *   </cql>
      * </cqlMapper>
      * }</pre>
-     * 
+     *
+     * <p>If the parent directory of {@code file} does not yet exist, this method attempts to
+     * create it.</p>
+     *
      * @param file the target file where the XML will be written
-     * @throws UncheckedIOException if the file cannot be written
+     * @throws UncheckedIOException if the parent directory cannot be created, or if the file
+     *         cannot be written
      * @see #loadFrom(String)
      */
     public void saveTo(final File file) throws UncheckedIOException {

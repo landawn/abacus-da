@@ -2581,9 +2581,12 @@ public final class MongoCollectionExecutor {
     /**
      * Inserts a single document into the collection (blocking operation).
      *
-     * <p>This method inserts a single document into the collection. The object can be a Document,
-     * Map, or any entity class with getter/setter methods. Entity objects are automatically
-     * converted to BSON documents using the configured codec registry.</p>
+     * <p>This method inserts a single document into the collection. The object can be a {@link Document},
+     * a {@link java.util.Map}, or any bean class with getter/setter methods. Non-{@code Document} inputs
+     * are converted via {@link MongoDBBase#toDocument(Object)} — for entity beans this flattens readable
+     * properties into a {@code Document}, <i>dropping properties whose getter returns {@code null}</i>
+     * (so absent fields are simply not written rather than written as null); {@link java.util.Map}
+     * inputs are copied entry-for-entry, including null values.</p>
      *
      * <p><b>Note:</b> This method performs a blocking operation. For non-blocking operations, use {@link #async()}.</p>
      *
@@ -2774,9 +2777,22 @@ public final class MongoCollectionExecutor {
      *
      * <p>This method updates a single document matching the provided ObjectId string with the specified
      * update operations. The update can be a Bson update document, a Document with update operators,
-     * a Map, or an entity class. When the update is a Map or entity, its non-null properties are mapped
-     * into a document. If the resulting update document does not contain MongoDB update operators (keys
-     * starting with {@code $}), it is automatically wrapped in a {@code $set} operation.</p>
+     * a Map, or an entity class.</p>
+     *
+     * <p><b>Conversion path:</b> The update is converted via {@link #toBson(Object)}. When the update is
+     * already a driver-built {@code Bson} (e.g. produced by {@link com.mongodb.client.model.Updates}), it
+     * is passed through unchanged. When the update is a {@link Document} or {@link BasicDBObject} whose
+     * first key already starts with {@code $}, it is also passed through unchanged. Otherwise:</p>
+     * <ul>
+     *   <li>Entity beans are flattened via {@link MongoDBBase#toDocument(Object)}, which <i>skips
+     *       properties whose getter returns {@code null}</i> — meaning entity nulls cannot be used to clear
+     *       fields through this path.</li>
+     *   <li>{@link java.util.Map} inputs are copied via {@code putAll}, so map entries with {@code null}
+     *       values are preserved and will be sent as {@code $set: {field: null}}.</li>
+     *   <li>The resulting {@code Document}/{@code BasicDBObject} is wrapped in a {@code {$set: doc}}
+     *       envelope. An empty input therefore produces {@code {$set: {}}}, which the server treats as a
+     *       no-op modification.</li>
+     * </ul>
      *
      * <p><b>Note:</b> This method performs a blocking operation. For non-blocking operations, use {@link #async()}.</p>
      *
@@ -2812,10 +2828,12 @@ public final class MongoCollectionExecutor {
     /**
      * Updates a single document identified by ObjectId.
      *
-     * <p>Updates the document with the specified ObjectId. When the update is a Map or entity, its
-     * non-null properties are mapped into the update document and wrapped in a {@code $set} operation
-     * unless MongoDB update operators are already present.</p>
-     * 
+     * <p>Updates the document with the specified ObjectId. See {@link #updateOne(String, Object)} for the
+     * full description of how the {@code update} argument is converted — in particular, entity bean
+     * properties whose getter returns {@code null} are <i>dropped</i> during conversion, while
+     * {@link java.util.Map} entries with {@code null} values are preserved (and would be sent as
+     * {@code $set: {field: null}}).</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ObjectId id = new ObjectId("507f1f77bcf86cd799439011");
@@ -2827,6 +2845,7 @@ public final class MongoCollectionExecutor {
      * @return UpdateResult containing update operation details
      * @throws IllegalArgumentException if objectId or update is null
      * @throws com.mongodb.MongoException if the database operation fails
+     * @see #updateOne(String, Object)
      */
     public UpdateResult updateOne(final ObjectId objectId, final Object update) {
         return updateOne(MongoDBBase.objectId2Filter(objectId), update);
@@ -2835,10 +2854,11 @@ public final class MongoCollectionExecutor {
     /**
      * Updates a single document matching the filter.
      *
-     * <p>Updates the first document that matches the filter criteria. When the update is a Map or
-     * entity, its non-null properties are mapped into the update document and wrapped in a
-     * {@code $set} operation unless MongoDB update operators are already present.</p>
-     * 
+     * <p>Updates the first document that matches the filter criteria. See {@link #updateOne(String, Object)}
+     * for the full description of how the {@code update} argument is converted (driver-built {@code Bson}
+     * pass-through, documents whose first key starts with {@code $} pass-through, otherwise wrap in
+     * {@code $set}; entity null properties are dropped, map nulls are preserved).</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson filter = Filters.eq("email", "john@example.com");
@@ -2850,6 +2870,7 @@ public final class MongoCollectionExecutor {
      * @return UpdateResult containing update operation details
      * @throws IllegalArgumentException if filter or update is null
      * @throws com.mongodb.MongoException if the database operation fails
+     * @see #updateOne(String, Object)
      */
     public UpdateResult updateOne(final Bson filter, final Object update) {
         return updateOne(filter, update, null);
@@ -3031,10 +3052,15 @@ public final class MongoCollectionExecutor {
     /**
      * Updates multiple documents matching the filter with the specified update operations (blocking operation).
      *
-     * <p>This method performs a bulk update operation on all documents that match the given filter.
-     * The update parameter can be a BSON update document, a Map, or an entity object. When the update
-     * is a Map or entity, its non-null properties are mapped into the update document and wrapped in a
-     * {@code $set} operation unless MongoDB update operators are already present.</p>
+     * <p>This method updates every document that matches the given filter. The update is converted via
+     * {@link #toBson(Object)}; see {@link #updateOne(String, Object)} for the full description (driver-built
+     * {@code Bson} pass-through, documents whose first key starts with {@code $} pass-through, otherwise
+     * wrap in {@code $set}; entity null properties are dropped, map nulls are preserved).</p>
+     *
+     * <p><b>Note:</b> This is an update of many documents in a single server call but it is <i>not</i>
+     * an atomic operation across documents — MongoDB applies the update to each matching document in
+     * turn, and other clients can observe partially-updated state mid-operation. Each individual
+     * document update is atomic.</p>
      *
      * <p><b>Note:</b> This method performs a blocking operation. For non-blocking operations, use {@link #async()}.</p>
      *
@@ -3064,9 +3090,11 @@ public final class MongoCollectionExecutor {
     /**
      * Updates multiple documents matching the filter with the specified update operations and options.
      *
-     * <p>This method performs a bulk update operation on all documents that match the given filter
-     * with additional control through UpdateOptions. Options allow specification of upsert behavior,
-     * write concern, bypass document validation, and array filters for advanced update scenarios.</p>
+     * <p>This method updates every document that matches the given filter with additional control
+     * through {@link UpdateOptions}. Options allow specification of upsert behavior, write concern,
+     * bypass document validation, and array filters for advanced update scenarios. The update payload
+     * undergoes the same {@code $set}-wrapping conversion described in {@link #updateOne(String, Object)}.
+     * As with all multi-document writes, the operation is not atomic across documents.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3172,10 +3200,15 @@ public final class MongoCollectionExecutor {
 
     /**
      * Replaces a document identified by ObjectId string.
-     * 
-     * <p>Completely replaces the document with the specified ObjectId string.
-     * Unlike update operations, this replaces the entire document except for the _id field.</p>
-     * 
+     *
+     * <p>Completely replaces the document with the specified ObjectId string. Unlike update operations,
+     * this swaps the entire document body. The replacement must not contain MongoDB update operators
+     * (keys starting with {@code $}); if it does, the driver will reject the call.</p>
+     *
+     * <p><b>_id handling:</b> The matched document's existing {@code _id} is retained. If the replacement
+     * itself contains an {@code _id} that differs from the matched document's {@code _id}, the server
+     * rejects the operation. If the replacement omits {@code _id}, the original is retained.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * String id = "507f1f77bcf86cd799439011";
@@ -3195,9 +3228,10 @@ public final class MongoCollectionExecutor {
 
     /**
      * Replaces a document identified by ObjectId.
-     * 
-     * <p>Completely replaces the document with the specified ObjectId.
-     * The entire document is replaced except for the _id field.</p>
+     *
+     * <p>Completely replaces the document with the specified ObjectId. The {@code _id} of the matched
+     * document is retained; see {@link #replaceOne(String, Object)} for the full {@code _id}-handling
+     * rules and the prohibition on update operators in the replacement.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3218,9 +3252,10 @@ public final class MongoCollectionExecutor {
 
     /**
      * Replaces a single document matching the filter.
-     * 
-     * <p>Replaces the first document that matches the filter criteria with
-     * the replacement document. The _id field is preserved.</p>
+     *
+     * <p>Replaces the first document that matches the filter criteria with the replacement document.
+     * The matched document's {@code _id} is retained; see {@link #replaceOne(String, Object)} for the
+     * full {@code _id}-handling rules and the prohibition on update operators in the replacement.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3385,19 +3420,25 @@ public final class MongoCollectionExecutor {
 
     /**
      * Performs bulk insert of multiple entities.
-     * 
-     * <p>Efficiently inserts a collection of entities using MongoDB's bulk write API.
-     * More efficient than individual inserts for large datasets.</p>
-     * 
+     *
+     * <p>Efficiently inserts a collection of entities using MongoDB's bulk write API by wrapping each
+     * element in an {@link InsertOneModel}. Entries that are already {@link Document}s are inserted
+     * as-is; other entries are converted via {@link MongoDBBase#toDocument(Object)} (Map/bean
+     * flattening — entity getters returning {@code null} are dropped). More efficient than individual
+     * inserts for large datasets.</p>
+     *
+     * <p><b>Atomicity:</b> The batch is executed as a single bulk-write call, but it is <i>not</i> a
+     * multi-document transaction — see {@link #bulkWrite(List)} for details.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<User> users = generateUsers(1000);
      * int inserted = executor.bulkInsert(users);
      * System.out.println("Inserted " + inserted + " users");
      * }</pre>
-     * 
+     *
      * @param entities collection of entities to insert
-     * @return number of documents inserted
+     * @return the {@link BulkWriteResult#getInsertedCount() inserted count} reported by the server
      * @throws IllegalArgumentException if entities is null or empty
      * @throws com.mongodb.MongoBulkWriteException if bulk write fails
      */
@@ -3441,10 +3482,17 @@ public final class MongoCollectionExecutor {
 
     /**
      * Executes bulk write operations.
-     * 
+     *
      * <p>Performs multiple write operations (insert, update, delete) in a single
      * batch for maximum efficiency.</p>
-     * 
+     *
+     * <p><b>Atomicity:</b> Each individual {@link WriteModel} is atomic against a single document,
+     * but the bulk write as a whole is <i>not</i> a multi-document transaction — other clients may
+     * observe state where some operations in the batch have been applied and others have not. By
+     * default ({@code ordered = true}) the server stops on the first failure; pass
+     * {@link BulkWriteOptions#ordered(boolean) ordered(false)} via the other overload to continue past
+     * individual failures.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<WriteModel<Document>> operations = Arrays.asList(
@@ -3454,7 +3502,7 @@ public final class MongoCollectionExecutor {
      * );
      * BulkWriteResult result = executor.bulkWrite(operations);
      * }</pre>
-     * 
+     *
      * @param requests list of write operations to execute
      * @return BulkWriteResult containing operation details
      * @throws IllegalArgumentException if requests is null or empty
@@ -3466,10 +3514,12 @@ public final class MongoCollectionExecutor {
 
     /**
      * Executes bulk write operations with additional options.
-     * 
+     *
      * <p>Provides full control over bulk write execution including ordered/unordered
-     * processing and write concern.</p>
-     * 
+     * processing and write concern. See {@link #bulkWrite(List)} for the atomicity
+     * semantics — individual operations are atomic against a single document but the
+     * batch as a whole is not a multi-document transaction.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * BulkWriteOptions options = new BulkWriteOptions()
@@ -3477,7 +3527,7 @@ public final class MongoCollectionExecutor {
      *     .bypassDocumentValidation(true);
      * BulkWriteResult result = executor.bulkWrite(operations, options);
      * }</pre>
-     * 
+     *
      * @param requests list of write operations to execute
      * @param options additional bulk write options (null uses defaults)
      * @return BulkWriteResult containing operation details
@@ -3496,22 +3546,29 @@ public final class MongoCollectionExecutor {
 
     /**
      * Finds and updates a single document atomically.
-     * 
-     * <p>Atomically finds a document and updates it, returning the original document.
-     * Useful for implementing locks or counters.</p>
-     * 
+     *
+     * <p>Atomically finds the first document matching {@code filter}, applies {@code update}, and
+     * returns the matched document. Useful for implementing locks or counters. The update payload
+     * undergoes the same {@code $set}-wrapping conversion described in {@link #updateOne(String, Object)}.</p>
+     *
+     * <p><b>Return value:</b> With no options supplied, the driver default
+     * {@link com.mongodb.client.model.ReturnDocument#BEFORE BEFORE} applies, so this returns the
+     * pre-update document; use the {@link FindOneAndUpdateOptions} overload with
+     * {@link FindOneAndUpdateOptions#returnDocument} to get the post-update document instead.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson filter = Filters.eq("_id", id);
      * Bson update = Updates.inc("counter", 1);
      * Document original = executor.findOneAndUpdate(filter, update);
      * }</pre>
-     * 
+     *
      * @param filter BSON filter to identify the document
      * @param update update operations to apply
-     * @return the original document before update, or null if not found
+     * @return the matched document (pre-update by default), or {@code null} if no document matches
      * @throws IllegalArgumentException if filter or update is null
      * @throws com.mongodb.MongoException if the database operation fails
+     * @see #updateOne(String, Object)
      */
     public Document findOneAndUpdate(final Bson filter, final Object update) {
         return findOneAndUpdate(filter, update, (FindOneAndUpdateOptions) null);
@@ -3707,18 +3764,25 @@ public final class MongoCollectionExecutor {
 
     /**
      * Finds and replaces a single document atomically.
-     * 
-     * <p>Atomically finds a document and replaces it entirely, returning the original.</p>
-     * 
+     *
+     * <p>Atomically finds the first document matching {@code filter} and replaces it entirely with
+     * {@code replacement}. The replacement is converted via {@link MongoDBBase#toDocument(Object)} when
+     * it is not already a {@link Document}; entity getters returning {@code null} are dropped.</p>
+     *
+     * <p><b>Return value:</b> With no options supplied, the driver default
+     * {@link com.mongodb.client.model.ReturnDocument#BEFORE BEFORE} applies, so this returns the
+     * pre-replacement document; use the {@link FindOneAndReplaceOptions} overload with
+     * {@link FindOneAndReplaceOptions#returnDocument} to obtain the post-replacement document.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * User newUser = new User("John", "john@example.com");
      * Document original = executor.findOneAndReplace(filter, newUser);
      * }</pre>
-     * 
+     *
      * @param filter BSON filter to identify the document
      * @param replacement the replacement document
-     * @return the original document before replacement, or null if not found
+     * @return the matched document (pre-replacement by default), or {@code null} if no document matches
      * @throws IllegalArgumentException if filter or replacement is null
      * @throws com.mongodb.MongoException if the database operation fails
      */

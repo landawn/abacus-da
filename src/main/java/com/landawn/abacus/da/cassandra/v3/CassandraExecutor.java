@@ -179,7 +179,7 @@ import lombok.experimental.Accessors;
  * User user = new User("john", "john@example.com", "active");
  * executor.insert(user);
  * 
- * // Async operations (returns Guava ListenableFuture)
+ * // Async operations (returned by AsyncCassandraExecutor)
  * ContinuableFuture<List<User>> futureUsers = executor.async().list(User.class,
  *     "SELECT * FROM users WHERE created_at > ?", yesterday);
  * }</pre>
@@ -480,21 +480,37 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Returns an asynchronous facade for this executor.
+     * Returns an asynchronous facade backed by this executor.
      *
-     * @return an AsyncCassandraExecutor for non-blocking Cassandra operations
+     * <p>The returned {@link AsyncCassandraExecutor} exposes the same Cassandra operations
+     * but submits them to an internal executor service and returns
+     * {@link com.landawn.abacus.util.ContinuableFuture} results, allowing non-blocking
+     * composition of multiple Cassandra calls.</p>
+     *
+     * <p>The returned instance is owned by this executor; do not close it independently.
+     * Its lifetime is bound to this {@code CassandraExecutor}.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * ContinuableFuture<List<User>> future = executor.async().list(User.class,
+     *     "SELECT * FROM users WHERE status = ?", "active");
+     * }</pre>
+     *
+     * @return the {@link AsyncCassandraExecutor} bound to this executor
      */
     public AsyncCassandraExecutor async() {
         return asyncCassandraExecutor;
     }
 
     /**
-     * Returns a DataStax object mapper for the specified entity class.
-     * 
-     * <p>The mapper provides automatic CRUD operations for entities using
-     * DataStax's object mapping annotations. This is useful for simple entity
-     * operations without writing CQL statements.</p>
-     * 
+     * Returns the DataStax Driver 3.x object {@link Mapper} for the given annotated entity class.
+     *
+     * <p>This is the driver's built-in object mapper (resolved via the internal
+     * {@link MappingManager}); the entity class must be annotated with the driver's mapping
+     * annotations (e.g. {@code @Table}, {@code @PartitionKey}, {@code @Column}). The
+     * mapper exposes CRUD-style methods ({@code save}, {@code get}, {@code delete}) and is
+     * independent of the higher-level CQL helpers on this executor.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * @Table(name = "users")
@@ -504,34 +520,36 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *     private String name;
      *     // getters and setters
      * }
-     * 
+     *
      * Mapper<User> mapper = executor.mapper(User.class);
      * mapper.save(user);
      * User found = mapper.get(userId);
      * }</pre>
-     * 
+     *
      * @param <T> the type of the entity
-     * @param targetClass the entity class
-     * @return a DataStax mapper for the entity class
+     * @param targetClass the entity class (must carry driver 3.x mapping annotations)
+     * @return the DataStax {@link Mapper} for the entity class
      */
     public <T> Mapper<T> mapper(final Class<T> targetClass) {
         return mappingManager.mapper(targetClass);
     }
 
     /**
-     * Registers a custom type codec for the specified Java class.
+     * Registers a JSON-based string codec for the specified Java class on this executor's
+     * {@link CodecRegistry}.
      *
-     * <p>This method registers a string-based codec that can serialize/deserialize
-     * objects of the specified class to/from JSON strings. This is useful for storing
-     * complex Java objects as text columns in Cassandra without having to define
-     * User Defined Types (UDTs).</p>
+     * <p>The registered codec is a {@link StringCodec} that serializes objects of
+     * {@code javaClazz} to JSON via {@code N.toJson(value)} and stores them in a CQL
+     * {@code varchar} (text) column. On read, the JSON text is parsed back into
+     * {@code javaClazz} via {@code N.fromJson(...)}. This avoids defining a Cassandra
+     * User Defined Type (UDT) for arbitrary application objects.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Register codec for custom class
      * executor.registerTypeCodec(Address.class);
      *
-     * // Now Address objects can be used directly in CQL operations
+     * // Now Address objects can be used directly in CQL operations against a varchar column
      * Address address = new Address("123 Main St", "Springfield", "12345");
      * executor.execute("INSERT INTO users (id, name, address) VALUES (?, ?, ?)",
      *     UUID.randomUUID(), "John Doe", address);
@@ -540,48 +558,50 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * User user = executor.findFirst(User.class,
      *     "SELECT * FROM users WHERE id = ?", userId).orElse(null);
      * // user.getAddress() returns the Address object automatically
-     *
-     * // Register multiple custom types
-     * executor.registerTypeCodec(ContactInfo.class);
-     * executor.registerTypeCodec(PaymentDetails.class);
-     * executor.registerTypeCodec(Preferences.class);
      * }</pre>
      *
-     * @param javaClazz the Java class for which to register a type codec
-     * @throws NullPointerException if javaClazz is null
+     * @param javaClazz the Java class for which to register a string-based codec
+     * @throws NullPointerException if {@code javaClazz} is {@code null}
      * @see #registerTypeCodec(CodecRegistry, Class)
+     * @see StringCodec
      */
     public void registerTypeCodec(final Class<?> javaClazz) {
         registerTypeCodec(codecRegistry, javaClazz);
     }
 
     /**
-     * Registers a custom type codec for the specified Java class in the given codec registry.
-     * 
-     * <p>This static method allows registration of type codecs in any codec registry,
-     * not just the one associated with this executor. The codec will serialize objects
-     * to/from JSON strings for storage in Cassandra text columns.</p>
-     * 
+     * Registers a JSON-based string codec for the specified Java class in the given
+     * {@link CodecRegistry}.
+     *
+     * <p>This static helper registers a {@link StringCodec} (JSON-over-{@code varchar})
+     * in any codec registry, not just the one associated with this executor.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * CodecRegistry registry = cluster.getConfiguration().getCodecRegistry();
      * CassandraExecutor.registerTypeCodec(registry, CustomData.class);
      * }</pre>
-     * 
+     *
      * @param codecRegistry the codec registry to register the codec in
      * @param javaClazz the Java class to register a codec for
+     * @throws NullPointerException if {@code codecRegistry} or {@code javaClazz} is {@code null}
+     * @see StringCodec
      */
     public static void registerTypeCodec(final CodecRegistry codecRegistry, final Class<?> javaClazz) {
         codecRegistry.register(new StringCodec<>(javaClazz));
     }
 
     /**
-     * Extracts data from a ResultSet into a Dataset with automatic type detection.
-     * 
-     * <p>This method converts all rows in the ResultSet into a Dataset structure,
-     * preserving column names and types. Nested Row objects are automatically
-     * converted to appropriate structures.</p>
-     * 
+     * Extracts data from a ResultSet into a {@link Dataset} without per-column type hints.
+     *
+     * <p>This method consumes all rows in {@code resultSet} (via {@link ResultSet#all()})
+     * and returns a {@link Dataset} that preserves column names and the raw values produced
+     * by {@link Row#getObject(int)}. Nested {@link Row} values are recursively flattened
+     * to {@code Object[]}.</p>
+     *
+     * <p>Because no target class is provided, no per-column type conversion is performed —
+     * values are stored as returned by the driver.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ResultSet rs = executor.execute("SELECT * FROM users");
@@ -589,21 +609,28 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * // Access data by column name
      * List<String> names = dataset.getColumn("name");
      * }</pre>
-     * 
+     *
      * @param resultSet the Cassandra ResultSet to extract data from
-     * @return a Dataset containing all data from the ResultSet
+     * @return a {@link Dataset} containing all rows from the ResultSet
+     * @see #extractData(ResultSet, Class)
      */
     public static Dataset extractData(final ResultSet resultSet) {
         return extractData(resultSet, null);
     }
 
     /**
-     * Extracts data from a ResultSet into a Dataset with specified target type.
-     * 
-     * <p>This method converts ResultSet rows into a Dataset, using the target class
-     * to determine appropriate type conversions. If targetClass is an entity class,
-     * column values will be converted to match the entity's property types.</p>
-     * 
+     * Extracts data from a ResultSet into a {@link Dataset}, using {@code targetClass} as a
+     * per-column type hint.
+     *
+     * <p>This method consumes all rows in {@code resultSet} (via {@link ResultSet#all()})
+     * and returns a {@link Dataset} preserving column names. When {@code targetClass} is a
+     * bean class, each column value is converted (via {@code N.convert}) to the type of the
+     * matching bean property where one exists. Nested {@link Row} values are recursively
+     * converted to the matching property type.</p>
+     *
+     * <p>When {@code targetClass} is {@code null} or a {@link Map} class, values are stored
+     * as returned by the driver with no per-column conversion.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ResultSet rs = executor.execute("SELECT * FROM users");
@@ -611,10 +638,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * // Column types match User property types
      * List<User> users = dataset.toList(User.class);
      * }</pre>
-     * 
+     *
      * @param resultSet the Cassandra ResultSet to extract data from
-     * @param targetClass an entity class with getter/setter methods or Map.class
-     * @return a Dataset containing all data from the ResultSet with appropriate type conversions
+     * @param targetClass an entity class with getter/setter methods, a {@link Map} class,
+     *                    or {@code null} for no type hint
+     * @return a {@link Dataset} containing all rows from the ResultSet, with values converted
+     *         to match {@code targetClass} property types when applicable
      */
     public static Dataset extractData(final ResultSet resultSet, final Class<?> targetClass) {
         final boolean isEntity = Beans.isBeanClass(targetClass);
@@ -660,30 +689,42 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Converts a ResultSet to a list of objects of the specified type.
-     * 
-     * <p>This method supports various target types including entity classes, Maps,
-     * Collections, arrays, and single-value types. For entity classes, column names
-     * are automatically mapped to property names.</p>
-     * 
+     * Converts every row of {@code resultSet} into an instance of {@code targetClass}
+     * and returns them as a {@link List}.
+     *
+     * <p>Supported {@code targetClass} values are:</p>
+     * <ul>
+     *   <li>{@link Row} — rows are returned unchanged (the existing list from
+     *       {@link ResultSet#all()} is returned)</li>
+     *   <li>An array class — each row becomes an array of column values, recursively
+     *       flattening nested {@link Row}s</li>
+     *   <li>A {@link Collection} class — each row becomes a new collection of column values</li>
+     *   <li>A {@link Map} class — each row becomes a new map keyed by column name</li>
+     *   <li>A JavaBean class — each row is mapped via {@link #toEntity(Row, Class)}</li>
+     *   <li>Any single-value type — used only when the result set has exactly one column;
+     *       the column value is converted to {@code T}</li>
+     * </ul>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Convert to entity list
      * ResultSet rs = executor.execute("SELECT * FROM users");
      * List<User> users = CassandraExecutor.toList(rs, User.class);
-     * 
+     *
      * // Convert to Map list
      * List<Map> maps = CassandraExecutor.toList(rs, Map.class);
-     * 
+     *
      * // Convert single column to value list
      * ResultSet names = executor.execute("SELECT name FROM users");
      * List<String> nameList = CassandraExecutor.toList(names, String.class);
      * }</pre>
-     * 
+     *
      * @param <T> the target type
      * @param resultSet the Cassandra ResultSet to convert
-     * @param targetClass an entity class with getter/setter methods or Map.class
-     * @return a list of objects converted from the ResultSet rows
+     * @param targetClass the per-row target type (see supported types above)
+     * @return a list of converted rows
+     * @throws IllegalArgumentException if {@code targetClass} is a single-value type but
+     *         the result set has more than one column
      */
     public static <T> List<T> toList(final ResultSet resultSet, final Class<T> targetClass) {
         if (targetClass.isAssignableFrom(Row.class)) {
@@ -712,12 +753,17 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <p>The method handles:</p>
      * <ul>
      * <li><strong>Direct mapping:</strong> Column names matching property names exactly</li>
-     * <li><strong>Case conversion:</strong> Automatic conversion between naming conventions (e.g., snake_case to camelCase)</li>
-     * <li><strong>Nested properties:</strong> Support for dot-notation property paths</li>
-     * <li><strong>Type conversion:</strong> Automatic conversion between compatible types</li>
-     * <li><strong>Null values:</strong> Proper handling of null column values</li>
-     * <li><strong>UDT support:</strong> Automatic conversion of User Defined Types</li>
+     * <li><strong>Naming-policy mapping:</strong> Column-to-property name resolution via
+     *     {@link QueryUtil#getColumn2PropNameMap(Class)} (e.g., snake_case columns to camelCase properties)</li>
+     * <li><strong>Nested properties:</strong> Dot-notation property paths (e.g., {@code "address.city"})
+     *     when no direct property is found</li>
+     * <li><strong>Null values:</strong> {@code null} column values are written through as {@code null}</li>
+     * <li><strong>Nested {@link Row} values:</strong> Recursively converted via {@link #readRow(Row, Class)}
+     *     to the property type</li>
      * </ul>
+     *
+     * <p>Note: this method does <em>not</em> perform UDT-to-bean conversion itself; UDT
+     * columns require a registered {@link UDTCodec} or are surfaced as {@link UDTValue}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -793,44 +839,49 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Converts a Cassandra Row to a Map with default map implementation.
-     * 
-     * <p>This method creates a HashMap containing all column name-value pairs
-     * from the Row. Nested Row objects are recursively converted to Maps.</p>
-     * 
+     * Converts a Cassandra Row to a {@link HashMap} of column name to value.
+     *
+     * <p>This convenience overload delegates to {@link #toMap(Row, IntFunction)} using
+     * {@link IntFunctions#ofMap()}, which returns a {@link HashMap}. The returned map
+     * therefore does <em>not</em> preserve column order. Nested {@link Row} values are
+     * recursively converted to maps via the same supplier.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Row row = resultSet.one();
      * Map<String, Object> map = CassandraExecutor.toMap(row);
      * Object value = map.get("column_name");
      * }</pre>
-     * 
+     *
      * @param row the Cassandra Row to convert
-     * @return a Map containing all column name-value pairs from the row
+     * @return a {@link HashMap} containing all column name-value pairs from the row
+     * @see #toMap(Row, IntFunction)
      */
     public static Map<String, Object> toMap(final Row row) {
         return toMap(row, IntFunctions.ofMap());
     }
 
     /**
-     * Converts a Cassandra Row to a Map using a custom map supplier.
-     * 
-     * <p>This method allows specification of the Map implementation to use.
-     * The supplier receives the expected map size as a parameter for optimal
-     * initialization. Nested Row objects are recursively converted to Maps.</p>
-     * 
+     * Converts a Cassandra Row to a Map using a caller-supplied map factory.
+     *
+     * <p>The {@code supplier} receives the expected column count and must return a fresh,
+     * mutable {@link Map} instance. Use this overload when you need a specific map
+     * implementation (e.g., {@link java.util.LinkedHashMap LinkedHashMap} to preserve
+     * column order, or {@link java.util.TreeMap TreeMap} for sorted keys). Nested
+     * {@link Row} values are recursively converted using the same supplier.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Row row = resultSet.one();
      * // Use LinkedHashMap to preserve column order
      * Map<String, Object> map = CassandraExecutor.toMap(row, LinkedHashMap::new);
-     * 
+     *
      * // Use TreeMap for sorted keys
      * Map<String, Object> sortedMap = CassandraExecutor.toMap(row, size -> new TreeMap<>());
      * }</pre>
-     * 
+     *
      * @param row the Cassandra Row to convert
-     * @param supplier function to create the Map instance with expected size
+     * @param supplier factory invoked with the expected column count to create the target map
      * @return a Map containing all column name-value pairs from the row
      */
     public static Map<String, Object> toMap(final Row row, final IntFunction<? extends Map<String, Object>> supplier) {
@@ -856,16 +907,27 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Reads a Cassandra Row and converts it to the specified row class type.
-     * 
-     * <p>This internal method handles conversion of Row objects to various Java types
-     * including arrays, collections, maps, entity beans, and single values. It performs
-     * recursive conversion for nested Row objects.</p>
-     * 
+     * Reads a single {@link Row} and converts it to {@code rowClass}.
+     *
+     * <p>Internal dispatcher used by the public conversion helpers. Behavior by
+     * {@code rowClass}:</p>
+     * <ul>
+     *   <li>{@code null} or an object-array class: each column becomes an array element;
+     *       nested {@link Row}s are recursively flattened to {@code Object[]}</li>
+     *   <li>{@link Collection} class: a fresh collection of column values</li>
+     *   <li>{@link Map} class: a fresh map keyed by column name</li>
+     *   <li>Bean class: delegates to {@link #toEntity(Row, Class)}</li>
+     *   <li>Single-value type: only legal when the row has exactly one column; the value
+     *       is converted to {@code T}</li>
+     * </ul>
+     *
      * @param <T> the target type
-     * @param row the Cassandra Row to read, or null
-     * @param rowClass the target class type, or null for Object[]
-     * @return the converted object, or default value if row is null
+     * @param row the Cassandra Row to read, or {@code null}
+     * @param rowClass the target class, or {@code null} to default to {@code Object[]}
+     * @return the converted object, or {@link N#defaultValueOf(Class)} when {@code row} is {@code null}
+     *         and {@code rowClass} is non-null
+     * @throws IllegalArgumentException if {@code rowClass} is a single-value type but the row has
+     *         more than one column
      */
     @SuppressWarnings("rawtypes")
     private static <T> T readRow(final Row row, final Class<T> rowClass) {
@@ -928,16 +990,19 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Creates a row mapper function for converting Rows to the specified class type.
-     * 
-     * <p>This internal method creates optimized mapper functions based on the target
-     * class type. The mapper handles arrays, collections, maps, entity beans, and
-     * single-value conversions.</p>
-     * 
+     * Builds a specialized {@code Row -> T} mapper for the given target class and column metadata.
+     *
+     * <p>The returned function chooses one of several strategies up front (array, collection,
+     * map, bean, or single-value) and uses that strategy for every row. For single-value
+     * conversions the mapper caches whether the runtime column type is already assignable
+     * to {@code T} to skip {@code N.convert} on later rows.</p>
+     *
      * @param <T> the target type
      * @param rowClass the target class for row conversion
-     * @param columnDefinitions the column definitions from the ResultSet
-     * @return a function that maps Row objects to the target type
+     * @param columnDefinitions the column definitions of the result set
+     * @return a function that maps {@link Row} to {@code T}
+     * @throws IllegalArgumentException if {@code rowClass} is a single-value type but the
+     *         result set has more than one column
      */
     @SuppressWarnings("rawtypes")
     private static <T> Function<Row, T> createRowMapper(final Class<T> rowClass, final ColumnDefinitions columnDefinitions) {
@@ -1481,19 +1546,24 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Closes the executor and releases all resources.
-     * 
-     * <p>This method closes the underlying Cassandra session and cluster connections.
-     * After calling this method, the executor instance cannot be used for any further operations.
-     * This method is idempotent - calling it multiple times has no additional effect.</p>
-     * 
+     * Closes the executor and releases all associated resources.
+     *
+     * <p>This method closes, in order: the underlying Cassandra {@link Session}, the
+     * {@link Cluster}, and the internal statement and prepared-statement pools. Sessions
+     * and clusters already closed are skipped. After calling this method, the executor
+     * instance must not be used for any further operations.</p>
+     *
+     * <p><strong>Note:</strong> closing the executor closes the {@code Session} and
+     * {@code Cluster} that were supplied at construction time, so do not share those
+     * resources with other components if you intend to call this method.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * CassandraExecutor executor = new CassandraExecutor(session);
      * try {
      *     // Perform database operations
      * } finally {
-     *     executor.close();   // Ensures resources are released
+     *     executor.close();   // Closes session, cluster, and internal pools
      * }
      * }</pre>
      */
@@ -1519,16 +1589,17 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Prepares a batch insert statement for a collection of entities.
-     * 
-     * <p>This method creates a batch statement that inserts multiple entities in a single
-     * round trip to the database. The batch type determines the atomicity and performance
-     * characteristics of the operation.</p>
-     * 
-     * @param entities the collection of entities to insert
-     * @param type the batch type
-     * @return a prepared BatchStatement ready for execution
-     * @throws IllegalArgumentException if entities is null or empty
+     * Builds a {@link BatchStatement} containing one {@code INSERT} per entity.
+     *
+     * <p>Each element of {@code entities} is converted to a parameterized INSERT via
+     * {@code prepareInsert(entity)} and added to a new batch of the given {@code type}.
+     * The batch is not executed by this method.</p>
+     *
+     * @param entities the entities to insert; must be non-null, non-empty, and contain no {@code null}
+     * @param type the batch type ({@link BatchStatement.Type#LOGGED}, {@code UNLOGGED}, or {@code COUNTER});
+     *        {@code null} is treated as {@code LOGGED} by {@link #prepareBatchStatement(BatchStatement.Type)}
+     * @return a populated {@link BatchStatement} ready for execution
+     * @throws IllegalArgumentException if {@code entities} is null, empty, or contains a {@code null} element
      */
     @Override
     protected BatchStatement prepareBatchInsertStatement(final Collection<?> entities, final BatchStatement.Type type) {
@@ -1547,17 +1618,19 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Prepares a batch insert statement for a collection of property maps.
-     * 
-     * <p>This method creates a batch statement that inserts multiple rows based on
-     * property maps rather than entity objects. This is useful when working with
-     * dynamic data structures.</p>
-     * 
-     * @param targetClass the entity class
-     * @param propsList collection of property maps to insert
-     * @param type the batch type
-     * @return a prepared BatchStatement ready for execution
-     * @throws IllegalArgumentException if propsList is null or empty
+     * Builds a {@link BatchStatement} containing one {@code INSERT} per property map.
+     *
+     * <p>Each element of {@code propsList} (a property-name &rarr; value map) is converted
+     * to a parameterized INSERT for {@code targetClass} via {@code prepareInsert(targetClass, props)}
+     * and added to a new batch of the given {@code type}. This overload is intended for
+     * dynamic data where entity instances are not available.</p>
+     *
+     * @param targetClass the entity class whose table/columns are targeted
+     * @param propsList property-name &rarr; value maps, one per INSERT;
+     *        must be non-null, non-empty, and contain no {@code null} elements
+     * @param type the batch type; {@code null} is treated as {@link BatchStatement.Type#LOGGED}
+     * @return a populated {@link BatchStatement} ready for execution
+     * @throws IllegalArgumentException if {@code propsList} is null, empty, or contains a {@code null} element
      */
     @Override
     protected BatchStatement prepareBatchInsertStatement(final Class<?> targetClass, final Collection<? extends Map<String, Object>> propsList,
@@ -1577,16 +1650,19 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Prepares a batch update statement for a collection of entities.
-     * 
-     * <p>This method creates a batch statement that updates multiple entities,
-     * updating only the specified properties for each entity.</p>
-     * 
-     * @param entities the collection of entities to update
-     * @param propNamesToUpdate the property names to update
-     * @param type the batch type
-     * @return a prepared BatchStatement ready for execution
-     * @throws IllegalArgumentException if entities or propNamesToUpdate is null or empty
+     * Builds a {@link BatchStatement} containing one {@code UPDATE} per entity, restricted
+     * to the columns named by {@code propNamesToUpdate}.
+     *
+     * <p>For each entity, an UPDATE is prepared via {@code prepareUpdate(entity, propNamesToUpdate)}
+     * and added to a new batch of the given {@code type}. The WHERE clause is derived from
+     * the entity's primary-key properties.</p>
+     *
+     * @param entities the entities to update; must be non-null, non-empty, and contain no {@code null}
+     * @param propNamesToUpdate the property names to include in each UPDATE; must be non-null and non-empty
+     * @param type the batch type; {@code null} is treated as {@link BatchStatement.Type#LOGGED}
+     * @return a populated {@link BatchStatement} ready for execution
+     * @throws IllegalArgumentException if {@code entities} or {@code propNamesToUpdate} is null or empty,
+     *         or if {@code entities} contains a {@code null} element
      */
     @Override
     protected BatchStatement prepareBatchUpdateStatement(final Collection<?> entities, final Collection<String> propNamesToUpdate,
@@ -1606,16 +1682,21 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Prepares a batch update statement for a collection of property maps.
-     * 
-     * <p>This method creates a batch statement that updates multiple rows based on
-     * property maps. The primary key values must be included in each property map.</p>
-     * 
-     * @param targetClass the entity class
-     * @param propsList collection of property maps to update
-     * @param type the batch type
-     * @return a prepared BatchStatement ready for execution
-     * @throws IllegalArgumentException if propsList is null or empty
+     * Builds a {@link BatchStatement} containing one {@code UPDATE} per property map.
+     *
+     * <p>For each map in {@code propsList}, the primary-key entries (as determined by
+     * {@code getKeyNameSet(targetClass)}) are extracted to form an equality WHERE clause,
+     * and the remaining entries become the SET assignments. Each resulting UPDATE is added
+     * to a new batch of the given {@code type}. Every map must therefore contain values for
+     * all primary-key columns of {@code targetClass}.</p>
+     *
+     * @param targetClass the entity class whose table/columns are targeted
+     * @param propsList property-name &rarr; value maps, one per UPDATE; each map must include
+     *        all primary-key values for {@code targetClass}. Must be non-null, non-empty,
+     *        and contain no {@code null} elements
+     * @param type the batch type; {@code null} is treated as {@link BatchStatement.Type#LOGGED}
+     * @return a populated {@link BatchStatement} ready for execution
+     * @throws IllegalArgumentException if {@code propsList} is null, empty, or contains a {@code null} element
      */
     @Override
     protected BatchStatement prepareBatchUpdateStatement(final Class<?> targetClass, final Collection<? extends Map<String, Object>> propsList,
@@ -1642,17 +1723,19 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Prepares a batch update statement with custom queries and parameters.
-     * 
-     * <p>This method creates a batch statement that executes multiple update queries
-     * with their respective parameters. Each element in parametersList corresponds
-     * to one execution of the query.</p>
-     * 
-     * @param query the CQL update query to execute
-     * @param parametersList collection of parameter sets for each query execution
-     * @param type the batch type
-     * @return a prepared BatchStatement ready for execution
-     * @throws IllegalArgumentException if parametersList is null or empty
+     * Builds a {@link BatchStatement} that runs the same CQL {@code query} once per element
+     * of {@code parametersList}, each with its own parameter binding.
+     *
+     * <p>Each element of {@code parametersList} is forwarded as the {@code parameters} argument
+     * to {@link #prepareStatement(String, Object...)}, so it may itself be an {@code Object[]},
+     * a {@link Collection}, a {@link Map} (for named parameters), or a bean.</p>
+     *
+     * @param query the CQL statement to execute; must be non-null
+     * @param parametersList parameter bundles, one per execution; must be non-null, non-empty,
+     *        and contain no {@code null} elements
+     * @param type the batch type; {@code null} is treated as {@link BatchStatement.Type#LOGGED}
+     * @return a populated {@link BatchStatement} ready for execution
+     * @throws IllegalArgumentException if {@code parametersList} is null, empty, or contains a {@code null} element
      */
     @Override
     protected BatchStatement prepareBatchUpdateStatement(final String query, final Collection<?> parametersList, final BatchStatement.Type type) {
@@ -1669,13 +1752,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Creates and configures a new batch statement.
-     * 
-     * <p>This method creates a batch statement of the specified type and applies
-     * any configured statement settings such as consistency level and retry policy.</p>
-     * 
-     * @param type the batch type
-     * @return a configured BatchStatement
+     * Creates a new, empty {@link BatchStatement} of the given type and applies this
+     * executor's {@link StatementSettings} via {@link #configStatement(Statement)}.
+     *
+     * @param type the batch type ({@link BatchStatement.Type#LOGGED}, {@code UNLOGGED}, or {@code COUNTER});
+     *        {@code null} is treated as {@code LOGGED}
+     * @return a configured, empty {@link BatchStatement}
      */
     @Override
     protected BatchStatement prepareBatchStatement(final BatchStatement.Type type) {
@@ -1687,14 +1769,15 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Prepares a statement from a CQL query without parameters.
-     * 
-     * <p>This method prepares a statement from the given query string, utilizing
-     * statement pooling for frequently used queries to improve performance.</p>
-     * 
-     * @param query the CQL query to prepare
-     * @return a prepared Statement ready for execution
-     * @throws IllegalArgumentException if query is null or empty
+     * Returns an executable {@link Statement} for a parameterless CQL query.
+     *
+     * <p>For queries no longer than {@link #POOLABLE_LENGTH} characters, the resulting
+     * {@link BoundStatement} is cached in an internal pool keyed by the query string so
+     * subsequent calls with the same query reuse the prepared/bound form. For longer
+     * queries the statement is always built fresh.</p>
+     *
+     * @param query the CQL query to prepare; must be non-null
+     * @return an executable {@link Statement}
      */
     @Override
     protected Statement prepareStatement(final String query) {
@@ -1722,16 +1805,29 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Prepares a parameterized statement from a CQL query.
-     * 
-     * <p>This method prepares a statement with the given parameters, supporting various
-     * parameter formats including positional, named, entity-based, and map-based parameters.
-     * The method utilizes prepared statement pooling for improved performance.</p>
-     * 
-     * @param query the CQL query to prepare
-     * @param parameters the query parameters
-     * @return a prepared Statement ready for execution
-     * @throws IllegalArgumentException if parameters don't match the query requirements
+     * Returns an executable {@link Statement} for the given CQL query with parameters bound.
+     *
+     * <p>Parameters can be supplied in several forms:</p>
+     * <ul>
+     *   <li>Positional values matching {@code ?} placeholders</li>
+     *   <li>A single {@code Object[]} or {@link Collection} containing all positional values</li>
+     *   <li>A single {@link Map} (named parameters: keys match {@code :name} placeholders or
+     *       the column names of the prepared statement variables)</li>
+     *   <li>A single bean instance (named parameters resolved via bean property getters)</li>
+     * </ul>
+     *
+     * <p>Values are coerced to the column's declared Java type using the executor's
+     * {@link CodecRegistry} and {@code N.convert(...)} where applicable. If
+     * {@code parameters} is empty the call is delegated to {@link #prepareStatement(String)}.
+     * For queries no longer than {@link #POOLABLE_LENGTH} characters the underlying
+     * {@link PreparedStatement} is cached and reused.</p>
+     *
+     * @param query the CQL query to prepare; must be non-null
+     * @param parameters the parameters to bind, in one of the supported forms
+     * @return an executable {@link Statement} with parameters bound
+     * @throws IllegalArgumentException if a required parameter is missing, if a named
+     *         parameter cannot be resolved, or if fewer values are supplied than the
+     *         prepared statement requires
      */
     @Override
     protected Statement prepareStatement(final String query, final Object... parameters) {
@@ -1870,14 +1966,16 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Prepares a CQL statement for execution.
-     * 
-     * <p>This method creates a PreparedStatement from the given query and applies
-     * any configured settings such as consistency level, retry policy, and tracing options.</p>
-     * 
-     * @param query the CQL query to prepare
-     * @return a PreparedStatement ready for binding
-     * @throws IllegalArgumentException if query is invalid
+     * Calls {@link Session#prepare(String)} on the underlying session and applies the
+     * subset of this executor's {@link StatementSettings} that can be set on a
+     * {@link PreparedStatement} (consistency, serial consistency, retry policy, tracing).
+     *
+     * <p>Read-timeout and fetch size are not propagated here; they are applied when the
+     * resulting bound statement is configured via {@link #configStatement(Statement)}.</p>
+     *
+     * @param query the CQL query to prepare; must be non-null
+     * @return a {@link PreparedStatement} bound to this executor's settings, ready for
+     *         {@link #bind(PreparedStatement, Object...)}
      */
     @Override
     protected PreparedStatement prepare(final String query) {
@@ -1913,15 +2011,14 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Binds parameters to a prepared statement.
-     * 
-     * <p>This method creates a BoundStatement by binding the provided parameters
-     * to the prepared statement and applies any configured statement settings.</p>
-     * 
+     * Binds the supplied positional parameters to {@code preStmt} and applies this
+     * executor's {@link StatementSettings} to the resulting {@link BoundStatement}.
+     *
      * @param preStmt the prepared statement to bind
-     * @param parameters the query parameters
-     * @return a BoundStatement ready for execution
-     * @throws IllegalArgumentException if parameter count doesn't match
+     * @param parameters the positional parameter values, already coerced to the column types
+     * @return a {@link BoundStatement} ready for execution
+     * @throws com.datastax.driver.core.exceptions.InvalidTypeException if a parameter value
+     *         cannot be assigned to its declared column type
      */
     @Override
     protected BoundStatement bind(final PreparedStatement preStmt, final Object... parameters) {
@@ -1933,12 +2030,14 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Configures a statement with the executor's settings.
-     * 
-     * <p>This method applies all configured settings (consistency level, retry policy,
-     * timeouts, fetch size, tracing) to the given statement.</p>
-     * 
-     * @param stmt the statement to configure
+     * Applies this executor's {@link StatementSettings} to the given {@link Statement}.
+     *
+     * <p>For each setting on {@link #settings} that is non-{@code null}, the corresponding
+     * property is set on {@code stmt}: consistency level, serial consistency level, retry
+     * policy, read-timeout, fetch size, and tracing (enabled/disabled). If this executor
+     * was built without a {@code StatementSettings}, this method is a no-op.</p>
+     *
+     * @param stmt the statement to configure; must not be {@code null}
      */
     protected void configStatement(final Statement stmt) {
         if (settings != null) {
@@ -1973,15 +2072,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Converts a ResultSet to a list of the specified target class.
-     * 
-     * <p>This method iterates through all rows in the ResultSet and maps each row
-     * to an instance of the target class.</p>
-     * 
+     * Template-method bridge that delegates to the static
+     * {@link #toList(ResultSet, Class)} with arguments reordered.
+     *
      * @param <T> the target type
-     * @param targetClass the entity class
+     * @param targetClass the per-row target type (see {@link #toList(ResultSet, Class)} for supported kinds)
      * @param rs the ResultSet to convert
-     * @return a list of mapped objects
+     * @return a list of converted rows
      */
     @Override
     protected <T> List<T> toList(final Class<T> targetClass, final ResultSet rs) {
@@ -1989,14 +2086,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Extracts data from a ResultSet into a Dataset.
-     * 
-     * <p>This method converts the ResultSet into a Dataset structure, which provides
-     * additional functionality for data manipulation and analysis.</p>
-     * 
-     * @param targetClass the entity class
+     * Template-method bridge that delegates to the static
+     * {@link #extractData(ResultSet, Class)} with arguments reordered.
+     *
+     * @param targetClass an entity class used as a per-column type hint, or {@code null}
      * @param rs the ResultSet to extract data from
-     * @return a Dataset containing the extracted data
+     * @return a {@link Dataset} containing all rows from the ResultSet
      */
     @Override
     protected Dataset extractData(final Class<?> targetClass, final ResultSet rs) {
@@ -2004,15 +2099,17 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Creates a row mapper function for the specified class.
-     * 
-     * <p>This method returns a function that maps Row objects to instances of the
-     * specified class. The mapper is lazily initialized on first use based on the
-     * actual column definitions.</p>
-     * 
+     * Returns a lazy {@link Function} that maps {@link Row} instances to {@code T}.
+     *
+     * <p>The returned function defers building the actual per-column mapper until it is
+     * invoked for the first row, at which point it reads the {@link ColumnDefinitions}
+     * from that row and caches the resulting mapper for subsequent rows. This is the
+     * template-method hook used by streaming/iterating helpers in the base executor.</p>
+     *
      * @param <T> the target type
-     * @param rowClass the class to map rows to
-     * @return a Function that maps Row to T
+     * @param rowClass the class to map rows to (entity, {@link Map}, {@link Collection},
+     *        array, or a single-value type when the result has one column)
+     * @return a {@link Function} that maps {@link Row} to {@code T}, lazily initialized
      */
     @Override
     protected <T> Function<Row, T> createRowMapper(final Class<T> rowClass) {
@@ -2031,15 +2128,16 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Creates a row mapper function from a custom BiFunction.
-     * 
-     * <p>This method wraps a BiFunction that takes ColumnDefinitions and Row
-     * into a simpler Function that only takes Row, caching the ColumnDefinitions
-     * for efficiency.</p>
-     * 
+     * Adapts a user-supplied {@code (ColumnDefinitions, Row) -> T} mapper into a
+     * single-argument {@link Function Function&lt;Row, T&gt;}.
+     *
+     * <p>The {@link ColumnDefinitions} are captured from the first row passed to the
+     * returned function and reused for every subsequent row, avoiding repeated metadata
+     * lookups.</p>
+     *
      * @param <T> the target type
-     * @param rowMapper the BiFunction to wrap
-     * @return a Function that maps Row to T
+     * @param rowMapper the user mapper that accepts column metadata and a row
+     * @return a {@link Function} that maps {@link Row} to {@code T}
      */
     protected <T> Function<Row, T> createRowMapper(final BiFunction<ColumnDefinitions, Row, T> rowMapper) {
         return new Function<>() {
@@ -2057,16 +2155,19 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Fetches exactly one result from a ResultSet.
-     * 
-     * <p>This method ensures that the ResultSet contains exactly one row.
-     * If no rows or multiple rows are found, appropriate exceptions are thrown.</p>
-     * 
+     * Returns the single row of {@code resultSet} mapped to {@code targetClass}, or
+     * {@code null} if the result set is empty.
+     *
+     * <p>If the result set contains exactly one row, that row is converted via
+     * {@link #readRow(Row, Class)} and returned. If it contains no rows, {@code null}
+     * is returned. If it contains more than one row, {@link DuplicateResultException}
+     * is thrown.</p>
+     *
      * @param <T> the target type
-     * @param targetClass the entity class
+     * @param targetClass the entity class to map the row to
      * @param resultSet the ResultSet to fetch from
-     * @return the single mapped result, or null if no rows
-     * @throws DuplicateResultException if more than one row is found
+     * @return the single mapped row, or {@code null} if the result set is empty
+     * @throws DuplicateResultException if more than one row is present
      */
     @Override
     protected <T> T fetchOnlyOne(final Class<T> targetClass, final ResultSet resultSet) {
@@ -2082,12 +2183,19 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Abstract base class for User Defined Type (UDT) codecs.
-     * 
-     * <p>This class provides a framework for creating custom type codecs that convert between
-     * Cassandra UDT values and Java objects. It supports mapping to Collections, Maps, and
-     * Java Bean classes.</p>
-     * 
+     * Abstract base class for codecs that translate between Cassandra User Defined Type
+     * (UDT) values and Java objects (Driver 3.x).
+     *
+     * <p>This class extends the DataStax {@link TypeCodec} so the codec can be registered
+     * with the driver's {@link CodecRegistry} and used transparently in CQL statements.
+     * Subclasses (or the instance returned by {@link #create(UserType, Class)}) implement
+     * {@link #serialize(Object)} and {@link #deserialize(UDTValue)} to map between the
+     * UDT field layout and the Java type {@code T}. Supported Java types are
+     * {@link Collection}, {@link Map}, and JavaBean classes.</p>
+     *
+     * <p>String-form serialization (used by {@link #format(Object)}/{@link #parse(String)})
+     * goes through {@code N.toJson(...)}/{@code N.fromJson(...)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Define a custom Address class
@@ -2097,16 +2205,16 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *     private String zipCode;
      *     // getters and setters...
      * }
-     * 
+     *
      * // Create a codec for the Address UDT
      * UserType addressType = cluster.getMetadata()
      *     .getKeyspace("mykeyspace")
      *     .getUserType("address");
-     * 
+     *
      * UDTCodec<Address> addressCodec = UDTCodec.create(addressType, Address.class);
      * cluster.getConfiguration().getCodecRegistry().register(addressCodec);
      * }</pre>
-     * 
+     *
      * @param <T> the Java type this codec handles
      */
     public abstract static class UDTCodec<T> extends TypeCodec<T> {
@@ -2116,10 +2224,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         private final TypeCodec<UDTValue> udtValueTypeCodec;
 
         /**
-         * Constructs a new UDT codec.
-         * 
-         * @param userType the Cassandra user type definition
-         * @param javaClazz the Java class to map to
+         * Constructs a new UDT codec bound to the specified Cassandra user type and Java class.
+         *
+         * @param userType the Cassandra user type definition the codec encodes/decodes
+         * @param javaClazz the Java class the codec maps to (a {@link Collection},
+         *                  {@link Map}, or bean class)
          */
         protected UDTCodec(final UserType userType, final Class<T> javaClazz) {
             super(userType, javaClazz);
@@ -2129,25 +2238,33 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
 
         /**
-         * Creates a UDT codec for the specified user type and Java class.
-         * 
-         * <p>This factory method creates a codec that can convert between Cassandra UDT values
-         * and Java objects. The Java class can be a Collection, Map, or Bean class.</p>
-         * 
+         * Creates a ready-to-use UDT codec for the given user type and Java class.
+         *
+         * <p>The returned codec encodes/decodes UDT values as follows:</p>
+         * <ul>
+         *   <li>{@link Collection} subclasses: encoded as the UDT fields in declaration
+         *       order; decoded into a new collection of the same type</li>
+         *   <li>{@link Map} subclasses: encoded by reading each UDT field by name from the map;
+         *       decoded into a new map keyed by UDT field name</li>
+         *   <li>JavaBean classes: encoded and decoded by reading/writing the bean property
+         *       whose name matches each UDT field name</li>
+         * </ul>
+         * <p>The {@link IllegalArgumentException} for unsupported types is thrown lazily at
+         * encode/decode time, not by this factory.</p>
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * UserType addressType = session.getCluster().getMetadata()
          *     .getKeyspace("mykeyspace")
          *     .getUserType("address");
-         * 
+         *
          * UDTCodec<Address> codec = UDTCodec.create(addressType, Address.class);
          * }</pre>
-         * 
+         *
          * @param <T> the Java type
          * @param userType the Cassandra user type
-         * @param javaClazz the Java class to map to
+         * @param javaClazz the Java class to map to (a {@link Collection}, {@link Map}, or bean class)
          * @return a new UDT codec instance
-         * @throws IllegalArgumentException if javaClazz is not a Collection, Map, or Bean class
          */
         public static <T> UDTCodec<T> create(final UserType userType, final Class<T> javaClazz) {
             return new UDTCodec<>(userType, javaClazz) {
@@ -2262,37 +2379,38 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
 
         /**
-         * Creates a UDT codec using cluster metadata.
-         * 
-         * <p>This convenience method looks up the user type from the cluster metadata
-         * and creates a codec for it.</p>
-         * 
+         * Creates a UDT codec by looking up the user type from the cluster's metadata.
+         *
+         * <p>Delegates to {@link #create(UserType, Class)} after resolving the UDT named
+         * {@code userType} in keyspace {@code keySpace} from {@code cluster}'s metadata.</p>
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * UDTCodec<Address> codec = UDTCodec.create(
          *     cluster, "mykeyspace", "address", Address.class
          * );
          * }</pre>
-         * 
+         *
          * @param <T> the Java type
-         * @param cluster the Cassandra cluster
+         * @param cluster the Cassandra cluster whose metadata is queried
          * @param keySpace the keyspace containing the UDT
-         * @param userType the name of the user type
-         * @param javaClazz the Java class to map to
+         * @param userType the name of the user type within {@code keySpace}
+         * @param javaClazz the Java class to map to (a {@link Collection}, {@link Map}, or bean class)
          * @return a new UDT codec instance
-         * @throws IllegalArgumentException if the user type doesn't exist
+         * @throws NullPointerException if the keyspace or user type cannot be found in the metadata
          */
         public static <T> UDTCodec<T> create(final Cluster cluster, final String keySpace, final String userType, final Class<T> javaClazz) {
             return create(cluster.getMetadata().getKeyspace(keySpace).getUserType(userType), javaClazz);
         }
 
         /**
-         * Serializes a Java object to a ByteBuffer.
-         * 
-         * @param value the value to serialize
-         * @param protocolVersion the protocol version to use
-         * @return the serialized ByteBuffer
-         * @throws InvalidTypeException if serialization fails
+         * Serializes a Java value into the binary representation of its UDT, delegating
+         * to {@link #serialize(Object)} and then to the underlying {@link UDTValue} codec.
+         *
+         * @param value the value to serialize, or {@code null}
+         * @param protocolVersion the native protocol version negotiated with the cluster
+         * @return the serialized {@link ByteBuffer}, or {@code null} for a {@code null} input
+         * @throws InvalidTypeException if the value cannot be serialized to this UDT
          */
         @Override
         public ByteBuffer serialize(final T value, final ProtocolVersion protocolVersion) throws InvalidTypeException {
@@ -2300,12 +2418,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
 
         /**
-         * Deserializes a ByteBuffer to a Java object.
-         * 
-         * @param bytes the ByteBuffer to deserialize
-         * @param protocolVersion the protocol version to use
-         * @return the deserialized object
-         * @throws InvalidTypeException if deserialization fails
+         * Deserializes the binary representation of a UDT into the target Java type, delegating
+         * to the underlying {@link UDTValue} codec and then to {@link #deserialize(UDTValue)}.
+         *
+         * @param bytes the binary UDT payload, or {@code null}
+         * @param protocolVersion the native protocol version negotiated with the cluster
+         * @return the deserialized object, or {@code null} for a {@code null} input
+         * @throws InvalidTypeException if the bytes cannot be decoded as this UDT
          */
         @Override
         public T deserialize(final ByteBuffer bytes, final ProtocolVersion protocolVersion) throws InvalidTypeException {
@@ -2313,11 +2432,14 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
 
         /**
-         * Parses a string representation to a Java object.
-         * 
+         * Parses a JSON string into a Java object of type {@code T}.
+         *
+         * <p>An empty string or the literal {@code "NULL"} ({@code TypeCodec#NULL_STR}) is
+         * decoded as {@code null}.</p>
+         *
          * @param value the string to parse
-         * @return the parsed object
-         * @throws InvalidTypeException if parsing fails
+         * @return the parsed object, or {@code null} for empty/{@code "NULL"} input
+         * @throws InvalidTypeException if the string is not valid JSON for {@code T}
          */
         @Override
         public T parse(final String value) throws InvalidTypeException {
@@ -2325,11 +2447,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
 
         /**
-         * Formats a Java object to its string representation.
-         * 
+         * Formats a Java object as a JSON string.
+         *
+         * <p>A {@code null} value is rendered as the literal {@code "NULL"}
+         * ({@code TypeCodec#NULL_STR}).</p>
+         *
          * @param value the value to format
-         * @return the formatted string
-         * @throws InvalidTypeException if formatting fails
+         * @return the JSON string (or {@code "NULL"} if {@code value} is {@code null})
          */
         @Override
         public String format(final T value) throws InvalidTypeException {
@@ -2337,49 +2461,53 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
 
         /**
-         * Creates a new UDT value instance.
-         * 
-         * @return a new UDTValue
+         * Returns a new, empty {@link UDTValue} for this codec's user type.
+         *
+         * @return a freshly allocated UDT value
          */
         protected UDTValue newUDTValue() {
             return userType.newValue();
         }
 
         /**
-         * Serializes a Java object to a UDT value.
-         * 
-         * @param value the value to serialize
-         * @return the serialized UDTValue
+         * Converts a Java value into a {@link UDTValue} following this codec's field layout.
+         *
+         * @param value the value to serialize; implementations must accept {@code null}
+         * @return the populated {@link UDTValue}, or {@code null} for a {@code null} input
          */
         protected abstract UDTValue serialize(T value);
 
         /**
-         * Deserializes a UDT value to a Java object.
-         * 
-         * @param udtValue the UDT value to deserialize
-         * @return the deserialized object
+         * Converts a {@link UDTValue} into the Java type handled by this codec.
+         *
+         * @param udtValue the UDT value to read; implementations must accept {@code null}
+         * @return the deserialized Java object, or {@code null} for a {@code null} input
          */
         protected abstract T deserialize(UDTValue udtValue);
     }
 
     /**
-     * Type codec for storing Java objects as JSON strings in VARCHAR columns.
-     * 
-     * <p>This codec serializes Java objects to JSON strings for storage in Cassandra
-     * VARCHAR columns, and deserializes them back to Java objects when reading.</p>
-     * 
+     * Type codec (Driver 3.x) that stores arbitrary Java objects as JSON strings in
+     * Cassandra {@code varchar} columns.
+     *
+     * <p>On encode, the value is converted to JSON via {@code N.toJson(value)}; on
+     * decode, the column text is parsed back into {@code T} via {@code N.fromJson(...)}.
+     * A {@code null} reference round-trips as the literal {@code "NULL"}
+     * ({@code TypeCodec#NULL_STR}) for the string forms. This is the codec implementation
+     * used by {@link CassandraExecutor#registerTypeCodec(Class)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Register a codec for storing complex objects as JSON
      * StringCodec<UserPreferences> prefsCodec = new StringCodec<>(UserPreferences.class);
      * cluster.getConfiguration().getCodecRegistry().register(prefsCodec);
-     * 
+     *
      * // Now UserPreferences objects can be stored in VARCHAR columns
      * UserPreferences prefs = new UserPreferences();
-     * executor.execute("INSERT INTO users (id, preferences) VALUES (?, ?)", 
+     * executor.execute("INSERT INTO users (id, preferences) VALUES (?, ?)",
      *     userId, prefs);
      * }</pre>
-     * 
+     *
      * @param <T> the Java type this codec handles
      */
     static class StringCodec<T> extends TypeCodec<T> {
@@ -2387,9 +2515,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         private final Class<T> javaClazz;
 
         /**
-         * Constructs a new string codec for the specified Java class.
-         * 
-         * @param javaClazz the Java class to handle
+         * Constructs a new JSON-over-{@code varchar} codec for the specified Java class.
+         *
+         * @param javaClazz the Java class this codec serializes/deserializes
          */
         protected StringCodec(final Class<T> javaClazz) {
             super(DataType.varchar(), javaClazz);
@@ -2397,12 +2525,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
 
         /**
-         * Serializes a Java object to a ByteBuffer.
-         * 
-         * @param value the value to serialize
-         * @param protocolVersion the protocol version to use
-         * @return the serialized ByteBuffer
-         * @throws InvalidTypeException if serialization fails
+         * Serializes a Java value into the binary representation of a Cassandra
+         * {@code varchar}, by first encoding it to JSON via {@link #serialize(Object)}.
+         *
+         * @param value the value to serialize, or {@code null}
+         * @param protocolVersion the native protocol version negotiated with the cluster
+         * @return the serialized {@link ByteBuffer}
+         * @throws InvalidTypeException if the value cannot be encoded as JSON
          */
         @Override
         public ByteBuffer serialize(final T value, final ProtocolVersion protocolVersion) throws InvalidTypeException {
@@ -2410,12 +2539,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
 
         /**
-         * Deserializes a ByteBuffer to a Java object.
-         * 
-         * @param bytes the ByteBuffer to deserialize
-         * @param protocolVersion the protocol version to use
-         * @return the deserialized object
-         * @throws InvalidTypeException if deserialization fails
+         * Deserializes a Cassandra {@code varchar} payload into the target Java type, by
+         * first decoding it to a string and then parsing the JSON via {@link #deserialize(String)}.
+         *
+         * @param bytes the binary {@code varchar} payload, or {@code null}
+         * @param protocolVersion the native protocol version negotiated with the cluster
+         * @return the deserialized object, or {@code null} for a {@code null} payload
+         * @throws InvalidTypeException if the bytes cannot be decoded as JSON of {@code T}
          */
         @Override
         public T deserialize(final ByteBuffer bytes, final ProtocolVersion protocolVersion) throws InvalidTypeException {
@@ -2423,11 +2553,14 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
 
         /**
-         * Parses a string representation to a Java object.
-         * 
+         * Parses a JSON string into a Java object of type {@code T}.
+         *
+         * <p>An empty string or the literal {@code "NULL"} ({@code TypeCodec#NULL_STR}) is
+         * decoded as {@code null}.</p>
+         *
          * @param value the string to parse
-         * @return the parsed object
-         * @throws InvalidTypeException if parsing fails
+         * @return the parsed object, or {@code null} for empty/{@code "NULL"} input
+         * @throws InvalidTypeException if the string is not valid JSON for {@code T}
          */
         @Override
         public T parse(final String value) throws InvalidTypeException {
@@ -2435,11 +2568,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
 
         /**
-         * Formats a Java object to its string representation.
-         * 
+         * Formats a Java object as a JSON string.
+         *
+         * <p>A {@code null} value is rendered as the literal {@code "NULL"}
+         * ({@code TypeCodec#NULL_STR}).</p>
+         *
          * @param value the value to format
-         * @return the formatted string
-         * @throws InvalidTypeException if formatting fails
+         * @return the JSON string (or {@code "NULL"} if {@code value} is {@code null})
          */
         @Override
         public String format(final T value) throws InvalidTypeException {
@@ -2447,18 +2582,22 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
 
         /**
-         * Serializes a Java object to a JSON string.
-         * 
+         * Encodes a Java object to its JSON string form. Equivalent to
+         * {@code N.toJson(value)}; does not apply the {@code "NULL"} sentinel
+         * used by {@link #format(Object)}.
+         *
          * @param value the value to serialize
-         * @return the JSON string
+         * @return the JSON string representation
          */
         protected String serialize(final T value) {
             return N.toJson(value);
         }
 
         /**
-         * Deserializes a JSON string to a Java object.
-         * 
+         * Decodes a JSON string back into a Java object. Equivalent to
+         * {@code N.fromJson(value, javaClazz)}; does not handle the {@code "NULL"}
+         * sentinel used by {@link #parse(String)}.
+         *
          * @param value the JSON string to deserialize
          * @return the deserialized object
          */

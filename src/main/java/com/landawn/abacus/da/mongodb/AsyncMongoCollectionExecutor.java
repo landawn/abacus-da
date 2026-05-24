@@ -55,32 +55,43 @@ import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
 
 /**
- * Asynchronous MongoDB collection executor providing non-blocking database operations with CompletableFuture support.
+ * Asynchronous facade over {@link MongoCollectionExecutor}, providing non-blocking versions of every
+ * sync-driver MongoDB operation via the Abacus {@link ContinuableFuture} API.
  *
- * <p>This class wraps the synchronous {@code MongoCollectionExecutor} to provide asynchronous execution
- * of all MongoDB operations. Each method returns a {@code ContinuableFuture} that can be used for
- * non-blocking programming patterns, reactive streams integration, and parallel processing.</p>
+ * <p>This class is a thin wrapper: every method submits the equivalent blocking
+ * {@link MongoCollectionExecutor} call to a backing {@link AsyncExecutor} and returns a
+ * {@link ContinuableFuture} that completes with the result (or completes exceptionally with whatever
+ * the underlying sync call would have thrown). It is the sync-driver flavour of the async API and
+ * should not be confused with the {@code com.landawn.abacus.da.mongodb.reactivestreams} subpackage,
+ * whose methods return {@code org.reactivestreams.Publisher} on top of the MongoDB reactive driver.</p>
  *
  * <h2>Key Features</h2>
  * <h3>Core Capabilities:</h3>
  * <ul>
- *   <li><strong>Non-blocking Operations:</strong> All database operations return immediately with futures</li>
- *   <li><strong>Thread Pool Management:</strong> Uses configurable AsyncExecutor for thread pool control</li>
- *   <li><strong>Future Composition:</strong> ContinuableFuture supports chaining and transformation</li>
- *   <li><strong>Error Handling:</strong> Exceptions are propagated through the future completion</li>
- *   <li><strong>Reactive Integration:</strong> Compatible with reactive streams and CompletableFuture APIs</li>
+ *   <li><strong>Non-blocking call sites:</strong> Every operation returns a future immediately;
+ *       the database work runs on the supplied {@link AsyncExecutor}'s thread pool.</li>
+ *   <li><strong>Thread pool control:</strong> The {@link AsyncExecutor} provided at construction
+ *       determines parallelism and queueing policy.</li>
+ *   <li><strong>Future composition:</strong> {@link ContinuableFuture} supports {@code thenApply},
+ *       {@code thenRun}, {@code thenCompose} style chaining and conversion to
+ *       {@link java.util.concurrent.CompletableFuture}.</li>
+ *   <li><strong>Exception propagation:</strong> Exceptions thrown by the underlying sync call
+ *       surface as the future's completion exception.</li>
  * </ul>
  *
  * <h3>Thread Safety:</h3>
- * <p>This class is thread-safe. All methods can be called concurrently from multiple threads.
- * The underlying executor manages thread pool and task scheduling safely.</p>
+ * <p>This class is thread-safe: instances hold immutable references and all mutating state lives
+ * inside MongoDB's {@code MongoCollection}, which is itself thread-safe.</p>
  *
  * <h3>Performance Considerations:</h3>
  * <ul>
- *   <li>Configure AsyncExecutor thread pool based on expected concurrent operations</li>
- *   <li>Use future composition to avoid blocking on individual operations</li>
- *   <li>Consider batch operations for multiple database calls</li>
- *   <li>Monitor thread pool utilization to prevent resource exhaustion</li>
+ *   <li>Each call consumes one thread on the backing {@link AsyncExecutor} for the duration of the
+ *       MongoDB call &mdash; size the executor for your expected concurrency.</li>
+ *   <li>Use future composition to avoid blocking on individual operations.</li>
+ *   <li>Prefer batch operations such as {@link #insertMany(Collection)} or {@link #bulkWrite(List)}
+ *       over many parallel single-document calls.</li>
+ *   <li>Streams and cursors materialised on the executor thread must still be drained by the caller;
+ *       remember to close the returned {@link Stream} / {@link ChangeStreamIterable}.</li>
  * </ul>
  *
  * <p><b>Usage Examples:</b></p>
@@ -646,10 +657,9 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(userOpt -> userOpt.ifPresent(user -> System.out.println(user.getString("name"))));
      * }</pre>
      *
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (null for all documents)
      * @return a ContinuableFuture that completes with an Optional containing the first matching document, or empty if none found
-     * @throws IllegalArgumentException if filter is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws com.mongodb.MongoException if the database operation fails (propagated through the future)
      * @see Optional
      * @see Document
      * @see com.mongodb.client.model.Filters
@@ -784,10 +794,9 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(activeUsers -> activeUsers.forEach(user -> processUser(user)));
      * }</pre>
      *
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (null for all documents)
      * @return a ContinuableFuture that completes with a List containing all matching documents (empty list if none found)
-     * @throws IllegalArgumentException if filter is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws com.mongodb.MongoException if the database operation fails (propagated through the future)
      * @see Document
      * @see #stream(Bson)
      * @see com.mongodb.client.model.Filters
@@ -1497,10 +1506,9 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(dataset -> dataset.forEach(row -> System.out.println(row)));
      * }</pre>
      *
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (null matches all documents)
      * @return a ContinuableFuture that completes with a Dataset containing the query results
-     * @throws IllegalArgumentException if filter is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws com.mongodb.MongoException if the database operation fails (propagated through the future)
      * @see Dataset
      * @see #query(Bson, Class)
      */
@@ -1748,10 +1756,9 @@ public final class AsyncMongoCollectionExecutor {
      *                               .forEach(doc -> processLog(doc)));
      * }</pre>
      *
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (null matches all documents)
      * @return a ContinuableFuture that completes with a Stream of Document objects
-     * @throws IllegalArgumentException if filter is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws com.mongodb.MongoException if the database operation fails (propagated through the future)
      * @see Stream
      * @see Document
      */

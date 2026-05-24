@@ -15,9 +15,14 @@
 package com.landawn.abacus.da.search;
 
 /**
- * Placeholder executor for Apache Lucene search operations.
+ * Package-private placeholder executor for Apache Lucene search operations.
  *
- * <p>This class is reserved for future implementation of Lucene search utility methods.</p>
+ * <p>This class is reserved for a future implementation that will wrap a Lucene
+ * {@code IndexSearcher}/{@code IndexWriter} pair and expose convenience methods for
+ * indexing and querying documents. It currently declares no members and is not
+ * visible outside this package.</p>
+ *
+ * @see SolrExecutor
  */
 final class LuceneExecutor { //NOSONAR
 

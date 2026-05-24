@@ -47,6 +47,12 @@ import com.landawn.abacus.exception.UncheckedIOException;
  */
 abstract class AnyOperation<AO extends AnyOperation<AO>> {
 
+    /**
+     * The underlying HBase {@link Operation} that every method on this class delegates to.
+     * Exposed to subclasses (such as {@link AnyOperationWithAttributes}, {@link AnyMutation},
+     * and {@link AnyQuery}) so that they may downcast to their corresponding HBase operation
+     * type and invoke type-specific behaviour. Set once in the constructor and never reassigned.
+     */
     protected final Operation op;
 
     /**

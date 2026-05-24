@@ -25,9 +25,17 @@ import com.mongodb.reactivestreams.client.MongoDatabase;
 /**
  * Reactive MongoDB database executor providing reactive streams support for non-blocking database operations.
  *
- * <p>This class extends {@link MongoDBBase} and integrates with MongoDB's reactive streams driver to provide
- * Publisher-Subscriber based database operations. It supports reactive programming patterns, backpressure
- * handling, and seamless integration with reactive frameworks like Project Reactor, RxJava, and Akka Streams.</p>
+ * <p>This class extends {@link MongoDBBase} and integrates with MongoDB's
+ * <strong>reactive streams</strong> driver
+ * ({@link com.mongodb.reactivestreams.client.MongoDatabase}) to provide
+ * Publisher-Subscriber based database operations. Every collection, executor, and mapper produced
+ * by this class returns {@link org.reactivestreams.Publisher Publisher}-valued results rather than
+ * blocking on the calling thread, which makes it suitable for reactive programming patterns,
+ * backpressure handling, and integration with frameworks such as Project Reactor, RxJava, and
+ * Akka Streams.</p>
+ *
+ * <p>For a blocking, synchronous variant built on the standard MongoDB driver, see
+ * {@link com.landawn.abacus.da.mongodb.MongoDB}.</p>
  *
  * <h2>Key Features</h2>
  * <h3>Core Capabilities:</h3>
@@ -91,6 +99,7 @@ import com.mongodb.reactivestreams.client.MongoDatabase;
  * <p><strong>Important:</strong> Define an "id" property in Java entities to map to MongoDB's "_id" 
  * field for optimal integration.</p>
  *
+ * @see com.landawn.abacus.da.mongodb.MongoDB
  * @see MongoDBBase
  * @see com.mongodb.reactivestreams.client.MongoDatabase
  * @see org.reactivestreams.Publisher
@@ -416,6 +425,19 @@ public final class MongoDB extends MongoDBBase {
         return new MongoCollectionMapper(collectionExecutor(collection), rowType);
     }
 
+    /**
+     * Converts a BSON {@link Document} into an instance of {@code rowType} using the same mapping
+     * rules as the synchronous variant. This is a package-visible bridge that delegates to
+     * {@link MongoDBBase#readRow(Document, Class)}; it exists so reactive subclasses in this
+     * package can decode rows without exposing the underlying helper publicly.
+     *
+     * @param <T> the target row type
+     * @param row the BSON document to convert; if {@code null}, the helper's null-handling
+     *            contract applies
+     * @param rowType the target Java class to map the document to
+     * @return an instance of {@code rowType} populated from {@code row}
+     * @see MongoDBBase#readRow(Document, Class)
+     */
     protected static <T> T readRow(final Document row, final Class<T> rowType) {
         return MongoDBBase.readRow(row, rowType);
     }

@@ -25,14 +25,25 @@ import com.mongodb.client.MongoDatabase;
 /**
  * Synchronous MongoDB database executor that provides a simplified interface for MongoDB operations.
  *
- * <p>This class extends {@link MongoDBBase} and wraps the MongoDB Java client to provide convenient methods for
- * database operations including collection management, document CRUD operations, and query execution.</p>
- * 
- * <p><strong>Important:</strong> We recommend defining an "id" property in Java entities/beans to map to the MongoDB "_id" 
+ * <p>This class extends {@link MongoDBBase} and wraps the <strong>synchronous</strong> MongoDB
+ * Java driver ({@link com.mongodb.client.MongoDatabase}) to provide convenient methods for
+ * database operations including collection management, document CRUD operations, and query
+ * execution. Calls made through the executors and mappers returned by this class block the
+ * calling thread until the MongoDB driver returns a result (or throws).</p>
+ *
+ * <p>For a non-blocking, Publisher-based variant built on the MongoDB reactive streams driver,
+ * see {@link com.landawn.abacus.da.mongodb.reactivestreams.MongoDB}.</p>
+ *
+ * <p>An {@link AsyncExecutor} is held internally and is used by {@link MongoCollectionExecutor}
+ * to expose convenience asynchronous wrappers around the otherwise-synchronous driver calls;
+ * it does not change the blocking nature of the underlying driver itself.</p>
+ *
+ * <p><strong>Important:</strong> We recommend defining an "id" property in Java entities/beans to map to the MongoDB "_id"
  * field to keep things as simple as possible.</p>
  *
+ * @see com.landawn.abacus.da.mongodb.reactivestreams.MongoDB
  * @see com.mongodb.client.model.Filters
- * @see com.mongodb.client.model.Projections  
+ * @see com.mongodb.client.model.Projections
  * @see com.mongodb.client.model.Sorts
  * @see com.mongodb.client.model.Updates
  * @see com.mongodb.client.model.Aggregates
@@ -52,11 +63,13 @@ public final class MongoDB extends MongoDBBase {
     private final AsyncExecutor asyncExecutor;
 
     /**
-     * Constructs a MongoDB executor with the specified database and default async executor.
+     * Constructs a MongoDB executor with the specified database and the framework's default
+     * async executor.
      *
-     * <p>This constructor initializes the MongoDB wrapper with a default asynchronous executor
-     * for non-blocking operations. The database is configured with the framework's custom codec
-     * registry to support automatic POJO mapping and BSON type conversions.</p>
+     * <p>Equivalent to calling {@link #MongoDB(MongoDatabase, AsyncExecutor)} with the shared
+     * default {@code AsyncExecutor}. The database is wrapped with the framework's custom codec
+     * registry so that automatic POJO mapping and BSON type conversions are available on every
+     * collection obtained from this instance.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -66,7 +79,8 @@ public final class MongoDB extends MongoDBBase {
      * }</pre>
      *
      * @param mongoDB the MongoDB database instance to wrap
-     * @throws IllegalArgumentException if mongoDB is null
+     * @throws IllegalArgumentException if {@code mongoDB} is {@code null}
+     * @see #MongoDB(MongoDatabase, AsyncExecutor)
      * @see MongoDatabase
      * @see AsyncExecutor
      */
@@ -88,8 +102,9 @@ public final class MongoDB extends MongoDBBase {
      * }</pre>
      *
      * @param mongoDB the MongoDB database instance to wrap
-     * @param asyncExecutor the async executor for non-blocking operations
-     * @throws IllegalArgumentException if mongoDB or asyncExecutor is null
+     * @param asyncExecutor the async executor used by {@link MongoCollectionExecutor} to expose
+     *                      asynchronous wrappers around the synchronous driver calls
+     * @throws IllegalArgumentException if {@code mongoDB} or {@code asyncExecutor} is {@code null}
      * @see MongoDatabase
      * @see AsyncExecutor
      */

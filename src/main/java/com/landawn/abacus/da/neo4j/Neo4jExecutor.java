@@ -34,92 +34,78 @@ import com.landawn.abacus.logging.LoggerFactory;
 import com.landawn.abacus.util.stream.Stream;
 
 /**
- * A comprehensive executor for Neo4j graph database operations, providing high-level abstractions
- * for Cypher query execution, node/relationship management, and graph traversals.
- * <p>
- * This executor wraps the Neo4j OGM (Object Graph Mapping) framework and provides session management,
- * connection pooling, and simplified APIs for common graph database operations.
+ * A thin executor that wraps the <a href="http://neo4j.com/docs/ogm/java/stable/">Neo4j OGM</a>
+ * {@link Session} API, adding lightweight session pooling and {@link Stream}-based result handling
+ * on top of it. Each public operation borrows a {@link Session} from an internal pool, delegates to
+ * the equivalent method on the OGM session, and either returns the session immediately (for eager
+ * methods) or transfers ownership of session release to the returned {@link Stream}'s
+ * {@code onClose} handler (for the streaming {@code query} overloads).
  *
- * <h2>Key Features</h2>
- * <h3>Core Capabilities:</h3>
+ * <h2>Session and Transaction Semantics</h2>
  * <ul>
- *   <li>Cypher query execution with parameter binding</li>
- *   <li>Node and relationship CRUD operations</li>
- *   <li>Graph traversals and path finding</li>
- *   <li>Object-Graph Mapping (OGM) support</li>
- *   <li>Session pooling and connection management</li>
- *   <li>Transaction support and management</li>
- *   <li>Filtering, sorting, and pagination</li>
+ *   <li><b>Pool:</b> Sessions are held in a bounded {@link LinkedBlockingQueue} (capacity 8192).
+ *       {@link #getSession()} polls the queue with a 100&nbsp;ms timeout and opens a fresh OGM
+ *       session via {@link SessionFactory#openSession()} if the queue is empty or the wait is
+ *       interrupted (the thread's interrupt status is preserved).</li>
+ *   <li><b>Release:</b> {@link Session#clear()} is invoked before a session is offered back to the
+ *       queue. If the queue is full or the offer times out the session is silently dropped (no
+ *       {@code close()} call is made; the OGM {@link Session} has no {@code close} operation).</li>
+ *   <li><b>Transactions:</b> Each operation runs against an auto-commit OGM session unless callers
+ *       use {@link #run(Consumer)} or {@link #call(Function)} to open a multi-statement transaction
+ *       explicitly via {@link Session#beginTransaction()}. Read/write routing is the OGM/driver's
+ *       responsibility; the {@code readOnly} flag accepted by
+ *       {@link #query(String, Map, boolean)} is forwarded to the underlying driver as a routing
+ *       hint.</li>
+ *   <li><b>Threading:</b> All methods are blocking and synchronous. The executor itself is
+ *       thread-safe (the session pool is concurrent), but individual {@link Session} instances
+ *       borrowed from the pool are <i>not</i> safe for concurrent use across threads; do not share
+ *       a session obtained via {@link #openSession()} between threads.</li>
  * </ul>
- * 
- * <h3>Graph Operations:</h3>
- * <ul>
- *   <li><b>Node Operations:</b> Create, read, update, delete nodes</li>
- *   <li><b>Relationship Operations:</b> Manage relationships between nodes</li>
- *   <li><b>Traversals:</b> Navigate graph structures efficiently</li>
- *   <li><b>Queries:</b> Execute complex Cypher queries</li>
- *   <li><b>Transactions:</b> Atomic operations across multiple graph changes</li>
- * </ul>
- * 
+ *
+ * <h2>Cypher Parameter Binding</h2>
+ * <p>Cypher parameters are passed as a {@code Map<String, ?>} of named parameters. Use the
+ * {@code $name} placeholder syntax in your Cypher (e.g. {@code MATCH (p:Person {name:$name})}).
+ * Parameter values are forwarded verbatim to the OGM session, which converts them through the
+ * standard OGM type system.</p>
+ *
+ * <h2>Result Streaming</h2>
+ * <p>The {@link #query(String, Map)}, {@link #query(String, Map, boolean)}, and
+ * {@link #query(Class, String, Map)} overloads return lazily-consumed {@link Stream}s that own a
+ * pooled session for their lifetime. The session is returned to the pool when the stream is closed
+ * (either explicitly via {@link Stream#close()} or via try-with-resources). Failing to close such a
+ * stream will leak a session from the pool.</p>
+ *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * // Initialize executor
  * SessionFactory sessionFactory = new SessionFactory(configuration, "com.example.model");
  * Neo4jExecutor executor = new Neo4jExecutor(sessionFactory);
- * 
+ *
  * // Node operations
  * Person person = new Person("John Doe", 30);
  * executor.save(person);
- * 
+ *
  * Person loaded = executor.load(Person.class, person.getId());
  * Collection<Person> people = executor.loadAll(Person.class);
- * 
+ *
  * // Relationship operations
  * Company company = new Company("Tech Corp");
  * person.worksFor(company);
  * executor.save(person, 1);   // Save with depth 1 to include relationships
- * 
+ *
  * // Cypher queries
  * Map<String, Object> params = Map.of("age", 25);
- * Stream<Person> adults = executor.query(Person.class, 
- *     "MATCH (p:Person) WHERE p.age > $age RETURN p", params);
- * 
- * // Complex queries
- * Stream<Map<String, Object>> results = executor.query(
- *     "MATCH (p:Person)-[:WORKS_FOR]->(c:Company) RETURN p.name, c.name", 
- *     Collections.emptyMap());
- * 
+ * try (Stream<Person> adults = executor.query(Person.class,
+ *         "MATCH (p:Person) WHERE p.age > $age RETURN p", params)) {
+ *     adults.forEach(System.out::println);
+ * }
+ *
  * // Filtering and pagination
  * Filter ageFilter = new Filter("age", ComparisonOperator.GREATER_THAN, 25);
  * Pagination pagination = new Pagination(0, 10);
  * Collection<Person> pagedResults = executor.loadAll(Person.class, ageFilter, pagination);
  * }</pre>
- * 
- * <h3>Session Management:</h3>
- * <p>The executor implements automatic session pooling to optimize performance:</p>
- * <ul>
- *   <li>Session reuse through connection pooling</li>
- *   <li>Automatic session cleanup and resource management</li>
- *   <li>Configurable pool sizes and timeout settings</li>
- *   <li>Thread-safe session handling</li>
- * </ul>
- * 
- * <h3>OGM Integration:</h3>
- * <ul>
- *   <li>Automatic mapping between Java objects and graph nodes</li>
- *   <li>Relationship mapping with annotations</li>
- *   <li>Support for complex object hierarchies</li>
- *   <li>Lazy loading of relationships</li>
- * </ul>
- * 
- * <h3>Performance Features:</h3>
- * <ul>
- *   <li>Depth control for loading related objects</li>
- *   <li>Batch operations for multiple entities</li>
- *   <li>Streaming results for large datasets</li>
- *   <li>Query optimization and caching</li>
- * </ul>
- * 
+ *
  * @see org.neo4j.ogm.session.SessionFactory
  * @see org.neo4j.ogm.session.Session
  * @see <a href="http://neo4j.com/docs/ogm/java/stable/">Neo4j OGM Documentation</a>
@@ -133,14 +119,16 @@ public final class Neo4jExecutor {
     private final SessionFactory sessionFactory;
 
     /**
-     * Constructs a Neo4jExecutor with the specified SessionFactory.
+     * Constructs a {@code Neo4jExecutor} that borrows sessions from the supplied
+     * {@link SessionFactory}.
      * <p>
-     * The SessionFactory manages the connection to the Neo4j database and provides
-     * configuration for the OGM mapping. The executor will create a session pool
-     * to optimize performance.
+     * The factory owns the connection to the Neo4j database and the OGM mapping configuration; this
+     * executor only manages a bounded internal queue (capacity 8192) of {@link Session} instances
+     * that are reused across calls. The session pool is populated lazily on first use; no sessions
+     * are opened by this constructor.
      *
-     * @param sessionFactory the Neo4j SessionFactory for database connections
-     * @throws IllegalArgumentException if sessionFactory is null
+     * @param sessionFactory the Neo4j {@link SessionFactory} used to open new sessions on demand
+     * @throws IllegalArgumentException if {@code sessionFactory} is {@code null}
      */
     public Neo4jExecutor(final SessionFactory sessionFactory) {
         if (sessionFactory == null) {
@@ -150,12 +138,12 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Returns the underlying Neo4j SessionFactory.
+     * Returns the {@link SessionFactory} this executor was constructed with.
      * <p>
-     * This method provides access to the SessionFactory for advanced operations
-     * or direct session management that are not supported by this executor.
-     * 
-     * @return the Neo4j SessionFactory instance
+     * Use this to access OGM features not surfaced by the executor (for example, direct
+     * configuration introspection or opening sessions that are not pooled by this executor).
+     *
+     * @return the {@link SessionFactory} supplied at construction time; never {@code null}
      * @see org.neo4j.ogm.session.SessionFactory
      */
     public SessionFactory sessionFactory() {
@@ -163,24 +151,25 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Opens a new Neo4j session directly from the underlying {@link SessionFactory}.
+     * Opens a new {@link Session} directly via the underlying {@link SessionFactory}.
      * <p>
-     * Sessions obtained this way are <i>not</i> tracked by this executor's session pool. The
-     * caller is responsible for releasing per-session state (e.g. by calling {@link Session#clear()})
-     * when finished. Prefer {@link #run(Consumer)} or {@link #call(Function)}, which acquire a
-     * pooled session and return it automatically.
+     * Sessions returned by this method are <i>not</i> placed into the executor's pool. The OGM
+     * {@link Session} does not expose a {@code close()} method, but the caller should call
+     * {@link Session#clear()} when finished to release the session's mapping context (the
+     * accumulated identity map of loaded entities). Prefer {@link #run(Consumer)} or
+     * {@link #call(Function)}, which acquire a pooled session, clear it on the way back to the
+     * pool, and propagate the result automatically.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Open a session for manual management
      * Session session = executor.openSession();
      * try {
-     *     // Perform operations
      *     Person person = session.load(Person.class, 123L);
      *     person.setName("Updated Name");
      *     session.save(person);
      * } finally {
-     *     // Important: manually clear the session to release resources
+     *     // Release the session's mapping context (no close() to call)
      *     session.clear();
      * }
      *
@@ -192,7 +181,7 @@ public final class Neo4jExecutor {
      * });
      * }</pre>
      *
-     * @return a new Neo4j session
+     * @return a fresh, unpooled OGM {@link Session}
      * @see org.neo4j.ogm.session.Session
      * @see #run(Consumer)
      * @see #call(Function)
@@ -202,11 +191,12 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Executes an action within a managed session context.
+     * Borrows a pooled {@link Session}, hands it to {@code action}, and returns it to the pool when
+     * {@code action} completes (whether normally or exceptionally).
      * <p>
-     * This method provides automatic session management, ensuring the session
-     * is properly returned to the pool after the action completes. Use this
-     * for operations that don't return values.
+     * Use this for multi-statement work that needs to share a single session (for example, when
+     * opening an explicit transaction via {@link Session#beginTransaction()} so that several saves
+     * commit atomically). For operations that return a value, use {@link #call(Function)} instead.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -217,25 +207,17 @@ public final class Neo4jExecutor {
      *     session.save(person);
      * });
      *
-     * // Batch operations
+     * // Multi-statement transaction
      * executor.run(session -> {
-     *     List<Person> people = loadPeopleToUpdate();
-     *     people.forEach(person -> {
-     *         person.setStatus("active");
-     *         session.save(person);
-     *     });
-     * });
-     *
-     * // Complex graph operations
-     * executor.run(session -> {
-     *     Person person = new Person("Alice");
-     *     Company company = new Company("Tech Corp");
-     *     person.worksFor(company);
-     *     session.save(person, 1);
+     *     try (org.neo4j.ogm.transaction.Transaction tx = session.beginTransaction()) {
+     *         session.save(personA);
+     *         session.save(personB);
+     *         tx.commit();
+     *     }
      * });
      * }</pre>
      *
-     * @param action the action to execute with the session
+     * @param action the callback invoked with the pooled session; must not be {@code null}
      * @see #call(Function)
      */
     @Beta
@@ -250,38 +232,31 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Executes a function within a managed session context and returns the result.
+     * Borrows a pooled {@link Session}, applies {@code action} to it, returns the result, and
+     * releases the session back to the pool when {@code action} completes (whether normally or
+     * exceptionally).
      * <p>
-     * This method provides automatic session management with return value support.
-     * The session is properly returned to the pool after the function completes.
+     * <b>Important:</b> {@code action} must not leak references to entities or to the {@link Session}
+     * itself outside the lambda, because the session is cleared (see {@link Session#clear()}) before
+     * it is returned to the pool, which severs the identity map of any loaded entities. Convert
+     * results to detached forms (e.g. collect into a {@code List}, copy fields, or convert to
+     * {@code String}) inside the lambda.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Execute and return a result
-     * Person person = executor.call(session -> {
-     *     return session.load(Person.class, 123L);
-     * });
+     * Person person = executor.call(session -> session.load(Person.class, 123L));
      *
-     * // Execute query and return count
-     * Long count = executor.call(session -> {
-     *     Map<String, Object> params = Map.of("status", "active");
-     *     return (Long) session.query(
-     *         "MATCH (p:Person {status: $status}) RETURN count(p) as count",
-     *         params).iterator().next().get("count");
-     * });
-     *
-     * // Load and transform data
-     * List<String> names = executor.call(session -> {
-     *     Collection<Person> people = session.loadAll(Person.class);
-     *     return people.stream()
+     * // Load and transform data inside the callback so nothing escapes the session
+     * List<String> names = executor.call(session ->
+     *     session.loadAll(Person.class).stream()
      *         .map(Person::getName)
-     *         .collect(Collectors.toList());
-     * });
+     *         .collect(Collectors.toList()));
      * }</pre>
      *
-     * @param <T> the return type of the function
-     * @param action the function to execute with the session
-     * @return the result of the function execution
+     * @param <T> the type returned by {@code action}
+     * @param action the function invoked with the pooled session; must not be {@code null}
+     * @return the value produced by {@code action}
      * @see #run(Consumer)
      */
     @Beta
@@ -296,39 +271,24 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Loads a single node from Neo4j by its unique ID.
+     * Loads a single node by its native Neo4j ID using the OGM session's default depth.
      * <p>
-     * This method retrieves a node and its immediate properties but does not
-     * load any relationships. For loading relationships, use {@link #load(Class, Long, int)}
-     * with a depth greater than 0.
+     * Delegates to {@link Session#load(Class, java.io.Serializable)}. The session's default load
+     * depth is&nbsp;1, so immediate relationships are typically also loaded; use
+     * {@link #load(Class, Long, int)} to control the depth explicitly.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Load a single node by ID
      * Person person = executor.load(Person.class, 123L);
      * if (person != null) {
      *     System.out.println("Person: " + person.getName());
      * }
-     *
-     * // Check if node exists
-     * Company company = executor.load(Company.class, 456L);
-     * if (company == null) {
-     *     System.out.println("Company not found");
-     * }
-     *
-     * // Load multiple nodes
-     * List<Long> ids = Arrays.asList(1L, 2L, 3L);
-     * List<Person> people = ids.stream()
-     *     .map(id -> executor.load(Person.class, id))
-     *     .filter(Objects::nonNull)
-     *     .collect(Collectors.toList());
      * }</pre>
      *
-     * @param <T> the node type
-     * @param targetClass the class representing the node type
-     * @param id the unique Neo4j node ID
-     * @return the loaded node entity, or null if not found
-     * @throws IllegalArgumentException if targetClass is null or id is null
+     * @param <T> the entity type mapped by OGM
+     * @param targetClass the OGM-mapped class to load
+     * @param id the native Neo4j node ID
+     * @return the loaded entity, or {@code null} if no node with that ID exists
      * @see #load(Class, Long, int)
      * @see #loadAll(Class, Collection)
      */
@@ -343,40 +303,26 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Loads a single node from Neo4j by its unique ID with specified relationship depth.
+     * Loads a single node by its native Neo4j ID, populating related entities to the given depth.
      * <p>
-     * This method retrieves a node and its relationships up to the specified depth.
-     * A depth of 0 loads only the node properties, depth 1 includes immediate relationships,
-     * and higher depths recursively load connected nodes.
+     * Delegates to {@link Session#load(Class, java.io.Serializable, int)}. {@code depth&nbsp;==&nbsp;0}
+     * loads only the node's scalar properties; {@code depth&nbsp;==&nbsp;1} loads it together with
+     * immediate relationships; larger depths recurse further; {@code -1} loads the entire connected
+     * sub-graph reachable from this node and should be used with care on large graphs.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Load node with immediate relationships (depth 1)
-     * Person person = executor.load(Person.class, 123L, 1);
-     * // person.getCompany() is now loaded
-     * System.out.println("Works for: " + person.getCompany().getName());
-     *
-     * // Load node with deep relationships (depth 2)
-     * Person personWithTeam = executor.load(Person.class, 123L, 2);
-     * // person.getCompany().getEmployees() is now loaded
-     * personWithTeam.getCompany().getEmployees().forEach(e ->
-     *     System.out.println("Colleague: " + e.getName()));
-     *
-     * // Load only node properties (depth 0)
-     * Person personOnly = executor.load(Person.class, 123L, 0);
-     * // No relationships loaded, more efficient
-     *
-     * // Load entire graph (depth -1)
-     * Person fullGraph = executor.load(Person.class, 123L, -1);
-     * // All connected nodes loaded (use with caution)
+     * Person personOnly = executor.load(Person.class, 123L, 0);   // properties only
+     * Person withCompany = executor.load(Person.class, 123L, 1);  // immediate relationships
+     * Person fullGraph = executor.load(Person.class, 123L, -1);   // full reachable sub-graph
      * }</pre>
      *
-     * @param <T> the node type
-     * @param targetClass the class representing the node type
-     * @param id the unique Neo4j node ID
-     * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
-     * @return the loaded node entity with relationships, or null if not found
-     * @throws IllegalArgumentException if targetClass is null or id is null
+     * @param <T> the entity type mapped by OGM
+     * @param targetClass the OGM-mapped class to load
+     * @param id the native Neo4j node ID
+     * @param depth the depth of relationships to traverse: {@code 0} for the node only, a positive
+     *              integer for that many hops, or {@code -1} for unlimited
+     * @return the loaded entity, or {@code null} if no node with that ID exists
      * @see #load(Class, Long)
      * @see #loadAll(Class, Collection, int)
      */
@@ -1453,11 +1399,13 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Saves a node and its relationships to Neo4j.
+     * Persists an OGM-mapped entity to Neo4j using the session's default save depth.
      * <p>
-     * This method persists the node to the graph database. If the node already exists
-     * (has an ID), it will be updated. New nodes will be created with generated IDs.
-     * The save operation uses the default depth, typically including immediate relationships.
+     * Delegates to {@link Session#save(Object)}, which by default traverses the object graph at
+     * unlimited depth ({@code -1}), saving the supplied entity together with every reachable
+     * related entity. New nodes are created and assigned a generated ID (written back onto the
+     * entity); existing nodes (those with an ID) are updated in place. Use {@link #save(Object, int)}
+     * to bound the traversal explicitly.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1466,25 +1414,14 @@ public final class Neo4jExecutor {
      * executor.save(person);
      * System.out.println("Saved with ID: " + person.getId());
      *
-     * // Update an existing node
-     * Person existing = executor.load(Person.class, 123L);
+     * // Update an existing node together with its (potentially deep) relationships
+     * Person existing = executor.load(Person.class, 123L, 1);
      * existing.setAge(31);
      * executor.save(existing);
-     *
-     * // Save with relationships
-     * Person person = new Person("Alice");
-     * Company company = new Company("Tech Corp");
-     * person.worksFor(company);
-     * executor.save(person);  // Both person and company are saved
-     *
-     * // Batch save
-     * List<Person> people = createPeople();
-     * people.forEach(executor::save);
      * }</pre>
      *
-     * @param <T> the node type
-     * @param object the node entity to save
-     * @throws IllegalArgumentException if object is null
+     * @param <T> the entity type mapped by OGM
+     * @param object the entity to save; must be an instance of an OGM-mapped class
      * @see #save(Object, int)
      */
     public <T> void save(final T object) {
@@ -1498,43 +1435,29 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Saves a node and its relationships to Neo4j with the specified depth.
+     * Persists an OGM-mapped entity to Neo4j, traversing related entities to the given depth.
      * <p>
-     * This method controls how deeply related objects are saved. A depth of 0 saves
-     * only the node properties, while higher depths save related nodes and their
-     * relationships recursively.
+     * Delegates to {@link Session#save(Object, int)}. {@code depth&nbsp;==&nbsp;0} saves only the
+     * node's scalar properties (no relationships are written); a positive integer recursively
+     * saves related entities to that many hops; {@code -1} saves the entire reachable sub-graph.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Save only node properties (depth 0)
      * Person person = new Person("John Doe");
-     * executor.save(person, 0);
-     * // Relationships are not saved
+     * executor.save(person, 0);   // node only - no relationships written
      *
-     * // Save with immediate relationships (depth 1)
-     * Person person = new Person("Alice");
+     * Person alice = new Person("Alice");
      * Company company = new Company("Tech Corp");
-     * person.worksFor(company);
-     * executor.save(person, 1);
-     * // person and company are saved
+     * alice.worksFor(company);
+     * executor.save(alice, 1);    // alice and the WORKS_FOR -> company edge
      *
-     * // Save with deep relationships (depth 2)
-     * Company company = new Company("Tech Corp");
-     * company.addEmployee(person1);
-     * company.addEmployee(person2);
-     * person1.addFriend(person2);
-     * executor.save(company, 2);
-     * // company, all employees, and their friends are saved
-     *
-     * // Save entire connected graph (depth -1)
-     * executor.save(rootNode, -1);
-     * // All connected nodes saved (use with caution)
+     * executor.save(rootNode, -1); // entire reachable sub-graph (use with care)
      * }</pre>
      *
-     * @param <T> the node type
-     * @param object the node entity to save
-     * @param depth the depth of relationships to save (0 = node only, -1 = infinite)
-     * @throws IllegalArgumentException if object is null
+     * @param <T> the entity type mapped by OGM
+     * @param object the entity to save
+     * @param depth the depth of related entities to traverse and persist: {@code 0} for the node
+     *              only, a positive integer for that many hops, or {@code -1} for unlimited
      * @see #save(Object)
      */
     public <T> void save(final T object, final int depth) {
@@ -1548,36 +1471,27 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Deletes a node and its relationships from Neo4j.
+     * Deletes an OGM-managed entity (and any relationships incident to its underlying node) from
+     * Neo4j.
      * <p>
-     * This method removes the specified node from the graph database. All relationships
-     * connected to this node will also be removed. Use with caution as this operation
-     * cannot be undone.
+     * Delegates to {@link Session#delete(Object)}. The entity must carry a populated graph ID
+     * (i.e. it has previously been loaded or saved); otherwise OGM has nothing to delete. The
+     * delete is irreversible.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Delete a node by loading and deleting
      * Person person = executor.load(Person.class, 123L);
      * if (person != null) {
      *     executor.delete(person);
-     *     System.out.println("Person deleted");
      * }
      *
-     * // Delete multiple nodes
-     * Collection<Person> inactivePeople = executor.loadAll(Person.class,
+     * Collection<Person> inactive = executor.loadAll(Person.class,
      *     new Filter("status", ComparisonOperator.EQUALS, "inactive"));
-     * inactivePeople.forEach(executor::delete);
-     *
-     * // Delete with condition check
-     * Person person = executor.load(Person.class, 123L);
-     * if (person != null && person.isExpired()) {
-     *     executor.delete(person);
-     * }
+     * inactive.forEach(executor::delete);
      * }</pre>
      *
-     * @param <T> the node type
-     * @param object the node entity to delete
-     * @throws IllegalArgumentException if object is null
+     * @param <T> the entity type mapped by OGM
+     * @param object the entity to delete
      * @see #deleteAll(Class)
      */
     public <T> void delete(final T object) {
@@ -1591,16 +1505,14 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Deletes all nodes of the specified type from Neo4j.
+     * Deletes every node of the supplied OGM-mapped class (and all relationships incident to those
+     * nodes) from Neo4j.
      * <p>
-     * This method removes all nodes of the given type from the graph database.
-     * All relationships connected to these nodes will also be removed.
-     * <strong>WARNING:</strong> This operation cannot be undone and will remove
-     * all data for the specified node type.
+     * Delegates to {@link Session#deleteAll(Class)}. <strong>WARNING:</strong> this is a destructive
+     * bulk operation that cannot be undone; verify the target class before invoking it.
      *
-     * @param <T> the node type
-     * @param targetClass the class representing the node type
-     * @throws IllegalArgumentException if targetClass is null
+     * @param <T> the entity type mapped by OGM
+     * @param targetClass the OGM-mapped class whose nodes are to be deleted
      * @see #delete(Object)
      */
     public <T> void deleteAll(final Class<T> targetClass) {
@@ -1625,11 +1537,12 @@ public final class Neo4jExecutor {
     //    }
 
     /**
-     * Executes a Cypher query and returns a single result object of the specified type.
+     * Executes a Cypher query and maps the single result row to an instance of {@code objectType}.
      * <p>
-     * This method executes a Cypher query with named parameters and expects a single
-     * result that can be mapped to the specified object type. If the query returns
-     * multiple results, only the first one is returned. Returns null if no results found.
+     * Delegates to {@link Session#queryForObject(Class, String, Map)}. The query must return
+     * exactly zero or one row; if multiple rows are returned the underlying OGM session raises a
+     * {@link RuntimeException}. Add a {@code LIMIT 1} clause or a uniqueness constraint to the
+     * Cypher to guarantee that.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1638,27 +1551,26 @@ public final class Neo4jExecutor {
      * Person person = executor.queryForObject(Person.class,
      *     "MATCH (p:Person {name: $name}) RETURN p", params);
      *
-     * if (person != null) {
-     *     System.out.println("Found: " + person.getName());
-     * }
-     *
      * // Query for single aggregation result
      * Long count = executor.queryForObject(Long.class,
      *     "MATCH (p:Person) WHERE p.age > $minAge RETURN count(p) as count",
      *     Map.of("minAge", 25));
      *
-     * // Query with LIMIT 1
+     * // Query with LIMIT 1 to guarantee a single row
      * Person oldest = executor.queryForObject(Person.class,
      *     "MATCH (p:Person) RETURN p ORDER BY p.age DESC LIMIT 1",
      *     Collections.emptyMap());
      * }</pre>
      *
-     * @param <T> the expected result type
-     * @param objectType the target class for result conversion (entity class with getter/setter methods)
-     * @param cypher the Cypher query string with named parameter placeholders
-     * @param parameters the named parameters for the query
-     * @return the single result object, or null if no results found
-     * @throws IllegalArgumentException if objectType or cypher is null
+     * @param <T> the result type
+     * @param objectType the target class &mdash; either a mapped OGM entity class or a basic value
+     *                   type (e.g. {@code Long.class} for an aggregate result)
+     * @param cypher the Cypher query string with {@code $name} parameter placeholders
+     * @param parameters named parameters bound by the OGM session; may be empty but should not be
+     *                   {@code null}
+     * @return the single mapped result, or {@code null} if the query returns no rows
+     * @throws RuntimeException if the query returns more than one row or the underlying OGM session
+     *                          rejects the query
      * @see #query(Class, String, Map)
      * @see #query(String, Map)
      */
@@ -1677,47 +1589,34 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Executes a Cypher query and returns the results as a stream of maps.
+     * Executes a Cypher query and returns each result row as a {@code Map<String, Object>} keyed
+     * by the column alias declared in the {@code RETURN} clause.
      * <p>
-     * This method executes a Cypher query with named parameters and returns each
-     * result row as a {@code Map<String, Object>}. The stream is lazily evaluated and
-     * automatically manages the session lifecycle.
+     * The returned stream is lazy: the underlying OGM session is borrowed from the pool when this
+     * method is invoked, and is returned to the pool when the stream is closed. <b>Callers must
+     * close the stream</b> (preferably with try-with-resources); leaving it open leaks a session
+     * for the lifetime of the executor.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Query and process results as maps
      * String cypher = "MATCH (p:Person)-[:WORKS_FOR]->(c:Company) " +
      *                 "WHERE c.name = $companyName " +
-     *                 "RETURN p.name as personName, p.age as age, c.name as companyName";
+     *                 "RETURN p.name as personName, c.name as companyName";
      * Map<String, Object> params = Map.of("companyName", "Tech Corp");
      *
-     * executor.query(cypher, params)
-     *     .forEach(row -> {
-     *         System.out.println(row.get("personName") + " works at " +
-     *                          row.get("companyName"));
-     *     });
-     *
-     * // Aggregate query results
-     * String aggCypher = "MATCH (p:Person) " +
-     *                    "RETURN p.department as dept, count(p) as count";
-     * List<String> departments = executor.query(aggCypher, Collections.emptyMap())
-     *     .map(row -> row.get("dept") + ": " + row.get("count"))
-     *     .collect(Collectors.toList());
-     *
-     * // Filter and transform stream
-     * long seniorCount = executor.query(
-     *         "MATCH (p:Person) RETURN p.name as name, p.age as age",
-     *         Collections.emptyMap())
-     *     .filter(row -> (Integer) row.get("age") > 50)
-     *     .count();
+     * try (Stream<Map<String, Object>> rows = executor.query(cypher, params)) {
+     *     rows.forEach(row -> System.out.println(
+     *             row.get("personName") + " works at " + row.get("companyName")));
+     * }
      * }</pre>
      *
-     * @param cypher the Cypher query string with named parameter placeholders
-     * @param parameters the named parameters for the query
-     * @return a Stream of result maps, each representing a query result row; close the stream to
-     *         release the underlying session back to the pool
-     * @throws IllegalArgumentException if cypher is null
+     * @param cypher the Cypher query string with {@code $name} parameter placeholders
+     * @param parameters named parameters bound by the OGM session
+     * @return a lazily-evaluated {@link Stream} of result rows, each row a {@code Map} keyed by the
+     *         {@code RETURN}-clause aliases; close the stream to release the underlying session
+     * @throws RuntimeException if the underlying OGM session rejects the query
      * @see #query(Class, String, Map)
+     * @see #query(String, Map, boolean)
      * @see #queryForObject(Class, String, Map)
      */
     public Stream<Map<String, Object>> query(final String cypher, final Map<String, ?> parameters) {
@@ -1735,21 +1634,24 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Executes a Cypher query with a read-only hint and returns the results as a stream of maps.
+     * Executes a Cypher query with an explicit read-only hint and returns each row as a
+     * {@code Map<String, Object>}.
      * <p>
-     * This method executes a Cypher query with named parameters and returns each
-     * result row as a {@code Map<String, Object>}. The {@code readOnly} flag is forwarded to the
-     * underlying OGM session so the driver can route the request to a read replica or otherwise
-     * optimize execution; pass {@code false} for queries that mutate the graph. The stream is
-     * lazily evaluated and the session is returned to the pool when the stream is closed.
+     * The {@code readOnly} flag is forwarded to {@link Session#query(String, Map, boolean)} so the
+     * Neo4j driver can route the request to a read replica in a clustered deployment or otherwise
+     * optimise execution. Pass {@code false} for any query that mutates the graph; passing
+     * {@code true} for a write query will result in a runtime failure from the driver.
+     * <p>
+     * The returned stream is lazy and borrows a pooled session for its lifetime; close the stream
+     * (try-with-resources) to release the session back to the pool.
      *
-     * @param cypher the Cypher query string with named parameter placeholders
-     * @param parameters the named parameters for the query
-     * @param readOnly {@code true} if the query is read-only and can be routed/optimized as such;
-     *                 must be {@code false} for queries that write to the graph
-     * @return a Stream of result maps, each representing a query result row; close the stream to
-     *         release the underlying session
-     * @throws IllegalArgumentException if cypher is null
+     * @param cypher the Cypher query string with {@code $name} parameter placeholders
+     * @param parameters named parameters bound by the OGM session
+     * @param readOnly {@code true} to mark the query as read-only (eligible for read-replica
+     *                 routing); must be {@code false} for queries that write to the graph
+     * @return a lazily-evaluated {@link Stream} of result rows; close the stream to release the
+     *         underlying session
+     * @throws RuntimeException if the underlying OGM session rejects the query
      * @see #query(String, Map)
      * @see #query(Class, String, Map)
      */
@@ -1768,52 +1670,33 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Executes a Cypher query and returns the results as a stream of objects of the specified type.
+     * Executes a Cypher query and maps each row to an instance of {@code objectType}.
      * <p>
-     * This method executes a Cypher query with named parameters and maps each result
-     * to an object of the specified type. The stream is lazily evaluated and automatically
-     * manages the session lifecycle. This is ideal for processing large result sets
-     * efficiently without loading all results into memory at once.
+     * Delegates to {@link Session#query(Class, String, Map)}. {@code objectType} is typically an
+     * OGM-mapped entity class for queries that return whole nodes, but may also be a basic value
+     * type when the {@code RETURN} clause produces a single scalar per row.
+     * <p>
+     * The returned stream is lazy and owns a pooled session for its lifetime; close the stream
+     * (try-with-resources recommended) to release the session back to the pool.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Query for Person entities
      * String cypher = "MATCH (p:Person) WHERE p.age > $minAge RETURN p";
      * Map<String, Object> params = Map.of("minAge", 25);
      *
-     * List<Person> adults = executor.query(Person.class, cypher, params)
-     *     .collect(Collectors.toList());
-     *
-     * // Stream and filter results
-     * executor.query(Person.class,
-     *         "MATCH (p:Person)-[:WORKS_FOR]->(c:Company) RETURN p",
-     *         Collections.emptyMap())
-     *     .filter(p -> p.getName().startsWith("A"))
-     *     .forEach(p -> System.out.println(p.getName()));
-     *
-     * // Complex query with relationships
-     * String relationshipCypher =
-     *     "MATCH (p:Person)-[r:WORKS_FOR]->(c:Company) " +
-     *     "WHERE c.name = $companyName " +
-     *     "RETURN p";
-     * Stream<Person> employees = executor.query(Person.class,
-     *     relationshipCypher, Map.of("companyName", "Tech Corp"));
-     *
-     * // Aggregate and process
-     * Double avgAge = executor.query(Person.class,
-     *         "MATCH (p:Person) RETURN p", Collections.emptyMap())
-     *     .mapToInt(Person::getAge)
-     *     .average()
-     *     .orElse(0.0);
+     * try (Stream<Person> adults = executor.query(Person.class, cypher, params)) {
+     *     adults.filter(p -> p.getName().startsWith("A"))
+     *           .forEach(p -> System.out.println(p.getName()));
+     * }
      * }</pre>
      *
-     * @param <T> the expected result object type
-     * @param objectType the target class for result conversion (entity class with getter/setter methods, Map.class, or supported basic types)
-     * @param cypher the Cypher query string with named parameter placeholders
-     * @param parameters the named parameters for the query
-     * @return a Stream of result objects of the specified type; close the stream to release the
-     *         underlying session back to the pool
-     * @throws IllegalArgumentException if objectType or cypher is null
+     * @param <T> the result row type
+     * @param objectType the target class &mdash; an OGM-mapped entity class or a basic value type
+     * @param cypher the Cypher query string with {@code $name} parameter placeholders
+     * @param parameters named parameters bound by the OGM session
+     * @return a lazily-evaluated {@link Stream} of rows mapped to {@code objectType}; close the
+     *         stream to release the underlying session
+     * @throws RuntimeException if the underlying OGM session rejects the query
      * @see #queryForObject(Class, String, Map)
      * @see #query(String, Map)
      */
@@ -1861,10 +1744,11 @@ public final class Neo4jExecutor {
      * int totalPages = (int) Math.ceil((double) totalItems / pageSize);
      * }</pre>
      *
-     * @param clazz the class representing the node type to count
-     * @param filters the filter criteria to apply when counting nodes
-     * @return the count of nodes matching the filter criteria
-     * @throws IllegalArgumentException if clazz is null or filters is null
+     * @param clazz the OGM-mapped class whose nodes are counted
+     * @param filters an {@link Iterable} of OGM {@link Filter}s combined with AND semantics; pass
+     *                an empty iterable to count all nodes of {@code clazz}
+     * @return the number of nodes of {@code clazz} that satisfy all the supplied filters
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #countEntitiesOfType(Class)
      * @see org.neo4j.ogm.cypher.Filter
      */
@@ -1906,9 +1790,9 @@ public final class Neo4jExecutor {
      * }
      * }</pre>
      *
-     * @param entity the class representing the node type to count
-     * @return the total count of nodes of the specified type
-     * @throws IllegalArgumentException if entity is null
+     * @param entity the OGM-mapped class whose nodes are counted
+     * @return the total number of nodes mapped by {@code entity}
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #count(Class, Iterable)
      */
     public long countEntitiesOfType(final Class<?> entity) {
@@ -1922,38 +1806,29 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Resolves the Neo4j graph ID for the given entity object.
+     * Resolves the native Neo4j node ID for {@code possibleEntity}, if it is an OGM-managed
+     * entity.
      * <p>
-     * This method extracts the Neo4j node ID from an entity object that may or may not
-     * be a managed Neo4j entity. Returns null if the object is not a Neo4j entity
-     * or doesn't have a graph ID assigned.
+     * Delegates to {@link Session#resolveGraphIdFor(Object)}. Because the executor borrows a fresh
+     * pooled session for the call, this only returns a non-null ID when the entity carries an ID
+     * field that OGM has already populated (either because it was loaded from the database or
+     * because a previous {@code save} assigned it). Transient objects that have never been saved
+     * or that are not mapped at all return {@code null}.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Get the graph ID of a loaded entity
      * Person person = executor.load(Person.class, 123L);
-     * Long graphId = executor.resolveGraphIdFor(person);
-     * System.out.println("Graph ID: " + graphId); // 123
+     * Long graphId = executor.resolveGraphIdFor(person); // 123
      *
-     * // Check if an object has been saved
      * Person newPerson = new Person("John Doe");
-     * Long id = executor.resolveGraphIdFor(newPerson);
-     * if (id == null) {
-     *     System.out.println("Person not yet saved");
-     *     executor.save(newPerson);
-     *     id = executor.resolveGraphIdFor(newPerson);
-     *     System.out.println("Saved with ID: " + id);
-     * }
-     *
-     * // Validate entity before operations
-     * if (executor.resolveGraphIdFor(person) != null) {
-     *     // Entity is managed and has an ID
-     *     executor.delete(person);
-     * }
+     * executor.resolveGraphIdFor(newPerson); // null - not yet saved
+     * executor.save(newPerson);
+     * Long savedId = executor.resolveGraphIdFor(newPerson); // assigned by Neo4j
      * }</pre>
      *
-     * @param possibleEntity the object that might be a Neo4j entity
-     * @return the Neo4j graph ID if the object is a managed entity, null otherwise
+     * @param possibleEntity an object that may or may not be an OGM-mapped entity
+     * @return the native Neo4j graph ID for the entity, or {@code null} if {@code possibleEntity}
+     *         is not a mapped/managed entity with an assigned ID
      * @see #load(Class, Long)
      */
     public Long resolveGraphIdFor(final Object possibleEntity) {

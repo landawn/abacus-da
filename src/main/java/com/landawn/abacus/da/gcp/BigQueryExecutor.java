@@ -71,64 +71,93 @@ import com.landawn.abacus.util.function.Function;
 import com.landawn.abacus.util.stream.Stream;
 
 /**
- * A comprehensive executor for Google Cloud BigQuery operations, providing high-level abstractions
- * for SQL query execution, data manipulation, and BigQuery-specific features.
- * <p>
- * This executor supports BigQuery's Standard SQL dialect and is designed for ad-hoc query execution
- * and DML (INSERT/UPDATE/DELETE) workloads driven from POJOs or property maps. It does <i>not</i>
- * wrap BigQuery's streaming insert ({@code tabledata.insertAll}) or its administrative dataset/table
- * APIs; reach for {@link #bigQuery()} when those are needed.
+ * A high-level executor on top of the Google Cloud {@link BigQuery} client. It provides POJO- and
+ * map-driven INSERT/UPDATE/DELETE, parameterised SELECTs, and {@link Stream}/{@link Dataset}
+ * result handling against BigQuery's <i>query jobs</i> API.
  *
- * <h2>Key Features</h2>
- * <h3>Core Capabilities:</h3>
+ * <h2>Query-Job Semantics (no streaming insert)</h2>
+ * <p>Every method on this executor ultimately submits work as a synchronous BigQuery <i>query job</i>
+ * via {@link BigQuery#query(QueryJobConfiguration, com.google.cloud.bigquery.BigQuery.JobOption...)}.
+ * That includes the DML helpers ({@link #insert(Object)}, {@link #update(Object)},
+ * {@link #delete(Object)}), which build {@code INSERT}/{@code UPDATE}/{@code DELETE} statements
+ * with {@link SqlBuilder} and submit them as ordinary query jobs. As a result, every call:</p>
  * <ul>
- *   <li>Standard SQL query execution with positional parameter binding</li>
- *   <li>POJO-driven INSERT/UPDATE/DELETE built on top of {@link SqlBuilder}</li>
- *   <li>Result mapping to entities, {@link Dataset}s, {@code Map}s, arrays, collections,
- *       and scalar values</li>
- *   <li>{@link Stream}-based result processing for large result sets</li>
- *   <li>Support for BigQuery data types and nested {@link FieldValueList} structures</li>
- *   <li>Configurable naming policy for mapping Java property names to column names</li>
+ *   <li>Counts against BigQuery's <i>bytes processed</i> billing model (DML on partitioned tables
+ *       processes whole partitions; consider partition filters for cost control).</li>
+ *   <li>Is governed by BigQuery's per-table DML concurrency limits.</li>
+ *   <li>Blocks the calling thread until the job completes; an {@link InterruptedException} during
+ *       the wait is rethrown as a {@link RuntimeException} after the thread's interrupt flag is
+ *       reset.</li>
  * </ul>
- * 
- * <h3>Naming Policy Support:</h3>
- * <p>The executor supports different naming conventions for mapping Java properties to BigQuery columns:</p>
+ * <p>This executor <b>does not</b> wrap the BigQuery <i>streaming insert</i> API
+ * ({@code tabledata.insertAll}), the load-job API, the dataset/table administrative API, or
+ * dry-run cost estimation. For those, obtain the underlying client via {@link #bigQuery()} and
+ * build the appropriate {@code JobConfiguration} (e.g.
+ * {@code QueryJobConfiguration.newBuilder(sql).setDryRun(true).build()}) yourself, then submit it
+ * with {@code bigQuery.query(...)} or {@code bigQuery.create(JobInfo.of(...))}.</p>
+ *
+ * <h2>Dataset and Table Naming</h2>
+ * <p>The {@link SqlBuilder}-driven helpers derive the BigQuery table name from the target Java
+ * class (via the configured {@link NamingPolicy}); the resulting SQL therefore uses an
+ * <i>unqualified</i> table name. To target a specific dataset or project you must either:</p>
  * <ul>
- *   <li>{@code SNAKE_CASE} - snake_case (default)</li>
- *   <li>{@code SCREAMING_SNAKE_CASE} - SCREAMING_SNAKE_CASE (e.g., firstName → FIRST_NAME)</li>
- *   <li>{@code CAMEL_CASE} - camelCase</li>
+ *   <li>Set the default dataset on the underlying {@link BigQuery} client (e.g. via
+ *       {@code BigQueryOptions} or a {@code QueryJobConfiguration#setDefaultDataset(DatasetId)}
+ *       on a custom configuration), or</li>
+ *   <li>Pass a fully-qualified SQL string ({@code `project.dataset.table`}) to the
+ *       {@link #execute(String, Object...)}, {@link #list(Class, String, Object...)},
+ *       {@link #query(Class, String, Object...)}, or {@link #stream(Class, String, Object...)}
+ *       overloads.</li>
  * </ul>
- * 
+ *
+ * <h2>Parameter Binding</h2>
+ * <p>Custom SQL methods use positional ({@code ?}) parameters; values are converted to
+ * {@link QueryParameterValue} by {@link #buildQueryParameterValue(Object...)} (e.g. {@code String},
+ * {@code Boolean}, integer/floating-point primitives and their boxed equivalents,
+ * {@link BigDecimal}, {@code java.util.Date}/{@code java.sql.*}, {@code com.google.cloud.Date},
+ * {@code com.google.cloud.Timestamp}, and {@code byte[]} are mapped to their native BigQuery
+ * types; everything else is serialised to JSON). {@code null} parameters must be wrapped in a
+ * {@link QueryParameterValue} so the SQL type is known.</p>
+ *
+ * <h2>Result Set Pagination</h2>
+ * <p>Pagination is delegated to BigQuery's {@link TableResult}: {@link #list}/{@link #query}
+ * eagerly materialise every page (via {@link TableResult#iterateAll()}); {@link #stream} returns a
+ * lazy {@link Stream} backed by the same iterator. Use {@link #stream} for large result sets to
+ * keep memory bounded.</p>
+ *
+ * <h2>Naming Policy</h2>
+ * <p>Property-to-column translation is governed by the {@link NamingPolicy} passed at
+ * construction time:</p>
+ * <ul>
+ *   <li>{@link NamingPolicy#SNAKE_CASE} (default) &mdash; e.g. {@code firstName} &rarr; {@code first_name}</li>
+ *   <li>{@link NamingPolicy#SCREAMING_SNAKE_CASE} &mdash; e.g. {@code firstName} &rarr; {@code FIRST_NAME}</li>
+ *   <li>{@link NamingPolicy#CAMEL_CASE} &mdash; e.g. {@code firstName} &rarr; {@code firstName}</li>
+ * </ul>
+ * <p>Any other naming policy raises {@link IllegalStateException} from the DML helpers.</p>
+ *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * // Initialize executor
  * BigQuery bigQuery = BigQueryOptions.getDefaultInstance().getService();
  * BigQueryExecutor executor = new BigQueryExecutor(bigQuery);
- * 
+ *
  * // Entity operations
  * Customer customer = new Customer("123", "John Doe");
  * executor.insert(customer);
- * 
+ *
  * // SQL queries
- * List<Customer> customers = executor.list(Customer.class, 
+ * List<Customer> customers = executor.list(Customer.class,
  *     "SELECT * FROM customers WHERE status = ?", "active");
- * 
+ *
  * // Streaming operations
  * Stream<Customer> customerStream = executor.stream(Customer.class,
  *     "SELECT * FROM customers WHERE created_date > ?", yesterday);
- * 
+ *
  * // Complex queries with conditions
- * Dataset results = executor.query(Customer.class, 
+ * Dataset results = executor.query(Customer.class,
  *     Filters.and(Filters.eq("status", "active"), Filters.gt("created_date", yesterday)));
  * }</pre>
- * 
- * <h3>BigQuery-Specific Features:</h3>
- * <ul>
- *   <li>Reads ARRAY and STRUCT result values via nested {@link FieldValueList} handling</li>
- *   <li>Direct {@link QueryJobConfiguration} execution for advanced job control</li>
- *   <li>Arbitrary DML and DDL statement execution via {@link #execute(String, Object...)}</li>
- * </ul>
- * 
+ *
  * @see com.google.cloud.bigquery.BigQuery
  * @see com.google.cloud.bigquery.QueryJobConfiguration
  * @see com.google.cloud.bigquery.TableResult
@@ -173,13 +202,12 @@ public class BigQueryExecutor {
     private final NamingPolicy namingPolicy;
 
     /**
-     * Constructs a BigQueryExecutor with the specified BigQuery instance using default naming policy.
-     * <p>
-     * This constructor uses the default naming policy of SNAKE_CASE, which maps
-     * Java camelCase property names to BigQuery snake_case column names (e.g., firstName → first_name).
-     * 
-     * @param bigQuery the Google Cloud BigQuery service instance
-     * @throws IllegalArgumentException if bigQuery is null
+     * Constructs a {@code BigQueryExecutor} backed by the supplied {@link BigQuery} client with
+     * the default {@link NamingPolicy#SNAKE_CASE} translation policy (e.g.
+     * {@code firstName} &rarr; {@code first_name}).
+     *
+     * @param bigQuery the Google Cloud BigQuery client this executor will delegate to
+     * @throws IllegalArgumentException if {@code bigQuery} is {@code null}
      * @see #BigQueryExecutor(BigQuery, NamingPolicy)
      * @see NamingPolicy#SNAKE_CASE
      */
@@ -188,13 +216,18 @@ public class BigQueryExecutor {
     }
 
     /**
-     * Constructs a BigQueryExecutor with the specified BigQuery instance and naming policy.
+     * Constructs a {@code BigQueryExecutor} backed by the supplied {@link BigQuery} client with an
+     * explicit property-to-column {@link NamingPolicy}.
      * <p>
-     * The naming policy determines how Java property names are mapped to BigQuery column names.
+     * Only {@link NamingPolicy#SNAKE_CASE}, {@link NamingPolicy#SCREAMING_SNAKE_CASE}, and
+     * {@link NamingPolicy#CAMEL_CASE} are honoured by the DML helpers; passing any other naming
+     * policy will cause the first INSERT/UPDATE/DELETE call to fail with
+     * {@link IllegalStateException}.
      *
-     * @param bigQuery the Google Cloud BigQuery service instance
-     * @param namingPolicy the naming convention for property-to-column mapping
-     * @throws IllegalArgumentException if bigQuery or namingPolicy is null
+     * @param bigQuery the Google Cloud BigQuery client this executor will delegate to
+     * @param namingPolicy the convention used when translating Java property names to BigQuery
+     *                     column/table names
+     * @throws IllegalArgumentException if {@code bigQuery} or {@code namingPolicy} is {@code null}
      * @see NamingPolicy
      */
     public BigQueryExecutor(final BigQuery bigQuery, final NamingPolicy namingPolicy) {
@@ -209,12 +242,14 @@ public class BigQueryExecutor {
     }
 
     /**
-     * Returns the underlying Google Cloud BigQuery service instance.
+     * Returns the underlying {@link BigQuery} client this executor was constructed with.
      * <p>
-     * This method provides access to the BigQuery service for advanced operations
-     * not directly supported by this executor.
-     * 
-     * @return the BigQuery service instance
+     * Use this to reach BigQuery features not surfaced by this executor &mdash; for example
+     * streaming inserts via {@code bigQuery().insertAll(...)}, dry-run cost estimation via a
+     * custom {@link QueryJobConfiguration} with {@code setDryRun(true)}, or dataset/table
+     * administration.
+     *
+     * @return the underlying BigQuery client; never {@code null}
      * @see com.google.cloud.bigquery.BigQuery
      */
     public BigQuery bigQuery() {
@@ -222,18 +257,21 @@ public class BigQueryExecutor {
     }
 
     /**
-     * Converts a BigQuery FieldValueList to a Java entity using the provided schema.
+     * Converts a BigQuery {@link FieldValueList} (a single result row) to an instance of
+     * {@code entityClass}, mapping column names to bean properties according to the supplied
+     * {@link Schema}.
      * <p>
-     * This method maps BigQuery query results to Java objects based on the schema definition.
-     * The entity class must have appropriate getter/setter methods for the fields.
-     * 
-     * @param <T> the target entity type
-     * @param schema the BigQuery schema defining field structure
-     * @param fieldValueList the row data from BigQuery
-     * @param entityClass the target entity class with getter/setter methods
-     * @return the converted entity instance
-     * @throws IllegalArgumentException if schema, fieldValueList, or entityClass is null,
-     *                                  or if entityClass is not a valid entity
+     * Convenience overload that immediately extracts {@code schema.getFields()} and delegates to
+     * {@link #toEntity(FieldList, FieldValueList, Class)}.
+     *
+     * @param <T> the entity type
+     * @param schema the schema describing {@code fieldValueList}; must not be {@code null}
+     * @param fieldValueList the row to convert
+     * @param entityClass the bean class to instantiate; must declare standard getter/setter methods
+     * @return a new {@code entityClass} instance with properties populated from {@code fieldValueList}
+     * @throws IllegalArgumentException if {@code schema} is {@code null} or {@code entityClass} is
+     *                                  not a recognised bean class
+     * @see #toEntity(FieldList, FieldValueList, Class)
      * @see #toEntity(FieldValueList, Class)
      */
     public static <T> T toEntity(final Schema schema, final FieldValueList fieldValueList, final Class<T> entityClass) {
@@ -243,19 +281,24 @@ public class BigQueryExecutor {
     }
 
     /**
-     * Converts a BigQuery FieldValueList to a Java entity using the provided field list.
+     * Converts a BigQuery {@link FieldValueList} (a single result row) to an instance of
+     * {@code entityClass}, mapping field names to bean properties via the supplied
+     * {@link FieldList}.
      * <p>
-     * This method maps BigQuery query results to Java objects based on the field list definition.
-     * The entity class must have appropriate getter/setter methods for the fields. Property names
-     * are matched using column-to-property mapping conventions.
-     * 
-     * @param <T> the target entity type
-     * @param fields the BigQuery field list defining field structure and names
-     * @param fieldValueList the row data from BigQuery containing the actual values
-     * @param entityClass the target entity class with getter/setter methods
-     * @return the converted entity instance with mapped values
-     * @throws IllegalArgumentException if entityClass is not a valid bean class with getter/setter methods,
-     *                                  or if fields or fieldValueList is null
+     * Column-to-property resolution proceeds in this order: an exact match on the bean's property
+     * name, then a column-to-property name map derived from the bean's annotations
+     * ({@code @Column}, etc.). Columns whose names contain a period are written via
+     * {@code BeanInfo#setPropValue(..., true)} so dotted paths can populate nested beans even when
+     * no top-level property matches. Nested {@link FieldValueList} values are converted recursively
+     * into the property's declared type.
+     *
+     * @param <T> the entity type
+     * @param fields the field list describing {@code fieldValueList}; must not be {@code null}
+     * @param fieldValueList the row to convert; must not be {@code null}
+     * @param entityClass the bean class to instantiate; must declare standard getter/setter methods
+     * @return a new {@code entityClass} instance with properties populated from {@code fieldValueList}
+     * @throws IllegalArgumentException if {@code entityClass} is not a recognised bean class, or if
+     *                                  {@code fields} or {@code fieldValueList} is {@code null}
      * @see #toEntity(Schema, FieldValueList, Class)
      * @see #toEntity(FieldValueList, Class)
      */
@@ -306,18 +349,22 @@ public class BigQueryExecutor {
     }
 
     /**
-     * Converts a BigQuery FieldValueList to a Java entity by automatically extracting the schema.
+     * Converts a {@link FieldValueList} to an instance of {@code entityClass}, extracting the
+     * schema from the row itself via {@link #getSchema(FieldValueList)} (reflection-based access
+     * to {@code FieldValueList.schema}).
      * <p>
-     * This is a convenience method that automatically extracts the schema information from the
-     * FieldValueList and then performs the entity conversion. The entity class must have
-     * appropriate getter/setter methods for the fields.
-     * 
-     * @param <T> the target entity type
-     * @param fieldValueList the row data from BigQuery containing both schema and values
-     * @param entityClass the target entity class with getter/setter methods
-     * @return the converted entity instance with mapped values
-     * @throws IllegalArgumentException if entityClass is not a valid bean class,
-     *                                  or if fieldValueList is null
+     * This is a convenience overload of {@link #toEntity(FieldList, FieldValueList, Class)} for
+     * callers who don't have a separate {@link FieldList} handy. Note that the underlying
+     * reflection-based schema extraction will fail if the BigQuery client library hides the
+     * {@code schema} field; in long-running processes prefer the
+     * {@link #toEntity(FieldList, FieldValueList, Class)} overload.
+     *
+     * @param <T> the entity type
+     * @param fieldValueList the row to convert
+     * @param entityClass the bean class to instantiate; must declare standard getter/setter methods
+     * @return a new {@code entityClass} instance with properties populated from {@code fieldValueList}
+     * @throws IllegalArgumentException if {@code entityClass} is not a recognised bean class, or if
+     *                                  the schema cannot be retrieved from {@code fieldValueList}
      * @see #toEntity(FieldList, FieldValueList, Class)
      */
     public static <T> T toEntity(final FieldValueList fieldValueList, final Class<T> entityClass) {
@@ -325,16 +372,16 @@ public class BigQueryExecutor {
     }
 
     /**
-     * Converts a BigQuery FieldValueList to a Map using the provided schema.
+     * Converts a BigQuery {@link FieldValueList} (a single result row) to a {@code Map}, using the
+     * supplied {@link Schema} to provide the column names that become the map's keys.
      * <p>
-     * This method creates a Map where keys are column names from the schema and values
-     * are the corresponding data from the FieldValueList. Nested structures are recursively
-     * converted to nested Maps.
-     * 
-     * @param schema the BigQuery schema defining field structure and names
-     * @param fieldValueList the row data from BigQuery containing the values
-     * @return a Map containing column names as keys and corresponding values
-     * @throws IllegalArgumentException if schema or fieldValueList is null
+     * Returns a {@link HashMap}. Nested {@link FieldValueList} values (BigQuery {@code STRUCT}s)
+     * are recursively converted to nested {@link Map}s.
+     *
+     * @param schema the schema describing {@code fieldValueList}; must not be {@code null}
+     * @param fieldValueList the row to convert
+     * @return a new {@code HashMap} with one entry per field in {@code schema}
+     * @throws IllegalArgumentException if {@code schema} or {@code fieldValueList} is {@code null}
      * @see #toMap(FieldList, FieldValueList)
      */
     public static Map<String, Object> toMap(final Schema schema, final FieldValueList fieldValueList) {
@@ -361,17 +408,21 @@ public class BigQueryExecutor {
     }
 
     /**
-     * Converts a BigQuery FieldValueList to a Map using the provided field list and Map supplier.
+     * Converts a BigQuery {@link FieldValueList} to a {@code Map} of caller-chosen type, using the
+     * supplied {@link FieldList} for the column names that become the map's keys.
      * <p>
-     * This method creates a Map of the specified type where keys are column names from the field list
-     * and values are the corresponding data from the FieldValueList. Nested FieldValueList structures
-     * are recursively converted to nested Maps using the same supplier function.
-     * 
-     * @param fields the BigQuery field list defining field structure and names
-     * @param fieldValueList the row data from BigQuery containing the values
-     * @param supplier a function that creates Map instances given the expected size
-     * @return a Map of the supplier's type containing column names as keys and corresponding values
-     * @throws IllegalArgumentException if fields, fieldValueList, or supplier is null
+     * {@code supplier} is invoked with the expected entry count and must return a writable map of
+     * the desired implementation type (e.g. {@link IntFunctions#ofMap()},
+     * {@link IntFunctions#ofLinkedHashMap()}). Nested {@link FieldValueList} values are recursively
+     * converted into nested maps, with each recursion also using {@code supplier} (the inner
+     * schemas are extracted via {@link #getSchema(FieldValueList)}).
+     *
+     * @param fields the field list describing {@code fieldValueList}; must not be {@code null}
+     * @param fieldValueList the row to convert; must not be {@code null}
+     * @param supplier creates the outer {@link Map} instance given the expected size; must not be
+     *                 {@code null}
+     * @return the map produced by {@code supplier}, populated with one entry per field
+     * @throws IllegalArgumentException if any argument is {@code null}
      * @see IntFunctions#ofMap()
      * @see IntFunctions#ofLinkedHashMap()
      */
@@ -619,18 +670,31 @@ public class BigQueryExecutor {
     }
 
     /**
-     * Converts a BigQuery TableResult to a List of Java objects.
+     * Materialises every row of a BigQuery {@link TableResult} into a {@link List}.
      * <p>
-     * This method processes all rows from a BigQuery query result and converts them to a list
-     * of Java objects of the specified type. The target class can be an entity class with
-     * getter/setter methods, a Map class, Object/Collection arrays, or basic value types.
+     * The row mapper used internally is chosen by {@code targetClass}:
+     * <ul>
+     *   <li>An entity bean class &rarr; each row is mapped via
+     *       {@link #toEntity(FieldList, FieldValueList, Class)}.</li>
+     *   <li>{@link Map} or a {@link Map} subclass &rarr; each row becomes a map of column-to-value.</li>
+     *   <li>An object-array class (e.g. {@code Object[].class}) or {@code null} &rarr; each row is
+     *       returned as an object array sized to the row width.</li>
+     *   <li>A {@link Collection} subclass &rarr; each row becomes a collection of values in column
+     *       order.</li>
+     *   <li>Any other class &rarr; the result is treated as a single-column scalar; the first
+     *       column's value is converted to {@code targetClass}. Rows with more than one column
+     *       raise {@link IllegalArgumentException} during iteration.</li>
+     * </ul>
      *
-     * @param <T> the target type for list elements
-     * @param tableResult the BigQuery table result containing query data
-     * @param targetClass the target class for result conversion (entity class with getter/setter methods, Map.class,
-     *                   Object[].class, Collection classes, or supported basic types)
-     * @return a List containing the converted objects from all result rows, empty list if no results
-     * @throws IllegalArgumentException if targetClass is not supported for conversion
+     * @param <T> the element type of the returned list
+     * @param tableResult the BigQuery query result to materialise
+     * @param targetClass selects the per-row mapping strategy as described above; may be
+     *                    {@code null} to fall back to {@code Object[]} rows
+     * @return a {@link List} containing one element per data row, sized to
+     *         {@link TableResult#getTotalRows()}; an empty list if the result has no rows or no
+     *         schema (e.g. a DML statement)
+     * @throws IllegalArgumentException if {@code targetClass} is incompatible with the row width
+     *                                  (see scalar case above)
      * @see #toEntity(FieldValueList, Class)
      * @see #stream(Class, String, Object...)
      */
@@ -662,17 +726,26 @@ public class BigQueryExecutor {
     }
 
     /**
-     * Extracts data from a BigQuery TableResult into a Dataset structure.
+     * Materialises a BigQuery {@link TableResult} into a columnar {@link Dataset}.
      * <p>
-     * This method converts a BigQuery TableResult into a columnar Dataset format where each
-     * column contains all values for that field across all rows. This is useful for data
-     * analysis operations where columnar access is preferred.
+     * The result is column-oriented: each output column holds every value for that field across
+     * all rows. {@code targetClass} drives per-column type conversion:
+     * <ul>
+     *   <li>If {@code targetClass} is an entity bean, each output column is converted to the
+     *       declared type of the matching bean property (resolved via the column-to-property name
+     *       map). Columns without a matching property are left unconverted.</li>
+     *   <li>If {@code targetClass} is assignable to {@link Map}, nested BigQuery {@code STRUCT}
+     *       values are converted to {@link Map}s; primitive values are left as-is.</li>
+     *   <li>For any other non-{@code null} {@code targetClass} (and for {@code null}), nested
+     *       {@code STRUCT} values are converted to {@code Object[]} and primitive values are left
+     *       as-is.</li>
+     * </ul>
      *
-     * @param tableResult the BigQuery table result containing query data
-     * @param targetClass the target class used to determine column types and structure; an entity class
-     *                   (with getter/setter methods) or Map.class drives type conversion, while
-     *                   {@code null} or any other class leaves column values unconverted
-     * @return a Dataset with column-oriented data from the table result, or an empty Dataset if the result has no schema
+     * @param tableResult the BigQuery query result to materialise
+     * @param targetClass type hint used to choose per-column conversion as described above; may be
+     *                    {@code null}
+     * @return a {@link RowDataset} backed by per-column lists, or {@link N#newEmptyDataset()} if
+     *         {@code tableResult} has no schema (e.g. it came from a DML statement)
      * @see RowDataset
      * @see #query(Class, String, Object...)
      */
@@ -862,8 +935,8 @@ public class BigQueryExecutor {
      * }
      *
      * // Load and update entity
-     * Customer customer = executor.queryForObject(Customer.class,
-     *     "SELECT * FROM customers WHERE customer_id = ?", "CUST123");
+     * Customer customer = executor.list(Customer.class,
+     *     "SELECT * FROM customers WHERE customer_id = ?", "CUST123").get(0);
      * customer.setEmail("newemail@example.com");
      *
      * TableResult result = executor.update(customer);
@@ -1019,8 +1092,8 @@ public class BigQueryExecutor {
      * System.out.println("Deleted rows: " + result.getTotalRows());
      *
      * // Or delete by loading first
-     * Customer existing = executor.queryForObject(Customer.class,
-     *     "SELECT * FROM customers WHERE customer_id = ?", "CUST456");
+     * Customer existing = executor.list(Customer.class,
+     *     "SELECT * FROM customers WHERE customer_id = ?", "CUST456").get(0);
      * executor.delete(existing);
      * }</pre>
      *
@@ -1290,11 +1363,13 @@ public class BigQueryExecutor {
     }
 
     /**
-     * Checks if records exist in a BigQuery table using a custom condition.
+     * Returns whether the table for {@code targetClass} contains at least one row matching
+     * {@code whereClause}.
      * <p>
-     * This method performs a SELECT query with LIMIT 1 to efficiently determine if any records
-     * exist matching the specified condition. Only the primary key fields are selected to
-     * minimize data transfer.
+     * Implemented as a parameterised {@code SELECT <keys> FROM <table> WHERE ... LIMIT 1} query
+     * job; only the primary-key columns of {@code targetClass} are projected to keep bytes
+     * processed small. Note that even with {@code LIMIT 1} BigQuery still <i>scans</i> the qualifying
+     * data before applying the limit, so this is not free on large unpartitioned tables.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1899,40 +1974,40 @@ public class BigQueryExecutor {
     }
 
     /**
-     * Executes a BigQuery SQL statement with positional parameters.
+     * Submits an arbitrary BigQuery SQL statement (SELECT/DML/DDL) as a query job with positional
+     * parameters and blocks the calling thread until it completes.
      * <p>
-     * This method executes any SQL statement (SELECT, INSERT, UPDATE, DELETE, DDL)
-     * and returns the results. Parameters are bound positionally using ? placeholders.
+     * Parameters are bound positionally to {@code ?} placeholders and converted via
+     * {@link #buildQueryParameterValue(Object...)}. The job runs synchronously through
+     * {@link BigQuery#query(QueryJobConfiguration, com.google.cloud.bigquery.BigQuery.JobOption...)};
+     * an {@link InterruptedException} during the wait is rethrown as a {@link RuntimeException}
+     * after the thread's interrupt flag is restored, and a {@link JobException} (failed/cancelled
+     * job) is wrapped via {@link ExceptionUtil#toRuntimeException(Throwable, boolean)}.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Execute SELECT query
+     * // SELECT
      * TableResult result = executor.execute(
      *     "SELECT * FROM customers WHERE status = ? AND created_date > ?",
      *     "active", LocalDate.now().minusMonths(6));
      *
-     * System.out.println("Rows returned: " + result.getTotalRows());
-     *
-     * // Execute DML statement
-     * TableResult updateResult = executor.execute(
+     * // DML (returned TableResult exposes the affected-row count via getTotalRows())
+     * TableResult updated = executor.execute(
      *     "UPDATE customers SET status = ? WHERE last_order_date < ?",
      *     "inactive", LocalDate.now().minusYears(1));
      *
-     * System.out.println("Rows updated: " + updateResult.getTotalRows());
-     *
-     * // Execute DDL statement
-     * TableResult ddlResult = executor.execute(
-     *     "CREATE TABLE IF NOT EXISTS test_table (id STRING, name STRING)");
-     *
-     * // Execute aggregation query
-     * TableResult aggResult = executor.execute(
-     *     "SELECT status, COUNT(*) as count FROM customers GROUP BY status");
+     * // DDL
+     * executor.execute("CREATE TABLE IF NOT EXISTS test_table (id STRING, name STRING)");
      * }</pre>
      *
-     * @param query the SQL query string with ? parameter placeholders
-     * @param parameters the parameter values to bind to the query
-     * @return the TableResult containing query results and execution statistics
-     * @throws RuntimeException if the query execution fails or the calling thread is interrupted
+     * @param query the SQL statement with {@code ?} positional placeholders; must not be {@code null}
+     * @param parameters values bound to the placeholders, in order; may be omitted entirely if the
+     *                   statement has no parameters
+     * @return the {@link TableResult} returned by BigQuery; for SELECT statements this contains the
+     *         rows, for DML the affected-row count via {@link TableResult#getTotalRows()}, for DDL
+     *         a result with no schema
+     * @throws RuntimeException if the underlying BigQuery call throws {@link JobException} or the
+     *                          calling thread is interrupted while waiting for the job
      * @see #stream(Class, String, Object...)
      * @see #list(Class, String, Object...)
      */
@@ -2043,12 +2118,23 @@ public class BigQueryExecutor {
     }
 
     /**
-     * Converts Java objects to BigQuery QueryParameterValue objects for parameter binding.
+     * Converts an array of Java values into a list of BigQuery {@link QueryParameterValue}s
+     * suitable for positional parameter binding in {@link QueryJobConfiguration#setPositionalParameters}.
      *
-     * <p>This method handles the conversion of various Java types to their corresponding
-     * BigQuery parameter representations. It supports primitive types, dates, BigDecimal,
-     * and complex objects (which are converted to JSON). The conversion ensures type
-     * safety and proper formatting for BigQuery's parameter binding system.</p>
+     * <p>Conversion rules (applied per element, in order):</p>
+     * <ol>
+     *   <li>Elements that are already {@link QueryParameterValue} instances are passed through
+     *       unchanged.</li>
+     *   <li>{@code null} elements raise {@link IllegalArgumentException} &mdash; BigQuery requires
+     *       the SQL type of a {@code NULL} parameter to be known, so callers must wrap nulls in a
+     *       {@code QueryParameterValue} of the appropriate type.</li>
+     *   <li>Strings, primitives and their boxed counterparts, {@link BigDecimal},
+     *       {@code java.util.Date}, {@code java.sql.Date}/{@code Time}/{@code Timestamp},
+     *       {@code com.google.cloud.Date}, {@code com.google.cloud.Timestamp}, and {@code byte[]}
+     *       are mapped to their canonical BigQuery types.</li>
+     *   <li>Arrays, collections, maps, and other beans are serialised to JSON and bound as
+     *       {@code STRING} via {@link QueryParameterValue#json(String)}.</li>
+     * </ol>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2056,11 +2142,11 @@ public class BigQueryExecutor {
      *     "John", 25, LocalDate.now());
      * }</pre>
      *
-     * @param parameters the Java objects to convert to BigQuery parameters
-     * @return a List of QueryParameterValue objects ready for BigQuery parameter binding,
-     *         or an empty list if {@code parameters} is null or empty
-     * @throws IllegalArgumentException if any parameter is {@code null} and not wrapped in a
-     *                                  {@link QueryParameterValue}
+     * @param parameters the values to convert; may be {@code null} or empty
+     * @return a list of {@link QueryParameterValue}s in the same order as {@code parameters}, or
+     *         {@link N#emptyList()} when {@code parameters} is {@code null} or empty
+     * @throws IllegalArgumentException if any element of {@code parameters} is {@code null} and not
+     *                                  already a {@link QueryParameterValue}
      * @see QueryParameterValue
      * @see #execute(String, Object...)
      */
@@ -2085,12 +2171,13 @@ public class BigQueryExecutor {
     }
 
     /**
-     * Extracts the schema (FieldList) from a FieldValueList using reflection.
+     * Extracts the {@link FieldList} backing a {@link FieldValueList} by reflectively reading the
+     * library-private {@code FieldValueList.schema} field.
      *
-     * <p>This utility method uses Java reflection to access the internal schema field
-     * of a FieldValueList object. This is necessary because the Google Cloud BigQuery
-     * client library doesn't provide a direct public method to access the schema
-     * from FieldValueList objects.</p>
+     * <p>The reflective accessor is resolved once in a static initialiser; if the BigQuery client
+     * library hides or removes the field, that initialiser silently disables the optimisation and
+     * <i>this method then fails</i> with {@link IllegalArgumentException} on the
+     * {@code N.checkArgNotNull(schemaFieldOfFieldList, ...)} guard.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2099,10 +2186,14 @@ public class BigQueryExecutor {
      * FieldList schema = BigQueryExecutor.getSchema(row);
      * }</pre>
      *
-     * @param fieldValueList the FieldValueList containing schema information, must not be {@code null}
-     * @return the FieldList schema defining the structure of the row data
-     * @throws IllegalArgumentException if the internal schema field cannot be accessed via reflection
-     * @throws RuntimeException if the schema field is inaccessible
+     * @param fieldValueList the row whose schema to extract; must not be {@code null}
+     * @return the {@link FieldList} describing the columns of {@code fieldValueList}
+     * @throws IllegalArgumentException if the reflective accessor was not available at class-init
+     *                                  time (e.g. on a future BigQuery client library version that
+     *                                  removes the {@code schema} field)
+     * @throws RuntimeException if the accessor was available at class-init but became inaccessible
+     *                          at call time (the accessor is also disabled for subsequent calls in
+     *                          that case)
      * @see FieldList
      * @see FieldValueList
      */

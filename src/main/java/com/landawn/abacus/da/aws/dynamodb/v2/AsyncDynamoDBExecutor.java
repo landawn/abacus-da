@@ -77,43 +77,56 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
 
 /**
  * Asynchronous DynamoDB executor providing non-blocking AWS DynamoDB operations with CompletableFuture support.
- * 
- * <p>This executor serves as a high-level asynchronous wrapper around AWS DynamoDB SDK v2, offering
- * CompletableFuture-based operations for all DynamoDB interactions. It enables reactive programming
- * patterns and efficient handling of concurrent database operations without blocking threads.</p>
+ *
+ * <p>This executor wraps the AWS SDK <b>v2</b> {@link DynamoDbAsyncClient} and exposes
+ * {@link CompletableFuture}-based variants of all DynamoDB interactions. It is the modern counterpart to
+ * {@code com.landawn.abacus.da.aws.dynamodb.AsyncDynamoDBExecutor} (which wraps the legacy AWS SDK v1
+ * {@code AmazonDynamoDBAsyncClient}); v1 and v2 are independent — they cannot share clients, request
+ * models, or {@code AttributeValue} types, and applications should standardize on one SDK generation.</p>
  *
  * <h2>Key Features and Architecture</h2>
  * <h3>Key Features:</h3>
  * <ul>
- * <li><b>Non-blocking Operations</b> - All methods return CompletableFuture for asynchronous execution</li>
- * <li><b>Complete CRUD Support</b> - Async versions of create, read, update, and delete operations</li>
- * <li><b>Batch Operations</b> - Efficient async batch get/write with proper limit handling</li>
- * <li><b>Query &amp; Scan</b> - Asynchronous querying with automatic pagination support</li>
- * <li><b>Stream Processing</b> - CompletableFuture&lt;Stream&gt; for memory-efficient large result processing</li>
- * <li><b>Object Mapping</b> - Automatic conversion between Java objects and DynamoDB AttributeValues</li>
- * <li><b>Type Safety</b> - Generic type support with Mapper&lt;T&gt; for entity-specific operations</li>
+ * <li><b>Non-blocking Operations</b> — every public method returns a {@link CompletableFuture}
+ *     or {@link Stream}-of-future for asynchronous execution</li>
+ * <li><b>Complete CRUD Support</b> — async get/put/update/delete (including {@code returnValues})</li>
+ * <li><b>Batch Operations</b> — efficient async batch get/write; unprocessed items must be retried
+ *     by the caller (not automatic)</li>
+ * <li><b>Query &amp; Scan</b> — async queries that auto-paginate when the caller has not set
+ *     {@code exclusiveStartKey}</li>
+ * <li><b>Stream Processing</b> — {@code CompletableFuture<Stream<T>>} for memory-efficient processing of
+ *     large result sets via lazy page fetching</li>
+ * <li><b>Object Mapping</b> — automatic conversion between Java beans and DynamoDB {@link AttributeValue}s</li>
+ * <li><b>Type Safety</b> — {@link Mapper Mapper&lt;T&gt;} for entity-specific operations</li>
  * </ul>
- * 
- * <h3>DynamoDB v2 SDK Integration:</h3>
- * <p>Built on AWS SDK v2's DynamoDbAsyncClient, this executor benefits from improved performance,
- * better resource management, and enhanced async capabilities compared to v1 SDK implementations.</p>
- * 
+ *
+ * <h3>Underlying executor:</h3>
+ * <p>All returned futures are completed on whatever thread the underlying
+ * {@link DynamoDbAsyncClient} dispatches its asynchronous responses on (typically the SDK's
+ * Netty event-loop or the executor configured via
+ * {@code DynamoDbAsyncClientBuilder.asyncConfiguration(...)}). Continuations attached with
+ * {@code thenApply}/{@code thenAccept} therefore run on that pool — push CPU-heavy or
+ * blocking work onto your own executor with the {@code *Async} variants (e.g.
+ * {@code thenApplyAsync(fn, myExecutor)}) to avoid blocking I/O threads.</p>
+ *
  * <h3>Thread Safety &amp; Performance:</h3>
  * <p>This class is fully thread-safe and optimized for high-concurrency scenarios. The underlying
- * DynamoDbAsyncClient uses NIO-based networking with efficient connection pooling and automatic
- * retry mechanisms with exponential backoff.</p>
- * 
+ * {@code DynamoDbAsyncClient} uses non-blocking NIO networking with connection pooling and the SDK's
+ * configured retry policy (with exponential backoff by default).</p>
+ *
  * <h3>CompletableFuture Usage Patterns:</h3>
  * <ul>
- * <li><b>Async Chaining:</b> Chain operations using thenCompose(), thenApply(), thenAccept()</li>
- * <li><b>Parallel Execution:</b> Combine multiple operations with CompletableFuture.allOf()</li>
- * <li><b>Error Handling:</b> Use exceptionally(), handle(), or whenComplete() for robust error handling</li>
- * <li><b>Timeout Control:</b> Apply timeouts using orTimeout() or completeOnTimeout()</li>
+ * <li><b>Async Chaining:</b> compose operations with {@code thenCompose()}, {@code thenApply()},
+ *     {@code thenAccept()}</li>
+ * <li><b>Parallel Execution:</b> combine multiple operations with {@code CompletableFuture.allOf()}</li>
+ * <li><b>Error Handling:</b> use {@code exceptionally()}, {@code handle()}, or {@code whenComplete()}
+ *     for robust error handling — DynamoDB exceptions are wrapped in {@link java.util.concurrent.CompletionException}</li>
+ * <li><b>Timeout Control:</b> apply timeouts via {@code orTimeout()} or {@code completeOnTimeout()}</li>
  * </ul>
- * 
+ *
  * <h3>Resource Management:</h3>
- * <p>The executor implements AutoCloseable and should be closed when no longer needed to ensure
- * proper cleanup of underlying resources including connection pools and thread pools.</p>
+ * <p>This class implements {@link AutoCloseable}; call {@link #close()} (or use try-with-resources)
+ * to shut down the underlying {@link DynamoDbAsyncClient}'s connection pool and async resources.</p>
  *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
@@ -145,9 +158,12 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
  * ProvisionedThroughputExceededException. Implement proper error handling using CompletableFuture's
  * exception handling methods.</p>
  *
- * @see <a href="https://sdk.amazonaws.com/java/api/latest/software/amazon/awssdk/services/dynamodb/DynamoDbAsyncClient.html">DynamoDbAsyncClient</a>
- * @see <a href="https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/">DynamoDB Developer Guide</a>
+ * @see DynamoDbAsyncClient
+ * @see com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor
+ * @see com.landawn.abacus.da.aws.dynamodb.AsyncDynamoDBExecutor
  * @see CompletableFuture
+ * @see <a href="https://sdk.amazonaws.com/java/api/latest/software/amazon/awssdk/services/dynamodb/DynamoDbAsyncClient.html">DynamoDbAsyncClient JavaDoc</a>
+ * @see <a href="https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/">DynamoDB Developer Guide</a>
  */
 @SuppressWarnings("java:S1192")
 public final class AsyncDynamoDBExecutor implements AutoCloseable {
@@ -155,23 +171,27 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
     private final DynamoDbAsyncClient dynamoDBClient;
 
     /**
-     * Constructs a new AsyncDynamoDBExecutor with the specified DynamoDB async client.
-     * 
-     * <p>The executor will use the provided async client for all DynamoDB operations,
-     * inheriting its configuration including region, credentials, retry policies, and
-     * connection settings. The client should be properly configured before passing
-     * to this constructor.</p>
+     * Constructs a new {@code AsyncDynamoDBExecutor} wrapping the specified AWS SDK v2 async client.
      *
-     * <p><b>Client Configuration:</b> Ensure the DynamoDbAsyncClient is configured with:</p>
+     * <p>The executor uses the provided client for all DynamoDB operations and inherits its
+     * configuration — region, credentials provider, retry policy, HTTP/connection settings, and
+     * the async-execution {@code Executor} attached via
+     * {@code DynamoDbAsyncClientBuilder.asyncConfiguration(...)}. Configure the client fully before
+     * passing it here.</p>
+     *
+     * <p><b>Ownership note:</b> calling {@link #close()} on this executor closes the supplied
+     * client. Do not share the client with code that expects to control its lifecycle.</p>
+     *
+     * <p><b>Client Configuration checklist:</b></p>
      * <ul>
-     * <li>Appropriate AWS credentials</li>
+     * <li>Appropriate AWS credentials provider</li>
      * <li>Correct AWS region</li>
-     * <li>Suitable retry policy and timeout settings</li>
-     * <li>Proper connection pool settings for your use case</li>
+     * <li>Suitable retry policy and request timeout settings</li>
+     * <li>Connection-pool size appropriate for your concurrency profile</li>
      * </ul>
-     * 
+     *
      * @param dynamoDBClient the DynamoDB async client to use for operations. Must not be null.
-     * @throws IllegalArgumentException if dynamoDBClient is null
+     * @throws IllegalArgumentException if {@code dynamoDBClient} is null
      */
     public AsyncDynamoDBExecutor(final DynamoDbAsyncClient dynamoDBClient) {
         if (dynamoDBClient == null) {
@@ -232,9 +252,12 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * }</pre>
      * 
      * @param <T> the entity type
-     * @param targetEntityClass the entity class to create mapper for. Must be annotated with @Table. Must not be null.
-     * @return a cached async Mapper instance for the specified entity class, never null
-     * @throws IllegalArgumentException if targetEntityClass is not a bean class, missing the @Table annotation, or does not have exactly one @Id field
+     * @param targetEntityClass the entity class to create a mapper for. Must be annotated with one of
+     *                          the supported {@code @Table} annotations. Must not be null.
+     * @return a cached async {@link Mapper} instance for the specified entity class, never null
+     * @throws IllegalArgumentException if {@code targetEntityClass} is not a bean class, is missing
+     *                                  the {@code @Table} annotation, or does not have exactly one
+     *                                  {@code @Id} field
      */
     public <T> Mapper<T> mapper(final Class<T> targetEntityClass) {
         @SuppressWarnings("rawtypes")
@@ -331,10 +354,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * 
      * @param tableName the name of the DynamoDB table to retrieve the item from. Must not be null or empty.
      * @param key the primary key of the item to retrieve. Must include all key attributes. Must not be null.
-     * @return a CompletableFuture containing the item as a Map of attribute names to values, 
-     *         or null if the item doesn't exist
-     * @throws IllegalArgumentException if tableName is null/empty or key is null
-     * @see #getItem(String, Map, Boolean) for consistent read operations
+     * @return a {@code CompletableFuture} that completes with the item as a {@code Map<String, Object>}
+     *         (or {@code null}/empty map when the item does not exist), or completes exceptionally with
+     *         a {@link java.util.concurrent.CompletionException} wrapping the underlying
+     *         {@link software.amazon.awssdk.services.dynamodb.model.DynamoDbException}
+     * @see #getItem(String, Map, Boolean)
      * @see DynamoDbAsyncClient#getItem(GetItemRequest)
      */
     public CompletableFuture<Map<String, Object>> getItem(final String tableName, final Map<String, AttributeValue> key) {
@@ -465,8 +489,10 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * @param tableName the name of the DynamoDB table. Must not be null or empty.
      * @param key the primary key of the item to retrieve. Must not be null or empty.
      * @param targetClass the class to convert the result to. Must not be null.
-     * @return a CompletableFuture that completes with the converted item, or null if item doesn't exist
-     * @throws IllegalArgumentException if any parameter is null, tableName is empty, or targetClass is unsupported
+     * @return a {@code CompletableFuture} that completes with the converted item, or {@code null}
+     *         when the item does not exist; completes exceptionally with a
+     *         {@link java.util.concurrent.CompletionException} wrapping the underlying SDK exception
+     *         on failure
      * @see DynamoDbAsyncClient#getItem(GetItemRequest)
      * @see <a href="https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_GetItem.html">GetItem API Reference</a>
      */
@@ -568,9 +594,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * 
      * @param <T> the type to convert the item to
      * @param getItemRequest the complete GetItemRequest with all parameters configured. Must not be null.
-     * @param targetClass the class to convert the item to. Must have a default constructor. Must not be null.
-     * @return a CompletableFuture containing the item converted to type T, or null if not found
-     * @throws IllegalArgumentException if getItemRequest or targetClass is null
+     * @param targetClass the class to convert the item to (entity beans need a public no-arg constructor;
+     *                    {@code Map.class} and primitive-wrapper types are also supported). Must not be null.
+     * @return a {@code CompletableFuture} that completes with the item converted to {@code T}
+     *         (or {@code null}/empty bean when the item does not exist), or completes exceptionally
+     *         with the underlying SDK exception wrapped in {@link java.util.concurrent.CompletionException}
      */
     public <T> CompletableFuture<T> getItem(final GetItemRequest getItemRequest, final Class<T> targetClass) {
         return dynamoDBClient.getItem(getItemRequest).thenApply(getItemResponse -> readRow(getItemResponse, targetClass));
@@ -1022,8 +1050,10 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * }</pre>
      * 
      * @param putItemRequest the complete PutItemRequest with all parameters configured. Must not be null.
-     * @return a CompletableFuture containing the PutItemResponse with operation results
-     * @throws IllegalArgumentException if putItemRequest is null
+     * @return a {@code CompletableFuture} that completes with the {@link PutItemResponse}, or
+     *         completes exceptionally (wrapped in {@link java.util.concurrent.CompletionException})
+     *         on SDK error — common causes include
+     *         {@link software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException}
      * @see PutItemRequest
      * @see PutItemResponse
      */
@@ -1430,10 +1460,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously deletes an item from DynamoDB table.
-     * 
+     *
      * <p>This method removes an item from the specified table using its primary key.
-     * The operation is idempotent - deleting a non-existent item doesn't cause an error.
-     * By default, no information about the deleted item is returned.</p>
+     * DynamoDB's {@code DeleteItem} is idempotent — deleting a non-existent item completes
+     * successfully without error. By default, no information about the deleted item is returned;
+     * use {@link #deleteItem(String, Map, String)} with {@code "ALL_OLD"} to recover it.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1553,18 +1584,20 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously executes a query and returns all matching items as a list of Maps.
-     * 
-     * <p>This method performs a Query operation that retrieves items with the same partition key
-     * and applies any specified filter conditions. It automatically handles pagination to return
-     * ALL matching items in a single list, which is convenient but may consume significant memory
-     * for large result sets.</p>
-     * 
+     *
+     * <p>This method performs a Query operation that retrieves items matching the partition key
+     * and any specified filter conditions. When the caller has not set
+     * {@code exclusiveStartKey} on the request, the method auto-paginates and concatenates every
+     * returned page into a single list, which is convenient but may consume significant memory
+     * for large result sets. If {@code exclusiveStartKey} <i>is</i> set, only the single page
+     * returned by DynamoDB is materialized.</p>
+     *
      * <p><b>Important Notes:</b></p>
      * <ul>
-     * <li>Automatically handles pagination - retrieves ALL results</li>
+     * <li>Auto-paginates only when the caller has not set {@code exclusiveStartKey}</li>
      * <li>May perform multiple API calls for large result sets</li>
      * <li>Results are loaded entirely into memory</li>
-     * <li>Consider using stream() for large datasets</li>
+     * <li>Consider using {@link #stream(QueryRequest)} for large datasets</li>
      * </ul>
      * 
      * <p><b>Usage Examples:</b></p>
@@ -1664,12 +1697,13 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * Asynchronously executes a query and returns results as a Dataset.
-     * 
-     * <p>This method performs a Query operation and returns the results in a Dataset format,
-     * which provides rich functionality for data manipulation, filtering, grouping, and
-     * aggregation operations. Datasets are particularly useful for analytical operations.</p>
-     * 
+     * Asynchronously executes a query and returns results as a {@link Dataset}.
+     *
+     * <p>This method performs a Query operation and materialises the rows into a {@code Dataset},
+     * which provides rich functionality for data manipulation, filtering, grouping, and aggregation.
+     * Like {@link #list(QueryRequest)}, the call auto-paginates and concatenates pages only when
+     * the caller has not set {@code exclusiveStartKey} on the request.</p>
+     *
      * <p><b>Dataset Features:</b></p>
      * <ul>
      * <li>Column-based operations</li>
@@ -1746,9 +1780,10 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * only the single page returned by DynamoDB is materialized.</p>
      *
      * @param queryRequest the QueryRequest with query parameters. Must not be null.
-     * @param targetClass the class to convert results to, or {@code null}/a Map type for raw results
-     * @return a CompletableFuture containing a typed Dataset with query results
-     * @throws IllegalArgumentException if queryRequest is null
+     * @param targetClass the row type for the Dataset, or {@code null} / a {@link Map} subtype to
+     *                    keep rows as raw maps of attribute name → value
+     * @return a CompletableFuture that completes with a {@link Dataset} containing the query
+     *         results (possibly empty)
      */
     public CompletableFuture<Dataset> query(final QueryRequest queryRequest, final Class<?> targetClass) {
         if (targetClass == null || Map.class.isAssignableFrom(targetClass)) {
@@ -1874,10 +1909,16 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * });
      * }</pre>
      * 
+     * <p><b>Threading note:</b> the {@code CompletableFuture} completes (almost immediately) on the
+     * common {@link java.util.concurrent.ForkJoinPool}; the wrapped iterator then performs each
+     * page fetch synchronously inside the consumer's thread via a blocking
+     * {@code dynamoDBClient.query(...).get()}, so terminal operations on the returned stream block
+     * the consuming thread.</p>
+     *
      * @param <T> the type of objects in the stream
      * @param queryRequest the QueryRequest with query parameters. Must not be null.
      * @param targetClass the class to convert results to. Must not be null.
-     * @return a CompletableFuture containing a Stream of typed objects
+     * @return a CompletableFuture that completes with a lazy {@link Stream} of typed objects
      * @throws IllegalArgumentException if queryRequest or targetClass is null
      */
     public <T> CompletableFuture<Stream<T>> stream(final QueryRequest queryRequest, final Class<T> targetClass) {
@@ -2215,10 +2256,15 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * });
      * }</pre>
      * 
+     * <p><b>Threading note:</b> identical to {@link #stream(QueryRequest, Class)} — the returned
+     * {@code CompletableFuture} completes immediately on {@link java.util.concurrent.ForkJoinPool}
+     * with a lazy {@link Stream}; each subsequent page is fetched synchronously inside the consuming
+     * thread, so terminal operations block.</p>
+     *
      * @param <T> the type of objects in the stream
      * @param scanRequest the complete ScanRequest with all parameters. Must not be null.
      * @param targetClass the class to convert results to. Must not be null.
-     * @return a CompletableFuture containing a Stream of typed objects
+     * @return a CompletableFuture that completes with a lazy {@link Stream} of typed objects
      * @throws IllegalArgumentException if scanRequest or targetClass is null
      */
     public <T> CompletableFuture<Stream<T>> scan(final ScanRequest scanRequest, final Class<T> targetClass) {
@@ -2271,28 +2317,32 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * Closes this async executor and releases all associated resources.
-     * 
-     * <p>This method shuts down the underlying DynamoDbAsyncClient, which includes closing
-     * HTTP connections, stopping background threads, and releasing any other system resources.
-     * After calling this method, no further operations should be performed on this executor.</p>
-     * 
+     * Closes this async executor and releases the resources held by the underlying client.
+     *
+     * <p>This method calls {@link DynamoDbAsyncClient#close()} on the wrapped client, which closes
+     * HTTP connections, shuts down internal async resources, and releases any other system resources
+     * held by the SDK. After calling this method, no further operations should be performed on this
+     * executor — they will fail because the underlying client is closed.</p>
+     *
+     * <p><b>Note on shared clients:</b> if the {@link DynamoDbAsyncClient} passed to the constructor
+     * is also used elsewhere, calling {@code close()} here will close it for those callers too.</p>
+     *
      * <p><b>Resource Management:</b></p>
      * <ul>
      * <li>Closes all HTTP connections in the connection pool</li>
      * <li>Shuts down internal async thread pools</li>
      * <li>Releases NIO channels and buffers</li>
-     * <li>Cancels any pending requests (they will fail)</li>
+     * <li>Any in-flight requests may fail with an SDK shutdown error</li>
      * </ul>
-     * 
+     *
      * <p><b>Best Practices:</b></p>
      * <ul>
-     * <li>Always call close() when finished with the executor</li>
+     * <li>Always call {@code close()} when finished with the executor</li>
      * <li>Use try-with-resources for automatic cleanup</li>
-     * <li>Don't call close() while operations are still pending</li>
-     * <li>Consider graceful shutdown by waiting for pending futures</li>
+     * <li>Avoid calling {@code close()} while operations are still pending</li>
+     * <li>For graceful shutdown, wait for outstanding {@code CompletableFuture}s to complete first</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Try-with-resources (recommended)
@@ -2301,7 +2351,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     CompletableFuture<User> future = executor.getItem(tableName, key, User.class);
      *     User user = future.get();
      * } // Automatically closed
-     * 
+     *
      * // Manual cleanup
      * AsyncDynamoDBExecutor executor = new AsyncDynamoDBExecutor(client);
      * try {
@@ -2310,8 +2360,9 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     executor.close();
      * }
      * }</pre>
-     * 
+     *
      * @see AutoCloseable#close()
+     * @see DynamoDbAsyncClient#close()
      */
     @Override
     public void close() {
@@ -2322,22 +2373,28 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * A generic mapper class for asynchronous DynamoDB operations on entity objects.
-     * 
-     * <p>This class provides a high-level abstraction for common DynamoDB operations including
-     * CRUD operations (Create, Read, Update, Delete), batch operations, queries, and scans.
-     * All operations are asynchronous and return CompletableFuture instances for non-blocking execution.</p>
-     * 
+     *
+     * <p>This nested class provides a high-level abstraction for common DynamoDB operations including
+     * CRUD operations (Create, Read, Update, Delete), batch operations, queries, and scans, bound to
+     * a single entity type and a single table. All operations are asynchronous and return
+     * {@link CompletableFuture} instances backed by the enclosing executor's
+     * {@link DynamoDbAsyncClient}.</p>
+     *
      * <p>The mapper automatically handles:</p>
      * <ul>
      *   <li>Entity-to-DynamoDB item conversion using configurable naming policies</li>
-     *   <li>Primary key extraction from entities using @Id annotations</li>
-     *   <li>Type conversions between Java objects and DynamoDB AttributeValues</li>
-     *   <li>Batch operation management with DynamoDB limits</li>
+     *   <li>Primary key extraction from entities using {@code @Id} annotations</li>
+     *   <li>Type conversions between Java objects and DynamoDB {@link AttributeValue}s</li>
+     *   <li>Batch operation request construction (subject to DynamoDB's batch limits — 25 items per
+     *       batch-write, 100 items per batch-get)</li>
      * </ul>
-     * 
-     * <p><b>Thread Safety:</b> Instances of this class are thread-safe and can be shared
+     *
+     * <p><b>Thread Safety:</b> instances of this class are thread-safe and can be shared
      * across multiple threads.</p>
-     * 
+     *
+     * <p><b>SDK version:</b> this is the AWS SDK v2 variant; it is separate from the v1 mapper in
+     * {@code com.landawn.abacus.da.aws.dynamodb.AsyncDynamoDBExecutor.Mapper}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Create a mapper for User entities
@@ -2348,13 +2405,13 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * User user = new User();
      * user.setUserId("123");
      * user.setName("John Doe");
-     * 
+     *
      * userMapper.putItem(user)
      *     .thenAccept(response -> System.out.println("User saved"));
      * }</pre>
-     * 
+     *
      * @param <T> the type of entity this mapper handles. Must be a valid bean class with getter/setter methods
-     *            and exactly one field annotated with @Id.
+     *            and exactly one field annotated with {@code @Id}.
      */
     public static class Mapper<T> {
         private final AsyncDynamoDBExecutor dynamoDBExecutor;
@@ -2497,27 +2554,29 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously retrieves an item using a custom GetItemRequest.
-         * 
+         *
          * <p>This method provides full control over the get operation, allowing specification
-         * of projection expressions, return consumed capacity, and other advanced options.
-         * If the table name is not specified in the request, it will be automatically set
-         * to this mapper's table.</p>
-         * 
+         * of projection expressions, return-consumed-capacity, and other advanced options.
+         * If the table name is empty on the supplied request, the mapper's table name is
+         * substituted; if it is non-empty and does not match the mapper's table, an
+         * {@link IllegalArgumentException} is thrown.</p>
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * GetItemRequest request = GetItemRequest.builder()
          *     .key(createKey("user123"))
          *     .projectionExpression("userId, email, lastLogin")
          *     .build();
-         * 
+         *
          * userMapper.getItem(request)
          *     .thenAccept(user -> System.out.println("User email: " + user.getEmail()));
          * }</pre>
-         * 
+         *
          * @param getItemRequest the complete GetItemRequest. Must not be null.
-         * @return a CompletableFuture containing the retrieved entity, or null if not found
-         * @throws IllegalArgumentException if the request specifies a different table name
-         *                                 than this mapper's table
+         * @return a CompletableFuture that completes with the retrieved entity, or {@code null}
+         *         when the item does not exist
+         * @throws IllegalArgumentException if the request specifies a non-empty table name that
+         *                                  differs from this mapper's table
          */
         public CompletableFuture<T> getItem(final GetItemRequest getItemRequest) {
             return dynamoDBExecutor.getItem(checkItem(getItemRequest), targetEntityClass);
@@ -2727,19 +2786,23 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously performs a batch put operation for multiple entities.
-         * 
+         *
          * <p>This method efficiently writes multiple items to DynamoDB in a single request.
-         * It's much more efficient than individual putItem calls when saving multiple items.
-         * Note that batch operations do not support conditional expressions.</p>
-         * 
-         * <p><b>Batch Limits:</b></p>
+         * It's much more efficient than individual {@code putItem} calls when saving multiple items.
+         * Batch writes do not support conditional expressions.</p>
+         *
+         * <p><b>DynamoDB batch limits</b> (enforced by the service; this method does not split):</p>
          * <ul>
          * <li>Maximum 25 items per batch request</li>
          * <li>Maximum 16 MB total request size</li>
          * <li>Maximum 400 KB per individual item</li>
          * <li>No conditional expressions supported</li>
          * </ul>
-         * 
+         *
+         * <p><b>Unprocessed items:</b> DynamoDB may return some items as unprocessed if throughput
+         * is exceeded; this method does NOT automatically retry them. Inspect
+         * {@link BatchWriteItemResponse#unprocessedItems()} on the result and re-submit as needed.</p>
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<User> newUsers = Arrays.asList(
@@ -2747,7 +2810,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          *     createUser("user2", "Bob"),
          *     createUser("user3", "Charlie")
          * );
-         * 
+         *
          * userMapper.batchPutItem(newUsers)
          *     .thenAccept(response -> {
          *         if (response.unprocessedItems().isEmpty()) {
@@ -2755,8 +2818,9 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          *         }
          *     });
          * }</pre>
-         * 
-         * @param entities collection of entities to save. Must not be null or exceed batch limits.
+         *
+         * @param entities collection of entities to save. Must not be null and the caller is
+         *                 responsible for keeping the batch within DynamoDB's 25-item limit.
          * @return a CompletableFuture containing the BatchWriteItemResponse with unprocessed items if any
          * @throws NullPointerException if {@code entities} (or any element in it) is null
          */

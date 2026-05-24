@@ -53,6 +53,24 @@ import com.mongodb.client.MongoIterable;
  * utilities for BSON document manipulation, object-document mapping, data type conversions, and
  * MongoDB-specific operations like ObjectId handling and aggregation support.</p>
  *
+ * <h2>Inheritance Contract</h2>
+ * <p>{@code MongoDBBase} centralizes type conversion, ID mapping and codec configuration so that
+ * concrete subclasses can focus on driver-specific orchestration. The shipped subclasses are:</p>
+ * <ul>
+ *   <li>{@link com.landawn.abacus.da.mongodb.MongoDB} &mdash; the synchronous facade built on top of
+ *       the blocking {@code com.mongodb.client} driver. It exposes builders such as
+ *       {@link com.landawn.abacus.da.mongodb.MongoCollectionExecutor} and
+ *       {@link com.landawn.abacus.da.mongodb.MongoCollectionMapper}.</li>
+ *   <li>{@code com.landawn.abacus.da.mongodb.reactivestreams.MongoDB} &mdash; a non-blocking facade
+ *       built on the Reactive Streams MongoDB driver, returning {@code Publisher}-style results
+ *       instead of materialized lists.</li>
+ * </ul>
+ * <p>Both subclasses share the protected helpers and constants defined here (codec registry,
+ * ObjectId resolution, document/bean conversion, etc.) but differ in how they consume
+ * {@link com.mongodb.client.MongoIterable} versus reactive publishers. Subclasses are expected to
+ * call the {@code toDocument}, {@code toEntity} and {@code readRow} helpers when bridging between
+ * BSON and user entity types so that ID handling stays consistent.</p>
+ *
  * <h2>Key Features</h2>
  * <h3>Core Capabilities:</h3>
  * <ul>
@@ -64,7 +82,7 @@ import com.mongodb.client.MongoIterable;
  * </ul>
  *
  * <h3>Thread Safety:</h3>
- * <p>This class is thread-safe. All static utility methods can be called concurrently without 
+ * <p>This class is thread-safe. All static utility methods can be called concurrently without
  * external synchronization. The codec registry and internal caches use thread-safe implementations.</p>
  *
  * <h3>Performance Considerations:</h3>
@@ -76,17 +94,18 @@ import com.mongodb.client.MongoIterable;
  *
  * <h3>BSON Type Mapping:</h3>
  * <ul>
- *   <li>Java String → BSON String</li>
- *   <li>Java primitives → BSON numeric types</li>
- *   <li>Java Date → BSON DateTime</li>
- *   <li>Java collections → BSON arrays</li>
- *   <li>Java Maps/POJOs → BSON documents</li>
+ *   <li>Java String &rarr; BSON String</li>
+ *   <li>Java primitives &rarr; BSON numeric types</li>
+ *   <li>Java Date &rarr; BSON DateTime</li>
+ *   <li>Java collections &rarr; BSON arrays</li>
+ *   <li>Java Maps/POJOs &rarr; BSON documents</li>
  * </ul>
  *
  * @see Document
  * @see ObjectId
  * @see com.mongodb.client.MongoCollection
  * @see Codec
+ * @see com.landawn.abacus.da.mongodb.MongoDB
  */
 public abstract class MongoDBBase {
 
@@ -101,24 +120,39 @@ public abstract class MongoDBBase {
 
     /**
      * Standard property name for entity ID fields in Java objects.
-     * 
+     *
      * <p>This constant is used as a fallback when mapping Java entity ID properties
-     * to MongoDB's "_id" field. When an entity doesn't have explicit @Id annotation,
+     * to MongoDB's "_id" field. When an entity doesn't have an explicit {@code @Id} annotation,
      * the framework looks for a property named "id" to map to MongoDB's "_id".</p>
      */
     public static final String ID = "id";
+
+    /**
+     * Default {@link AsyncExecutor} shared by subclasses for asynchronous MongoDB operations.
+     *
+     * <p>Sized for I/O-bound workloads: the core pool is {@code max(64, CPU_CORES * 8)} threads,
+     * the maximum pool is {@code max(128, CPU_CORES * 16)} threads, and idle threads above the
+     * core size are reclaimed after 180&nbsp;seconds.</p>
+     */
     protected static final AsyncExecutor DEFAULT_ASYNC_EXECUTOR = new AsyncExecutor(//
             N.max(64, IOUtil.CPU_CORES * 8), // coreThreadPoolSize
             N.max(128, IOUtil.CPU_CORES * 16), // maxThreadPoolSize
             180L, TimeUnit.SECONDS);
     private static final JsonParser jsonParser = ParserFactory.createJsonParser();
+
+    /**
+     * Shared {@link CodecRegistry} combining the MongoDB default codecs with the bean-aware
+     * {@link GeneralCodecRegistry}. Subclasses use this registry when configuring collections so
+     * arbitrary POJOs can be transparently (de)serialized to/from BSON.
+     */
     protected static final CodecRegistry codecRegistry = CodecRegistries.fromRegistries(MongoClientSettings.getDefaultCodecRegistry(),
             new GeneralCodecRegistry());
     private static final Map<Class<?>, Method> classIdSetMethodPool = new ConcurrentHashMap<>();
 
     /**
      * Protected no-arg constructor for subclasses; this class is not intended to be instantiated
-     * directly. Use a concrete subclass such as {@link MongoDB}.
+     * directly. Use a concrete subclass such as {@link MongoDB} (sync) or the reactive streams
+     * variant {@code com.landawn.abacus.da.mongodb.reactivestreams.MongoDB}.
      */
     protected MongoDBBase() {
     }
@@ -145,10 +179,10 @@ public abstract class MongoDBBase {
      * @param documentClass the entity class to configure ID property mapping for
      * @param idPropertyName the name of the property to map to MongoDB's "_id" field
      * @throws IllegalArgumentException if the class lacks getter/setter methods for the property,
-     *                                  or if the property type is not String or ObjectId
+     *                                  or if the property type is not {@link String} or {@link ObjectId}
      * @see com.landawn.abacus.annotation.Id
      * @see ObjectId
-     * @deprecated Use @Id annotation on the desired property instead of programmatic registration.
+     * @deprecated Use {@code @Id} annotation on the desired property instead of programmatic registration.
      *             This approach provides better compile-time safety and clearer code intent.
      */
     @Deprecated
@@ -244,9 +278,10 @@ public abstract class MongoDBBase {
      *
      * @param <T> the target BSON type
      * @param json the JSON string to parse
-     * @param rowType the target class - must be one of: Bson.class, Document.class, BasicBSONObject.class, or BasicDBObject.class
+     * @param rowType the target class - must be one of: {@link Bson}, {@link Document},
+     *                {@link BasicBSONObject}, or {@link BasicDBObject}
      * @return an instance of the specified type populated with the JSON data
-     * @throws IllegalArgumentException if rowType is not supported
+     * @throws IllegalArgumentException if {@code rowType} is not one of the supported BSON types
      * @see Document
      * @see org.bson.BasicBSONObject
      * @see com.mongodb.BasicDBObject
@@ -375,7 +410,9 @@ public abstract class MongoDBBase {
      *
      * @param obj the object to convert - can be an entity with getter/setter methods, {@code Map<String, Object>}, or array of property name-value pairs
      * @return a BSON document representation of the object
-     * @throws IllegalArgumentException if obj cannot be converted to BSON
+     * @throws NullPointerException if {@code obj} is {@code null}
+     * @throws IllegalArgumentException if {@code obj} is an array with an odd number of elements,
+     *         is a bean class with no readable properties, or is otherwise not convertible to a BSON document
      * @see Document
      * @see org.bson.conversions.Bson
      * @see #toDocument(Object)
@@ -404,9 +441,12 @@ public abstract class MongoDBBase {
      * Bson emptyBson = MongoDB.toBson();
      * }</pre>
      *
-     * @param a variable arguments representing property name-value pairs, or a single object to convert
-     * @return a BSON document created from the specified parameters
-     * @throws IllegalArgumentException if arguments are invalid or cannot be converted to BSON
+     * @param a variable arguments representing property name-value pairs, or a single object to convert.
+     *          When {@code null} or empty an empty BSON document is returned. When length is 1 the single
+     *          element is converted via {@link #toBson(Object)}. Otherwise the array is treated as alternating
+     *          name-value pairs and must contain an even number of elements.
+     * @return a BSON document created from the specified parameters; never {@code null}
+     * @throws IllegalArgumentException if multiple arguments are provided but they don't form valid name-value pairs
      * @see #toBson(Object)
      * @see Document
      */
@@ -437,9 +477,10 @@ public abstract class MongoDBBase {
      * }</pre>
      *
      * @param obj the object to convert - can be an entity with getter/setter methods, {@code Map<String, Object>}, or array of property name-value pairs
-     * @return a MongoDB Document representation of the object
-     * @throws NullPointerException if obj is null
-     * @throws IllegalArgumentException if obj cannot be converted to a Document
+     * @return a MongoDB Document representation of the object; never {@code null}
+     * @throws NullPointerException if {@code obj} is {@code null}
+     * @throws IllegalArgumentException if {@code obj} is an array with an odd number of elements,
+     *         is a bean class with no readable properties, or is not a {@link Map}, bean, or {@code Object[]}
      * @see Document
      * @see #toBson(Object)
      */
@@ -487,6 +528,22 @@ public abstract class MongoDBBase {
         return a.length == 1 ? toDocument(a[0]) : toDocument((Object) a);
     }
 
+    /**
+     * Internal conversion helper that converts {@code obj} into a MongoDB {@link Document} and
+     * applies ObjectId normalization to the resulting document.
+     *
+     * <p>Supported input types: {@link Map}, bean-style entities (via {@code Beans.isBeanClass}),
+     * and {@code Object[]} containing alternating property-name / value pairs. After population the
+     * helper invokes {@code resetObjectId} so that the document's id field is materialized as a
+     * proper {@link ObjectId} when possible.</p>
+     *
+     * @param obj the source value; must not be {@code null}
+     * @param isForUpdate reserved for callers that build {@code $set}-style update documents; currently unused
+     * @return a {@link Document} populated from {@code obj}
+     * @throws NullPointerException if {@code obj} is {@code null}
+     * @throws IllegalArgumentException if {@code obj} is an array with an odd number of elements,
+     *         a bean class with no getter/setter pairs, or an unsupported type
+     */
     protected static Document toDocument(final Object obj, @SuppressWarnings("unused") final boolean isForUpdate) { //NOSONAR
         final Document result = new Document();
 
@@ -549,9 +606,10 @@ public abstract class MongoDBBase {
      * }</pre>
      *
      * @param obj the object to convert - can be an entity with getter/setter methods, {@code Map<String, Object>}, or array of property name-value pairs
-     * @return a BasicBSONObject representation of the object
-     * @throws NullPointerException if obj is null
-     * @throws IllegalArgumentException if obj cannot be converted to BasicBSONObject
+     * @return a BasicBSONObject representation of the object; never {@code null}
+     * @throws NullPointerException if {@code obj} is {@code null}
+     * @throws IllegalArgumentException if {@code obj} is an array with an odd number of elements,
+     *         or is not a {@link Map}, bean, or {@code Object[]}
      * @see BasicBSONObject
      * @see #toBSONObject(Object...)
      * @see #toDocument(Object)
@@ -646,9 +704,10 @@ public abstract class MongoDBBase {
      * }</pre>
      *
      * @param obj the object to convert - can be an entity with getter/setter methods, {@code Map<String, Object>}, or array of property name-value pairs
-     * @return a BasicDBObject representation of the object
-     * @throws NullPointerException if obj is null
-     * @throws IllegalArgumentException if obj cannot be converted to BasicDBObject, or array has odd number of elements
+     * @return a BasicDBObject representation of the object; never {@code null}
+     * @throws NullPointerException if {@code obj} is {@code null}
+     * @throws IllegalArgumentException if {@code obj} is an array with an odd number of elements,
+     *         or is not a {@link Map}, bean, or {@code Object[]}
      * @see BasicDBObject
      * @see #toDBObject(Object...)
      * @see #toBSONObject(Object)
@@ -814,9 +873,10 @@ public abstract class MongoDBBase {
      * }</pre>
      *
      * @param <T> the target entity type
-     * @param doc the MongoDB Document to convert; if null, {@code null} is returned
-     * @param rowType the Class representing the target entity type
-     * @return an entity instance populated with data from the document, or {@code null} if doc is null
+     * @param doc the MongoDB Document to convert; if {@code null}, {@code null} is returned
+     * @param rowType the Class representing the target entity type; must not be {@code null} when {@code doc} is non-null
+     * @return an entity instance populated with data from the document, or {@code null} if {@code doc} is {@code null}
+     * @throws NullPointerException if {@code doc} is non-null and {@code rowType} is {@code null}
      * @see Document
      * @see #_ID
      * @see com.landawn.abacus.annotation.Id
@@ -936,6 +996,27 @@ public abstract class MongoDBBase {
         }
     }
 
+    /**
+     * Converts a single MongoDB {@link Document} row into an instance of {@code rowType}.
+     *
+     * <p>Routing rules based on {@code rowType}:</p>
+     * <ul>
+     *   <li>{@code null} or an object-array type &rarr; the row values are placed into a new
+     *       {@code Object[]} (component type derived from {@code rowType} when supplied).</li>
+     *   <li>A {@link Collection} type &rarr; a new collection of that type containing the row's values.</li>
+     *   <li>A {@link Map} type &rarr; a new map of that type populated via {@link #toMap(Document, IntFunction)}.</li>
+     *   <li>A bean class &rarr; delegated to {@link #toEntity(Document, Class)}.</li>
+     *   <li>Any other type when the row has at most two fields &rarr; the non-{@code _id} field value is
+     *       converted to {@code rowType} via {@code N.convert}.</li>
+     * </ul>
+     *
+     * @param <T> the target type
+     * @param row the document to convert; if {@code null}, the default value of {@code rowType} is returned
+     *            (or {@code null} when {@code rowType} is {@code null})
+     * @param rowType the target type, or {@code null} to produce an {@code Object[]}
+     * @return the converted value
+     * @throws IllegalArgumentException if the row cannot be projected onto {@code rowType}
+     */
     @SuppressWarnings("rawtypes")
     protected static <T> T readRow(final Document row, final Class<T> rowType) {
         if (row == null) {
@@ -1492,9 +1573,17 @@ public abstract class MongoDBBase {
      */
     static class GeneralCodecRegistry implements CodecRegistry {
 
-        /** The Constant pool. */
+        /** Codec cache keyed by the encoded class; populated on first request. */
         private static final Map<Class<?>, Codec<?>> pool = new ObjectPool<>(128);
 
+        /**
+         * Returns a {@link Codec} for {@code clazz}, creating and caching a new {@link GeneralCodec}
+         * on the first lookup. Subsequent calls return the same cached instance.
+         *
+         * @param <T> the encoded Java type
+         * @param clazz the class to obtain a codec for
+         * @return a codec that handles {@code clazz}; never {@code null}
+         */
         @Override
         public <T> Codec<T> get(final Class<T> clazz) {
             Codec<?> codec = pool.get(clazz);
@@ -1508,6 +1597,15 @@ public abstract class MongoDBBase {
             return (Codec<T>) codec;
         }
 
+        /**
+         * Overload accepting a {@link CodecRegistry} hint; ignored here since this implementation
+         * always uses its own {@link GeneralCodec}. Equivalent to {@link #get(Class)}.
+         *
+         * @param <T> the encoded Java type
+         * @param clazz the class to obtain a codec for
+         * @param registry the parent registry (ignored)
+         * @return a codec that handles {@code clazz}; never {@code null}
+         */
         @Override
         public <T> Codec<T> get(final Class<T> clazz, final CodecRegistry registry) {
             //    final Codec<T> codec = registry.get(clazz);
@@ -1528,13 +1626,13 @@ public abstract class MongoDBBase {
      */
     static class GeneralCodec<T> implements Codec<T> {
 
-        /** The Constant documentCodec. */
+        /** Shared {@link DocumentCodec} used to encode/decode the BSON document representation of beans. */
         private static final DocumentCodec documentCodec = new DocumentCodec(codecRegistry, new BsonTypeClassMap());
 
-        /** The cls. */
+        /** The Java class this codec handles. */
         private final Class<T> cls;
 
-        /** The is entity class. */
+        /** {@code true} when {@link #cls} is a bean class; encoding switches between document and string forms accordingly. */
         private final boolean isEntityClass;
 
         /**
@@ -1555,6 +1653,15 @@ public abstract class MongoDBBase {
             isEntityClass = Beans.isBeanClass(cls);
         }
 
+        /**
+         * Encodes {@code value} into the supplied BSON writer. Beans are first converted with
+         * {@link MongoDBBase#toDocument(Object)} and written through the shared {@link DocumentCodec};
+         * all other types are written as their {@code N.stringOf(Object)} string representation.
+         *
+         * @param writer destination writer
+         * @param value the value to encode
+         * @param encoderContext encoder context forwarded to the underlying document codec for bean values
+         */
         @Override
         public void encode(final BsonWriter writer, final T value, final EncoderContext encoderContext) {
             if (isEntityClass) {
@@ -1564,6 +1671,16 @@ public abstract class MongoDBBase {
             }
         }
 
+        /**
+         * Decodes the next BSON value into an instance of {@link #cls}. Beans are read as a
+         * {@link Document} through the shared {@link DocumentCodec} and then mapped via
+         * {@link MongoDBBase#readRow(Document, Class)}; all other types are read as a BSON string and
+         * parsed using {@code N.valueOf(String, Class)}.
+         *
+         * @param reader BSON reader positioned at the value to decode
+         * @param decoderContext decoder context forwarded to the underlying document codec for bean values
+         * @return the decoded value
+         */
         @Override
         public T decode(final BsonReader reader, final DecoderContext decoderContext) {
             if (isEntityClass) {
@@ -1573,6 +1690,11 @@ public abstract class MongoDBBase {
             }
         }
 
+        /**
+         * Returns the Java class this codec encodes.
+         *
+         * @return the encoded class; never {@code null}
+         */
         @Override
         public Class<T> getEncoderClass() {
             return cls;

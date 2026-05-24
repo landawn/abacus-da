@@ -31,12 +31,49 @@ import org.apache.hadoop.hbase.io.TimeRange;
 import com.landawn.abacus.annotation.SuppressFBWarnings;
 
 /**
- * A comprehensive wrapper around HBase's {@code Scan} class that provides simplified scanning operations
- * with automatic type conversion and a fluent API design.
- * <p>
- * This class extends {@link AnyQuery} and provides all the functionality of HBase's native Scan class
- * while reducing the complexity of working with byte arrays. It supports various scanning patterns
- * including range scans, prefix scans, and filtered scans.
+ * A comprehensive wrapper around HBase's {@link Scan} class that provides simplified scanning
+ * operations with automatic type conversion and a fluent API design.
+ *
+ * <p>This class extends {@link AnyQuery} and exposes all the functionality of HBase's native
+ * {@link Scan} class while reducing the complexity of working with byte arrays. Every mutator
+ * returns {@code this}, enabling method chaining. The underlying {@link Scan} instance is
+ * accessible through {@link #val()} for interoperation with native HBase APIs.</p>
+ *
+ * <h2>Scan range semantics</h2>
+ * <ul>
+ *   <li><b>Start row</b> is <i>inclusive</i> by default and can be flipped with
+ *       {@link #withStartRow(Object, boolean)}; if it does not exist the scanner advances to the
+ *       next lexicographically greater row.</li>
+ *   <li><b>Stop row</b> is <i>exclusive</i> by default and can be flipped with
+ *       {@link #withStopRow(Object, boolean)}.</li>
+ *   <li><b>Prefix scans</b> can be configured via {@link #setStartStopRowForPrefixScan(byte[])}
+ *       which translates the prefix into appropriate start/stop bounds without server-side filtering.</li>
+ *   <li><b>Reversed scans</b> ({@link #setReversed(boolean)}) swap the natural traversal order: the
+ *       scanner starts at the stop row (now treated as the upper bound) and moves backwards toward
+ *       the start row.</li>
+ * </ul>
+ *
+ * <h2>Throughput tuning</h2>
+ * <ul>
+ *   <li>{@link #setCaching(int)} controls how many <em>rows</em> are pre-fetched per RPC.</li>
+ *   <li>{@link #setBatch(int)} controls how many <em>columns</em> are returned per RPC for
+ *       wide rows (use with {@link #setAllowPartialResults(boolean)} for very wide rows).</li>
+ *   <li>{@link #setMaxResultSize(long)} caps the total bytes transferred per RPC, providing an
+ *       OOM safeguard independent of row/column counts.</li>
+ *   <li>{@link #setLimit(int)} bounds the total number of rows returned by the scan.</li>
+ *   <li>{@link #setAsyncPrefetch(boolean)} lets the client overlap I/O with processing.</li>
+ * </ul>
+ *
+ * <h2>Time range and versions</h2>
+ * <p>{@link #setTimeRange(long, long)} restricts the scan to cells whose timestamp falls within
+ * {@code [minStamp, maxStamp)}. {@link #setTimestamp(long)} is a convenience for the single-point
+ * range {@code [timestamp, timestamp + 1)}. By default at most one version per cell is returned;
+ * use {@link #readVersions(int)} or {@link #readAllVersions()} to retrieve more.</p>
+ *
+ * <h2>Filters and raw scans</h2>
+ * <p>Server-side {@link Filter} chains are inherited from {@link AnyQuery#setFilter(Filter)}.
+ * {@link #setRaw(boolean)} enables a raw scan that surfaces delete markers (tombstones) for
+ * administrative or debugging use.</p>
  *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
@@ -48,9 +85,9 @@ import com.landawn.abacus.annotation.SuppressFBWarnings;
  *     .setCaching(10);
  * }</pre>
  *
- * <p>Key features:
+ * <p>Key features:</p>
  * <ul>
- *   <li>Automatic conversion between different data types and byte arrays</li>
+ *   <li>Automatic conversion between Java values and byte arrays for row keys / families / qualifiers</li>
  *   <li>Fluent API for method chaining</li>
  *   <li>Support for all HBase scan operations and filters</li>
  *   <li>Easy configuration of scan parameters like caching, batching, and limits</li>
@@ -62,14 +99,19 @@ import com.landawn.abacus.annotation.SuppressFBWarnings;
  */
 public final class AnyScan extends AnyQuery<AnyScan> {
 
+    /**
+     * The underlying HBase {@link Scan} instance that backs this wrapper. Mutator methods on
+     * {@link AnyScan} forward to this object, and {@link #val()} exposes it for interoperation
+     * with native HBase APIs. Also held in the inherited {@code query} field.
+     */
     private final Scan scan;
 
     /**
      * Constructs a new AnyScan with default configuration.
-     * <p>
-     * Creates an empty scan that will scan all rows and columns in a table
-     * unless further configured with row ranges, families, or filters.
-     * </p>
+     *
+     * <p>Creates an empty scan that will scan all rows and columns in a table unless further
+     * configured with row ranges, families, or filters. Package-private; callers should use the
+     * {@link #create()} factory method.</p>
      */
     AnyScan() {
         super(new Scan());
@@ -79,10 +121,11 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     /**
      * Constructs a new AnyScan that starts scanning at the specified row.
      *
-     * <p>If the specified row does not exist, the Scanner will start from the
-     * next closest row after the specified row.</p>
+     * <p>If the specified row does not exist, the scanner starts from the next lexicographically
+     * greater row. Package-private; callers should use {@link #create()} chained with
+     * {@link #withStartRow(Object)}.</p>
      *
-     * @param startRow row to start scanner at or after
+     * @param startRow row to start scanner at or after; converted via {@link HBaseExecutor#toRowKeyBytes(Object)}
      * @deprecated Use {@code AnyScan.create().withStartRow(startRow)} instead.
      */
     @Deprecated
@@ -92,7 +135,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     }
 
     /**
-     * Constructs a new AnyScan for the range of rows specified.
+     * Constructs a new AnyScan for the range of rows specified. Package-private; callers should use
+     * {@link #create()} chained with {@link #withStartRow(Object)} and {@link #withStopRow(Object)}.
      *
      * @param startRow row to start scanner at or after (inclusive)
      * @param stopRow row to stop scanner before (exclusive)
@@ -105,10 +149,12 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     }
 
     /**
-     * Constructs a new AnyScan that starts scanning at the specified row with a filter.
+     * Constructs a new AnyScan that starts scanning at the specified row with a filter. Package-private;
+     * callers should use {@link #create()} chained with {@link #withStartRow(Object)} and
+     * {@link AnyQuery#setFilter(Filter)}.
      *
      * @param startRow row to start scanner at or after
-     * @param filter the filter to apply to the scan
+     * @param filter the {@link Filter} to apply to the scan
      * @deprecated Use {@code AnyScan.create().withStartRow(startRow).setFilter(filter)} instead.
      */
     @Deprecated
@@ -118,12 +164,13 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     }
 
     /**
-     * Constructs a new AnyScan wrapping an existing HBase Scan object.
+     * Constructs a new AnyScan wrapping an existing HBase {@link Scan} object.
      *
-     * <p>No null-check is performed; passing {@code null} will result in a
-     * {@link NullPointerException} the first time the wrapped scan is dereferenced.</p>
+     * <p>The supplied {@link Scan} is wrapped by reference, not copied. No null-check is performed;
+     * passing {@code null} will result in a {@link NullPointerException} the first time the wrapped
+     * scan is dereferenced. Package-private; callers should use {@link #of(Scan)}.</p>
      *
-     * @param scan the HBase Scan object to wrap; must not be null
+     * @param scan the HBase {@link Scan} object to wrap; must not be {@code null}
      */
     AnyScan(final Scan scan) {
         super(scan);
@@ -131,17 +178,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     }
 
     /**
-     * Constructs a new AnyScan from an existing Get operation.
-     * <p>
-     * This constructor converts a Get operation into a Scan operation,
-     * which can be useful when you want to extend a point query into a range query.
-     * The conversion is delegated to the underlying {@link Scan#Scan(Get)} constructor.
-     * </p>
+     * Constructs a new AnyScan from an existing {@link Get} operation.
      *
-     * <p>No null-check is performed; passing {@code null} will result in a
-     * {@link NullPointerException} from the wrapped HBase {@link Scan} constructor.</p>
+     * <p>This constructor converts a point lookup into a single-row scan, preserving the families,
+     * qualifiers, time range and other settings configured on the {@link Get}. The conversion is
+     * delegated to the underlying {@link Scan#Scan(Get)} constructor. No null-check is performed;
+     * passing {@code null} will result in a {@link NullPointerException} from that constructor.
+     * Package-private; callers should use {@link #of(Get)}.</p>
      *
-     * @param get the Get operation to convert to a Scan; must not be null
+     * @param get the {@link Get} operation to convert to a {@link Scan}; must not be {@code null}
      */
     AnyScan(final Get get) {
         this(new Scan(get));
@@ -289,14 +334,13 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     }
 
     /**
-     * Returns the underlying HBase Scan object.
-     * <p>
-     * This method provides access to the native HBase Scan instance,
-     * which can be useful when you need to interact directly with HBase APIs
-     * that expect the native type.
-     * </p>
+     * Returns the underlying HBase {@link Scan} object.
      *
-     * @return the underlying Scan object; never null
+     * <p>This method provides access to the native HBase {@link Scan} instance, which can be useful
+     * when you need to interact directly with HBase APIs that expect the native type. Mutations
+     * performed on the returned object are visible to this {@link AnyScan} and vice versa.</p>
+     *
+     * @return the underlying {@link Scan} object; never {@code null}
      */
     public Scan val() {
         return scan;
@@ -346,13 +390,12 @@ public final class AnyScan extends AnyQuery<AnyScan> {
 
     /**
      * Returns an array of all column family names specified for this scan.
-     * <p>
-     * This method provides access to all column families that have been added to the scan.
-     * The returned array contains byte arrays representing the family names in the order
-     * they were added to the scan.
-     * </p>
      *
-     * @return an array of column family names as byte arrays; null if no families specified
+     * <p>This method provides access to all column families that have been added to the scan.
+     * The returned array contains byte arrays representing the family names. Returns {@code null}
+     * if no families have been added (in which case the scan covers every family in the table).</p>
+     *
+     * @return an array of column family names as byte arrays; {@code null} if no families specified
      * @see #addFamily(String)
      * @see #numFamilies()
      */
@@ -459,8 +502,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * call simply stores the supplied reference, so any later traversal of a {@code null} map
      * will fail with a {@link NullPointerException}.</p>
      *
-     * @param familyMap the complete family-to-qualifiers mapping; must not be null
-     * @return this AnyScan instance for method chaining
+     * @param familyMap the complete family-to-qualifiers mapping; must not be {@code null}
+     * @return this {@link AnyScan} instance for method chaining
      * @see #getFamilyMap()
      */
     public AnyScan setFamilyMap(final Map<byte[], NavigableSet<byte[]>> familyMap) {
@@ -879,16 +922,17 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     }
 
     /**
-     * Sets the row prefix filter via start/stop rows (misnomer; see {@code @deprecated}).
+     * Sets the row prefix bounds via start/stop rows (the name is a misnomer &mdash; no
+     * {@link Filter} is installed).
      *
-     * <p>Despite the name, no {@link Filter} is installed: this method delegates to
+     * <p>Despite the name, no server-side {@link Filter} is registered: this method delegates to
      * {@link Scan#setRowPrefixFilter(byte[])}, which configures startRow and stopRow to bracket
-     * all keys with the given prefix.</p>
+     * all keys beginning with the given prefix.</p>
      *
      * @param rowPrefix the row prefix; converted to bytes via {@link HBaseExecutor#toRowKeyBytes(Object)}
-     * @return this AnyScan instance for method chaining
-     * @deprecated Since HBase 2.5.0, will be removed in 4.0.0. The name is considered misleading
-     *             because no {@link Filter} is used. Use {@link #setStartStopRowForPrefixScan(byte[])} instead.
+     * @return this {@link AnyScan} instance for method chaining
+     * @deprecated Since HBase 2.5.0, scheduled for removal in 4.0.0. The name is misleading because
+     *             no {@link Filter} is used. Use {@link #setStartStopRowForPrefixScan(byte[])} instead.
      */
     @Deprecated
     public AnyScan setRowPrefixFilter(final Object rowPrefix) {
@@ -1317,25 +1361,25 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     }
 
     /**
-     * Returns whether a filter has been set for this scan.
-     * <p>
-     * Filters allow for server-side filtering of rows and columns,
-     * reducing the amount of data transferred to the client.
-     * </p>
+     * Returns whether a {@link Filter} has been set for this scan.
+     *
+     * <p>Filters allow for server-side filtering of rows and columns, reducing the amount of data
+     * transferred to the client. The filter itself is configured via the inherited
+     * {@link AnyQuery#setFilter(Filter)} method.</p>
      *
      * @return {@code true} if a filter has been set, {@code false} otherwise
-     * @see AnyQuery#setFilter(org.apache.hadoop.hbase.filter.Filter)
+     * @see AnyQuery#setFilter(Filter)
      */
     public boolean hasFilter() {
         return scan.hasFilter();
     }
 
     /**
-     * Returns whether this scan will proceed in reverse order.
-     * <p>
-     * Reversed scans start from the stop row and proceed backwards to the start row,
-     * which can be useful for retrieving the most recent data first in time-series applications.
-     * </p>
+     * Returns whether this scan will proceed in reverse (descending) row-key order.
+     *
+     * <p>In a reversed scan the start row is interpreted as the higher bound and the stop row as
+     * the lower bound; the scanner walks rows from high keys to low keys. This can be useful for
+     * retrieving the most recent data first in time-series applications keyed by ascending time.</p>
      *
      * @return {@code true} if the scan is reversed, {@code false} otherwise
      * @see #setReversed(boolean)
@@ -1345,24 +1389,25 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     }
 
     /**
-     * Sets whether this scan should proceed in reverse order.
-     * <p>
-     * When set to true, the scan will start from the stop row and proceed backwards
-     * to the start row. This is useful for time-series data where you want the most
-     * recent entries first. Note that reversed scans may have slightly lower performance
-     * than forward scans.
-     * </p>
+     * Sets whether this scan should proceed in reverse (descending) row-key order.
+     *
+     * <p>When set to {@code true}, the start row becomes the upper bound and the stop row becomes
+     * the lower bound, and rows are visited in descending lexicographic order. This is useful for
+     * time-series data where the most recent entries are wanted first. Reversed scans typically
+     * have slightly lower performance than forward scans because HBase storage is optimized for
+     * ascending iteration.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Reversed: start at the high key (Dec 31), stop before the low key (Jan 01).
      * AnyScan scan = AnyScan.create()
-     *                      .withStartRow("2024-01-01")
-     *                      .withStopRow("2024-12-31")
-     *                      .setReversed(true);   // Scan from Dec to Jan
+     *                      .withStartRow("2024-12-31")
+     *                      .withStopRow("2024-01-01")
+     *                      .setReversed(true);
      * }</pre>
      *
      * @param reversed {@code true} to scan in reverse order, {@code false} for normal order
-     * @return this AnyScan instance for method chaining
+     * @return this {@link AnyScan} instance for method chaining
      * @see #isReversed()
      */
     public AnyScan setReversed(final boolean reversed) {
@@ -1627,9 +1672,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *   <li>{@link ReadType#PREAD} - Optimized for random access patterns. Uses positioned reads.</li>
      *   <li>{@link ReadType#DEFAULT} - Let HBase choose the optimal read type based on scan characteristics.</li>
      * </ul>
-     * Note: HBase may override your choice in certain cases. For example, it will always use
-     * pread for get scans regardless of this setting.
-     * </p>
+     * <p>Note: HBase may override your choice in certain cases. For example, it will always use
+     * pread for get scans regardless of this setting.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1664,7 +1708,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * @return {@code true} if cursor results are needed, {@code false} otherwise
      * @see #setNeedCursorResult(boolean)
-     * @see #createScanFromCursor(org.apache.hadoop.hbase.client.Cursor)
+     * @see #createScanFromCursor(Cursor)
      */
     public boolean isNeedCursorResult() {
         return scan.isNeedCursorResult();
@@ -1688,7 +1732,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @param needCursorResult {@code true} to enable cursor results, {@code false} to disable
      * @return this AnyScan instance for method chaining
      * @see #isNeedCursorResult()
-     * @see #createScanFromCursor(org.apache.hadoop.hbase.client.Cursor)
+     * @see #createScanFromCursor(Cursor)
      */
     public AnyScan setNeedCursorResult(final boolean needCursorResult) {
         scan.setNeedCursorResult(needCursorResult);

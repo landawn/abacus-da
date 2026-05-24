@@ -100,8 +100,8 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
  * <h3>Key Features:</h3>
  * <ul>
  * <li><b>Complete CRUD Operations</b> - Create, read, update, and delete with conditional operation support</li>
- * <li><b>Batch Operations</b> - Efficient batch get/write operations with automatic 25/100-item limit handling</li>
- * <li><b>Query &amp; Scan</b> - Flexible querying with GSI/LSI support, filtering, and automatic pagination</li>
+ * <li><b>Batch Operations</b> - Efficient batch get/write helpers (caller must respect the 25-item write / 100-item read service limits; this wrapper does not auto-split)</li>
+ * <li><b>Query &amp; Scan</b> - Flexible querying with GSI/LSI support, filtering, and transparent {@code lastEvaluatedKey} pagination on list/query/stream/scan</li>
  * <li><b>Object Mapping</b> - Seamless conversion between Java objects and DynamoDB AttributeValues</li>
  * <li><b>Stream Processing</b> - Memory-efficient streaming for large result sets with pagination support</li>
  * <li><b>Type-Safe Mappers</b> - Entity-specific mappers with compile-time type checking</li>
@@ -940,9 +940,11 @@ public final class DynamoDBExecutor implements AutoCloseable {
     /**
      * Converts a Java object to a DynamoDB item Map using AWS SDK v2 with automatic type detection.
      *
-     * <p>This method converts a Java object (Entity or Map) into a DynamoDB item Map, where each property
-     * is represented as an AttributeValue. The conversion uses the {@link NamingPolicy#CAMEL_CASE} naming policy.
-     * Properties with {@code null} values are skipped.</p>
+     * <p>This method converts a Java object (Entity, Map, or {@code Object[]} of alternating
+     * name/value pairs) into a DynamoDB item Map, where each property is represented as an
+     * {@link AttributeValue}. The conversion uses the {@link NamingPolicy#CAMEL_CASE} naming policy.
+     * For bean entities, properties with {@code null} values are skipped; for {@code Map} inputs all
+     * entries (including {@code null} values) are preserved.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -961,8 +963,12 @@ public final class DynamoDBExecutor implements AutoCloseable {
     /**
      * Converts a Java object to a DynamoDB item Map using AWS SDK v2 with specified naming policy.
      *
-     * <p>This method converts a Java object (Entity or Map) into a DynamoDB item Map, where each property
-     * is represented as an AttributeValue. The conversion respects the specified naming policy for attribute names.</p>
+     * <p>This method converts a Java object (Entity, Map, or {@code Object[]} of alternating
+     * name/value pairs) into a DynamoDB item Map, where each property is represented as an
+     * {@link AttributeValue}. The supplied naming policy is applied to attribute names; bean
+     * properties annotated with {@code @Column} use their column name instead. For bean entities,
+     * properties with {@code null} values are skipped; for {@code Map} inputs all entries are
+     * preserved.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1018,9 +1024,11 @@ public final class DynamoDBExecutor implements AutoCloseable {
     /**
      * Converts a Java object to a DynamoDB update item Map using AWS SDK v2 with automatic type detection.
      *
-     * <p>This method converts a Java object (Entity or Map) into a DynamoDB update item Map, where each property
-     * is represented as an AttributeValueUpdate. The conversion uses the {@link NamingPolicy#CAMEL_CASE} naming policy.
-     * Properties with {@code null} values are skipped.</p>
+     * <p>This method converts a Java object (Entity, Map, or {@code Object[]} of alternating
+     * name/value pairs) into a DynamoDB update item Map, where each value is wrapped in an
+     * {@link AttributeValueUpdate} with the default PUT action. The conversion uses the
+     * {@link NamingPolicy#CAMEL_CASE} naming policy. For bean entities, properties with
+     * {@code null} values are skipped; for {@code Map} inputs all entries are preserved.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1039,8 +1047,12 @@ public final class DynamoDBExecutor implements AutoCloseable {
     /**
      * Converts a Java object to a DynamoDB update item Map using AWS SDK v2 with specified naming policy.
      *
-     * <p>This method converts a Java object (Entity or Map) into a DynamoDB update item Map, where each property
-     * is represented as an AttributeValueUpdate. The conversion respects the specified naming policy for attribute names.</p>
+     * <p>This method converts a Java object (Entity, Map, or {@code Object[]} of alternating
+     * name/value pairs) into a DynamoDB update item Map, where each value is wrapped in an
+     * {@link AttributeValueUpdate} with the default PUT action. The supplied naming policy is
+     * applied to attribute names; bean properties annotated with {@code @Column} use their column
+     * name instead. For bean entities, properties with {@code null} values are skipped; for
+     * {@code Map} inputs all entries are preserved.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1093,10 +1105,25 @@ public final class DynamoDBExecutor implements AutoCloseable {
         return attrs;
     }
 
+    /**
+     * Converts a collection of Java objects (entities or maps) into a list of DynamoDB item maps
+     * using the default {@link NamingPolicy#CAMEL_CASE} naming policy.
+     *
+     * @param entities the entities, maps, or {@code Object[]} property pairs to convert
+     * @return a list of item maps in iteration order; never {@code null}
+     */
     static List<Map<String, AttributeValue>> toItem(final Collection<?> entities) {
         return toItem(entities, NamingPolicy.CAMEL_CASE);
     }
 
+    /**
+     * Converts a collection of Java objects (entities or maps) into a list of DynamoDB item maps
+     * using the supplied naming policy.
+     *
+     * @param entities the entities, maps, or {@code Object[]} property pairs to convert
+     * @param namingPolicy naming policy applied to attribute names
+     * @return a list of item maps in iteration order; never {@code null}
+     */
     static List<Map<String, AttributeValue>> toItem(final Collection<?> entities, final NamingPolicy namingPolicy) {
         final List<Map<String, AttributeValue>> attrsList = new ArrayList<>(entities.size());
 
@@ -1107,10 +1134,27 @@ public final class DynamoDBExecutor implements AutoCloseable {
         return attrsList;
     }
 
+    /**
+     * Converts a collection of Java objects (entities or maps) into a list of DynamoDB update-item maps
+     * (each value wrapped in an {@link AttributeValueUpdate} with PUT action) using the default
+     * {@link NamingPolicy#CAMEL_CASE} naming policy.
+     *
+     * @param entities the entities, maps, or {@code Object[]} property pairs to convert
+     * @return a list of update-item maps in iteration order; never {@code null}
+     */
     static List<Map<String, AttributeValueUpdate>> toUpdateItem(final Collection<?> entities) {
         return toUpdateItem(entities, NamingPolicy.CAMEL_CASE);
     }
 
+    /**
+     * Converts a collection of Java objects (entities or maps) into a list of DynamoDB update-item maps
+     * (each value wrapped in an {@link AttributeValueUpdate} with PUT action) using the supplied
+     * naming policy.
+     *
+     * @param entities the entities, maps, or {@code Object[]} property pairs to convert
+     * @param namingPolicy naming policy applied to attribute names
+     * @return a list of update-item maps in iteration order; never {@code null}
+     */
     static List<Map<String, AttributeValueUpdate>> toUpdateItem(final Collection<?> entities, final NamingPolicy namingPolicy) {
         final List<Map<String, AttributeValueUpdate>> attrsList = new ArrayList<>(entities.size());
 
@@ -1175,13 +1219,15 @@ public final class DynamoDBExecutor implements AutoCloseable {
     /**
      * Converts a DynamoDB item Map to a Java entity of the specified class.
      *
-     * <p>This method converts a Map representing a DynamoDB item into an entity of the specified class.
-     * It uses reflection to set the properties of the entity based on the item attributes.</p>
+     * <p>Each attribute is mapped to a property whose name matches the attribute name (or whose
+     * {@code @Column} alias matches it). Attribute names containing a {@code '.'} are treated as
+     * nested-property paths (e.g. {@code "address.city"}). Attributes that do not correspond to any
+     * declared property are silently ignored.</p>
      *
      * @param <T> the type of the entity to convert to
-     * @param item the Map representing the DynamoDB item, can be null
-     * @param targetClass the class of the entity to convert to
-     * @return an instance of the target class representing the item, or null if the item is null
+     * @param item the Map representing the DynamoDB item, can be {@code null}
+     * @param targetClass the entity class to instantiate; must be a bean class with getter/setter methods
+     * @return an instance of {@code targetClass} populated from {@code item}, or {@code null} if {@code item} is {@code null}
      */
     public static <T> T toEntity(final Map<String, AttributeValue> item, final Class<T> targetClass) {
         if (item == null) {
@@ -1492,18 +1538,18 @@ public final class DynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * Converts a QueryResponse to a List of entities of the specified class with pagination support.
+     * Converts a QueryResponse to a List of entities, slicing the single response page.
      *
-     * <p>This method extracts the items from the QueryResponse and converts them to a List of entities
-     * using the specified target class, starting from the given offset and limiting the number of items to count.
-     * If the response does not contain any items, it returns an empty list.</p>
+     * <p><b>Single page only:</b> Only the items present in {@code queryResult} are considered;
+     * {@code offset} and {@code count} index into <i>that</i> page (not across all paginated
+     * results). For end-to-end pagination use the {@link #list(QueryRequest, Class)} overload.</p>
      *
      * @param <T> the type of the entities to convert to
      * @param queryResult the QueryResponse containing the items to convert
-     * @param offset the starting index for pagination
-     * @param count the maximum number of items to return
+     * @param offset the starting index within the single response page (0-based)
+     * @param count the maximum number of items to take from {@code offset}
      * @param targetClass the class of the entities to convert to
-     * @return a List of entities, never null
+     * @return a List of entities materialized from the sliced page, never null
      * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
      */
     public static <T> List<T> toList(final QueryResponse queryResult, final int offset, final int count, final Class<T> targetClass) {
@@ -1530,18 +1576,18 @@ public final class DynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * Converts a ScanResponse to a List of entities of the specified class with pagination support.
+     * Converts a ScanResponse to a List of entities, slicing the single response page.
      *
-     * <p>This method extracts the items from the ScanResponse and converts them to a List of entities
-     * using the specified target class, starting from the given offset and limiting the number of items to count.
-     * If the response does not contain any items, it returns an empty list.</p>
+     * <p><b>Single page only:</b> Only the items present in {@code scanResult} are considered;
+     * {@code offset} and {@code count} index into <i>that</i> page (not across all paginated
+     * results). Use the streaming {@code scan(...)} overloads to iterate every matching item.</p>
      *
      * @param <T> the type of the entities to convert to
      * @param scanResult the ScanResponse containing the items to convert
-     * @param offset the starting index for pagination
-     * @param count the maximum number of items to return
+     * @param offset the starting index within the single response page (0-based)
+     * @param count the maximum number of items to take from {@code offset}
      * @param targetClass the class of the entities to convert to
-     * @return a List of entities, never null
+     * @return a List of entities materialized from the sliced page, never null
      * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
      */
     public static <T> List<T> toList(final ScanResponse scanResult, final int offset, final int count, final Class<T> targetClass) {
@@ -1617,15 +1663,16 @@ public final class DynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * Extracts a Dataset from a QueryResponse with pagination support.
+     * Extracts a Dataset from a QueryResponse, slicing the single response page.
      *
-     * <p>This method extracts the items from the QueryResponse and converts them to a Dataset,
-     * starting from the given offset and limiting the number of items to count.</p>
+     * <p><b>Single page only:</b> Only the items present in {@code queryResult} are considered;
+     * {@code offset} and {@code count} index into <i>that</i> page (not across all paginated
+     * results). For end-to-end pagination use {@link #query(QueryRequest)}.</p>
      *
      * @param queryResult the QueryResponse containing the items to convert
-     * @param offset the starting index for pagination
-     * @param count the maximum number of items to return
-     * @return a Dataset containing the extracted data, never null
+     * @param offset the starting index within the single response page (0-based)
+     * @param count the maximum number of items to take from {@code offset}
+     * @return a Dataset containing the sliced page, never null
      * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
      */
     public static Dataset extractData(final QueryResponse queryResult, final int offset, final int count) {
@@ -1650,15 +1697,16 @@ public final class DynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * Extracts a Dataset from a ScanResponse with pagination support.
+     * Extracts a Dataset from a ScanResponse, slicing the single response page.
      *
-     * <p>This method extracts the items from the ScanResponse and converts them to a Dataset,
-     * starting from the given offset and limiting the number of items to count.</p>
+     * <p><b>Single page only:</b> Only the items present in {@code scanResult} are considered;
+     * {@code offset} and {@code count} index into <i>that</i> page (not across all paginated
+     * results). Use the streaming {@code scan(...)} overloads to iterate every matching item.</p>
      *
      * @param scanResult the ScanResponse containing the items to convert
-     * @param offset the starting index for pagination
-     * @param count the maximum number of items to return
-     * @return a Dataset containing the extracted data, never null
+     * @param offset the starting index within the single response page (0-based)
+     * @param count the maximum number of items to take from {@code offset}
+     * @return a Dataset containing the sliced page, never null
      * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
      */
     public static Dataset extractData(final ScanResponse scanResult, final int offset, final int count) {
@@ -1946,10 +1994,15 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * <ul>
      * <li>Retrieves up to 100 items across multiple tables in one request</li>
      * <li>More efficient than individual GetItem calls</li>
-     * <li>Automatic handling of unprocessed keys</li>
      * <li>Support for different consistency settings per table</li>
      * <li>Projection expressions for retrieving specific attributes only</li>
      * </ul>
+     *
+     * <p><b>Unprocessed Keys:</b> If DynamoDB throttles the request or returns partial results,
+     * the keys that could not be processed are returned by the SDK in the
+     * {@link BatchGetItemResponse#unprocessedKeys()} field. This wrapper does <i>not</i> auto-retry
+     * unprocessed keys; callers must inspect the underlying response (via the {@code BatchGetItemRequest}
+     * overloads if needed) and re-submit them.</p>
      *
      * <p><b>AWS SDK v2 Enhancements:</b></p>
      * <ul>
@@ -2671,7 +2724,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
     /**
      * Lists items from the specified DynamoDB table using a QueryRequest.
      *
-     * <p>This method performs a query operation using AWS SDK v2 and returns the results as a list of maps.</p>
+     * <p>This method performs a query operation using AWS SDK v2 and returns the results as a list
+     * of attribute maps. When the caller has not set {@code exclusiveStartKey} on the request, all
+     * pages are fetched and concatenated; if the caller did set {@code exclusiveStartKey}, only the
+     * single page returned by DynamoDB is materialized.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2928,8 +2984,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
     /**
      * Streams items from the specified DynamoDB table using a QueryRequest and converts the results to entities of the specified type.
      *
-     * <p>This method performs a query operation using AWS SDK v2 and returns the results as a stream of entities
-     * of the specified target class.</p>
+     * <p>This method performs a query operation using AWS SDK v2 and returns the results as a lazy
+     * stream of entities of the specified target class. The stream transparently follows
+     * {@code lastEvaluatedKey}, issuing additional Query calls on demand until DynamoDB stops
+     * returning a continuation key, so it is suitable for arbitrarily large result sets.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2944,7 +3002,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param <T> the type of the entities to convert to
      * @param queryRequest the QueryRequest containing the table name and query parameters. Must not be null.
      * @param targetClass the class of the entities to convert to. Must not be null.
-     * @return a stream of entities of the specified target class. Never null.
+     * @return a lazy stream of entities that auto-paginates via {@code lastEvaluatedKey}. Never null.
      * @throws IllegalArgumentException if queryRequest or targetClass is null
      */
     public <T> Stream<T> stream(final QueryRequest queryRequest, final Class<T> targetClass) {
@@ -3162,10 +3220,12 @@ public final class DynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * Scans items from the specified DynamoDB table using a ScanRequest and converts the results to a stream of entities of the specified type.
+     * Scans items from the specified DynamoDB table using a ScanRequest and converts the results
+     * to a lazy stream of entities of the specified type.
      *
-     * <p>This method performs a scan operation using AWS SDK v2 and returns the results as a stream of entities
-     * of the specified target class.</p>
+     * <p>The returned stream transparently follows {@code lastEvaluatedKey}, issuing additional Scan
+     * calls on demand until DynamoDB stops returning a continuation key, so it is suitable for full
+     * table traversals of arbitrary size.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3178,7 +3238,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param <T> the type of the entities to convert to
      * @param scanRequest the ScanRequest containing the table name and scan parameters. Must not be null.
      * @param targetClass the class of the entities to convert to. Must not be null.
-     * @return a stream of entities of the specified target class. Never null.
+     * @return a lazy stream of entities that auto-paginates via {@code lastEvaluatedKey}. Never null.
      * @throws IllegalArgumentException if scanRequest or targetClass is null
      */
     public <T> Stream<T> scan(final ScanRequest scanRequest, final Class<T> targetClass) {
@@ -3611,8 +3671,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * <p>This method is more efficient than multiple individual putItem calls for bulk inserts.
          * DynamoDB limits batch write operations to 25 items per request; this method does NOT split
          * larger collections automatically — the caller is responsible for batching to stay within
-         * the service limit. Items are written in parallel and the operation is atomic per item but
-         * not for the batch as a whole.</p>
+         * the service limit. Each item write is atomic, but the batch as a whole is not transactional;
+         * any individual writes that DynamoDB could not process are returned in
+         * {@link BatchWriteItemResponse#unprocessedItems()} and must be retried by the caller.</p>
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3794,8 +3855,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * <p>This method is more efficient than multiple individual deleteItem calls for bulk deletions.
          * DynamoDB limits batch write operations to 25 items per request; this method does NOT split
          * larger collections automatically — the caller is responsible for batching to stay within
-         * the service limit. Deletions are processed in parallel and are atomic per item but not for
-         * the batch as a whole.</p>
+         * the service limit. Each delete is atomic, but the batch as a whole is not transactional;
+         * any individual deletes that DynamoDB could not process are returned in
+         * {@link BatchWriteItemResponse#unprocessedItems()} and must be retried by the caller.</p>
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code

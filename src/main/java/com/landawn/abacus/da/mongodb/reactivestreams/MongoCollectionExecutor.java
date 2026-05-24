@@ -66,20 +66,28 @@ import reactor.core.publisher.Mono;
  * <h2>Key Features</h2>
  * <h3>Core Capabilities:</h3>
  * <ul>
- *   <li><strong>Publisher-Based Operations:</strong> All methods return Publishers for reactive composition</li>
- *   <li><strong>Backpressure Support:</strong> Automatic backpressure handling for streaming operations</li>
- *   <li><strong>Error Propagation:</strong> Reactive error handling through Publisher error signals</li>
- *   <li><strong>Resource Management:</strong> Automatic cursor and connection lifecycle management</li>
- *   <li><strong>Integration Ready:</strong> Direct compatibility with Reactor, RxJava, and other reactive libraries</li>
- *   <li><strong>Stream Processing:</strong> Natural integration with reactive stream processing pipelines</li>
+ *   <li><strong>Publisher-Based Operations:</strong> All methods return Publishers (typically {@link Mono} or
+ *       {@link Flux}) for reactive composition</li>
+ *   <li><strong>Backpressure Support:</strong> Honours reactive-streams backpressure via the underlying driver</li>
+ *   <li><strong>Error Propagation:</strong> Database failures surface as Publisher {@code onError} signals
+ *       rather than thrown exceptions</li>
+ *   <li><strong>Cursor Lifecycle:</strong> The driver's {@link FindPublisher} cursor is opened on subscription
+ *       and closed automatically on completion, cancellation, or error</li>
+ *   <li><strong>Integration Ready:</strong> Direct compatibility with Reactor, RxJava, and any other library
+ *       that consumes {@code org.reactivestreams.Publisher}</li>
  * </ul>
  *
  * <h3>Reactive Patterns:</h3>
  * <ul>
- *   <li><strong>Cold Publishers:</strong> Operations start when subscribed to</li>
- *   <li><strong>Hot Streams:</strong> Change streams for real-time data monitoring</li>
- *   <li><strong>Single-Value Operations:</strong> Mono-like semantics for single results</li>
- *   <li><strong>Multi-Value Streams:</strong> Flux-like semantics for result sets</li>
+ *   <li><strong>Cold Publishers:</strong> Every returned {@code Mono}/{@code Flux} is <i>cold</i> — no
+ *       request is sent to MongoDB until the Publisher is subscribed to, and each new subscription executes
+ *       the operation again (and opens a new cursor for find/aggregate). Re-subscribing a write operation
+ *       therefore re-issues the write.</li>
+ *   <li><strong>Hot Streams:</strong> {@link #watch()} returns a long-lived {@link ChangeStreamPublisher}
+ *       that does not naturally complete; cancel the subscription to close the cursor.</li>
+ *   <li><strong>Single-Value Operations:</strong> {@code Mono} for at-most-one result; empty Mono indicates
+ *       "no match"</li>
+ *   <li><strong>Multi-Value Streams:</strong> {@code Flux} for result sets, backed by a server-side cursor</li>
  * </ul>
  *
  * <h3>Thread Safety:</h3>
@@ -88,10 +96,10 @@ import reactor.core.publisher.Mono;
  *
  * <h3>Performance Considerations:</h3>
  * <ul>
- *   <li>Publishers are lazy - computation starts only on subscription</li>
+ *   <li>Publishers are lazy — computation starts only on subscription</li>
  *   <li>Use appropriate schedulers to avoid blocking reactive threads</li>
- *   <li>Leverage backpressure to prevent memory overflow with large datasets</li>
- *   <li>Consider connection pooling settings for high-concurrency scenarios</li>
+ *   <li>Honour backpressure when consuming large result sets to avoid unbounded buffering</li>
+ *   <li>Consider connection-pool settings for high-concurrency scenarios</li>
  *   <li>Use projection to reduce network bandwidth for large documents</li>
  * </ul>
  *
@@ -241,23 +249,24 @@ public final class MongoCollectionExecutor {
      * Checks if any documents exist matching the specified filter in a reactive manner.
      *
      * <p>This method provides a reactive way to verify if documents matching the given filter exist
-     * without retrieving the actual documents. It's optimized to stop after finding the first match,
-     * making it efficient for existence checks on filtered queries.</p>
-     * 
+     * without retrieving the actual documents. It is implemented as a {@code countDocuments(filter,
+     * limit=1)} query, so the server stops after locating the first match.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson activeUserFilter = Filters.eq("status", "active");
      * Mono<Boolean> existsMono = executor.exists(activeUserFilter);
-     * 
+     *
      * existsMono.subscribe(
      *     exists -> System.out.println("Active users exist: " + exists),
      *     error -> System.err.println("Error: " + error)
      * );
      * }</pre>
      *
-     * @param filter the query filter to match documents against
-     * @return a Mono that emits {@code true} if any documents match the filter, {@code false} otherwise
-     * @throws IllegalArgumentException if filter is null
+     * @param filter the query filter to match documents against; must not be null
+     * @return a {@code Mono} that, on subscription, emits a single {@code Boolean} ({@code true} when
+     *         at least one document matches the filter, {@code false} otherwise), then completes
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see Bson
      * @see com.mongodb.client.model.Filters
      */
@@ -309,9 +318,10 @@ public final class MongoCollectionExecutor {
      * );
      * }</pre>
      *
-     * @param filter the query filter to match documents against
-     * @return a Mono that emits the count of documents matching the filter
-     * @throws IllegalArgumentException if filter is null
+     * @param filter the query filter to match documents against; must not be null
+     * @return a {@code Mono} that, on subscription, emits a single {@code Long} count of documents
+     *         matching the filter, then completes
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see Bson
      * @see com.mongodb.client.model.Filters
      */
@@ -335,10 +345,11 @@ public final class MongoCollectionExecutor {
      * );
      * }</pre>
      *
-     * @param filter the query filter to match documents against
-     * @param options the count options to apply (can be null)
-     * @return a Mono that emits the count of documents matching the filter with applied options
-     * @throws IllegalArgumentException if filter is null
+     * @param filter the query filter to match documents against; must not be null
+     * @param options the count options to apply (may be null to use driver defaults)
+     * @return a {@code Mono} that, on subscription, emits a single {@code Long} count of documents
+     *         matching the filter with the applied options, then completes
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see Bson
      * @see CountOptions
      * @see com.mongodb.client.model.Filters
@@ -391,9 +402,10 @@ public final class MongoCollectionExecutor {
      * );
      * }</pre>
      *
-     * @param options the estimation options to apply
-     * @return a Mono that emits the estimated count with applied options
-     * @throws IllegalArgumentException if options is null
+     * @param options the estimation options to apply; must not be null
+     * @return a {@code Mono} that, on subscription, emits a single {@code Long} estimated count, then
+     *         completes
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see EstimatedDocumentCountOptions
      */
     public Mono<Long> estimatedDocumentCount(final EstimatedDocumentCountOptions options) {
@@ -601,9 +613,10 @@ public final class MongoCollectionExecutor {
      * );
      * }</pre>
      *
-     * @param filter the query filter to match documents against
-     * @return a Mono that emits the first matching document, or empty if no documents match the filter
-     * @throws IllegalArgumentException if filter is null
+     * @param filter the query filter to match documents against (null matches all)
+     * @return a {@code Mono} that emits the first matching document on subscription, or completes
+     *         empty when no documents match the filter
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see Document
      * @see Bson
      * @see com.mongodb.client.model.Filters
@@ -633,10 +646,11 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to convert the document to
-     * @param filter the query filter to match documents against
-     * @param rowType the Class representing the target type for conversion
-     * @return a Mono that emits the first matching converted object, or empty if no documents match the filter
-     * @throws IllegalArgumentException if filter or rowType is null
+     * @param filter the query filter to match documents against (null matches all)
+     * @param rowType the Class representing the target type for conversion; must not be null
+     * @return a {@code Mono} that emits the first matching document converted to {@code T} on
+     *         subscription, or completes empty when no documents match
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see Bson
      * @see com.mongodb.client.model.Filters
      */
@@ -664,10 +678,12 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the type to convert the projected document to
      * @param selectPropNames the collection of field names to include in the projection
-     * @param filter the query filter to match documents against
-     * @param rowType the Class representing the target type for conversion
-     * @return a Mono that emits the first matching projected converted object, or empty if no documents match
-     * @throws IllegalArgumentException if selectPropNames, filter, or rowType is null
+     *                        (null/empty selects all fields)
+     * @param filter the query filter to match documents against (null matches all)
+     * @param rowType the Class representing the target type for conversion; must not be null
+     * @return a {@code Mono} that emits the first matching projected document converted to {@code T}
+     *         on subscription, or completes empty when no documents match
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see Bson
      * @see com.mongodb.client.model.Filters
      * @see com.mongodb.client.model.Projections
@@ -754,8 +770,9 @@ public final class MongoCollectionExecutor {
     /**
      * Lists all documents matching the filter, converted to the specified type.
      *
-     * <p>Returns a reactive stream of all documents that match the filter criteria,
-     * with each document automatically converted to the specified Java type.</p>
+     * <p>Returns a cold {@link Flux} of all documents that match the filter; each subscription opens
+     * a new server-side cursor and converts every emitted document to {@code T} using the configured
+     * codec registry.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -764,9 +781,11 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to convert documents to
-     * @param filter the query filter to match documents against
-     * @param rowType the Class representing the target type for conversion
-     * @return a Flux that emits all matching documents converted to type T
+     * @param filter the query filter to match documents against (null matches all)
+     * @param rowType the Class representing the target type for conversion; must not be null
+     * @return a cold {@code Flux} that, on subscription, emits each matching document converted to
+     *         {@code T}, then completes; completes empty when no documents match
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
      */
     public <T> Flux<T> list(final Bson filter, final Class<T> rowType) {
         return list(null, filter, rowType);
@@ -1388,10 +1407,11 @@ public final class MongoCollectionExecutor {
     }
 
     /**
-     * Executes a query and returns results as a typed Dataset.
+     * Executes a query and returns results as a typed {@link Dataset}.
      *
-     * <p>Performs a query with the specified filter and returns all matching documents
-     * in a Dataset, with rows converted to the specified type for easier manipulation.</p>
+     * <p>Materialises every matching document into memory, then emits a single {@code Dataset}
+     * whose row schema is derived from {@code rowType}. Even when no documents match, an empty
+     * {@code Dataset} is emitted (the {@code Mono} does not complete empty).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1399,9 +1419,11 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to convert documents to
-     * @param filter the query filter to match documents against
-     * @param rowType the Class representing the row type for the Dataset
-     * @return a Mono that emits a Dataset with typed rows
+     * @param filter the query filter to match documents against (null matches all)
+     * @param rowType the Class representing the row type for the Dataset; must not be null
+     * @return a {@code Mono} that, on subscription, emits exactly one {@code Dataset} (possibly
+     *         empty) and then completes
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      */
     public <T> Mono<Dataset> query(final Bson filter, final Class<T> rowType) {
         return query(null, filter, rowType);
@@ -1654,8 +1676,10 @@ public final class MongoCollectionExecutor {
     /**
      * Creates a typed change stream to watch for changes in the collection.
      *
-     * <p>Returns a reactive publisher that emits change events converted to the specified type,
-     * enabling type-safe processing of collection changes in real-time.</p>
+     * <p>Returns a hot, long-lived {@link ChangeStreamPublisher} whose
+     * {@code ChangeStreamDocument.fullDocument} is decoded as {@code rowType} using the configured
+     * codec registry. Like {@link #watch()}, the stream does not naturally complete — cancel the
+     * subscription to close the cursor.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1663,9 +1687,10 @@ public final class MongoCollectionExecutor {
      * Flux.from(userChanges).subscribe(event -> handleUserChange(event));
      * }</pre>
      *
-     * @param <T> the type to convert change events to
-     * @param rowType the Class representing the target type for change events
-     * @return a ChangeStreamPublisher that emits typed change events
+     * @param <T> the type to decode each change event's full document into
+     * @param rowType the Class representing the target type for change events; must not be null
+     * @return a {@link ChangeStreamPublisher} that emits typed change events as they occur
+     * @see com.mongodb.reactivestreams.client.MongoCollection#watch(Class)
      */
     public <T> ChangeStreamPublisher<T> watch(final Class<T> rowType) {
         return coll.watch(rowType);
@@ -1674,8 +1699,9 @@ public final class MongoCollectionExecutor {
     /**
      * Creates a change stream with an aggregation pipeline to watch filtered changes.
      *
-     * <p>Returns a reactive publisher that emits change events filtered through an
-     * aggregation pipeline, allowing for selective monitoring of specific changes.</p>
+     * <p>Returns a hot, long-lived {@link ChangeStreamPublisher} that runs each change event through
+     * the supplied aggregation pipeline before publishing it. As with {@link #watch()}, the stream
+     * does not naturally complete — cancel the subscription to close the cursor.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1685,8 +1711,9 @@ public final class MongoCollectionExecutor {
      * ChangeStreamPublisher<Document> filteredChanges = executor.watch(pipeline);
      * }</pre>
      *
-     * @param pipeline the aggregation pipeline to filter change events
-     * @return a ChangeStreamPublisher that emits filtered change events as Documents
+     * @param pipeline the aggregation pipeline applied to change events; must not be null
+     * @return a {@link ChangeStreamPublisher} emitting filtered change events as {@link Document}
+     * @see com.mongodb.reactivestreams.client.MongoCollection#watch(List)
      */
     public ChangeStreamPublisher<Document> watch(final List<? extends Bson> pipeline) {
         return coll.watch(pipeline);
@@ -1695,8 +1722,9 @@ public final class MongoCollectionExecutor {
     /**
      * Creates a typed change stream with an aggregation pipeline to watch filtered changes.
      *
-     * <p>Combines pipeline filtering with type conversion for change events,
-     * providing both selectivity and type safety in change stream processing.</p>
+     * <p>Combines pipeline filtering with type conversion for change events, providing both
+     * selectivity and type-safe full-document decoding. The returned hot publisher does not
+     * naturally complete — cancel the subscription to close the server-side cursor.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1706,10 +1734,11 @@ public final class MongoCollectionExecutor {
      * ChangeStreamPublisher<Alert> alerts = executor.watch(pipeline, Alert.class);
      * }</pre>
      *
-     * @param <T> the type to convert change events to
-     * @param pipeline the aggregation pipeline to filter change events
-     * @param rowType the Class representing the target type for change events
-     * @return a ChangeStreamPublisher that emits filtered and typed change events
+     * @param <T> the type to decode each change event's full document into
+     * @param pipeline the aggregation pipeline applied to change events; must not be null
+     * @param rowType the Class representing the target type for change events; must not be null
+     * @return a {@link ChangeStreamPublisher} emitting filtered and typed change events
+     * @see com.mongodb.reactivestreams.client.MongoCollection#watch(List, Class)
      */
     public <T> ChangeStreamPublisher<T> watch(final List<? extends Bson> pipeline, final Class<T> rowType) {
         return coll.watch(pipeline, rowType);
@@ -1745,7 +1774,8 @@ public final class MongoCollectionExecutor {
      * Inserts a single document with options into the collection reactively.
      *
      * <p>Inserts the provided object with custom insert options, such as bypass document
-     * validation. The object is converted to a Document before insertion.</p>
+     * validation. Non-{@link Document} input is converted via {@code MongoDBBase.toDocument}
+     * before insertion.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1753,9 +1783,12 @@ public final class MongoCollectionExecutor {
      * Mono<InsertOneResult> result = executor.insertOne(entity, options);
      * }</pre>
      *
-     * @param obj the object to insert (Document/Map/entity class)
-     * @param options the options to apply to the insert operation
-     * @return a Mono that emits the InsertOneResult containing operation details
+     * @param obj the object to insert (Document/Map/entity class); must not be null
+     * @param options the options to apply to the insert operation; may be null for driver defaults
+     * @return a {@code Mono} that, on subscription, emits exactly one {@link InsertOneResult}, then
+     *         completes
+     * @throws com.mongodb.MongoWriteException if the insert violates a unique constraint or
+     *         document validation (signalled via {@code Mono})
      */
     public Mono<InsertOneResult> insertOne(final Object obj, final InsertOneOptions options) {
         if (options == null) {
@@ -1768,8 +1801,10 @@ public final class MongoCollectionExecutor {
     /**
      * Inserts multiple documents into the collection reactively.
      *
-     * <p>Batch inserts a collection of objects as documents. Each object can be a
-     * Document, Map, or entity class. This is more efficient than multiple single inserts.</p>
+     * <p>Batch inserts a collection of objects as documents. Each element may be a
+     * {@link Document}, {@link java.util.Map}, or an entity class — non-Document elements are
+     * converted via {@code MongoDBBase.toDocument}. A bulk insert is more efficient than multiple
+     * single inserts.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1777,8 +1812,14 @@ public final class MongoCollectionExecutor {
      * Mono<InsertManyResult> result = executor.insertMany(users);
      * }</pre>
      *
-     * @param objList the collection of objects to insert (Document/Map/entity classes)
-     * @return a Mono that emits the InsertManyResult containing operation details
+     * @param objList the collection of objects to insert (Document/Map/entity classes);
+     *                must not be null or empty
+     * @return a {@code Mono} that, on subscription, emits exactly one {@link InsertManyResult}, then
+     *         completes
+     * @throws IllegalArgumentException if {@code objList} is null or empty
+     * @throws com.mongodb.MongoBulkWriteException if any insert violates a unique constraint or
+     *         document validation (signalled via {@code Mono})
+     * @see #insertMany(Collection, InsertManyOptions)
      */
     public Mono<InsertManyResult> insertMany(final Collection<?> objList) {
         return insertMany(objList, null);
@@ -1788,7 +1829,8 @@ public final class MongoCollectionExecutor {
      * Inserts multiple documents with options into the collection reactively.
      *
      * <p>Batch inserts a collection of objects with custom insert options, such as
-     * ordered/unordered insertion. Unordered insertion can continue even if some inserts fail.</p>
+     * ordered/unordered insertion. With {@code ordered(false)}, the driver continues after
+     * per-document failures and reports them in the resulting bulk-write exception.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1796,9 +1838,13 @@ public final class MongoCollectionExecutor {
      * Mono<InsertManyResult> result = executor.insertMany(documents, options);
      * }</pre>
      *
-     * @param objList the collection of objects to insert (Document/Map/entity classes)
-     * @param options the options to apply to the insert operation
-     * @return a Mono that emits the InsertManyResult containing operation details
+     * @param objList the collection of objects to insert (Document/Map/entity classes);
+     *                must not be null or empty
+     * @param options the options to apply to the insert operation; may be null for driver defaults
+     * @return a {@code Mono} that, on subscription, emits exactly one {@link InsertManyResult}, then
+     *         completes
+     * @throws IllegalArgumentException if {@code objList} is null or empty
+     * @throws com.mongodb.MongoBulkWriteException if any insert fails (signalled via {@code Mono})
      */
     public Mono<InsertManyResult> insertMany(final Collection<?> objList, final InsertManyOptions options) {
         N.checkArgNotEmpty(objList, "objList");
@@ -1935,11 +1981,11 @@ public final class MongoCollectionExecutor {
     }
 
     /**
-     * Updates the first document matching the filter using a collection of update operations reactively.
+     * Updates the first document matching the filter using a pipeline of update stages reactively.
      *
-     * <p>Applies multiple update operations from a collection to the first matching document.
-     * This corresponds to MongoDB's pipeline-style update form, allowing more complex update
-     * operations including field references and expressions.</p>
+     * <p>Applies a list of update operations as a MongoDB <i>pipeline-style</i> update
+     * (server requires MongoDB 4.2+). Each element is converted via {@link #toBson(Object)}; any
+     * non-operator object is wrapped in a {@code $set}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1949,9 +1995,10 @@ public final class MongoCollectionExecutor {
      * Mono<UpdateResult> result = executor.updateOne(filter, pipeline);
      * }</pre>
      *
-     * @param filter the query filter to identify the document to update
-     * @param objList the collection of update operations to apply
-     * @return a Mono that emits the UpdateResult containing operation details
+     * @param filter the query filter to identify the document to update; must not be null
+     * @param objList the pipeline of update stages to apply; must not be null or empty
+     * @return a {@code Mono} that emits the {@link UpdateResult} containing operation details
+     * @throws IllegalArgumentException if {@code objList} is null or empty
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final Collection<?> objList) {
         return updateOne(filter, objList, null);
@@ -2497,7 +2544,10 @@ public final class MongoCollectionExecutor {
      *
      * <p>Performs a bulk write operation consisting of multiple insert, update, replace,
      * or delete operations. This method provides maximum flexibility for complex bulk
-     * operations where different types of operations need to be executed together.</p>
+     * operations where different types of operations need to be executed together. The
+     * default driver behaviour is <i>ordered</i>: execution stops at the first failing model.
+     * Use {@link #bulkWrite(List, BulkWriteOptions)} with {@code ordered(false)} to continue
+     * after errors.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2510,8 +2560,10 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param requests list of write models representing the operations to perform; must not be null or empty
-     * @return a Mono that emits the BulkWriteResult containing detailed operation results
-     * @throws IllegalArgumentException if requests is null or empty
+     * @return a {@code Mono} that, on subscription, emits a single {@link BulkWriteResult} and then
+     *         completes
+     * @throws IllegalArgumentException if {@code requests} is null or empty
+     * @throws com.mongodb.MongoBulkWriteException if any write fails (signalled via {@code Mono})
      * @see #bulkWrite(List, BulkWriteOptions)
      */
     public Mono<BulkWriteResult> bulkWrite(final List<? extends WriteModel<? extends Document>> requests) {
@@ -3009,7 +3061,7 @@ public final class MongoCollectionExecutor {
      * Finds distinct values for a specified field.
      *
      * <p>Returns distinct values for the specified field across all documents in the collection.
-     * This method is useful for getting unique values such as categories, tags, or statuses.</p>
+     * Useful for getting unique values such as categories, tags, or statuses.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3019,8 +3071,9 @@ public final class MongoCollectionExecutor {
      * @param <T> the type of the distinct values
      * @param fieldName the field name to get distinct values for; must not be null
      * @param rowType the class type of the distinct values; must not be null
-     * @return a Flux that emits the distinct values for the field
-     * @throws IllegalArgumentException if fieldName or rowType is null
+     * @return a cold {@code Flux} that, on subscription, emits each distinct value of the field
+     *         (deduplicated by the server), then completes
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
      * @see #distinct(String, Bson, Class)
      */
     public <T> Flux<T> distinct(final String fieldName, final Class<T> rowType) {
@@ -3031,7 +3084,7 @@ public final class MongoCollectionExecutor {
      * Finds distinct values for a field with a filter.
      *
      * <p>Returns distinct values for the specified field among documents matching the filter.
-     * This method is useful for getting unique values within a subset of documents.</p>
+     * Useful for getting unique values within a subset of documents.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3043,8 +3096,9 @@ public final class MongoCollectionExecutor {
      * @param fieldName the field name to get distinct values for; must not be null
      * @param filter the query filter to apply before finding distinct values; must not be null
      * @param rowType the class type of the distinct values; must not be null
-     * @return a Flux that emits the distinct values for the field within filtered documents
-     * @throws IllegalArgumentException if any parameter is null
+     * @return a cold {@code Flux} that, on subscription, emits each distinct value found among the
+     *         filtered documents, then completes
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
      */
     public <T> Flux<T> distinct(final String fieldName, final Bson filter, final Class<T> rowType) {
         return Flux.from(coll.distinct(fieldName, filter, rowType));
@@ -3305,9 +3359,9 @@ public final class MongoCollectionExecutor {
     /**
      * Executes a map-reduce operation.
      *
-     * <p>Performs a map-reduce operation using JavaScript functions. Map-reduce provides
-     * a way to process large datasets with custom JavaScript logic. Note that aggregation
-     * pipelines are generally preferred over map-reduce for better performance.</p>
+     * <p>Performs a server-side map-reduce using the supplied JavaScript functions. Note that
+     * server-side map-reduce has been deprecated by MongoDB itself starting with version 5.0 —
+     * aggregation pipelines are preferred for both performance and forward compatibility.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3318,9 +3372,9 @@ public final class MongoCollectionExecutor {
      *
      * @param mapFunction the JavaScript map function; must not be null
      * @param reduceFunction the JavaScript reduce function; must not be null
-     * @return a Flux that emits the map-reduce results
-     * @throws IllegalArgumentException if mapFunction or reduceFunction is null
-     * @deprecated Map-reduce is deprecated in MongoDB 5.0+. Use aggregation pipelines instead.
+     * @return a cold {@code Flux} that, on subscription, emits each result document, then completes
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
+     * @deprecated Map-reduce is deprecated in MongoDB 5.0+. Use {@link #aggregate(List)} instead.
      * @see #aggregate(List)
      */
     @Deprecated
@@ -3331,8 +3385,9 @@ public final class MongoCollectionExecutor {
     /**
      * Executes a map-reduce operation returning results as a specific type.
      *
-     * <p>Performs a map-reduce operation and maps the results to the specified type.
-     * This method combines powerful map-reduce capabilities with type-safe results.</p>
+     * <p>Performs a server-side map-reduce using the supplied JavaScript functions, decoding each
+     * output document to {@code rowType} via the framework's row-conversion path. See
+     * {@link #mapReduce(String, String)} for deprecation status.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3345,9 +3400,10 @@ public final class MongoCollectionExecutor {
      * @param mapFunction the JavaScript map function; must not be null
      * @param reduceFunction the JavaScript reduce function; must not be null
      * @param rowType the class to deserialize results into; must not be null
-     * @return a Flux that emits the map-reduce results mapped to the specified type
-     * @throws IllegalArgumentException if any parameter is null
-     * @deprecated Map-reduce is deprecated in MongoDB 5.0+. Use aggregation pipelines instead.
+     * @return a cold {@code Flux} that, on subscription, emits each result document decoded as
+     *         {@code T}, then completes
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
+     * @deprecated Map-reduce is deprecated in MongoDB 5.0+. Use {@link #aggregate(List, Class)} instead.
      */
     @Deprecated
     public <T> Flux<T> mapReduce(final String mapFunction, final String reduceFunction, final Class<T> rowType) {

@@ -15,9 +15,12 @@
 package com.landawn.abacus.da.spark;
 
 /**
- * Placeholder utility class for Apache Spark Dataset operations.
+ * Package-private placeholder utility class for Apache Spark {@code Dataset} operations.
  *
- * <p>This class is reserved for future implementation of Spark Dataset utility methods.</p>
+ * <p>This class is reserved for a future implementation of Spark SQL {@code Dataset}
+ * helper methods. It currently exposes no API and is not visible outside this package.</p>
+ *
+ * @see DStreamUtil
  */
 final class DatasetUtil {
 

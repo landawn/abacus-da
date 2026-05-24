@@ -51,56 +51,83 @@ import com.mongodb.client.result.DeleteResult;
 import com.mongodb.client.result.UpdateResult;
 
 /**
- * Type-safe MongoDB collection mapper providing object-document mapping (ODM) for strongly-typed entity operations.
+ * Synchronous, strongly-typed façade over a MongoDB {@code MongoCollection<Document>}.
  *
- * <p>This class combines the functionality of {@code MongoCollectionExecutor} with automatic type conversion
- * to provide a type-safe, object-oriented interface for MongoDB operations. It eliminates the need for manual
- * document-to-object conversion while maintaining full access to MongoDB's query and update capabilities.</p>
+ * <p>This class wraps a {@link MongoCollectionExecutor} (which works in raw {@link Document}s) and
+ * adds automatic object-document mapping for a single entity type {@code T}: queries return
+ * {@code T} (or {@code Optional<T>}, {@code Stream<T>}, ...), while writes accept {@code T} and are
+ * converted to {@link Document}s before being sent to the driver.</p>
  *
- * <h2>Key Features</h2>
- * <h3>Core Capabilities:</h3>
+ * <h2>{@code @Id} Mapping</h2>
  * <ul>
- *   <li><strong>Type Safety:</strong> All operations return properly typed objects instead of raw Documents</li>
- *   <li><strong>Automatic Conversion:</strong> Seamless conversion between Java entities and BSON documents</li>
- *   <li><strong>ID Mapping:</strong> Automatic mapping between entity ID fields and MongoDB's "_id" field</li>
- *   <li><strong>Full Query Support:</strong> Complete access to MongoDB query operators and aggregation</li>
- *   <li><strong>Bulk Operations:</strong> Type-safe bulk insert, update, and delete operations</li>
- *   <li><strong>Streaming:</strong> Stream-based processing with automatic object conversion</li>
+ *   <li>An entity property annotated with {@code @Id} (or named {@code id} when no annotation is
+ *       present) is mapped to MongoDB's {@code _id} field on writes and back to the same property
+ *       on reads.</li>
+ *   <li>When the {@code _id} value is omitted, MongoDB assigns an {@link ObjectId}; the value is
+ *       written back into the entity's id property after the insert returns.</li>
+ *   <li>The {@code get/gett} and id-keyed {@code updateOne/replaceOne/deleteOne} overloads accept
+ *       either an {@link ObjectId} or its 24-hex-character {@link String} form; the string overloads
+ *       throw {@link IllegalArgumentException} if the string is not a valid hex ObjectId.</li>
  * </ul>
  *
- * <h3>Entity Requirements:</h3>
- * <p>Entity classes used with this mapper should follow these conventions:</p>
+ * <h2>Property &harr; Field Mapping</h2>
  * <ul>
- *   <li>Have a default (no-argument) constructor</li>
- *   <li>Use proper getter/setter methods for properties</li>
- *   <li>Mark ID fields with @Id annotation or use "id" property name</li>
- *   <li>Use MongoDB-compatible data types (or provide custom converters)</li>
+ *   <li>Java property names map 1:1 to BSON field names by default; an annotation supported by the
+ *       configured parser (e.g. {@code @Column}) can override the BSON field name.</li>
+ *   <li>Conversion is delegated to the codec registry configured on the underlying
+ *       {@code MongoCollection}, so any custom codecs registered there are honored.</li>
+ *   <li>Embedded objects, collections and maps are converted recursively. BSON {@code null} and
+ *       missing fields both surface as Java {@code null} in the mapped entity.</li>
  * </ul>
  *
- * <h3>Thread Safety:</h3>
- * <p>This class is thread-safe. All operations can be called concurrently from multiple threads
- * without external synchronization.</p>
- *
- * <h3>Performance Considerations:</h3>
+ * <h2>Projection / Sort / Limit Semantics</h2>
  * <ul>
- *   <li>Object conversion adds overhead compared to raw Document operations</li>
- *   <li>Use projection to limit fields when full objects are not needed</li>
- *   <li>Batch operations are more efficient than individual entity operations</li>
- *   <li>Consider caching for frequently accessed reference data</li>
+ *   <li>{@code selectPropNames} is a collection of <i>property</i> names (not BSON field names);
+ *       it is translated to a projection on the corresponding mapped fields. Passing {@code null}
+ *       selects every field. The {@code _id} field is always returned unless explicitly excluded
+ *       via the {@link Bson}-projection overloads.</li>
+ *   <li>{@link Bson}-projection overloads pass the projection through unchanged, so any
+ *       {@code com.mongodb.client.model.Projections} expression (including computed/sliced fields)
+ *       is supported. Computed fields may surface in the returned entity only when the entity has
+ *       a matching property/setter.</li>
+ *   <li>{@code sort} is any {@link Bson} sort expression
+ *       (see {@code com.mongodb.client.model.Sorts}). When omitted, the driver returns documents in
+ *       the natural order, which is not stable across queries.</li>
+ *   <li>{@code offset}/{@code count} are forwarded as the driver's {@code skip} and {@code limit}
+ *       hints. {@code offset == 0} disables skip; {@code count <= 0} is treated as "no limit" by
+ *       the underlying executor.</li>
  * </ul>
  *
- * <p><b>Usage Examples:</b></p>
+ * <h2>Bulk-Write Atomicity</h2>
+ * <ul>
+ *   <li>{@link #bulkWrite(List)} and {@link #bulkWrite(List, BulkWriteOptions)} send all
+ *       {@link WriteModel}s in a single bulk-write call to the server. Each individual write is
+ *       atomic on its target document, but the bulk as a whole is <strong>not</strong> atomic
+ *       across documents — it is not a transaction. Use a session-bound transaction at the
+ *       executor level if cross-document atomicity is required.</li>
+ *   <li>With {@code ordered = true} (the driver default), the server stops at the first failing
+ *       operation; earlier successful operations remain applied. With {@code ordered = false},
+ *       all operations are attempted and errors are reported in the bulk result.</li>
+ *   <li>{@link #insertMany(Collection)} has the same per-document atomicity guarantees as
+ *       {@code bulkWrite} with insert models.</li>
+ * </ul>
+ *
+ * <h2>Thread Safety</h2>
+ * <p>This class is immutable after construction and delegates to a thread-safe executor; instances
+ * are safe for concurrent use from multiple threads.</p>
+ *
+ * <h2>Usage</h2>
  * <pre>{@code
- * // Entity class definition:
+ * // Entity class:
  * public class User {
  *     @Id
  *     private String id;
  *     private String name;
  *     private String email;
  *     private Date createdAt;
- *     // getters and setters...
+ *     // getters and setters
  * }
- * 
+ *
  * // Create mapper:
  * MongoCollectionMapper<User> userMapper = mongoDB.collectionMapper(User.class);
  *
@@ -109,10 +136,7 @@ import com.mongodb.client.result.UpdateResult;
  * userMapper.insertOne(newUser);
  *
  * Optional<User> user = userMapper.findFirst(Filters.eq("email", "john@example.com"));
- * List<User> activeUsers = userMapper.stream(Filters.eq("active", true)).toList();
- *
- * userMapper.updateMany(Filters.lt("lastLogin", new Date(1672531200000L)),
- *                        Updates.set("status", "inactive"));
+ * List<User> activeUsers = userMapper.list(Filters.eq("active", true));
  * }</pre>
  *
  * @param <T> the entity type for object-document mapping operations
@@ -1983,19 +2007,20 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Updates a single entity identified by ObjectId string with the specified update operations.
+     * Updates the document whose {@code _id} matches the supplied 24-hex-character ObjectId string,
+     * applying the fields of {@code update} via the {@code $set} operator.
      *
-     * <p>This method updates a single entity matching the provided ObjectId string with the specified
-     * update entity. The update entity is automatically converted to appropriate update operations.
-     * If the update entity implements the DirtyMarker interface, only the dirty properties will be updated.
-     * Otherwise, all non-null properties are included in the update operation.</p>
+     * <p>If {@code update} is already a driver-built {@link Bson} update expression
+     * (for example {@code Updates.set(...)}/{@code Updates.combine(...)}) it is used verbatim.
+     * Otherwise the entity is converted to a {@link Document} and wrapped in {@code {$set: ...}};
+     * fields whose values are {@code null} in the entity become {@code null} in the {@code $set}
+     * document, not omitted from it.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * String userId = "507f1f77bcf86cd799439011";
      *
-     * // Update with partial entity:
      * User updateData = new User();
      * updateData.setStatus("inactive");
      * updateData.setLastSeen(new Date());
@@ -2004,10 +2029,10 @@ public final class MongoCollectionMapper<T> {
      * System.out.println("Modified " + result.getModifiedCount() + " entity");
      * }</pre>
      *
-     * @param objectId the string representation of the ObjectId identifying the entity to update
-     * @param update the entity containing update data
+     * @param objectId the 24-hex-character ObjectId string identifying the entity to update
+     * @param update the entity (or driver {@link Bson} update expression) containing the update data
      * @return UpdateResult containing information about the update operation
-     * @throws IllegalArgumentException if objectId or update is null, or objectId format is invalid
+     * @throws IllegalArgumentException if {@code objectId} is null, empty, or not a valid hex ObjectId
      * @throws com.mongodb.MongoWriteException if the update operation fails
      * @throws com.mongodb.MongoException if the database operation fails
      * @see UpdateResult
@@ -2572,21 +2597,23 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Performs a bulk insert of entities with optimized performance.
-     * 
-     * <p>This method inserts multiple entities using MongoDB's bulk write operations for
-     * optimal performance. It's more efficient than insertMany for very large datasets
-     * and provides better throughput for high-volume data loading scenarios.</p>
-     * 
+     * Inserts the supplied entities as a single MongoDB bulk-write of {@code InsertOneModel} entries
+     * and returns the inserted count reported by the server.
+     *
+     * <p>Unlike {@link #insertMany(Collection)} (which returns {@code void} but performs the same
+     * bulk-write under the hood), this overload returns the inserted count and reuses the
+     * bulk-write pathway. Per-document atomicity applies; the bulk as a whole is not atomic across
+     * documents.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<Product> products = loadLargeProductCatalog();
      * int insertedCount = mapper.bulkInsert(products);
      * System.out.println("Bulk inserted " + insertedCount + " products");
      * }</pre>
-     * 
+     *
      * @param entities collection of entities to insert in bulk
-     * @return the number of entities successfully inserted
+     * @return the number of entities reported as inserted by the server
      * @throws IllegalArgumentException if entities is null or empty
      * @throws com.mongodb.MongoBulkWriteException if one or more operations fail
      * @throws com.mongodb.MongoException if the database operation fails
@@ -2685,12 +2712,14 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Finds and updates a single entity atomically, returning the entity.
-     * 
-     * <p>This method atomically finds and updates a single entity matching the filter,
-     * returning either the original or updated entity based on options. The operation
-     * is atomic, preventing race conditions in concurrent environments.</p>
-     * 
+     * Atomically finds the first document matching {@code filter}, applies the supplied update, and
+     * returns the matched document as an entity. The find-and-modify is atomic on a single document.
+     *
+     * <p>By default the entity is returned in its <strong>pre-update</strong> state
+     * (driver default {@code ReturnDocument.BEFORE}). Use
+     * {@link #findOneAndUpdate(Bson, Object, FindOneAndUpdateOptions)} with
+     * {@code returnDocument(ReturnDocument.AFTER)} to receive the post-update entity.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * User updates = new User();
@@ -2698,10 +2727,10 @@ public final class MongoCollectionMapper<T> {
      * User user = mapper.findOneAndUpdate(
      *     Filters.eq("email", "user@example.com"), updates);
      * }</pre>
-     * 
+     *
      * @param filter the query filter to match the entity to update
-     * @param update the entity containing update data
-     * @return the entity before or after the update (based on default options), or null if not found
+     * @param update the entity containing update data, or a driver-built {@link Bson} update
+     * @return the matched entity (pre-update by default), or {@code null} if no document matched
      * @throws IllegalArgumentException if filter or update is null
      * @throws com.mongodb.MongoWriteException if the operation fails
      * @throws com.mongodb.MongoException if the database operation fails

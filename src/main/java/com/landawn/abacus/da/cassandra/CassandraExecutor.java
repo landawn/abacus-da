@@ -94,13 +94,32 @@ import lombok.experimental.Accessors;
 /**
  * Primary Cassandra database executor providing high-level CQL operations and result mapping.
  *
- * <p>The CassandraExecutor serves as a sophisticated wrapper around the Cassandra Java Driver,
- * offering simplified database operations while maintaining full control over Cassandra-specific
- * features. It provides both synchronous and asynchronous execution modes, comprehensive parameter
+ * <p>The CassandraExecutor wraps the DataStax Cassandra Java Driver, offering simplified database
+ * operations while preserving full access to Cassandra-specific features. It provides synchronous
+ * (this class) and asynchronous (via {@link #async()}) execution modes, comprehensive parameter
  * binding support, and automatic result set mapping to Java objects.</p>
  *
+ * <h2>Prepared Statement &amp; Bound Statement Caching</h2>
+ * <p>Parameterized queries are parsed once via {@link ParsedCql} (which also extracts {@code :name}
+ * named-parameter positions) and prepared on first use. Both the {@link PreparedStatement} and the
+ * resulting {@link BoundStatement} are pooled (keyed by query text) up to {@code POOLABLE_LENGTH}
+ * characters of query text, so subsequent identical CQL strings reuse the cached server-side
+ * preparation. Bind values are positionally bound after parameter-name resolution and best-effort
+ * type conversion against the prepared statement's metadata.</p>
+ *
+ * <h2>Batch Semantics</h2>
+ * <p>Batch helpers accept a {@link BatchType}: {@link BatchType#LOGGED LOGGED} (the default applied
+ * by {@code prepareBatchStatement} when {@code type} is {@code null}) uses Cassandra's batch log for
+ * atomicity across partitions at the cost of extra coordination; {@link BatchType#UNLOGGED UNLOGGED}
+ * skips the batch log (recommended only for single-partition batches); {@link BatchType#COUNTER
+ * COUNTER} is required for counter mutations. Batches do <i>not</i> provide ACID transactions.</p>
+ *
+ * <h2>Consistency Levels &amp; Statement Settings</h2>
+ * <p>Default consistency, serial consistency, page size, per-statement timeout, and query tracing are
+ * applied uniformly from the {@link StatementSettings} passed at construction time; they can be
+ * overridden per-statement when callers build a {@link Statement} directly against the driver.</p>
+ *
  * <h2>Key Features</h2>
- * <h3>Multiple Capabilities</h3>
  * <ul>
  * <li><strong>Multiple Parameter Binding Styles:</strong>
  *     <ul>
@@ -131,14 +150,13 @@ import lombok.experimental.Accessors;
  *     <ul>
  *     <li>Statement pooling for frequently used queries</li>
  *     <li>Connection reuse and session management</li>
- *     <li>Asynchronous execution with CompletableFuture integration</li>
+ *     <li>Asynchronous execution exposed via {@link #async()} returning ContinuableFuture-typed results</li>
  *     <li>Efficient type conversion and codec registry support</li>
  *     </ul>
  * </li>
  * </ul>
  *
  * <h3>Basic Usage Examples</h3>
- * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * // Initialize executor with session
  * CqlSession session = CqlSession.builder()
@@ -166,7 +184,6 @@ import lombok.experimental.Accessors;
  * }</pre>
  *
  * <h3>Advanced Features</h3>
- * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * // Custom statement settings
  * StatementSettings settings = StatementSettings.builder()
@@ -192,8 +209,7 @@ import lombok.experimental.Accessors;
  * }</pre>
  *
  * <h3>CQL Builder Integration</h3>
- * <p>This executor integrates seamlessly with the CqlBuilder for dynamic query construction:</p>
- * <p><b>Usage Examples:</b></p>
+ * <p>This executor integrates with the CqlBuilder for dynamic query construction:</p>
  * <pre>{@code
  * // Using CqlBuilder for dynamic queries
  * String cql = NSC.select("id", "name", "email")
@@ -216,7 +232,6 @@ import lombok.experimental.Accessors;
  * <h3>Resource Management</h3>
  * <p>The executor implements {@link AutoCloseable} and should be closed properly to release
  * underlying resources:</p>
- * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * try (CassandraExecutor executor = new CassandraExecutor(session)) {
  *     // Perform database operations
@@ -363,22 +378,28 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     /**
      * Creates a new CassandraExecutor with full configuration options.
      *
-     * <p>This is the most comprehensive constructor, allowing full customization of the executor
+     * <p>This is the most comprehensive constructor, allowing full customization of executor
      * behavior. The naming policy controls how Java property names are mapped to Cassandra
      * column names, which is essential for entity-based operations.</p>
      *
+     * <p>When {@code settings} is non-null it is defensively copied (so later mutations to the caller's
+     * instance do not affect this executor). The {@link AsyncCassandraExecutor} returned by
+     * {@link #async()} is created eagerly here and shares this executor's session, statement caches,
+     * and codec registry.</p>
+     *
      * <h4>Naming Policy Examples:</h4>
      * <ul>
-     * <li>{@code SNAKE_CASE}: {@code firstName} → {@code first_name}</li>
-     * <li>{@code SCREAMING_SNAKE_CASE}: {@code firstName} → {@code FIRST_NAME}</li>
-     * <li>{@code CAMEL_CASE}: {@code firstName} → {@code firstName}</li>
+     * <li>{@code LOWER_CASE_WITH_UNDERSCORE}: {@code firstName} &rarr; {@code first_name}</li>
+     * <li>{@code UPPER_CASE_WITH_UNDERSCORE}: {@code firstName} &rarr; {@code FIRST_NAME}</li>
+     * <li>{@code LOWER_CAMEL_CASE}: {@code firstName} &rarr; {@code firstName}</li>
      * </ul>
      *
      * @param session the Cassandra session to use for database operations
-     * @param settings default statement settings, or null for defaults
-     * @param cqlMapper CQL mapper containing pre-configured statements, or null if not needed
-     * @param namingPolicy policy for mapping Java property names to column names,
-     *                     or null for {@code SNAKE_CASE}
+     * @param settings default statement settings to apply to every prepared/bound statement built by
+     *                 this executor, or {@code null} to apply no defaults (copied defensively)
+     * @param cqlMapper CQL mapper containing pre-configured statements, or {@code null} if not needed
+     * @param namingPolicy policy for mapping Java property names to column names; when {@code null} the
+     *                     subclass default (defined in {@link CassandraExecutorBase}) is used
      * @see NamingPolicy
      */
     public CassandraExecutor(final CqlSession session, final StatementSettings settings, final CqlMapper cqlMapper, final NamingPolicy namingPolicy) {
@@ -422,7 +443,19 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     /**
      * Returns an asynchronous facade for this executor.
      *
-     * @return an AsyncCassandraExecutor for non-blocking Cassandra operations
+     * <p>The returned {@link AsyncCassandraExecutor} shares the same {@link CqlSession}, prepared
+     * statement cache, codec registry, and {@link StatementSettings} as this synchronous executor;
+     * it merely exposes non-blocking variants of the same operations that return
+     * {@code ContinuableFuture}-typed results. The async facade is created lazily at construction and
+     * is safe to call repeatedly.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * ContinuableFuture<List<User>> future = executor.async().list(User.class,
+     *     "SELECT * FROM users WHERE status = ?", "active");
+     * }</pre>
+     *
+     * @return the {@link AsyncCassandraExecutor} bound to this executor's session
      */
     public AsyncCassandraExecutor async() {
         return asyncCassandraExecutor;
@@ -912,12 +945,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Retrieves a single entity of the specified type from the database through the {@code gett} contract.
+     * Retrieves at most one entity matching the given WHERE condition (the "get-typed" contract).
      *
-     * <p>This method executes a query that is expected to return at most one row,
-     * and maps the result to an instance of the specified target class. If no row
-     * matches, it returns {@code null}. If more than one row is returned, a
-     * {@link DuplicateResultException} is thrown.</p>
+     * <p>Builds a {@code SELECT} that requests the matching row with {@code LIMIT 2} (so a duplicate
+     * match can be detected) and maps the result to an instance of {@code targetClass}. If no row
+     * matches, returns {@code null}. If two or more rows match, a {@link DuplicateResultException}
+     * is thrown.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -926,11 +959,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * }</pre>
      *
      * @param <T> the type of the entity to retrieve
-     * @param targetClass the entity class
-     * @param selectPropNames the property names to select (null for all properties)
+     * @param targetClass the entity class to map the result row to
+     * @param selectPropNames the property names to select, or {@code null} to select all entity properties
      * @param whereClause the WHERE condition
-     * @return an instance of the target class populated with data from the first row, or null if no result is found
-     * @throws DuplicateResultException if more than one row is returned
+     * @return an instance of {@code targetClass} populated with data from the single matching row,
+     *         or {@code null} when no row matches
+     * @throws DuplicateResultException if more than one row matches the WHERE condition
      */
     @Override
     public <T> T gett(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) throws DuplicateResultException {
@@ -1753,7 +1787,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * Abstract base class for creating custom User Defined Type (UDT) codecs.
      *
      * <p>This class provides a framework for encoding and decoding Cassandra UDTs to/from Java objects.
-     * Subclasses must implement the conversion logic between UdtValue and the target Java type.</p>
+     * Subclasses must implement the abstract conversion methods between {@link UdtValue} and the
+     * target Java type {@code T}: {@link #serialize(Object)} (Java &rarr; UDT) and
+     * {@link #deserialize(UdtValue)} (UDT &rarr; Java). The driver-facing {@link #encode} and
+     * {@link #decode} methods delegate to these abstract methods via the underlying
+     * {@link TypeCodecs#udtOf udt-of} codec.</p>
      *
      * @param <T> the Java type to encode/decode
      */
@@ -1764,6 +1802,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         private final Class<T> javaClazz;
         private final TypeCodec<UdtValue> udtValueTypeCodec;
 
+        /**
+         * Constructs a {@code UDTCodec} bound to the given UDT definition and target Java class.
+         *
+         * @param cqlType the Cassandra User Defined Type this codec serializes against
+         * @param javaClazz the Java class this codec marshals to/from {@code cqlType}
+         */
         protected UDTCodec(final UserDefinedType cqlType, final Class<T> javaClazz) {
             this.cqlType = cqlType;
             javaType = GenericType.of(javaClazz);
@@ -2053,18 +2097,27 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * A codec for serializing and deserializing Java objects to/from Cassandra TEXT type.
+     * Default codec used by {@link CassandraExecutor#registerTypeCodec(Class)} for arbitrary Java
+     * classes, mapping them to/from the Cassandra {@code TEXT} type by JSON serialization.
      *
-     * <p>This codec converts Java objects to JSON strings for storage in Cassandra TEXT columns.
-     * It supports serialization and deserialization of any Java class that can be represented as JSON.</p>
+     * <p>Values are serialized via {@link N#toJson(Object)} and deserialized via
+     * {@link N#fromJson(String, Class)}; {@code null} payloads are represented by the literal
+     * {@code "null"} ({@code TypeCodec.NULL_STR}). Suitable for storing arbitrary POJOs as JSON in
+     * a {@code TEXT} column.</p>
      *
-     * @param <T> the type of the Java class to map
+     * @param <T> the Java class encoded/decoded by this codec
      */
     static class StringCodec<T> implements TypeCodec<T> {
         private static final TypeCodec<String> stringTypeCodec = TypeCodecs.TEXT;
         private final Class<T> javaClazz;
         private final GenericType<T> javaType;
 
+        /**
+         * Creates a {@code StringCodec} that JSON-marshals values of {@code javaClazz} to and from
+         * Cassandra {@code TEXT}.
+         *
+         * @param javaClazz the Java class this codec encodes/decodes
+         */
         protected StringCodec(final Class<T> javaClazz) {
             this.javaClazz = javaClazz;
             javaType = GenericType.of(javaClazz);
@@ -2190,13 +2243,28 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Configuration settings for Cassandra statements.
+     * Configuration settings applied to every CQL statement built by a {@link CassandraExecutor}.
      *
-     * <p>This class encapsulates various execution settings that can be applied to CQL statements,
-     * such as consistency levels, timeouts, fetch sizes, and query tracing.</p>
+     * <p>Encapsulates the driver settings that are pushed onto each {@link Statement} via
+     * {@code configStatement(...)}:</p>
+     * <ul>
+     *   <li>{@link ConsistencyLevel consistency} &mdash; replication-level read/write consistency
+     *       (for example {@link ConsistencyLevel#QUORUM QUORUM},
+     *       {@link ConsistencyLevel#LOCAL_QUORUM LOCAL_QUORUM}).</li>
+     *   <li>{@code serialConsistency} &mdash; serial consistency for lightweight transactions
+     *       ({@code IF EXISTS} / {@code IF NOT EXISTS}); typically
+     *       {@link ConsistencyLevel#SERIAL SERIAL} or {@link ConsistencyLevel#LOCAL_SERIAL
+     *       LOCAL_SERIAL}.</li>
+     *   <li>{@code fetchSize} &mdash; driver page size (rows per fetched page) when streaming
+     *       results.</li>
+     *   <li>{@code timeout} &mdash; per-statement timeout.</li>
+     *   <li>{@code traceQuery} &mdash; enables server-side query tracing.</li>
+     * </ul>
      *
-     * <p>This class uses Lombok annotations to provide builder pattern, getters/setters,
-     * and both no-argument and all-arguments constructors for convenient instantiation.</p>
+     * <p>Any {@code null} field is left at the driver's default and not applied to the statement.
+     * This class uses Lombok annotations ({@code @Builder}, {@code @Data},
+     * {@code @Accessors(fluent = true)}) to provide a fluent builder, fluent accessors, and the
+     * default and all-arguments constructors below.</p>
      */
     @Builder
     @Data
@@ -2210,21 +2278,23 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         private Boolean traceQuery;
 
         /**
-         * Default constructor.
-         * Creates a new StatementSettings instance with default values.
+         * Creates an empty {@code StatementSettings} with every field {@code null} (i.e. no driver
+         * defaults overridden). Fields can be populated via the fluent setters.
          */
         public StatementSettings() {
         }
 
         /**
-         * All-arguments constructor.
-         * Creates a new StatementSettings instance with all specified values.
+         * Creates a {@code StatementSettings} with all fields populated. {@code null} fields are
+         * treated as "do not override the driver default."
          *
-         * @param consistency the consistency level
-         * @param serialConsistency the serial consistency level
-         * @param fetchSize the fetch size
-         * @param timeout the timeout duration
-         * @param traceQuery whether to enable query tracing
+         * @param consistency replication-level consistency, or {@code null} for the driver default
+         * @param serialConsistency serial consistency for LWT operations, or {@code null} for the
+         *        driver default
+         * @param fetchSize driver page size, or {@code null} for the driver default
+         * @param timeout per-statement timeout, or {@code null} for the driver default
+         * @param traceQuery {@code true} to enable server-side query tracing, {@code false} to
+         *        disable, or {@code null} to leave unset
          */
         public StatementSettings(final ConsistencyLevel consistency, final ConsistencyLevel serialConsistency, final Integer fetchSize, final Duration timeout,
                 final Boolean traceQuery) {

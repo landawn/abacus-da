@@ -15,9 +15,10 @@
 package com.landawn.abacus.da.blink;
 
 /**
- * Placeholder utility class for Apache Flink DataSet operations.
+ * Package-private placeholder utility class for Apache Flink {@code DataSet} (batch processing) operations.
  *
- * <p>This class is reserved for future implementation of Flink DataSet (batch processing) utility methods.</p>
+ * <p>This class is reserved for a future implementation of Flink {@code DataSet} helper methods.
+ * It currently exposes no API and is not visible outside this package.</p>
  *
  * @see DataStreamUtil
  */

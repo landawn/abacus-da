@@ -45,23 +45,39 @@ import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 /**
- * Reactive type-safe MongoDB collection mapper providing object-document mapping with reactive streams support.
+ * Reactive, type-safe MongoDB collection mapper providing object-document mapping over the MongoDB
+ * Reactive Streams driver.
  *
- * <p>This class combines the functionality of reactive {@code MongoCollectionExecutor} with automatic type conversion
- * to provide a strongly-typed, reactive interface for MongoDB operations. It eliminates manual document-to-object
- * conversion while providing full reactive streams capabilities including backpressure, error handling,
- * and seamless integration with reactive frameworks.</p>
+ * <p>This class is the reactive counterpart of
+ * {@link com.landawn.abacus.da.mongodb.MongoCollectionMapper} (in the parent package). It wraps a
+ * reactive {@link MongoCollectionExecutor} and binds a fixed entity type {@code T} so callers never
+ * have to repeat the target class on each call. Every operation returns a Project Reactor
+ * {@link Mono} or {@link Flux} (both implementations of the Reactive Streams {@code Publisher}); the
+ * returned publishers are <b>cold</b> — no database I/O is performed until they are subscribed to,
+ * and each subscription triggers a fresh request honouring downstream demand (back-pressure) per the
+ * Reactive Streams contract.</p>
  *
  * <h2>Key Features</h2>
- * <h3>Core Capabilities:</h3>
  * <ul>
- *   <li><strong>Reactive Type Safety:</strong> All operations return Publishers with properly typed objects</li>
- *   <li><strong>Automatic Conversion:</strong> Seamless conversion between Java entities and BSON with reactive streams</li>
- *   <li><strong>ID Mapping:</strong> Automatic mapping between entity ID fields and MongoDB's "_id" field</li>
- *   <li><strong>Backpressure Support:</strong> Built-in backpressure handling for streaming operations</li>
- *   <li><strong>Error Propagation:</strong> Reactive error handling through Publisher error signals</li>
- *   <li><strong>Framework Integration:</strong> Direct compatibility with Project Reactor, RxJava, and reactive frameworks</li>
+ *   <li><strong>Reactive type safety:</strong> Every method returns a {@code Mono<...>} or
+ *       {@code Flux<T>} typed against the mapper's entity type, so no per-call {@code Class<T>}
+ *       parameter is needed.</li>
+ *   <li><strong>Automatic conversion:</strong> Entities are encoded/decoded by the driver's
+ *       configured codec registry; ID fields annotated with {@code @Id} (or named {@code id}) are
+ *       mapped to MongoDB's {@code _id}.</li>
+ *   <li><strong>Back-pressure support:</strong> Streaming {@code Flux} operations propagate
+ *       Reactive Streams {@code Subscription.request(n)} demand to the driver.</li>
+ *   <li><strong>Error propagation:</strong> Database errors are signalled via
+ *       {@code Subscriber.onError} rather than thrown synchronously.</li>
+ *   <li><strong>Framework integration:</strong> Returned types are interoperable with any
+ *       Reactive Streams consumer (Project Reactor, RxJava 3, SmallRye Mutiny, &hellip;).</li>
  * </ul>
+ *
+ * <h3>Subscription &amp; lifecycle</h3>
+ * <p>The methods of this class merely build a publisher; the MongoDB call only begins on
+ * subscription. Subscribing a returned publisher twice will issue the underlying MongoDB request
+ * twice. Use {@link Mono#cache()}/{@link Flux#cache()} or {@code share()} to multicast a single
+ * execution when needed.</p>
  *
  * <h3>Reactive Entity Requirements:</h3>
  * <p>Entity classes used with this reactive mapper should follow these conventions:</p>
@@ -151,10 +167,15 @@ public final class MongoCollectionMapper<T> {
     private final Class<T> rowType;
 
     /**
-     * Package-private constructor for creating a reactive MongoDB collection mapper.
+     * Package-private constructor; instances are obtained via
+     * {@code ReactiveMongoDB.collectionMapper(...)} rather than direct instantiation.
+     *
+     * <p>Binds this mapper to a specific reactive collection executor and entity type. The
+     * {@code resultClass} becomes the implicit decode target for every {@code Mono}/{@code Flux}
+     * returned by this mapper.</p>
      *
      * @param collectionExecutor the reactive collection executor to use for operations
-     * @param resultClass the Class representing the entity type for mapping operations
+     * @param resultClass the {@link Class} representing the entity type {@code T} for mapping
      */
     MongoCollectionMapper(final MongoCollectionExecutor collectionExecutor, final Class<T> resultClass) {
         this.collectionExecutor = collectionExecutor;
@@ -568,11 +589,12 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Lists all entities matching the specified filter reactively.
+     * Lists all entities matching the specified filter as a reactive {@code Flux<T>}.
      *
-     * <p>This method provides a reactive way to retrieve all documents that match the given
-     * filter criteria and automatically convert them to the mapped entity type. The results
-     * are streamed asynchronously with backpressure support.</p>
+     * <p>On subscription, the matching documents are fetched (page by page per the driver's cursor
+     * batch size) and decoded one at a time to the mapper's entity type. The returned {@code Flux}
+     * is cold and respects downstream demand: the driver fetches further documents only as the
+     * downstream subscriber requests them.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -589,7 +611,8 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param filter the query filter to match documents
-     * @return a Flux that emits all matching entities
+     * @return a cold {@code Flux} that, on subscription, emits each matching entity decoded as
+     *         {@code T} (one per emission, honouring downstream demand), then completes
      * @throws IllegalArgumentException if filter is null
      * @see Bson
      * @see com.mongodb.client.model.Filters
@@ -599,11 +622,11 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Lists entities matching the specified filter with pagination support.
+     * Lists entities matching the specified filter with offset-based pagination.
      *
-     * <p>Retrieves a subset of documents that match the filter criteria, with support for offset-based
-     * pagination. The results are automatically converted to the mapped entity type and streamed reactively.</p>
-     * 
+     * <p>Applies {@code skip(offset)} and {@code limit(count)} on the server-side query and decodes
+     * each returned document to the mapper's entity type.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson filter = Filters.gt("age", 18);
@@ -612,9 +635,10 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param filter the query filter to match documents against
-     * @param offset the number of documents to skip (must be >= 0)
-     * @param count the maximum number of documents to return (must be > 0)
-     * @return a Flux that emits the paginated matching entities
+     * @param offset the number of documents to skip (must be &gt;= 0)
+     * @param count the maximum number of documents to return (must be &gt; 0)
+     * @return a cold {@code Flux} that, on subscription, emits up to {@code count} matching entities
+     *         decoded as {@code T} (honouring downstream demand), then completes
      * @throws IllegalArgumentException if filter is null, offset is negative, or count is non-positive
      */
     public Flux<T> list(final Bson filter, final int offset, final int count) {
@@ -1388,8 +1412,9 @@ public final class MongoCollectionMapper<T> {
     /**
      * Inserts a single entity into the collection reactively.
      *
-     * <p>This method provides a reactive way to insert a single entity of the mapped type into the collection.
-     * The entity is automatically converted to a MongoDB document using the configured codec registry.</p>
+     * <p>This method provides a reactive way to insert a single entity of the mapped type into the
+     * collection. The entity is automatically converted to a MongoDB document using the configured
+     * codec registry.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1399,10 +1424,13 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param obj the entity to insert
-     * @return a Mono that emits the insert result when the operation completes
+     * @return a cold {@code Mono} that, on subscription, emits exactly one
+     *         {@link InsertOneResult} when the insert completes, then completes
      * @throws IllegalArgumentException if obj is null
-     * @throws com.mongodb.MongoWriteException if the insert operation fails
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws com.mongodb.MongoWriteException if the insert operation fails (signalled via
+     *         {@code Mono})
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via
+     *         {@code Mono})
      * @see #insertOne(Object, InsertOneOptions)
      * @see #insertMany(Collection)
      */
@@ -1426,10 +1454,13 @@ public final class MongoCollectionMapper<T> {
      *
      * @param obj the entity to insert
      * @param options the insert options to apply (null uses default settings)
-     * @return a Mono that emits the insert result when the operation completes
+     * @return a cold {@code Mono} that, on subscription, emits exactly one
+     *         {@link InsertOneResult} when the insert completes, then completes
      * @throws IllegalArgumentException if obj is null
-     * @throws com.mongodb.MongoWriteException if the insert operation fails
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws com.mongodb.MongoWriteException if the insert operation fails (signalled via
+     *         {@code Mono})
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via
+     *         {@code Mono})
      * @see #insertOne(Object)
      * @see InsertOneOptions
      */
@@ -1441,7 +1472,8 @@ public final class MongoCollectionMapper<T> {
      * Inserts multiple entities into the collection reactively.
      *
      * <p>This method provides a reactive way to insert a collection of entities of the mapped type.
-     * All entities are automatically converted to MongoDB documents using the configured codec registry.</p>
+     * All entities are automatically converted to MongoDB documents using the configured codec
+     * registry.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1454,8 +1486,11 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param objList the collection of entities to insert
-     * @return a Mono that emits the insert result when the operation completes
+     * @return a cold {@code Mono} that, on subscription, emits exactly one
+     *         {@link InsertManyResult} when the operation completes, then completes
      * @throws IllegalArgumentException if objList is null or empty
+     * @throws com.mongodb.MongoBulkWriteException if any document fails to insert (signalled via
+     *         {@code Mono})
      */
     public Mono<InsertManyResult> insertMany(final Collection<? extends T> objList) {
         return collectionExecutor.insertMany(objList);
@@ -1944,10 +1979,13 @@ public final class MongoCollectionMapper<T> {
      *
      * @param filter the query filter to match documents for deletion
      * @param options additional options to configure the delete operation
-     * @return a Mono emitting DeleteResult with deletion statistics
+     * @return a cold {@code Mono} that, on subscription, emits exactly one {@link DeleteResult}
+     *         with deletion statistics, then completes
      * @throws IllegalArgumentException if filter is null
-     * @throws com.mongodb.MongoWriteException if the delete operation fails
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws com.mongodb.MongoWriteException if the delete operation fails (signalled via
+     *         {@code Mono})
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via
+     *         {@code Mono})
      */
     public Mono<DeleteResult> deleteMany(final Bson filter, final DeleteOptions options) {
         return collectionExecutor.deleteMany(filter, options);
@@ -2328,12 +2366,12 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Executes an aggregation pipeline on the collection.
+     * Executes an aggregation pipeline on the collection, decoding each output document as the
+     * mapper's row type {@code T}.
      *
-     * <p>Processes documents through a series of pipeline stages to perform complex
-     * data transformations, computations, and analysis. Aggregation pipelines can
-     * filter, group, sort, project, and perform various other operations on data.</p>
-     * 
+     * <p>Processes documents through the supplied pipeline stages to perform filtering, grouping,
+     * sorting, projection, and other transformations.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<Bson> pipeline = Arrays.asList(
@@ -2343,9 +2381,13 @@ public final class MongoCollectionMapper<T> {
      *     .subscribe(result -> System.out.println("Aggregation result: " + result));
      * }</pre>
      *
-     * @param pipeline list of aggregation stages to execute in order
-     * @return a Flux emitting documents resulting from the aggregation
-     * @throws IllegalArgumentException if pipeline is null or empty
+     * @param pipeline list of aggregation stages to execute in order; the pipeline itself may be
+     *        empty (which returns every document)
+     * @return a cold {@code Flux} that, on subscription, emits each output document decoded as
+     *         {@code T} (one per emission, honouring downstream demand), then completes; completes
+     *         empty if the pipeline produces no documents
+     * @throws IllegalArgumentException if pipeline is null
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
      */
     public Flux<T> aggregate(final List<? extends Bson> pipeline) {
         return collectionExecutor.aggregate(pipeline, rowType);
@@ -2354,10 +2396,10 @@ public final class MongoCollectionMapper<T> {
     /**
      * Groups documents by a single field (Beta feature).
      *
-     * <p>Performs a simple grouping operation on documents based on the values of
-     * a single field. This is a convenience method for basic grouping without
-     * requiring a full aggregation pipeline.</p>
-     * 
+     * <p>Issues an aggregation pipeline with a single {@code $group} stage keyed on
+     * {@code fieldName} and decodes each resulting group document to the mapper's row type
+     * {@code T}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * userMapper.groupBy("department")
@@ -2366,7 +2408,8 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param fieldName the field name to group documents by
-     * @return a Flux emitting grouped results
+     * @return a cold {@code Flux} that, on subscription, emits each group result decoded as
+     *         {@code T} (one per emission, honouring downstream demand), then completes
      * @throws IllegalArgumentException if fieldName is null or empty
      */
     @Beta
@@ -2377,10 +2420,10 @@ public final class MongoCollectionMapper<T> {
     /**
      * Groups documents by multiple fields (Beta feature).
      *
-     * <p>Performs grouping based on the combination of values from multiple fields.
-     * This creates groups where each unique combination of field values forms a
-     * separate group.</p>
-     * 
+     * <p>Issues an aggregation pipeline whose {@code $group} key is the composition of the supplied
+     * field names; each unique combination forms a distinct output document, decoded to the
+     * mapper's row type {@code T}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<String> fields = Arrays.asList("country", "department");
@@ -2389,8 +2432,9 @@ public final class MongoCollectionMapper<T> {
      *     .subscribe(groups -> System.out.println("Multi-field groups: " + groups));
      * }</pre>
      *
-     * @param fieldNames collection of field names to group by
-     * @return a Flux emitting grouped results
+     * @param fieldNames collection of field names to compose the group key
+     * @return a cold {@code Flux} that, on subscription, emits each group result decoded as
+     *         {@code T} (one per emission, honouring downstream demand), then completes
      * @throws IllegalArgumentException if fieldNames is null or empty
      */
     @Beta
@@ -2401,10 +2445,10 @@ public final class MongoCollectionMapper<T> {
     /**
      * Groups documents by a field and counts frequency (Beta feature).
      *
-     * <p>Performs grouping on a single field and includes a count of documents
-     * in each group. This is useful for generating frequency distributions or
-     * summary statistics.</p>
-     * 
+     * <p>Equivalent to {@link #groupBy(String)} with a {@code $sum: 1} accumulator: each emitted
+     * document represents one group and carries the count of documents that fell into it. Useful
+     * for frequency distributions and summary statistics.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * userMapper.groupByAndCount("status")
@@ -2413,7 +2457,8 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param fieldName the field name to group and count by
-     * @return a Flux emitting groups with document counts
+     * @return a cold {@code Flux} that, on subscription, emits each group-with-count result decoded
+     *         as {@code T} (one per emission, honouring downstream demand), then completes
      * @throws IllegalArgumentException if fieldName is null or empty
      */
     @Beta
@@ -2424,9 +2469,10 @@ public final class MongoCollectionMapper<T> {
     /**
      * Groups documents by multiple fields with counts (Beta feature).
      *
-     * <p>Performs multi-field grouping and counts the number of documents in each
-     * group. This provides frequency analysis across multiple dimensions of data.</p>
-     * 
+     * <p>Equivalent to {@link #groupBy(Collection)} with a {@code $sum: 1} accumulator: each
+     * emitted document represents one unique combination of {@code fieldNames} and carries the
+     * count of documents that fell into it.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<String> fields = Arrays.asList("country", "status");
@@ -2435,8 +2481,9 @@ public final class MongoCollectionMapper<T> {
      *     .subscribe(counts -> System.out.println("Distribution: " + counts));
      * }</pre>
      *
-     * @param fieldNames collection of field names to group and count by
-     * @return a Flux emitting groups with document counts
+     * @param fieldNames collection of field names to compose the group key
+     * @return a cold {@code Flux} that, on subscription, emits each group-with-count result decoded
+     *         as {@code T} (one per emission, honouring downstream demand), then completes
      * @throws IllegalArgumentException if fieldNames is null or empty
      */
     @Beta

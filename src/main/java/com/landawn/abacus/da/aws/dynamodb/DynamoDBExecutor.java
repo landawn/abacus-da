@@ -145,7 +145,13 @@ import com.landawn.abacus.util.stream.Stream;
  * required arguments are {@code null}. Static helper methods that read {@code entity.getClass()} will throw
  * {@link NullPointerException} when {@code entity} is {@code null}.</p>
  *
- * @see <a href="http://docs.aws.amazon.com/AWSJavaSDK/latest/javadoc/">com.amazonaws.services.dynamodbv2.AmazonDynamoDB</a>
+ * <p><b>AWS SDK v1 vs v2:</b> This class wraps the legacy AWS SDK v1 client
+ * ({@link com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient}) and the v1
+ * {@link com.amazonaws.services.dynamodbv2.model.AttributeValue} model. The v2 variant lives in the
+ * {@code com.landawn.abacus.da.aws.dynamodb.v2} sub-package and wraps {@code software.amazon.awssdk.services.dynamodb}
+ * types; the two are not interchangeable.</p>
+ *
+ * @see com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient
  * @see AsyncDynamoDBExecutor
  * @see <a href="https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/">DynamoDB Developer Guide</a>
  */
@@ -462,9 +468,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param namingPolicy the naming policy for converting property names to attribute names; if {@code null},
      *                     {@link NamingPolicy#CAMEL_CASE} is used.
      * @return a new Mapper instance configured with the specified parameters, never null
-     * @throws IllegalArgumentException if {@code targetEntityClass} or {@code dynamoDBExecutor} is {@code null},
-     *                                  if {@code tableName} is null/empty, if {@code targetEntityClass} is not a bean
-     *                                  class, or if it does not declare exactly one ID property
+     * @throws IllegalArgumentException if {@code targetEntityClass} is {@code null}, if {@code tableName} is
+     *                                  null or empty, if {@code targetEntityClass} is not a bean class, or if it
+     *                                  does not declare exactly one ID property
      */
     public <T> Mapper<T> mapper(final Class<T> targetEntityClass, final String tableName, final NamingPolicy namingPolicy) {
         return new Mapper<>(targetEntityClass, this, tableName, namingPolicy);
@@ -497,32 +503,39 @@ public final class DynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * Converts a Java object to a DynamoDB AttributeValue with automatic type detection.
-     * 
-     * <p>This method performs intelligent type mapping to convert Java objects into appropriate DynamoDB
-     * AttributeValue instances based on the object's runtime type:</p>
-     * 
+     * Converts a Java object to a DynamoDB v1 {@link AttributeValue} with automatic scalar-type
+     * detection.
+     *
+     * <p>The resulting AttributeValue has exactly one slot populated, chosen from the object's
+     * runtime type:</p>
+     *
      * <ul>
-     * <li><b>null</b> → AttributeValue with NULL=true</li>
-     * <li><b>Number types</b> (Integer, Long, Double, BigDecimal, etc.) → N (Number) attribute</li>
-     * <li><b>Boolean</b> → BOOL (Boolean) attribute</li>
-     * <li><b>ByteBuffer</b> → B (Binary) attribute</li>
-     * <li><b>All other types</b> → S (String) attribute using string conversion</li>
+     * <li><b>{@code null}</b> &rarr; {@code NULL = true}</li>
+     * <li><b>Number types</b> (Integer, Long, Double, BigDecimal, etc.) &rarr; {@code N} (DynamoDB's
+     *     number type — stored as the value's stringified form)</li>
+     * <li><b>Boolean</b> &rarr; {@code BOOL}</li>
+     * <li><b>{@link ByteBuffer}</b> &rarr; {@code B} (binary; the buffer is stored as-is, not copied)</li>
+     * <li><b>Everything else</b> &rarr; {@code S} (string), produced by the registered
+     *     {@link Type} for the object's class (so e.g. {@code java.util.Date},
+     *     {@code java.time.LocalDateTime}, and {@code UUID} are written as their canonical strings)</li>
      * </ul>
-     * 
-     * <p><b>Important:</b> This method does NOT handle complex types like Lists, Maps, or Sets.
-     * For complex AttributeValue creation, use the DynamoDB SDK's AttributeValue.builder() methods.</p>
-     * 
+     *
+     * <p><b>Scope:</b> this helper produces only scalar AttributeValues. It does not build {@code SS},
+     * {@code NS}, {@code BS}, {@code L}, or {@code M} (set / list / map) AttributeValues — instead
+     * collections and maps are serialised to their string form via {@code S}. If you need typed
+     * list/map AttributeValues, build them manually using {@code new AttributeValue().withL(...)} or
+     * {@code .withM(...)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AttributeValue stringAttr = toAttributeValue("Hello World");   // S: "Hello World"
      * AttributeValue numberAttr = toAttributeValue(42);              // N: "42"
-     * AttributeValue boolAttr = toAttributeValue(true);              // BOOL: true
-     * AttributeValue nullAttr = toAttributeValue(null);              // NULL: true
+     * AttributeValue boolAttr   = toAttributeValue(true);            // BOOL: true
+     * AttributeValue nullAttr   = toAttributeValue(null);            // NULL: true
      * }</pre>
-     * 
-     * @param value the Java object to convert, can be null
-     * @return an AttributeValue representing the input value with appropriate type mapping, never null
+     *
+     * @param value the Java object to convert; may be {@code null}
+     * @return a new {@link AttributeValue} representing {@code value}; never {@code null}
      */
     public static AttributeValue toAttributeValue(final Object value) {
         final AttributeValue attrVal = new AttributeValue();
@@ -1251,30 +1264,36 @@ public final class DynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * Converts a DynamoDB item (map of AttributeValues) to a specified entity class.
-     * This method performs automatic mapping from DynamoDB's AttributeValue format to Java objects,
-     * supporting nested properties and various data types.
-     * 
-     * <p>The conversion handles:</p>
+     * Converts a DynamoDB item (map of AttributeValues) into an instance of the specified entity class.
+     *
+     * <p>For each attribute in {@code item} the converter:</p>
      * <ul>
-     * <li>Simple types (String, Number, Boolean, Binary)</li>
-     * <li>Set types (String Set, Number Set, Binary Set)</li>
-     * <li>Complex types (List, Map)</li>
-     * <li>Nested properties using dot notation</li>
-     * <li>Column name mapping via annotations</li>
+     *   <li>looks up the matching property on {@code targetClass} (using the property name, then any
+     *       {@code @Column}/{@code @Table} column-to-property map), and writes the converted value if found;</li>
+     *   <li>if the attribute name contains a {@code '.'} (dot) and no top-level property matches, treats
+     *       it as a nested-property path and assigns into the nested bean;</li>
+     *   <li>silently ignores attributes that match neither a property nor a dotted path.</li>
      * </ul>
-     * 
+     *
+     * <p>AttributeValue payloads are converted by {@link #toValue(AttributeValue, Class)}, which handles
+     * scalars ({@code S}, {@code N}, {@code BOOL}, {@code B}, {@code NULL}), the typed sets
+     * ({@code SS}, {@code NS}, {@code BS}), and nested {@code L}/{@code M} structures. Note that
+     * DynamoDB {@code N} values arrive as Strings and are coerced to the property's declared type via
+     * {@link N#convert(Object, Class)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValue> item = dynamoDBClient.getItem(tableName, key).getItem();
      * User user = DynamoDBExecutor.toEntity(item, User.class);
      * }</pre>
-     * 
+     *
      * @param <T> the target entity type
-     * @param item the DynamoDB item as a map of attribute names to AttributeValues
-     * @param targetClass the class to convert the item to, must be a bean class with getter/setter methods
-     * @return the converted entity instance, or null if the item is null
-     * @throws IllegalArgumentException if targetClass is not a valid bean class
+     * @param item the DynamoDB item as a map of attribute names to AttributeValues; may be {@code null}
+     * @param targetClass the class to convert the item to; must be a bean class with getter/setter methods
+     *                    and must not be {@code null}
+     * @return the converted entity instance, or {@code null} if {@code item} is {@code null}
+     * @throws IllegalArgumentException if {@code targetClass} is not a valid bean class
+     * @throws NullPointerException if {@code targetClass} is {@code null} and {@code item} is non-null
      */
     public static <T> T toEntity(final Map<String, AttributeValue> item, final Class<T> targetClass) {
         if (item == null) {
@@ -1713,6 +1732,20 @@ public final class DynamoDBExecutor implements AutoCloseable {
         return extractData(scanResult.getItems(), offset, count);
     }
 
+    /**
+     * Builds a {@link Dataset} over a {@code [offset, offset + count)} slice of {@code items}.
+     *
+     * <p>Columns are the union of all attribute names that appear in the selected slice, in
+     * first-seen order. Missing attributes for a given row are converted via
+     * {@link #toValue(AttributeValue)} from {@code null}, yielding a {@code null} cell.</p>
+     *
+     * @param items the source rows (may be {@code null} or empty)
+     * @param offset zero-based index of the first row to include; must be {@code >= 0}
+     * @param count maximum number of rows to include; must be {@code >= 0}
+     * @return a Dataset over the selected slice, or an empty Dataset when {@code items} is empty,
+     *         {@code count == 0}, or {@code offset} is past the end
+     * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
+     */
     static Dataset extractData(final List<Map<String, AttributeValue>> items, final int offset, final int count) {
         N.checkArgument(offset >= 0 && count >= 0, "'offset' and 'count' can't be negative: %s, %s", offset, count);
 
@@ -1806,21 +1839,25 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * Strong consistent reads ensure you get the most up-to-date data but consume more
      * read capacity and have higher latency than eventually consistent reads.</p>
      * 
-     * <p><b>Read Consistency Options:</b></p>
+     * <p><b>Read Consistency Options ({@code Boolean} — three-valued):</b></p>
      * <ul>
-     * <li><b>Eventually Consistent (false/null):</b> Default, better performance, lower cost</li>
-     * <li><b>Strongly Consistent (true):</b> Most recent data, higher cost, higher latency</li>
+     * <li>{@code null} &mdash; <em>not set</em> on the request; DynamoDB applies its default
+     *     (eventually consistent reads)</li>
+     * <li>{@link Boolean#FALSE} &mdash; explicit eventually-consistent read</li>
+     * <li>{@link Boolean#TRUE} &mdash; strongly-consistent read; sees every prior committed write
+     *     but doubles the consumed read-capacity cost and has higher latency</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValue> key = asKey("userId", "user123");
      * Map<String, Object> item = executor.getItem("Users", key, true);   // Strong consistency
      * }</pre>
-     * 
+     *
      * @param tableName the name of the DynamoDB table. Must not be null or empty.
      * @param key the primary key of the item to retrieve. Must not be null or empty.
-     * @param consistentRead true for strongly consistent reads, false/null for eventually consistent reads
+     * @param consistentRead {@link Boolean#TRUE} for strongly-consistent reads;
+     *                       {@link Boolean#FALSE} or {@code null} for eventually-consistent reads
      * @return a Map containing the item attributes, or null if item doesn't exist
      * @throws IllegalArgumentException if tableName is null/empty or key is null/empty
      * @see #getItem(String, Map)
@@ -1948,26 +1985,32 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * <li>Maximum 100 items per batch request</li>
      * <li>Maximum 16 MB total response size</li>
      * <li>Items can span multiple tables</li>
-     * <li>Unprocessed items may be returned if limits are exceeded</li>
      * </ul>
-     * 
+     *
+     * <p><b>Unprocessed items:</b> If DynamoDB cannot process every key (for example due to size
+     * limits or throughput throttling) the remaining keys are reported by
+     * {@code BatchGetItemResult.getUnprocessedKeys()}. <em>This method does not auto-retry them</em>;
+     * because it returns only the responses map, any unprocessed keys are silently dropped.
+     * Use {@link #batchGetItem(BatchGetItemRequest)} or call the underlying client directly when
+     * you need to detect and re-issue unprocessed keys with exponential back-off.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, KeysAndAttributes> requestItems = new HashMap<>();
-     * 
+     *
      * // Request multiple users
      * List<Map<String, AttributeValue>> userKeys = Arrays.asList(
      *     asKey("userId", "user1"),
      *     asKey("userId", "user2")
      * );
      * requestItems.put("Users", KeysAndAttributes.builder().keys(userKeys).build());
-     * 
+     *
      * Map<String, List<Map<String, Object>>> results = executor.batchGetItem(requestItems);
      * List<Map<String, Object>> users = results.get("Users");
      * }</pre>
-     * 
+     *
      * @param requestItems a map of table names to KeysAndAttributes specifying which items to retrieve. Must not be null.
-     * @return a map of table names to lists of retrieved items, never null
+     * @return a map of table names to lists of retrieved items, never null. Unprocessed keys are not included.
      * @throws IllegalArgumentException if requestItems is null or empty
      * @see #batchGetItem(Map, String)
      * @see #batchGetItem(Map, Class)
@@ -3214,10 +3257,17 @@ public final class DynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * Closes the DynamoDB client and releases all resources.
+     * Closes the underlying DynamoDB client and releases its network resources.
      *
-     * <p>This method should be called when the DynamoDBExecutor is no longer needed to
-     * ensure that all resources are properly released.</p>
+     * <p>This delegates to {@link AmazonDynamoDBClient#shutdown()}. Call this method when this
+     * executor — and the {@code AmazonDynamoDBClient} passed into its constructor — is no longer
+     * needed so that HTTP connections, idle thread pools, and socket resources held by the SDK can
+     * be released. After calling {@code close()}, the underlying client and any
+     * {@link AsyncDynamoDBExecutor} returned by {@link #async()} can no longer be used to make
+     * requests.</p>
+     *
+     * <p><b>Note:</b> The {@link AsyncExecutor} passed to the constructor is not shut down here
+     * because it may be shared with other components.</p>
      */
     @Override
     public void close() {
@@ -3225,10 +3275,29 @@ public final class DynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * A generic mapper class for DynamoDB operations that provides a simplified interface
-     * for common database operations on a specific entity type and table.
-     * 
-     * @param <T> the type of entity this mapper handles
+     * Type-safe wrapper that binds a specific entity class, table name, and
+     * {@link NamingPolicy} together to provide a simplified, strongly typed API over the
+     * surrounding {@link DynamoDBExecutor}.
+     *
+     * <p>Each {@code Mapper} captures:</p>
+     * <ul>
+     *   <li>the target entity class (which must be a bean and declare exactly one ID property);</li>
+     *   <li>the DynamoDB table name to operate on;</li>
+     *   <li>the {@link NamingPolicy} used both to translate entity property names to attribute
+     *       names when writing items and to compute the key attribute name(s) used by
+     *       {@code getItem}/{@code updateItem}/{@code deleteItem}/{@code batchGetItem}/{@code batchDeleteItem}.</li>
+     * </ul>
+     *
+     * <p>All overloads that accept a fully built request object (e.g. {@link GetItemRequest},
+     * {@link PutItemRequest}, {@link QueryRequest}, {@link ScanRequest},
+     * {@link BatchGetItemRequest}, {@link BatchWriteItemRequest}) will fill the table name from
+     * this mapper if it is empty, and reject the request if it explicitly names a different table.</p>
+     *
+     * <p>Instances are thread-safe and intended to be cached and reused; obtain them via
+     * {@link DynamoDBExecutor#mapper(Class)} or
+     * {@link DynamoDBExecutor#mapper(Class, String, NamingPolicy)}.</p>
+     *
+     * @param <T> the entity type bound to this mapper
      */
     public static class Mapper<T> {
         private final DynamoDBExecutor dynamoDBExecutor;
@@ -3239,6 +3308,27 @@ public final class DynamoDBExecutor implements AutoCloseable {
         private final List<PropInfo> keyPropInfos;
         private final NamingPolicy namingPolicy;
 
+        /**
+         * Package-private constructor invoked by
+         * {@link DynamoDBExecutor#mapper(Class, String, NamingPolicy)}; not part of the public API.
+         *
+         * <p>Resolves the entity's single ID property via
+         * {@link QueryUtil#getIdPropNames(Class)} (failing fast if zero or more than one is declared)
+         * and caches the corresponding {@link PropInfo}s and DynamoDB key attribute names. Key
+         * attribute names are computed by passing each ID {@code PropInfo} through {@code namingPolicy}
+         * so they match what {@link DynamoDBExecutor#toItem(Object, NamingPolicy)} writes when the
+         * same property is serialised.</p>
+         *
+         * @param targetEntityClass the entity class; must be a bean with exactly one ID property
+         * @param dynamoDBExecutor the enclosing executor used for all I/O; must not be {@code null}
+         * @param tableName the DynamoDB table name; must not be {@code null} or empty
+         * @param namingPolicy the naming policy applied to property names; {@code null} defaults to
+         *                     {@link NamingPolicy#CAMEL_CASE}
+         * @throws IllegalArgumentException if {@code targetEntityClass} or {@code dynamoDBExecutor}
+         *                                  is {@code null}, {@code tableName} is null/empty,
+         *                                  {@code targetEntityClass} is not a bean class, or it does
+         *                                  not declare exactly one ID property
+         */
         Mapper(final Class<T> targetEntityClass, final DynamoDBExecutor dynamoDBExecutor, final String tableName, final NamingPolicy namingPolicy) {
             N.checkArgNotNull(targetEntityClass, "targetEntityClass");
             N.checkArgNotNull(dynamoDBExecutor, "dynamoDBExecutor");
@@ -3708,8 +3798,14 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * <li>Maximum 25 items per batch request</li>
          * <li>Maximum 16 MB total request size</li>
          * <li>Cannot use conditional expressions</li>
-         * <li>Unprocessed items may be returned if limits are exceeded</li>
          * </ul>
+         *
+         * <p><b>Unprocessed items:</b> When DynamoDB cannot perform every requested delete (typically
+         * due to provisioned throughput throttling or item-size limits) the remaining
+         * {@link WriteRequest}s are returned via {@code BatchWriteItemResult.getUnprocessedItems()}.
+         * This method does <em>not</em> retry them automatically — the caller is responsible for
+         * inspecting the result and re-issuing the unprocessed requests (usually with exponential
+         * back-off).</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3731,7 +3827,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
          *
          * @param entities collection of entities containing the key values for deletion, must not be {@code null}
          * @return the BatchWriteItemResult containing operation metadata and any unprocessed items
-         * @throws IllegalArgumentException if entities is {@code null} or exceeds batch limits (25 items)
+         * @throws IllegalArgumentException if entities is {@code null}
+         * @throws com.amazonaws.AmazonServiceException if the request exceeds the 25-item batch limit
          */
         public BatchWriteItemResult batchDeleteItem(final Collection<? extends T> entities) {
             return dynamoDBExecutor.batchWriteItem(createBatchDeleteRequest(entities));
@@ -4154,13 +4251,23 @@ public final class DynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * Utility class providing factory methods for creating DynamoDB filter conditions.
-     * These conditions are used in scan and query operations to filter results.
-     * All methods return a Map that can be directly used with DynamoDB scan operations.
+     * Static factory helpers that build single-attribute {@link Condition} maps consumable by the
+     * legacy v1 {@code ScanRequest.withScanFilter(...)} and {@code QueryRequest.withQueryFilter(...)} APIs.
+     *
+     * <p>Each method returns a {@code Map<String, Condition>} containing exactly one entry — the
+     * attribute name and a {@code Condition} carrying the chosen {@link ComparisonOperator} and the
+     * supplied operand(s) converted via {@link #toAttributeValue(Object)}. The map is intended to be
+     * passed directly to the scan/query overloads on {@link DynamoDBExecutor}.</p>
+     *
+     * <p>To combine multiple attribute conditions into one filter map, use {@link #builder()}.</p>
+     *
+     * <p>Note that v1 query/scan filters are server-evaluated after the read, so they reduce
+     * returned items but not consumed read capacity; for production workloads prefer FilterExpression
+     * with key conditions and a Global/Local secondary index where possible.</p>
      */
     public static final class Filters {
         private Filters() {
-            // singleton for Utility class
+            // utility class — not instantiable
         }
 
         /**
@@ -4292,34 +4399,36 @@ public final class DynamoDBExecutor implements AutoCloseable {
         }
 
         /**
-         * Creates a null condition for the specified attribute.
-         * Matches items where the attribute does not exist or has a null value.
+         * Creates a {@link ComparisonOperator#NULL} condition for the specified attribute.
+         * Matches items where the attribute does <em>not exist</em> on the item.
+         * (DynamoDB does not store an explicit Java-style {@code null} — an attribute is either
+         * present with one of its typed slots populated, or absent.)
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, Condition> filter = Filters.isNull("deletedAt");
-         * // Matches all items where deletedAt attribute is null or doesn't exist
+         * // Matches all items that do not have a "deletedAt" attribute
          * }</pre>
          *
          * @param attrName the name of the attribute to check
-         * @return a Map containing the null condition for use in DynamoDB operations
+         * @return a Map containing the NULL condition for use in DynamoDB scan/query filters
          */
         public static Map<String, Condition> isNull(final String attrName) {
             return N.asMap(attrName, new Condition().withComparisonOperator(ComparisonOperator.NULL));
         }
 
         /**
-         * Creates a not-null condition for the specified attribute.
-         * Matches items where the attribute exists and has a non-null value.
+         * Creates a {@link ComparisonOperator#NOT_NULL} condition for the specified attribute.
+         * Matches items where the attribute <em>exists</em> on the item.
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, Condition> filter = Filters.notNull("email");
-         * // Matches all items where email attribute exists and is not null
+         * // Matches all items that have an "email" attribute
          * }</pre>
          *
          * @param attrName the name of the attribute to check
-         * @return a Map containing the not-null condition for use in DynamoDB operations
+         * @return a Map containing the NOT_NULL condition for use in DynamoDB scan/query filters
          */
         public static Map<String, Condition> notNull(final String attrName) {
             return N.asMap(attrName, new Condition().withComparisonOperator(ComparisonOperator.NOT_NULL));
@@ -4475,9 +4584,13 @@ public final class DynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * A fluent builder class for constructing complex DynamoDB filter conditions.
-     * Allows chaining multiple condition methods to create a composite filter map
-     * for use in scan and query operations.
+     * Fluent builder that accumulates per-attribute {@link Condition}s into a single
+     * {@code Map<String, Condition>} suitable for v1 {@code ScanRequest.withScanFilter(...)} or
+     * {@code QueryRequest.withQueryFilter(...)}.
+     *
+     * <p>Because the underlying map is keyed by attribute name, adding a second condition for the
+     * same attribute will overwrite the first. Instances are <em>not</em> thread-safe and are
+     * single-use — see {@link #build()} for the drain-on-build contract.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -4612,8 +4725,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
         }
 
         /**
-         * Adds a null condition for the specified attribute.
-         * Matches items where the attribute does not exist or has a null value.
+         * Adds a {@link ComparisonOperator#NULL} condition for the specified attribute.
+         * Matches items where the attribute does not exist on the item.
          *
          * @param attrName the name of the attribute to check
          * @return this builder for method chaining
@@ -4625,8 +4738,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
         }
 
         /**
-         * Adds a not-null condition for the specified attribute.
-         * Matches items where the attribute exists and has a non-null value.
+         * Adds a {@link ComparisonOperator#NOT_NULL} condition for the specified attribute.
+         * Matches items where the attribute exists on the item.
          *
          * @param attrName the name of the attribute to check
          * @return this builder for method chaining
@@ -4718,8 +4831,12 @@ public final class DynamoDBExecutor implements AutoCloseable {
         }
 
         /**
-         * Builds and returns the final condition map.
-         * After calling this method, the builder instance should not be reused.
+         * Returns the accumulated {@code attrName -> Condition} map and detaches it from this builder.
+         *
+         * <p>After this call the builder is drained: its internal map reference is cleared, so any
+         * subsequent {@code eq/ne/gt/...} call on this builder instance will throw
+         * {@link NullPointerException}. Create a fresh {@link Filters#builder()} when you need
+         * another condition set.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -4730,7 +4847,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * // Use filters in scan or query operations
          * }</pre>
          *
-         * @return a Map containing all the conditions added to this builder
+         * @return the live condition map that was accumulated by this builder (never {@code null};
+         *         may be empty if no conditions were added)
          */
         public Map<String, Condition> build() {
             final Map<String, Condition> result = condMap;

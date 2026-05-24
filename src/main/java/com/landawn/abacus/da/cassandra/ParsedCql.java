@@ -132,15 +132,18 @@ import com.landawn.abacus.util.Strings;
  * Map<String, String> attrs = parsedWithAttrs.getAttributes();
  * String timeout = attrs.get("timeout");
  *
- * // NOTE: Caching is based on CQL string only. If you call parse() again with
- * // the same CQL but different attributes, the cached instance is returned
- * // with its original attributes, not the new ones.
+ * // NOTE: The text-only cache is consulted only when the supplied attribute
+ * // map is empty (or null). When a non-empty attributes map is supplied, the
+ * // cache is bypassed and a fresh ParsedCql instance is created, so each
+ * // call sees the attributes it provided.
  * }</pre>
  * 
  * <h3>Thread Safety</h3>
- * <p>This class is thread-safe. The internal caching mechanism uses concurrent data structures
- * and appropriate synchronization to ensure safe access from multiple threads. However, individual
- * ParsedCql instances are immutable after creation.</p>
+ * <p>The internal cache used by {@link #parse(String, Map)} is thread-safe. The parsed fields of
+ * an individual {@code ParsedCql} instance (original CQL, parameterized CQL, named-parameter
+ * mapping, parameter count) are effectively immutable after construction. The attribute map
+ * returned by {@link #getAttributes()} is a live, mutable {@link Map}; callers that share an
+ * instance across threads and mutate the attribute map must provide their own synchronization.</p>
  * 
  * <h3>Memory Management</h3>
  * <p>The class uses object pooling to minimize memory allocation and garbage collection overhead.
@@ -416,20 +419,23 @@ public final class ParsedCql {
      * prepared statement.</p>
      * 
      * <p>The map will be empty for CQL statements that use only positional parameters ({@code ?}).</p>
-     * 
+     *
+     * <p>The returned map is the instance's internal map; it is populated during construction and
+     * is not intended to be modified by callers. Treat it as read-only.</p>
+     *
      * <p>Example mappings:</p>
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * CQL: "SELECT * FROM users WHERE name = :userName AND status = :status"
      * Returns: {0: "userName", 1: "status"}
-     * 
+     *
      * CQL: "INSERT INTO users VALUES (#{id}, #{name}, #{email})"
      * Returns: {0: "id", 1: "name", 2: "email"}
-     * 
+     *
      * CQL: "SELECT * FROM users WHERE id = ? AND status = ?"
      * Returns: {} (empty map)
      * }</pre>
-     * 
+     *
      * @return a map from parameter index (0-based) to parameter name, empty if no named parameters
      */
     public Map<Integer, String> namedParameters() {

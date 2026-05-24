@@ -29,7 +29,16 @@ import com.landawn.abacus.annotation.SuppressFBWarnings;
 
 /**
  * Wrapper around HBase's {@link RowMutations} for grouping multiple {@link Put} and {@link Delete}
- * operations against a single row so the server applies them atomically.
+ * operations targeting the same single row.
+ *
+ * <h2>Atomicity Guarantees</h2>
+ * <p>When the wrapped {@link RowMutations} is submitted via an HBase API such as
+ * {@code Table.mutateRow(RowMutations)}, the server applies every contained {@link Put} and
+ * {@link Delete} <strong>atomically as a single row-level operation</strong>: either all the
+ * mutations take effect together, or none of them do, and no other client can observe a partial
+ * state. The atomicity scope is the row identified by the shared row key, and is enforced by
+ * HBase only because every mutation in this batch shares that row key — HBase rejects any
+ * mutation whose row key differs from the one this {@code AnyRowMutations} was created with.</p>
  *
  * <p>Unlike the other {@code Any*} types in this package, {@code AnyRowMutations} is a thin
  * adapter and does not extend {@link AnyOperation} / {@link AnyMutation}; it implements
@@ -158,7 +167,9 @@ public final class AnyRowMutations implements Row {
     /**
      * Appends a {@link Put} or {@link Delete} mutation to the batch. All mutations in the batch
      * must share the row key this {@code AnyRowMutations} was created with; HBase rejects
-     * mismatches with an {@link IOException}.
+     * mismatches with an {@link IOException}. When this batch is later submitted to the server,
+     * the appended mutation participates in the row-level atomic apply described in the
+     * {@linkplain AnyRowMutations class-level javadoc}.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -191,7 +202,9 @@ public final class AnyRowMutations implements Row {
 
     /**
      * Appends multiple {@link Put} / {@link Delete} mutations to the batch in a single call.
-     * All mutations must share the row key this {@code AnyRowMutations} was created with.
+     * All mutations must share the row key this {@code AnyRowMutations} was created with. When
+     * this batch is later submitted to the server, every appended mutation participates in the
+     * row-level atomic apply described in the {@linkplain AnyRowMutations class-level javadoc}.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

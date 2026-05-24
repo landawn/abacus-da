@@ -17,7 +17,9 @@ package com.landawn.abacus.da.aws;
 /**
  * Placeholder utility class for Amazon S3 (Simple Storage Service) operations.
  *
- * <p>This class is reserved for future implementation of AWS S3 utility methods.</p>
+ * <p>This class is reserved for a future implementation of AWS S3 helper methods.
+ * It currently exposes no public API; the type exists only to anchor the package
+ * namespace and prevent accidental subclassing or instantiation.</p>
  *
  * @see AWSRDSUtil
  */

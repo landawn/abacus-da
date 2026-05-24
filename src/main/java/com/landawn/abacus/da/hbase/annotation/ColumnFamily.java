@@ -32,7 +32,7 @@ import java.lang.annotation.Target;
  * class to set a default column family for all of its fields; apply to a field to override the
  * class-level setting for that single field.</p>
  *
- * <p><strong>Retention:</strong> {@link RetentionPolicy#RUNTIME} — the abacus-da reflection
+ * <p><strong>Retention:</strong> {@link RetentionPolicy#RUNTIME} - the abacus-da reflection
  * machinery reads this annotation at runtime during entity-to-HBase mapping.</p>
  *
  * <h2>Usage Patterns</h2>

@@ -15,9 +15,14 @@
 package com.landawn.abacus.da.search;
 
 /**
- * Placeholder executor for Apache Solr search operations.
+ * Package-private placeholder executor for Apache Solr search operations.
  *
- * <p>This class is reserved for future implementation of Solr utility methods.</p>
+ * <p>This class is reserved for a future implementation that will wrap a Solr client
+ * and expose convenience methods for indexing and querying documents against a Solr
+ * core or collection. It currently declares no members and is not visible outside
+ * this package.</p>
+ *
+ * @see LuceneExecutor
  */
 final class SolrExecutor { //NOSONAR
 

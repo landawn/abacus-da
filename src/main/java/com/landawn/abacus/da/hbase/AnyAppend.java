@@ -28,109 +28,95 @@ import org.apache.hadoop.hbase.io.TimeRange;
 import com.landawn.abacus.annotation.SuppressFBWarnings;
 
 /**
- * A fluent builder wrapper for HBase {@link Append} operations that provides atomic value concatenation
- * capabilities with automatic type conversion and performance optimization. This class simplifies append
- * operations by handling byte array conversions and providing advanced features like time range filtering
- * and result control for efficient counter implementations and log aggregation scenarios.
+ * Fluent builder wrapper for HBase {@link Append} operations. Each {@link #addColumn} call queues
+ * a byte-array concatenation that the region server applies atomically as a single
+ * read-modify-write — the supplied bytes are appended verbatim to the end of the cell's existing
+ * value, with no parsing, addition, or other interpretation.
  *
- * <p>HBase Append operations are atomic server-side operations that concatenate byte arrays to existing
- * cell values, making them ideal for implementing counters, logs, and other append-only data structures.
- * Unlike client-side read-modify-write operations, Append operations guarantee atomicity even under
- * concurrent access.</p>
+ * <p><strong>Append vs. Increment:</strong> {@code Append} performs a bytewise concatenation; it
+ * is <em>not</em> a counter operation. To atomically add to a numeric value use
+ * {@link AnyIncrement} instead. For example, appending {@code Bytes.toBytes(1L)} to a cell that
+ * already contains {@code Bytes.toBytes(1L)} produces a 16-byte value whose first 8 bytes decode to
+ * {@code 1} — it does not produce {@code 2}.</p>
  *
  * <h2>Usage Examples</h2>
  *
  * <h3>Basic Value Appending</h3>
  * <pre>{@code
- * // Append string values to create logs
+ * // Append string fragments to build a log entry
  * AnyAppend logAppend = AnyAppend.of("user123")
  *                                .addColumn("logs", "activity", "login at " + new Date());
  *
- * // Append binary data for counters
- * AnyAppend counterAppend = AnyAppend.of("stats:daily")
- *                                    .addColumn("metrics", "pageviews", 1L)
- *                                    .addColumn("metrics", "sessions", 1L);
- *
- * // Multiple column appends in single operation
+ * // Append multiple columns in a single round-trip
  * AnyAppend multiAppend = AnyAppend.of("user123")
  *                                  .addColumn("timeline", "posts", "New post at " + timestamp)
- *                                  .addColumn("stats", "post_count", 1L);
+ *                                  .addColumn("audit", "trail", "ACTION:POST_CREATED;");
  * }</pre>
  *
  * <h3>Performance-Optimized Appends</h3>
  * <pre>{@code
- * // Disable result return for better performance
+ * // Skip the response payload for higher throughput
  * AnyAppend performanceAppend = AnyAppend.of("high_volume_key")
  *                                        .setReturnResults(false)
  *                                        .addColumn("data", "stream", newData);
  *
- * // Time-range filtering for partitioned data
+ * // Restrict the pre-append read to a time range
  * long startOfDay = System.currentTimeMillis() / 86400000 * 86400000;
  * long endOfDay = startOfDay + 86400000;
- * AnyAppend timeRangeAppend = AnyAppend.of("daily_counter")
+ * AnyAppend timeRangeAppend = AnyAppend.of("daily_log")
  *                                      .setTimeRange(startOfDay, endOfDay)
- *                                      .addColumn("metrics", "events", 1L);
+ *                                      .addColumn("logs", "events", "evt;");
  * }</pre>
  *
  * <h3>Advanced Construction Patterns</h3>
  * <pre>{@code
- * // Create from byte array for performance
+ * // Construct from a pre-computed byte-array row key
  * byte[] rowKeyBytes = Bytes.toBytes("high_perf_row");
  * AnyAppend byteAppend = AnyAppend.of(rowKeyBytes)
  *                                 .addColumn("data", "values", newBytes);
  *
- * // Row key slicing for composite keys
+ * // Use only a slice of a composite key
  * AnyAppend sliceAppend = AnyAppend.of(compositeKey, 0, prefixLength)
- *                                  .addColumn("counters", "hits", 1L);
+ *                                  .addColumn("logs", "hits", "h;");
  *
- * // Copy and modify existing append
+ * // Copy an existing Append and extend it
  * AnyAppend copiedAppend = AnyAppend.of(existingAppend.val())
  *                                   .addColumn("additional", "data", moreData);
  * }</pre>
  *
- * <h3>Key Features:</h3>
+ * <h3>Key features</h3>
  * <ul>
- * <li><strong>Atomic Operations</strong>: Server-side atomic append operations for thread-safe data modification</li>
- * <li><strong>Type Safety</strong>: Automatic conversion from Java objects to byte arrays</li>
- * <li><strong>Performance Control</strong>: Optional result return for high-throughput scenarios</li>
- * <li><strong>Time Range Filtering</strong>: Efficient time-based append operations for partitioned data</li>
- * <li><strong>Counter Support</strong>: Ideal for implementing distributed counters and metrics</li>
- * <li><strong>Log Aggregation</strong>: Perfect for append-only log data structures</li>
- * <li><strong>Memory Efficiency</strong>: Server-side operation eliminates client-side data retrieval</li>
+ * <li><strong>Per-row atomicity</strong>: the server applies all queued cells in one
+ *     read-modify-write against the target row</li>
+ * <li><strong>Type safety</strong>: Java objects are encoded to bytes via {@link HBaseExecutor}</li>
+ * <li><strong>Performance control</strong>: {@link #setReturnResults(boolean)} can suppress the
+ *     post-append result payload</li>
+ * <li><strong>Time-range filtering</strong>: {@link #setTimeRange(long, long)} narrows the read
+ *     that precedes the append</li>
  * </ul>
  *
- * <h3>Common Use Cases:</h3>
+ * <h3>Typical use cases</h3>
  * <ul>
- * <li><strong>Distributed Counters</strong>: Page views, user sessions, event counting</li>
- * <li><strong>Activity Logs</strong>: User activity timelines, audit trails, system logs</li>
- * <li><strong>Message Queues</strong>: Append-only message accumulation</li>
- * <li><strong>Time Series Data</strong>: Sensor readings, metrics collection, monitoring data</li>
- * <li><strong>Social Feeds</strong>: News feeds, notification streams, activity updates</li>
- * <li><strong>Configuration Merging</strong>: Append-based configuration updates</li>
+ * <li><strong>Activity logs / audit trails</strong>: appending event strings to a per-user cell</li>
+ * <li><strong>Stream accumulation</strong>: appending serialized records to an append-only cell</li>
+ * <li><strong>Configuration merging</strong>: appending additional configuration fragments</li>
  * </ul>
+ * <p>For numeric counters (page views, session counts, hit counts) use {@link AnyIncrement}, not
+ * {@code AnyAppend}.</p>
  *
- * <h3>Performance Considerations:</h3>
+ * <h3>HBase Append semantics</h3>
  * <ul>
- * <li><strong>Result Control</strong>: Use {@code setReturnResults(false)} for write-heavy scenarios</li>
- * <li><strong>Time Range Optimization</strong>: Use time ranges for partitioned counter scenarios</li>
- * <li><strong>Batch Operations</strong>: Combine multiple appends in single operations when possible</li>
- * <li><strong>Row Key Design</strong>: Design keys to minimize hot-spotting in high-throughput scenarios</li>
- * <li><strong>Value Size</strong>: Keep appended values reasonably sized to avoid large cell accumulation</li>
- * <li><strong>Compaction Impact</strong>: Consider HBase compaction patterns for long-running append scenarios</li>
- * </ul>
- *
- * <h3>HBase Append Semantics:</h3>
- * <ul>
- * <li><strong>Atomicity</strong>: Operations are atomic at the server level, safe for concurrent access</li>
- * <li><strong>Ordering</strong>: Appends preserve order within a single column</li>
- * <li><strong>Existence</strong>: Creates new cells if they don't exist, appends to existing cells</li>
- * <li><strong>Versioning</strong>: Each append operation creates a new version with current timestamp</li>
- * <li><strong>Consistency</strong>: Immediately consistent within a region, eventually consistent across replicas</li>
+ * <li><strong>Atomicity</strong>: single-row atomic; safe under concurrent access</li>
+ * <li><strong>Ordering</strong>: bytes are appended in the order {@code addColumn} is called</li>
+ * <li><strong>Existence</strong>: a new cell is created when the column did not previously exist</li>
+ * <li><strong>Versioning</strong>: each append creates a new version stamped with the server time
+ *     (or the timestamp set via {@link #setTimestamp(long)} on the wrapped mutation)</li>
  * </ul>
  *
  * @see Append
  * @see AnyMutation
- * @see HBaseExecutor#append(String, AnyAppend) 
+ * @see AnyIncrement
+ * @see HBaseExecutor#append(String, AnyAppend)
  * @see <a href="http://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
  * @see org.apache.hadoop.hbase.client.Append
  */
@@ -143,6 +129,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * for the given row key, which is converted to bytes via {@link HBaseExecutor#toRowBytes(Object)}.
      *
      * @param rowKey the row key for the append operation
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}
      */
     AnyAppend(final Object rowKey) {
         super(new Append(toRowBytes(rowKey)));
@@ -201,16 +188,16 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * Creates a new AnyAppend instance for the specified row key.
      *
      * <p>This factory method creates an append operation for the given row key. The row key
-     * will be converted to bytes using HBase's standard conversion mechanisms. This is the
+     * will be converted to bytes via {@link HBaseExecutor#toRowBytes(Object)}. This is the
      * most commonly used factory method for creating append operations.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyAppend append = AnyAppend.of("user123");
-     * append.addColumn("cf", "counter", 1L);
+     * append.addColumn("logs", "activity", "login;");
      * }</pre>
      *
-     * @param rowKey the row key to append data to, will be converted to bytes automatically
+     * @param rowKey the row key to append data to; converted to bytes automatically
      * @return a new AnyAppend instance configured for the specified row
      * @throws IllegalArgumentException if rowKey is null
      * @see #addColumn(String, String, Object)
@@ -230,7 +217,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * <pre>{@code
      * byte[] keyBytes = Bytes.toBytes("user123");
      * AnyAppend append = AnyAppend.of(keyBytes);
-     * append.addColumn("cf", "counter", 1L);
+     * append.addColumn("logs", "activity", "login;");
      * }</pre>
      *
      * @param rowKey the row key as a byte array, must not be null or empty
@@ -253,7 +240,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * <pre>{@code
      * byte[] data = "prefix:user123:suffix".getBytes();
      * AnyAppend append = AnyAppend.of(data, 7, 7);   // Extract "user123"
-     * append.addColumn("cf", "counter", 1L);
+     * append.addColumn("logs", "activity", "login;");
      * }</pre>
      *
      * @param rowKey the source byte array containing the row key
@@ -307,10 +294,11 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Append existingAppend = new Append(Bytes.toBytes("user123"));
-     * existingAppend.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("counter"), Bytes.toBytes(1L));
+     * existingAppend.addColumn(Bytes.toBytes("logs"), Bytes.toBytes("activity"),
+     *                          Bytes.toBytes("login;"));
      *
      * AnyAppend append = AnyAppend.of(existingAppend);
-     * append.addColumn("cf", "visits", 1L);   // Add more data
+     * append.addColumn("logs", "activity", "logout;");   // Add more data
      * }</pre>
      *
      * @param appendToCopy the existing HBase Append object to copy
@@ -332,7 +320,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyAppend anyAppend = AnyAppend.of("user123")
-     *                                .addColumn("stats", "count", 1L);
+     *                                .addColumn("logs", "activity", "login;");
      * Append hbaseAppend = anyAppend.val();
      * table.append(hbaseAppend);   // Use with native HBase API
      * }</pre>
@@ -345,28 +333,26 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
     }
 
     /**
-     * Sets the TimeRange to be used on the Get operation for this append.
+     * Sets the TimeRange used by the Get that HBase performs before the append. Because the
+     * server reads the existing cell value (or the lack of one) before concatenating, restricting
+     * the read to a specific time range lets you target time-partitioned cells.
      * <p>
-     * This is useful for when you have counters that only last for specific
-     * periods of time (i.e., counters that are partitioned by time).  By setting
-     * the range of valid times for this append, you can potentially gain
-     * some performance with a more optimal Get operation.
-     * Be careful adding the time range to this class as you will update the old cell if the
-     * time range doesn't include the latest cells.
+     * <strong>Caution:</strong> if the time range does not cover the latest cells the server will
+     * append against an older version, effectively rewriting it rather than the current value.
      * </p>
      * <p>
-     * This range is used as [minStamp, maxStamp), meaning minStamp is inclusive
-     * and maxStamp is exclusive.
+     * The range is half-open: {@code [minStamp, maxStamp)} — {@code minStamp} is inclusive and
+     * {@code maxStamp} is exclusive.
      * </p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Set time range for hourly partitioned counters
+     * // Append into the cell version recorded during the current hour
      * long hourStart = System.currentTimeMillis() / 3600000 * 3600000;
      * long hourEnd = hourStart + 3600000;
-     * AnyAppend append = AnyAppend.of("hourly_counter")
+     * AnyAppend append = AnyAppend.of("hourly_log")
      *                             .setTimeRange(hourStart, hourEnd)
-     *                             .addColumn("stats", "events", 1L);
+     *                             .addColumn("logs", "events", "evt;");
      * }</pre>
      *
      * @param minStamp minimum timestamp value, inclusive
@@ -410,25 +396,26 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * Sets whether to return results after the append operation.
      *
      * <p>By default, HBase Append operations return the updated values. However, in high-throughput
-     * scenarios where the results are not needed, you can disable result return for better performance.
-     * This is particularly useful for counters or log aggregation where you only care about the operation's
-     * success and not the resulting values.</p>
+     * scenarios where the results are not needed, you can disable result return for better
+     * performance. This is particularly useful for log aggregation where you only care about the
+     * operation's success and not the resulting concatenated value.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Disable result return for better performance
-     * AnyAppend highThroughput = AnyAppend.of("counter_key")
-     *                                     .addColumn("stats", "count", 1L)
+     * AnyAppend highThroughput = AnyAppend.of("log_key")
+     *                                     .addColumn("logs", "events", "evt;")
      *                                     .setReturnResults(false);
      *
-     * // Enable result return to verify the new value
+     * // Enable result return to inspect the concatenated value
      * AnyAppend withResults = AnyAppend.of("important_key")
      *                                  .addColumn("data", "value", someData)
      *                                  .setReturnResults(true);
      * }</pre>
      *
-     * @param returnResults {@code true} (HBase default) to return the post-append values;
-     *                      {@code false} to skip the response payload and improve throughput
+     * @param returnResults {@code true} to return the post-append values (HBase's historical
+     *                      default for {@link Append}); {@code false} to skip the response
+     *                      payload and improve throughput
      * @return this AnyAppend instance, to allow fluent method chaining
      * @see #isReturnResults()
      */
@@ -448,7 +435,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyAppend append = AnyAppend.of("user123")
-     *                             .addColumn("stats", "count", 1L)
+     *                             .addColumn("logs", "activity", "login;")
      *                             .setReturnResults(false);
      * boolean returnsResults = append.isReturnResults();   // returns false
      * }</pre>
@@ -511,23 +498,28 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * Adds the specified column and value to this append operation using string identifiers.
      *
      * <p>This convenience method allows you to specify the column family, qualifier, and value
-     * using strings and objects rather than byte arrays. The method automatically handles
-     * the conversion from string/object to bytes using HBase's standard conversion mechanisms.
-     * This is the most commonly used method for adding data to append operations.</p>
+     * using strings and objects rather than byte arrays. The method automatically converts the
+     * family/qualifier via {@link HBaseExecutor#toFamilyQualifierBytes(String)} and the value via
+     * {@link HBaseExecutor#toValueBytes(Object)} before delegating to the wrapped
+     * {@link Append}. The encoded bytes are then concatenated to the end of the cell's existing
+     * value on the server — they are <em>not</em> parsed or summed, so this is not a counter
+     * operation. Use {@link AnyIncrement} for atomic numeric counters.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyAppend append = AnyAppend.of("user123");
-     * append.addColumn("stats", "login_count", 1L);
-     * append.addColumn("profile", "last_login", new Date());
-     * append.addColumn("settings", "theme", "dark");
+     * append.addColumn("logs", "activity", "login;");
+     * append.addColumn("audit", "trail", "ACTION:LOGIN;");
+     * append.addColumn("settings", "history", "theme=dark;");
      * }</pre>
      *
      * @param family the column-family name; converted via {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @param qualifier the column-qualifier name; converted via {@link HBaseExecutor#toFamilyQualifierBytes(String)}
-     * @param value the value to append; converted via {@link HBaseExecutor#toValueBytes(Object)}
+     * @param value the value whose encoded bytes will be appended; converted via
+     *              {@link HBaseExecutor#toValueBytes(Object)}
      * @return this AnyAppend instance, to allow fluent method chaining
      * @see #addColumn(byte[], byte[], byte[])
+     * @see AnyIncrement
      */
     public AnyAppend addColumn(final String family, final String qualifier, final Object value) {
         append.addColumn(toFamilyQualifierBytes(family), toFamilyQualifierBytes(qualifier), toValueBytes(value));
@@ -536,13 +528,13 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
     }
 
     /**
-     * Adds a pre-constructed Cell to this append operation.
+     * Adds a pre-constructed {@link Cell} carrying bytes to concatenate. Useful when an existing
+     * cell (for example one read out of an {@link org.apache.hadoop.hbase.CellScanner}) already
+     * encodes the value to append; for ordinary use prefer
+     * {@link #addColumn(String, String, Object)}.
      *
-     * <p>This method allows you to add a fully constructed HBase Cell object to the
-     * append operation. This provides maximum flexibility when you need precise control
-     * over cell attributes such as timestamp, type, or when working with existing Cell
-     * objects from other HBase operations. The cell must have the same row key as this
-     * append operation.</p>
+     * <p>The cell's row key must match this append's row key, otherwise the underlying
+     * {@link Append#add(Cell)} will reject it.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -550,11 +542,11 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      *
      * Cell cell = CellUtil.createCell(
      *     Bytes.toBytes("user123"),
-     *     Bytes.toBytes("stats"),
-     *     Bytes.toBytes("counter"),
+     *     Bytes.toBytes("logs"),
+     *     Bytes.toBytes("activity"),
      *     System.currentTimeMillis(),
-     *     Cell.Type.Put,
-     *     Bytes.toBytes(1L)
+     *     KeyValue.Type.Put.getCode(),
+     *     Bytes.toBytes("login;")
      * );
      *
      * append.add(cell);

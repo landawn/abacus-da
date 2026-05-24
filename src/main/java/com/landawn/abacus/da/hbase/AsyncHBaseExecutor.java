@@ -39,17 +39,28 @@ import com.landawn.abacus.util.stream.Stream;
 
 /**
  * Asynchronous wrapper for HBase database operations that provides non-blocking access to Apache HBase.
- * This executor returns {@code ContinuableFuture} instances for all operations, enabling high-performance,
+ * This executor returns {@link ContinuableFuture} instances for all operations, enabling high-performance,
  * concurrent access patterns and reactive programming models.
  *
  * <p>All methods in this class are asynchronous counterparts to the synchronous methods in {@link HBaseExecutor}.
- * Operations are executed on a configurable thread pool, allowing the calling thread to continue processing
- * while HBase operations complete in the background.</p>
+ * Each method submits a task that invokes the corresponding synchronous method on the {@link AsyncExecutor}
+ * supplied at construction time (or, when none is supplied, on {@link HBaseExecutor#DEFAULT_ASYNC_EXECUTOR},
+ * a thread pool sized to {@code max(64, CPU_CORES * 8)} core threads and {@code max(128, CPU_CORES * 16)}
+ * maximum threads, with a 180-second keep-alive). Every method in this class uses that same executor,
+ * so the threading model is uniform across operations.</p>
+ *
+ * <p><b>Ordering guarantees:</b> tasks are submitted to the executor in the order calls are made,
+ * but completion order depends on the executor's scheduling and on how long each individual HBase
+ * operation takes; concurrent submissions are not serialised. Each returned {@code ContinuableFuture}
+ * completes when its single underlying synchronous call returns. Chained continuations created via
+ * {@code thenRun}/{@code thenApply}/{@code thenCompose} run synchronously on the completing thread
+ * unless the {@code Async} variants ({@code thenRunAsync}, {@code thenCallAsync}, etc.) are used, in
+ * which case they are dispatched back to the same {@code AsyncExecutor}.</p>
  *
  * <h2>Key Features</h2>
  * <ul>
  * <li><strong>Non-blocking Operations</strong>: All methods return immediately with a {@code ContinuableFuture}</li>
- * <li><strong>Thread Pool Management</strong>: Configurable executor for controlling concurrency</li>
+ * <li><strong>Thread Pool Management</strong>: A single, configurable {@link AsyncExecutor} backs every method</li>
  * <li><strong>Row Key Operations</strong>: Async existence checks, gets, puts, deletes with row key support</li>
  * <li><strong>Batch Operations</strong>: Async batch gets, puts, and deletes for high throughput</li>
  * <li><strong>Scanning</strong>: Async table scans with column family and qualifier filtering</li>
@@ -90,13 +101,15 @@ import com.landawn.abacus.util.stream.Stream;
  * <h3>Performance Considerations:</h3>
  * <ul>
  * <li><strong>Thread Pool Sizing</strong>: Default pool size scales with CPU cores (8-16x)</li>
- * <li><strong>Connection Sharing</strong>: Shares HBase connection with synchronous executor</li>
- * <li><strong>Memory Management</strong>: Results are processed asynchronously to avoid blocking</li>
- * <li><strong>Error Handling</strong>: Exceptions are wrapped in the returned futures</li>
+ * <li><strong>Connection Sharing</strong>: Shares the underlying HBase {@code Connection} with the wrapped {@link HBaseExecutor}</li>
+ * <li><strong>Memory Management</strong>: Streams returned by {@code scan} are produced eagerly by HBase but consumed lazily by the caller; close them after use</li>
+ * <li><strong>Error Handling</strong>: Exceptions thrown by the underlying call are propagated through the returned {@code ContinuableFuture}</li>
  * </ul>
  *
  * @see HBaseExecutor
+ * @see HBaseExecutor#async()
  * @see ContinuableFuture
+ * @see AsyncExecutor
  * @see <a href="http://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
  * @see org.apache.hadoop.hbase.client.Table
  */
@@ -106,19 +119,27 @@ public final class AsyncHBaseExecutor {
 
     private final AsyncExecutor asyncExecutor;
 
+    /**
+     * Package-private constructor. Instances are created by {@link HBaseExecutor} and obtained via
+     * {@link HBaseExecutor#async()} rather than constructed directly.
+     *
+     * @param hbaseExecutor the synchronous executor this wrapper delegates to; must not be null
+     * @param asyncExecutor the thread pool on which every operation in this wrapper is submitted;
+     *                      must not be null
+     */
     AsyncHBaseExecutor(final HBaseExecutor hbaseExecutor, final AsyncExecutor asyncExecutor) {
         this.hbaseExecutor = hbaseExecutor;
         this.asyncExecutor = asyncExecutor;
     }
 
     /**
-     * Returns the underlying synchronous HBase executor for blocking operations.
+     * Returns the underlying synchronous HBase executor that this async wrapper delegates to.
      *
-     * <p>This method provides access to the synchronous executor that this async wrapper
-     * delegates to. Use this when you need to perform blocking operations or when integrating
-     * with synchronous code paths.</p>
+     * <p>Every async method in this class submits a task that invokes the corresponding method on
+     * the returned instance. Use this when you need to perform blocking operations directly or when
+     * integrating with synchronous code paths.</p>
      *
-     * @return the synchronous HBase executor instance
+     * @return the wrapped {@link HBaseExecutor} instance; never null
      * @see HBaseExecutor
      */
     public HBaseExecutor sync() {
@@ -129,11 +150,13 @@ public final class AsyncHBaseExecutor {
      * Asynchronously checks if a row exists in the specified HBase table.
      *
      * <p>This is a server-side operation that checks for row existence without transferring
-     * any actual data to the client, making it efficient for existence checks.</p>
+     * any actual cell value to the client, making it efficient for existence checks.</p>
      *
      * @param tableName the name of the HBase table to check
-     * @param get the Get operation specifying the row to check for existence
-     * @return a ContinuableFuture that completes with {@code true} if the row exists, {@code false} otherwise
+     * @param get the Get operation specifying the row (and optionally column filters) to check for existence
+     * @return a {@link ContinuableFuture} that completes with {@code true} if the Get matches one or
+     *         more cells, {@code false} otherwise. Wraps {@link HBaseExecutor#exists(String, Get)}.
+     * @see HBaseExecutor#exists(String, Get)
      * @see Get
      */
     public ContinuableFuture<Boolean> exists(final String tableName, final Get get) {
@@ -179,15 +202,17 @@ public final class AsyncHBaseExecutor {
     //    }
 
     /**
-     * Asynchronously checks if a row exists using an AnyGet operation builder.
+     * Asynchronously checks if a row exists using an {@link AnyGet} operation builder.
      *
-     * <p>This method provides a fluent API for existence checks using the AnyGet builder,
-     * which allows for more readable and maintainable code when specifying row keys,
-     * column families, and qualifiers.</p>
+     * <p>Equivalent to {@link #exists(String, Get)} but using the fluent {@link AnyGet} wrapper,
+     * which allows row keys, column families, and qualifiers to be specified without manual
+     * byte-array conversion.</p>
      *
      * @param tableName the name of the HBase table to check
      * @param anyGet the AnyGet operation builder specifying the row to check
-     * @return a ContinuableFuture that completes with {@code true} if the row exists, {@code false} otherwise
+     * @return a {@link ContinuableFuture} that completes with {@code true} if the row exists,
+     *         {@code false} otherwise. Wraps {@link HBaseExecutor#exists(String, AnyGet)}.
+     * @see HBaseExecutor#exists(String, AnyGet)
      * @see AnyGet
      */
     public ContinuableFuture<Boolean> exists(final String tableName, final AnyGet anyGet) {
@@ -195,15 +220,19 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously checks the existence of multiple rows using AnyGet operation builders.
+     * Asynchronously checks the existence of multiple rows using {@link AnyGet} operation builders.
      *
-     * <p>Performs batch existence checks using a collection of AnyGet builders. This method
-     * provides the convenience of the fluent API while maintaining the efficiency of batch
-     * operations for multiple existence checks.</p>
+     * <p>Performs batch existence checks using a collection of AnyGet builders. The returned list
+     * preserves the iteration order of {@code anyGets} so that the i-th entry corresponds to the
+     * i-th AnyGet.</p>
      *
      * @param tableName the name of the HBase table to check
      * @param anyGets the collection of AnyGet builders specifying the rows to check
-     * @return a ContinuableFuture containing a list of boolean values indicating existence
+     * @return a {@link ContinuableFuture} whose value is a {@code List<Boolean>} in the iteration
+     *         order of {@code anyGets}; each entry is {@code true} if the corresponding AnyGet
+     *         matches one or more cells, {@code false} otherwise. Wraps
+     *         {@link HBaseExecutor#exists(String, Collection)}.
+     * @see HBaseExecutor#exists(String, Collection)
      * @see AnyGet
      */
     public ContinuableFuture<List<Boolean>> exists(final String tableName, final Collection<AnyGet> anyGets) {
@@ -219,13 +248,16 @@ public final class AsyncHBaseExecutor {
     /**
      * Asynchronously retrieves a single row from the specified HBase table.
      *
-     * <p>Performs a get operation to retrieve data from a specific row. The returned Result
-     * object contains all the cells that match the Get operation's criteria, including
-     * column family and qualifier specifications, time ranges, and version limits.</p>
+     * <p>Performs a get operation to retrieve data from a specific row. The returned {@link Result}
+     * contains all cells that match the Get operation's criteria (column family and qualifier
+     * specifications, time ranges, and version limits). If the row does not exist, the Result will
+     * be {@linkplain Result#isEmpty() empty}.</p>
      *
      * @param tableName the name of the HBase table to retrieve from
      * @param get the Get operation specifying the row and columns to retrieve
-     * @return a ContinuableFuture containing the Result object with the retrieved data
+     * @return a {@link ContinuableFuture} containing the Result object with the retrieved data
+     *         (possibly empty). Wraps {@link HBaseExecutor#get(String, Get)}.
+     * @see HBaseExecutor#get(String, Get)
      * @see Get
      * @see Result
      */
@@ -254,11 +286,16 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously retrieves a single row using an AnyGet operation builder.
+     * Asynchronously retrieves a single row using an {@link AnyGet} operation builder.
+     *
+     * <p>Equivalent to {@link #get(String, Get)} but using the fluent {@link AnyGet} wrapper. If
+     * the row does not exist, the Result will be {@linkplain Result#isEmpty() empty}.</p>
      *
      * @param tableName the name of the HBase table to retrieve from
      * @param anyGet the AnyGet operation builder specifying the row and columns
-     * @return a ContinuableFuture containing the Result object with the retrieved data
+     * @return a {@link ContinuableFuture} containing the Result object with the retrieved data
+     *         (possibly empty). Wraps {@link HBaseExecutor#get(String, AnyGet)}.
+     * @see HBaseExecutor#get(String, AnyGet)
      * @see AnyGet
      */
     public ContinuableFuture<Result> get(final String tableName, final AnyGet anyGet) {
@@ -266,11 +303,16 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously retrieves multiple rows using AnyGet operation builders.
+     * Asynchronously retrieves multiple rows using {@link AnyGet} operation builders.
+     *
+     * <p>The returned list has the same size and order as {@code anyGets}; rows that do not exist
+     * are represented by {@linkplain Result#isEmpty() empty} Result entries.</p>
      *
      * @param tableName the name of the HBase table to retrieve from
      * @param anyGets the collection of AnyGet builders specifying the rows to retrieve
-     * @return a ContinuableFuture containing a list of Result objects
+     * @return a {@link ContinuableFuture} containing a list of Result objects in the iteration
+     *         order of {@code anyGets}. Wraps {@link HBaseExecutor#get(String, Collection)}.
+     * @see HBaseExecutor#get(String, Collection)
      * @see AnyGet
      */
     public ContinuableFuture<List<Result>> get(final String tableName, final Collection<AnyGet> anyGets) {
@@ -278,13 +320,19 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously retrieves a row and converts it to the specified type.
+     * Asynchronously retrieves a row and converts it to the specified target type.
+     *
+     * <p>The {@link Result} returned by HBase is converted to {@code T} using the entity-mapping
+     * facilities of {@link HBaseExecutor}. If the row does not exist, the resulting object may be
+     * {@code null} or an empty instance depending on the target type.</p>
      *
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to retrieve from
      * @param get the Get operation specifying the row to retrieve
      * @param targetClass the class to convert the result to
-     * @return a ContinuableFuture containing the converted object
+     * @return a {@link ContinuableFuture} containing the converted object. Wraps
+     *         {@link HBaseExecutor#get(String, Get, Class)}.
+     * @see HBaseExecutor#get(String, Get, Class)
      * @see Get
      */
     public <T> ContinuableFuture<T> get(final String tableName, final Get get, final Class<T> targetClass) {
@@ -312,13 +360,17 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously retrieves a row using AnyGet and converts it to the specified type.
+     * Asynchronously retrieves a row using {@link AnyGet} and converts it to the specified target type.
+     *
+     * <p>Equivalent to {@link #get(String, Get, Class)} but using the fluent {@link AnyGet} wrapper.</p>
      *
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to retrieve from
      * @param anyGet the AnyGet operation builder specifying the row
      * @param targetClass the class to convert the result to
-     * @return a ContinuableFuture containing the converted object
+     * @return a {@link ContinuableFuture} containing the converted object. Wraps
+     *         {@link HBaseExecutor#get(String, AnyGet, Class)}.
+     * @see HBaseExecutor#get(String, AnyGet, Class)
      * @see AnyGet
      */
     public <T> ContinuableFuture<T> get(final String tableName, final AnyGet anyGet, final Class<T> targetClass) {
@@ -349,18 +401,24 @@ public final class AsyncHBaseExecutor {
      * Asynchronously scans the specified HBase table for all rows in a column family.
      *
      * <p>Performs a full table scan retrieving all cells from the specified column family.
-     * The returned ContinuableFuture completes with a Stream of Result objects that can be
-     * processed using functional programming constructs. The stream must be closed after use.</p>
+     * The returned {@link ContinuableFuture} completes with a lazy {@link Stream} of {@link Result}
+     * objects backed by an open HBase {@code ResultScanner}.</p>
+     *
+     * <p><b>Important:</b> the returned Stream owns an open HBase scanner and must be closed
+     * (e.g., via try-with-resources or by exhausting it with a terminal operation that closes it)
+     * to release server-side resources.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.scan("users", "info")
-     *      .thenAcceptAsync(stream -> stream.forEach(result -> System.out.println(result)));
+     *      .thenAcceptAsync(stream -> { try (stream) { stream.forEach(System.out::println); } });
      * }</pre>
      *
      * @param tableName the name of the HBase table to scan
      * @param family the column family name to retrieve (as String)
-     * @return a ContinuableFuture containing a Stream of Result objects from the scan
+     * @return a {@link ContinuableFuture} containing a {@code Stream<Result>} of all rows in the
+     *         specified family. Wraps {@link HBaseExecutor#scan(String, String)}.
+     * @see HBaseExecutor#scan(String, String)
      * @see Scan
      * @see Result
      */
@@ -371,9 +429,11 @@ public final class AsyncHBaseExecutor {
     /**
      * Asynchronously scans the specified HBase table for all rows with a specific column.
      *
-     * <p>Performs a full table scan retrieving only the specified column (family:qualifier).
-     * This is more efficient than scanning the entire family when only specific columns are needed.
-     * The returned stream must be closed after use.</p>
+     * <p>Performs a full table scan retrieving only the specified column (family:qualifier). This
+     * is more efficient than scanning the entire family when only specific columns are needed.</p>
+     *
+     * <p><b>Important:</b> the returned Stream owns an open HBase scanner and must be closed
+     * after use to release server-side resources.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -384,7 +444,9 @@ public final class AsyncHBaseExecutor {
      * @param tableName the name of the HBase table to scan
      * @param family the column family name (as String)
      * @param qualifier the column qualifier name (as String)
-     * @return a ContinuableFuture containing a Stream of Result objects with the specified column
+     * @return a {@link ContinuableFuture} containing a {@code Stream<Result>} for the specified
+     *         column. Wraps {@link HBaseExecutor#scan(String, String, String)}.
+     * @see HBaseExecutor#scan(String, String, String)
      * @see Scan
      * @see Result
      */
@@ -393,15 +455,20 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously scans the specified HBase table for all rows in a column family.
+     * Asynchronously scans the specified HBase table for all rows in a column family, using a
+     * byte-array family identifier.
      *
-     * <p>Performs a full table scan retrieving all cells from the specified column family.
-     * This method accepts the family name as a byte array for efficiency when the bytes
-     * are already available. The returned stream must be closed after use.</p>
+     * <p>Performs a full table scan retrieving all cells from the specified column family. The
+     * byte-array variant avoids string-to-bytes conversion when the bytes are already available.</p>
+     *
+     * <p><b>Important:</b> the returned Stream owns an open HBase scanner and must be closed
+     * after use.</p>
      *
      * @param tableName the name of the HBase table to scan
      * @param family the column family name as a byte array
-     * @return a ContinuableFuture containing a Stream of Result objects from the scan
+     * @return a {@link ContinuableFuture} containing a {@code Stream<Result>} from the scan. Wraps
+     *         {@link HBaseExecutor#scan(String, byte[])}.
+     * @see HBaseExecutor#scan(String, byte[])
      * @see Scan
      * @see Result
      */
@@ -410,16 +477,21 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously scans the specified HBase table for all rows with a specific column.
+     * Asynchronously scans the specified HBase table for all rows with a specific column, using
+     * byte-array identifiers.
      *
-     * <p>Performs a full table scan retrieving only the specified column (family:qualifier).
-     * This method accepts both family and qualifier as byte arrays for efficiency when the
-     * bytes are already available. The returned stream must be closed after use.</p>
+     * <p>Performs a full table scan retrieving only the specified column (family:qualifier). The
+     * byte-array variant avoids string-to-bytes conversion when the bytes are already available.</p>
+     *
+     * <p><b>Important:</b> the returned Stream owns an open HBase scanner and must be closed
+     * after use.</p>
      *
      * @param tableName the name of the HBase table to scan
      * @param family the column family name as a byte array
      * @param qualifier the column qualifier name as a byte array
-     * @return a ContinuableFuture containing a Stream of Result objects with the specified column
+     * @return a {@link ContinuableFuture} containing a {@code Stream<Result>} for the specified
+     *         column. Wraps {@link HBaseExecutor#scan(String, byte[], byte[])}.
+     * @see HBaseExecutor#scan(String, byte[], byte[])
      * @see Scan
      * @see Result
      */
@@ -428,11 +500,14 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously scans the specified HBase table using a fluent AnyScan builder.
+     * Asynchronously scans the specified HBase table using a fluent {@link AnyScan} builder.
      *
-     * <p>Performs a table scan with the criteria specified in the AnyScan builder. AnyScan provides
-     * a fluent API for configuring scan parameters including start/stop rows, filters, column families,
-     * time ranges, and result limits. The returned stream must be closed after use.</p>
+     * <p>Performs a table scan with the criteria specified in the AnyScan builder, which exposes
+     * a fluent API for configuring start/stop rows, filters, column families, time ranges, and
+     * result limits.</p>
+     *
+     * <p><b>Important:</b> the returned Stream owns an open HBase scanner and must be closed
+     * after use.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -442,7 +517,9 @@ public final class AsyncHBaseExecutor {
      *
      * @param tableName the name of the HBase table to scan
      * @param anyScan the AnyScan builder specifying scan criteria
-     * @return a ContinuableFuture containing a Stream of Result objects matching the scan criteria
+     * @return a {@link ContinuableFuture} containing a {@code Stream<Result>} matching the scan
+     *         criteria. Wraps {@link HBaseExecutor#scan(String, AnyScan)}.
+     * @see HBaseExecutor#scan(String, AnyScan)
      * @see AnyScan
      * @see Result
      */
@@ -451,15 +528,20 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously scans the specified HBase table using a native Scan object.
+     * Asynchronously scans the specified HBase table using a native HBase {@link Scan} object.
      *
-     * <p>Performs a table scan with the criteria specified in the HBase Scan object. This method
-     * provides direct access to all HBase scan capabilities including filters, column selection,
-     * time ranges, caching, and batching. The returned stream must be closed after use.</p>
+     * <p>Performs a table scan with the criteria specified in the HBase {@link Scan} object,
+     * providing direct access to all HBase scan capabilities including filters, column selection,
+     * time ranges, caching, and batching.</p>
+     *
+     * <p><b>Important:</b> the returned Stream owns an open HBase scanner and must be closed
+     * after use.</p>
      *
      * @param tableName the name of the HBase table to scan
      * @param scan the HBase Scan object specifying scan criteria
-     * @return a ContinuableFuture containing a Stream of Result objects matching the scan criteria
+     * @return a {@link ContinuableFuture} containing a {@code Stream<Result>} matching the scan
+     *         criteria. Wraps {@link HBaseExecutor#scan(String, Scan)}.
+     * @see HBaseExecutor#scan(String, Scan)
      * @see Scan
      * @see Result
      */
@@ -468,11 +550,13 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously scans the table and converts results to the specified target type.
+     * Asynchronously scans the table and converts each Result to the specified target type.
      *
      * <p>Performs a full table scan of the specified column family and automatically converts each
-     * Result to the target type. For entity classes, performs object-relational mapping. For
-     * primitive types, extracts the single cell value. The returned stream must be closed after use.</p>
+     * {@link Result} to {@code T} using {@link HBaseExecutor}'s entity-mapping facilities.</p>
+     *
+     * <p><b>Important:</b> the returned Stream owns an open HBase scanner and must be closed
+     * after use.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -484,7 +568,9 @@ public final class AsyncHBaseExecutor {
      * @param tableName the name of the HBase table to scan
      * @param family the column family name (as String)
      * @param targetClass the class to convert each result to
-     * @return a ContinuableFuture containing a Stream of converted objects
+     * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
+     *         Wraps {@link HBaseExecutor#scan(String, String, Class)}.
+     * @see HBaseExecutor#scan(String, String, Class)
      * @see Scan
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final String family, final Class<T> targetClass) {
@@ -492,18 +578,24 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously scans the table for a specific column and converts results to the target type.
+     * Asynchronously scans the table for a specific column and converts each Result to the
+     * specified target type.
      *
      * <p>Performs a full table scan retrieving only the specified column (family:qualifier) and
-     * automatically converts each Result to the target type. This is efficient for retrieving
-     * single-valued entities. The returned stream must be closed after use.</p>
+     * automatically converts each Result to {@code T}. This is efficient when each row maps to a
+     * single value.</p>
+     *
+     * <p><b>Important:</b> the returned Stream owns an open HBase scanner and must be closed
+     * after use.</p>
      *
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to scan
      * @param family the column family name (as String)
      * @param qualifier the column qualifier name (as String)
      * @param targetClass the class to convert each result to
-     * @return a ContinuableFuture containing a Stream of converted objects
+     * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
+     *         Wraps {@link HBaseExecutor#scan(String, String, String, Class)}.
+     * @see HBaseExecutor#scan(String, String, String, Class)
      * @see Scan
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final String family, final String qualifier, final Class<T> targetClass) {
@@ -511,17 +603,22 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously scans the table and converts results to the specified target type.
+     * Asynchronously scans the table and converts each Result to the specified target type, using
+     * a byte-array family identifier.
      *
-     * <p>Performs a full table scan of the specified column family and automatically converts each
-     * Result to the target type. This method accepts the family name as a byte array for efficiency.
-     * The returned stream must be closed after use.</p>
+     * <p>The byte-array variant avoids string-to-bytes conversion when the bytes are already
+     * available.</p>
+     *
+     * <p><b>Important:</b> the returned Stream owns an open HBase scanner and must be closed
+     * after use.</p>
      *
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to scan
      * @param family the column family name as a byte array
      * @param targetClass the class to convert each result to
-     * @return a ContinuableFuture containing a Stream of converted objects
+     * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
+     *         Wraps {@link HBaseExecutor#scan(String, byte[], Class)}.
+     * @see HBaseExecutor#scan(String, byte[], Class)
      * @see Scan
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final byte[] family, final Class<T> targetClass) {
@@ -529,18 +626,23 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously scans the table for a specific column and converts results to the target type.
+     * Asynchronously scans the table for a specific column and converts each Result to the
+     * specified target type, using byte-array identifiers.
      *
-     * <p>Performs a full table scan retrieving only the specified column (family:qualifier) and
-     * automatically converts each Result to the target type. This method accepts both family and
-     * qualifier as byte arrays for efficiency. The returned stream must be closed after use.</p>
+     * <p>The byte-array variant avoids string-to-bytes conversion when the bytes are already
+     * available.</p>
+     *
+     * <p><b>Important:</b> the returned Stream owns an open HBase scanner and must be closed
+     * after use.</p>
      *
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to scan
      * @param family the column family name as a byte array
      * @param qualifier the column qualifier name as a byte array
      * @param targetClass the class to convert each result to
-     * @return a ContinuableFuture containing a Stream of converted objects
+     * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
+     *         Wraps {@link HBaseExecutor#scan(String, byte[], byte[], Class)}.
+     * @see HBaseExecutor#scan(String, byte[], byte[], Class)
      * @see Scan
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final byte[] family, final byte[] qualifier, final Class<T> targetClass) {
@@ -548,11 +650,14 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously scans the table using AnyScan and converts results to the target type.
+     * Asynchronously scans the table using a fluent {@link AnyScan} builder and converts each
+     * Result to the specified target type.
      *
-     * <p>Performs a table scan with the criteria specified in the AnyScan builder and automatically
-     * converts each Result to the target type. This combines the flexibility of AnyScan configuration
-     * with automatic object mapping. The returned stream must be closed after use.</p>
+     * <p>Combines the flexibility of {@link AnyScan} configuration (start/stop rows, filters,
+     * column families, time ranges, limits) with automatic object mapping.</p>
+     *
+     * <p><b>Important:</b> the returned Stream owns an open HBase scanner and must be closed
+     * after use.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -564,7 +669,9 @@ public final class AsyncHBaseExecutor {
      * @param tableName the name of the HBase table to scan
      * @param anyScan the AnyScan builder specifying scan criteria
      * @param targetClass the class to convert each result to
-     * @return a ContinuableFuture containing a Stream of converted objects
+     * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
+     *         Wraps {@link HBaseExecutor#scan(String, AnyScan, Class)}.
+     * @see HBaseExecutor#scan(String, AnyScan, Class)
      * @see AnyScan
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final AnyScan anyScan, final Class<T> targetClass) {
@@ -572,17 +679,22 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously scans the table using a native Scan object and converts results to the target type.
+     * Asynchronously scans the table using a native HBase {@link Scan} object and converts each
+     * Result to the specified target type.
      *
-     * <p>Performs a table scan with the criteria specified in the HBase Scan object and automatically
-     * converts each Result to the target type. This provides full access to HBase scan capabilities
-     * with automatic object mapping. The returned stream must be closed after use.</p>
+     * <p>Provides full access to HBase scan capabilities (filters, column selection, time ranges,
+     * caching, batching) combined with automatic object mapping.</p>
+     *
+     * <p><b>Important:</b> the returned Stream owns an open HBase scanner and must be closed
+     * after use.</p>
      *
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to scan
      * @param scan the HBase Scan object specifying scan criteria
      * @param targetClass the class to convert each result to
-     * @return a ContinuableFuture containing a Stream of converted objects
+     * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
+     *         Wraps {@link HBaseExecutor#scan(String, Scan, Class)}.
+     * @see HBaseExecutor#scan(String, Scan, Class)
      * @see Scan
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final Scan scan, final Class<T> targetClass) {
@@ -592,9 +704,12 @@ public final class AsyncHBaseExecutor {
     /**
      * Asynchronously inserts or updates a single row in the specified HBase table.
      *
-     * <p>Performs a put operation that stores cells from the Put object into HBase. If the row
-     * already exists, this operation updates the specified cells. The ContinuableFuture completes
-     * with {@code null} when the operation finishes successfully.</p>
+     * <p>Performs a put operation that stores cells from the {@link Put} object into HBase. Cells
+     * are written per (row, family, qualifier, timestamp) tuple: an explicit-timestamp cell with
+     * the same key as an existing cell overwrites it, while cells with different timestamps
+     * produce additional versions (subject to the column family's {@code VERSIONS} setting). The
+     * returned {@link ContinuableFuture} completes with {@code null} when the operation finishes
+     * successfully.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -605,7 +720,9 @@ public final class AsyncHBaseExecutor {
      *
      * @param tableName the name of the HBase table to put data into
      * @param put the Put operation containing the row key and cells to store
-     * @return a ContinuableFuture that completes with {@code null} when the put operation finishes
+     * @return a {@link ContinuableFuture} that completes with {@code null} when the put operation
+     *         finishes. Wraps {@link HBaseExecutor#put(String, Put)}.
+     * @see HBaseExecutor#put(String, Put)
      * @see Put
      */
     public ContinuableFuture<Void> put(final String tableName, final Put put) {
@@ -619,9 +736,10 @@ public final class AsyncHBaseExecutor {
     /**
      * Asynchronously inserts or updates multiple rows in the specified HBase table.
      *
-     * <p>Performs batch put operations to efficiently store multiple rows in a single operation.
-     * This is optimized for high throughput when inserting or updating many rows. The
-     * ContinuableFuture completes with {@code null} when all put operations finish successfully.</p>
+     * <p>Performs batch put operations to efficiently store multiple rows. The same per-cell
+     * overwrite-vs-version semantics described for {@link #put(String, Put)} apply to each
+     * individual Put in the list. The returned {@link ContinuableFuture} completes with
+     * {@code null} when all put operations finish successfully.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -634,7 +752,9 @@ public final class AsyncHBaseExecutor {
      *
      * @param tableName the name of the HBase table to put data into
      * @param puts the list of Put operations to execute
-     * @return a ContinuableFuture that completes with {@code null} when all put operations finish
+     * @return a {@link ContinuableFuture} that completes with {@code null} when all put operations
+     *         finish. Wraps {@link HBaseExecutor#put(String, List)}.
+     * @see HBaseExecutor#put(String, List)
      * @see Put
      */
     public ContinuableFuture<Void> put(final String tableName, final List<Put> puts) {
@@ -646,11 +766,11 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously inserts or updates a single row using a fluent AnyPut builder.
+     * Asynchronously inserts or updates a single row using a fluent {@link AnyPut} builder.
      *
-     * <p>Performs a put operation using the AnyPut builder which provides a fluent API for
-     * constructing put operations. AnyPut simplifies the creation of Put objects with a more
-     * readable syntax. The ContinuableFuture completes with {@code null} when the operation finishes.</p>
+     * <p>Equivalent to {@link #put(String, Put)} but using the fluent {@link AnyPut} wrapper. See
+     * that method for the per-cell overwrite-vs-version semantics. The returned
+     * {@link ContinuableFuture} completes with {@code null} when the operation finishes.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -660,7 +780,9 @@ public final class AsyncHBaseExecutor {
      *
      * @param tableName the name of the HBase table to put data into
      * @param anyPut the AnyPut builder specifying the row and cells to store
-     * @return a ContinuableFuture that completes with {@code null} when the put operation finishes
+     * @return a {@link ContinuableFuture} that completes with {@code null} when the put operation
+     *         finishes. Wraps {@link HBaseExecutor#put(String, AnyPut)}.
+     * @see HBaseExecutor#put(String, AnyPut)
      * @see AnyPut
      */
     public ContinuableFuture<Void> put(final String tableName, final AnyPut anyPut) {
@@ -672,11 +794,12 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously inserts or updates multiple rows using AnyPut builders.
+     * Asynchronously inserts or updates multiple rows using {@link AnyPut} builders.
      *
-     * <p>Performs batch put operations using a collection of AnyPut builders. This combines
-     * the efficiency of batch operations with the convenience of the fluent AnyPut API. The
-     * ContinuableFuture completes with {@code null} when all put operations finish successfully.</p>
+     * <p>Performs batch put operations using a collection of AnyPut builders. The same per-cell
+     * overwrite-vs-version semantics described for {@link #put(String, Put)} apply to each
+     * individual AnyPut. The returned {@link ContinuableFuture} completes with {@code null} when
+     * all put operations finish successfully.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -689,7 +812,9 @@ public final class AsyncHBaseExecutor {
      *
      * @param tableName the name of the HBase table to put data into
      * @param anyPuts the collection of AnyPut builders specifying the rows to store
-     * @return a ContinuableFuture that completes with {@code null} when all put operations finish
+     * @return a {@link ContinuableFuture} that completes with {@code null} when all put operations
+     *         finish. Wraps {@link HBaseExecutor#put(String, Collection)}.
+     * @see HBaseExecutor#put(String, Collection)
      * @see AnyPut
      */
     public ContinuableFuture<Void> put(final String tableName, final Collection<AnyPut> anyPuts) {
@@ -701,11 +826,12 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously deletes a row or specific cells from the specified HBase table.
+     * Asynchronously deletes a row, column family, column, or specific cell version from the
+     * specified HBase table.
      *
-     * <p>Performs a delete operation that removes the row or specific cells identified by the
-     * Delete object. The delete can target an entire row, specific column families, or individual
-     * cells. The ContinuableFuture completes with {@code null} when the operation finishes.</p>
+     * <p>The granularity of the delete is determined by the {@link Delete} object: it may target
+     * an entire row, specific column families, specific qualifiers, or individual versions. The
+     * returned {@link ContinuableFuture} completes with {@code null} when the operation finishes.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -715,7 +841,9 @@ public final class AsyncHBaseExecutor {
      *
      * @param tableName the name of the HBase table to delete from
      * @param delete the Delete operation specifying the row and cells to delete
-     * @return a ContinuableFuture that completes with {@code null} when the delete operation finishes
+     * @return a {@link ContinuableFuture} that completes with {@code null} when the delete
+     *         operation finishes. Wraps {@link HBaseExecutor#delete(String, Delete)}.
+     * @see HBaseExecutor#delete(String, Delete)
      * @see Delete
      */
     public ContinuableFuture<Void> delete(final String tableName, final Delete delete) {
@@ -729,9 +857,9 @@ public final class AsyncHBaseExecutor {
     /**
      * Asynchronously deletes multiple rows or cells from the specified HBase table.
      *
-     * <p>Performs batch delete operations to efficiently remove multiple rows or cells in a single
-     * operation. This is optimized for high throughput when deleting many rows. The ContinuableFuture
-     * completes with {@code null} when all delete operations finish successfully.</p>
+     * <p>Performs batch delete operations to efficiently remove multiple rows or cells. The
+     * returned {@link ContinuableFuture} completes with {@code null} when all delete operations
+     * finish successfully.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -744,7 +872,9 @@ public final class AsyncHBaseExecutor {
      *
      * @param tableName the name of the HBase table to delete from
      * @param deletes the list of Delete operations to execute
-     * @return a ContinuableFuture that completes with {@code null} when all delete operations finish
+     * @return a {@link ContinuableFuture} that completes with {@code null} when all delete
+     *         operations finish. Wraps {@link HBaseExecutor#delete(String, List)}.
+     * @see HBaseExecutor#delete(String, List)
      * @see Delete
      */
     public ContinuableFuture<Void> delete(final String tableName, final List<Delete> deletes) {
@@ -756,11 +886,12 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously deletes a row or specific cells using a fluent AnyDelete builder.
+     * Asynchronously deletes a row, column family, column, or specific cell version using a
+     * fluent {@link AnyDelete} builder.
      *
-     * <p>Performs a delete operation using the AnyDelete builder which provides a fluent API for
-     * constructing delete operations. AnyDelete simplifies the creation of Delete objects with
-     * a more readable syntax. The ContinuableFuture completes with {@code null} when the operation finishes.</p>
+     * <p>Equivalent to {@link #delete(String, Delete)} but using the fluent {@link AnyDelete}
+     * wrapper. The returned {@link ContinuableFuture} completes with {@code null} when the
+     * operation finishes.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -770,7 +901,9 @@ public final class AsyncHBaseExecutor {
      *
      * @param tableName the name of the HBase table to delete from
      * @param anyDelete the AnyDelete builder specifying the row and cells to delete
-     * @return a ContinuableFuture that completes with {@code null} when the delete operation finishes
+     * @return a {@link ContinuableFuture} that completes with {@code null} when the delete
+     *         operation finishes. Wraps {@link HBaseExecutor#delete(String, AnyDelete)}.
+     * @see HBaseExecutor#delete(String, AnyDelete)
      * @see AnyDelete
      */
     public ContinuableFuture<Void> delete(final String tableName, final AnyDelete anyDelete) {
@@ -782,11 +915,11 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously deletes multiple rows or cells using AnyDelete builders.
+     * Asynchronously deletes multiple rows or cells using {@link AnyDelete} builders.
      *
-     * <p>Performs batch delete operations using a collection of AnyDelete builders. This combines
-     * the efficiency of batch operations with the convenience of the fluent AnyDelete API. The
-     * ContinuableFuture completes with {@code null} when all delete operations finish successfully.</p>
+     * <p>Performs batch delete operations using a collection of {@link AnyDelete} builders. The
+     * returned {@link ContinuableFuture} completes with {@code null} when all delete operations
+     * finish successfully.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -799,7 +932,9 @@ public final class AsyncHBaseExecutor {
      *
      * @param tableName the name of the HBase table to delete from
      * @param anyDeletes the collection of AnyDelete builders specifying the rows to delete
-     * @return a ContinuableFuture that completes with {@code null} when all delete operations finish
+     * @return a {@link ContinuableFuture} that completes with {@code null} when all delete
+     *         operations finish. Wraps {@link HBaseExecutor#delete(String, Collection)}.
+     * @see HBaseExecutor#delete(String, Collection)
      * @see AnyDelete
      */
     public ContinuableFuture<Void> delete(final String tableName, final Collection<AnyDelete> anyDeletes) {
@@ -813,10 +948,10 @@ public final class AsyncHBaseExecutor {
     /**
      * Asynchronously performs atomic mutations on a single row using a fluent builder.
      *
-     * <p>Executes multiple mutations (puts and/or deletes) on a single row atomically. All mutations
-     * either succeed together or fail together, ensuring data consistency. This is useful for
-     * implementing complex update logic that requires atomic guarantees. The ContinuableFuture
-     * completes with {@code null} when the operation finishes.</p>
+     * <p>Executes multiple mutations (puts and/or deletes) on a single row atomically. All
+     * mutations target the same row key and either all succeed or all fail, ensuring per-row
+     * consistency. The returned {@link ContinuableFuture} completes with {@code null} when the
+     * operation finishes.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -828,7 +963,9 @@ public final class AsyncHBaseExecutor {
      *
      * @param tableName the name of the HBase table
      * @param rm the AnyRowMutations builder containing the atomic mutations
-     * @return a ContinuableFuture that completes with {@code null} when the mutations finish
+     * @return a {@link ContinuableFuture} that completes with {@code null} when the mutations
+     *         finish. Wraps {@link HBaseExecutor#mutateRow(String, AnyRowMutations)}.
+     * @see HBaseExecutor#mutateRow(String, AnyRowMutations)
      * @see AnyRowMutations
      */
     public ContinuableFuture<Void> mutateRow(final String tableName, final AnyRowMutations rm) {
@@ -840,16 +977,19 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously performs atomic mutations on a single row using a native RowMutations object.
+     * Asynchronously performs atomic mutations on a single row using a native {@link RowMutations}
+     * object.
      *
      * <p>Executes multiple mutations (puts and/or deletes) on a single row atomically using the
-     * HBase native RowMutations API. All mutations either succeed together or fail together,
-     * ensuring data consistency. The ContinuableFuture completes with {@code null} when the
-     * operation finishes.</p>
+     * HBase native {@link RowMutations} API. All mutations target the same row key and either all
+     * succeed or all fail. The returned {@link ContinuableFuture} completes with {@code null} when
+     * the operation finishes.</p>
      *
      * @param tableName the name of the HBase table
      * @param rm the RowMutations object containing the atomic mutations
-     * @return a ContinuableFuture that completes with {@code null} when the mutations finish
+     * @return a {@link ContinuableFuture} that completes with {@code null} when the mutations
+     *         finish. Wraps {@link HBaseExecutor#mutateRow(String, RowMutations)}.
+     * @see HBaseExecutor#mutateRow(String, RowMutations)
      * @see RowMutations
      */
     public ContinuableFuture<Void> mutateRow(final String tableName, final RowMutations rm) {
@@ -861,12 +1001,14 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously appends data to one or more columns in a row using a fluent builder.
+     * Asynchronously appends data to one or more columns in a row using a fluent {@link AnyAppend}
+     * builder.
      *
-     * <p>Atomically appends values to the end of existing cell values. This is useful for
-     * maintaining counters or logs. If the cell doesn't exist, it's created with the appended
-     * value. The ContinuableFuture completes with a Result containing the new cell values after
-     * the append operation.</p>
+     * <p>Atomically concatenates the supplied bytes to the end of each targeted cell's existing
+     * value. If a target cell does not yet exist, it is created with the supplied value. This is
+     * useful for maintaining log-like or counter-like columns. The returned
+     * {@link ContinuableFuture} completes with a {@link Result} containing the new (post-append)
+     * cell values, or an empty Result if the underlying call returned {@code null}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -876,7 +1018,9 @@ public final class AsyncHBaseExecutor {
      *
      * @param tableName the name of the HBase table
      * @param append the AnyAppend builder specifying the row and values to append
-     * @return a ContinuableFuture containing the Result with new cell values after the append
+     * @return a {@link ContinuableFuture} containing the Result with new cell values after the
+     *         append. Wraps {@link HBaseExecutor#append(String, AnyAppend)}.
+     * @see HBaseExecutor#append(String, AnyAppend)
      * @see AnyAppend
      * @see Result
      */
@@ -885,15 +1029,19 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously appends data to one or more columns in a row using a native Append object.
+     * Asynchronously appends data to one or more columns in a row using a native {@link Append}
+     * object.
      *
-     * <p>Atomically appends values to the end of existing cell values using the HBase native
-     * Append API. If the cell doesn't exist, it's created with the appended value. The
-     * ContinuableFuture completes with a Result containing the new cell values after the append.</p>
+     * <p>Atomically concatenates the supplied bytes to the end of each targeted cell's existing
+     * value via the HBase native {@link Append} API. If a target cell does not yet exist, it is
+     * created with the supplied value. The returned {@link ContinuableFuture} completes with a
+     * {@link Result} containing the new (post-append) cell values.</p>
      *
      * @param tableName the name of the HBase table
      * @param append the Append object specifying the row and values to append
-     * @return a ContinuableFuture containing the Result with new cell values after the append
+     * @return a {@link ContinuableFuture} containing the Result with new cell values after the
+     *         append. Wraps {@link HBaseExecutor#append(String, Append)}.
+     * @see HBaseExecutor#append(String, Append)
      * @see Append
      * @see Result
      */
@@ -902,12 +1050,13 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously increments column values in a row using a fluent builder.
+     * Asynchronously increments column values in a row using a fluent {@link AnyIncrement}
+     * builder.
      *
-     * <p>Atomically increments one or more column values by the specified amounts. This is ideal
-     * for maintaining counters without race conditions. If the cell doesn't exist, it's initialized
-     * to the increment value. The ContinuableFuture completes with a Result containing the new
-     * cell values after the increment.</p>
+     * <p>Atomically increments one or more long-valued cells by the specified amounts. This is
+     * ideal for maintaining counters without race conditions. If a target cell does not yet exist,
+     * it is initialised to the increment amount. The returned {@link ContinuableFuture} completes
+     * with a {@link Result} containing the post-increment cell values.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -917,7 +1066,9 @@ public final class AsyncHBaseExecutor {
      *
      * @param tableName the name of the HBase table
      * @param increment the AnyIncrement builder specifying the row and increment amounts
-     * @return a ContinuableFuture containing the Result with new cell values after the increment
+     * @return a {@link ContinuableFuture} containing the Result with new cell values after the
+     *         increment. Wraps {@link HBaseExecutor#increment(String, AnyIncrement)}.
+     * @see HBaseExecutor#increment(String, AnyIncrement)
      * @see AnyIncrement
      * @see Result
      */
@@ -926,15 +1077,18 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously increments column values in a row using a native Increment object.
+     * Asynchronously increments column values in a row using a native {@link Increment} object.
      *
-     * <p>Atomically increments one or more column values by the specified amounts using the HBase
-     * native Increment API. If the cell doesn't exist, it's initialized to the increment value.
-     * The ContinuableFuture completes with a Result containing the new cell values after the increment.</p>
+     * <p>Atomically increments one or more long-valued cells by the specified amounts using the
+     * HBase native {@link Increment} API. If a target cell does not yet exist, it is initialised
+     * to the increment amount. The returned {@link ContinuableFuture} completes with a
+     * {@link Result} containing the post-increment cell values.</p>
      *
      * @param tableName the name of the HBase table
      * @param increment the Increment object specifying the row and increment amounts
-     * @return a ContinuableFuture containing the Result with new cell values after the increment
+     * @return a {@link ContinuableFuture} containing the Result with new cell values after the
+     *         increment. Wraps {@link HBaseExecutor#increment(String, Increment)}.
+     * @see HBaseExecutor#increment(String, Increment)
      * @see Increment
      * @see Result
      */
@@ -945,10 +1099,10 @@ public final class AsyncHBaseExecutor {
     /**
      * Asynchronously increments a single column value by a specified amount.
      *
-     * <p>Atomically increments a specific column's long value by the given amount. This is a
-     * convenience method for incrementing a single counter without creating an Increment object.
-     * If the cell doesn't exist, it's initialized to the amount value. The ContinuableFuture
-     * completes with the new value after the increment.</p>
+     * <p>Atomically increments a specific column's long-encoded value by the given amount. This is
+     * a convenience method for incrementing a single counter without constructing an
+     * {@link Increment}. If the cell does not yet exist, it is initialised to {@code amount}. The
+     * returned {@link ContinuableFuture} completes with the new value after the increment.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -961,7 +1115,9 @@ public final class AsyncHBaseExecutor {
      * @param family the column family name (as String)
      * @param qualifier the column qualifier name (as String)
      * @param amount the amount to increment by (can be negative for decrement)
-     * @return a ContinuableFuture containing the new value after the increment
+     * @return a {@link ContinuableFuture} containing the new value after the increment. Wraps
+     *         {@link HBaseExecutor#incrementColumnValue(String, Object, String, String, long)}.
+     * @see HBaseExecutor#incrementColumnValue(String, Object, String, String, long)
      */
     public ContinuableFuture<Long> incrementColumnValue(final String tableName, final Object rowKey, final String family, final String qualifier,
             final long amount) {
@@ -969,11 +1125,12 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously increments a single column value with specified durability.
+     * Asynchronously increments a single column value with the specified write durability.
      *
-     * <p>Atomically increments a specific column's long value by the given amount with control
-     * over write durability. The durability setting determines how data is persisted (e.g.,
-     * SYNC_WAL, ASYNC_WAL, SKIP_WAL). The ContinuableFuture completes with the new value.</p>
+     * <p>Atomically increments a specific column's long-encoded value by the given amount with
+     * control over write durability. The durability setting determines how the WAL is flushed
+     * (e.g., {@link Durability#SYNC_WAL}, {@link Durability#ASYNC_WAL}, {@link Durability#SKIP_WAL}).
+     * The returned {@link ContinuableFuture} completes with the new value.</p>
      *
      * @param tableName the name of the HBase table
      * @param rowKey the row key (will be converted to bytes)
@@ -981,7 +1138,9 @@ public final class AsyncHBaseExecutor {
      * @param qualifier the column qualifier name (as String)
      * @param amount the amount to increment by (can be negative for decrement)
      * @param durability the durability level for this operation
-     * @return a ContinuableFuture containing the new value after the increment
+     * @return a {@link ContinuableFuture} containing the new value after the increment. Wraps
+     *         {@link HBaseExecutor#incrementColumnValue(String, Object, String, String, long, Durability)}.
+     * @see HBaseExecutor#incrementColumnValue(String, Object, String, String, long, Durability)
      * @see Durability
      */
     public ContinuableFuture<Long> incrementColumnValue(final String tableName, final Object rowKey, final String family, final String qualifier,
@@ -990,18 +1149,21 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously increments a single column value by a specified amount.
+     * Asynchronously increments a single column value by a specified amount, using byte-array
+     * family and qualifier identifiers.
      *
-     * <p>Atomically increments a specific column's long value by the given amount. This method
-     * accepts family and qualifier as byte arrays for efficiency. If the cell doesn't exist,
-     * it's initialized to the amount value. The ContinuableFuture completes with the new value.</p>
+     * <p>Atomically increments a specific column's long-encoded value by the given amount. If the
+     * cell does not yet exist, it is initialised to {@code amount}. The returned
+     * {@link ContinuableFuture} completes with the new value.</p>
      *
      * @param tableName the name of the HBase table
      * @param rowKey the row key (will be converted to bytes)
      * @param family the column family name as a byte array
      * @param qualifier the column qualifier name as a byte array
      * @param amount the amount to increment by (can be negative for decrement)
-     * @return a ContinuableFuture containing the new value after the increment
+     * @return a {@link ContinuableFuture} containing the new value after the increment. Wraps
+     *         {@link HBaseExecutor#incrementColumnValue(String, Object, byte[], byte[], long)}.
+     * @see HBaseExecutor#incrementColumnValue(String, Object, byte[], byte[], long)
      */
     public ContinuableFuture<Long> incrementColumnValue(final String tableName, final Object rowKey, final byte[] family, final byte[] qualifier,
             final long amount) {
@@ -1009,11 +1171,12 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously increments a single column value with specified durability.
+     * Asynchronously increments a single column value with the specified write durability, using
+     * byte-array family and qualifier identifiers.
      *
-     * <p>Atomically increments a specific column's long value by the given amount with control
-     * over write durability. This method accepts family and qualifier as byte arrays for efficiency.
-     * The ContinuableFuture completes with the new value after the increment.</p>
+     * <p>Atomically increments a specific column's long-encoded value by the given amount with
+     * control over WAL durability. The returned {@link ContinuableFuture} completes with the new
+     * value.</p>
      *
      * @param tableName the name of the HBase table
      * @param rowKey the row key (will be converted to bytes)
@@ -1021,7 +1184,9 @@ public final class AsyncHBaseExecutor {
      * @param qualifier the column qualifier name as a byte array
      * @param amount the amount to increment by (can be negative for decrement)
      * @param durability the durability level for this operation
-     * @return a ContinuableFuture containing the new value after the increment
+     * @return a {@link ContinuableFuture} containing the new value after the increment. Wraps
+     *         {@link HBaseExecutor#incrementColumnValue(String, Object, byte[], byte[], long, Durability)}.
+     * @see HBaseExecutor#incrementColumnValue(String, Object, byte[], byte[], long, Durability)
      * @see Durability
      */
     public ContinuableFuture<Long> incrementColumnValue(final String tableName, final Object rowKey, final byte[] family, final byte[] qualifier,
@@ -1030,16 +1195,19 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously creates an RPC channel to a coprocessor for the specified row.
+     * Asynchronously obtains an RPC channel for invoking coprocessor endpoints on the region that
+     * contains the specified row.
      *
-     * <p>Returns a coprocessor RPC channel that can be used to execute custom server-side logic
-     * on the region server hosting the specified row. This enables extending HBase functionality
-     * with custom operations that run close to the data. The ContinuableFuture completes with
-     * the channel that can be used for coprocessor method invocation.</p>
+     * <p>The returned {@link CoprocessorRpcChannel} can be used to execute custom server-side
+     * logic registered on the region server hosting {@code rowKey}, enabling computation close to
+     * the data. The returned {@link ContinuableFuture} completes with the channel that can then be
+     * used for coprocessor method invocation.</p>
      *
      * @param tableName the name of the HBase table
-     * @param rowKey the row key to determine which region server to connect to
-     * @return a ContinuableFuture containing the CoprocessorRpcChannel for the row's region
+     * @param rowKey the row key used to locate the region server / region whose channel is returned
+     * @return a {@link ContinuableFuture} containing the {@code CoprocessorRpcChannel} for the
+     *         row's region. Wraps {@link HBaseExecutor#coprocessorService(String, Object)}.
+     * @see HBaseExecutor#coprocessorService(String, Object)
      * @see CoprocessorRpcChannel
      */
     public ContinuableFuture<CoprocessorRpcChannel> coprocessorService(final String tableName, final Object rowKey) {
@@ -1047,12 +1215,14 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously executes a coprocessor call across a range of rows.
+     * Asynchronously executes a coprocessor call across all regions in a row range.
      *
-     * <p>Invokes a coprocessor service method across all regions that overlap with the specified
-     * row range. The callable is executed on each region server, and results are collected in a
-     * map keyed by region start key. This enables distributed processing across multiple regions.
-     * The ContinuableFuture completes with a map of results from each region.</p>
+     * <p>Invokes a coprocessor service method on every region whose row range overlaps
+     * {@code [startRowKey, endRowKey)}. The {@code callable} is executed on each region server,
+     * and results are collected into a map keyed by the region's start row key. This enables
+     * distributed server-side processing across multiple regions. The returned
+     * {@link ContinuableFuture} completes with the aggregated map once every region has
+     * responded.</p>
      *
      * @param <T> the coprocessor service type
      * @param <R> the return type from the coprocessor call
@@ -1061,7 +1231,9 @@ public final class AsyncHBaseExecutor {
      * @param startRowKey the starting row key (inclusive) for the range
      * @param endRowKey the ending row key (exclusive) for the range
      * @param callable the callable to execute on each region
-     * @return a ContinuableFuture containing a map of region start keys to results
+     * @return a {@link ContinuableFuture} containing a map of region start keys to results. Wraps
+     *         {@link HBaseExecutor#coprocessorService(String, Class, Object, Object, Batch.Call)}.
+     * @see HBaseExecutor#coprocessorService(String, Class, Object, Object, Batch.Call)
      * @see Batch.Call
      */
     public <T extends Service, R> ContinuableFuture<Map<byte[], R>> coprocessorService(final String tableName, final Class<T> service, final Object startRowKey,
@@ -1070,13 +1242,14 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously executes a coprocessor call across a range of rows with a callback.
+     * Asynchronously executes a coprocessor call across all regions in a row range, delivering
+     * each region's result to a callback as it becomes available.
      *
-     * <p>Invokes a coprocessor service method across all regions that overlap with the specified
-     * row range, with results delivered via the provided callback as they become available. This
-     * enables streaming processing of results rather than collecting them all in memory. The
-     * callback is invoked for each region's result. The ContinuableFuture completes with {@code null}
-     * when all coprocessor calls finish.</p>
+     * <p>Invokes a coprocessor service method on every region whose row range overlaps
+     * {@code [startRowKey, endRowKey)}, with each region's result delivered to {@code callback} as
+     * soon as it returns. This enables streaming processing of results rather than collecting them
+     * all in memory. The returned {@link ContinuableFuture} completes with {@code null} once every
+     * coprocessor invocation has finished.</p>
      *
      * @param <T> the coprocessor service type
      * @param <R> the return type from the coprocessor call
@@ -1085,8 +1258,10 @@ public final class AsyncHBaseExecutor {
      * @param startRowKey the starting row key (inclusive) for the range
      * @param endRowKey the ending row key (exclusive) for the range
      * @param callable the callable to execute on each region
-     * @param callback the callback to receive results from each region
-     * @return a ContinuableFuture that completes with {@code null} when all calls finish
+     * @param callback the callback that receives each region's result
+     * @return a {@link ContinuableFuture} that completes with {@code null} when all calls finish.
+     *         Wraps {@link HBaseExecutor#coprocessorService(String, Class, Object, Object, Batch.Call, Batch.Callback)}.
+     * @see HBaseExecutor#coprocessorService(String, Class, Object, Object, Batch.Call, Batch.Callback)
      * @see Batch.Call
      * @see Batch.Callback
      */
@@ -1100,12 +1275,14 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously executes a batch coprocessor call across a range of rows.
+     * Asynchronously executes a batch coprocessor call across all regions in a row range using
+     * Protocol Buffer messages.
      *
-     * <p>Invokes a coprocessor method defined by the method descriptor across all regions that
-     * overlap with the specified row range using Protocol Buffer messages. This is useful for
-     * executing predefined coprocessor operations in batch mode. The ContinuableFuture completes
-     * with a map of region start keys to response messages.</p>
+     * <p>Invokes the coprocessor method identified by {@code methodDescriptor} on every region
+     * whose row range overlaps {@code [startRowKey, endRowKey)}, passing the supplied
+     * {@code request} message and parsing each response against {@code responsePrototype}. The
+     * returned {@link ContinuableFuture} completes with a map of region start keys to response
+     * messages once every region has responded.</p>
      *
      * @param <R> the response message type
      * @param tableName the name of the HBase table
@@ -1113,8 +1290,10 @@ public final class AsyncHBaseExecutor {
      * @param request the request message to send to each region
      * @param startRowKey the starting row key (inclusive) for the range
      * @param endRowKey the ending row key (exclusive) for the range
-     * @param responsePrototype the prototype instance for parsing responses
-     * @return a ContinuableFuture containing a map of region start keys to response messages
+     * @param responsePrototype the prototype instance used to parse responses
+     * @return a {@link ContinuableFuture} containing a map of region start keys to response
+     *         messages. Wraps {@link HBaseExecutor#batchCoprocessorService(String, Descriptors.MethodDescriptor, Message, Object, Object, Message)}.
+     * @see HBaseExecutor#batchCoprocessorService(String, Descriptors.MethodDescriptor, Message, Object, Object, Message)
      * @see Descriptors.MethodDescriptor
      */
     public <R extends Message> ContinuableFuture<Map<byte[], R>> batchCoprocessorService(final String tableName,
@@ -1125,13 +1304,14 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously executes a batch coprocessor call across a range of rows with a callback.
+     * Asynchronously executes a batch coprocessor call across all regions in a row range with a
+     * callback, using Protocol Buffer messages.
      *
-     * <p>Invokes a coprocessor method defined by the method descriptor across all regions that
-     * overlap with the specified row range using Protocol Buffer messages, with results delivered
-     * via the provided callback as they become available. This enables streaming processing of
-     * results. The callback is invoked for each region's response. The ContinuableFuture completes
-     * with {@code null} when all coprocessor calls finish.</p>
+     * <p>Invokes the coprocessor method identified by {@code methodDescriptor} on every region
+     * whose row range overlaps {@code [startRowKey, endRowKey)}, with each region's response
+     * delivered to {@code callback} as soon as it is received. This enables streaming processing
+     * of results. The returned {@link ContinuableFuture} completes with {@code null} once every
+     * coprocessor invocation has finished.</p>
      *
      * @param <R> the response message type
      * @param tableName the name of the HBase table
@@ -1139,9 +1319,11 @@ public final class AsyncHBaseExecutor {
      * @param request the request message to send to each region
      * @param startRowKey the starting row key (inclusive) for the range
      * @param endRowKey the ending row key (exclusive) for the range
-     * @param responsePrototype the prototype instance for parsing responses
-     * @param callback the callback to receive responses from each region
-     * @return a ContinuableFuture that completes with {@code null} when all calls finish
+     * @param responsePrototype the prototype instance used to parse responses
+     * @param callback the callback that receives each region's response
+     * @return a {@link ContinuableFuture} that completes with {@code null} when all calls finish.
+     *         Wraps {@link HBaseExecutor#batchCoprocessorService(String, Descriptors.MethodDescriptor, Message, Object, Object, Message, Batch.Callback)}.
+     * @see HBaseExecutor#batchCoprocessorService(String, Descriptors.MethodDescriptor, Message, Object, Object, Message, Batch.Callback)
      * @see Descriptors.MethodDescriptor
      * @see Batch.Callback
      */

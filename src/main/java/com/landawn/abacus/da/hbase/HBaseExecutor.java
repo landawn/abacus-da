@@ -78,68 +78,93 @@ import com.landawn.abacus.util.stream.ObjIteratorEx;
 import com.landawn.abacus.util.stream.Stream;
 
 /**
- * A comprehensive HBase client wrapper that provides high-level operations for Apache HBase database access.
- * This executor simplifies HBase operations by providing object-relational mapping functionality, automatic
- * type conversion, and fluent API for common database operations.
+ * High-level facade over Apache HBase that adds entity mapping, automatic byte-array
+ * conversion, batch helpers, and a fluent {@code AnyXxx} builder API on top of the
+ * native HBase client {@link Connection}/{@link Table}/{@link Admin} interfaces.
  *
- * <p>The executor supports both synchronous and asynchronous operations, entity mapping, and various HBase
- * operations including CRUD operations, scanning, coprocessor execution, and batch operations.</p>
+ * <p>The executor owns an HBase {@link Admin} and reuses the supplied {@link Connection}.
+ * Most operations acquire a short-lived {@link Table} from the connection, run the call,
+ * and close the table in a {@code finally} block; the connection itself is left open
+ * until {@link #close()} is invoked.</p>
  *
- * <h2>Entity Mapping Strategy</h2>
+ * <h2>Byte-array conversion</h2>
+ * <p>Convenience overloads that accept {@code Object} row keys or {@link String} column
+ * families and qualifiers convert their arguments to {@code byte[]} via the package-private
+ * helpers {@code toRowKeyBytes}, {@code toFamilyQualifierBytes}, and {@code toValueBytes}.
+ * Overloads that take raw {@code byte[]} pass the bytes through unchanged. Strings are
+ * encoded with {@link Bytes#toBytes(String)}; other objects are converted to their
+ * {@code N.stringOf} form first; {@link ByteBuffer}s are read into a fresh array;
+ * existing {@code byte[]} values are returned as-is.</p>
  *
- * <h3>Default Mapping</h3>
- * <p>By default, field names in Java classes are mapped to HBase Column Families, with empty Column qualifiers.
- * This behavior can be customized using {@code @ColumnFamily} and {@code @Column} annotations.</p>
+ * <h2>Entity mapping</h2>
  *
- * <h4>Default Mapping (without annotations):</h4>
- * <p><b>Usage Examples:</b></p>
+ * <h3>Default mapping</h3>
+ * <p>Without annotations, each field name is interpreted as the HBase Column Family name
+ * and the column qualifier defaults to the empty string for scalar fields. Nested bean
+ * fields are flattened so that each nested property becomes a qualifier under the parent
+ * field's family.</p>
+ *
+ * <p><b>Example (no annotations):</b></p>
  * <pre>{@code
  * public static class Account {
  *     @Id
- *     private String id;  // HBase: "id:" (columnFamily=id, qualifier=empty)
- *     private String gui;  // HBase: "gui:" (columnFamily=gui, qualifier=empty)
- *     private Name name;  // HBase: "name:firstName" and "name:lastName"
+ *     private String id;            // HBase: "id:"          (columnFamily=id,  qualifier="")
+ *     private String gui;           // HBase: "gui:"         (columnFamily=gui, qualifier="")
+ *     private Name name;            // HBase: "name:firstName" and "name:lastName"
  *     private String emailAddress;  // HBase: "emailAddress:"
  * }
  *
  * public static class Name {
  *     private String firstName;  // HBase: "name:firstName"
- *     private String lastName;  // HBase: "name:lastName"
+ *     private String lastName;   // HBase: "name:lastName"
  * }
  * }</pre>
  *
- * <h4>Annotated Mapping (with {@code @ColumnFamily} and {@code @Column}):</h4>
- * <p><b>Usage Examples:</b></p>
+ * <h3>Annotated mapping</h3>
+ * <p>A class-level {@link ColumnFamily} sets the default family for every field, and a
+ * field-level {@link ColumnFamily} overrides it. {@code @Column} customizes the qualifier.</p>
+ *
+ * <p><b>Example (annotated):</b></p>
  * <pre>{@code
  * @ColumnFamily("cf")
  * public static class Account {
  *     @Id
- *     private String id;  // HBase: "cf:id"
+ *     private String id;            // HBase: "cf:id"
  *     @Column("guid")
- *     private String gui;  // HBase: "cf:guid"
+ *     private String gui;           // HBase: "cf:guid"
  *     @ColumnFamily("name")
- *     private Name name;  // HBase: "name:givenName" and "name:lastName"
+ *     private Name name;            // HBase: "name:givenName" and "name:lastName"
  * }
  * }</pre>
  *
- * <h3>Usage Examples</h3>
+ * <h2>Asynchronous access</h2>
+ * <p>{@link #async()} exposes an {@link AsyncHBaseExecutor} that wraps the same operations
+ * in {@link com.landawn.abacus.util.ContinuableFuture} return values, submitting them to
+ * the {@link AsyncExecutor} supplied at construction (or the shared
+ * {@link #DEFAULT_ASYNC_EXECUTOR}).</p>
+ *
+ * <h2>Scan streams</h2>
+ * <p>{@code scan(...)} returns a lazy {@link Stream} that opens the underlying
+ * {@link Table} and {@link ResultScanner} only when iteration begins; both are closed
+ * when the stream is closed. Always consume scan streams inside a try-with-resources
+ * block to avoid leaking the table or scanner.</p>
+ *
+ * <h2>Basic usage</h2>
  * <pre>{@code
- * // Initialize executor
- * HBaseExecutor executor = new HBaseExecutor(connection);
+ * try (HBaseExecutor executor = new HBaseExecutor(connection)) {
+ *     boolean exists = executor.exists("users", AnyGet.of("user123"));
+ *     Result result  = executor.get("users", AnyGet.of("user123"));
+ *     executor.put("users", AnyPut.of("user123").addColumn("info", "name", "John"));
  *
- * // Basic operations
- * boolean exists = executor.exists("users", "user123");
- * Result result = executor.get("users", AnyGet.of("user123"));
- * executor.put("users", AnyPut.of("user123").addColumn("info", "name", "John"));
- *
- * // Entity mapping
- * HBaseMapper<User, String> mapper = executor.mapper(User.class);
- * User user = mapper.get("user123");
- * mapper.put(user);
+ *     HBaseMapper<User, String> mapper = executor.mapper(User.class);
+ *     User user = mapper.get("user123");
+ *     mapper.put(user);
+ * }
  * }</pre>
  *
  * @see com.landawn.abacus.util.HBaseColumn
  * @see com.landawn.abacus.da.hbase.annotation.ColumnFamily
+ * @see AsyncHBaseExecutor
  * @see <a href="http://hbase.apache.org/devapidocs/index.html">Apache HBase Java API</a>
  */
 public final class HBaseExecutor implements AutoCloseable {
@@ -173,32 +198,43 @@ public final class HBaseExecutor implements AutoCloseable {
     private final AsyncHBaseExecutor asyncHBaseExecutor;
 
     /**
-     * Constructs a new HBaseExecutor with the specified HBase connection.
-     * Uses the default async executor for asynchronous operations.
+     * Constructs an {@code HBaseExecutor} bound to the given HBase {@link Connection},
+     * using the shared {@link #DEFAULT_ASYNC_EXECUTOR} for async operations.
      *
-     * <p>This constructor initializes the executor with a default async executor that has:
+     * <p>The default async executor is statically configured with:</p>
      * <ul>
-     * <li>Core thread pool size: max(64, CPU_CORES * 8)</li>
-     * <li>Max thread pool size: max(128, CPU_CORES * 16)</li>
-     * <li>Keep-alive time: 180 seconds</li>
+     *   <li>Core thread pool size: {@code max(64, IOUtil.CPU_CORES * 8)}</li>
+     *   <li>Max thread pool size: {@code max(128, IOUtil.CPU_CORES * 16)}</li>
+     *   <li>Keep-alive time: 180 seconds</li>
      * </ul>
      *
+     * <p>The supplied {@code conn} is not copied; closing this executor closes the
+     * connection it wraps (see {@link #close()}).</p>
+     *
      * @param conn the HBase connection to use for database operations
-     * @throws UncheckedIOException if unable to create the HBase admin interface
+     * @throws UncheckedIOException if obtaining the {@link Admin} interface from the
+     *         connection fails with an {@link IOException}
      */
     public HBaseExecutor(final Connection conn) {
         this(conn, DEFAULT_ASYNC_EXECUTOR);
     }
 
     /**
-     * Constructs a new HBaseExecutor with the specified HBase connection and custom async executor.
+     * Constructs an {@code HBaseExecutor} bound to the given HBase {@link Connection}
+     * and a caller-supplied {@link AsyncExecutor} for asynchronous operations.
      *
-     * <p>This constructor allows for fine-grained control over the thread pool used for asynchronous
-     * operations. The async executor is used by the {@link AsyncHBaseExecutor} for non-blocking operations.</p>
+     * <p>Use this constructor when you want to share or constrain the thread pool that
+     * drives the {@link AsyncHBaseExecutor} returned from {@link #async()}.</p>
      *
-     * @param conn the HBase connection to use for database operations
-     * @param asyncExecutor the custom async executor for handling asynchronous operations
-     * @throws UncheckedIOException if unable to create the HBase admin interface
+     * <p>If {@link Connection#getAdmin()} throws, the partially constructed admin is closed
+     * quietly and the underlying {@link IOException} is rethrown wrapped in
+     * {@link UncheckedIOException}.</p>
+     *
+     * @param conn the HBase connection to use for database operations; not copied — closing
+     *        this executor closes the connection
+     * @param asyncExecutor the executor that drives the {@link AsyncHBaseExecutor}
+     * @throws UncheckedIOException if obtaining the {@link Admin} interface from the
+     *         connection fails with an {@link IOException}
      */
     public HBaseExecutor(final Connection conn, final AsyncExecutor asyncExecutor) {
         Admin tmpAdmin = null;
@@ -219,12 +255,13 @@ public final class HBaseExecutor implements AutoCloseable {
     }
 
     /**
-     * Returns the HBase admin interface for administrative operations.
+     * Returns the HBase {@link Admin} owned by this executor.
      *
-     * <p>The admin interface provides methods for table management, cluster administration,
-     * and other HBase administrative tasks such as creating/dropping tables, managing regions, etc.</p>
+     * <p>The admin interface exposes table-management and cluster-administration calls
+     * (create/drop tables, manage regions, etc.). The returned instance is owned by this
+     * executor and is closed by {@link #close()}; do not close it independently.</p>
      *
-     * @return the HBase admin interface
+     * @return the HBase admin interface bound to this executor
      * @see Admin
      */
     public Admin admin() {
@@ -232,12 +269,13 @@ public final class HBaseExecutor implements AutoCloseable {
     }
 
     /**
-     * Returns the underlying HBase connection used by this executor.
+     * Returns the {@link Connection} this executor wraps.
      *
-     * <p>The connection is shared across all operations performed by this executor.
-     * This method provides access to the raw connection for advanced usage scenarios.</p>
+     * <p>The connection is shared by every operation performed through this executor
+     * and is closed by {@link #close()}. Exposed for advanced scenarios that need to
+     * issue calls directly against the native HBase API.</p>
      *
-     * @return the HBase connection instance
+     * @return the wrapped HBase {@link Connection}
      * @see Connection
      */
     public Connection connection() {
@@ -245,19 +283,23 @@ public final class HBaseExecutor implements AutoCloseable {
     }
 
     /**
-     * Returns the asynchronous executor wrapper for non-blocking HBase operations.
+     * Returns the asynchronous facade for non-blocking HBase operations.
      *
-     * <p>The async executor provides the same operations as this executor but returns
-     * {@code CompletableFuture} objects for asynchronous execution. This is useful
-     * for building non-blocking, high-performance applications.</p>
+     * <p>The returned {@link AsyncHBaseExecutor} exposes the same operations as this
+     * executor but submits them to the {@link AsyncExecutor} supplied at construction
+     * (or {@link #DEFAULT_ASYNC_EXECUTOR}) and returns
+     * {@link com.landawn.abacus.util.ContinuableFuture} results.</p>
+     *
+     * <p>The returned instance is owned by this executor and its lifetime is bound to
+     * this {@code HBaseExecutor}; do not close it independently.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * CompletableFuture<Boolean> existsFuture = executor.async().exists("users", "user123");
-     * CompletableFuture<User> userFuture = executor.async().get("users", "user123", User.class);
+     * ContinuableFuture<Boolean> existsFuture = executor.async().exists("users", AnyGet.of("user123"));
+     * ContinuableFuture<User>    userFuture   = executor.async().get("users", AnyGet.of("user123"), User.class);
      * }</pre>
      *
-     * @return the asynchronous HBase executor
+     * @return the asynchronous HBase executor bound to this executor
      * @see AsyncHBaseExecutor
      */
     public AsyncHBaseExecutor async() {
@@ -265,28 +307,30 @@ public final class HBaseExecutor implements AutoCloseable {
     }
 
     /**
-     * Registers a property as the row key for the specified entity class.
+     * Manually registers a property of {@code cls} as the HBase row-key for the entity class.
      *
-     * <p>This method allows manual registration of a property to be used as the HBase row key
-     * for entities. The property will be read from and written to when converting between
-     * entity objects and HBase operations.</p>
+     * <p>The setter of the registered property is recorded and used by the result-to-entity
+     * conversion path to populate the row-key value when reading rows. Calling this method
+     * also clears any previously cached column-family/qualifier name maps for {@code cls}
+     * so they are recomputed from the new row-key configuration.</p>
      *
-     * <p><strong>Deprecated:</strong> This method is deprecated. Instead, annotate the row key
-     * field directly with {@code @Id} annotation from either:</p>
+     * <p><strong>Deprecated:</strong> prefer annotating the row-key field with {@code @Id}
+     * from one of the following:</p>
      * <ul>
-     * <li>{@code com.landawn.abacus.annotation.Id}</li>
-     * <li>{@code javax.persistence.Id}</li>
-     * <li>{@code jakarta.persistence.Id}</li>
+     *   <li>{@code com.landawn.abacus.annotation.Id}</li>
+     *   <li>{@code javax.persistence.Id}</li>
+     *   <li>{@code jakarta.persistence.Id}</li>
      * </ul>
      *
-     * @param cls the entity class with getter/setter methods for which to register the row key property
+     * @param cls the entity class (must be a JavaBean class) on which to register the row-key property
      * @param rowKeyPropertyName the name of the property to use as the row key
-     * @throws IllegalArgumentException if the specified class doesn't have getter or setter methods
-     *         for the specified property, or if the property type is {@link HBaseColumn} (directly,
-     *         or as a single-arg generic such as {@code Collection<HBaseColumn>}, or as the value type
-     *         of a two-arg generic such as {@code Map<?, HBaseColumn>})
+     * @throws IllegalArgumentException if {@code cls} has no getter or setter for
+     *         {@code rowKeyPropertyName}, or if the property's declared type is
+     *         {@link HBaseColumn} (directly, as the single type-arg of a generic such as
+     *         {@code Collection<HBaseColumn>}, or as the value type of a two-arg generic
+     *         such as {@code Map<?, HBaseColumn>})
      * @see com.landawn.abacus.annotation.Id
-     * @deprecated Define or annotate the key/id field using {@code @Id} annotation instead.
+     * @deprecated Annotate the row-key field with {@code @Id} instead.
      */
     @Deprecated
     public static void registerRowKeyProperty(final Class<?> cls, final String rowKeyPropertyName) {
@@ -445,18 +489,19 @@ public final class HBaseExecutor implements AutoCloseable {
     }
 
     /**
-     * Converts all results from a HBase ResultScanner to a list of target type objects.
+     * Reads every {@link Result} from {@code resultScanner}, converts each into
+     * {@code targetClass}, and returns them as a {@link List}.
      *
-     * <p>This method processes all available results from the scanner and converts them to the specified
-     * target type. For entity classes, it performs object mapping using the configured column family
-     * and column mapping strategies. For primitive types, it extracts the single cell value.</p>
+     * <p>Equivalent to {@code toList(resultScanner, 0, Integer.MAX_VALUE, targetClass)}.
+     * The scanner is always closed (via {@link IOUtil#closeQuietly(java.io.Closeable)})
+     * before this method returns, even on exception.</p>
      *
      * @param <T> the target type for conversion
-     * @param resultScanner the HBase result scanner to process
-     * @param targetClass the target class for conversion - can be entity classes with getter/setter methods
-     *                   or basic single value types (String, Integer, Date, etc.)
-     * @return a list of converted objects from the scanner results
-     * @throws UncheckedIOException if an I/O error occurs during scanning
+     * @param resultScanner the HBase result scanner to drain
+     * @param targetClass the target class — a JavaBean class or a single-value type
+     *                    (e.g. {@code String}, {@code Integer}, {@code Date})
+     * @return a list of converted objects (skipping no rows)
+     * @throws UncheckedIOException if reading from {@code resultScanner} fails with an {@link IOException}
      * @see #toList(ResultScanner, int, int, Class)
      */
     public static <T> List<T> toList(final ResultScanner resultScanner, final Class<T> targetClass) {
@@ -464,27 +509,29 @@ public final class HBaseExecutor implements AutoCloseable {
     }
 
     /**
-     * Converts a range of results from a HBase ResultScanner to a list of target type objects.
+     * Reads a windowed range of results from {@code resultScanner}, converts each into
+     * {@code targetClass}, and returns them as a {@link List}.
      *
-     * <p>This method allows for pagination-like processing of results by specifying an offset
-     * and maximum count. It's useful for processing large result sets in chunks or implementing
-     * pagination functionality.</p>
+     * <p>The first {@code offset} results are read and discarded; up to {@code count}
+     * subsequent results are converted via the per-row mapping for {@code targetClass}.
+     * The scanner is always closed (via {@link IOUtil#closeQuietly(java.io.Closeable)})
+     * before this method returns, even on exception.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Get first 100 results, skipping the first 50
+     * // Skip the first 50 results, then take up to 100
      * List<User> users = HBaseExecutor.toList(scanner, 50, 100, User.class);
      * }</pre>
      *
      * @param <T> the target type for conversion
      * @param resultScanner the HBase result scanner to process
-     * @param offset the number of results to skip from the beginning
-     * @param count the maximum number of results to process
-     * @param targetClass the target class for conversion - can be entity classes with getter/setter methods
-     *                   or basic single value types (String, Integer, Date, etc.)
-     * @return a list of converted objects from the specified range of scanner results
-     * @throws IllegalArgumentException if offset or count is negative
-     * @throws UncheckedIOException if an I/O error occurs during scanning
+     * @param offset the number of results to skip from the beginning; must be non-negative
+     * @param count the maximum number of results to convert; must be non-negative
+     * @param targetClass the target class — a JavaBean class or a single-value type
+     *                    (e.g. {@code String}, {@code Integer}, {@code Date})
+     * @return a list of converted objects from the requested window
+     * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
+     * @throws UncheckedIOException if reading from {@code resultScanner} fails with an {@link IOException}
      */
     public static <T> List<T> toList(final ResultScanner resultScanner, int offset, int count, final Class<T> targetClass) {
         if (offset < 0 || count < 0) {
@@ -520,18 +567,19 @@ public final class HBaseExecutor implements AutoCloseable {
     }
 
     /**
-     * Converts a list of HBase Results to a list of entities of the specified type.
+     * Converts an in-memory list of HBase {@link Result}s into entities of {@code targetClass}.
      *
-     * <p>This static utility method efficiently converts multiple HBase Result objects into a list
-     * of Java objects. For entity classes, it performs batch object-relational mapping. For primitive
-     * types, it extracts single cell values from each result.</p>
+     * <p>Each element of {@code results} is converted using the same per-row mapping as
+     * {@link #toEntity(Result, Class)}. Elements for which {@link Result#isEmpty()} is
+     * {@code true} are skipped, so the returned list may be shorter than {@code results}
+     * and is not necessarily index-aligned with it.</p>
      *
      * @param <T> the target type for conversion
-     * @param results the list of HBase Results to convert
-     * @param targetClass the target class - can be entity classes with getter/setter methods
-     *                   or basic single value types (String, Integer, Date, etc.)
+     * @param results the HBase results to convert
+     * @param targetClass the target class — a JavaBean class or a single-value type
+     *                    (e.g. {@code String}, {@code Integer}, {@code Date})
      * @return a list of converted entities; empty results are skipped
-     * @throws UncheckedIOException if an I/O error occurs during conversion
+     * @throws UncheckedIOException if reading cells from any result fails with an {@link IOException}
      */
     static <T> List<T> toList(final List<Result> results, final Class<T> targetClass) {
         final Type<T> targetType = N.typeOf(targetClass);
@@ -559,18 +607,27 @@ public final class HBaseExecutor implements AutoCloseable {
     }
 
     /**
-     * Converts a HBase Result to an entity of the specified type.
+     * Converts a single HBase {@link Result} into an instance of {@code targetClass}.
      *
-     * <p>This static utility method converts a single HBase Result object into a Java object of
-     * the target type. For entity classes (beans), it performs object-relational mapping by reading
-     * cells from the Result and populating the entity's fields based on column family and qualifier
-     * mappings. For primitive types, it extracts the single cell value.</p>
+     * <p>For JavaBean target classes this performs full object-relational mapping: the
+     * row-key cell (if a row-key setter is registered or discovered via {@code @Id})
+     * populates the row-key property, and each subsequent cell is matched to a bean
+     * property using the entity's column-family/qualifier mapping. Cells whose family,
+     * qualifier, or field name cannot be resolved are silently ignored. Bean properties
+     * declared as {@link HBaseColumn}, {@code Collection<HBaseColumn>}, or
+     * {@code Map<?, HBaseColumn>} are populated cell-by-cell with versioned values.</p>
      *
-     * <p>Entity class requirements:</p>
+     * <p>For single-value target types the {@link Result} must contain exactly one cell,
+     * whose value is decoded via {@link Type#valueOf(String)} into {@code T}; a result
+     * with more cells triggers {@link IllegalArgumentException}. Map target types are
+     * explicitly rejected.</p>
+     *
+     * <p>Entity-class requirements:</p>
      * <ul>
-     * <li>Must have getter/setter methods following JavaBean conventions</li>
-     * <li>Can use {@code @ColumnFamily} and {@code @Column} annotations for custom mapping</li>
-     * <li>Without annotations, field names map to column families with empty qualifiers</li>
+     *   <li>JavaBean conventions (getters/setters)</li>
+     *   <li>{@code @ColumnFamily} / {@code @Column} for custom mapping; without them,
+     *       field names become column-family names with empty qualifiers (or are flattened
+     *       for nested bean fields)</li>
      * </ul>
      *
      * <p><b>Usage Examples:</b></p>
@@ -578,17 +635,19 @@ public final class HBaseExecutor implements AutoCloseable {
      * Result result = table.get(new Get(Bytes.toBytes("user123")));
      * User user = HBaseExecutor.toEntity(result, User.class);
      *
-     * // For primitive types
+     * // Single-cell single-value extraction
      * String name = HBaseExecutor.toEntity(result, String.class);
      * }</pre>
      *
      * @param <T> the target type
      * @param result the HBase Result to convert
-     * @param targetClass the target class - can be entity classes with getter/setter methods
-     *                   or basic single value types (String, Integer, Date, etc.). Map types are not supported.
+     * @param targetClass the target class — a JavaBean class with getter/setter methods or a
+     *                    single-value type (e.g. {@code String}, {@code Integer}, {@code Date}).
+     *                    {@link Map} types are not supported.
      * @return the converted entity, or the type's default value if the result is empty
-     * @throws IllegalArgumentException if {@code targetClass} is a Map type, or if a non-bean result contains more than one cell
-     * @throws UncheckedIOException if an I/O error occurs during conversion
+     * @throws IllegalArgumentException if {@code targetClass} is a {@link Map} type, or if the
+     *         result has more than one cell when {@code targetClass} is a single-value type
+     * @throws UncheckedIOException if reading cells from {@code result} fails with an {@link IOException}
      * @see Result
      */
     public static <T> T toEntity(final Result result, final Class<T> targetClass) {
@@ -604,18 +663,20 @@ public final class HBaseExecutor implements AutoCloseable {
     //    }
 
     /**
-     * Converts a single HBase Result to an entity of the specified type.
+     * Package-private entry point that converts a single HBase {@link Result} to
+     * {@code targetClass}, returning the {@link Type#defaultValue()} for empty results.
      *
-     * <p>This static utility method converts a HBase Result object into a Java object of the target type.
-     * For entity classes, it performs object-relational mapping. For primitive types, it extracts the
-     * single cell value. Returns the default value for the type if the result is empty.</p>
+     * <p>Used internally by {@link #toEntity(Result, Class)} and the per-table {@code get}
+     * overloads. Wraps any {@link IOException} from the result's cell scanner in
+     * {@link UncheckedIOException}.</p>
      *
      * @param <T> the target type for conversion
      * @param result the HBase Result to convert
-     * @param targetClass the target class - can be entity classes with getter/setter methods
-     *                   or basic single value types (String, Integer, Date, etc.)
-     * @return the converted entity, or the default value if the result is empty
-     * @throws UncheckedIOException if an I/O error occurs during conversion
+     * @param targetClass the target class — a JavaBean class or a single-value type
+     *                    (e.g. {@code String}, {@code Integer}, {@code Date})
+     * @return the converted entity, or the type's default value if the result is empty
+     * @throws IllegalArgumentException if {@code targetClass} is a {@link Map} type
+     * @throws UncheckedIOException if reading cells from {@code result} fails with an {@link IOException}
      */
     static <T> T toValue(final Result result, final Class<T> targetClass) {
         final Type<T> targetType = N.typeOf(targetClass);
@@ -1012,14 +1073,16 @@ public final class HBaseExecutor implements AutoCloseable {
     }
 
     /**
-     * Retrieves a Table interface for performing operations on the specified HBase table.
+     * Opens a fresh {@link Table} handle for {@code tableName} from this executor's
+     * {@link Connection}.
      *
-     * <p>This method returns a Table instance that provides the native HBase API for direct
-     * table operations. The returned Table should be closed after use to release resources.
-     * This method is useful when you need access to HBase operations not provided by the executor.</p>
+     * <p>Useful for direct access to HBase APIs that are not surfaced by this executor.
+     * Note that {@link Connection#getTable(TableName)} returns a new lightweight wrapper
+     * on each call — it does not validate that the table exists.</p>
      *
-     * <p><strong>Important:</strong> The caller is responsible for closing the returned Table
-     * instance to prevent resource leaks.</p>
+     * <p><strong>Resource ownership:</strong> the caller owns the returned {@link Table}
+     * and must close it (typically via try-with-resources) to release any associated
+     * region locator/thread-local resources.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1030,8 +1093,8 @@ public final class HBaseExecutor implements AutoCloseable {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @return a Table instance for the specified table
-     * @throws UncheckedIOException if unable to retrieve the table (e.g., table doesn't exist)
+     * @return a new {@link Table} handle for {@code tableName}
+     * @throws UncheckedIOException if the underlying call fails with an {@link IOException}
      * @see Table
      * @see org.apache.hadoop.hbase.TableName
      */
@@ -1051,18 +1114,21 @@ public final class HBaseExecutor implements AutoCloseable {
     private final Map<Class<?>, HBaseMapper> mapperPool = new ConcurrentHashMap<>();
 
     /**
-     * Creates a typed mapper for simplified entity-based HBase operations.
+     * Returns the cached typed {@link HBaseMapper} for {@code targetEntityClass}, resolving
+     * the table name from the class's {@code @Table} annotation.
      *
-     * <p>The mapper provides a high-level, type-safe interface for performing CRUD operations
-     * on HBase tables using entity classes. The table name is automatically derived from the
-     * {@code @Table} annotation on the entity class.</p>
-     *
-     * <p>The entity class must:</p>
+     * <p>The returned mapper is cached per entity class on this executor and uses
+     * {@link NamingPolicy#CAMEL_CASE}. The entity class requirements are:</p>
      * <ul>
-     * <li>Be annotated with {@code @Table} to specify the HBase table name</li>
-     * <li>Have exactly one field annotated with {@code @Id} for the row key</li>
-     * <li>Follow JavaBean conventions with getter/setter methods</li>
+     *   <li>Annotated with {@code @Table} (from
+     *       {@code com.landawn.abacus.annotation}, {@code javax.persistence}, or
+     *       {@code jakarta.persistence}) to supply the HBase table name</li>
+     *   <li>Exactly one property marked with {@code @Id} (used as the row key)</li>
+     *   <li>JavaBean conventions (getters/setters)</li>
      * </ul>
+     *
+     * <p>If no {@code @Table} annotation is present, use
+     * {@link #mapper(Class, String, NamingPolicy)} to supply the table name explicitly.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1081,10 +1147,12 @@ public final class HBaseExecutor implements AutoCloseable {
      *
      * @param <T> the entity type
      * @param <K> the row key type
-     * @param targetEntityClass the entity class with {@code @Table} annotation
-     * @return a typed mapper for the specified entity class
-     * @throws IllegalArgumentException if the entity class is not properly annotated or configured
+     * @param targetEntityClass an entity class carrying a {@code @Table} annotation
+     * @return a cached typed mapper for the specified entity class
+     * @throws IllegalArgumentException if {@code targetEntityClass} has no {@code @Table}
+     *         annotation, has no {@code @Id} property, or has more than one {@code @Id} property
      * @see HBaseMapper
+     * @see #mapper(Class, String, NamingPolicy)
      */
     public <T, K> HBaseMapper<T, K> mapper(final Class<T> targetEntityClass) {
         @SuppressWarnings("rawtypes")
@@ -1107,22 +1175,19 @@ public final class HBaseExecutor implements AutoCloseable {
     }
 
     /**
-     * Creates a typed mapper with explicit table name and naming policy configuration.
+     * Builds a fresh {@link HBaseMapper} with an explicit table name and naming policy.
      *
-     * <p>This method allows creating a mapper without requiring a {@code @Table} annotation
-     * on the entity class, and provides fine-grained control over the column naming strategy.</p>
+     * <p>Use this overload when the entity class has no {@code @Table} annotation or when
+     * you need a non-default naming policy. The returned mapper is <em>not</em> cached on
+     * this executor (in contrast to {@link #mapper(Class)}).</p>
      *
-     * <p>The naming policy determines how Java field names are converted to HBase column names:</p>
-     * <ul>
-     * <li>{@code CAMEL_CASE}: fieldName → fieldName</li>
-     * <li>{@code UPPER_CAMEL_CASE}: fieldName → FieldName</li>
-     * <li>{@code SNAKE_CASE}: fieldName → field_name</li>
-     * <li>{@code SCREAMING_SNAKE_CASE}: fieldName → FIELD_NAME</li>
-     * </ul>
+     * <p>The naming policy controls how Java property names map to HBase column-family /
+     * qualifier strings (e.g. {@link NamingPolicy#CAMEL_CASE} preserves names,
+     * {@link NamingPolicy#SNAKE_CASE} converts {@code fieldName} to {@code field_name}).
+     * A {@code null} {@code namingPolicy} is treated as {@link NamingPolicy#CAMEL_CASE}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Create mapper for User class using "user_table" with underscore naming
      * HBaseMapper<User, String> mapper = executor.mapper(
      *     User.class,
      *     "user_table",
@@ -1132,11 +1197,12 @@ public final class HBaseExecutor implements AutoCloseable {
      *
      * @param <T> the entity type
      * @param <K> the row key type
-     * @param targetEntityClass the entity class to map
-     * @param tableName the HBase table name to use
-     * @param namingPolicy the naming policy for column name conversion
-     * @return a configured typed mapper for the specified entity class and table
-     * @throws IllegalArgumentException if the entity class is not a valid bean class
+     * @param targetEntityClass the entity class to map (must be a JavaBean class with one {@code @Id} property)
+     * @param tableName the HBase table name to bind the mapper to; must not be empty
+     * @param namingPolicy the naming policy for column name conversion; {@code null} maps to {@link NamingPolicy#CAMEL_CASE}
+     * @return a configured (non-cached) typed mapper for the specified entity class and table
+     * @throws IllegalArgumentException if {@code targetEntityClass} is not a bean class, has no
+     *         {@code @Id} property, or has more than one {@code @Id} property; or if {@code tableName} is empty
      * @see NamingPolicy
      * @see HBaseMapper
      */
@@ -1585,14 +1651,17 @@ public final class HBaseExecutor implements AutoCloseable {
     }
 
     /**
-     * Performs a scan operation on the specified HBase table and returns a stream of Results.
+     * Performs a scan against the specified HBase table and returns a lazy {@link Stream}
+     * of {@link Result}s.
      *
-     * <p>This method creates a lazy stream that processes HBase scan results on-demand.
-     * The stream automatically handles resource management, including closing the underlying
-     * ResultScanner and Table when the stream is closed or terminates.</p>
+     * <p>The returned stream is deferred: the underlying {@link Table} and
+     * {@link ResultScanner} are opened only when iteration begins, and both are closed
+     * when the stream is closed (whether by reaching the end of iteration, calling
+     * {@link Stream#close()}, or exiting a try-with-resources block).</p>
      *
-     * <p><strong>Important:</strong> Always use the returned stream in a try-with-resources
-     * block or ensure it's properly closed to avoid resource leaks.</p>
+     * <p><strong>Resource ownership:</strong> the stream owns the table and scanner it
+     * opens. Always consume scan streams inside a try-with-resources block, or call
+     * {@link Stream#close()} explicitly, to avoid leaking the table connection.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1610,8 +1679,9 @@ public final class HBaseExecutor implements AutoCloseable {
      *
      * @param tableName the name of the HBase table to scan
      * @param scan the Scan operation defining the scan parameters
-     * @return a lazy stream of HBase Results from the scan operation
-     * @throws UncheckedIOException if an I/O error occurs during scanning
+     * @return a lazy, closable {@link Stream} of HBase {@link Result}s
+     * @throws IllegalArgumentException if {@code tableName} or {@code scan} is {@code null}
+     * @throws UncheckedIOException if opening the table or scanner fails with an {@link IOException}
      * @see Scan
      * @see Result
      * @see Stream
@@ -2145,10 +2215,13 @@ public final class HBaseExecutor implements AutoCloseable {
     }
 
     /**
-     * Atomically increments a single column value.
+     * Atomically increments a single column's numeric value and returns the post-increment value.
      *
-     * <p>This is a convenience method for incrementing a single numeric column value.
-     * If the cell doesn't exist, it's treated as zero before incrementing.</p>
+     * <p>{@code rowKey} is converted to bytes via {@link #toRowKeyBytes(Object)} (so it may be
+     * any of the types accepted by that helper); {@code family} and {@code qualifier} are
+     * encoded via the cached {@link #toFamilyQualifierBytes(String)}. If the cell does not
+     * exist it is treated as zero before incrementing. {@code amount} may be negative to
+     * decrement.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2157,12 +2230,12 @@ public final class HBaseExecutor implements AutoCloseable {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param rowKey the row key (any object type, will be converted to bytes)
-     * @param family the column family name
-     * @param qualifier the column qualifier name
-     * @param amount the amount to increment (can be negative for decrementing)
-     * @return the new value after the increment operation
-     * @throws UncheckedIOException if an I/O error occurs during the operation
+     * @param rowKey the row key (converted to bytes via {@link #toRowKeyBytes(Object)})
+     * @param family the column family name (converted to bytes via {@link #toFamilyQualifierBytes(String)})
+     * @param qualifier the column qualifier name (converted to bytes via {@link #toFamilyQualifierBytes(String)})
+     * @param amount the amount to add (negative values decrement)
+     * @return the value of the column after the increment
+     * @throws UncheckedIOException if the HBase call fails with an {@link IOException}
      */
     public long incrementColumnValue(final String tableName, final Object rowKey, final String family, final String qualifier, final long amount)
             throws UncheckedIOException {
@@ -2170,19 +2243,20 @@ public final class HBaseExecutor implements AutoCloseable {
     }
 
     /**
-     * Atomically increments a single column value with specified durability.
+     * Atomically increments a single column's numeric value with the specified
+     * {@link Durability} guarantee.
      *
-     * <p>This method provides fine-grained control over the durability guarantees
-     * for the increment operation.</p>
+     * <p>{@code rowKey}, {@code family}, and {@code qualifier} are converted to bytes as
+     * documented on {@link #incrementColumnValue(String, Object, String, String, long)}.</p>
      *
      * @param tableName the name of the HBase table
-     * @param rowKey the row key (any object type, will be converted to bytes)
-     * @param family the column family name
-     * @param qualifier the column qualifier name
-     * @param amount the amount to increment (can be negative for decrementing)
-     * @param durability the durability level for this operation
-     * @return the new value after the increment operation
-     * @throws UncheckedIOException if an I/O error occurs during the operation
+     * @param rowKey the row key (converted via {@link #toRowKeyBytes(Object)})
+     * @param family the column family name (converted via {@link #toFamilyQualifierBytes(String)})
+     * @param qualifier the column qualifier name (converted via {@link #toFamilyQualifierBytes(String)})
+     * @param amount the amount to add (negative values decrement)
+     * @param durability the durability level to use for the WAL write
+     * @return the value of the column after the increment
+     * @throws UncheckedIOException if the HBase call fails with an {@link IOException}
      * @see Durability
      */
     public long incrementColumnValue(final String tableName, final Object rowKey, final String family, final String qualifier, final long amount,
@@ -2191,17 +2265,19 @@ public final class HBaseExecutor implements AutoCloseable {
     }
 
     /**
-     * Atomically increments a single column value using byte arrays.
+     * Byte-array variant of {@link #incrementColumnValue(String, Object, String, String, long)}.
      *
-     * <p>This is the byte array version of {@link #incrementColumnValue(String, Object, String, String, long)}.</p>
+     * <p>{@code family} and {@code qualifier} are passed through to HBase unchanged (no
+     * encoding cache is consulted); {@code rowKey} is still converted via
+     * {@link #toRowKeyBytes(Object)}.</p>
      *
      * @param tableName the name of the HBase table
-     * @param rowKey the row key (any object type, will be converted to bytes)
-     * @param family the column family as a byte array
-     * @param qualifier the column qualifier as a byte array
-     * @param amount the amount to increment (can be negative for decrementing)
-     * @return the new value after the increment operation
-     * @throws UncheckedIOException if an I/O error occurs during the operation
+     * @param rowKey the row key (converted via {@link #toRowKeyBytes(Object)})
+     * @param family the column family bytes (used as-is)
+     * @param qualifier the column qualifier bytes (used as-is)
+     * @param amount the amount to add (negative values decrement)
+     * @return the value of the column after the increment
+     * @throws UncheckedIOException if the HBase call fails with an {@link IOException}
      */
     public long incrementColumnValue(final String tableName, final Object rowKey, final byte[] family, final byte[] qualifier, final long amount)
             throws UncheckedIOException {
@@ -2217,19 +2293,20 @@ public final class HBaseExecutor implements AutoCloseable {
     }
 
     /**
-     * Atomically increments a single column value using byte arrays with specified durability.
+     * Byte-array variant of
+     * {@link #incrementColumnValue(String, Object, String, String, long, Durability)}.
      *
-     * <p>This is the byte array version of
-     * {@link #incrementColumnValue(String, Object, String, String, long, Durability)}.</p>
+     * <p>{@code family} and {@code qualifier} are passed through to HBase unchanged;
+     * {@code rowKey} is still converted via {@link #toRowKeyBytes(Object)}.</p>
      *
      * @param tableName the name of the HBase table
-     * @param rowKey the row key (any object type, will be converted to bytes)
-     * @param family the column family as a byte array
-     * @param qualifier the column qualifier as a byte array
-     * @param amount the amount to increment (can be negative for decrementing)
-     * @param durability the durability level for this operation
-     * @return the new value after the increment operation
-     * @throws UncheckedIOException if an I/O error occurs during the operation
+     * @param rowKey the row key (converted via {@link #toRowKeyBytes(Object)})
+     * @param family the column family bytes (used as-is)
+     * @param qualifier the column qualifier bytes (used as-is)
+     * @param amount the amount to add (negative values decrement)
+     * @param durability the durability level to use for the WAL write
+     * @return the value of the column after the increment
+     * @throws UncheckedIOException if the HBase call fails with an {@link IOException}
      * @see Durability
      */
     public long incrementColumnValue(final String tableName, final Object rowKey, final byte[] family, final byte[] qualifier, final long amount,
@@ -2246,10 +2323,13 @@ public final class HBaseExecutor implements AutoCloseable {
     }
 
     /**
-     * Gets a CoprocessorRpcChannel for communicating with a coprocessor for a specific row.
+     * Returns a {@link CoprocessorRpcChannel} for the region hosting {@code rowKey}.
      *
-     * <p>This method creates an RPC channel to communicate with a coprocessor endpoint
-     * that is deployed on the region server hosting the specified row.</p>
+     * <p>The channel is created by a short-lived {@link Table} that is closed before this
+     * method returns; the returned channel itself drives subsequent RPCs through the
+     * shared {@link Connection}, so the closed table does not affect channel usage.</p>
+     *
+     * <p>{@code rowKey} is converted to bytes via {@link #toRowKeyBytes(Object)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2259,9 +2339,9 @@ public final class HBaseExecutor implements AutoCloseable {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param rowKey the row key to identify which region server to connect to
-     * @return the CoprocessorRpcChannel for the specified row's region
-     * @throws UncheckedIOException if an I/O error occurs while obtaining the underlying {@link Table}
+     * @param rowKey the row key identifying the target region (converted via {@link #toRowKeyBytes(Object)})
+     * @return a CoprocessorRpcChannel pointed at the region hosting {@code rowKey}
+     * @throws UncheckedIOException if obtaining the {@link Table} fails with an {@link IOException}
      * @see CoprocessorRpcChannel
      */
     public CoprocessorRpcChannel coprocessorService(final String tableName, final Object rowKey) {
@@ -2278,20 +2358,24 @@ public final class HBaseExecutor implements AutoCloseable {
     }
 
     /**
-     * Executes a coprocessor call against a range of rows and returns results.
+     * Invokes a coprocessor {@link Service} on every region whose row range overlaps
+     * {@code [startRowKey, endRowKey)} and returns the per-region results.
      *
-     * <p>This method invokes a coprocessor service on all regions that span the specified
-     * row range, collecting and returning the results from each region.</p>
+     * <p>{@code startRowKey} and {@code endRowKey} are converted to bytes via
+     * {@link #toRowKeyBytes(Object)}. The underlying {@link Table} is closed in a
+     * {@code finally} block.</p>
      *
      * @param <T> the service type
-     * @param <R> the result type
+     * @param <R> the result type produced by {@code callable}
      * @param tableName the name of the HBase table
      * @param service the service interface class
-     * @param startRowKey the start row key (inclusive)
-     * @param endRowKey the end row key (exclusive)
-     * @param callable the callable to execute on each region
-     * @return a map of region names (byte arrays) to their corresponding results
-     * @throws UncheckedIOException if an I/O error occurs during the operation
+     * @param startRowKey the start row key (inclusive; {@code null} for unbounded start)
+     * @param endRowKey the end row key (exclusive; {@code null} for unbounded end)
+     * @param callable the per-region callable to execute
+     * @return a map from region name bytes to the result returned by {@code callable} for that region
+     * @throws UncheckedIOException if the call fails with an {@link IOException}
+     * @throws RuntimeException if the coprocessor invocation throws a non-{@link IOException}
+     *         {@link Throwable} (wrapped via {@code ExceptionUtil.toRuntimeException})
      * @see Service
      * @see Batch.Call
      */
@@ -2311,22 +2395,25 @@ public final class HBaseExecutor implements AutoCloseable {
     }
 
     /**
-     * Executes a coprocessor call against a range of rows with a callback for results.
+     * Invokes a coprocessor {@link Service} on every region whose row range overlaps
+     * {@code [startRowKey, endRowKey)}, delivering each per-region result to
+     * {@code callback} as it becomes available.
      *
-     * <p>This method invokes a coprocessor service on all regions that span the specified
-     * row range, invoking the callback with each region's result as it becomes available.</p>
+     * <p>{@code startRowKey} and {@code endRowKey} are converted to bytes via
+     * {@link #toRowKeyBytes(Object)}. The underlying {@link Table} is closed in a
+     * {@code finally} block.</p>
      *
      * @param <T> the service type
-     * @param <R> the result type
+     * @param <R> the result type produced by {@code callable}
      * @param tableName the name of the HBase table
      * @param service the service interface class
-     * @param startRowKey the start row key (inclusive)
-     * @param endRowKey the end row key (exclusive)
-     * @param callable the callable to execute on each region
-     * @param callback the callback to receive results from each region
-     * @throws UncheckedIOException if an I/O error occurs during the operation
-     * @throws Exception if the coprocessor execution throws a checked exception other than {@link IOException}
-     *         (the original {@link Throwable} from the coprocessor is wrapped in a new {@link Exception})
+     * @param startRowKey the start row key (inclusive; {@code null} for unbounded start)
+     * @param endRowKey the end row key (exclusive; {@code null} for unbounded end)
+     * @param callable the per-region callable to execute
+     * @param callback the callback that receives each region's result
+     * @throws UncheckedIOException if the call fails with an {@link IOException}
+     * @throws Exception if the coprocessor invocation throws a non-{@link IOException}
+     *         {@link Throwable}; the original cause is wrapped in a new {@link Exception}
      * @see Service
      * @see Batch.Call
      * @see Batch.Callback
@@ -2420,6 +2507,17 @@ public final class HBaseExecutor implements AutoCloseable {
         }
     }
 
+    /**
+     * Converts a column-family or qualifier string to its UTF-8 byte representation,
+     * caching the result in a shared {@link ConcurrentHashMap} keyed by the input string.
+     *
+     * <p>The cache (an unbounded {@link ConcurrentHashMap}) avoids re-encoding hot family
+     * and qualifier names on every call. Returns {@code null} for a {@code null} input.
+     * The returned array is the shared cached instance and must not be mutated by callers.</p>
+     *
+     * @param str the family or qualifier name to encode; may be {@code null}
+     * @return the UTF-8 bytes for {@code str}, or {@code null} if {@code str} is {@code null}
+     */
     static byte[] toFamilyQualifierBytes(final String str) {
         if (str == null) {
             return null; // NOSONAR
@@ -2436,14 +2534,51 @@ public final class HBaseExecutor implements AutoCloseable {
         return bytes;
     }
 
+    /**
+     * Converts an arbitrary row-key value to its HBase byte representation.
+     *
+     * <p>Equivalent to {@link #toValueBytes(Object)}; defined as a separate helper to keep
+     * row-key call sites self-describing at the call site.</p>
+     *
+     * @param rowKey the row key value; may be {@code null}
+     * @return the bytes for the row key, or {@code null} if {@code rowKey} is {@code null}
+     * @see #toValueBytes(Object)
+     */
     static byte[] toRowKeyBytes(final Object rowKey) {
         return toValueBytes(rowKey);
     }
 
+    /**
+     * Converts an arbitrary {@code row} value to its HBase byte representation.
+     *
+     * <p>Equivalent to {@link #toValueBytes(Object)}; used at call sites that operate on
+     * an HBase {@code row} parameter (as distinct from a row key).</p>
+     *
+     * @param row the row value; may be {@code null}
+     * @return the bytes for {@code row}, or {@code null} if {@code row} is {@code null}
+     * @see #toValueBytes(Object)
+     */
     static byte[] toRowBytes(final Object row) {
         return toValueBytes(row);
     }
 
+    /**
+     * Converts an arbitrary value to its HBase byte representation.
+     *
+     * <p>The conversion is type-directed:</p>
+     * <ul>
+     *   <li>{@code null} &rarr; {@code null}</li>
+     *   <li>{@code byte[]} &rarr; returned as-is (no defensive copy)</li>
+     *   <li>{@link ByteBuffer} &rarr; a fresh byte array containing the buffer's remaining
+     *       bytes (the source buffer's position is not mutated)</li>
+     *   <li>{@link String} &rarr; UTF-8 bytes via {@link Bytes#toBytes(String)}</li>
+     *   <li>Any other type &rarr; converted to a {@link String} via {@code N.stringOf(value)}
+     *       and then to UTF-8 bytes</li>
+     * </ul>
+     *
+     * @param value the value to convert; may be {@code null}
+     * @return the byte representation, or {@code null} if {@code value} is {@code null}
+     */
     static byte[] toValueBytes(final Object value) {
         if (value == null) {
             return null; // NOSONAR
@@ -2499,13 +2634,17 @@ public final class HBaseExecutor implements AutoCloseable {
     }
 
     /**
-     * Closes the HBase executor and releases all associated resources.
+     * Closes this executor, releasing the underlying {@link Admin} and {@link Connection}.
      *
-     * <p>This method closes the underlying HBase connection if it's not already closed.
-     * After calling this method, the executor should not be used for any further operations.</p>
+     * <p>This method closes the {@link Admin} first and then the wrapped {@link Connection}
+     * (if it has not already been closed). After this call, the executor must not be used
+     * for further operations. Because the connection supplied at construction is shared with
+     * this executor and closed here, do not pass in a connection that other components
+     * still need.</p>
      *
-     * <p>It's recommended to use the executor in a try-with-resources block to ensure
-     * proper resource cleanup:</p>
+     * <p><strong>Note:</strong> the {@link AsyncExecutor} passed at construction is
+     * <em>not</em> shut down by this method; its lifecycle is the caller's responsibility.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * try (HBaseExecutor executor = new HBaseExecutor(connection)) {
@@ -2513,7 +2652,7 @@ public final class HBaseExecutor implements AutoCloseable {
      * }
      * }</pre>
      *
-     * @throws IOException if an I/O error occurs while closing the connection
+     * @throws IOException if closing {@link Admin} or {@link Connection} fails
      * @see AutoCloseable
      */
     @Override
@@ -2894,14 +3033,18 @@ public final class HBaseExecutor implements AutoCloseable {
         }
 
         /**
-         * Atomically increments a single column value.
+         * Atomically increments a single column's numeric value on this mapper's table.
          *
-         * @param rowKey the row key
-         * @param family the column family name
-         * @param qualifier the column qualifier name
-         * @param amount the amount to increment
-         * @return the new value after the increment
-         * @throws UncheckedIOException if an I/O error occurs during the operation
+         * <p>Delegates to
+         * {@link HBaseExecutor#incrementColumnValue(String, Object, String, String, long)}
+         * with the mapper's bound table name.</p>
+         *
+         * @param rowKey the row key (converted via {@link HBaseExecutor#toRowKeyBytes(Object)})
+         * @param family the column family name (converted via {@link HBaseExecutor#toFamilyQualifierBytes(String)})
+         * @param qualifier the column qualifier name (converted via {@link HBaseExecutor#toFamilyQualifierBytes(String)})
+         * @param amount the amount to add (negative values decrement)
+         * @return the value of the column after the increment
+         * @throws UncheckedIOException if the HBase call fails with an {@link IOException}
          */
         public long incrementColumnValue(final Object rowKey, final String family, final String qualifier, final long amount) throws UncheckedIOException {
             return hbaseExecutor.incrementColumnValue(tableName, rowKey, family, qualifier, amount);

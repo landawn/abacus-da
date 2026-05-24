@@ -130,8 +130,9 @@ abstract class AnyOperationWithAttributes<AOWA extends AnyOperationWithAttribute
      *
      * @param name the attribute name; must not be {@code null}
      * @param value the attribute value, converted to bytes via {@link HBaseExecutor#toValueBytes(Object)};
-     *              may be {@code null} (which conventionally removes the attribute on the
-     *              underlying HBase operation)
+     *              the resulting byte-array semantics (including how {@code null} is handled) are
+     *              defined by {@link HBaseExecutor#toValueBytes(Object)} and the underlying HBase
+     *              {@link OperationWithAttributes#setAttribute(String, byte[])} contract
      * @return this instance, to allow fluent method chaining
      * @see #getAttribute(String)
      * @see HBaseExecutor#toValueBytes(Object)
@@ -190,8 +191,9 @@ abstract class AnyOperationWithAttributes<AOWA extends AnyOperationWithAttribute
      * use the value to order or throttle operations; the exact semantics depend on the server
      * configuration.
      *
-     * @return the priority value previously set via {@link #setPriority(int)}, or HBase's default
-     *         when none has been set
+     * @return the priority value previously set via {@link #setPriority(int)}, or the value
+     *         returned by {@link OperationWithAttributes#getPriority()} (HBase's default) when
+     *         none has been set on this operation
      * @see #setPriority(int)
      */
     public int getPriority() {

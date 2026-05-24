@@ -89,6 +89,11 @@ import org.apache.hadoop.hbase.security.visibility.Authorizations;
  */
 abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttributes<AQ> {
 
+    /**
+     * The underlying HBase {@link Query} that every getter / setter in this wrapper delegates to.
+     * Stored as a {@code Query} reference so that {@code Get}- and {@code Scan}-specific
+     * functionality is exposed only by the concrete subclasses ({@link AnyGet} / {@link AnyScan}).
+     */
     protected final Query query;
 
     /**

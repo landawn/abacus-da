@@ -15,9 +15,13 @@
 package com.landawn.abacus.da.spark;
 
 /**
- * Placeholder utility class for Apache Spark DStream (Discretized Stream) operations.
+ * Package-private placeholder utility class for Apache Spark {@code DStream}
+ * (Discretized Stream) operations.
  *
- * <p>This class is reserved for future implementation of Spark DStream utility methods.</p>
+ * <p>This class is reserved for a future implementation of Spark Streaming helper
+ * methods. It currently exposes no API and is not visible outside this package.</p>
+ *
+ * @see DatasetUtil
  */
 final class DStreamUtil {
 

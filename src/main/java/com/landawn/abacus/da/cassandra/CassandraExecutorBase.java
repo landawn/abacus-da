@@ -38,7 +38,6 @@ import com.landawn.abacus.query.condition.Condition;
 import com.landawn.abacus.util.Beans;
 import com.landawn.abacus.util.ClassUtil;
 import com.landawn.abacus.util.Clazz;
-import com.landawn.abacus.util.ContinuableFuture;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.ImmutableList;
 import com.landawn.abacus.util.ImmutableSet;
@@ -69,130 +68,104 @@ import com.landawn.abacus.util.function.ToShortFunction;
 import com.landawn.abacus.util.stream.Stream;
 
 /**
- * Abstract base class providing common functionality for Cassandra database executors.
- * 
- * <p>This abstract class serves as the foundation for both modern and legacy Cassandra executors,
- * implementing shared functionality such as entity operations, query building, result processing,
- * and parameter binding. It provides a comprehensive set of database operations while remaining
- * agnostic to the specific Cassandra driver version.</p>
+ * Driver-agnostic base class shared by the synchronous {@link CassandraExecutor} (DataStax 4.x driver)
+ * and the legacy {@code com.landawn.abacus.da.cassandra.v3.CassandraExecutor} (DataStax 3.x driver),
+ * as well as their {@code Async*} counterparts.
  *
- * <h2>Core Responsibilities</h2>
- * <h3>Primary Functions</h3>
+ * <p>The base implements the parts of the contract that do not depend on a particular driver release:
+ * entity-to-CQL mapping, {@link CqlBuilder} integration, primary-key extraction, {@link Condition}
+ * translation into {@code WHERE} clauses, and the common {@code queryForXxx}/{@code findFirst}/
+ * {@code list}/{@code stream}/{@code count}/{@code exists}/{@code insert}/{@code update}/{@code delete}
+ * façades. The concrete subclasses are responsible for the driver-specific pieces — opening sessions,
+ * executing/preparing/binding statements, registering codecs, and shaping the result set.</p>
+ *
+ * <h2>Contract Honored By Subclasses</h2>
  * <ul>
- * <li><strong>Entity Operations:</strong>
- *     <ul>
- *     <li>CRUD operations (Create, Read, Update, Delete) for entity classes</li>
- *     <li>Batch operations for multiple entities</li>
- *     <li>Conditional operations with IF EXISTS/IF NOT EXISTS</li>
- *     <li>TTL and timestamp support for data lifecycle management</li>
- *     </ul>
- * </li>
- * <li><strong>Query Building and Execution:</strong>
- *     <ul>
- *     <li>Dynamic CQL generation using {@link CqlBuilder} integration</li>
- *     <li>Parameter binding support for multiple formats (positional, named, entity-based)</li>
- *     <li>Prepared statement management and caching</li>
- *     <li>Result set processing and mapping</li>
- *     </ul>
- * </li>
- * <li><strong>Type System Integration:</strong>
- *     <ul>
- *     <li>Automatic type conversion and validation</li>
- *     <li>Support for primitive types, collections, and custom objects</li>
- *     <li>Configurable naming policies for property-to-column mapping</li>
- *     <li>Bean introspection and reflection-based operations</li>
- *     </ul>
- * </li>
- * <li><strong>Advanced Features:</strong>
- *     <ul>
- *     <li>Asynchronous operation support with {@link ContinuableFuture}</li>
- *     <li>Stream-based result processing for large datasets</li>
- *     <li>Custom row mappers and result transformations</li>
- *     <li>Integration with condition factories for dynamic WHERE clauses</li>
- *     </ul>
- * </li>
+ * <li><strong>Preferred statement cache:</strong> subclasses are expected to cache the
+ *     {@code PreparedStatement} returned by their {@link #prepare(String)} implementation so that
+ *     repeated calls with the same CQL string reuse a single prepared statement.</li>
+ * <li><strong>ParsedCql cache:</strong> {@link #parseCql(String)} consults the optional
+ *     {@link CqlMapper} first (allowing pre-registered, named CQL fragments) and falls back to
+ *     {@link ParsedCql#parse(String, java.util.Map)} for ad-hoc CQL. Subclasses should reuse the
+ *     resulting {@link ParsedCql} where possible to avoid re-parsing.</li>
+ * <li><strong>Codec registry:</strong> subclasses install the driver's codec registry so that
+ *     entity properties and bound parameters round-trip through the configured codecs (including any
+ *     custom user codecs).</li>
+ * <li><strong>Entity-to-CQL mapping:</strong> entity properties are mapped to columns through the
+ *     configured {@link NamingPolicy} (see below). Primary-key columns are discovered through
+ *     {@code @Id} annotations or {@link #registerKeys(Class, Collection)}.</li>
  * </ul>
- * 
- * <h3>Generic Type Parameters</h3>
- * <p>This class uses generic types to abstract away driver-specific implementations:</p>
+ *
+ * <h2>Generic Type Parameters</h2>
  * <ul>
- * <li><strong>RW:</strong> Row type (e.g., {@code com.datastax.oss.driver.api.core.cql.Row})</li>
- * <li><strong>RS:</strong> ResultSet type (e.g., {@code com.datastax.oss.driver.api.core.cql.ResultSet})</li>
- * <li><strong>ST:</strong> Statement type (e.g., {@code com.datastax.oss.driver.api.core.cql.Statement})</li>
- * <li><strong>PS:</strong> PreparedStatement type (e.g., {@code com.datastax.oss.driver.api.core.cql.PreparedStatement})</li>
- * <li><strong>BT:</strong> BatchType enum (e.g., {@code com.datastax.oss.driver.api.core.cql.BatchType})</li>
+ * <li><strong>{@code RW}:</strong> driver row type (for example
+ *     {@code com.datastax.oss.driver.api.core.cql.Row}).</li>
+ * <li><strong>{@code RS}:</strong> driver result-set type, required to be {@code Iterable<RW>}
+ *     (for example {@code com.datastax.oss.driver.api.core.cql.ResultSet}).</li>
+ * <li><strong>{@code ST}:</strong> driver statement type (for example
+ *     {@code com.datastax.oss.driver.api.core.cql.Statement}).</li>
+ * <li><strong>{@code PS}:</strong> driver prepared-statement type.</li>
+ * <li><strong>{@code BT}:</strong> driver batch-type enum (for example
+ *     {@code com.datastax.oss.driver.api.core.cql.BatchType}).</li>
  * </ul>
- * 
- * <h3>Parameter Binding Support</h3>
- * <p>The base class supports multiple parameter binding approaches:</p>
+ *
+ * <h2>Parameter Binding</h2>
  * <ul>
  * <li><strong>Positional parameters:</strong> {@code SELECT * FROM users WHERE id = ?}</li>
  * <li><strong>Named parameters:</strong> {@code SELECT * FROM users WHERE id = :userId}</li>
- * <li><strong>Entity binding:</strong> Automatic extraction from POJO properties</li>
- * <li><strong>Map binding:</strong> Key-value pairs for named parameters</li>
- * <li><strong>Array/Collection binding:</strong> Multiple values for batch operations</li>
+ * <li><strong>Entity binding:</strong> a single bean argument supplies values for named placeholders
+ *     by property name.</li>
+ * <li><strong>Map binding:</strong> a single {@code Map<String, Object>} supplies values for named
+ *     placeholders by key.</li>
+ * <li><strong>Array/Collection binding:</strong> a single array or collection is unpacked
+ *     positionally.</li>
  * </ul>
- * 
- * <h3>Entity Operation Patterns</h3>
- * <p>The base class implements common entity operation patterns:</p>
- * <p><b>Usage Examples:</b></p>
+ *
+ * <h2>Naming Policy</h2>
+ * <p>{@link NamingPolicy} controls the property-to-column mapping used by the embedded
+ * {@link CqlBuilder} variants (NSC for snake-case, NAC for screaming-snake-case, NLC for camel-case).
+ * The default applied by the constructor when {@code null} is passed in is snake-case:</p>
+ * <ul>
+ * <li><strong>SNAKE_CASE:</strong> {@code firstName} maps to {@code first_name}</li>
+ * <li><strong>SCREAMING_SNAKE_CASE:</strong> {@code firstName} maps to {@code FIRST_NAME}</li>
+ * <li><strong>CAMEL_CASE:</strong> {@code firstName} is kept as {@code firstName}</li>
+ * </ul>
+ *
+ * <h2>Usage</h2>
  * <pre>{@code
  * // Basic CRUD operations
- * executor.insert(user);   // INSERT based on entity
- * Optional<User> found = executor.get(User.class, id);   // SELECT by primary key
- * executor.update(user);   // UPDATE based on entity
- * executor.delete(User.class, id);   // DELETE by primary key
+ * executor.insert(user);                                  // INSERT based on entity
+ * Optional<User> found = executor.get(User.class, id);    // SELECT by primary key
+ * executor.update(user);                                  // UPDATE based on entity
+ * executor.delete(User.class, id);                        // DELETE by primary key
  *
- * // Get entity (returns Optional)
- * User user = executor.get(User.class, id).orElse(null);
- * // Or with gett() for the nullable variant
- * // (returns null if not found, throws only if multiple rows match)
- * User user2 = executor.gett(User.class, id);
- * 
+ * // gett() is the nullable variant — returns null when not found,
+ * // throws DuplicateResultException only if multiple rows match.
+ * User user = executor.gett(User.class, id);
+ *
  * // Batch operations
- * List<User> users = Arrays.asList(user1, user2, user3);
- * executor.batchInsert(users);
- * executor.batchUpdate(users, Arrays.asList("name", "email"));
- * 
+ * executor.batchInsert(Arrays.asList(user1, user2, user3), BatchType.LOGGED);
+ *
  * // Query operations
- * List<User> activeUsers = executor.list(User.class, 
+ * List<User> activeUsers = executor.list(User.class,
  *     "SELECT * FROM users WHERE status = ?", "active");
- * 
- * Optional<User> user = executor.findFirst(User.class,
- *     "SELECT * FROM users WHERE email = ?", email);
  * }</pre>
- * 
- * <h3>Naming Policy Integration</h3>
- * <p>The class supports configurable naming policies for mapping Java property names
- * to Cassandra column names:</p>
- * <ul>
- * <li><strong>SNAKE_CASE:</strong> {@code firstName} → {@code first_name}</li>
- * <li><strong>SCREAMING_SNAKE_CASE:</strong> {@code firstName} → {@code FIRST_NAME}</li>
- * <li><strong>CAMEL_CASE:</strong> {@code firstName} → {@code firstName}</li>
- * </ul>
- * 
- * <h3>Thread Safety</h3>
- * <p>Implementations of this base class are expected to be thread-safe. The base class
- * provides thread-safe caching mechanisms and concurrent access patterns, but concrete
- * implementations must ensure thread safety of driver-specific operations.</p>
- * 
- * <h3>Extension Points</h3>
- * <p>Concrete implementations must provide the following abstract methods:</p>
- * <ul>
- * <li>{@code execute()}: Core statement execution</li>
- * <li>{@code prepare()}: Prepared statement creation</li>
- * <li>{@code bind()}: Parameter binding</li>
- * <li>{@code toList()}: Result set to list conversion</li>
- * <li>{@code extractData()}: Result set to Dataset conversion</li>
- * <li>And others as defined by the abstract contract</li>
- * </ul>
- * 
- * @param <RW> the row type for the specific Cassandra driver version
- * @param <RS> the result set type for the specific Cassandra driver version
- * @param <ST> the statement type for the specific Cassandra driver version
- * @param <PS> the prepared statement type for the specific Cassandra driver version
- * @param <BT> the batch type enum for the specific Cassandra driver version
- * 
+ *
+ * <h2>Lifecycle</h2>
+ * <p>The class declares {@link AutoCloseable} so the concrete subclass can release its underlying
+ * driver session in {@code close()}; the base itself holds no closeable resources.</p>
+ *
+ * <h2>Thread Safety</h2>
+ * <p>Implementations are expected to be thread-safe. The static caches maintained by the base
+ * (e.g. {@link #entityKeyNamesMap}) are concurrent. Mutability of {@link Condition} or entity
+ * arguments passed in by callers is the caller's responsibility.</p>
+ *
+ * @param <RW> driver row type
+ * @param <RS> driver result-set type ({@code Iterable<RW>})
+ * @param <ST> driver statement type
+ * @param <PS> driver prepared-statement type
+ * @param <BT> driver batch-type enum
+ *
  * @see CassandraExecutor
  * @see com.landawn.abacus.da.cassandra.v3.CassandraExecutor
  * @see CqlBuilder
@@ -237,6 +210,18 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     protected final NamingPolicy namingPolicy;
 
+    /**
+     * Constructs the base with an optional named-CQL mapper and a property-to-column naming policy.
+     *
+     * <p>Subclasses should invoke this constructor from their own constructors with the
+     * caller-supplied {@link CqlMapper} (or {@code null}) and {@link NamingPolicy} (or {@code null}
+     * to accept the snake-case default).</p>
+     *
+     * @param cqlMapper optional registry of named CQL fragments consulted first by
+     *        {@link #parseCql(String)}; pass {@code null} to disable named-CQL lookup
+     * @param namingPolicy the policy applied when mapping entity property names to CQL column names;
+     *        when {@code null}, snake-case is used
+     */
     protected CassandraExecutorBase(final CqlMapper cqlMapper, final NamingPolicy namingPolicy) {
         this.cqlMapper = cqlMapper;
         this.namingPolicy = namingPolicy == null ? NamingPolicy.SNAKE_CASE : namingPolicy;
@@ -299,8 +284,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * appropriate WHERE clauses for database operations.</p>
      * 
      * @param entityClass the entity class
-     * @return an immutable list of property names that form the primary key
-     * @throws IllegalArgumentException if entityClass is null
+     * @return an immutable list of property names that form the primary key (empty if neither
+     *         registration nor {@code @Id} annotations are present)
      */
     protected static ImmutableList<String> getKeyNames(final Class<?> entityClass) {
         Tuple2<ImmutableList<String>, ImmutableSet<String>> tp = entityKeyNamesMap.get(entityClass);
@@ -326,8 +311,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * property name is part of the primary key.</p>
      * 
      * @param entityClass the entity class
-     * @return an immutable set of property names that form the primary key
-     * @throws IllegalArgumentException if entityClass is null
+     * @return an immutable set of property names that form the primary key (empty if neither
+     *         registration nor {@code @Id} annotations are present)
      * @see #getKeyNames(Class)
      */
     protected static Set<String> getKeyNameSet(final Class<?> entityClass) {
@@ -365,10 +350,11 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * // Result: WHERE user_id = ? AND session_id = ?
      * }</pre>
      * 
-     * @param targetClass the entity class
+     * @param targetClass the entity class whose primary-key column names are used
      * @param ids the ID values in the same order as the key fields
      * @return a Condition representing the primary key equality check
-     * @throws IllegalArgumentException if ids array is empty or doesn't match key count
+     * @throws IllegalArgumentException if {@code ids} is null or empty, or if its length does not
+     *         match the number of registered/annotated key columns on {@code targetClass}
      */
     protected static Condition idsToCondition(final Class<?> targetClass, final Object... ids) {
         N.checkArgNotEmpty(ids, "ids");
@@ -1078,9 +1064,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * }</pre>
      *
      * @param targetClass the entity class
-     * @param ids the primary key values
+     * @param ids the primary key values, in the order of the declared key columns
      * @return the result set from the DELETE operation
-     * @throws IllegalArgumentException if targetClass is null or ids is null or empty
+     * @throws IllegalArgumentException if {@code ids} is null or empty, or if its length does not
+     *         match the registered/annotated key columns of {@code targetClass}
      */
     public final RS delete(final Class<?> targetClass, final Object... ids) {
         return delete(targetClass, null, ids);
@@ -1103,10 +1090,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * }</pre>
      *
      * @param targetClass the entity class
-     * @param propNamesToDelete the property names to delete (null for entire row)
-     * @param ids the primary key values
+     * @param propNamesToDelete the property names to delete; pass {@code null} to delete the
+     *        entire row
+     * @param ids the primary key values, in the order of the declared key columns
      * @return the result set from the DELETE operation
-     * @throws IllegalArgumentException if targetClass is null, ids is null or empty, or propNamesToDelete is empty (but not null)
+     * @throws IllegalArgumentException if {@code ids} is null or empty, if its length does not
+     *         match the registered/annotated key columns of {@code targetClass}, or if
+     *         {@code propNamesToDelete} is non-null but empty
      */
     public final RS delete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Object... ids) {
         N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be null or empty");
@@ -1235,9 +1225,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * }</pre>
      *
      * @param targetClass the entity class
-     * @param ids the primary key values
+     * @param ids the primary key values, in the order of the declared key columns
      * @return {@code true} if a record exists with the given primary key, {@code false} otherwise
-     * @throws IllegalArgumentException if targetClass is null or ids is null or empty
+     * @throws IllegalArgumentException if {@code ids} is null or empty, or if its length does not
+     *         match the registered/annotated key columns of {@code targetClass}
      */
     public final boolean exists(final Class<?> targetClass, final Object... ids) {
         return exists(targetClass, idsToCondition(targetClass, ids));
@@ -1255,10 +1246,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * boolean exists = executor.exists(User.class, where);
      * }</pre>
      *
-     * @param targetClass the entity class
-     * @param whereClause the WHERE condition
+     * @param targetClass the entity class whose table is queried
+     * @param whereClause the WHERE condition; pass {@code null} to check whether the table has at
+     *        least one row
      * @return {@code true} if at least one record matches the condition, {@code false} otherwise
-     * @throws IllegalArgumentException if targetClass is null
      */
     public boolean exists(final Class<?> targetClass, final Condition whereClause) {
         final ImmutableList<String> keyNames = getKeyNames(targetClass);
@@ -1281,10 +1272,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * System.out.println("Active users: " + activeUsers);
      * }</pre>
      *
-     * @param targetClass the entity class
-     * @param whereClause the WHERE condition
-     * @return the count of records matching the condition
-     * @throws IllegalArgumentException if targetClass is null
+     * @param targetClass the entity class whose table is queried
+     * @param whereClause the WHERE condition; pass {@code null} to count all rows in the table
+     * @return the count of records matching the condition, or {@code 0} if no rows match
      */
     public long count(final Class<?> targetClass, final Condition whereClause) {
         // Note: LIMIT must NOT be applied to a COUNT(*) query. In Cassandra, "SELECT count(*) ... LIMIT 1"
@@ -1314,10 +1304,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param <T> the entity type to map the result row to
      * @param targetClass the entity class with getter/setter methods matching column names
-     * @param whereClause the WHERE condition used to build the CQL query
+     * @param whereClause the WHERE condition used to build the CQL query (may be {@code null})
      * @return a <i>present</i> {@code Optional<T>} holding the first mapped row when at least one row is
      *         returned; {@code Optional.empty()} when the query returns no rows
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @see #findFirst(Class, Collection, Condition)
      * @see #findFirst(Class, String, Object...)
      */
@@ -1347,10 +1336,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param <T> the entity type to map the result row to
      * @param targetClass the entity class with getter/setter methods matching column names
      * @param selectPropNames the property names to select, or {@code null} for all properties
-     * @param whereClause the WHERE condition used to build the CQL query
+     * @param whereClause the WHERE condition used to build the CQL query (may be {@code null})
      * @return a <i>present</i> {@code Optional<T>} holding the first mapped row when at least one row is
      *         returned; {@code Optional.empty()} when the query returns no rows
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      * @see #findFirst(Class, Condition)
      * @see #findFirst(Class, String, Object...)
      */
@@ -1373,10 +1361,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * }</pre>
      *
      * @param <T> the entity type
-     * @param targetClass the entity class
-     * @param whereClause the WHERE condition
-     * @return a List of all matching entities
-     * @throws IllegalArgumentException if targetClass is null
+     * @param targetClass the entity class with getter/setter methods matching column names
+     * @param whereClause the WHERE condition (may be {@code null} to select every row)
+     * @return a list of all matching entities; empty if no row matches
      */
     public <T> List<T> list(final Class<T> targetClass, final Condition whereClause) {
         return list(targetClass, null, whereClause);
@@ -1396,11 +1383,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * }</pre>
      *
      * @param <T> the entity type
-     * @param targetClass the entity class
-     * @param selectPropNames the property names to select (null for all properties)
-     * @param whereClause the WHERE condition
-     * @return a List of all matching entities
-     * @throws IllegalArgumentException if targetClass is null
+     * @param targetClass the entity class with getter/setter methods matching column names
+     * @param selectPropNames the property names to select; pass {@code null} for all properties
+     * @param whereClause the WHERE condition (may be {@code null} to select every row)
+     * @return a list of all matching entities; empty if no row matches
      */
     public <T> List<T> list(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
         final SP cp = prepareQuery(targetClass, selectPropNames, whereClause);
@@ -1422,10 +1408,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * }</pre>
      *
      * @param <T> the entity type
-     * @param targetClass the entity class
-     * @param whereClause the WHERE condition
-     * @return a Dataset containing all matching entities
-     * @throws IllegalArgumentException if targetClass is null
+     * @param targetClass the entity class with getter/setter methods matching column names
+     * @param whereClause the WHERE condition (may be {@code null} to select every row)
+     * @return a Dataset containing all matching entities; empty Dataset if no row matches
      */
     public <T> Dataset query(final Class<T> targetClass, final Condition whereClause) {
         return query(targetClass, null, whereClause);
@@ -1444,11 +1429,11 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * }</pre>
      *
      * @param <T> the entity type
-     * @param targetClass the entity class
-     * @param selectPropNames the property names to select (null for all properties)
-     * @param whereClause the WHERE condition
-     * @return a Dataset containing the selected properties of matching entities
-     * @throws IllegalArgumentException if targetClass is null
+     * @param targetClass the entity class with getter/setter methods matching column names
+     * @param selectPropNames the property names to select; pass {@code null} for all properties
+     * @param whereClause the WHERE condition (may be {@code null} to select every row)
+     * @return a Dataset containing the selected properties of matching entities; empty Dataset
+     *         if no row matches
      */
     public <T> Dataset query(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
         final SP cp = prepareQuery(targetClass, selectPropNames, whereClause);
@@ -1938,10 +1923,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * }</pre>
      *
      * @param <T> the entity type
-     * @param targetClass the entity class
-     * @param whereClause the WHERE condition
-     * @return a Stream of matching entities
-     * @throws IllegalArgumentException if targetClass is null
+     * @param targetClass the entity class with getter/setter methods matching column names
+     * @param whereClause the WHERE condition (may be {@code null} to stream every row)
+     * @return a stream of matching entities (lazily produced; empty if no row matches)
      */
     public <T> Stream<T> stream(final Class<T> targetClass, final Condition whereClause) {
         return stream(targetClass, null, whereClause);
@@ -1958,11 +1942,11 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * }</pre>
      *
      * @param <T> the entity type
-     * @param targetClass the entity class
-     * @param selectPropNames the property names to select (null for all properties)
-     * @param whereClause the WHERE condition
-     * @return a Stream of matching entities with selected properties
-     * @throws IllegalArgumentException if targetClass is null
+     * @param targetClass the entity class with getter/setter methods matching column names
+     * @param selectPropNames the property names to select; pass {@code null} for all properties
+     * @param whereClause the WHERE condition (may be {@code null} to stream every row)
+     * @return a stream of matching entities with selected properties (lazily produced; empty if
+     *         no row matches)
      */
     public <T> Stream<T> stream(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
         final SP cp = prepareQuery(targetClass, selectPropNames, whereClause);
@@ -1971,20 +1955,23 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
     }
 
     /**
-     * Checks if any records exist matching the given query.
-     * 
-     * <p>Always remember to set "LIMIT 1" in the CQL statement for better performance,
-     * as this method only needs to check for the existence of at least one record.</p>
-     * 
+     * Executes the given CQL query and returns whether it produced at least one row.
+     *
+     * <p>This method only consults {@code resultSet.iterator().hasNext()}, so adding
+     * {@code LIMIT 1} to the CQL is strongly recommended to avoid the server materializing a
+     * larger result set than necessary. Parameters are bound positionally to {@code ?}
+     * placeholders.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * boolean exists = executor.exists("SELECT * FROM users WHERE email = ? LIMIT 1", 
-     *                                  "user@example.com");
+     * boolean exists = executor.exists(
+     *     "SELECT 1 FROM users WHERE email = ? LIMIT 1",
+     *     "user@example.com");
      * }</pre>
-     * 
-     * @param query the CQL query to execute
-     * @param parameters the query parameters
-     * @return {@code true} if at least one record exists, {@code false} otherwise
+     *
+     * @param query the CQL query string with {@code ?} placeholders for parameters
+     * @param parameters the values to bind, in declaration order
+     * @return {@code true} if the query returned at least one row, {@code false} otherwise
      */
     public final boolean exists(final String query, final Object... parameters) {
         final RS resultSet = execute(query, parameters);
@@ -1993,16 +1980,21 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
     }
 
     /**
-     * Counts the number of records matching the given query.
+     * Executes the given CQL query (assumed to be a {@code SELECT count(*)} / {@code SELECT sum(...)}
+     * or similar single-value aggregate) and returns the first column of the first row as a
+     * {@code long}.
      *
-     * @deprecated Use {@link #queryForLong(String, Object...)} with COUNT(*) in the query instead. Note: queryForLong returns OptionalLong; use {@code .orElse(0L)} for equivalent behavior.
-     *             This method will be removed in a future version.
+     * <p>Parameters are bound positionally to {@code ?} placeholders. If the query produces no rows
+     * (or the aggregate returns {@code NULL}) this method returns {@code 0L}.</p>
      *
-     * @param query the CQL query to execute (should return a count)
-     * @param parameters the query parameters
-     * @return the count of matching records, or 0 if none found
+     * @param query the CQL query to execute (typically a {@code COUNT(*)} aggregate)
+     * @param parameters the values to bind, in declaration order
+     * @return the aggregate value, or {@code 0L} if no row is returned
      * @see #queryForLong(String, Object...)
      * @see #count(Class, Condition)
+     * @deprecated prefer {@link #queryForLong(String, Object...)} with a {@code COUNT(*)} query and
+     *             {@code .orElse(0L)} for the same behavior. Slated for removal in a future
+     *             release.
      */
     @Deprecated
     public final long count(final String query, final Object... parameters) {
@@ -2435,103 +2427,135 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
     public abstract <T> Optional<T> findFirst(final Class<T> targetClass, final String query, final Object... parameters);
 
     /**
-     * Returns all query results as a List of Maps.
-     * 
-     * @param query the CQL query to execute
-     * @param parameters the query parameters
-     * @return a List of Maps representing all result rows
+     * Executes the given CQL query and returns every row as a {@code Map<String, Object>} keyed by
+     * column name.
+     *
+     * <p>Parameters are bound positionally to {@code ?} placeholders. The returned list is mutable
+     * and never {@code null}; an empty list signals "no rows".</p>
+     *
+     * @param query the CQL query string with {@code ?} placeholders for parameters
+     * @param parameters the values to bind, in declaration order
+     * @return a list of result rows, each as a {@code Map<String, Object>} keyed by column name
+     * @see #list(Class, String, Object...)
      */
     public final List<Map<String, Object>> list(final String query, final Object... parameters) {
         return list(Clazz.PROPS_MAP, query, parameters);
     }
 
     /**
-     * Returns all query results as a List of the specified type.
-     * 
+     * Executes the given CQL query and returns every row mapped to an instance of {@code targetClass}.
+     *
+     * <p>Parameters are bound positionally to {@code ?} placeholders. The returned list is mutable
+     * and never {@code null}; an empty list signals "no rows".</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * List<User> activeUsers = executor.list(User.class, 
+     * List<User> activeUsers = executor.list(User.class,
      *     "SELECT * FROM users WHERE status = ?", "active");
      * }</pre>
-     * 
+     *
      * @param <T> the target type
-     * @param targetClass an entity class with getter/setter methods, Map.class, or basic single value type
-     * @param query the CQL query to execute
-     * @param parameters the query parameters
-     * @return a List of results mapped to the target type
+     * @param targetClass an entity class with getter/setter methods matching column names,
+     *        {@code Map.class}, or a basic single-value type
+     * @param query the CQL query string with {@code ?} placeholders for parameters
+     * @param parameters the values to bind, in declaration order
+     * @return a list of result rows mapped to {@code targetClass}
      */
     public final <T> List<T> list(final Class<T> targetClass, final String query, final Object... parameters) {
         return toList(targetClass, execute(query, parameters));
     }
 
     /**
-     * Executes a query and returns results as a Dataset with Map rows.
-     * 
-     * @param query the CQL query to execute
-     * @param parameters the query parameters
+     * Executes the given CQL query and returns the result rows as a {@link Dataset}.
+     *
+     * <p>Each row is converted to a {@code Map<String, Object>} entry. Parameters are bound
+     * positionally to {@code ?} placeholders. The returned Dataset is never {@code null};
+     * an empty Dataset signals "no rows".</p>
+     *
+     * @param query the CQL query string with {@code ?} placeholders for parameters
+     * @param parameters the values to bind, in declaration order
      * @return a Dataset containing all result rows
+     * @see #query(Class, String, Object...)
      */
     public final Dataset query(final String query, final Object... parameters) {
         return query(Map.class, query, parameters);
     }
 
     /**
-     * Executes a query and returns results as a Dataset with rows mapped to the specified type.
-     * 
+     * Executes the given CQL query and returns the result rows as a {@link Dataset} with rows
+     * shaped according to {@code targetClass}.
+     *
+     * <p>Parameters are bound positionally to {@code ?} placeholders. The returned Dataset is
+     * never {@code null}; an empty Dataset signals "no rows".</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Dataset userDataset = executor.query(User.class, 
+     * Dataset userDataset = executor.query(User.class,
      *     "SELECT * FROM users WHERE age > ?", 18);
      * }</pre>
-     * 
-     * @param targetClass an entity class with getter/setter methods or Map.class
-     * @param query the CQL query to execute
-     * @param parameters the query parameters
-     * @return a Dataset containing all result rows mapped to the target type
+     *
+     * @param targetClass an entity class with getter/setter methods matching column names,
+     *        or {@code Map.class}
+     * @param query the CQL query string with {@code ?} placeholders for parameters
+     * @param parameters the values to bind, in declaration order
+     * @return a Dataset containing all result rows shaped according to {@code targetClass}
      */
     public final Dataset query(final Class<?> targetClass, final String query, final Object... parameters) {
         return extractData(targetClass, execute(query, parameters));
     }
 
     /**
-     * Creates a Stream of Object arrays from the query results.
-     * 
-     * @param query the CQL query to execute
-     * @param parameters the query parameters
-     * @return a Stream of Object arrays, each representing a result row
+     * Executes the given CQL query and returns the result rows as a lazy stream of {@code Object[]}.
+     *
+     * <p>Each emitted array has one element per selected column, ordered by the column index in the
+     * result set. Parameters are bound positionally to {@code ?} placeholders.</p>
+     *
+     * @param query the CQL query string with {@code ?} placeholders for parameters
+     * @param parameters the values to bind, in declaration order
+     * @return a stream of result rows, each as an {@code Object[]} of column values
+     * @see #stream(Class, String, Object...)
      */
     public final Stream<Object[]> stream(final String query, final Object... parameters) {
         return stream(Object[].class, query, parameters);
     }
 
     /**
-     * Creates a Stream of results mapped to the specified type.
-     * 
+     * Executes the given CQL query and returns the result rows as a lazy stream of
+     * {@code targetClass} instances.
+     *
+     * <p>Rows are mapped on demand by the row mapper returned from
+     * {@link #createRowMapper(Class)}. Parameters are bound positionally to {@code ?} placeholders.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * executor.stream(User.class, "SELECT * FROM users")
      *         .filter(u -> u.getAge() > 21)
      *         .forEach(System.out::println);
      * }</pre>
-     * 
+     *
      * @param <T> the target type
-     * @param targetClass an entity class with getter/setter methods or Map.class
-     * @param query the CQL query to execute
-     * @param parameters the query parameters
-     * @return a Stream of results mapped to the target type
+     * @param targetClass an entity class with getter/setter methods matching column names,
+     *        or {@code Map.class}
+     * @param query the CQL query string with {@code ?} placeholders for parameters
+     * @param parameters the values to bind, in declaration order
+     * @return a stream of result rows mapped to {@code targetClass}
      */
     public final <T> Stream<T> stream(final Class<T> targetClass, final String query, final Object... parameters) {
         return Stream.of(execute(query, parameters).iterator()).map(createRowMapper(targetClass));
     }
 
     /**
-     * Creates a Stream of results from a prepared statement.
+     * Executes the supplied driver statement and returns the result rows as a lazy stream of
+     * {@code targetClass} instances.
+     *
+     * <p>Rows are mapped on demand by the row mapper returned from
+     * {@link #createRowMapper(Class)}. The statement is run via {@link #execute(Object)}.</p>
      *
      * @param <T> the target type
-     * @param targetClass an entity class with getter/setter methods or Map.class
-     * @param statement the prepared statement to execute
-     * @return a Stream of results mapped to the target type
-     * @throws IllegalArgumentException if targetClass is null or statement is null
+     * @param targetClass an entity class with getter/setter methods matching column names,
+     *        or {@code Map.class}
+     * @param statement the driver statement to execute (for example a bound or batch statement)
+     * @return a stream of result rows mapped to {@code targetClass}
      */
     public <T> Stream<T> stream(final Class<T> targetClass, final ST statement) {
         return Stream.of(execute(statement).iterator()).map(createRowMapper(targetClass));
@@ -2695,10 +2719,15 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
     public abstract RS execute(final ST statement);
 
     /**
-     * Executes a prepared query with parameters.
-     * 
-     * @param cp the prepared query with parameters
-     * @return the result set
+     * Executes the CQL string and bound positional parameters carried by the supplied {@link SP}
+     * pair and returns the driver result set.
+     *
+     * <p>This is a convenience for the common case where {@link CqlBuilder} produces an
+     * {@code SP} (statement + parameters) pair; it dispatches to
+     * {@link #execute(String, Object...)}.</p>
+     *
+     * @param cp the parameterized CQL statement to execute
+     * @return the driver result set
      */
     protected RS execute(final SP cp) {
         return execute(cp.query(), cp.parameters().toArray());

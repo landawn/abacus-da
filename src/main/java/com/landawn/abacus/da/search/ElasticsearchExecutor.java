@@ -15,9 +15,13 @@
 package com.landawn.abacus.da.search;
 
 /**
- * Placeholder executor for Elasticsearch operations.
+ * Package-private placeholder executor for Elasticsearch operations.
  *
- * <p>This class is reserved for future implementation of Elasticsearch utility methods.</p>
+ * <p>This class is reserved for a future implementation of Elasticsearch utility methods
+ * (see the commented-out skeleton below for the intended surface area: {@code get},
+ * {@code update}, {@code delete}, {@code exists}, {@code count}, {@code index},
+ * {@code search}, and indexed-script management). It currently has no public API and
+ * cannot be instantiated outside its package.</p>
  */
 final class ElasticsearchExecutor { //NOSONAR
     //

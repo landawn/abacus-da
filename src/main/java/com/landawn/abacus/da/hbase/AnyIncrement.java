@@ -280,15 +280,17 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
 
     /**
      * Adds a pre-constructed {@link Cell} carrying the per-column increment amount. Useful when
-     * an existing {@code Cell} (e.g. from a {@link CellScanner}) already encodes the desired
-     * increment; for ordinary use prefer {@link #addColumn(String, String, long)}.
+     * an existing {@code Cell} (e.g. from an {@link org.apache.hadoop.hbase.CellScanner}) already
+     * encodes the desired increment; for ordinary use prefer
+     * {@link #addColumn(String, String, long)}.
      *
      * <p>The cell's row key must match this increment's row key; HBase's {@link Increment#add(Cell)}
      * throws an {@link IOException} otherwise.</p>
      *
      * @param cell the {@link Cell} to add
      * @return this AnyIncrement instance, to allow fluent method chaining
-     * @throws IOException if the cell's row key does not match or it is otherwise invalid
+     * @throws IOException if the cell's row key does not match this increment's row key, or if
+     *         the cell is otherwise rejected by HBase
      * @see Cell
      * @see #addColumn(String, String, long)
      */
@@ -463,8 +465,9 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *                                                .setReturnResults(true);
      * }</pre>
      *
-     * @param returnResults {@code true} (HBase default) to return the post-increment values;
-     *                      {@code false} to skip the response payload and improve throughput
+     * @param returnResults {@code true} to return the post-increment values (HBase's historical
+     *                      default for {@link Increment}); {@code false} to skip the response
+     *                      payload and improve throughput
      * @return this AnyIncrement instance, to allow fluent method chaining
      * @see #isReturnResults()
      */

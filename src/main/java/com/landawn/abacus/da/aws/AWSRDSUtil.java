@@ -17,7 +17,9 @@ package com.landawn.abacus.da.aws;
 /**
  * Placeholder utility class for Amazon RDS (Relational Database Service) operations.
  *
- * <p>This class is reserved for future implementation of AWS RDS utility methods.</p>
+ * <p>This class is reserved for a future implementation of AWS RDS helper methods.
+ * It currently exposes no public API; the type exists only to anchor the package
+ * namespace and prevent accidental subclassing or instantiation.</p>
  *
  * @see AWSS3Util
  */

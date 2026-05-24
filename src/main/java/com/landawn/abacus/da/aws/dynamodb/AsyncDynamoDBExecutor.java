@@ -40,24 +40,45 @@ import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.stream.Stream;
 
 /**
- * Asynchronous wrapper for DynamoDBExecutor that provides non-blocking operations for Amazon DynamoDB.
- * 
- * <p>This class wraps a synchronous {@link DynamoDBExecutor} and executes all operations
- * asynchronously using an {@link AsyncExecutor}. All methods return {@link ContinuableFuture}
- * instances that can be used to handle results asynchronously, enabling non-blocking I/O patterns
- * and better resource utilization in concurrent applications.</p>
- * 
+ * Asynchronous wrapper around {@link DynamoDBExecutor} providing non-blocking operations against the
+ * AWS SDK <b>v1</b> ({@code com.amazonaws.services.dynamodbv2}) DynamoDB client.
+ *
+ * <p>This class wraps a synchronous {@link DynamoDBExecutor} and submits each call to a backing
+ * {@link AsyncExecutor}. Every method returns a {@link ContinuableFuture} whose payload is exactly
+ * the value the corresponding synchronous method on {@link DynamoDBExecutor} would have returned
+ * (for example, {@code Map<String, Object>}, {@code PutItemResult}, or {@code Stream<T>}).</p>
+ *
+ * <p><strong>Note:</strong> This class targets AWS SDK v1, which is a different driver than the
+ * v2 wrappers in the {@code com.landawn.abacus.da.aws.dynamodb.v2} subpackage. The two are not
+ * interchangeable; the v1 model classes (e.g. {@link com.amazonaws.services.dynamodbv2.model.GetItemRequest})
+ * are referenced throughout.</p>
+ *
+ * <p><strong>Threading model:</strong></p>
+ * <ul>
+ *   <li>Each method submits a task to the {@link AsyncExecutor} supplied at construction
+ *       (typically derived from {@link DynamoDBExecutor#async()}).</li>
+ *   <li>The submitted task invokes the corresponding blocking call on the underlying
+ *       {@link DynamoDBExecutor}; the calling thread is never blocked.</li>
+ *   <li>Continuations attached via {@link ContinuableFuture#thenRunAsync} and related methods
+ *       run on the same {@link AsyncExecutor} unless an explicit executor is supplied.</li>
+ *   <li>For methods that return a {@link Stream} (queries/scans), the stream itself is created
+ *       asynchronously but is consumed lazily on whichever thread iterates it; the underlying
+ *       SDK calls used to fetch additional pages happen synchronously during iteration.</li>
+ * </ul>
+ *
  * <p><strong>Key Features:</strong></p>
  * <ul>
- *   <li>Non-blocking operations for all DynamoDB CRUD operations</li>
- *   <li>Automatic type conversion between DynamoDB AttributeValues and Java objects</li>
- *   <li>Support for batch operations, queries, and scans</li>
- *   <li>Memory-efficient streaming for large result sets</li>
- *   <li>Seamless integration with ContinuableFuture API</li>
+ *   <li>Non-blocking analogues of every public {@link DynamoDBExecutor} operation.</li>
+ *   <li>Automatic type conversion between DynamoDB {@link AttributeValue}s and Java objects.</li>
+ *   <li>Support for batch operations, queries, and scans.</li>
+ *   <li>Memory-efficient streaming for large result sets (automatic pagination).</li>
+ *   <li>Seamless interop with the {@link ContinuableFuture} API for composition and chaining.</li>
  * </ul>
- * 
- * <p><strong>Thread Safety:</strong> This class is thread-safe and can be shared across multiple threads.</p>
- * 
+ *
+ * <p><strong>Thread Safety:</strong> This class is thread-safe and may be shared across multiple
+ * threads; both the wrapped {@link DynamoDBExecutor} and the {@link AsyncExecutor} are themselves
+ * thread-safe.</p>
+ *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * // Create an async executor
@@ -71,7 +92,7 @@ import com.landawn.abacus.util.stream.Stream;
  * // Or block for the result:
  * Map<String, Object> item = asyncExecutor.getItem("MyTable", key).get();
  * }</pre>
- * 
+ *
  * @see DynamoDBExecutor
  * @see ContinuableFuture
  * @see AsyncExecutor
@@ -84,12 +105,15 @@ public final class AsyncDynamoDBExecutor {
 
     /**
      * Constructs an AsyncDynamoDBExecutor with the specified synchronous executor and async executor.
-     * 
-     * <p>This constructor is package-private and typically called by {@link DynamoDBExecutor#async()}
-     * to create an asynchronous wrapper around a synchronous executor.</p>
      *
-     * @param dbExecutor the synchronous DynamoDB executor to wrap
-     * @param asyncExecutor the async executor for handling asynchronous operations
+     * <p>This constructor is package-private and is typically invoked indirectly through
+     * {@link DynamoDBExecutor#async()} to create an asynchronous wrapper around a synchronous
+     * executor. Every asynchronous operation delegates the corresponding synchronous method on
+     * {@code dbExecutor} to a task submitted to {@code asyncExecutor}.</p>
+     *
+     * @param dbExecutor the synchronous DynamoDB executor to wrap (must not be {@code null})
+     * @param asyncExecutor the executor used to schedule each asynchronous operation
+     *                      (must not be {@code null})
      */
     AsyncDynamoDBExecutor(final DynamoDBExecutor dbExecutor, final AsyncExecutor asyncExecutor) {
         this.dbExecutor = dbExecutor;
@@ -179,9 +203,10 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param tableName the name of the DynamoDB table to retrieve the item from, must not be {@code null}
      * @param key the primary key of the item to retrieve, must include all key attributes, must not be {@code null}
-     * @param consistentRead whether to perform a strongly consistent read (true) or eventually consistent read (false/null)
-     * @return a {@link ContinuableFuture} containing the item as a Map of attribute names to values,
-     *         or {@code null} if the item doesn't exist
+     * @param consistentRead {@code Boolean.TRUE} for a strongly consistent read;
+     *                       {@code Boolean.FALSE} or {@code null} for an eventually consistent read
+     * @return a {@link ContinuableFuture} whose payload is a {@code Map<String, Object>} of attribute
+     *         names to values, or {@code null} if the item doesn't exist
      * @throws IllegalArgumentException if tableName or key is {@code null}
      * @see #getItem(String, Map) for eventually consistent reads
      * @see #getItem(String, Map, Boolean, Class) for type-safe retrieval with consistency control
@@ -314,9 +339,11 @@ public final class AsyncDynamoDBExecutor {
      * @param <T> the type to convert the item to
      * @param tableName the name of the table to get the item from, must not be {@code null}
      * @param key the primary key of the item to retrieve, must include all key attributes, must not be {@code null}
-     * @param consistentRead whether to perform a consistent read (true) or eventually consistent read (false)
+     * @param consistentRead {@code Boolean.TRUE} to perform a strongly consistent read;
+     *                       {@code Boolean.FALSE} or {@code null} for an eventually consistent read
      * @param targetClass the class to convert the item to, must not be {@code null}
-     * @return a ContinuableFuture containing the item converted to type T, or null if not found
+     * @return a {@link ContinuableFuture} whose payload is the item converted to type {@code T},
+     *         or {@code null} if the item does not exist
      * @throws IllegalArgumentException if tableName, key, or targetClass is {@code null}
      */
     public <T> ContinuableFuture<T> getItem(final String tableName, final Map<String, AttributeValue> key, final Boolean consistentRead,
@@ -446,7 +473,8 @@ public final class AsyncDynamoDBExecutor {
      *         }
      *         List<Map<String, Object>> users = results.get("Users");
      *         System.out.println("Retrieved " + users.size() + " users");
-     *         // Note: Consumed capacity info available in response metadata
+     *         // Note: this overload extracts only the per-table results. To inspect
+     *         // ConsumedCapacity, use batchGetItem(BatchGetItemRequest) instead.
      *     });
      * }</pre>
      *
@@ -624,12 +652,12 @@ public final class AsyncDynamoDBExecutor {
         return asyncExecutor.execute(() -> dbExecutor.batchGetItem(requestItems, returnConsumedCapacity, targetClass));
     }
 
-    /**     
-     * Asynchronously performs a batch get operation using a BatchGetItemRequest with type conversion.
-     * 
+    /**
+     * Asynchronously performs a batch get operation using a {@link BatchGetItemRequest} with type conversion.
+     *
      * <p>This method allows you to retrieve multiple items from one or more tables and convert
      * each item to the specified target type using a fully configured BatchGetItemRequest.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * BatchGetItemRequest request = new BatchGetItemRequest()
@@ -638,7 +666,7 @@ public final class AsyncDynamoDBExecutor {
      *             .withKeys(Map.of("userId", new AttributeValue("user123")))
      *             .withProjectionExpression("userId, name, age")
      *     ));
-     * 
+     *
      * asyncExecutor.batchGetItem(request, User.class)
      *     .thenRunAsync(results -> {
      *         List<User> users = results.get("Users");
@@ -649,7 +677,9 @@ public final class AsyncDynamoDBExecutor {
      * @param <T> the type to convert retrieved items to
      * @param batchGetItemRequest the complete BatchGetItemRequest with all parameters configured, must not be {@code null}
      * @param targetClass the class to convert each retrieved item to, must not be {@code null}
-     * @return a ContinuableFuture containing a map of table names to lists of converted items
+     * @return a {@link ContinuableFuture} whose payload is a map of table names to lists of items
+     *         converted to type {@code T}; tables not in the request are absent from the map
+     * @throws IllegalArgumentException if {@code batchGetItemRequest} or {@code targetClass} is {@code null}
      */
     public <T> ContinuableFuture<Map<String, List<T>>> batchGetItem(final BatchGetItemRequest batchGetItemRequest, final Class<T> targetClass) {
         return asyncExecutor.execute(() -> dbExecutor.batchGetItem(batchGetItemRequest, targetClass));
@@ -795,27 +825,39 @@ public final class AsyncDynamoDBExecutor {
     }
 
     /**
-     * Asynchronously puts an entity object into the specified table.
-     * 
-     * <p>Note: This method is package-private as Object type can be ambiguous.</p>
+     * Asynchronously puts an entity (POJO) into the specified table.
      *
-     * @param tableName the name of the table to put the entity into
-     * @param entity the entity object to put
-     * @return a ContinuableFuture containing the PutItemResult
+     * <p>The entity is converted to a map of {@link AttributeValue}s by the underlying
+     * {@link DynamoDBExecutor} before being written. This method is package-private
+     * because the {@code Object} parameter would overload-clash with the
+     * {@link #putItem(String, Map)} entry point and create resolution ambiguity for
+     * callers passing {@code Map}-typed entities; public callers should serialize their
+     * entity to a {@code Map<String, AttributeValue>} and use the public overload, or
+     * obtain the wrapper through other API entry points.</p>
+     *
+     * @param tableName the name of the table to put the entity into (must not be null)
+     * @param entity the entity object to put (must not be null)
+     * @return a {@link ContinuableFuture} whose payload is the {@link PutItemResult}
+     *         returned by the underlying synchronous operation
      */
     ContinuableFuture<PutItemResult> putItem(final String tableName, final Object entity) {
         return asyncExecutor.execute(() -> dbExecutor.putItem(tableName, entity));
     }
 
     /**
-     * Asynchronously puts an entity object into the specified table with return value specification.
-     * 
-     * <p>Note: This method is package-private as Object type can be ambiguous.</p>
+     * Asynchronously puts an entity (POJO) into the specified table with return value specification.
      *
-     * @param tableName the name of the table to put the entity into
-     * @param entity the entity object to put
+     * <p>The entity is converted to a map of {@link AttributeValue}s by the underlying
+     * {@link DynamoDBExecutor} before being written. This method is package-private for the
+     * same reason as {@link #putItem(String, Object)} — the {@code Object} parameter would
+     * overload-clash with the {@code Map}-accepting public entry point.</p>
+     *
+     * @param tableName the name of the table to put the entity into (must not be null)
+     * @param entity the entity object to put (must not be null)
      * @param returnValues specifies what values to return: "NONE" (default) or "ALL_OLD" for PutItem operations
-     * @return a ContinuableFuture containing the PutItemResult
+     * @return a {@link ContinuableFuture} whose payload is the {@link PutItemResult}
+     *         returned by the underlying synchronous operation; when {@code returnValues}
+     *         is {@code "ALL_OLD"} the result's {@code getAttributes()} contains the previous item
      */
     ContinuableFuture<PutItemResult> putItem(final String tableName, final Object entity, final String returnValues) {
         return asyncExecutor.execute(() -> dbExecutor.putItem(tableName, entity, returnValues));

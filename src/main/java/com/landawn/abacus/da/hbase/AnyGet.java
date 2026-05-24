@@ -90,10 +90,16 @@ import com.landawn.abacus.util.N;
  *
  * <h3>Performance Considerations:</h3>
  * <ul>
- * <li><strong>Cache Control</strong>: Use {@code setCacheBlocks(false)} for large scans</li>
- * <li><strong>Column Selection</strong>: Specify only needed columns to reduce network transfer</li>
- * <li><strong>Version Limiting</strong>: Use {@code readVersions()} to control data volume</li>
- * <li><strong>Existence Checks</strong>: Use {@code setCheckExistenceOnly(true)} for efficient existence testing</li>
+ * <li><strong>Cache Control</strong>: use {@link #setCacheBlocks(boolean) setCacheBlocks(false)}
+ *     for one-shot reads of large rows that would pollute the block cache</li>
+ * <li><strong>Column Selection</strong>: specify only the columns you need
+ *     ({@link #addColumn(String, String) addColumn} / {@link #addFamily(String) addFamily}) to
+ *     reduce network and IO cost</li>
+ * <li><strong>Version Limiting</strong>: use {@link #readVersions(int) readVersions} to cap how
+ *     many historical versions are returned (default is 1, the latest version only)</li>
+ * <li><strong>Existence Checks</strong>: use
+ *     {@link #setCheckExistenceOnly(boolean) setCheckExistenceOnly(true)} when you only need to
+ *     know whether the row exists — the server skips returning cell data</li>
  * </ul>
  *
  * @see Get
@@ -107,7 +113,11 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
 
     /**
      * Constructs a new AnyGet instance for the specified row key.
-     * The row key is automatically converted to the appropriate byte array format.
+     *
+     * <p>The row key is converted to its byte array form via
+     * {@link HBaseExecutor#toRowKeyBytes(Object)}. Without further {@code addFamily} /
+     * {@code addColumn} calls, executing this get will retrieve the latest version of every
+     * column in every family of the row.</p>
      *
      * @param rowKey the row key object to retrieve, automatically converted to bytes
      */
@@ -388,10 +398,13 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
     /**
      * Returns the map of column families to their respective column qualifiers.
      *
-     * <p>This method provides access to the internal family map that specifies which
-     * columns to retrieve. The map contains column families as keys and navigable sets
-     * of column qualifiers as values. An empty or null set for a family indicates that
-     * all columns in that family should be retrieved.</p>
+     * <p>Delegates to {@link Get#getFamilyMap()} and returns the same live map that backs this
+     * Get — it is <em>not</em> a defensive copy. Subsequent
+     * {@link #addFamily(String)}/{@link #addColumn(String, String)} calls will be reflected in
+     * the returned map, and mutating the returned map will affect the underlying Get. Each
+     * family is mapped either to a {@link NavigableSet} of explicit qualifiers, or to
+     * {@code null} when the family was added via {@link #addFamily(String)} (meaning "all
+     * columns in the family").</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -402,7 +415,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * // familyMap contains mapping of families to their qualifiers
      * }</pre>
      *
-     * @return the map of column families to column qualifiers, never null
+     * @return the live family map, never null (possibly empty)
      * @see #addFamily(String)
      * @see #addColumn(String, String)
      */
@@ -646,10 +659,11 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
     /**
      * Sets the maximum number of results to return per column family.
      *
-     * <p>This method limits the number of cells returned for each column family,
-     * which is useful for controlling data transfer volume when dealing with
-     * families containing many columns or when implementing pagination-like behavior.
-     * The limit applies after any offset specified by {@link #setRowOffsetPerColumnFamily(int)}.</p>
+     * <p>Delegates to {@link Get#setMaxResultsPerColumnFamily(int)}. Limits the number of cells
+     * returned for each column family, which is useful for controlling data transfer volume on
+     * wide families or when implementing pagination-like behavior. The limit applies after any
+     * offset specified by {@link #setRowOffsetPerColumnFamily(int)}. A value of {@code -1}
+     * (the default) disables the limit.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -659,9 +673,8 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *                    .setMaxResultsPerColumnFamily(50);
      * }</pre>
      *
-     * @param limit the maximum number of results per column family (must be non-negative)
+     * @param limit the maximum number of results per column family; use {@code -1} to disable
      * @return this AnyGet instance for method chaining
-     * @throws IllegalArgumentException if limit is less than 0
      * @see #getMaxResultsPerColumnFamily()
      * @see #setRowOffsetPerColumnFamily(int)
      */
@@ -695,10 +708,11 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
     /**
      * Sets the row offset for each column family.
      *
-     * <p>This method configures how many cells to skip before returning results for
-     * each column family. When combined with {@link #setMaxResultsPerColumnFamily(int)},
-     * this enables pagination-like behavior for large column families. The offset is
-     * applied before the limit.</p>
+     * <p>Delegates to {@link Get#setRowOffsetPerColumnFamily(int)}. Configures how many cells
+     * to skip within a particular row/CF combination before returning results. When combined
+     * with {@link #setMaxResultsPerColumnFamily(int)}, this enables pagination-like behavior
+     * for wide column families. The offset is applied before the limit and resets back to zero
+     * when the operation moves to the next row or CF.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -709,9 +723,8 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *                    .setMaxResultsPerColumnFamily(10);
      * }</pre>
      *
-     * @param offset the number of cells to skip per column family (must be non-negative)
+     * @param offset the number of cells to skip per column family
      * @return this AnyGet instance for method chaining
-     * @throws IllegalArgumentException if offset is negative
      * @see #getRowOffsetPerColumnFamily()
      * @see #setMaxResultsPerColumnFamily(int)
      */
@@ -841,9 +854,11 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
     /**
      * Returns the set of column families specified for this Get operation.
      *
-     * <p>This method returns an unmodifiable set containing the byte array
-     * representations of all column families that have been added to this
-     * Get operation. The set will be empty if no families have been specified.</p>
+     * <p>Delegates to {@link Get#getFamilyMap()}{@code .keySet()}, so the returned set is a live
+     * view backed by the underlying family map — it reflects subsequent
+     * {@link #addFamily(String)} / {@link #addColumn(String, String)} calls, and removing an
+     * element from it will also remove the family from this Get. The set will be empty if no
+     * families have been specified.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -854,7 +869,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * // families contains byte arrays for "info" and "stats"
      * }</pre>
      *
-     * @return the set of column families as byte arrays, never null
+     * @return a live keySet view of column-family byte arrays; never null, possibly empty
      * @see #hasFamilies()
      * @see #numFamilies()
      */

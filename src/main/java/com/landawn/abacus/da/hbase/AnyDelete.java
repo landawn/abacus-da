@@ -107,10 +107,16 @@ import com.landawn.abacus.util.N;
  *
  * <h3>Deletion Strategies:</h3>
  * <ul>
- * <li><strong>addColumn()</strong>: Deletes latest version (expensive - requires server-side get)</li>
- * <li><strong>addColumns()</strong>: Deletes all versions up to specified timestamp</li>
- * <li><strong>addFamily()</strong>: Deletes entire family or versions up to timestamp</li>
- * <li><strong>addFamilyVersion()</strong>: Deletes family data at exact timestamp</li>
+ * <li><strong>{@link #addColumn(String, String)}</strong>: deletes a single version of a column.
+ *     When no explicit timestamp is supplied, the server uses {@code LATEST_TIMESTAMP}, which
+ *     triggers a server-side get to resolve the latest version's stamp before writing the
+ *     tombstone (expensive).</li>
+ * <li><strong>{@link #addColumns(String, String)}</strong>: deletes all versions of a column up
+ *     to {@code LATEST_TIMESTAMP} (or the supplied timestamp). No server-side get is required.</li>
+ * <li><strong>{@link #addFamily(String)}</strong>: deletes all versions of all columns in the
+ *     family up to {@code LATEST_TIMESTAMP} (or the supplied timestamp).</li>
+ * <li><strong>{@link #addFamilyVersion(String, long)}</strong>: deletes all columns in the family
+ *     stamped with exactly the supplied timestamp.</li>
  * </ul>
  *
  * <h3>Performance Considerations:</h3>
@@ -142,7 +148,12 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
 
     /**
      * Constructs a new AnyDelete instance for the specified row key.
-     * The row key is automatically converted to the appropriate byte array format.
+     *
+     * <p>The row key is automatically converted to its byte array representation via
+     * {@link HBaseExecutor#toRowKeyBytes(Object)}. If no further {@code addFamily}/{@code addColumn}
+     * calls are made, executing this delete will remove every version of every column in every
+     * family of the row (using {@code HConstants.LATEST_TIMESTAMP} as the upper bound). Cells
+     * whose timestamp is in the future relative to the server clock are not affected.</p>
      *
      * @param rowKey the row key object to delete, automatically converted to bytes
      */
@@ -152,8 +163,14 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
     }
 
     /**
-     * Constructs a new AnyDelete instance with timestamp-based version control.
-     * Deletes all versions of the row with timestamps less than or equal to the specified timestamp.
+     * Constructs a new AnyDelete instance with a default timestamp upper bound.
+     *
+     * <p>Without further {@code addFamily}/{@code addColumn} calls, executing this delete will
+     * remove every version of every column in every family of the row whose stamp is less than
+     * or equal to {@code timestamp}. The supplied timestamp also serves as the default upper
+     * bound used by subsequent {@code addColumn(family, qualifier)} /
+     * {@code addColumns(family, qualifier)} / {@code addFamily(family)} calls that do not pass
+     * their own timestamp.</p>
      *
      * @param rowKey the row key object to delete, automatically converted to bytes
      * @param timestamp the maximum timestamp for versions to delete (inclusive)
@@ -205,7 +222,11 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
 
     /**
      * Constructs a new AnyDelete instance by copying an existing Delete object.
-     * Creates a deep copy that can be modified without affecting the original.
+     *
+     * <p>Delegates to {@link Delete#Delete(Delete)}, which copies the row, timestamp, and the
+     * family-to-cells map structure (the map and per-family {@code List<Cell>} are new collections,
+     * but the {@link Cell} instances themselves are shared with the source). Subsequent
+     * {@code addColumn}/{@code addFamily} calls on the wrapper do not affect the source delete.</p>
      *
      * @param deleteToCopy the HBase Delete object to copy
      */
@@ -253,9 +274,11 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * }</pre>
      *
      * @param rowKey the row key object to delete, automatically converted to bytes
-     * @param timestamp the maximum timestamp for versions to delete (inclusive)
+     * @param timestamp the maximum timestamp for versions to delete (inclusive); also used as the
+     *                  default timestamp for any subsequent {@code addColumn}/{@code addColumns}/
+     *                  {@code addFamily} calls that omit a timestamp
      * @return a new AnyDelete instance configured for timestamp-based deletion
-     * @throws IllegalArgumentException if rowKey is null or timestamp is negative
+     * @throws IllegalArgumentException if {@code rowKey} resolves to a null/empty byte array
      * @see #of(Object)
      * @see #addFamily(String, long)
      * @see #addColumn(String, String, long)
@@ -354,10 +377,12 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
     /**
      * Creates a new AnyDelete instance by copying an existing HBase Delete object.
      *
-     * <p>This factory method creates a deep copy of the provided HBase Delete operation, allowing you
-     * to modify the copy without affecting the original. This is useful when you want to extend or
-     * modify an existing delete operation while preserving the original for other uses, or when
-     * integrating with existing HBase code that provides Delete objects.</p>
+     * <p>This factory method delegates to {@link Delete#Delete(Delete)} to create a copy of the
+     * provided HBase Delete operation. The copy holds the same row, timestamp, and the same set
+     * of {@link Cell} instances in new collections, so further {@code addColumn}/{@code addFamily}
+     * calls on the returned wrapper do not mutate the source. (Note: the {@code Cell} instances
+     * themselves are shared by reference.) This is useful when you want to extend an existing
+     * delete operation while preserving the original.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -368,8 +393,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * }</pre>
      *
      * @param deleteToCopy the HBase Delete object to copy; must not be null
-     * @return a new AnyDelete instance that is a deep copy of the provided Delete
-     * @throws IllegalArgumentException if deleteToCopy is null
+     * @return a new AnyDelete instance backed by a fresh Delete copied from {@code deleteToCopy}
+     * @throws NullPointerException if {@code deleteToCopy} is null
      * @see Delete
      * @see #val()
      */
@@ -401,10 +426,12 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
     /**
      * Adds an existing delete-marker Cell to this delete operation.
      *
-     * <p>This advanced method delegates to {@link Delete#add(Cell)}. The supplied cell must
-     * represent a delete tombstone (i.e. its type must be one of {@code Delete},
-     * {@code DeleteColumn}, {@code DeleteFamily}, or {@code DeleteFamilyVersion}) and its
-     * row key must match this delete's row key.</p>
+     * <p>Advanced API that delegates to {@link Delete#add(Cell)}. To be meaningful as a delete
+     * marker, the supplied cell should have one of the delete cell types
+     * ({@code Delete}, {@code DeleteColumn}, {@code DeleteFamily}, or
+     * {@code DeleteFamilyVersion}); the underlying call does <em>not</em> enforce this, so it is
+     * the caller's responsibility. The cell's row must, however, equal this delete's row, and
+     * its family must be non-empty — both are enforced by the underlying API.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -413,11 +440,12 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *                            .add(deleteMarker);
      * }</pre>
      *
-     * @param kv an existing Cell representing a delete marker; must be a delete-type cell
+     * @param kv an existing Cell to attach to this delete; should be a delete-type cell
      *           whose row matches this delete's row
      * @return this AnyDelete instance for method chaining
-     * @throws IOException if the cell is not a delete-type cell, or if its row key does not
-     *         match this delete's row key (thrown by the underlying {@link Delete#add(Cell)})
+     * @throws IOException if the cell's row does not match this delete's row
+     *         (a {@code WrongRowIOException}, an {@code IOException} subtype)
+     * @throws IllegalArgumentException if the cell's family is null or empty
      * @see Cell
      * @see Delete#add(Cell)
      */
@@ -429,9 +457,15 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
     /**
      * Marks an entire column family for deletion.
      *
-     * <p>This method deletes all columns and all versions within the specified column family
-     * for the row. This is the most efficient way to remove all data from a column family
-     * as it creates a single delete marker at the family level.</p>
+     * <p>Delegates to {@link Delete#addFamily(byte[])}. Writes a single family-level tombstone
+     * that covers all columns and all versions of the family with timestamps up to the row's
+     * default timestamp (i.e. the timestamp passed to the {@code AnyDelete} constructor, or
+     * {@code HConstants.LATEST_TIMESTAMP} when none was supplied). Per HBase semantics, this
+     * call overrides any previous {@code addColumn}/{@code addColumns} entries for the same
+     * family on this delete.</p>
+     *
+     * <p>The actual storage cleanup happens lazily during major compaction; until then, the
+     * tombstone masks matching cells from reads.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -442,7 +476,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * @param family the name of the column family to delete
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if family is null or empty
+     * @throws IllegalArgumentException if {@code family} resolves to a null/empty byte array
      * @see #addFamily(String, long)
      * @see #addFamilyVersion(String, long)
      */
@@ -454,9 +488,11 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
     /**
      * Marks a column family for deletion up to the specified timestamp.
      *
-     * <p>This method deletes all columns and versions within the specified column family
-     * that have timestamps less than or equal to the specified timestamp. This enables
-     * time-based data retention strategies at the family level.</p>
+     * <p>Delegates to {@link Delete#addFamily(byte[], long)}. Writes a family-level tombstone
+     * covering all columns and all versions whose timestamps are less than or equal to
+     * {@code timestamp}. Useful for time-based retention strategies at the family level. Per
+     * HBase semantics this call overrides any previous {@code addColumn}/{@code addColumns}
+     * entries for the same family on this delete.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -468,7 +504,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param family the name of the column family to delete
      * @param timestamp the maximum timestamp for versions to delete (inclusive)
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if family is null or empty, or timestamp is negative
+     * @throws IllegalArgumentException if {@code family} resolves to a null/empty byte array,
+     *         or if {@code timestamp} is negative
      * @see #addFamily(String)
      * @see #addFamilyVersion(String, long)
      */
@@ -529,11 +566,13 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
     }
 
     /**
-     * Marks a specific version of an entire column family for deletion.
+     * Marks all cells in the family stamped with exactly the given timestamp for deletion.
      *
-     * <p>This method creates a delete marker for a specific version of the entire column family,
-     * removing only the data that exists at exactly the specified timestamp. This is useful for
-     * precise version management and rollback operations.</p>
+     * <p>Delegates to {@link Delete#addFamilyVersion(byte[], long)}. Writes a
+     * {@code DeleteFamilyVersion} tombstone that matches cells across every column in
+     * {@code family} whose stamp equals {@code timestamp} (an exact, point-in-time match — not
+     * "less-than-or-equal" as with {@link #addFamily(String, long)}). Useful for surgical
+     * rollback of a single mutation batch that touched the family.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -543,9 +582,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * }</pre>
      *
      * @param family the name of the column family
-     * @param timestamp the exact timestamp of the version to delete
+     * @param timestamp the exact timestamp of the cells to delete
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if family is null or empty
+     * @throws IllegalArgumentException if {@code family} resolves to a null/empty byte array
      * @see #addFamily(String, long)
      * @see #addColumn(String, String, long)
      */
@@ -582,12 +621,15 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
     }
 
     /**
-     * Marks a specific column for deletion.
+     * Marks a single version of a specific column for deletion.
      *
-     * <p>This method removes only the most recent version of the specified column. Note that this
-     * operation is expensive as it requires a server-side get operation to determine the latest
-     * version's timestamp. For better performance, consider using {@link #addColumns(String, String)}
-     * to delete all versions, or specify an explicit timestamp.</p>
+     * <p>Delegates to {@link Delete#addColumn(byte[], byte[])} using this delete's default
+     * timestamp ({@code HConstants.LATEST_TIMESTAMP} unless one was supplied to the constructor).
+     * When the default {@code LATEST_TIMESTAMP} is in effect, the region server must first issue
+     * a get to discover the latest version's stamp and then write a {@code Delete} tombstone for
+     * exactly that stamp — an expensive round-trip. For better performance, prefer
+     * {@link #addColumns(String, String)} (deletes all versions, no server-side get) or
+     * {@link #addColumn(String, String, long)} with an explicit timestamp.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -599,7 +641,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param family the column family name
      * @param qualifier the column qualifier name
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if family or qualifier is null or empty
+     * @throws IllegalArgumentException if {@code family} or {@code qualifier} resolves to a
+     *         null/empty byte array
      * @see #addColumn(String, String, long)
      * @see #addColumns(String, String)
      */
@@ -624,9 +667,10 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * @param family the column family name
      * @param qualifier the column qualifier name
-     * @param timestamp the exact timestamp of the version to delete
+     * @param timestamp the exact timestamp of the version to delete; must be non-negative
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if family or qualifier is null or empty
+     * @throws IllegalArgumentException if {@code family} or {@code qualifier} resolves to a
+     *         null/empty byte array, or if {@code timestamp} is negative
      * @see #addColumn(String, String)
      * @see #addColumns(String, String, long)
      */
@@ -636,11 +680,13 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
     }
 
     /**
-     * Marks the most recent version of a specific column for deletion using byte array representation.
+     * Marks a single version of a specific column for deletion, using byte array identifiers.
      *
-     * <p>This method provides direct byte array access for deleting the most recent version
-     * of a column. Like the String version, this operation requires a server-side get and
-     * should be used judiciously for performance reasons.</p>
+     * <p>Delegates to {@link Delete#addColumn(byte[], byte[])} using this delete's default
+     * timestamp ({@code HConstants.LATEST_TIMESTAMP} unless one was supplied to the constructor).
+     * When the default {@code LATEST_TIMESTAMP} is in effect, the region server must first issue
+     * a get to discover the latest version's stamp, so this call is more expensive than the
+     * timestamped variant or {@link #addColumns(byte[], byte[])}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -679,9 +725,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * @param family the column family name as a byte array
      * @param qualifier the column qualifier name as a byte array
-     * @param timestamp the exact timestamp of the version to delete
+     * @param timestamp the exact timestamp of the version to delete; must be non-negative
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if family or qualifier is null
+     * @throws IllegalArgumentException if {@code family} is null, or if {@code timestamp} is negative
      * @see #addColumn(byte[], byte[])
      * @see #addColumns(byte[], byte[], long)
      */
@@ -693,10 +739,12 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
     /**
      * Marks all versions of a specific column for deletion.
      *
-     * <p>This method removes all versions of the specified column up to the current time.
-     * This is more efficient than {@link #addColumn(String, String)} as it doesn't require
-     * a server-side get operation. Use this when you want to completely remove a column
-     * regardless of how many versions exist.</p>
+     * <p>Delegates to {@link Delete#addColumns(byte[], byte[])}. Writes a {@code DeleteColumn}
+     * tombstone covering every version of the column whose timestamp is less than or equal to
+     * this delete's default timestamp ({@code HConstants.LATEST_TIMESTAMP} unless one was supplied
+     * to the constructor — interpreted server-side as "every version up to the time the delete
+     * is applied"). Unlike {@link #addColumn(String, String)}, no server-side get is required,
+     * making this the preferred call when you intend to remove the column entirely.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -708,7 +756,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param family the column family name
      * @param qualifier the column qualifier name
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if family or qualifier is null or empty
+     * @throws IllegalArgumentException if {@code family} or {@code qualifier} resolves to a
+     *         null/empty byte array
      * @see #addColumns(String, String, long)
      * @see #addColumn(String, String)
      */
@@ -733,9 +782,10 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * @param family the column family name
      * @param qualifier the column qualifier name
-     * @param timestamp the maximum timestamp for versions to delete (inclusive)
+     * @param timestamp the maximum timestamp for versions to delete (inclusive); must be non-negative
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if family or qualifier is null or empty
+     * @throws IllegalArgumentException if {@code family} or {@code qualifier} resolves to a
+     *         null/empty byte array, or if {@code timestamp} is negative
      * @see #addColumns(String, String)
      * @see #addColumn(String, String, long)
      */
@@ -745,10 +795,12 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
     }
 
     /**
-     * Marks all versions of a specific column for deletion using byte array representation.
+     * Marks all versions of a specific column for deletion, using byte array identifiers.
      *
-     * <p>This method provides direct byte array access for removing all versions of a column.
-     * More efficient than single version deletion as it doesn't require server-side operations.</p>
+     * <p>Delegates to {@link Delete#addColumns(byte[], byte[])}. Writes a {@code DeleteColumn}
+     * tombstone that covers every version of the column with stamp less than or equal to this
+     * delete's default timestamp. More efficient than {@link #addColumn(byte[], byte[])} because
+     * it does not require a server-side get to resolve the latest version's stamp.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
