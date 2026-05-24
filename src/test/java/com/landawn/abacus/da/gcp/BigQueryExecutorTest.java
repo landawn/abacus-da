@@ -953,6 +953,79 @@ public class BigQueryExecutorTest extends TestBase {
         assertTrue(list.isEmpty());
     }
 
+    @Test
+    public void testQueryForSingleValueWithPositiveTotalRowsButEmptyValues() throws Exception {
+        // DML-result shape: getTotalRows() returns the affected-row count (> 0) while
+        // getValues() is empty. queryForSingleValue used to dispatch off totalRows and then
+        // call iterator().next() on an empty iterable, throwing NoSuchElementException.
+        when(mockTableResult.getTotalRows()).thenReturn(5L);
+        when(mockTableResult.getValues()).thenReturn(java.util.Collections.<FieldValueList> emptyList());
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        Nullable<String> result = executor.queryForSingleValue(String.class, "UPDATE test_table SET name = ? WHERE id < ?", "x", 10);
+
+        assertFalse(result.isPresent());
+    }
+
+    @Test
+    public void testToListWithObjectArrayPopulatesElements() throws Exception {
+        // Regression: createRowMapper(rowClass, fields) used by toList previously left
+        // fieldCount=0 when a non-null fields argument was supplied, so each row was
+        // mapped to an empty Object[]. The row content was silently dropped.
+        Field field1 = Field.of("id", StandardSQLTypeName.INT64);
+        Field field2 = Field.of("name", StandardSQLTypeName.STRING);
+        FieldList fields = FieldList.of(field1, field2);
+        Schema schema = Schema.of(fields);
+
+        List<FieldValueList> rows = new ArrayList<>();
+        rows.add(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "42"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "Alice")),
+                fields));
+        rows.add(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "43"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "Bob")),
+                fields));
+
+        when(mockTableResult.getTotalRows()).thenReturn(2L);
+        when(mockTableResult.getSchema()).thenReturn(schema);
+        when(mockTableResult.iterateAll()).thenReturn(rows);
+
+        List<Object[]> arrayList = BigQueryExecutor.toList(mockTableResult, Object[].class);
+
+        assertNotNull(arrayList);
+        assertEquals(2, arrayList.size());
+        // Each row must produce a length-2 array, not an empty one.
+        assertEquals(2, arrayList.get(0).length);
+        assertEquals("42", arrayList.get(0)[0]);
+        assertEquals("Alice", arrayList.get(0)[1]);
+        assertEquals(2, arrayList.get(1).length);
+        assertEquals("43", arrayList.get(1)[0]);
+        assertEquals("Bob", arrayList.get(1)[1]);
+    }
+
+    @Test
+    public void testToListWithListClassPopulatesElements() throws Exception {
+        // Same regression as testToListWithObjectArrayPopulatesElements but for the
+        // Collection branch of createRowMapper.
+        Field field1 = Field.of("id", StandardSQLTypeName.INT64);
+        Field field2 = Field.of("name", StandardSQLTypeName.STRING);
+        FieldList fields = FieldList.of(field1, field2);
+        Schema schema = Schema.of(fields);
+
+        List<FieldValueList> rows = new ArrayList<>();
+        rows.add(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "100"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "Carol")),
+                fields));
+
+        when(mockTableResult.getTotalRows()).thenReturn(1L);
+        when(mockTableResult.getSchema()).thenReturn(schema);
+        when(mockTableResult.iterateAll()).thenReturn(rows);
+
+        List<List> listList = BigQueryExecutor.toList(mockTableResult, List.class);
+
+        assertNotNull(listList);
+        assertEquals(1, listList.size());
+        assertEquals(2, listList.get(0).size());
+        assertEquals("100", listList.get(0).get(0));
+        assertEquals("Carol", listList.get(0).get(1));
+    }
+
     // Test entity classes
     public static class TestEntity {
         private int id;

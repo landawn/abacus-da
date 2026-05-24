@@ -1991,6 +1991,8 @@ public final class MongoCollectionExecutor {
      * @see #stream(Bson, Class)
      */
     public <T> Stream<T> stream(final Class<T> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         final MongoCursor<Document> cursor = coll.find().iterator();
 
         if (rowType.isAssignableFrom(Document.class)) {
@@ -2221,6 +2223,8 @@ public final class MongoCollectionExecutor {
      */
     public <T> Stream<T> stream(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         final MongoCursor<Document> cursor = query(selectPropNames, filter, sort, offset, count).iterator();
 
         if (rowType.isAssignableFrom(Document.class)) {
@@ -2289,6 +2293,8 @@ public final class MongoCollectionExecutor {
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> Stream<T> stream(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         final MongoCursor<Document> cursor = executeQuery(projection, filter, sort, offset, count).iterator();
 
         if (rowType.isAssignableFrom(Document.class)) {

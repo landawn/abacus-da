@@ -17,6 +17,7 @@ package com.landawn.abacus.da.aws.dynamodb.v2;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.attrValueOf;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.createRowMapper;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.extractData;
+import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.getAttrName;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.readRow;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toEntities;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toItem;
@@ -2397,11 +2398,13 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
             this.dynamoDBExecutor = dynamoDBExecutor;
             this.targetEntityClass = targetEntityClass;
             this.tableName = tableName;
+            this.namingPolicy = namingPolicy == null ? NamingPolicy.CAMEL_CASE : namingPolicy;
             entityInfo = ParserUtil.getBeanInfo(targetEntityClass);
             keyPropInfos = Stream.of(idPropNames).map(entityInfo::getPropInfo).toList();
-            keyPropNames = Stream.of(keyPropInfos).map(it -> Strings.isEmpty(it.columnName.orElseNull()) ? it.name : it.columnName.orElseNull()).toList();
-
-            this.namingPolicy = namingPolicy == null ? NamingPolicy.CAMEL_CASE : namingPolicy;
+            // Key attribute names must mirror what toItem(entity, namingPolicy) writes for the same property,
+            // otherwise getItem/updateItem/deleteItem/batchGetItem/batchDeleteItem will look up the wrong
+            // attribute when a non-CAMEL_CASE NamingPolicy renames the id field (e.g. "userId" -> "user_id").
+            keyPropNames = Stream.of(keyPropInfos).map(it -> getAttrName(it, this.namingPolicy)).toList();
         }
 
         /**

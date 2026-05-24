@@ -2264,9 +2264,16 @@ public final class HBaseExecutor implements AutoCloseable {
      * @see CoprocessorRpcChannel
      */
     public CoprocessorRpcChannel coprocessorService(final String tableName, final Object rowKey) {
+        // The returned CoprocessorRpcChannel uses the underlying Connection (not the Table)
+        // for region lookup and RPC, so the Table can be safely closed before returning the channel.
+        // Without this close, every call leaks one Table (and its associated thread-local state).
         final Table table = getTable(tableName);
 
-        return table.coprocessorService(toRowKeyBytes(rowKey));
+        try {
+            return table.coprocessorService(toRowKeyBytes(rowKey));
+        } finally {
+            closeQuietly(table);
+        }
     }
 
     /**

@@ -483,6 +483,37 @@ public class CassandraExecutor01Test extends TestBase {
     }
 
     @Test
+    public void testQueryForSingleNonNull_nullValue_throwsNullPointerException() {
+        when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockSession.execute(any(Statement.class))).thenReturn(mockResultSet);
+        when(mockResultSet.one()).thenReturn(mockRow);
+        when(mockRow.getObject(0)).thenReturn(null);
+
+        assertThrows(NullPointerException.class, () -> executor.queryForSingleNonNull(String.class, "SELECT name FROM test WHERE id = ?", 1L));
+    }
+
+    @Test
+    public void testFindFirst_singleColumnNullValue_throwsNullPointerException() {
+        // Separate column-defs mock for the result-set side, so we don't have
+        // to set up bound-statement variable types.
+        ColumnDefinitions rowCols = mock(ColumnDefinitions.class);
+        when(rowCols.size()).thenReturn(1);
+
+        when(mockSession.prepare(anyString())).thenReturn(mockPreparedStatement);
+        when(mockPreparedStatement.bind(any(Object[].class))).thenReturn(mockBoundStatement);
+        when(mockPreparedStatement.getVariableDefinitions()).thenReturn(mockColumnDefinitions);
+        // mockColumnDefinitions.size() left at Mockito default (0) -> bind() fast-path
+        when(mockSession.execute(any(Statement.class))).thenReturn(mockResultSet);
+        when(mockResultSet.one()).thenReturn(mockRow);
+        when(mockRow.getColumnDefinitions()).thenReturn(rowCols);
+        when(mockRow.getObject(0)).thenReturn(null);
+
+        assertThrows(NullPointerException.class, () -> executor.findFirst(String.class, "SELECT name FROM test WHERE id = ?", 1L));
+    }
+
+    @Test
     public void testStatementSettings() {
         // Test StatementSettings builder
         StatementSettings settings = StatementSettings.builder()

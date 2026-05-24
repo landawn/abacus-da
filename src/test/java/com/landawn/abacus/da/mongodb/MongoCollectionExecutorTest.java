@@ -731,6 +731,55 @@ public class MongoCollectionExecutorTest extends TestBase {
         Assertions.assertFalse(updateCaptor.getValue() instanceof Document);
     }
 
+    @Test
+    public void testStreamRejectsNullRowTypeBeforeOpeningCursor() {
+        // Regression: previously, stream(null) would open a cursor and then throw NPE on
+        // `rowType.isAssignableFrom(...)`, leaking the cursor. The contract says null rowType
+        // must throw IllegalArgumentException, and no cursor should be opened.
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.stream((Class<Document>) null));
+
+        verify(mockCollection, org.mockito.Mockito.never()).find();
+    }
+
+    @Test
+    public void testStreamWithCollectionProjectionRejectsNullRowTypeBeforeOpeningCursor() {
+        // Regression: cursor-leak fix for the multi-arg stream overload.
+        final Collection<String> selectPropNames = java.util.Collections.singletonList("name");
+        final Document filter = new Document("status", "active");
+        Assertions.assertThrows(IllegalArgumentException.class,
+                () -> executor.stream(selectPropNames, filter, (Bson) null, 0, 10, (Class<Document>) null));
+
+        verify(mockCollection, org.mockito.Mockito.never()).find(any(Bson.class));
+        verify(mockCollection, org.mockito.Mockito.never()).find();
+    }
+
+    @Test
+    public void testStreamWithBsonProjectionRejectsNullRowTypeBeforeOpeningCursor() {
+        // Regression: cursor-leak fix for the Bson-projection stream overload.
+        final Bson projection = com.mongodb.client.model.Projections.include("name");
+        final Bson filter = new Document("status", "active");
+        Assertions.assertThrows(IllegalArgumentException.class,
+                () -> executor.stream(projection, filter, (Bson) null, 0, 10, (Class<Document>) null));
+
+        verify(mockCollection, org.mockito.Mockito.never()).find(any(Bson.class));
+        verify(mockCollection, org.mockito.Mockito.never()).find();
+    }
+
+    @Test
+    public void testQueryForSingleNonNullReturnsEmptyOnMissingPropertyValue() {
+        // When the matched document has no value for the requested property (vs. the value being null),
+        // queryForSingleNonNull must return Optional.empty().
+        Document filter = new Document("id", 1);
+        Document doc = new Document("otherProp", "x"); // does not contain "value"
+        when(mockFindIterable.first()).thenReturn(doc);
+        when(mockFindIterable.projection(any())).thenReturn(mockFindIterable);
+        when(mockFindIterable.limit(anyInt())).thenReturn(mockFindIterable);
+
+        Optional<String> result = executor.queryForSingleNonNull("value", filter, String.class);
+
+        Assertions.assertFalse(result.isPresent());
+    }
+
     private static class TestEntity {
         private String id;
         private String name;

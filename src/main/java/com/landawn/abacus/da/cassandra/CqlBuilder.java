@@ -39,6 +39,7 @@ import com.landawn.abacus.query.QueryUtil;
 import com.landawn.abacus.query.condition.Between;
 import com.landawn.abacus.query.condition.Binary;
 import com.landawn.abacus.query.condition.Cell;
+import com.landawn.abacus.query.condition.ComposableCell;
 import com.landawn.abacus.query.condition.Condition;
 import com.landawn.abacus.query.condition.Expression;
 import com.landawn.abacus.query.condition.Having;
@@ -854,6 +855,17 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
             appendCondition(cell.getCondition());
         } else if (cond instanceof final Cell cell) {
+            _sb.append(_SPACE);
+            _sb.append(cell.operator().toString());
+            _sb.append(_SPACE);
+
+            _sb.append(_PARENTHESIS_L);
+            appendCondition(cell.getCondition());
+            _sb.append(_PARENTHESIS_R);
+        } else if (cond instanceof final ComposableCell cell) {
+            // Handles Not / Exists / NotExists / Any / All / Some — these extend ComposableCell, not Cell,
+            // so without this branch they would fall through to the final `else` and throw
+            // "Unsupported condition", breaking e.g. PSC.select(...).where(Filters.not(...)).
             _sb.append(_SPACE);
             _sb.append(cell.operator().toString());
             _sb.append(_SPACE);

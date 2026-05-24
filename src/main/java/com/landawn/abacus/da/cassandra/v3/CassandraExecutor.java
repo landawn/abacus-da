@@ -1770,7 +1770,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             colType = columnDefinitions.getType(0);
             javaClazz = namedDataType.get(colType.getName().name());
 
-            if (parameters[0] == null || (javaClazz.isAssignableFrom(parameters[0].getClass()) || codecRegistry.codecFor(colType).accepts(parameters[0]))) {
+            if (parameters[0] == null
+                    || (javaClazz == null || javaClazz.isAssignableFrom(parameters[0].getClass()) || codecRegistry.codecFor(colType).accepts(parameters[0]))) {
                 return bind(preStmt, parameters);
             } else if (parameters[0] instanceof List && ((List<Object>) parameters[0]).size() == 1) {
                 final Object tmp = ((List<Object>) parameters[0]).get(0);
@@ -1783,7 +1784,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
         Object[] values = parameters;
 
-        if (parameters.length == 1 && (parameters[0] instanceof Map || Beans.isBeanClass(parameters[0].getClass()))) {
+        if (parameters.length == 1 && parameters[0] != null && (parameters[0] instanceof Map || Beans.isBeanClass(parameters[0].getClass()))) {
             values = new Object[parameterCount];
             final Object parameter_0 = parameters[0];
             final Map<Integer, String> namedParameters = parseCql.namedParameters();
@@ -1836,13 +1837,18 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             }
         }
 
+        if (values.length < parameterCount) {
+            throw new IllegalArgumentException(
+                    "Not enough parameters for parameterized query: expected " + parameterCount + " but got " + values.length + " for query: " + query);
+        }
+
         for (int i = 0; i < parameterCount; i++) {
             colType = columnDefinitions.getType(i);
             javaClazz = namedDataType.get(colType.getName().name());
 
             if (values[i] == null) {
-                values[i] = N.defaultValueOf(javaClazz);
-            } else if (javaClazz.isAssignableFrom(values[i].getClass()) || codecRegistry.codecFor(colType).accepts(values[i])) {
+                values[i] = javaClazz == null ? null : N.defaultValueOf(javaClazz);
+            } else if (javaClazz == null || javaClazz.isAssignableFrom(values[i].getClass()) || codecRegistry.codecFor(colType).accepts(values[i])) {
                 // continue;
             } else {
                 try {

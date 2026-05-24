@@ -496,7 +496,7 @@ public class BigQueryExecutor {
         if (rowType == null || rowType.isObjectArray()) {
             mapper = new Function<>() {
                 private FieldList rowFields = fields;
-                private int fieldCount = 0;
+                private int fieldCount = fields == null ? 0 : fields.size();
 
                 @Override
                 public T apply(final FieldValueList row) throws RuntimeException {
@@ -525,7 +525,7 @@ public class BigQueryExecutor {
         } else if (rowType.isCollection()) {
             mapper = new Function<>() {
                 private FieldList rowFields = fields;
-                private int fieldCount = 0;
+                private int fieldCount = fields == null ? 0 : fields.size();
 
                 @Override
                 public T apply(final FieldValueList row) throws RuntimeException {
@@ -1407,9 +1407,20 @@ public class BigQueryExecutor {
      */
     public final <V> Nullable<V> queryForSingleValue(final Class<V> valueClass, final String query, final Object... parameters) {
         final TableResult tableResult = execute(query, parameters);
-        final FieldValueList row = tableResult.getTotalRows() > 0 ? tableResult.getValues().iterator().next() : null;
+        // For DML statements BigQuery reports the affected-row count via getTotalRows() while
+        // getValues() is empty. Drive off the iterator rather than the row count so we don't
+        // throw NoSuchElementException in that case.
+        if (tableResult.getTotalRows() <= 0) {
+            return (Nullable<V>) Nullable.empty();
+        }
 
-        return row == null ? (Nullable<V>) Nullable.empty() : Nullable.of(N.convert(row.get(0).getValue(), valueClass));
+        final Iterator<FieldValueList> iter = tableResult.getValues().iterator();
+        if (!iter.hasNext()) {
+            return (Nullable<V>) Nullable.empty();
+        }
+
+        final FieldValueList row = iter.next();
+        return Nullable.of(N.convert(row.get(0).getValue(), valueClass));
     }
 
     /**

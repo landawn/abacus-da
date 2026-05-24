@@ -6,12 +6,23 @@ package com.landawn.abacus.da.hbase;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.util.List;
 
 import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.KeyValue;
+import org.apache.hadoop.hbase.TableName;
+import org.apache.hadoop.hbase.client.Admin;
+import org.apache.hadoop.hbase.client.Connection;
 import org.apache.hadoop.hbase.client.Result;
+import org.apache.hadoop.hbase.client.Table;
+import org.apache.hadoop.hbase.ipc.CoprocessorRpcChannel;
 import org.apache.hadoop.hbase.util.Bytes;
 import org.junit.jupiter.api.Test;
 
@@ -127,5 +138,36 @@ public class HBaseExecutorToValueTest {
         final String value = HBaseExecutor.toEntity(result, String.class);
 
         org.junit.jupiter.api.Assertions.assertNull(value);
+    }
+
+    /**
+     * Regression: {@link HBaseExecutor#coprocessorService(String, Object)} used to open a
+     * {@link Table} via {@code getTable(tableName)} and return the {@link CoprocessorRpcChannel}
+     * without ever closing the Table — leaking one Table (and its associated client state) on
+     * every call. The returned channel is backed by the underlying {@link Connection}, not the
+     * Table, so the Table is safe to close before returning.
+     *
+     * <p>This test verifies the Table is closed by stubbing {@code Connection}/{@code Table}
+     * with Mockito (no live HBase cluster).</p>
+     */
+    @Test
+    public void test_coprocessorService_singleRow_closesTable() throws Exception {
+        final Connection conn = mock(Connection.class);
+        final Admin admin = mock(Admin.class);
+        final Table table = mock(Table.class);
+        final CoprocessorRpcChannel channel = mock(CoprocessorRpcChannel.class);
+
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+        when(table.coprocessorService(any(byte[].class))).thenReturn(channel);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            final CoprocessorRpcChannel returned = executor.coprocessorService("any-table", "row-1");
+            assertSame(channel, returned, "Returned channel must be the one obtained from Table");
+        }
+
+        // The Table acquired for the coprocessorService call must be closed exactly once
+        // (executor.close() does not touch any per-call Tables — it only closes Admin + Connection).
+        verify(table, times(1)).close();
     }
 }

@@ -1754,4 +1754,91 @@ public class DynamoDBExecutorV2Test extends TestBase {
         assertTrue(item.containsKey("user_name"));
         assertEquals("Alice", item.get("user_name").s());
     }
+
+    /**
+     * Regression: when the Mapper is configured with a non-CAMEL_CASE NamingPolicy and the @Id field
+     * has no explicit @Column annotation, the key built by getItem/deleteItem/updateItem/batchGetItem
+     * must use the policy-converted attribute name (e.g. "userId" -> "user_id") so it matches what
+     * putItem writes via toItem(entity, namingPolicy). Previously the key was built from the raw
+     * Java property name, causing every key-based operation to lookup the wrong attribute.
+     */
+    @Test
+    public void testMapperGetItemAppliesNamingPolicyToKey() {
+        class TestEntity {
+            @com.landawn.abacus.annotation.Id
+            private String userId;
+            private String userName;
+
+            public String getUserId() {
+                return userId;
+            }
+
+            public void setUserId(String userId) {
+                this.userId = userId;
+            }
+
+            public String getUserName() {
+                return userName;
+            }
+
+            public void setUserName(String userName) {
+                this.userName = userName;
+            }
+        }
+
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class, "TestTable", NamingPolicy.SNAKE_CASE);
+
+        TestEntity entity = new TestEntity();
+        entity.setUserId("u-1");
+
+        when(mockDynamoDbClient.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().build());
+
+        org.mockito.ArgumentCaptor<GetItemRequest> captor = org.mockito.ArgumentCaptor.forClass(GetItemRequest.class);
+
+        mapper.getItem(entity);
+
+        verify(mockDynamoDbClient).getItem(captor.capture());
+
+        Map<String, AttributeValue> key = captor.getValue().key();
+        // With SNAKE_CASE the "userId" id must be mapped to "user_id" key, mirroring what putItem writes.
+        assertTrue(key.containsKey("user_id"), "key should contain converted attribute 'user_id', actual keys: " + key.keySet());
+        assertEquals("u-1", key.get("user_id").s());
+    }
+
+    /**
+     * Regression: same as {@link #testMapperGetItemAppliesNamingPolicyToKey()} but for the
+     * batch-delete path which goes through createBatchDeleteRequest -> createKey.
+     */
+    @Test
+    public void testMapperBatchDeleteItemAppliesNamingPolicyToKey() {
+        class TestEntity {
+            @com.landawn.abacus.annotation.Id
+            private String userId;
+
+            public String getUserId() {
+                return userId;
+            }
+
+            public void setUserId(String userId) {
+                this.userId = userId;
+            }
+        }
+
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class, "TestTable", NamingPolicy.SNAKE_CASE);
+
+        TestEntity entity = new TestEntity();
+        entity.setUserId("u-42");
+
+        when(mockDynamoDbClient.batchWriteItem(any(BatchWriteItemRequest.class))).thenReturn(BatchWriteItemResponse.builder().build());
+
+        org.mockito.ArgumentCaptor<BatchWriteItemRequest> captor = org.mockito.ArgumentCaptor.forClass(BatchWriteItemRequest.class);
+
+        mapper.batchDeleteItem(List.of(entity));
+
+        verify(mockDynamoDbClient).batchWriteItem(captor.capture());
+
+        Map<String, AttributeValue> key = captor.getValue().requestItems().get("TestTable").get(0).deleteRequest().key();
+        assertTrue(key.containsKey("user_id"), "delete key should contain converted attribute 'user_id', actual keys: " + key.keySet());
+        assertEquals("u-42", key.get("user_id").s());
+    }
 }

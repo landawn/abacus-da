@@ -6,12 +6,16 @@ package com.landawn.abacus.da.cassandra.v3;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
 import java.net.InetSocketAddress;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -29,6 +33,8 @@ import com.landawn.abacus.da.cassandra.CqlBuilder.LCCB;
 import com.landawn.abacus.da.cassandra.CqlBuilder.NLC;
 import com.landawn.abacus.da.cassandra.CqlBuilder.NSC;
 import com.landawn.abacus.da.cassandra.CqlBuilder.SCCB;
+import com.landawn.abacus.da.cassandra.CqlMapper;
+import com.landawn.abacus.da.cassandra.ParsedCql;
 import com.landawn.abacus.da.cassandra.v3.CassandraExecutor.UDTCodec;
 import com.landawn.abacus.da.entity.Song;
 import com.landawn.abacus.da.entity.Users;
@@ -610,6 +616,245 @@ public class CassandraExecutorTest extends AbstractNoSQLTest {
         cassandraExecutor.query("SELECT * FROM simplex.songs WHERE id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d").println();
 
         System.out.println();
+    }
+
+    /**
+     * Verifies that passing a single {@code null} parameter when the query
+     * expects multiple parameters produces an IllegalArgumentException
+     * (not a NullPointerException from {@code parameters[0].getClass()}).
+     */
+    @Test
+    public void test_prepareStatement_nullSingleParamMultiParamQuery_throwsIAE_notNPE() {
+        // The query has two ? placeholders, but only a single null arg is supplied.
+        // Previously this would NPE inside prepareStatement at parameters[0].getClass().
+        // After the fix, the loop sees values.length < parameterCount and throws IAE.
+        try {
+            cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", (Object) null);
+            fail("Expected IllegalArgumentException for too-few parameters");
+        } catch (IllegalArgumentException e) {
+            // expected
+        } catch (NullPointerException e) {
+            fail("Got NPE instead of IllegalArgumentException: " + e);
+        }
+    }
+
+    /**
+     * Verifies that passing fewer parameters than the query expects yields
+     * an IllegalArgumentException, not an ArrayIndexOutOfBoundsException
+     * from the parameter-type-conversion loop in prepareStatement.
+     */
+    @Test
+    public void test_prepareStatement_tooFewPositionalParams_throwsIAE_notAIOOBE() {
+        try {
+            cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", UUID.randomUUID());
+            fail("Expected IllegalArgumentException for too-few parameters");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage() == null || e.getMessage().toLowerCase().contains("parameter"),
+                    "Message should mention parameters: " + e.getMessage());
+        } catch (ArrayIndexOutOfBoundsException e) {
+            fail("Got AIOOBE instead of IllegalArgumentException: " + e);
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    //  ParsedCql parser tests (no DB required)
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void test_ParsedCql_positionalParams() {
+        ParsedCql parsed = ParsedCql.parse("SELECT * FROM simplex.users WHERE id = ? AND status = ?", null);
+
+        assertEquals(2, parsed.parameterCount());
+        assertTrue(parsed.namedParameters().isEmpty());
+        assertEquals("SELECT * FROM simplex.users WHERE id = ? AND status = ?", parsed.getParameterizedCql());
+    }
+
+    @Test
+    public void test_ParsedCql_namedColonParams() {
+        ParsedCql parsed = ParsedCql.parse("SELECT * FROM simplex.users WHERE id = :userId AND status = :st", null);
+
+        assertEquals(2, parsed.parameterCount());
+        Map<Integer, String> named = parsed.namedParameters();
+        assertEquals("userId", named.get(0));
+        assertEquals("st", named.get(1));
+        // The colon syntax should be normalized to '?'
+        assertFalse(parsed.getParameterizedCql().contains(":"), "Parameterized CQL should not contain ':' " + parsed.getParameterizedCql());
+    }
+
+    @Test
+    public void test_ParsedCql_ibatisStyleParams() {
+        ParsedCql parsed = ParsedCql.parse("SELECT * FROM simplex.users WHERE id = #{userId} AND name = #{name}", null);
+
+        assertEquals(2, parsed.parameterCount());
+        assertEquals("userId", parsed.namedParameters().get(0));
+        assertEquals("name", parsed.namedParameters().get(1));
+        assertFalse(parsed.getParameterizedCql().contains("#{"), "Parameterized CQL should not contain '#{' " + parsed.getParameterizedCql());
+    }
+
+    @Test
+    public void test_ParsedCql_emptyIbatisParameterNameThrows() {
+        // SqlParser keeps `#{...}` tokens whole. An empty `#{}` should be rejected
+        // because the parameter name would be empty.
+        // If the tokenizer ever changes and #{} is split, the test will still pass
+        // because the SELECT statement will simply have no parameters - so we
+        // verify the throw is raised OR the input is parsed without a named param.
+        try {
+            ParsedCql parsed = ParsedCql.parse("SELECT * FROM simplex.users WHERE id = #{}", null);
+            // If we got here, no exception was thrown. Make sure no bogus empty-named param was created.
+            assertFalse(parsed.namedParameters().containsValue(""),
+                    "Empty-named parameter must not be silently registered: " + parsed.namedParameters());
+        } catch (IllegalArgumentException e) {
+            // expected
+        }
+    }
+
+    @Test
+    public void test_ParsedCql_mixedStylesThrows() {
+        // mix '?' and ':name'
+        assertThrows(IllegalArgumentException.class,
+                () -> ParsedCql.parse("SELECT * FROM simplex.users WHERE id = ? AND status = :st", null),
+                "Mixed parameter styles should throw IAE");
+
+        // mix '?' and '#{name}'
+        assertThrows(IllegalArgumentException.class,
+                () -> ParsedCql.parse("SELECT * FROM simplex.users WHERE id = ? AND status = #{st}", null),
+                "Mixed '?' and '#{}' parameter styles should throw IAE");
+
+        // mix ':name' and '#{name}'
+        assertThrows(IllegalArgumentException.class,
+                () -> ParsedCql.parse("SELECT * FROM simplex.users WHERE id = :id AND status = #{st}", null),
+                "Mixed ':name' and '#{}' parameter styles should throw IAE");
+    }
+
+    @Test
+    public void test_ParsedCql_nullCqlThrows() {
+        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse(null, null));
+    }
+
+    @Test
+    public void test_ParsedCql_caching() {
+        // The same CQL string with null attrs should return the same cached instance.
+        String cql = "SELECT * FROM simplex.users WHERE id = ? AND name = ?";
+        ParsedCql first = ParsedCql.parse(cql, null);
+        ParsedCql second = ParsedCql.parse(cql, null);
+        assertTrue(first == second, "Cached parse() should return the same instance for identical CQL with null attrs");
+
+        // With non-empty attrs, the cache is bypassed and a fresh instance is returned.
+        Map<String, String> attrs = new HashMap<>();
+        attrs.put("timeout", "5000");
+        ParsedCql withAttrs1 = ParsedCql.parse(cql, attrs);
+        ParsedCql withAttrs2 = ParsedCql.parse(cql, attrs);
+        assertTrue(withAttrs1 != withAttrs2, "Non-empty attrs should bypass the cache");
+        assertEquals("5000", withAttrs1.getAttributes().get("timeout"));
+    }
+
+    @Test
+    public void test_ParsedCql_trailingSemicolonRemoved() {
+        ParsedCql parsed = ParsedCql.parse("SELECT * FROM simplex.users WHERE id = ?;", null);
+        assertFalse(parsed.getParameterizedCql().endsWith(";"), "Trailing semicolon should be removed: " + parsed.getParameterizedCql());
+    }
+
+    @Test
+    public void test_ParsedCql_ddlNoParameterParsing() {
+        // For non-DML statements (e.g. CREATE/ALTER/DROP) parameterCount is always 0
+        // and the CQL is kept as-is (parameter style detection is skipped).
+        ParsedCql parsed = ParsedCql.parse("CREATE TABLE if not exists t (id uuid PRIMARY KEY, val text)", null);
+        assertEquals(0, parsed.parameterCount());
+        assertTrue(parsed.namedParameters().isEmpty());
+    }
+
+    @Test
+    public void test_ParsedCql_originalCqlTrimmed() {
+        ParsedCql parsed = ParsedCql.parse("   SELECT * FROM simplex.users WHERE id = ?   ", null);
+        // originalCql() returns the trimmed original
+        assertEquals("SELECT * FROM simplex.users WHERE id = ?", parsed.originalCql());
+    }
+
+    @Test
+    public void test_ParsedCql_attributesDefensiveCopy() {
+        Map<String, String> attrs = new HashMap<>();
+        attrs.put("timeout", "1000");
+        ParsedCql parsed = ParsedCql.parse("SELECT * FROM simplex.users WHERE id = ?", attrs);
+
+        // Mutating the source map after parse should not affect the ParsedCql's attrs.
+        attrs.put("timeout", "9999");
+        assertEquals("1000", parsed.getAttributes().get("timeout"));
+    }
+
+    @Test
+    public void test_ParsedCql_equalsAndHashCode() {
+        ParsedCql a = ParsedCql.parse("SELECT 1 FROM simplex.users WHERE id = ?", null);
+        ParsedCql b = ParsedCql.parse("SELECT 1 FROM simplex.users WHERE id = ?", null);
+        ParsedCql c = ParsedCql.parse("SELECT 2 FROM simplex.users WHERE id = ?", null);
+
+        assertEquals(a, b);
+        assertEquals(a.hashCode(), b.hashCode());
+        assertFalse(a.equals(c));
+        // equals against non-ParsedCql
+        assertFalse(a.equals("not a ParsedCql"));
+        assertFalse(a.equals(null));
+    }
+
+    // ---------------------------------------------------------------------
+    //  CqlMapper tests (no DB required)
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void test_CqlMapper_addAndGet() {
+        CqlMapper mapper = new CqlMapper();
+        Map<String, String> attrs = new HashMap<>();
+        attrs.put("timeout", "3000");
+
+        mapper.add("findUser", "SELECT * FROM simplex.users WHERE id = ?", attrs);
+
+        ParsedCql parsed = mapper.get("findUser");
+        assertNotNull(parsed);
+        assertEquals(1, parsed.parameterCount());
+        assertEquals("3000", parsed.getAttributes().get("timeout"));
+        assertNull(mapper.get("nonExistent"));
+    }
+
+    @Test
+    public void test_CqlMapper_addDuplicateIdThrows() {
+        CqlMapper mapper = new CqlMapper();
+        mapper.add("dup", "SELECT * FROM simplex.users WHERE id = ?", null);
+        assertThrows(IllegalArgumentException.class,
+                () -> mapper.add("dup", "SELECT * FROM simplex.users WHERE id = ?", null),
+                "Adding a duplicate id should throw");
+    }
+
+    @Test
+    public void test_CqlMapper_copyIsIndependent() {
+        CqlMapper original = new CqlMapper();
+        original.add("a", "SELECT 1 FROM simplex.users WHERE id = ?", null);
+
+        CqlMapper copy = original.copy();
+        assertNotNull(copy.get("a"));
+
+        copy.remove("a");
+        assertNull(copy.get("a"));
+        // Original should still have the entry
+        assertNotNull(original.get("a"));
+
+        original.add("b", "SELECT 2 FROM simplex.users WHERE id = ?", null);
+        // Copy must not have seen the new addition
+        assertNull(copy.get("b"));
+    }
+
+    @Test
+    public void test_CqlMapper_keySet_isEmpty_remove() {
+        CqlMapper mapper = new CqlMapper();
+        assertTrue(mapper.isEmpty());
+        assertTrue(mapper.keySet().isEmpty());
+
+        mapper.add("k1", "SELECT 3 FROM simplex.users WHERE id = ?", null);
+        assertFalse(mapper.isEmpty());
+        assertTrue(mapper.keySet().contains("k1"));
+
+        mapper.remove("k1");
+        assertTrue(mapper.isEmpty());
+        // remove of missing key is a no-op (does not throw)
+        mapper.remove("missing");
     }
 
     private Users createUser() {

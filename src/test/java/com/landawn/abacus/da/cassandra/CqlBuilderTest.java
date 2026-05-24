@@ -613,4 +613,48 @@ public class CqlBuilderTest extends AbstractNoSQLTest {
         // String overload is verbatim (no x1000) per its contract.
         assertTrue(tsStr.endsWith(" USING TIMESTAMP 42"), tsStr);
     }
+
+    /**
+     * Regression guard for the missing {@code ComposableCell} branch in
+     * {@code CqlBuilder.appendCondition}. {@code Filters.not(...)} returns a {@code Not} which
+     * extends {@code ComposableCell} (NOT {@code Cell}); before the fix, {@code Not} (and the
+     * other {@code ComposableCell} subclasses: {@code Exists}, {@code NotExists}, {@code Any},
+     * {@code All}, {@code Some}) fell through to the final {@code else} branch of
+     * {@code appendCondition} and raised {@code IllegalArgumentException("Unsupported condition: ...")}.
+     *
+     * <p>Asserted via {@code contains(...)} on a whitespace-normalized form: the underlying
+     * {@code Cell}/{@code ComposableCell} rendering pattern in both {@code CqlBuilder} and the
+     * sister {@code SqlBuilder} prepends a defensive leading space (needed when invoked inside a
+     * {@code (...)} junction element); when invoked directly via {@code where(Not)} this yields a
+     * cosmetic double-space before {@code NOT}, which CQL/SQL parsers tolerate. The asserted
+     * substring captures the load-bearing token ordering and parenthesization, not the cosmetic
+     * spacing.</p>
+     */
+    @Test
+    public void test_composable_cell_not_is_supported() {
+        // Filters.not(Binary) — must render "NOT (binary)" rather than throwing.
+        final String pscNot = PSC.select("id").from("account").where(Filters.not(Filters.eq("status", "X"))).build().query();
+        N.println(pscNot);
+        assertTrue(pscNot.startsWith("SELECT id FROM account WHERE"), pscNot);
+        assertTrue(normalizeWs(pscNot).contains("WHERE NOT (status = ?)"), pscNot);
+
+        // Snake-case formalization of the inner column must still apply inside the NOT wrapper.
+        final String pscNotSnake = PSC.select("id").from("account").where(Filters.not(Filters.eq("firstName", "X"))).build().query();
+        N.println(pscNotSnake);
+        assertTrue(normalizeWs(pscNotSnake).contains("WHERE NOT (first_name = ?)"), pscNotSnake);
+
+        // Inline-value (RAW_SQL) variant must also work and inline the value, not throw.
+        final String sccbNot = SCCB.select("id").from("account").where(Filters.not(Filters.eq("status", "X"))).build().query();
+        N.println(sccbNot);
+        assertTrue(normalizeWs(sccbNot).contains("WHERE NOT (status = 'X')"), sccbNot);
+
+        // Named-parameter (NSC) variant must also work.
+        final String nscNot = NSC.select("id").from("account").where(Filters.not(Filters.eq("status", "X"))).build().query();
+        N.println(nscNot);
+        assertTrue(normalizeWs(nscNot).contains("WHERE NOT (status = :status)"), nscNot);
+    }
+
+    private static String normalizeWs(final String s) {
+        return s.replaceAll("\\s+", " ").trim();
+    }
 }

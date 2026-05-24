@@ -1360,4 +1360,58 @@ public class DynamoDBExecutor01Test extends TestBase {
         assertEquals("John", writtenItem.get("first_name").getS());
         assertEquals("123", writtenItem.get("id").getS());
     }
+
+    /**
+     * Regression test for bug in DynamoDBExecutor.Mapper.createKey: it computed the
+     * key attribute name as the raw Java field name (or @Column override) without
+     * applying the configured NamingPolicy. Mapper.putItem honored NamingPolicy via
+     * toItem(entity, namingPolicy), so a SNAKE_CASE mapper wrote "user_id" but the
+     * subsequent getItem/deleteItem/updateItem/batch* looked up "userId" — the row
+     * was unreachable through the mapper API once persisted.
+     */
+    @Test
+    public void testMapperCreateKeyRespectsNamingPolicy() {
+        @com.landawn.abacus.annotation.Table(name = "TestTable")
+        class TestEntity {
+            @com.landawn.abacus.annotation.Id
+            private String userId;
+            private String firstName;
+
+            public String getUserId() {
+                return userId;
+            }
+
+            public void setUserId(String userId) {
+                this.userId = userId;
+            }
+
+            public String getFirstName() {
+                return firstName;
+            }
+
+            public void setFirstName(String firstName) {
+                this.firstName = firstName;
+            }
+        }
+
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class, "TestTable", NamingPolicy.SNAKE_CASE);
+
+        TestEntity entity = new TestEntity();
+        entity.setUserId("u123");
+
+        when(mockDynamoDBClient.getItem(any(String.class), any(Map.class))).thenReturn(new GetItemResult());
+
+        mapper.getItem(entity);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, AttributeValue>> keyCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(mockDynamoDBClient).getItem(any(String.class), keyCaptor.capture());
+
+        Map<String, AttributeValue> capturedKey = keyCaptor.getValue();
+
+        // With SNAKE_CASE the key attribute must be "user_id" (matching what putItem writes),
+        // not the raw field name "userId". Before the fix, the captured key was "userId".
+        assertTrue(capturedKey.containsKey("user_id"), "Expected snake_case key attribute 'user_id' but got: " + capturedKey.keySet());
+        assertEquals("u123", capturedKey.get("user_id").getS());
+    }
 }

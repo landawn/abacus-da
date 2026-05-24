@@ -2,6 +2,7 @@ package com.landawn.abacus.da.cassandra;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -19,8 +20,8 @@ import org.junit.jupiter.api.Test;
 
 import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.exception.DuplicateResultException;
-import com.landawn.abacus.query.condition.Condition;
 import com.landawn.abacus.query.Filters;
+import com.landawn.abacus.query.condition.Condition;
 import com.landawn.abacus.util.ContinuableFuture;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.ImmutableList;
@@ -758,6 +759,19 @@ public class CassandraExecutorBaseTest extends TestBase {
         TestStatement stmt = new TestStatement();
         TestResultSet result4 = executor.execute(stmt);
         assertNotNull(result4);
+    }
+
+
+    @Test
+    public void testAsyncFindFirst_nullMappedRow_throwsNullPointerException() throws Exception {
+        final TestCassandraExecutor exec = new TestCassandraExecutor() {
+            @SuppressWarnings("unchecked")
+            @Override
+            protected <T> Function<TestRow, T> createRowMapper(Class<T> targetClass) {
+                return row -> (T) null;
+            }
+        };
+        assertThrows(NullPointerException.class, () -> exec.async().findFirst(String.class, "SELECT name FROM t WHERE id = ?", 1L).get());
     }
 
     // Test implementation of CassandraExecutorBase
