@@ -1058,6 +1058,430 @@ public class DynamoDBExecutor01Test extends TestBase {
         assertEquals("u123", capturedKey.get("user_id").getS());
     }
 
+    // -- Additional coverage tests below --
+
+    @Test
+    public void testAsUpdateItemTwoPairs() {
+        Map<String, AttributeValueUpdate> result = DynamoDBExecutor.asUpdateItem("name", "alice", "age", 30);
+        assertNotNull(result);
+        assertEquals(2, result.size());
+        assertEquals("alice", result.get("name").getValue().getS());
+        assertEquals("30", result.get("age").getValue().getN());
+    }
+
+    @Test
+    public void testAsUpdateItemThreePairs() {
+        Map<String, AttributeValueUpdate> result = DynamoDBExecutor.asUpdateItem("a", "1", "b", "2", "c", "3");
+        assertNotNull(result);
+        assertEquals(3, result.size());
+        assertEquals("1", result.get("a").getValue().getS());
+        assertEquals("2", result.get("b").getValue().getS());
+        assertEquals("3", result.get("c").getValue().getS());
+    }
+
+    @Test
+    public void testAsUpdateItemVarargs() {
+        Map<String, AttributeValueUpdate> result = DynamoDBExecutor.asUpdateItem(new Object[] { "a", 1, "b", 2 });
+        assertNotNull(result);
+        assertEquals(2, result.size());
+        assertEquals("1", result.get("a").getValue().getN());
+        assertEquals("2", result.get("b").getValue().getN());
+    }
+
+    @Test
+    public void testAsUpdateItemVarargs_OddCountThrows() {
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asUpdateItem(new Object[] { "a", 1, "b" }));
+    }
+
+    @Test
+    public void testAsItemVarargs() {
+        Map<String, AttributeValue> result = DynamoDBExecutor.asItem(new Object[] { "a", "x", "b", "y" });
+        assertNotNull(result);
+        assertEquals(2, result.size());
+        assertEquals("x", result.get("a").getS());
+        assertEquals("y", result.get("b").getS());
+    }
+
+    @Test
+    public void testAsKeyVarargs_Explicit() {
+        Map<String, AttributeValue> result = DynamoDBExecutor.asKey(new Object[] { "k1", "v1", "k2", "v2" });
+        assertNotNull(result);
+        assertEquals(2, result.size());
+        assertEquals("v1", result.get("k1").getS());
+        assertEquals("v2", result.get("k2").getS());
+    }
+
+    @Test
+    public void testToItemCollection() {
+        TestEntity e1 = new TestEntity();
+        e1.setId("1");
+        TestEntity e2 = new TestEntity();
+        e2.setId("2");
+
+        // Drives Mapper.batchPutItem which internally calls package-private toItem(Collection, NamingPolicy)
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class, "TestTable", NamingPolicy.SNAKE_CASE);
+        when(mockDynamoDBClient.batchWriteItem(any(Map.class))).thenReturn(new BatchWriteItemResult());
+
+        mapper.batchPutItem(List.of(e1, e2));
+
+        ArgumentCaptor<Map<String, List<WriteRequest>>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(mockDynamoDBClient).batchWriteItem(captor.capture());
+        assertEquals(2, captor.getValue().get("TestTable").size());
+    }
+
+    @Test
+    public void testToListWithOffsetCount() {
+        QueryResult queryResult = new QueryResult();
+        List<Map<String, AttributeValue>> items = new ArrayList<>();
+        items.add(Map.of("id", new AttributeValue().withS("1")));
+        items.add(Map.of("id", new AttributeValue().withS("2")));
+        items.add(Map.of("id", new AttributeValue().withS("3")));
+        queryResult.setItems(items);
+
+        List<TestEntity> result = DynamoDBExecutor.toList(queryResult, 1, 2, TestEntity.class);
+        assertNotNull(result);
+        assertEquals(2, result.size());
+        assertEquals("2", result.get(0).getId());
+        assertEquals("3", result.get(1).getId());
+    }
+
+    @Test
+    public void testToListFromScanResult() {
+        ScanResult scanResult = new ScanResult();
+        List<Map<String, AttributeValue>> items = new ArrayList<>();
+        items.add(Map.of("id", new AttributeValue().withS("a")));
+        items.add(Map.of("id", new AttributeValue().withS("b")));
+        scanResult.setItems(items);
+
+        List<TestEntity> result = DynamoDBExecutor.toList(scanResult, TestEntity.class);
+        assertNotNull(result);
+        assertEquals(2, result.size());
+        assertEquals("a", result.get(0).getId());
+    }
+
+    @Test
+    public void testToListFromScanResultWithOffsetCount() {
+        ScanResult scanResult = new ScanResult();
+        List<Map<String, AttributeValue>> items = new ArrayList<>();
+        items.add(Map.of("id", new AttributeValue().withS("a")));
+        items.add(Map.of("id", new AttributeValue().withS("b")));
+        items.add(Map.of("id", new AttributeValue().withS("c")));
+        scanResult.setItems(items);
+
+        List<TestEntity> result = DynamoDBExecutor.toList(scanResult, 1, 1, TestEntity.class);
+        assertNotNull(result);
+        assertEquals(1, result.size());
+        assertEquals("b", result.get(0).getId());
+    }
+
+    @Test
+    public void testExtractDataFromScanResult() {
+        ScanResult scanResult = new ScanResult();
+        List<Map<String, AttributeValue>> items = new ArrayList<>();
+        items.add(Map.of("id", new AttributeValue().withS("1"), "name", new AttributeValue().withS("n1")));
+        items.add(Map.of("id", new AttributeValue().withS("2"), "name", new AttributeValue().withS("n2")));
+        scanResult.setItems(items);
+
+        Dataset result = DynamoDBExecutor.extractData(scanResult);
+        assertNotNull(result);
+        assertEquals(2, result.size());
+        assertTrue(result.containsColumn("id"));
+    }
+
+    @Test
+    public void testExtractDataFromScanResultWithOffsetCount() {
+        ScanResult scanResult = new ScanResult();
+        List<Map<String, AttributeValue>> items = new ArrayList<>();
+        items.add(Map.of("id", new AttributeValue().withS("1")));
+        items.add(Map.of("id", new AttributeValue().withS("2")));
+        items.add(Map.of("id", new AttributeValue().withS("3")));
+        scanResult.setItems(items);
+
+        Dataset result = DynamoDBExecutor.extractData(scanResult, 1, 1);
+        assertNotNull(result);
+        assertEquals(1, result.size());
+    }
+
+    @Test
+    public void testExtractDataFromQueryResultWithOffsetCount() {
+        QueryResult queryResult = new QueryResult();
+        List<Map<String, AttributeValue>> items = new ArrayList<>();
+        items.add(Map.of("id", new AttributeValue().withS("1")));
+        items.add(Map.of("id", new AttributeValue().withS("2")));
+        items.add(Map.of("id", new AttributeValue().withS("3")));
+        queryResult.setItems(items);
+
+        Dataset result = DynamoDBExecutor.extractData(queryResult, 0, 2);
+        assertNotNull(result);
+        assertEquals(2, result.size());
+    }
+
+    @Test
+    public void testToMapWithMapSupplier() {
+        Map<String, AttributeValue> item = new HashMap<>();
+        item.put("id", new AttributeValue().withS("123"));
+        item.put("count", new AttributeValue().withN("5"));
+
+        Map<String, Object> result = DynamoDBExecutor.toMap(item, com.landawn.abacus.util.IntFunctions.ofLinkedHashMap());
+        assertNotNull(result);
+        assertEquals(2, result.size());
+        assertEquals("123", result.get("id"));
+    }
+
+    // GetItemRequest-based overloads
+    @Test
+    public void testGetItemWithGetItemRequest() {
+        GetItemRequest req = new GetItemRequest().withTableName("TestTable").withKey(Map.of("id", new AttributeValue().withS("1")));
+        GetItemResult res = new GetItemResult().withItem(Map.of("id", new AttributeValue().withS("1"), "name", new AttributeValue().withS("n")));
+        when(mockDynamoDBClient.getItem(req)).thenReturn(res);
+
+        Map<String, Object> result = executor.getItem(req);
+        assertNotNull(result);
+        assertEquals("1", result.get("id"));
+        assertEquals("n", result.get("name"));
+    }
+
+    @Test
+    public void testGetItemWithGetItemRequestAndClass() {
+        GetItemRequest req = new GetItemRequest().withTableName("TestTable").withKey(Map.of("id", new AttributeValue().withS("1")));
+        GetItemResult res = new GetItemResult().withItem(Map.of("id", new AttributeValue().withS("1"), "name", new AttributeValue().withS("n")));
+        when(mockDynamoDBClient.getItem(req)).thenReturn(res);
+
+        TestEntity result = executor.getItem(req, TestEntity.class);
+        assertNotNull(result);
+        assertEquals("1", result.getId());
+        assertEquals("n", result.getName());
+    }
+
+    @Test
+    public void testGetItemWithConsistentReadAndClass() {
+        Map<String, AttributeValue> key = Map.of("id", new AttributeValue().withS("1"));
+        GetItemResult res = new GetItemResult().withItem(Map.of("id", new AttributeValue().withS("1")));
+        when(mockDynamoDBClient.getItem("TestTable", key, true)).thenReturn(res);
+
+        TestEntity result = executor.getItem("TestTable", key, true, TestEntity.class);
+        assertNotNull(result);
+        assertEquals("1", result.getId());
+    }
+
+    // batchGetItem overloads
+    @Test
+    public void testBatchGetItemWithReturnConsumedCapacity() {
+        Map<String, KeysAndAttributes> requestItems = Map.of("TestTable",
+                new KeysAndAttributes().withKeys(List.of(Map.of("id", new AttributeValue().withS("1")))));
+        BatchGetItemResult res = new BatchGetItemResult().withResponses(Map.of("TestTable",
+                List.of(Map.of("id", new AttributeValue().withS("1")))));
+        when(mockDynamoDBClient.batchGetItem(requestItems, "TOTAL")).thenReturn(res);
+
+        Map<String, List<Map<String, Object>>> result = executor.batchGetItem(requestItems, "TOTAL");
+        assertNotNull(result);
+        assertEquals(1, result.get("TestTable").size());
+    }
+
+    @Test
+    public void testBatchGetItemWithRequest() {
+        BatchGetItemRequest req = new BatchGetItemRequest().withRequestItems(Map.of("TestTable",
+                new KeysAndAttributes().withKeys(List.of(Map.of("id", new AttributeValue().withS("1"))))));
+        BatchGetItemResult res = new BatchGetItemResult().withResponses(Map.of("TestTable",
+                List.of(Map.of("id", new AttributeValue().withS("1")))));
+        when(mockDynamoDBClient.batchGetItem(req)).thenReturn(res);
+
+        Map<String, List<Map<String, Object>>> result = executor.batchGetItem(req);
+        assertNotNull(result);
+        assertEquals(1, result.get("TestTable").size());
+    }
+
+    @Test
+    public void testBatchGetItemWithRequestAndClass() {
+        BatchGetItemRequest req = new BatchGetItemRequest().withRequestItems(Map.of("TestTable",
+                new KeysAndAttributes().withKeys(List.of(Map.of("id", new AttributeValue().withS("1"))))));
+        BatchGetItemResult res = new BatchGetItemResult().withResponses(Map.of("TestTable",
+                List.of(Map.of("id", new AttributeValue().withS("1")))));
+        when(mockDynamoDBClient.batchGetItem(req)).thenReturn(res);
+
+        Map<String, List<TestEntity>> result = executor.batchGetItem(req, TestEntity.class);
+        assertNotNull(result);
+        assertEquals(1, result.get("TestTable").size());
+        assertEquals("1", result.get("TestTable").get(0).getId());
+    }
+
+    @Test
+    public void testBatchGetItemMapWithReturnConsumedCapacityAndClass() {
+        Map<String, KeysAndAttributes> requestItems = Map.of("TestTable",
+                new KeysAndAttributes().withKeys(List.of(Map.of("id", new AttributeValue().withS("1")))));
+        BatchGetItemResult res = new BatchGetItemResult().withResponses(Map.of("TestTable",
+                List.of(Map.of("id", new AttributeValue().withS("1")))));
+        when(mockDynamoDBClient.batchGetItem(requestItems, "TOTAL")).thenReturn(res);
+
+        Map<String, List<TestEntity>> result = executor.batchGetItem(requestItems, "TOTAL", TestEntity.class);
+        assertNotNull(result);
+        assertEquals(1, result.get("TestTable").size());
+        assertEquals("1", result.get("TestTable").get(0).getId());
+    }
+
+    // put/update/delete overloads taking request objects
+    @Test
+    public void testPutItemWithRequest() {
+        PutItemRequest req = new PutItemRequest().withTableName("TestTable").withItem(Map.of("id", new AttributeValue().withS("1")));
+        PutItemResult res = new PutItemResult();
+        when(mockDynamoDBClient.putItem(req)).thenReturn(res);
+
+        PutItemResult result = executor.putItem(req);
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testPutItemWithReturnValues() {
+        Map<String, AttributeValue> item = Map.of("id", new AttributeValue().withS("1"));
+        PutItemResult res = new PutItemResult();
+        when(mockDynamoDBClient.putItem("TestTable", item, "ALL_OLD")).thenReturn(res);
+
+        PutItemResult result = executor.putItem("TestTable", item, "ALL_OLD");
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testBatchWriteItemWithRequest() {
+        BatchWriteItemRequest req = new BatchWriteItemRequest().withRequestItems(Map.of("TestTable",
+                List.of(new WriteRequest(new PutRequest(Map.of("id", new AttributeValue().withS("1")))))));
+        BatchWriteItemResult res = new BatchWriteItemResult();
+        when(mockDynamoDBClient.batchWriteItem(req)).thenReturn(res);
+
+        BatchWriteItemResult result = executor.batchWriteItem(req);
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testUpdateItemWithRequest() {
+        UpdateItemRequest req = new UpdateItemRequest().withTableName("TestTable").withKey(Map.of("id", new AttributeValue().withS("1")));
+        UpdateItemResult res = new UpdateItemResult();
+        when(mockDynamoDBClient.updateItem(req)).thenReturn(res);
+
+        UpdateItemResult result = executor.updateItem(req);
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testUpdateItemWithReturnValues() {
+        Map<String, AttributeValue> key = Map.of("id", new AttributeValue().withS("1"));
+        Map<String, AttributeValueUpdate> upd = Map.of("name", new AttributeValueUpdate().withValue(new AttributeValue().withS("x")).withAction(AttributeAction.PUT));
+        UpdateItemResult res = new UpdateItemResult();
+        when(mockDynamoDBClient.updateItem("TestTable", key, upd, "ALL_NEW")).thenReturn(res);
+
+        UpdateItemResult result = executor.updateItem("TestTable", key, upd, "ALL_NEW");
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testDeleteItemWithRequest() {
+        DeleteItemRequest req = new DeleteItemRequest().withTableName("TestTable").withKey(Map.of("id", new AttributeValue().withS("1")));
+        DeleteItemResult res = new DeleteItemResult();
+        when(mockDynamoDBClient.deleteItem(req)).thenReturn(res);
+
+        DeleteItemResult result = executor.deleteItem(req);
+        assertNotNull(result);
+    }
+
+    @Test
+    public void testDeleteItemWithReturnValues() {
+        Map<String, AttributeValue> key = Map.of("id", new AttributeValue().withS("1"));
+        DeleteItemResult res = new DeleteItemResult();
+        when(mockDynamoDBClient.deleteItem("TestTable", key, "ALL_OLD")).thenReturn(res);
+
+        DeleteItemResult result = executor.deleteItem("TestTable", key, "ALL_OLD");
+        assertNotNull(result);
+    }
+
+    // scan overloads
+    @Test
+    public void testScanByTableNameAndScanFilter() {
+        ScanResult res = new ScanResult().withItems(List.of(Map.of("id", new AttributeValue().withS("1"))));
+        when(mockDynamoDBClient.scan(any(ScanRequest.class))).thenReturn(res);
+
+        Stream<Map<String, Object>> stream = executor.scan("TestTable", Filters.eq("status", "active"));
+        assertNotNull(stream);
+        assertEquals(1, stream.count());
+    }
+
+    @Test
+    public void testScanByTableNameAttrsAndScanFilter() {
+        ScanResult res = new ScanResult().withItems(List.of(Map.of("id", new AttributeValue().withS("1"))));
+        when(mockDynamoDBClient.scan(any(ScanRequest.class))).thenReturn(res);
+
+        Stream<Map<String, Object>> stream = executor.scan("TestTable", List.of("id"), Filters.eq("status", "active"));
+        assertNotNull(stream);
+        assertEquals(1, stream.count());
+    }
+
+    @Test
+    public void testScanWithAttrsAndClass() {
+        ScanResult res = new ScanResult().withItems(List.of(Map.of("id", new AttributeValue().withS("1"))));
+        when(mockDynamoDBClient.scan(any(ScanRequest.class))).thenReturn(res);
+
+        Stream<TestEntity> stream = executor.scan("TestTable", List.of("id"), TestEntity.class);
+        assertNotNull(stream);
+        assertEquals(1, stream.count());
+    }
+
+    @Test
+    public void testScanWithFilterAndClass() {
+        ScanResult res = new ScanResult().withItems(List.of(Map.of("id", new AttributeValue().withS("1"))));
+        when(mockDynamoDBClient.scan(any(ScanRequest.class))).thenReturn(res);
+
+        Stream<TestEntity> stream = executor.scan("TestTable", Filters.eq("status", "active"), TestEntity.class);
+        assertNotNull(stream);
+        assertEquals(1, stream.count());
+    }
+
+    @Test
+    public void testScanWithAttrsFilterAndClass() {
+        ScanResult res = new ScanResult().withItems(List.of(Map.of("id", new AttributeValue().withS("1"))));
+        when(mockDynamoDBClient.scan(any(ScanRequest.class))).thenReturn(res);
+
+        Stream<TestEntity> stream = executor.scan("TestTable", List.of("id"), Filters.eq("status", "active"), TestEntity.class);
+        assertNotNull(stream);
+        assertEquals(1, stream.count());
+    }
+
+    @Test
+    public void testListWithClassPaginates() {
+        // list(QueryRequest, Class) covers the pagination branch as well.
+        QueryRequest req = new QueryRequest().withTableName("TestTable");
+        QueryResult page1 = new QueryResult()
+                .withItems(List.of(Map.of("id", new AttributeValue().withS("1"))))
+                .withLastEvaluatedKey(Map.of("id", new AttributeValue().withS("1")));
+        QueryResult page2 = new QueryResult().withItems(List.of(Map.of("id", new AttributeValue().withS("2"))));
+
+        when(mockDynamoDBClient.query(any(QueryRequest.class))).thenReturn(page1, page2);
+
+        List<TestEntity> result = executor.list(req, TestEntity.class);
+        assertNotNull(result);
+        assertEquals(2, result.size());
+    }
+
+    @Test
+    public void testQueryWithClassEntityBranch() {
+        // query(QueryRequest, Class) with a non-Map class goes through list(...) path.
+        QueryRequest req = new QueryRequest().withTableName("TestTable");
+        QueryResult res = new QueryResult().withItems(List.of(Map.of("id", new AttributeValue().withS("1"))));
+        when(mockDynamoDBClient.query(any(QueryRequest.class))).thenReturn(res);
+
+        Dataset ds = executor.query(req, TestEntity.class);
+        assertNotNull(ds);
+        assertEquals(1, ds.size());
+    }
+
+    @Test
+    public void testStreamWithClass() {
+        QueryRequest req = new QueryRequest().withTableName("TestTable");
+        QueryResult res = new QueryResult().withItems(List.of(Map.of("id", new AttributeValue().withS("1"))));
+        when(mockDynamoDBClient.query(any(QueryRequest.class))).thenReturn(res);
+
+        Stream<TestEntity> stream = executor.stream(req, TestEntity.class);
+        assertNotNull(stream);
+        assertEquals(1, stream.count());
+    }
+
     @com.landawn.abacus.annotation.Table(name = "TestTable")
     private static class TestEntity {
         @com.landawn.abacus.annotation.Id

@@ -3,9 +3,12 @@ package com.landawn.abacus.da.gcp;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -15,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -1024,6 +1028,495 @@ public class BigQueryExecutorTest extends TestBase {
         assertEquals(2, listList.get(0).size());
         assertEquals("100", listList.get(0).get(0));
         assertEquals("Carol", listList.get(0).get(1));
+    }
+
+    // ---------- Additional coverage: constructor validation ----------
+
+    @Test
+    public void testConstructor_NullBigQuery() {
+        assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(null));
+    }
+
+    @Test
+    public void testConstructor_NullNamingPolicy() {
+        assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(mockBigQuery, null));
+    }
+
+    @Test
+    public void testConstructor_NullBigQueryWithNamingPolicy() {
+        assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(null, NamingPolicy.SNAKE_CASE));
+    }
+
+    // ---------- Insert / update / delete with non-default naming policies ----------
+    // Drives the SCREAMING_SNAKE_CASE and CAMEL_CASE branches of prepareInsert(Class,Map),
+    // prepareUpdate(Class,Map,Condition) and prepareDelete(Class,Condition).
+
+    @Test
+    public void testInsertWithMap_ScreamingSnakeCase() throws Exception {
+        BigQueryExecutor exec = new BigQueryExecutor(mockBigQuery, NamingPolicy.SCREAMING_SNAKE_CASE);
+        Map<String, Object> props = new HashMap<>();
+        props.put("id", 1);
+        props.put("name", "X");
+
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        TableResult result = exec.insert(TestEntity.class, props);
+        assertSame(mockTableResult, result);
+    }
+
+    @Test
+    public void testInsertWithMap_CamelCase() throws Exception {
+        BigQueryExecutor exec = new BigQueryExecutor(mockBigQuery, NamingPolicy.CAMEL_CASE);
+        Map<String, Object> props = new HashMap<>();
+        props.put("id", 1);
+        props.put("name", "X");
+
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        assertSame(mockTableResult, exec.insert(TestEntity.class, props));
+    }
+
+    @Test
+    public void testInsertWithMap_UnsupportedNamingPolicy() {
+        BigQueryExecutor exec = new BigQueryExecutor(mockBigQuery, NamingPolicy.NO_CHANGE);
+        Map<String, Object> props = new HashMap<>();
+        props.put("id", 1);
+
+        assertThrows(IllegalStateException.class, () -> exec.insert(TestEntity.class, props));
+    }
+
+    @Test
+    public void testUpdateEntity_ScreamingSnakeCase() throws Exception {
+        BigQueryExecutor exec = new BigQueryExecutor(mockBigQuery, NamingPolicy.SCREAMING_SNAKE_CASE);
+        TestEntity entity = new TestEntity();
+        entity.setId(1);
+        entity.setName("X");
+
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+        assertSame(mockTableResult, exec.update(entity));
+    }
+
+    @Test
+    public void testUpdateEntity_CamelCase() throws Exception {
+        BigQueryExecutor exec = new BigQueryExecutor(mockBigQuery, NamingPolicy.CAMEL_CASE);
+        TestEntity entity = new TestEntity();
+        entity.setId(1);
+        entity.setName("X");
+
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+        assertSame(mockTableResult, exec.update(entity));
+    }
+
+    @Test
+    public void testUpdateWithMap_ScreamingSnakeCase() throws Exception {
+        BigQueryExecutor exec = new BigQueryExecutor(mockBigQuery, NamingPolicy.SCREAMING_SNAKE_CASE);
+        Map<String, Object> props = new HashMap<>();
+        props.put("name", "Y");
+
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+        assertSame(mockTableResult, exec.update(TestEntity.class, props, Filters.eq("id", 1)));
+    }
+
+    @Test
+    public void testUpdateWithMap_CamelCase() throws Exception {
+        BigQueryExecutor exec = new BigQueryExecutor(mockBigQuery, NamingPolicy.CAMEL_CASE);
+        Map<String, Object> props = new HashMap<>();
+        props.put("name", "Y");
+
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+        assertSame(mockTableResult, exec.update(TestEntity.class, props, Filters.eq("id", 1)));
+    }
+
+    @Test
+    public void testUpdateWithMap_UnsupportedNamingPolicy() {
+        BigQueryExecutor exec = new BigQueryExecutor(mockBigQuery, NamingPolicy.NO_CHANGE);
+        Map<String, Object> props = new HashMap<>();
+        props.put("name", "Y");
+        assertThrows(IllegalStateException.class, () -> exec.update(TestEntity.class, props, Filters.eq("id", 1)));
+    }
+
+    @Test
+    public void testDelete_ScreamingSnakeCase() throws Exception {
+        BigQueryExecutor exec = new BigQueryExecutor(mockBigQuery, NamingPolicy.SCREAMING_SNAKE_CASE);
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+        assertSame(mockTableResult, exec.delete(TestEntity.class, Filters.eq("id", 1)));
+    }
+
+    @Test
+    public void testDelete_CamelCase() throws Exception {
+        BigQueryExecutor exec = new BigQueryExecutor(mockBigQuery, NamingPolicy.CAMEL_CASE);
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+        assertSame(mockTableResult, exec.delete(TestEntity.class, Filters.eq("id", 1)));
+    }
+
+    @Test
+    public void testDelete_UnsupportedNamingPolicy() {
+        BigQueryExecutor exec = new BigQueryExecutor(mockBigQuery, NamingPolicy.NO_CHANGE);
+        assertThrows(IllegalStateException.class, () -> exec.delete(TestEntity.class, Filters.eq("id", 1)));
+    }
+
+    // ---------- prepareQuery (covers PAC / PLC branches via query()) ----------
+
+    @Test
+    public void testQuery_ScreamingSnakeCase() throws Exception {
+        BigQueryExecutor exec = new BigQueryExecutor(mockBigQuery, NamingPolicy.SCREAMING_SNAKE_CASE);
+        Field f = Field.of("id", StandardSQLTypeName.INT64);
+        Schema schema = Schema.of(FieldList.of(f));
+
+        when(mockTableResult.getTotalRows()).thenReturn(0L);
+        when(mockTableResult.getSchema()).thenReturn(schema);
+        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<FieldValueList>());
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        Dataset ds = exec.query(TestEntity.class, Filters.eq("id", 1));
+        assertNotNull(ds);
+    }
+
+    @Test
+    public void testQuery_CamelCase() throws Exception {
+        BigQueryExecutor exec = new BigQueryExecutor(mockBigQuery, NamingPolicy.CAMEL_CASE);
+        Field f = Field.of("id", StandardSQLTypeName.INT64);
+        Schema schema = Schema.of(FieldList.of(f));
+
+        when(mockTableResult.getTotalRows()).thenReturn(0L);
+        when(mockTableResult.getSchema()).thenReturn(schema);
+        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<FieldValueList>());
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        Dataset ds = exec.query(TestEntity.class, Filters.eq("id", 1));
+        assertNotNull(ds);
+    }
+
+    @Test
+    public void testQuery_WithSelectProps_ScreamingSnakeCase() throws Exception {
+        BigQueryExecutor exec = new BigQueryExecutor(mockBigQuery, NamingPolicy.SCREAMING_SNAKE_CASE);
+        Field f = Field.of("name", StandardSQLTypeName.STRING);
+        Schema schema = Schema.of(FieldList.of(f));
+
+        when(mockTableResult.getTotalRows()).thenReturn(0L);
+        when(mockTableResult.getSchema()).thenReturn(schema);
+        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<FieldValueList>());
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        Dataset ds = exec.query(TestEntity.class, Arrays.asList("name"), null);
+        assertNotNull(ds);
+    }
+
+    @Test
+    public void testQuery_WithSelectProps_CamelCase() throws Exception {
+        BigQueryExecutor exec = new BigQueryExecutor(mockBigQuery, NamingPolicy.CAMEL_CASE);
+        Field f = Field.of("name", StandardSQLTypeName.STRING);
+        Schema schema = Schema.of(FieldList.of(f));
+
+        when(mockTableResult.getTotalRows()).thenReturn(0L);
+        when(mockTableResult.getSchema()).thenReturn(schema);
+        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<FieldValueList>());
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        Dataset ds = exec.query(TestEntity.class, Arrays.asList("name"), null);
+        assertNotNull(ds);
+    }
+
+    @Test
+    public void testQuery_NullCondition() throws Exception {
+        // whereClause == null exercises the "no where clause" path in prepareQuery.
+        Field f = Field.of("id", StandardSQLTypeName.INT64);
+        Schema schema = Schema.of(FieldList.of(f));
+
+        when(mockTableResult.getTotalRows()).thenReturn(0L);
+        when(mockTableResult.getSchema()).thenReturn(schema);
+        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<FieldValueList>());
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        Dataset ds = executor.query(TestEntity.class, (Condition) null);
+        assertNotNull(ds);
+    }
+
+    @Test
+    public void testQuery_UnsupportedNamingPolicy() {
+        BigQueryExecutor exec = new BigQueryExecutor(mockBigQuery, NamingPolicy.NO_CHANGE);
+        assertThrows(IllegalStateException.class, () -> exec.query(TestEntity.class, Filters.eq("id", 1)));
+    }
+
+    // ---------- stream(Class, QueryJobConfiguration) / stream(QueryJobConfiguration) error paths ----------
+
+    @Test
+    public void testStreamWithQueryJobConfiguration_InterruptedException() throws Exception {
+        QueryJobConfiguration cfg = QueryJobConfiguration.newBuilder("SELECT 1").build();
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenThrow(new InterruptedException("interrupted"));
+
+        // Clear interrupt flag first (the executor sets it on InterruptedException).
+        Thread.interrupted();
+        assertThrows(RuntimeException.class, () -> executor.stream(cfg));
+        // The catch handler re-interrupts the thread; clear it so we don't leak state to later tests.
+        Thread.interrupted();
+    }
+
+    @Test
+    public void testStreamWithClassAndQueryJobConfiguration_InterruptedException() throws Exception {
+        QueryJobConfiguration cfg = QueryJobConfiguration.newBuilder("SELECT 1").build();
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenThrow(new InterruptedException("interrupted"));
+
+        Thread.interrupted();
+        assertThrows(RuntimeException.class, () -> executor.stream(TestEntity.class, cfg));
+        Thread.interrupted();
+    }
+
+    @Test
+    public void testExecute_InterruptedException() throws Exception {
+        // execute(String, Object...) must convert InterruptedException to RuntimeException.
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenThrow(new InterruptedException("interrupted"));
+
+        Thread.interrupted();
+        assertThrows(RuntimeException.class, () -> executor.execute("SELECT 1"));
+        Thread.interrupted();
+    }
+
+    // ---------- idsToCondition / entityToCondition edge cases ----------
+
+    @Test
+    public void testDelete_WithIds_MismatchCount() {
+        // Single-key entity should reject more than one ID.
+        assertThrows(IllegalArgumentException.class, () -> executor.delete(TestEntity.class, 1, 2));
+    }
+
+    @Test
+    public void testDelete_WithIds_EmptyIds() {
+        assertThrows(IllegalArgumentException.class, () -> executor.delete(TestEntity.class, new Object[0]));
+    }
+
+    @Test
+    public void testDelete_WithIds_NullIdValue() {
+        // idsToCondition's @NotEmpty check rejects a null-only varargs array.
+        assertThrows(IllegalArgumentException.class, () -> executor.delete(TestEntity.class, (Object[]) null));
+    }
+
+    @Test
+    public void testDelete_EntityNoKeyValue() {
+        // Entity with the @Id-equivalent key but a default (zero) primitive int is still considered present;
+        // however an entity whose only key is null/empty string should fail entityToCondition.
+        TestEntityWithStringKey entity = new TestEntityWithStringKey();
+        entity.setId(""); // empty string is treated as missing
+        assertThrows(IllegalArgumentException.class, () -> executor.delete(entity));
+    }
+
+    @Test
+    public void testDelete_EntityNullKeyValue() {
+        TestEntityWithStringKey entity = new TestEntityWithStringKey();
+        entity.setId(null);
+        assertThrows(IllegalArgumentException.class, () -> executor.delete(entity));
+    }
+
+    // ---------- buildQueryParameterValue: additional type coverage ----------
+
+    @Test
+    public void testBuildQueryParameterValueWithSqlTypes() {
+        // Drives the java.sql.Date / Time / Timestamp branches and com.google.cloud.Timestamp.
+        Object[] params = new Object[] { new java.sql.Date(0L), new java.sql.Time(0L), new java.sql.Timestamp(0L),
+                com.google.cloud.Timestamp.ofTimeSecondsAndNanos(0L, 0) };
+
+        List<QueryParameterValue> values = BigQueryExecutor.buildQueryParameterValue(params);
+        assertEquals(4, values.size());
+    }
+
+    @Test
+    public void testBuildQueryParameterValueWithGoogleDate() {
+        Object[] params = new Object[] { com.google.cloud.Date.fromYearMonthDay(2024, 1, 1) };
+        List<QueryParameterValue> values = BigQueryExecutor.buildQueryParameterValue(params);
+        assertEquals(1, values.size());
+    }
+
+    @Test
+    public void testBuildQueryParameterValue_NullParametersArray() {
+        // Passing a null array is treated as no parameters.
+        List<QueryParameterValue> values = BigQueryExecutor.buildQueryParameterValue((Object[]) null);
+        assertNotNull(values);
+        assertEquals(0, values.size());
+    }
+
+    // ---------- toMap / toEntity using supplier IntFunctions ----------
+
+    @Test
+    public void testToMap_WithLinkedHashMapSupplier() {
+        // Use a supplier other than the default HashMap to drive the IntFunction branch.
+        Field f1 = Field.of("id", StandardSQLTypeName.INT64);
+        Field f2 = Field.of("name", StandardSQLTypeName.STRING);
+        FieldList fields = FieldList.of(f1, f2);
+
+        FieldValueList fvl = FieldValueList.of(
+                Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "9"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "Z")), fields);
+
+        Map<String, Object> map = BigQueryExecutor.toMap(fields, fvl, com.landawn.abacus.util.IntFunctions.ofLinkedHashMap());
+        assertTrue(map instanceof LinkedHashMap);
+        assertEquals("9", map.get("id"));
+        assertEquals("Z", map.get("name"));
+    }
+
+    // ---------- toList for non-bean basic types (single-column) ----------
+
+    @Test
+    public void testToList_WithIntegerClass() throws Exception {
+        // Drives the "single-column convert" branch of createRowMapper for basic types.
+        Field f = Field.of("c", StandardSQLTypeName.INT64);
+        FieldList fields = FieldList.of(f);
+        Schema schema = Schema.of(fields);
+
+        List<FieldValueList> rows = new ArrayList<>();
+        rows.add(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1")), fields));
+        rows.add(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "2")), fields));
+
+        when(mockTableResult.getTotalRows()).thenReturn(2L);
+        when(mockTableResult.getSchema()).thenReturn(schema);
+        when(mockTableResult.iterateAll()).thenReturn(rows);
+
+        List<Integer> values = BigQueryExecutor.toList(mockTableResult, Integer.class);
+        assertEquals(2, values.size());
+        assertEquals(Integer.valueOf(1), values.get(0));
+        assertEquals(Integer.valueOf(2), values.get(1));
+    }
+
+    // ---------- queryForSingleValue overloads ----------
+
+    @Test
+    public void testQueryForSingleValue_WithCondition_NullValue() throws Exception {
+        // Row exists but the column value is null: result is present-but-null, not empty.
+        Field f = Field.of("name", StandardSQLTypeName.STRING);
+        FieldList fields = FieldList.of(f);
+
+        FieldValueList row = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, (String) null)), fields);
+
+        when(mockTableResult.getTotalRows()).thenReturn(1L);
+        when(mockTableResult.getValues()).thenReturn(Arrays.asList(row));
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        Nullable<String> result = executor.queryForSingleValue(TestEntity.class, String.class, "name", Filters.eq("id", 1));
+        assertTrue(result.isPresent());
+        assertNull(result.orElse(null));
+    }
+
+    // ---------- exists with whereClause null ----------
+
+    @Test
+    public void testExists_NullWhereClause_NoRows() throws Exception {
+        // Null whereClause passes through prepareQuery without a WHERE.
+        when(mockTableResult.getTotalRows()).thenReturn(0L);
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        assertFalse(executor.exists(TestEntity.class, (Condition) null));
+    }
+
+    @Test
+    public void testExists_NullWhereClause_HasRows() throws Exception {
+        when(mockTableResult.getTotalRows()).thenReturn(3L);
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        assertTrue(executor.exists(TestEntity.class, (Condition) null));
+    }
+
+    // ---------- getSchema / NullPointer scenarios for extractData ----------
+
+    @Test
+    public void testToList_ReadRow_WithFieldValueList_AsObjectArray() throws Exception {
+        // Force readRow's "Object[]" branch with a nested FieldValueList field.
+        Field nested = Field.of("inner", StandardSQLTypeName.STRING);
+        FieldList nestedFields = FieldList.of(nested);
+        FieldValueList nestedRow = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "v")), nestedFields);
+
+        Field outer = Field.of("outer", StandardSQLTypeName.STRUCT, nestedFields);
+        FieldList outerFields = FieldList.of(outer);
+        Schema schema = Schema.of(outerFields);
+
+        List<FieldValueList> rows = new ArrayList<>();
+        rows.add(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.RECORD, nestedRow)), outerFields));
+
+        when(mockTableResult.getTotalRows()).thenReturn(1L);
+        when(mockTableResult.getSchema()).thenReturn(schema);
+        when(mockTableResult.iterateAll()).thenReturn(rows);
+
+        List<Object[]> result = BigQueryExecutor.toList(mockTableResult, Object[].class);
+        assertEquals(1, result.size());
+        // The nested struct should be expanded to its own array.
+        assertTrue(result.get(0)[0] instanceof Object[]);
+    }
+
+    // ---------- queryForSingleValue via TestEntityWithStringKey condition path ----------
+
+    @Test
+    public void testQueryForSingleValue_ByQuery_NoRows() throws Exception {
+        when(mockTableResult.getTotalRows()).thenReturn(0L);
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        Nullable<Long> result = executor.queryForSingleValue(Long.class, "SELECT COUNT(*) FROM t WHERE id = ?", 0);
+        assertFalse(result.isPresent());
+    }
+
+    @Test
+    public void testListWithClassAndCondition_NoMatching() throws Exception {
+        Field f = Field.of("id", StandardSQLTypeName.INT64);
+        FieldList fields = FieldList.of(f);
+        Schema schema = Schema.of(fields);
+
+        when(mockTableResult.getTotalRows()).thenReturn(0L);
+        when(mockTableResult.getSchema()).thenReturn(schema);
+        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<FieldValueList>());
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        List<TestEntity> list = executor.list(TestEntity.class, Filters.eq("id", -1));
+        assertNotNull(list);
+        assertEquals(0, list.size());
+    }
+
+    // ---------- Stream classes / pipeline through real query() ----------
+
+    @Test
+    public void testStreamWithClassAndCondition_ReturnsRows() throws Exception {
+        Field f1 = Field.of("id", StandardSQLTypeName.INT64);
+        Field f2 = Field.of("name", StandardSQLTypeName.STRING);
+        FieldList fields = FieldList.of(f1, f2);
+
+        List<FieldValueList> rows = new ArrayList<>();
+        rows.add(FieldValueList
+                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "10"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "Eve")), fields));
+
+        when(mockTableResult.iterateAll()).thenReturn(rows);
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        Stream<TestEntity> stream = executor.stream(TestEntity.class, Filters.eq("id", 10));
+        List<TestEntity> collected = stream.toList();
+        assertEquals(1, collected.size());
+        assertEquals(10, collected.get(0).getId());
+        assertEquals("Eve", collected.get(0).getName());
+    }
+
+    // ---------- bigQuery() accessor returns the same instance ----------
+
+    @Test
+    public void testBigQuery_ReturnsSameInstance() {
+        BigQuery another = mock(BigQuery.class);
+        BigQueryExecutor exec = new BigQueryExecutor(another);
+        assertSame(another, exec.bigQuery());
+    }
+
+    // Entity with a String id used to exercise entityToCondition's empty/null-key error paths.
+    public static class TestEntityWithStringKey {
+        private String id;
+        private String value;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(String id) {
+            this.id = id;
+        }
+
+        public String getValue() {
+            return value;
+        }
+
+        public void setValue(String value) {
+            this.value = value;
+        }
     }
 
     // Test entity classes

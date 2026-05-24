@@ -785,6 +785,426 @@ public class MongoCollectionExecutorTest extends TestBase {
         Assertions.assertFalse(result.isPresent());
     }
 
+    // ---- Additional coverage: list/query/stream overloads with selectPropNames / projection / pagination / sort ----
+
+    @Test
+    public void testListWithSelectPropNamesAndFilter() {
+        Document filter = new Document("status", "active");
+        List<Document> docs = Arrays.asList(new Document("name", "a"), new Document("name", "b"));
+        when(mockFindIterable.into(any())).thenReturn(docs);
+
+        List<Document> result = executor.list(Arrays.asList("name"), filter, Document.class);
+        Assertions.assertEquals(2, result.size());
+    }
+
+    @Test
+    public void testListWithSelectPropNamesFilterOffsetCount() {
+        Document filter = new Document("status", "active");
+        List<Document> docs = Arrays.asList(new Document("name", "a"));
+        when(mockFindIterable.into(any())).thenReturn(docs);
+
+        List<Document> result = executor.list(Arrays.asList("name"), filter, 0, 10, Document.class);
+        Assertions.assertEquals(1, result.size());
+    }
+
+    @Test
+    public void testListWithSelectPropNamesFilterAndSort() {
+        Document filter = new Document("status", "active");
+        Document sort = new Document("name", 1);
+        List<Document> docs = Arrays.asList(new Document("name", "a"));
+        when(mockFindIterable.into(any())).thenReturn(docs);
+
+        List<Document> result = executor.list(Arrays.asList("name"), filter, sort, Document.class);
+        Assertions.assertEquals(1, result.size());
+    }
+
+    @Test
+    public void testListWithSelectPropNamesFilterSortOffsetCount() {
+        Document filter = new Document("status", "active");
+        Document sort = new Document("name", 1);
+        List<Document> docs = Arrays.asList(new Document("name", "a"));
+        when(mockFindIterable.into(any())).thenReturn(docs);
+
+        List<Document> result = executor.list(Arrays.asList("name"), filter, sort, 0, 10, Document.class);
+        Assertions.assertEquals(1, result.size());
+    }
+
+    @Test
+    public void testListWithBsonProjectionFilterAndSort() {
+        Bson projection = com.mongodb.client.model.Projections.include("name");
+        Document filter = new Document("status", "active");
+        Document sort = new Document("name", 1);
+        List<Document> docs = Arrays.asList(new Document("name", "a"));
+        when(mockFindIterable.into(any())).thenReturn(docs);
+
+        List<Document> result = executor.list(projection, filter, sort, Document.class);
+        Assertions.assertEquals(1, result.size());
+    }
+
+    @Test
+    public void testListWithBsonProjectionFilterSortOffsetCount() {
+        Bson projection = com.mongodb.client.model.Projections.include("name");
+        Document filter = new Document("status", "active");
+        Document sort = new Document("name", 1);
+        List<Document> docs = Arrays.asList(new Document("name", "a"));
+        when(mockFindIterable.into(any())).thenReturn(docs);
+
+        List<Document> result = executor.list(projection, filter, sort, 0, 10, Document.class);
+        Assertions.assertEquals(1, result.size());
+    }
+
+    @Test
+    public void testQueryWithFilterAndRowType() {
+        Document filter = new Document("status", "active");
+        List<Document> docs = Arrays.asList(new Document("id", 1));
+        when(mockFindIterable.into(any())).thenReturn(docs);
+
+        Dataset result = executor.query(filter, Document.class);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testQueryWithFilterOffsetCountAndRowType() {
+        Document filter = new Document("status", "active");
+        List<Document> docs = Arrays.asList(new Document("id", 1));
+        when(mockFindIterable.into(any())).thenReturn(docs);
+
+        Dataset result = executor.query(filter, 0, 10, Document.class);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testQueryWithSelectPropNamesAndFilter() {
+        Document filter = new Document("status", "active");
+        List<Document> docs = Arrays.asList(new Document("id", 1));
+        when(mockFindIterable.into(any())).thenReturn(docs);
+
+        Dataset result = executor.query(Arrays.asList("id"), filter, Document.class);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testQueryWithBsonProjectionFilterSort() {
+        Bson projection = com.mongodb.client.model.Projections.include("name");
+        Document filter = new Document("status", "active");
+        Document sort = new Document("name", 1);
+        List<Document> docs = Arrays.asList(new Document("name", "a"));
+        when(mockFindIterable.into(any())).thenReturn(docs);
+
+        Dataset result = executor.query(projection, filter, sort, Document.class);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testStreamWithFilter() {
+        Document filter = new Document("status", "active");
+        when(mockFindIterable.iterator()).thenReturn(mockCursor);
+
+        Stream<Document> result = executor.stream(filter);
+        Assertions.assertNotNull(result);
+        result.close();
+    }
+
+    @Test
+    public void testStreamWithFilterAndRowType() {
+        Document filter = new Document("status", "active");
+        when(mockFindIterable.iterator()).thenReturn(mockCursor);
+
+        Stream<Document> result = executor.stream(filter, Document.class);
+        Assertions.assertNotNull(result);
+        result.close();
+    }
+
+    @Test
+    public void testStreamWithSelectPropNamesAndFilter() {
+        Document filter = new Document("status", "active");
+        when(mockFindIterable.iterator()).thenReturn(mockCursor);
+
+        Stream<Document> result = executor.stream(Arrays.asList("name"), filter, Document.class);
+        Assertions.assertNotNull(result);
+        result.close();
+    }
+
+    @Test
+    public void testStreamWithBsonProjectionFilterSort() {
+        Bson projection = com.mongodb.client.model.Projections.include("name");
+        Document filter = new Document("status", "active");
+        Document sort = new Document("name", 1);
+        when(mockFindIterable.iterator()).thenReturn(mockCursor);
+
+        Stream<Document> result = executor.stream(projection, filter, sort, Document.class);
+        Assertions.assertNotNull(result);
+        result.close();
+    }
+
+    // ---- findOneAndUpdate / Replace / Delete with options & rowType ----
+
+    @Test
+    public void testFindOneAndUpdateWithRowType() {
+        Document filter = new Document("id", 1);
+        Document update = new Document("$set", new Document("a", 1));
+        Document returnedDoc = new Document("a", 1);
+        when(mockCollection.findOneAndUpdate(any(Bson.class), any(Bson.class))).thenReturn(returnedDoc);
+
+        Document result = executor.findOneAndUpdate(filter, update, Document.class);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithOptions() {
+        Document filter = new Document("id", 1);
+        Document update = new Document("$set", new Document("a", 1));
+        com.mongodb.client.model.FindOneAndUpdateOptions options = new com.mongodb.client.model.FindOneAndUpdateOptions();
+        Document returnedDoc = new Document("a", 1);
+        when(mockCollection.findOneAndUpdate(any(Bson.class), any(Bson.class), any(com.mongodb.client.model.FindOneAndUpdateOptions.class)))
+                .thenReturn(returnedDoc);
+
+        Document result = executor.findOneAndUpdate(filter, update, options);
+        Assertions.assertNotNull(result);
+        verify(mockCollection).findOneAndUpdate(any(Bson.class), any(Bson.class), eq(options));
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithOptionsAndRowType() {
+        Document filter = new Document("id", 1);
+        Document update = new Document("$set", new Document("a", 1));
+        com.mongodb.client.model.FindOneAndUpdateOptions options = new com.mongodb.client.model.FindOneAndUpdateOptions();
+        Document returnedDoc = new Document("a", 1);
+        when(mockCollection.findOneAndUpdate(any(Bson.class), any(Bson.class), any(com.mongodb.client.model.FindOneAndUpdateOptions.class)))
+                .thenReturn(returnedDoc);
+
+        Document result = executor.findOneAndUpdate(filter, update, options, Document.class);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithCollection() {
+        Document filter = new Document("id", 1);
+        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
+        Document returnedDoc = new Document("a", 1);
+        when(mockCollection.findOneAndUpdate(any(Bson.class), anyList())).thenReturn(returnedDoc);
+
+        Document result = executor.findOneAndUpdate(filter, updates);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithCollectionAndOptions() {
+        Document filter = new Document("id", 1);
+        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
+        com.mongodb.client.model.FindOneAndUpdateOptions options = new com.mongodb.client.model.FindOneAndUpdateOptions();
+        Document returnedDoc = new Document("a", 1);
+        when(mockCollection.findOneAndUpdate(any(Bson.class), anyList(), any(com.mongodb.client.model.FindOneAndUpdateOptions.class)))
+                .thenReturn(returnedDoc);
+
+        Document result = executor.findOneAndUpdate(filter, updates, options);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithCollectionOptionsAndRowType() {
+        Document filter = new Document("id", 1);
+        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
+        com.mongodb.client.model.FindOneAndUpdateOptions options = new com.mongodb.client.model.FindOneAndUpdateOptions();
+        Document returnedDoc = new Document("a", 1);
+        when(mockCollection.findOneAndUpdate(any(Bson.class), anyList(), any(com.mongodb.client.model.FindOneAndUpdateOptions.class)))
+                .thenReturn(returnedDoc);
+
+        Document result = executor.findOneAndUpdate(filter, updates, options, Document.class);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndReplaceWithRowType() {
+        Document filter = new Document("id", 1);
+        Document replacement = new Document("name", "x");
+        Document returnedDoc = new Document("name", "x");
+        when(mockCollection.findOneAndReplace(any(Bson.class), any(Document.class))).thenReturn(returnedDoc);
+
+        Document result = executor.findOneAndReplace(filter, replacement, Document.class);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndReplaceWithOptions() {
+        Document filter = new Document("id", 1);
+        Document replacement = new Document("name", "x");
+        com.mongodb.client.model.FindOneAndReplaceOptions options = new com.mongodb.client.model.FindOneAndReplaceOptions();
+        Document returnedDoc = new Document("name", "x");
+        when(mockCollection.findOneAndReplace(any(Bson.class), any(Document.class), any(com.mongodb.client.model.FindOneAndReplaceOptions.class)))
+                .thenReturn(returnedDoc);
+
+        Document result = executor.findOneAndReplace(filter, replacement, options);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndReplaceWithOptionsAndRowType() {
+        Document filter = new Document("id", 1);
+        Document replacement = new Document("name", "x");
+        com.mongodb.client.model.FindOneAndReplaceOptions options = new com.mongodb.client.model.FindOneAndReplaceOptions();
+        Document returnedDoc = new Document("name", "x");
+        when(mockCollection.findOneAndReplace(any(Bson.class), any(Document.class), any(com.mongodb.client.model.FindOneAndReplaceOptions.class)))
+                .thenReturn(returnedDoc);
+
+        Document result = executor.findOneAndReplace(filter, replacement, options, Document.class);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndDeleteWithRowType() {
+        Document filter = new Document("id", 1);
+        Document returnedDoc = new Document("id", 1);
+        when(mockCollection.findOneAndDelete(any(Bson.class))).thenReturn(returnedDoc);
+
+        Document result = executor.findOneAndDelete(filter, Document.class);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndDeleteWithOptions() {
+        Document filter = new Document("id", 1);
+        com.mongodb.client.model.FindOneAndDeleteOptions options = new com.mongodb.client.model.FindOneAndDeleteOptions();
+        Document returnedDoc = new Document("id", 1);
+        when(mockCollection.findOneAndDelete(any(Bson.class), any(com.mongodb.client.model.FindOneAndDeleteOptions.class))).thenReturn(returnedDoc);
+
+        Document result = executor.findOneAndDelete(filter, options);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndDeleteWithOptionsAndRowType() {
+        Document filter = new Document("id", 1);
+        com.mongodb.client.model.FindOneAndDeleteOptions options = new com.mongodb.client.model.FindOneAndDeleteOptions();
+        Document returnedDoc = new Document("id", 1);
+        when(mockCollection.findOneAndDelete(any(Bson.class), any(com.mongodb.client.model.FindOneAndDeleteOptions.class))).thenReturn(returnedDoc);
+
+        Document result = executor.findOneAndDelete(filter, options, Document.class);
+        Assertions.assertNotNull(result);
+    }
+
+    // ---- distinct/update/delete/get with collection projection ----
+
+    @Test
+    public void testDistinctWithFilter() {
+        String fieldName = "category";
+        Document filter = new Document("active", true);
+        when(mockCollection.distinct(eq(fieldName), eq(filter), eq(String.class))).thenReturn(mock());
+
+        Stream<String> result = executor.distinct(fieldName, filter, String.class);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testGetWithSelectPropNamesAndRowType() {
+        String objectId = "507f1f77bcf86cd799439011";
+        Document doc = new Document("_id", new ObjectId(objectId)).append("name", "test");
+        when(mockFindIterable.first()).thenReturn(doc);
+
+        Optional<TestEntity> result = executor.get(objectId, Arrays.asList("name"), TestEntity.class);
+        Assertions.assertTrue(result.isPresent());
+    }
+
+    @Test
+    public void testGettWithSelectPropNamesAndRowType() {
+        String objectId = "507f1f77bcf86cd799439011";
+        Document doc = new Document("_id", new ObjectId(objectId)).append("name", "test");
+        when(mockFindIterable.first()).thenReturn(doc);
+
+        TestEntity result = executor.gett(objectId, Arrays.asList("name"), TestEntity.class);
+        Assertions.assertNotNull(result);
+    }
+
+    // ---- toBson collection path: collection of non-Bson entities triggers conversion via MongoDBBase ----
+
+    @Test
+    public void testUpdateOneWithCollection() {
+        Document filter = new Document("id", 1);
+        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
+        UpdateResult updateResult = mock(UpdateResult.class);
+        when(mockCollection.updateOne(any(Bson.class), anyList())).thenReturn(updateResult);
+
+        UpdateResult result = executor.updateOne(filter, updates);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testUpdateOneWithCollectionAndOptions() {
+        Document filter = new Document("id", 1);
+        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
+        com.mongodb.client.model.UpdateOptions options = new com.mongodb.client.model.UpdateOptions();
+        UpdateResult updateResult = mock(UpdateResult.class);
+        when(mockCollection.updateOne(any(Bson.class), anyList(), any(com.mongodb.client.model.UpdateOptions.class))).thenReturn(updateResult);
+
+        UpdateResult result = executor.updateOne(filter, updates, options);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testUpdateManyWithCollection() {
+        Document filter = new Document("id", 1);
+        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
+        UpdateResult updateResult = mock(UpdateResult.class);
+        when(mockCollection.updateMany(any(Bson.class), anyList())).thenReturn(updateResult);
+
+        UpdateResult result = executor.updateMany(filter, updates);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testUpdateManyWithCollectionAndOptions() {
+        Document filter = new Document("id", 1);
+        List<Document> updates = Arrays.asList(new Document("$set", new Document("a", 1)));
+        com.mongodb.client.model.UpdateOptions options = new com.mongodb.client.model.UpdateOptions();
+        UpdateResult updateResult = mock(UpdateResult.class);
+        when(mockCollection.updateMany(any(Bson.class), anyList(), any(com.mongodb.client.model.UpdateOptions.class))).thenReturn(updateResult);
+
+        UpdateResult result = executor.updateMany(filter, updates, options);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testDeleteOneWithFilterAndOptions() {
+        Document filter = new Document("status", "x");
+        com.mongodb.client.model.DeleteOptions options = new com.mongodb.client.model.DeleteOptions();
+        DeleteResult deleteResult = mock(DeleteResult.class);
+        when(mockCollection.deleteOne(any(Bson.class), any(com.mongodb.client.model.DeleteOptions.class))).thenReturn(deleteResult);
+
+        DeleteResult result = executor.deleteOne(filter, options);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testDeleteManyWithFilterAndOptions() {
+        Document filter = new Document("status", "x");
+        com.mongodb.client.model.DeleteOptions options = new com.mongodb.client.model.DeleteOptions();
+        DeleteResult deleteResult = mock(DeleteResult.class);
+        when(mockCollection.deleteMany(any(Bson.class), any(com.mongodb.client.model.DeleteOptions.class))).thenReturn(deleteResult);
+
+        DeleteResult result = executor.deleteMany(filter, options);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testWatchWithPipeline() {
+        List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
+        ChangeStreamIterable<Document> changeStream = mock(ChangeStreamIterable.class);
+        when(mockCollection.watch(pipeline)).thenReturn(changeStream);
+
+        ChangeStreamIterable<Document> result = executor.watch(pipeline);
+        Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testWatchWithPipelineAndRowType() {
+        List<Document> pipeline = Arrays.asList(new Document("$match", new Document()));
+        ChangeStreamIterable<Document> changeStream = mock(ChangeStreamIterable.class);
+        when(mockCollection.watch(pipeline, Document.class)).thenReturn(changeStream);
+
+        ChangeStreamIterable<Document> result = executor.watch(pipeline, Document.class);
+        Assertions.assertNotNull(result);
+    }
+
     private static class TestEntity {
         private String id;
         private String name;

@@ -6,6 +6,9 @@ package com.landawn.abacus.da.cassandra;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.fail;
 
@@ -19,10 +22,13 @@ import java.util.concurrent.ExecutionException;
 
 import org.junit.jupiter.api.Test;
 
+import com.datastax.oss.driver.api.core.ConsistencyLevel;
 import com.datastax.oss.driver.api.core.CqlSession;
 import com.datastax.oss.driver.api.core.cql.BatchType;
+import com.datastax.oss.driver.api.core.cql.BoundStatement;
 import com.datastax.oss.driver.api.core.cql.ResultSet;
 import com.datastax.oss.driver.api.core.cql.Row;
+import com.datastax.oss.driver.api.core.cql.Statement;
 import com.datastax.oss.driver.api.core.type.codec.registry.MutableCodecRegistry;
 import com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry;
 import com.landawn.abacus.da.TestBase;
@@ -34,11 +40,14 @@ import com.landawn.abacus.da.cassandra.CqlBuilder.SCCB;
 import com.landawn.abacus.da.entity.Song;
 import com.landawn.abacus.da.entity.Users;
 import com.landawn.abacus.query.Filters;
+import com.landawn.abacus.da.cassandra.CassandraExecutor.StatementSettings;
 import com.landawn.abacus.util.Beans;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.Dates;
 import com.landawn.abacus.util.Fn;
+import com.landawn.abacus.util.IntFunctions;
 import com.landawn.abacus.util.N;
+import com.landawn.abacus.util.NamingPolicy;
 import com.landawn.abacus.util.stream.Stream;
 
 public class CassandraExecutorTest extends TestBase {
@@ -622,6 +631,260 @@ public class CassandraExecutorTest extends TestBase {
         cassandraExecutor.query("SELECT * FROM simplex.songs WHERE id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d").println();
 
         System.out.println();
+    }
+
+    // ---------------------------------------------------------------------
+    //  StatementSettings (v2) tests - no DB required
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void test_StatementSettings_defaultsAreNull() {
+        StatementSettings settings = new StatementSettings();
+        assertNull(settings.consistency());
+        assertNull(settings.serialConsistency());
+        assertNull(settings.fetchSize());
+        assertNull(settings.timeout());
+        assertNull(settings.traceQuery());
+    }
+
+    @Test
+    public void test_StatementSettings_allArgsConstructorAndBuilder() {
+        java.time.Duration d = java.time.Duration.ofSeconds(15);
+        StatementSettings s1 = new StatementSettings(ConsistencyLevel.QUORUM, ConsistencyLevel.LOCAL_SERIAL, 250, d, Boolean.TRUE);
+        assertEquals(ConsistencyLevel.QUORUM, s1.consistency());
+        assertEquals(ConsistencyLevel.LOCAL_SERIAL, s1.serialConsistency());
+        assertEquals(250, s1.fetchSize().intValue());
+        assertEquals(d, s1.timeout());
+        assertTrue(s1.traceQuery());
+
+        StatementSettings s2 = StatementSettings.builder()
+                .consistency(ConsistencyLevel.ONE)
+                .serialConsistency(ConsistencyLevel.SERIAL)
+                .fetchSize(99)
+                .timeout(java.time.Duration.ofMillis(500))
+                .traceQuery(Boolean.FALSE)
+                .build();
+        assertEquals(ConsistencyLevel.ONE, s2.consistency());
+        assertEquals(99, s2.fetchSize().intValue());
+        assertFalse(s2.traceQuery());
+    }
+
+    // ---------------------------------------------------------------------
+    //  Constructor / accessor coverage
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void test_constructor_withSettingsAndMapper() {
+        StatementSettings settings = StatementSettings.builder().fetchSize(50).build();
+        CqlMapper mapper = new CqlMapper();
+        CassandraExecutor exec = new CassandraExecutor(cassandraExecutor.session(), settings, mapper, NamingPolicy.SNAKE_CASE);
+        assertNotNull(exec);
+        assertTrue(exec.session() == cassandraExecutor.session());
+        assertNotNull(exec.async());
+    }
+
+    @Test
+    public void test_constructor_withSettingsOnly() {
+        CassandraExecutor exec = new CassandraExecutor(cassandraExecutor.session(), null);
+        assertNotNull(exec);
+        assertNotNull(exec.async());
+    }
+
+    @Test
+    public void test_async_returnsSameInstance() {
+        // async() should return the same AsyncCassandraExecutor every time
+        assertTrue(cassandraExecutor.async() == cassandraExecutor.async());
+    }
+
+    // ---------------------------------------------------------------------
+    //  Static helper tests against live ResultSets
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void test_extractData_withEntityClass() {
+        UUID id = UUID.randomUUID();
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title, album, artist) VALUES (?, ?, ?, ?)", id, "t", "a", "ar");
+        try {
+            ResultSet rs = cassandraExecutor.execute("SELECT * FROM simplex.songs WHERE id = ?", id);
+            Dataset ds = CassandraExecutor.extractData(rs, Song.class);
+            assertNotNull(ds);
+            assertEquals(1, ds.size());
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
+        }
+    }
+
+    @Test
+    public void test_extractData_withMapClass() {
+        UUID id = UUID.randomUUID();
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "t");
+        try {
+            ResultSet rs = cassandraExecutor.execute("SELECT id, title FROM simplex.songs WHERE id = ?", id);
+            Dataset ds = CassandraExecutor.extractData(rs, Map.class);
+            assertNotNull(ds);
+            assertEquals(1, ds.size());
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
+        }
+    }
+
+    @Test
+    public void test_toList_withRowClass() {
+        UUID id = UUID.randomUUID();
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "rowTest");
+        try {
+            ResultSet rs = cassandraExecutor.execute("SELECT * FROM simplex.songs WHERE id = ?", id);
+            // Fast-path: target is Row.class -> returns resultSet.all() directly.
+            List<Row> rows = CassandraExecutor.toList(rs, Row.class);
+            assertEquals(1, rows.size());
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
+        }
+    }
+
+    @Test
+    public void test_toList_singleColumnValue() {
+        UUID id = UUID.randomUUID();
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "scalar");
+        try {
+            ResultSet rs = cassandraExecutor.execute("SELECT title FROM simplex.songs WHERE id = ?", id);
+            List<String> titles = CassandraExecutor.toList(rs, String.class);
+            assertEquals(1, titles.size());
+            assertEquals("scalar", titles.get(0));
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
+        }
+    }
+
+    @Test
+    public void test_toMap_withSupplier() {
+        UUID id = UUID.randomUUID();
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "mapT");
+        try {
+            ResultSet rs = cassandraExecutor.execute("SELECT id, title FROM simplex.songs WHERE id = ?", id);
+            Row row = rs.one();
+            assertNotNull(row);
+            // Use a LinkedHashMap supplier to verify the supplier branch is exercised.
+            Map<String, Object> map = CassandraExecutor.toMap(row, IntFunctions.ofLinkedHashMap());
+            assertNotNull(map);
+            assertEquals(2, map.size());
+            assertTrue(map.containsKey("id"));
+            assertTrue(map.containsKey("title"));
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
+        }
+    }
+
+    @Test
+    public void test_toEntity_song() {
+        UUID id = UUID.randomUUID();
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title, album) VALUES (?, ?, ?)", id, "t1", "a1");
+        try {
+            Row row = cassandraExecutor.execute("SELECT * FROM simplex.songs WHERE id = ?", id).one();
+            assertNotNull(row);
+            Song s = CassandraExecutor.toEntity(row, Song.class);
+            assertNotNull(s);
+            assertEquals(id, s.getId());
+            assertEquals("t1", s.getTitle());
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    //  findFirst / queryForSingle empty-result branches
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void test_findFirst_noRows_returnsEmpty() {
+        UUID nonExistent = UUID.randomUUID();
+        assertTrue(cassandraExecutor.findFirst(Song.class, "SELECT * FROM simplex.songs WHERE id = ?", nonExistent).isEmpty());
+    }
+
+    @Test
+    public void test_queryForSingleValue_noRows_returnsEmptyNullable() {
+        UUID nonExistent = UUID.randomUUID();
+        assertTrue(cassandraExecutor.queryForSingleValue(String.class, "SELECT title FROM simplex.songs WHERE id = ?", nonExistent).isEmpty());
+    }
+
+    @Test
+    public void test_queryForSingleNonNull_noRows_returnsEmptyOptional() {
+        UUID nonExistent = UUID.randomUUID();
+        assertTrue(cassandraExecutor.queryForSingleNonNull(String.class, "SELECT title FROM simplex.songs WHERE id = ?", nonExistent).isEmpty());
+    }
+
+    @Test
+    public void test_queryForSingleNonNull_withValue() {
+        UUID id = UUID.randomUUID();
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "x");
+        try {
+            assertEquals("x", cassandraExecutor.queryForSingleNonNull(String.class, "SELECT title FROM simplex.songs WHERE id = ?", id).orElse(null));
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    //  stream(...) coverage
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void test_stream_withBiFunctionRowMapper() {
+        UUID id = UUID.randomUUID();
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "sTitle");
+        try {
+            long count = cassandraExecutor.stream(
+                    "SELECT * FROM simplex.songs WHERE id = ?",
+                    (cds, r) -> r.getString("title"),
+                    id).count();
+            assertEquals(1L, count);
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
+        }
+    }
+
+    @Test
+    public void test_stream_withStatement_BiFunctionRowMapper() {
+        UUID id = UUID.randomUUID();
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "stmtT");
+        try {
+            BoundStatement bs = cassandraExecutor.session().prepare("SELECT * FROM simplex.songs WHERE id = ?").bind(id);
+            long count = cassandraExecutor.stream((Statement<?>) bs, (cds, r) -> r.getString("title")).count();
+            assertEquals(1L, count);
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
+        }
+    }
+
+    @Test
+    public void test_stream_nullRowMapper_throwsIAE() {
+        assertThrows(IllegalArgumentException.class,
+                () -> cassandraExecutor.stream("SELECT * FROM simplex.songs",
+                        (java.util.function.BiFunction<com.datastax.oss.driver.api.core.cql.ColumnDefinitions, Row, Object>) null));
+    }
+
+    @Test
+    public void test_execute_withMapNamedParams() {
+        UUID id = UUID.randomUUID();
+        cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", id, "nT");
+        try {
+            Map<String, Object> params = new java.util.HashMap<>();
+            params.put("id", id);
+            ResultSet rs = cassandraExecutor.execute("SELECT * FROM simplex.songs WHERE id = :id", params);
+            assertNotNull(rs);
+            assertNotNull(rs.one());
+        } finally {
+            cassandraExecutor.execute("DELETE FROM simplex.songs WHERE id = ?", id);
+        }
+    }
+
+    @Test
+    public void test_execute_missingNamedParameter_throwsIAE() {
+        Map<String, Object> params = new java.util.HashMap<>();
+        params.put("wrong", UUID.randomUUID());
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> cassandraExecutor.execute("SELECT * FROM simplex.songs WHERE id = :id", params));
+        assertTrue(ex.getMessage() == null || ex.getMessage().toLowerCase().contains("missing") || ex.getMessage().toLowerCase().contains("parameter"));
     }
 
     private Users createUser() {
