@@ -8,12 +8,15 @@ It wraps vendor SDKs with executor-style APIs for CRUD, queries, mapping, bulk o
 
 It includes integrations for:
 
-* MongoDB: [MongoCollectionExecutor](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/MongoCollectionExecutor_view.html), async MongoDB, and reactive-streams MongoDB
-* Cassandra: [CassandraExecutor](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/CassandraExecutor_view.html) and [CqlBuilder](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/CqlBuilder_view.html)
-* DynamoDB: [DynamoDBExecutor](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/DynamoDBExecutor_view.html) and async executors for AWS SDK v1/v2
-* HBase: [HBaseExecutor](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/HBaseExecutor_view.html)
+* MongoDB: [MongoCollectionExecutor](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/MongoCollectionExecutor_view.html), plus async and reactive-streams variants
+* Cassandra: [CassandraExecutor](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/CassandraExecutor_view.html) and [CqlBuilder](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/CqlBuilder_view.html), for both DataStax OSS driver 4.x and the legacy 3.x driver (under `cassandra.v3`)
+* DynamoDB: [DynamoDBExecutor](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/DynamoDBExecutor_view.html) with async executors for AWS SDK v1 and v2, plus S3 and RDS utilities
+* HBase: [HBaseExecutor](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/HBaseExecutor_view.html) (sync and async)
+* Azure Cosmos DB: `CosmosContainerExecutor`
+* Google Cloud: `BigQueryExecutor`
 * Neo4j: [Neo4jExecutor](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/Neo4jExecutor_view.html)
-* Additional modules for Couchbase, Azure Cosmos DB, Google BigQuery, Elasticsearch, Solr, Lucene, Hadoop/HDFS, Spark, and Blink
+* Search: `ElasticsearchExecutor`, `SolrExecutor`, `LuceneExecutor`
+* Big data: Hadoop/HDFS utilities, Spark `Dataset`/`DStream` utilities, and Blink `DataSet`/`DataStream` utilities
 
 
 ## Download/Installation & [Changes](https://github.com/landawn/abacus-da/blob/master/CHANGES.md):
@@ -22,14 +25,17 @@ It includes integrations for:
 
 * Gradle:
 ```gradle
-// JDK 17 or above:
+// JDK 17 or above. Pick `abacus-da-all` for everything, or one of the per-backend artifacts:
 implementation 'com.landawn.abacus:abacus-da-all:2.7.1'
 implementation 'com.landawn.abacus:abacus-da-mongodb:2.7.1'
 implementation 'com.landawn.abacus:abacus-da-cassandra:2.7.1'
+implementation 'com.landawn.abacus:abacus-da-hbase:2.7.1'
 implementation 'com.landawn.abacus:abacus-da-aws:2.7.1'
 implementation 'com.landawn.abacus:abacus-da-gcp:2.7.1'
 implementation 'com.landawn.abacus:abacus-da-azure:2.7.1'
 ```
+
+The Neo4j, search (Elasticsearch/Solr/Lucene), Hadoop, Spark, and Blink integrations are bundled only in `abacus-da-all` — there are no separately-published artifacts for them.
 
 
 ### Functional Programming:
