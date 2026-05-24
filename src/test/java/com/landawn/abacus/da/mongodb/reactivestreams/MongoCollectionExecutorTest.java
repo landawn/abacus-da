@@ -1,8 +1,10 @@
 package com.landawn.abacus.da.mongodb.reactivestreams;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
@@ -1845,6 +1847,273 @@ public class MongoCollectionExecutorTest extends TestBase {
         Mono<String> result = executor.queryForSingleValue(propName, filter, String.class);
 
         StepVerifier.create(result).verifyComplete();
+    }
+
+    // Cover list(Collection, Bson, Bson, Class) overload (with sort and projection collection).
+    @Test
+    public void testListWithSelectPropNamesFilterSortAndRowType() {
+        Collection<String> selectPropNames = Arrays.asList("name", "score");
+        Bson filter = new Document("active", true);
+        Bson sort = new Document("score", -1);
+        List<Document> docs = Arrays.asList(new Document("name", "a").append("score", 10), new Document("name", "b").append("score", 5));
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, docs.get(0), docs.get(1));
+
+        Flux<Document> result = executor.list(selectPropNames, filter, sort, Document.class);
+
+        StepVerifier.create(result).expectNext(docs.get(0)).expectNext(docs.get(1)).verifyComplete();
+    }
+
+    // Covers list(Bson projection, Bson filter, Bson sort, int offset, int count, Class) overload.
+    @Test
+    public void testListWithProjectionAndOffsetCount() {
+        Bson projection = Projections.include("name");
+        Bson filter = new Document("active", true);
+        Bson sort = new Document("name", 1);
+        int offset = 5;
+        int count = 10;
+        Document doc = new Document("name", "test");
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(projection)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.skip(offset)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(count)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Flux<Document> result = executor.list(projection, filter, sort, offset, count, Document.class);
+
+        StepVerifier.create(result).expectNext(doc).verifyComplete();
+    }
+
+    // Covers query(Bson filter, int offset, int count, Class) -> Dataset overload.
+    @Test
+    public void testQueryWithFilterOffsetCountForDataset() {
+        Bson filter = new Document("status", "active");
+        int offset = 0;
+        int count = 5;
+        Document doc = new Document("name", "x").append("value", 1);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(count)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Dataset> result = executor.query(filter, offset, count, Document.class);
+
+        StepVerifier.create(result).expectNextMatches(ds -> ds.size() == 1).verifyComplete();
+    }
+
+    // Covers query(Collection, Bson, Class) -> Dataset overload.
+    @Test
+    public void testQueryWithSelectPropNamesAndFilterForDataset() {
+        Collection<String> selectPropNames = Arrays.asList("name", "value");
+        Bson filter = new Document("active", true);
+        Document doc = new Document("name", "x").append("value", 1);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Dataset> result = executor.query(selectPropNames, filter, Document.class);
+
+        StepVerifier.create(result).expectNextMatches(ds -> ds.size() == 1).verifyComplete();
+    }
+
+    // Covers query(Collection, Bson, int, int, Class) -> Dataset overload.
+    @Test
+    public void testQueryWithSelectPropNamesFilterOffsetCountForDataset() {
+        Collection<String> selectPropNames = Arrays.asList("name");
+        Bson filter = new Document("active", true);
+        int offset = 0;
+        int count = 10;
+        Document doc = new Document("name", "x");
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(count)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Dataset> result = executor.query(selectPropNames, filter, offset, count, Document.class);
+
+        StepVerifier.create(result).expectNextMatches(ds -> ds.size() == 1).verifyComplete();
+    }
+
+    // Covers query(Collection, Bson, Bson, Class) -> Dataset overload.
+    @Test
+    public void testQueryWithSelectPropNamesFilterSortForDataset() {
+        Collection<String> selectPropNames = Arrays.asList("name");
+        Bson filter = new Document("active", true);
+        Bson sort = new Document("name", 1);
+        Document doc = new Document("name", "x");
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Dataset> result = executor.query(selectPropNames, filter, sort, Document.class);
+
+        StepVerifier.create(result).expectNextMatches(ds -> ds.size() == 1).verifyComplete();
+    }
+
+    // Covers query(Bson projection, Bson filter, Bson sort, Class) -> Dataset overload.
+    @Test
+    public void testQueryWithProjectionFilterSortForDataset() {
+        Bson projection = Projections.include("name");
+        Bson filter = new Document("active", true);
+        Bson sort = new Document("name", 1);
+        Document doc = new Document("name", "x");
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(projection)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Dataset> result = executor.query(projection, filter, sort, Document.class);
+
+        StepVerifier.create(result).expectNextMatches(ds -> ds.size() == 1).verifyComplete();
+    }
+
+    // Covers query(Bson projection, Bson filter, Bson sort, int offset, int count, Class) -> Dataset overload.
+    @Test
+    public void testQueryWithProjectionAllParametersForDataset() {
+        Bson projection = Projections.include("name", "value");
+        Bson filter = new Document("active", true);
+        Bson sort = new Document("name", 1);
+        int offset = 2;
+        int count = 8;
+        Document doc = new Document("name", "x").append("value", 1);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(projection)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.skip(offset)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(count)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Mono<Dataset> result = executor.query(projection, filter, sort, offset, count, Document.class);
+
+        StepVerifier.create(result).expectNextMatches(ds -> ds.size() == 1).verifyComplete();
+    }
+
+    // Covers the empty-results path: extractData on an empty rowList yields an empty Dataset.
+    @Test
+    public void testQueryWithSelectPropNamesEmptyResults() {
+        Collection<String> selectPropNames = Arrays.asList("name");
+        Bson filter = new Document("active", true);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher);
+
+        Mono<Dataset> result = executor.query(selectPropNames, filter, Document.class);
+
+        StepVerifier.create(result).expectNextMatches(ds -> ds.size() == 0).verifyComplete();
+    }
+
+    // Covers the empty-results path for query(Bson projection, ...) -> Dataset.
+    @Test
+    public void testQueryWithProjectionEmptyResults() {
+        Bson projection = Projections.include("name");
+        Bson filter = new Document("active", true);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(projection)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher);
+
+        Mono<Dataset> result = executor.query(projection, filter, null, Document.class);
+
+        StepVerifier.create(result).expectNextMatches(ds -> ds.size() == 0).verifyComplete();
+    }
+
+    // Covers the private query(Collection,...) -> executeQuery(Projections.include(List)) branch
+    // by passing selectPropNames as a non-List Collection (Set).
+    @Test
+    public void testListWithSelectPropNamesAsNonListCollection() {
+        Collection<String> selectPropNames = new java.util.LinkedHashSet<>(Arrays.asList("name", "value"));
+        Bson filter = new Document("active", true);
+        Document doc = new Document("name", "x").append("value", 1);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        Flux<Document> result = executor.list(selectPropNames, filter, Document.class);
+
+        StepVerifier.create(result).expectNext(doc).verifyComplete();
+    }
+
+    // Covers toBson(Collection) pass-through path: when ALL elements are already Bson
+    // and the collection IS a List, the list is returned as-is (no copy).
+    @Test
+    public void testUpdateOneWithAllBsonListPassthrough() {
+        Bson filter = new Document("name", "test");
+        List<Bson> updates = Arrays.asList(new Document("$set", new Document("a", 1)), new Document("$set", new Document("b", 2)));
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        when(mockCollection.updateOne(eq(filter), eq(updates))).thenReturn(publisher);
+
+        Mono<UpdateResult> result = executor.updateOne(filter, updates);
+
+        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
+        verify(mockCollection).updateOne(eq(filter), eq(updates));
+    }
+
+    // Covers toBson(Collection) all-Bson-but-non-List path: copies into a new ArrayList.
+    @Test
+    public void testUpdateOneWithAllBsonNonListCollection() {
+        Bson filter = new Document("name", "test");
+        Collection<Bson> updates = new java.util.LinkedHashSet<>(
+                Arrays.asList(new Document("$set", new Document("a", 1)), new Document("$set", new Document("b", 2))));
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        when(mockCollection.updateOne(eq(filter), anyList())).thenReturn(publisher);
+
+        Mono<UpdateResult> result = executor.updateOne(filter, updates);
+
+        StepVerifier.create(result).expectNext(updateResult).verifyComplete();
+        verify(mockCollection).updateOne(eq(filter), anyList());
+    }
+
+    // Covers toBson(Collection) empty-collection guard: must throw IllegalArgumentException.
+    @Test
+    public void testUpdateOneWithEmptyCollection_EdgeCase() {
+        Bson filter = new Document("name", "test");
+        assertThrows(IllegalArgumentException.class, () -> {
+            executor.updateOne(filter, Collections.emptyList());
+        });
+    }
+
+    // Covers toDocument(Collection) all-Document path for a non-List collection.
+    @Test
+    public void testInsertManyWithAllDocumentsNonListCollection() {
+        Collection<Document> docs = new java.util.LinkedHashSet<>(Arrays.asList(new Document("name", "a"), new Document("name", "b")));
+        InsertManyResult insertResult = mock(InsertManyResult.class);
+        Publisher<InsertManyResult> publisher = Mono.just(insertResult);
+        when(mockCollection.insertMany(anyList())).thenReturn(publisher);
+
+        Mono<InsertManyResult> result = executor.insertMany(docs);
+
+        StepVerifier.create(result).expectNext(insertResult).verifyComplete();
+    }
+
+    // Sanity: executor.coll() returns the wrapped collection (additional assertion form).
+    @Test
+    public void testCollReturnsWrappedCollection() {
+        assertNotNull(executor.coll());
+        assertEquals(mockCollection, executor.coll());
+    }
+
+    // Confirms executor created via constructor with a non-null collection is usable.
+    @Test
+    public void testConstructorAcceptsCollection() {
+        MongoCollectionExecutor exec = new MongoCollectionExecutor(mockCollection);
+        assertNotNull(exec);
+        assertSame(mockCollection, exec.coll());
+        assertTrue(exec.coll() == mockCollection);
     }
 
     @SuppressWarnings("unchecked")

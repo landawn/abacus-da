@@ -884,8 +884,7 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
     @Test
     public void testBatchGetItemWithRequest() throws ExecutionException, InterruptedException {
         BatchGetItemRequest request = BatchGetItemRequest.builder()
-                .requestItems(Map.of("TestTable",
-                        KeysAndAttributes.builder().keys(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build()))
+                .requestItems(Map.of("TestTable", KeysAndAttributes.builder().keys(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build()))
                 .build();
         BatchGetItemResponse response = BatchGetItemResponse.builder()
                 .responses(Map.of("TestTable", List.of(Map.of("id", AttributeValue.builder().s("1").build()))))
@@ -901,8 +900,7 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
     @Test
     public void testBatchGetItemWithRequestAndTargetClass() throws ExecutionException, InterruptedException {
         BatchGetItemRequest request = BatchGetItemRequest.builder()
-                .requestItems(Map.of("TestTable",
-                        KeysAndAttributes.builder().keys(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build()))
+                .requestItems(Map.of("TestTable", KeysAndAttributes.builder().keys(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build()))
                 .build();
         BatchGetItemResponse response = BatchGetItemResponse.builder()
                 .responses(Map.of("TestTable", List.of(Map.of("id", AttributeValue.builder().s("1").build()))))
@@ -927,8 +925,8 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
     @Test
     public void testBatchWriteItemWithRequest() throws ExecutionException, InterruptedException {
         BatchWriteItemRequest request = BatchWriteItemRequest.builder()
-                .requestItems(Map.of("TestTable",
-                        List.of(WriteRequest.builder().putRequest(PutRequest.builder().item(Map.of("id", AttributeValue.builder().s("1").build())).build()).build())))
+                .requestItems(Map.of("TestTable", List.of(
+                        WriteRequest.builder().putRequest(PutRequest.builder().item(Map.of("id", AttributeValue.builder().s("1").build())).build()).build())))
                 .build();
         when(mockDynamoDbAsyncClient.batchWriteItem(request)).thenReturn(CompletableFuture.completedFuture(BatchWriteItemResponse.builder().build()));
 
@@ -1092,7 +1090,8 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
         TestEntity entity = new TestEntity();
         entity.setId("1");
 
-        when(mockDynamoDbAsyncClient.updateItem(any(UpdateItemRequest.class))).thenReturn(CompletableFuture.completedFuture(UpdateItemResponse.builder().build()));
+        when(mockDynamoDbAsyncClient.updateItem(any(UpdateItemRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(UpdateItemResponse.builder().build()));
 
         CompletableFuture<UpdateItemResponse> future = mapper.updateItem(entity, "ALL_NEW");
         assertNotNull(future.get());
@@ -1104,7 +1103,8 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
         TestEntity entity = new TestEntity();
         entity.setId("1");
 
-        when(mockDynamoDbAsyncClient.deleteItem(any(DeleteItemRequest.class))).thenReturn(CompletableFuture.completedFuture(DeleteItemResponse.builder().build()));
+        when(mockDynamoDbAsyncClient.deleteItem(any(DeleteItemRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(DeleteItemResponse.builder().build()));
 
         CompletableFuture<DeleteItemResponse> future = mapper.deleteItem(entity, "ALL_OLD");
         assertNotNull(future.get());
@@ -1115,7 +1115,8 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
         AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
         Map<String, AttributeValue> key = Map.of("id", AttributeValue.builder().s("1").build());
 
-        when(mockDynamoDbAsyncClient.deleteItem(any(DeleteItemRequest.class))).thenReturn(CompletableFuture.completedFuture(DeleteItemResponse.builder().build()));
+        when(mockDynamoDbAsyncClient.deleteItem(any(DeleteItemRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(DeleteItemResponse.builder().build()));
 
         CompletableFuture<DeleteItemResponse> future = mapper.deleteItem(key);
         assertNotNull(future.get());
@@ -1137,7 +1138,8 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
         AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
         UpdateItemRequest request = UpdateItemRequest.builder().tableName("TestTable").key(Map.of("id", AttributeValue.builder().s("1").build())).build();
 
-        when(mockDynamoDbAsyncClient.updateItem(any(UpdateItemRequest.class))).thenReturn(CompletableFuture.completedFuture(UpdateItemResponse.builder().build()));
+        when(mockDynamoDbAsyncClient.updateItem(any(UpdateItemRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(UpdateItemResponse.builder().build()));
 
         CompletableFuture<UpdateItemResponse> future = mapper.updateItem(request);
         assertNotNull(future.get());
@@ -1148,7 +1150,8 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
         AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
         DeleteItemRequest request = DeleteItemRequest.builder().tableName("TestTable").key(Map.of("id", AttributeValue.builder().s("1").build())).build();
 
-        when(mockDynamoDbAsyncClient.deleteItem(any(DeleteItemRequest.class))).thenReturn(CompletableFuture.completedFuture(DeleteItemResponse.builder().build()));
+        when(mockDynamoDbAsyncClient.deleteItem(any(DeleteItemRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(DeleteItemResponse.builder().build()));
 
         CompletableFuture<DeleteItemResponse> future = mapper.deleteItem(request);
         assertNotNull(future.get());
@@ -1158,8 +1161,7 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
     public void testMapperBatchGetItemWithRequest() throws ExecutionException, InterruptedException {
         AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
         BatchGetItemRequest request = BatchGetItemRequest.builder()
-                .requestItems(Map.of("TestTable",
-                        KeysAndAttributes.builder().keys(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build()))
+                .requestItems(Map.of("TestTable", KeysAndAttributes.builder().keys(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build()))
                 .build();
         BatchGetItemResponse response = BatchGetItemResponse.builder()
                 .responses(Map.of("TestTable", List.of(Map.of("id", AttributeValue.builder().s("1").build()))))
@@ -1176,8 +1178,8 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
     public void testMapperBatchWriteItemWithRequest() throws ExecutionException, InterruptedException {
         AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
         BatchWriteItemRequest request = BatchWriteItemRequest.builder()
-                .requestItems(Map.of("TestTable",
-                        List.of(WriteRequest.builder().putRequest(PutRequest.builder().item(Map.of("id", AttributeValue.builder().s("1").build())).build()).build())))
+                .requestItems(Map.of("TestTable", List.of(
+                        WriteRequest.builder().putRequest(PutRequest.builder().item(Map.of("id", AttributeValue.builder().s("1").build())).build()).build())))
                 .build();
 
         when(mockDynamoDbAsyncClient.batchWriteItem(any(BatchWriteItemRequest.class)))

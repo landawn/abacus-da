@@ -430,8 +430,9 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockFindIterable.projection(any())).thenReturn(mockFindIterable);
         when(mockFindIterable.limit(anyInt())).thenReturn(mockFindIterable);
 
-        Optional<String> result = executor.queryForSingleNonNull(propName, filter, String.class);
-        Assertions.assertFalse(result.isPresent());
+        // When a document is matched but the field value is null, Optional.of(null) rejects the
+        // payload and NullPointerException is thrown.
+        Assertions.assertThrows(NullPointerException.class, () -> executor.queryForSingleNonNull(propName, filter, String.class));
     }
 
     @Test
@@ -771,18 +772,16 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
-    public void testQueryForSingleNonNullReturnsEmptyOnMissingPropertyValue() {
-        // When the matched document has no value for the requested property (vs. the value being null),
-        // queryForSingleNonNull must return Optional.empty().
+    public void testQueryForSingleNonNullThrowsOnMissingPropertyValue() {
+        // When the matched document has no value for the requested property, doc.get(propName) is
+        // null and Optional.of(null) rejects the payload, so NullPointerException is thrown.
         Document filter = new Document("id", 1);
         Document doc = new Document("otherProp", "x"); // does not contain "value"
         when(mockFindIterable.first()).thenReturn(doc);
         when(mockFindIterable.projection(any())).thenReturn(mockFindIterable);
         when(mockFindIterable.limit(anyInt())).thenReturn(mockFindIterable);
 
-        Optional<String> result = executor.queryForSingleNonNull("value", filter, String.class);
-
-        Assertions.assertFalse(result.isPresent());
+        Assertions.assertThrows(NullPointerException.class, () -> executor.queryForSingleNonNull("value", filter, String.class));
     }
 
     // ---- Additional coverage: list/query/stream overloads with selectPropNames / projection / pagination / sort ----

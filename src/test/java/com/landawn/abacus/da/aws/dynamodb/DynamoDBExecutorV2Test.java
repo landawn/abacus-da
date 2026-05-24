@@ -1244,10 +1244,7 @@ public class DynamoDBExecutorV2Test extends TestBase {
     public void testMapperPutItemWithRequest() {
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
-        PutItemRequest request = PutItemRequest.builder()
-                .tableName("TestTable")
-                .item(Map.of("id", AttributeValue.builder().s("123").build()))
-                .build();
+        PutItemRequest request = PutItemRequest.builder().tableName("TestTable").item(Map.of("id", AttributeValue.builder().s("123").build())).build();
 
         when(mockDynamoDbClient.putItem(any(PutItemRequest.class))).thenReturn(PutItemResponse.builder().build());
 
@@ -1272,10 +1269,7 @@ public class DynamoDBExecutorV2Test extends TestBase {
     public void testMapperUpdateItemWithRequest() {
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
-        UpdateItemRequest request = UpdateItemRequest.builder()
-                .tableName("TestTable")
-                .key(Map.of("id", AttributeValue.builder().s("123").build()))
-                .build();
+        UpdateItemRequest request = UpdateItemRequest.builder().tableName("TestTable").key(Map.of("id", AttributeValue.builder().s("123").build())).build();
 
         when(mockDynamoDbClient.updateItem(any(UpdateItemRequest.class))).thenReturn(UpdateItemResponse.builder().build());
 
@@ -1287,10 +1281,7 @@ public class DynamoDBExecutorV2Test extends TestBase {
     public void testMapperDeleteItemWithRequest() {
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
-        DeleteItemRequest request = DeleteItemRequest.builder()
-                .tableName("TestTable")
-                .key(Map.of("id", AttributeValue.builder().s("123").build()))
-                .build();
+        DeleteItemRequest request = DeleteItemRequest.builder().tableName("TestTable").key(Map.of("id", AttributeValue.builder().s("123").build())).build();
 
         when(mockDynamoDbClient.deleteItem(any(DeleteItemRequest.class))).thenReturn(DeleteItemResponse.builder().build());
 
@@ -1303,8 +1294,7 @@ public class DynamoDBExecutorV2Test extends TestBase {
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         BatchGetItemRequest request = BatchGetItemRequest.builder()
-                .requestItems(Map.of("TestTable",
-                        KeysAndAttributes.builder().keys(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build()))
+                .requestItems(Map.of("TestTable", KeysAndAttributes.builder().keys(List.of(Map.of("id", AttributeValue.builder().s("1").build()))).build()))
                 .build();
 
         when(mockDynamoDbClient.batchGetItem(any(BatchGetItemRequest.class))).thenReturn(
@@ -1320,8 +1310,8 @@ public class DynamoDBExecutorV2Test extends TestBase {
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         BatchWriteItemRequest request = BatchWriteItemRequest.builder()
-                .requestItems(Map.of("TestTable",
-                        List.of(WriteRequest.builder().putRequest(PutRequest.builder().item(Map.of("id", AttributeValue.builder().s("1").build())).build()).build())))
+                .requestItems(Map.of("TestTable", List.of(
+                        WriteRequest.builder().putRequest(PutRequest.builder().item(Map.of("id", AttributeValue.builder().s("1").build())).build()).build())))
                 .build();
 
         when(mockDynamoDbClient.batchWriteItem(any(BatchWriteItemRequest.class))).thenReturn(BatchWriteItemResponse.builder().build());
@@ -1335,8 +1325,8 @@ public class DynamoDBExecutorV2Test extends TestBase {
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         BatchWriteItemRequest request = BatchWriteItemRequest.builder()
-                .requestItems(Map.of("WrongTable",
-                        List.of(WriteRequest.builder().putRequest(PutRequest.builder().item(Map.of("id", AttributeValue.builder().s("1").build())).build()).build())))
+                .requestItems(Map.of("WrongTable", List.of(
+                        WriteRequest.builder().putRequest(PutRequest.builder().item(Map.of("id", AttributeValue.builder().s("1").build())).build()).build())))
                 .build();
 
         assertThrows(IllegalArgumentException.class, () -> mapper.batchWriteItem(request));
@@ -1349,8 +1339,7 @@ public class DynamoDBExecutorV2Test extends TestBase {
         TestEntity entity = new TestEntity();
         entity.setId("1");
 
-        when(mockDynamoDbClient.batchGetItem(any(BatchGetItemRequest.class)))
-                .thenReturn(BatchGetItemResponse.builder().responses(new HashMap<>()).build());
+        when(mockDynamoDbClient.batchGetItem(any(BatchGetItemRequest.class))).thenReturn(BatchGetItemResponse.builder().responses(new HashMap<>()).build());
 
         List<TestEntity> result = mapper.batchGetItem(List.of(entity));
         assertNotNull(result);

@@ -383,6 +383,125 @@ public class MongoDBBaseTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> MongoDBBase.objectId2Filter("not-an-objectid"));
     }
 
+    // -- GeneralCodec tests (package-private inner class) --
+
+    @Test
+    public void testGeneralCodecGetEncoderClassForEntity() {
+        MongoDBBase.GeneralCodec<TestEntity> codec = new MongoDBBase.GeneralCodec<>(TestEntity.class);
+        assertEquals(TestEntity.class, codec.getEncoderClass());
+    }
+
+    @Test
+    public void testGeneralCodecGetEncoderClassForNonEntity() {
+        MongoDBBase.GeneralCodec<String> codec = new MongoDBBase.GeneralCodec<>(String.class);
+        assertEquals(String.class, codec.getEncoderClass());
+    }
+
+    @Test
+    public void testGeneralCodecEncodeDecodeEntity() {
+        // Round-trip an entity through the codec via a BSON document
+        MongoDBBase.GeneralCodec<TestEntity> codec = new MongoDBBase.GeneralCodec<>(TestEntity.class);
+
+        TestEntity in = new TestEntity();
+        in.setName("alice");
+
+        // Encode into a BsonDocument
+        org.bson.BsonDocument bsonDoc = new org.bson.BsonDocument();
+        org.bson.BsonDocumentWriter writer = new org.bson.BsonDocumentWriter(bsonDoc);
+        codec.encode(writer, in, org.bson.codecs.EncoderContext.builder().build());
+
+        // Decode back from the BsonDocument
+        org.bson.BsonDocumentReader reader = new org.bson.BsonDocumentReader(bsonDoc);
+        TestEntity out = codec.decode(reader, org.bson.codecs.DecoderContext.builder().build());
+
+        assertNotNull(out);
+        assertEquals("alice", out.getName());
+    }
+
+    @Test
+    public void testGeneralCodecEncodeDecodeNonEntityString() {
+        // Non-bean classes are written/read as plain strings
+        MongoDBBase.GeneralCodec<String> codec = new MongoDBBase.GeneralCodec<>(String.class);
+
+        org.bson.BsonDocument wrap = new org.bson.BsonDocument();
+        org.bson.BsonDocumentWriter writer = new org.bson.BsonDocumentWriter(wrap);
+        writer.writeStartDocument();
+        writer.writeName("v");
+        codec.encode(writer, "hello", org.bson.codecs.EncoderContext.builder().build());
+        writer.writeEndDocument();
+
+        org.bson.BsonDocumentReader reader = new org.bson.BsonDocumentReader(wrap);
+        reader.readStartDocument();
+        reader.readName();
+        String decoded = codec.decode(reader, org.bson.codecs.DecoderContext.builder().build());
+        reader.readEndDocument();
+
+        assertEquals("hello", decoded);
+    }
+
+    @Test
+    public void testGeneralCodecEncodeDecodeNonEntityInteger() {
+        // Integer is encoded as its string form, then valueOf re-parses
+        MongoDBBase.GeneralCodec<Integer> codec = new MongoDBBase.GeneralCodec<>(Integer.class);
+
+        org.bson.BsonDocument wrap = new org.bson.BsonDocument();
+        org.bson.BsonDocumentWriter writer = new org.bson.BsonDocumentWriter(wrap);
+        writer.writeStartDocument();
+        writer.writeName("v");
+        codec.encode(writer, 42, org.bson.codecs.EncoderContext.builder().build());
+        writer.writeEndDocument();
+
+        org.bson.BsonDocumentReader reader = new org.bson.BsonDocumentReader(wrap);
+        reader.readStartDocument();
+        reader.readName();
+        Integer decoded = codec.decode(reader, org.bson.codecs.DecoderContext.builder().build());
+        reader.readEndDocument();
+
+        assertEquals(42, decoded);
+    }
+
+    // -- GeneralCodecRegistry tests (package-private inner class) --
+
+    @Test
+    public void testGeneralCodecRegistryGetReturnsCodec() {
+        MongoDBBase.GeneralCodecRegistry registry = new MongoDBBase.GeneralCodecRegistry();
+        org.bson.codecs.Codec<TestEntity> codec = registry.get(TestEntity.class);
+
+        assertNotNull(codec);
+        assertEquals(TestEntity.class, codec.getEncoderClass());
+    }
+
+    @Test
+    public void testGeneralCodecRegistryGetCachesPerClass() {
+        // Two lookups for the same class should return the same instance (pooled)
+        MongoDBBase.GeneralCodecRegistry registry = new MongoDBBase.GeneralCodecRegistry();
+        org.bson.codecs.Codec<TestEntity> first = registry.get(TestEntity.class);
+        org.bson.codecs.Codec<TestEntity> second = registry.get(TestEntity.class);
+
+        assertNotNull(first);
+        assertNotNull(second);
+        assertTrue(first == second);
+    }
+
+    @Test
+    public void testGeneralCodecRegistryGetWithRegistryDelegates() {
+        // The two-arg get(Class, CodecRegistry) delegates to the one-arg get
+        MongoDBBase.GeneralCodecRegistry registry = new MongoDBBase.GeneralCodecRegistry();
+        org.bson.codecs.Codec<String> codec = registry.get(String.class, registry);
+
+        assertNotNull(codec);
+        assertEquals(String.class, codec.getEncoderClass());
+    }
+
+    @Test
+    public void testGeneralCodecRegistryGetForNonEntityType() {
+        MongoDBBase.GeneralCodecRegistry registry = new MongoDBBase.GeneralCodecRegistry();
+        org.bson.codecs.Codec<Long> codec = registry.get(Long.class);
+
+        assertNotNull(codec);
+        assertEquals(Long.class, codec.getEncoderClass());
+    }
+
     // -- Entities used by tests --
 
     public static class TestEntity {

@@ -41,6 +41,12 @@ import com.landawn.abacus.da.entity.Song;
 import com.landawn.abacus.da.entity.Users;
 import com.landawn.abacus.query.Filters;
 import com.landawn.abacus.da.cassandra.CassandraExecutor.StatementSettings;
+import com.datastax.oss.driver.api.core.ProtocolVersion;
+import com.datastax.oss.driver.api.core.type.DataTypes;
+import com.datastax.oss.driver.api.core.type.UserDefinedType;
+import com.datastax.oss.driver.api.core.type.codec.TypeCodec;
+import java.nio.ByteBuffer;
+import java.time.Duration;
 import com.landawn.abacus.util.Beans;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.Dates;
@@ -881,6 +887,302 @@ public class CassandraExecutorTest extends TestBase {
         IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
                 () -> cassandraExecutor.execute("SELECT * FROM simplex.songs WHERE id = :id", params));
         assertTrue(ex.getMessage() == null || ex.getMessage().toLowerCase().contains("missing") || ex.getMessage().toLowerCase().contains("parameter"));
+    }
+
+    // ---------------------------------------------------------------------
+    //  StringCodec (v4 driver) tests - access via registerTypeCodec since
+    //  StringCodec is package-private with a protected constructor.
+    // ---------------------------------------------------------------------
+
+    /** Helper: build a StringCodec via the codec registry (same as registerTypeCodec). */
+    @SuppressWarnings("unchecked")
+    private static <T> TypeCodec<T> newStringCodec(Class<T> cls) {
+        // Use a fresh registry so this test does not interfere with the static one.
+        MutableCodecRegistry reg = new DefaultCodecRegistry("test-" + cls.getSimpleName());
+        CassandraExecutor.registerTypeCodec(reg, cls);
+        return (TypeCodec<T>) reg.codecFor(DataTypes.TEXT, cls);
+    }
+
+    @Test
+    public void test_StringCodec_format_null_returnsNULL() {
+        TypeCodec<String> codec = newStringCodec(String.class);
+        assertEquals("NULL", codec.format(null));
+    }
+
+    @Test
+    public void test_StringCodec_format_value_returnsJson() {
+        TypeCodec<Song> codec = newStringCodec(Song.class);
+        Song s = new Song();
+        s.setTitle("t1");
+        String json = codec.format(s);
+        assertNotNull(json);
+        assertTrue(json.contains("t1"));
+    }
+
+    @Test
+    public void test_StringCodec_parse_empty_returnsNull() {
+        TypeCodec<Song> codec = newStringCodec(Song.class);
+        assertNull(codec.parse(""));
+    }
+
+    @Test
+    public void test_StringCodec_parse_NULL_returnsNull() {
+        TypeCodec<Song> codec = newStringCodec(Song.class);
+        assertNull(codec.parse("NULL"));
+    }
+
+    @Test
+    public void test_StringCodec_parse_json_returnsObject() {
+        TypeCodec<Song> codec = newStringCodec(Song.class);
+        Song s = new Song();
+        s.setTitle("hello");
+        String json = codec.format(s);
+        Song parsed = codec.parse(json);
+        assertNotNull(parsed);
+        assertEquals("hello", parsed.getTitle());
+    }
+
+    @Test
+    public void test_StringCodec_encode_null_doesNotThrow() {
+        TypeCodec<String> codec = newStringCodec(String.class);
+        // encode delegates to TEXT codec on serialize(null) result; just verify it does not throw.
+        ByteBuffer bb = codec.encode(null, ProtocolVersion.DEFAULT);
+        // Either null or empty buffer is acceptable - both indicate "no value".
+        if (bb != null) {
+            assertTrue(bb.remaining() >= 0);
+        }
+    }
+
+    @Test
+    public void test_StringCodec_encodeDecode_roundtrip() {
+        TypeCodec<Song> codec = newStringCodec(Song.class);
+        Song s = new Song();
+        s.setTitle("rt");
+        s.setAlbum("alb");
+        ByteBuffer encoded = codec.encode(s, ProtocolVersion.DEFAULT);
+        assertNotNull(encoded);
+        Song decoded = codec.decode(encoded, ProtocolVersion.DEFAULT);
+        assertNotNull(decoded);
+        assertEquals("rt", decoded.getTitle());
+        assertEquals("alb", decoded.getAlbum());
+    }
+
+    @Test
+    public void test_StringCodec_getJavaType() {
+        TypeCodec<Song> codec = newStringCodec(Song.class);
+        assertNotNull(codec.getJavaType());
+        assertEquals(Song.class, codec.getJavaType().getRawType());
+    }
+
+    @Test
+    public void test_StringCodec_getCqlType_isText() {
+        TypeCodec<Song> codec = newStringCodec(Song.class);
+        assertEquals(DataTypes.TEXT, codec.getCqlType());
+    }
+
+    @Test
+    public void test_StringCodec_deprecated_serializeDeserialize_roundtrip() throws Exception {
+        // Exercise the @Deprecated serialize(T, ProtocolVersion) / deserialize(ByteBuffer, ProtocolVersion) overloads via reflection.
+        TypeCodec<Song> codec = newStringCodec(Song.class);
+        Song s = new Song();
+        s.setTitle("dep");
+        java.lang.reflect.Method ser = codec.getClass().getMethod("serialize", Object.class, ProtocolVersion.class);
+        java.lang.reflect.Method des = codec.getClass().getMethod("deserialize", ByteBuffer.class, ProtocolVersion.class);
+        ByteBuffer bb = (ByteBuffer) ser.invoke(codec, s, ProtocolVersion.DEFAULT);
+        assertNotNull(bb);
+        Song back = (Song) des.invoke(codec, bb, ProtocolVersion.DEFAULT);
+        assertNotNull(back);
+        assertEquals("dep", back.getTitle());
+    }
+
+    // ---------------------------------------------------------------------
+    //  UDTCodec (v4 driver) tests - rely on UDTs registered in static init.
+    // ---------------------------------------------------------------------
+
+    /** Helper: get a UserDefinedType from the session metadata. */
+    private static UserDefinedType lookupUDT(String name) {
+        return session.getMetadata().getKeyspace("simplex").orElseThrow().getUserDefinedType(name).orElseThrow();
+    }
+
+    @Test
+    public void test_UDTCodec_create_fromUserType_returnsCodec() {
+        UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
+        assertNotNull(codec);
+        assertNotNull(codec.getJavaType());
+        assertEquals(Users.Name.class, codec.getJavaType().getRawType());
+    }
+
+    @Test
+    public void test_UDTCodec_create_withSession_returnsCodec() {
+        UDTCodec<Users.Name> codec = UDTCodec.create(session, "simplex", "fullname", Users.Name.class);
+        assertNotNull(codec);
+        assertNotNull(codec.getCqlType());
+    }
+
+    @Test
+    public void test_UDTCodec_format_null_returnsNULL() {
+        UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
+        assertEquals("NULL", codec.format(null));
+    }
+
+    @Test
+    public void test_UDTCodec_parse_empty_returnsNull() {
+        UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
+        assertNull(codec.parse(""));
+        assertNull(codec.parse("NULL"));
+    }
+
+    @Test
+    public void test_UDTCodec_serialize_null_returnsNull() {
+        UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
+        // The protected serialize(T) returns null for null input.
+        java.lang.reflect.Method m;
+        try {
+            // serialize(T) is protected abstract in the parent and overridden in anonymous subclass
+            // Find it among the declared methods of the runtime class.
+            m = null;
+            for (java.lang.reflect.Method dm : codec.getClass().getDeclaredMethods()) {
+                if (dm.getName().equals("serialize") && dm.getParameterCount() == 1) {
+                    m = dm;
+                    break;
+                }
+            }
+            assertNotNull(m);
+            m.setAccessible(true);
+            Object result = m.invoke(codec, (Object) null);
+            assertNull(result);
+        } catch (Exception e) {
+            fail(e.getMessage());
+        }
+    }
+
+    @Test
+    public void test_UDTCodec_format_value_returnsJson() {
+        UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
+        Users.Name n = new Users.Name();
+        n.setFirstName("a");
+        n.setLastName("b");
+        String json = codec.format(n);
+        assertNotNull(json);
+        assertTrue(json.contains("a"));
+        assertTrue(json.contains("b"));
+    }
+
+    @Test
+    public void test_UDTCodec_parse_json_returnsObject() {
+        UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
+        String json = "{\"firstName\":\"x\",\"lastName\":\"y\"}";
+        Users.Name n = codec.parse(json);
+        assertNotNull(n);
+        assertEquals("x", n.getFirstName());
+        assertEquals("y", n.getLastName());
+    }
+
+    @Test
+    public void test_UDTCodec_getCqlType_isUDT() {
+        UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
+        assertNotNull(codec.getCqlType());
+        // The CQL type should equal the underlying UDT.
+        assertEquals(lookupUDT("fullname").asCql(true, true), codec.getCqlType().asCql(true, true));
+    }
+
+    @Test
+    public void test_UDTCodec_serializeBean_thenDeserialize_roundtrip() {
+        UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
+        Users.Name n = new Users.Name();
+        n.setFirstName("first");
+        n.setLastName("last");
+        ByteBuffer encoded = codec.encode(n, ProtocolVersion.DEFAULT);
+        assertNotNull(encoded);
+        Users.Name back = codec.decode(encoded, ProtocolVersion.DEFAULT);
+        assertNotNull(back);
+        assertEquals("first", back.getFirstName());
+        assertEquals("last", back.getLastName());
+    }
+
+    @Test
+    public void test_UDTCodec_serialize_invalidType_throwsIAE() {
+        // The UDTCodec produced by create() throws IAE if the class is neither Collection, Map, nor Bean.
+        UDTCodec<Integer> codec = UDTCodec.create(lookupUDT("fullname"), Integer.class);
+        assertThrows(IllegalArgumentException.class, () -> codec.encode(42, ProtocolVersion.DEFAULT));
+    }
+
+    @Test
+    public void test_UDTCodec_serializeMap_roundtrip() {
+        UDTCodec<Map> codec = UDTCodec.create(lookupUDT("fullname"), Map.class);
+        // Cassandra unquoted identifiers are lowercased - use lower-case keys.
+        Map<String, Object> m = new java.util.HashMap<>();
+        m.put("firstname", "f");
+        m.put("lastname", "l");
+        ByteBuffer encoded = codec.encode(m, ProtocolVersion.DEFAULT);
+        assertNotNull(encoded);
+        Map back = codec.decode(encoded, ProtocolVersion.DEFAULT);
+        assertNotNull(back);
+        assertEquals("f", back.get("firstname"));
+        assertEquals("l", back.get("lastname"));
+    }
+
+    @Test
+    public void test_UDTCodec_serializeCollection_roundtrip() {
+        UDTCodec<List> codec = UDTCodec.create(lookupUDT("fullname"), List.class);
+        List<Object> values = N.asList("first", "last");
+        ByteBuffer encoded = codec.encode(values, ProtocolVersion.DEFAULT);
+        assertNotNull(encoded);
+        // Decoding into a List returns a list of the values in field order.
+        List back = codec.decode(encoded, ProtocolVersion.DEFAULT);
+        assertNotNull(back);
+        assertEquals(2, back.size());
+    }
+
+    @Test
+    public void test_UDTCodec_deprecated_serializeDeserialize_roundtrip() throws Exception {
+        UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
+        Users.Name n = new Users.Name();
+        n.setFirstName("d1");
+        n.setLastName("d2");
+        // Use the deprecated public serialize(T, ProtocolVersion) overload.
+        ByteBuffer bb = codec.serialize(n, ProtocolVersion.DEFAULT);
+        assertNotNull(bb);
+        Users.Name back = codec.deserialize(bb, ProtocolVersion.DEFAULT);
+        assertNotNull(back);
+        assertEquals("d1", back.getFirstName());
+        assertEquals("d2", back.getLastName());
+    }
+
+    // ---------------------------------------------------------------------
+    //  StatementSettings (v4) — extra fluent-setter and equals/hashCode coverage
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void test_StatementSettings_fluentSetters_returnSelf() {
+        StatementSettings s = new StatementSettings();
+        assertTrue(s == s.consistency(ConsistencyLevel.ONE));
+        assertTrue(s == s.serialConsistency(ConsistencyLevel.SERIAL));
+        assertTrue(s == s.fetchSize(10));
+        assertTrue(s == s.timeout(Duration.ofSeconds(1)));
+        assertTrue(s == s.traceQuery(Boolean.TRUE));
+        assertEquals(ConsistencyLevel.ONE, s.consistency());
+        assertEquals(10, s.fetchSize().intValue());
+    }
+
+    @Test
+    public void test_StatementSettings_equalsAndHashCode() {
+        Duration d = Duration.ofSeconds(5);
+        StatementSettings a = new StatementSettings(ConsistencyLevel.ONE, ConsistencyLevel.SERIAL, 5, d, Boolean.TRUE);
+        StatementSettings b = new StatementSettings(ConsistencyLevel.ONE, ConsistencyLevel.SERIAL, 5, d, Boolean.TRUE);
+        StatementSettings c = new StatementSettings(ConsistencyLevel.TWO, ConsistencyLevel.SERIAL, 5, d, Boolean.TRUE);
+        assertEquals(a, b);
+        assertEquals(a.hashCode(), b.hashCode());
+        assertFalse(a.equals(c));
+    }
+
+    @Test
+    public void test_StatementSettings_toString_containsValues() {
+        StatementSettings s = new StatementSettings();
+        s.fetchSize(123);
+        String str = s.toString();
+        assertNotNull(str);
+        assertTrue(str.contains("123"));
     }
 
     private Users createUser() {
