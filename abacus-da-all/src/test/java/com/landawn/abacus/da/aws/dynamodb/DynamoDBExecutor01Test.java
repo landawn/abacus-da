@@ -1968,8 +1968,7 @@ public class DynamoDBExecutor01Test extends TestBase {
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
         BatchGetItemRequest req = new BatchGetItemRequest()
                 .withRequestItems(Map.of("TestTable", new KeysAndAttributes().withKeys(List.of(Map.of("id", new AttributeValue().withS("b1"))))));
-        BatchGetItemResult res = new BatchGetItemResult()
-                .withResponses(Map.of("TestTable", List.of(Map.of("id", new AttributeValue().withS("b1")))));
+        BatchGetItemResult res = new BatchGetItemResult().withResponses(Map.of("TestTable", List.of(Map.of("id", new AttributeValue().withS("b1")))));
         when(mockDynamoDBClient.batchGetItem(req)).thenReturn(res);
 
         List<TestEntity> result = mapper.batchGetItem(req);
@@ -1996,8 +1995,7 @@ public class DynamoDBExecutor01Test extends TestBase {
         TestEntity e1 = new TestEntity();
         e1.setId("1");
 
-        BatchGetItemResult res = new BatchGetItemResult()
-                .withResponses(Map.of("TestTable", List.of(Map.of("id", new AttributeValue().withS("1")))));
+        BatchGetItemResult res = new BatchGetItemResult().withResponses(Map.of("TestTable", List.of(Map.of("id", new AttributeValue().withS("1")))));
         when(mockDynamoDBClient.batchGetItem(any(Map.class), eq("TOTAL"))).thenReturn(res);
 
         List<TestEntity> result = mapper.batchGetItem(List.of(e1), "TOTAL");
@@ -2009,8 +2007,8 @@ public class DynamoDBExecutor01Test extends TestBase {
     @Test
     public void testMapperBatchWriteItemRequest_NoTableNameSet() {
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
-        BatchWriteItemRequest req = new BatchWriteItemRequest()
-                .withRequestItems(Map.of("TestTable", List.of(new WriteRequest().withPutRequest(new PutRequest().withItem(Map.of("id", new AttributeValue().withS("b1")))))));
+        BatchWriteItemRequest req = new BatchWriteItemRequest().withRequestItems(
+                Map.of("TestTable", List.of(new WriteRequest().withPutRequest(new PutRequest().withItem(Map.of("id", new AttributeValue().withS("b1")))))));
         when(mockDynamoDBClient.batchWriteItem(req)).thenReturn(new BatchWriteItemResult());
 
         BatchWriteItemResult result = mapper.batchWriteItem(req);
@@ -2077,8 +2075,7 @@ public class DynamoDBExecutor01Test extends TestBase {
     // ===== toEntities (package-private) - reached via batchGetItem with Class =====
     @Test
     public void testBatchGetItem_WithClassDoesNotThrowOnEmpty() {
-        Map<String, KeysAndAttributes> req = Map.of("TestTable",
-                new KeysAndAttributes().withKeys(List.of(Map.of("id", new AttributeValue().withS("1")))));
+        Map<String, KeysAndAttributes> req = Map.of("TestTable", new KeysAndAttributes().withKeys(List.of(Map.of("id", new AttributeValue().withS("1")))));
         when(mockDynamoDBClient.batchGetItem(req)).thenReturn(new BatchGetItemResult());
 
         Map<String, List<TestEntity>> result = executor.batchGetItem(req, TestEntity.class);

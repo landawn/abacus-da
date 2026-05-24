@@ -1508,7 +1508,8 @@ public class BigQueryExecutorTest extends TestBase {
         Schema schema = Schema.of(fields);
 
         List<FieldValueList> rows = new ArrayList<>();
-        rows.add(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "n")), fields));
+        rows.add(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "n")),
+                fields));
 
         when(mockTableResult.getTotalRows()).thenReturn(1L);
         when(mockTableResult.getSchema()).thenReturn(schema);
@@ -1592,7 +1593,8 @@ public class BigQueryExecutorTest extends TestBase {
         Schema schema = Schema.of(fields);
 
         List<FieldValueList> rows = new ArrayList<>();
-        rows.add(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "x")), fields));
+        rows.add(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "x")),
+                fields));
 
         when(mockTableResult.getTotalRows()).thenReturn(1L);
         when(mockTableResult.getSchema()).thenReturn(schema);
@@ -1658,7 +1660,8 @@ public class BigQueryExecutorTest extends TestBase {
         FieldList fields = FieldList.of(f1, f2);
 
         List<FieldValueList> rows = new ArrayList<>();
-        rows.add(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "9"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "John")), fields));
+        rows.add(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "9"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "John")),
+                fields));
 
         when(mockTableResult.iterateAll()).thenReturn(rows);
         when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
@@ -1703,9 +1706,8 @@ public class BigQueryExecutorTest extends TestBase {
         Field f1 = Field.of("id", StandardSQLTypeName.INT64);
         Field f2 = Field.of("name", StandardSQLTypeName.STRING);
         FieldList fields = FieldList.of(f1, f2);
-        FieldValueList row = FieldValueList.of(
-                Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, String.valueOf(v1)), FieldValue.of(FieldValue.Attribute.PRIMITIVE, String.valueOf(v2))),
-                fields);
+        FieldValueList row = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, String.valueOf(v1)),
+                FieldValue.of(FieldValue.Attribute.PRIMITIVE, String.valueOf(v2))), fields);
         return Arrays.asList(row);
     }
 

@@ -51,7 +51,6 @@ import com.mongodb.client.MongoDatabase;
  * @see <a href="https://www.mongodb.com/docs/drivers/java/sync/current/fundamentals/builders/">Simplify your Code with Builders</a>
  * @see <a href="https://www.mongodb.com/docs/drivers/java/sync/current/">MongoDB Java Driver</a>
  */
-@SuppressWarnings("java:S1192")
 public final class MongoDB extends MongoDBBase {
 
     //    private final Map<String, MongoCollectionExecutor> collectionExecutorPool = new ConcurrentHashMap<>();

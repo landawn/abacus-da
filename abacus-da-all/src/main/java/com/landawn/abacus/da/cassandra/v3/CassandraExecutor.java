@@ -233,7 +233,6 @@ import lombok.experimental.Accessors;
  * @see com.datastax.driver.core.Session
  * @see com.landawn.abacus.query.Filters
  */
-@SuppressWarnings("java:S1192")
 public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSet, Statement, PreparedStatement, BatchStatement.Type> {
 
     static {
@@ -929,7 +928,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @throws IllegalArgumentException if {@code rowClass} is a single-value type but the row has
      *         more than one column
      */
-    @SuppressWarnings("rawtypes")
+    @SuppressWarnings({ "rawtypes", "null" })
     private static <T> T readRow(final Row row, final Class<T> rowClass) {
         if (row == null) {
             return rowClass == null ? null : N.defaultValueOf(rowClass);
@@ -1056,6 +1055,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 private boolean isAssignable = false;
                 private Class<?> valueClass = null;
 
+                @SuppressWarnings("null")
                 @Override
                 public T apply(final Row row) {
                     if (isAssignable) {

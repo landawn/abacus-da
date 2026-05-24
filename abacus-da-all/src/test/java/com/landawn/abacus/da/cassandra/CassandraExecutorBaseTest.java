@@ -868,8 +868,7 @@ public class CassandraExecutorBaseTest extends TestBase {
 
     @Test
     public void testEntityToCondition_collection_emptyCollection_throwsIAE() {
-        assertThrows(IllegalArgumentException.class,
-                () -> TestCassandraExecutor.exposedEntityToConditionCollection(TestEntity.class, new ArrayList<>()));
+        assertThrows(IllegalArgumentException.class, () -> TestCassandraExecutor.exposedEntityToConditionCollection(TestEntity.class, new ArrayList<>()));
     }
 
     @Test
@@ -1169,8 +1168,7 @@ public class CassandraExecutorBaseTest extends TestBase {
 
     @Test
     public void testIdsToCondition_compositeKey_mismatch_throwsIAE() {
-        assertThrows(IllegalArgumentException.class,
-                () -> TestCassandraExecutor.exposedIdsToCondition(CompositeKeyEntity.class, "onlyOne"));
+        assertThrows(IllegalArgumentException.class, () -> TestCassandraExecutor.exposedIdsToCondition(CompositeKeyEntity.class, "onlyOne"));
     }
 
     @Test

@@ -155,7 +155,6 @@ import com.landawn.abacus.util.stream.Stream;
  * @see AsyncDynamoDBExecutor
  * @see <a href="https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/">DynamoDB Developer Guide</a>
  */
-@SuppressWarnings("java:S1192")
 public final class DynamoDBExecutor implements AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(DynamoDBExecutor.class);
@@ -1380,7 +1379,6 @@ public final class DynamoDBExecutor implements AutoCloseable {
         if (rowType.isObjectArray()) {
             return row -> {
                 final int columnCount = row.size();
-                @SuppressWarnings("ConstantValue")
                 final Object[] a = rowClass == null ? new Object[columnCount] : N.newArray(rowClass.getComponentType(), columnCount);
                 final Class<?> componentType = a.getClass().getComponentType();
                 int idx = 0;

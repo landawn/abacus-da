@@ -1952,9 +1952,7 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testToValue_ListViaToMap() {
-        AttributeValue listAttr = AttributeValue.builder()
-                .l(AttributeValue.builder().s("x").build(), AttributeValue.builder().n("5").build())
-                .build();
+        AttributeValue listAttr = AttributeValue.builder().l(AttributeValue.builder().s("x").build(), AttributeValue.builder().n("5").build()).build();
         Map<String, AttributeValue> item = new HashMap<>();
         item.put("l", listAttr);
         Map<String, Object> result = DynamoDBExecutor.toMap(item);

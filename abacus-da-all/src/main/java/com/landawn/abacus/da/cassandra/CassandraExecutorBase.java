@@ -173,7 +173,6 @@ import com.landawn.abacus.util.stream.Stream;
  * @see ParsedCql
  * @see com.landawn.abacus.query.Filters
  */
-@SuppressWarnings("java:S1192")
 public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS, BT> implements AutoCloseable {
 
     protected static final String NULL_STR = "NULL";

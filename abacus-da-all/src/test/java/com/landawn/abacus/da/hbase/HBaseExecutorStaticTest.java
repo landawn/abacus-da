@@ -545,8 +545,7 @@ public class HBaseExecutorStaticTest extends TestBase {
         org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
         when(conn.getAdmin()).thenReturn(admin);
         when(conn.getTable(any(TableName.class))).thenReturn(table);
-        when(table.exists(org.mockito.ArgumentMatchers.<List<org.apache.hadoop.hbase.client.Get>> any()))
-                .thenReturn(new boolean[] { true, false });
+        when(table.exists(org.mockito.ArgumentMatchers.<List<org.apache.hadoop.hbase.client.Get>> any())).thenReturn(new boolean[] { true, false });
 
         try (HBaseExecutor executor = new HBaseExecutor(conn)) {
             org.apache.hadoop.hbase.client.Get g1 = new org.apache.hadoop.hbase.client.Get(Bytes.toBytes("k1"));
@@ -946,8 +945,8 @@ public class HBaseExecutorStaticTest extends TestBase {
                 any(org.apache.hadoop.hbase.client.Durability.class))).thenReturn(10L);
 
         try (HBaseExecutor executor = new HBaseExecutor(conn)) {
-            assertEquals(10L,
-                    executor.incrementColumnValue("tbl", "rk", Bytes.toBytes("cf"), Bytes.toBytes("q"), 1L, org.apache.hadoop.hbase.client.Durability.SKIP_WAL));
+            assertEquals(10L, executor.incrementColumnValue("tbl", "rk", Bytes.toBytes("cf"), Bytes.toBytes("q"), 1L,
+                    org.apache.hadoop.hbase.client.Durability.SKIP_WAL));
         }
     }
 

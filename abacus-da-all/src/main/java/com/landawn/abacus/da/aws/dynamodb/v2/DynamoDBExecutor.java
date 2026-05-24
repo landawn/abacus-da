@@ -172,7 +172,6 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
  * @see <a href="https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/">DynamoDB Developer Guide</a>
  * @see <a href="https://aws.amazon.com/blogs/developer/aws-sdk-for-java-2-x-released/">AWS SDK v2 Release Notes</a>
  */
-@SuppressWarnings("java:S1192")
 public final class DynamoDBExecutor implements AutoCloseable {
 
     private static final Logger logger = LoggerFactory.getLogger(DynamoDBExecutor.class);
@@ -1351,7 +1350,6 @@ public final class DynamoDBExecutor implements AutoCloseable {
         if (rowType.isObjectArray()) {
             return row -> {
                 final int columnCount = row.size();
-                @SuppressWarnings("ConstantValue")
                 final Object[] a = rowClass == null ? new Object[columnCount] : N.newArray(rowClass.getComponentType(), columnCount);
                 final Class<?> componentType = a.getClass().getComponentType();
                 int idx = 0;

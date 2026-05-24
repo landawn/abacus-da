@@ -165,7 +165,6 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
  * @see <a href="https://sdk.amazonaws.com/java/api/latest/software/amazon/awssdk/services/dynamodb/DynamoDbAsyncClient.html">DynamoDbAsyncClient JavaDoc</a>
  * @see <a href="https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/">DynamoDB Developer Guide</a>
  */
-@SuppressWarnings("java:S1192")
 public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     private final DynamoDbAsyncClient dynamoDBClient;

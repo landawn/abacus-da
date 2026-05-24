@@ -1361,8 +1361,7 @@ public class CassandraExecutorTest extends TestBase {
         // Users has @Table("simplex.users") so the keyspace is resolved.
         UUID id1 = UUID.randomUUID();
         UUID id2 = UUID.randomUUID();
-        List<Map<String, Object>> propsList = N.asList(N.asMap("id", (Object) id1),
-                N.asMap("id", (Object) id2));
+        List<Map<String, Object>> propsList = N.asList(N.asMap("id", (Object) id1), N.asMap("id", (Object) id2));
         try {
             ResultSet rs = cassandraExecutor.batchInsert(Users.class, propsList, BatchStatement.Type.LOGGED);
             assertNotNull(rs);
@@ -1386,10 +1385,8 @@ public class CassandraExecutorTest extends TestBase {
                     N.asMap("id", (Object) id2, "someDate", (Object) "d-after2"));
             ResultSet rs = cassandraExecutor.batchUpdate(Users.class, propsList, BatchStatement.Type.LOGGED);
             assertNotNull(rs);
-            assertEquals("d-after1",
-                    cassandraExecutor.queryForSingleValue(String.class, "SELECT someDate FROM simplex.users WHERE id = ?", id1).orElse(null));
-            assertEquals("d-after2",
-                    cassandraExecutor.queryForSingleValue(String.class, "SELECT someDate FROM simplex.users WHERE id = ?", id2).orElse(null));
+            assertEquals("d-after1", cassandraExecutor.queryForSingleValue(String.class, "SELECT someDate FROM simplex.users WHERE id = ?", id1).orElse(null));
+            assertEquals("d-after2", cassandraExecutor.queryForSingleValue(String.class, "SELECT someDate FROM simplex.users WHERE id = ?", id2).orElse(null));
         } finally {
             cassandraExecutor.execute("DELETE FROM simplex.users WHERE id = ?", id1);
             cassandraExecutor.execute("DELETE FROM simplex.users WHERE id = ?", id2);
@@ -1434,8 +1431,8 @@ public class CassandraExecutorTest extends TestBase {
 
     @Test
     public void test_v3_batchUpdate_emptyQueryParams_throwsIAE() {
-        assertThrows(IllegalArgumentException.class, () -> cassandraExecutor.batchUpdate("UPDATE simplex.songs SET title = ? WHERE id = ?",
-                N.emptyList(), BatchStatement.Type.LOGGED));
+        assertThrows(IllegalArgumentException.class,
+                () -> cassandraExecutor.batchUpdate("UPDATE simplex.songs SET title = ? WHERE id = ?", N.emptyList(), BatchStatement.Type.LOGGED));
     }
 
     // ---------------------------------------------------------------------
@@ -1585,8 +1582,7 @@ public class CassandraExecutorTest extends TestBase {
         Song s = new Song();
         s.setId(UUID.randomUUID());
         s.setTitle("t");
-        assertThrows(IllegalArgumentException.class,
-                () -> cassandraExecutor.execute("SELECT * FROM simplex.songs WHERE id = :nonExistentBeanProp", s));
+        assertThrows(IllegalArgumentException.class, () -> cassandraExecutor.execute("SELECT * FROM simplex.songs WHERE id = :nonExistentBeanProp", s));
     }
 
     @Test

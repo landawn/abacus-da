@@ -113,7 +113,6 @@ import com.mongodb.reactivestreams.client.MongoDatabase;
  * @see <a href="https://www.mongodb.com/docs/drivers/java/reactive-streams/">MongoDB Reactive Streams Driver</a>
  * @see <a href="https://www.reactive-streams.org/">Reactive Streams Specification</a>
  */
-@SuppressWarnings("java:S1192")
 public final class MongoDB extends MongoDBBase {
 
     //    private final Map<String, MongoCollectionExecutor> collectionExecutorPool = new ConcurrentHashMap<>();

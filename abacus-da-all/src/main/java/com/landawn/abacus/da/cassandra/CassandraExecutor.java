@@ -246,7 +246,6 @@ import lombok.experimental.Accessors;
  * @see com.datastax.oss.driver.api.core.CqlSession
  * @see com.landawn.abacus.query.Filters
  */
-@SuppressWarnings("java:S1192")
 public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSet, Statement<?>, PreparedStatement, BatchType> {
 
     static {
@@ -803,7 +802,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         return map;
     }
 
-    @SuppressWarnings("rawtypes")
+    @SuppressWarnings({ "rawtypes", "null" })
     private static <T> T readRow(final Class<T> rowClass, final Row row) {
         if (row == null) {
             return rowClass == null ? null : N.defaultValueOf(rowClass);
@@ -915,6 +914,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 private boolean isAssignable = false;
                 private Class<?> valueClass = null;
 
+                @SuppressWarnings("null")
                 @Override
                 public T apply(final Row row) {
                     if (isAssignable) {

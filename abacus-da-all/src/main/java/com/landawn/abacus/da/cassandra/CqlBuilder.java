@@ -147,7 +147,6 @@ import com.landawn.abacus.util.u.Optional;
  * @see CassandraExecutor
  * @see ParsedCql
  */
-@SuppressWarnings("java:S1192")
 public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
     // TODO performance goal: 80% cases (or maybe CQL.length < 1024?) can be composed in 0.1 millisecond. 0.01 millisecond will be fantastic if possible.

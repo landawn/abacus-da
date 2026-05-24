@@ -42,7 +42,6 @@ import com.landawn.abacus.parser.ParserUtil.PropInfo;
 import com.landawn.abacus.query.AbstractQueryBuilder.SP;
 import com.landawn.abacus.query.Filters;
 import com.landawn.abacus.query.QueryUtil;
-import com.landawn.abacus.util.SK;
 import com.landawn.abacus.query.SqlBuilder;
 import com.landawn.abacus.query.SqlBuilder.NAC;
 import com.landawn.abacus.query.SqlBuilder.NLC;
@@ -63,6 +62,7 @@ import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.NamingPolicy;
 import com.landawn.abacus.util.Numbers;
 import com.landawn.abacus.util.RowDataset;
+import com.landawn.abacus.util.SK;
 import com.landawn.abacus.util.Strings;
 import com.landawn.abacus.util.Tuple;
 import com.landawn.abacus.util.Tuple.Tuple2;
@@ -162,7 +162,6 @@ import com.landawn.abacus.util.stream.Stream;
  * @see com.google.cloud.bigquery.QueryJobConfiguration
  * @see com.google.cloud.bigquery.TableResult
  */
-@SuppressWarnings("java:S1192")
 public class BigQueryExecutor {
 
     private static final Logger logger = LoggerFactory.getLogger(BigQueryExecutor.class);
@@ -479,7 +478,7 @@ public class BigQueryExecutor {
         return toMap(getSchema(fieldValueList), fieldValueList, supplier);
     }
 
-    @SuppressWarnings("rawtypes")
+    @SuppressWarnings({ "rawtypes", "null" })
     private static <T> T readRow(final FieldValueList row, final Class<T> rowClass) {
         if (row == null) {
             return rowClass == null ? null : N.defaultValueOf(rowClass);
@@ -634,6 +633,7 @@ public class BigQueryExecutor {
                 private Class<?> valueClass = null;
                 int fieldCount = -1;
 
+                @SuppressWarnings("null")
                 @Override
                 public T apply(final FieldValueList row) throws RuntimeException {
                     if (fieldCount < 0) {
@@ -749,6 +749,7 @@ public class BigQueryExecutor {
      * @see RowDataset
      * @see #query(Class, String, Object...)
      */
+    @SuppressWarnings("null")
     public static Dataset extractData(final TableResult tableResult, final Class<?> targetClass) {
         final int rowCount = Numbers.toIntExact(tableResult.getTotalRows());
         final Schema schema = tableResult.getSchema();

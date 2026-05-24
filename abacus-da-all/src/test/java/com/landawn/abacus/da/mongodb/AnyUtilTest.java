@@ -15,7 +15,6 @@ import org.junit.jupiter.api.Test;
 
 import com.landawn.abacus.da.TestBase;
 
-
 /**
  * Tests for the AnyUtil utility class.
  *
