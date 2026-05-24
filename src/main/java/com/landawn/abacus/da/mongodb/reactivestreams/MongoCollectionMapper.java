@@ -769,22 +769,34 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Queries for a single boolean value from a document property.
+     * Returns a {@code Mono} that, on subscription, queries for the given property of the first
+     * matching document in this mapper's collection as a {@code Boolean} value.
      *
-     * <p>Retrieves the boolean value of a specific property from the first document matching
-     * the filter. This is useful for checking flags or boolean states in documents.</p>
-     * 
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored. Delegates to the underlying
+     * {@link MongoCollectionExecutor#queryForBoolean(String, Bson)}.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the returned {@code Mono} completes <i>empty</i> when no
+     * document matches the filter, or when a matching document's named field is absent or BSON null.
+     * Otherwise it emits the converted {@code Boolean} value and then completes. Because this
+     * overload is driven by the wrapper type {@code Boolean.class}, missing/null fields surface as
+     * Mono completion (not as the primitive default {@code false}).</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Bson filter = Filters.eq("username", "admin");
-     * Mono<Boolean> isActive = userMapper.queryForBoolean("isActive", filter);
-     * isActive.subscribe(active -> System.out.println("Admin active: " + active));
+     * Mono<Boolean> isActive = userMapper.queryForBoolean(
+     *     "isActive", Filters.eq("username", "admin"));
+     * isActive.subscribe(a -> System.out.println("Admin active: " + a));
      * }</pre>
      *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against
-     * @return a Mono that emits the boolean value, or empty if not found
-     * @throws IllegalArgumentException if propName or filter is null
+     * @return a {@code Mono} that emits the {@code Boolean} field value on subscription, or completes
+     *         empty when no document matches or the field is missing/null
+     * @throws IllegalArgumentException if {@code propName} is null or empty (signalled via {@code Mono})
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @see #queryForSingleValue(String, Bson, Class)
+     * @see MongoCollectionExecutor#queryForBoolean(String, Bson)
      */
     @Beta
     public Mono<Boolean> queryForBoolean(final String propName, final Bson filter) {
@@ -792,22 +804,31 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Queries for a single character value from a document property.
+     * Returns a {@code Mono} that, on subscription, queries for the given property of the first
+     * matching document in this mapper's collection as a {@code Character} value.
      *
-     * <p>Retrieves the character value of a specific property from the first document matching
-     * the filter. This is useful for retrieving single character codes or flags.</p>
-     * 
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored. Delegates to the underlying
+     * {@link MongoCollectionExecutor#queryForChar(String, Bson)}.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the returned {@code Mono} completes <i>empty</i> when no
+     * document matches the filter, or when a matching document's named field is absent or BSON null.
+     * Otherwise it emits the converted {@code Character} value and then completes.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Bson filter = Filters.eq("id", userId);
-     * Mono<Character> grade = userMapper.queryForChar("grade", filter);
-     * grade.subscribe(g -> System.out.println("User grade: " + g));
+     * Mono<Character> grade = userMapper.queryForChar("grade", Filters.eq("id", userId));
+     * grade.subscribe(g -> System.out.println("Grade: " + g));
      * }</pre>
      *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against
-     * @return a Mono that emits the character value, or empty if not found
-     * @throws IllegalArgumentException if propName or filter is null
+     * @return a {@code Mono} that emits the {@code Character} field value on subscription, or
+     *         completes empty when no document matches or the field is missing/null
+     * @throws IllegalArgumentException if {@code propName} is null or empty (signalled via {@code Mono})
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @see #queryForSingleValue(String, Bson, Class)
+     * @see MongoCollectionExecutor#queryForChar(String, Bson)
      */
     @Beta
     public Mono<Character> queryForChar(final String propName, final Bson filter) {
@@ -815,22 +836,32 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Queries for a single byte value from a document property.
+     * Returns a {@code Mono} that, on subscription, queries for the given property of the first
+     * matching document in this mapper's collection as a {@code Byte} value.
      *
-     * <p>Retrieves the byte value of a specific property from the first document matching
-     * the filter. This is useful for retrieving small numeric values or byte flags.</p>
-     * 
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored. Delegates to the underlying
+     * {@link MongoCollectionExecutor#queryForByte(String, Bson)}.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the returned {@code Mono} completes <i>empty</i> when no
+     * document matches the filter, or when a matching document's named field is absent or BSON null.
+     * Otherwise it emits the converted {@code Byte} value and then completes.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Bson filter = Filters.eq("productId", productId);
-     * Mono<Byte> status = userMapper.queryForByte("statusCode", filter);
+     * Mono<Byte> status = userMapper.queryForByte(
+     *     "statusCode", Filters.eq("productId", productId));
      * status.subscribe(code -> processStatusCode(code));
      * }</pre>
      *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against
-     * @return a Mono that emits the byte value, or empty if not found
-     * @throws IllegalArgumentException if propName or filter is null
+     * @return a {@code Mono} that emits the {@code Byte} field value on subscription, or completes
+     *         empty when no document matches or the field is missing/null
+     * @throws IllegalArgumentException if {@code propName} is null or empty (signalled via {@code Mono})
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @see #queryForSingleValue(String, Bson, Class)
+     * @see MongoCollectionExecutor#queryForByte(String, Bson)
      */
     @Beta
     public Mono<Byte> queryForByte(final String propName, final Bson filter) {
@@ -838,22 +869,32 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Queries for a single short value from a document property.
+     * Returns a {@code Mono} that, on subscription, queries for the given property of the first
+     * matching document in this mapper's collection as a {@code Short} value.
      *
-     * <p>Retrieves the short integer value of a specific property from the first document
-     * matching the filter. This is useful for retrieving small numeric values.</p>
-     * 
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored. Delegates to the underlying
+     * {@link MongoCollectionExecutor#queryForShort(String, Bson)}.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the returned {@code Mono} completes <i>empty</i> when no
+     * document matches the filter, or when a matching document's named field is absent or BSON null.
+     * Otherwise it emits the converted {@code Short} value and then completes.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Bson filter = Filters.eq("orderId", orderId);
-     * Mono<Short> quantity = userMapper.queryForShort("quantity", filter);
-     * quantity.subscribe(qty -> System.out.println("Order quantity: " + qty));
+     * Mono<Short> quantity = userMapper.queryForShort(
+     *     "quantity", Filters.eq("orderId", orderId));
+     * quantity.subscribe(q -> System.out.println("Quantity: " + q));
      * }</pre>
      *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against
-     * @return a Mono that emits the short value, or empty if not found
-     * @throws IllegalArgumentException if propName or filter is null
+     * @return a {@code Mono} that emits the {@code Short} field value on subscription, or completes
+     *         empty when no document matches or the field is missing/null
+     * @throws IllegalArgumentException if {@code propName} is null or empty (signalled via {@code Mono})
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @see #queryForSingleValue(String, Bson, Class)
+     * @see MongoCollectionExecutor#queryForShort(String, Bson)
      */
     @Beta
     public Mono<Short> queryForShort(final String propName, final Bson filter) {
@@ -861,22 +902,32 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Queries for a single integer value from a document property.
+     * Returns a {@code Mono} that, on subscription, queries for the given property of the first
+     * matching document in this mapper's collection as an {@code Integer} value.
      *
-     * <p>Retrieves the integer value of a specific property from the first document matching
-     * the filter. This is one of the most commonly used scalar query methods.</p>
-     * 
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored. Delegates to the underlying
+     * {@link MongoCollectionExecutor#queryForInt(String, Bson)}.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the returned {@code Mono} completes <i>empty</i> when no
+     * document matches the filter, or when a matching document's named field is absent or BSON null.
+     * Otherwise it emits the converted {@code Integer} value and then completes.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Bson filter = Filters.eq("email", "user@example.com");
-     * Mono<Integer> age = userMapper.queryForInt("age", filter);
+     * Mono<Integer> age = userMapper.queryForInt(
+     *     "age", Filters.eq("email", "user@example.com"));
      * age.subscribe(a -> System.out.println("User age: " + a));
      * }</pre>
      *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against
-     * @return a Mono that emits the integer value, or empty if not found
-     * @throws IllegalArgumentException if propName or filter is null
+     * @return a {@code Mono} that emits the {@code Integer} field value on subscription, or completes
+     *         empty when no document matches or the field is missing/null
+     * @throws IllegalArgumentException if {@code propName} is null or empty (signalled via {@code Mono})
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @see #queryForSingleValue(String, Bson, Class)
+     * @see MongoCollectionExecutor#queryForInt(String, Bson)
      */
     @Beta
     public Mono<Integer> queryForInt(final String propName, final Bson filter) {
@@ -884,22 +935,32 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Queries for a single long value from a document property.
+     * Returns a {@code Mono} that, on subscription, queries for the given property of the first
+     * matching document in this mapper's collection as a {@code Long} value.
      *
-     * <p>Retrieves the long integer value of a specific property from the first document
-     * matching the filter. This is useful for retrieving timestamps, IDs, or large numeric values.</p>
-     * 
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored. Delegates to the underlying
+     * {@link MongoCollectionExecutor#queryForLong(String, Bson)}.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the returned {@code Mono} completes <i>empty</i> when no
+     * document matches the filter, or when a matching document's named field is absent or BSON null.
+     * Otherwise it emits the converted {@code Long} value and then completes.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Bson filter = Filters.eq("sessionId", sessionId);
-     * Mono<Long> timestamp = userMapper.queryForLong("lastAccessTime", filter);
-     * timestamp.subscribe(time -> updateLastAccess(time));
+     * Mono<Long> timestamp = userMapper.queryForLong(
+     *     "lastAccessTime", Filters.eq("sessionId", sessionId));
+     * timestamp.subscribe(t -> updateLastAccess(t));
      * }</pre>
      *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against
-     * @return a Mono that emits the long value, or empty if not found
-     * @throws IllegalArgumentException if propName or filter is null
+     * @return a {@code Mono} that emits the {@code Long} field value on subscription, or completes
+     *         empty when no document matches or the field is missing/null
+     * @throws IllegalArgumentException if {@code propName} is null or empty (signalled via {@code Mono})
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @see #queryForSingleValue(String, Bson, Class)
+     * @see MongoCollectionExecutor#queryForLong(String, Bson)
      */
     @Beta
     public Mono<Long> queryForLong(final String propName, final Bson filter) {
@@ -907,22 +968,33 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Queries for a single float value from a document property.
+     * Returns a {@code Mono} that, on subscription, queries for the given property of the first
+     * matching document in this mapper's collection as a {@code Float} value.
      *
-     * <p>Retrieves the float value of a specific property from the first document matching
-     * the filter. This is useful for retrieving decimal values with single precision.</p>
-     * 
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored. Delegates to the underlying
+     * {@link MongoCollectionExecutor#queryForFloat(String, Bson)}.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the returned {@code Mono} completes <i>empty</i> when no
+     * document matches the filter, or when a matching document's named field is absent or BSON null.
+     * Otherwise it emits the converted {@code Float} value and then completes.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Bson filter = Filters.eq("productId", productId);
-     * Mono<Float> price = userMapper.queryForFloat("price", filter);
-     * price.subscribe(p -> System.out.println("Product price: $" + p));
+     * Mono<Float> price = userMapper.queryForFloat(
+     *     "price", Filters.eq("productId", productId));
+     * price.subscribe(p -> System.out.println("Price: $" + p));
      * }</pre>
      *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against
-     * @return a Mono that emits the float value, or empty if not found
-     * @throws IllegalArgumentException if propName or filter is null
+     * @return a {@code Mono} that emits the {@code Float} field value on subscription, or completes
+     *         empty when no document matches or the field is missing/null
+     * @throws IllegalArgumentException if {@code propName} is null or empty (signalled via {@code Mono})
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @see #queryForDouble(String, Bson)
+     * @see #queryForSingleValue(String, Bson, Class)
+     * @see MongoCollectionExecutor#queryForFloat(String, Bson)
      */
     @Beta
     public Mono<Float> queryForFloat(final String propName, final Bson filter) {
@@ -930,22 +1002,33 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Queries for a single double value from a document property.
+     * Returns a {@code Mono} that, on subscription, queries for the given property of the first
+     * matching document in this mapper's collection as a {@code Double} value.
      *
-     * <p>Retrieves the double precision value of a specific property from the first document
-     * matching the filter. This is ideal for financial calculations or scientific data.</p>
-     * 
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored. Delegates to the underlying
+     * {@link MongoCollectionExecutor#queryForDouble(String, Bson)}.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the returned {@code Mono} completes <i>empty</i> when no
+     * document matches the filter, or when a matching document's named field is absent or BSON null.
+     * Otherwise it emits the converted {@code Double} value and then completes.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Bson filter = Filters.eq("accountId", accountId);
-     * Mono<Double> balance = userMapper.queryForDouble("balance", filter);
-     * balance.subscribe(b -> System.out.println("Account balance: " + b));
+     * Mono<Double> balance = userMapper.queryForDouble(
+     *     "balance", Filters.eq("accountId", accountId));
+     * balance.subscribe(b -> System.out.println("Balance: " + b));
      * }</pre>
      *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against
-     * @return a Mono that emits the double value, or empty if not found
-     * @throws IllegalArgumentException if propName or filter is null
+     * @return a {@code Mono} that emits the {@code Double} field value on subscription, or completes
+     *         empty when no document matches or the field is missing/null
+     * @throws IllegalArgumentException if {@code propName} is null or empty (signalled via {@code Mono})
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @see #queryForFloat(String, Bson)
+     * @see #queryForSingleValue(String, Bson, Class)
+     * @see MongoCollectionExecutor#queryForDouble(String, Bson)
      */
     @Beta
     public Mono<Double> queryForDouble(final String propName, final Bson filter) {
@@ -953,22 +1036,35 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Queries for a single string value from a document property.
+     * Returns a {@code Mono} that, on subscription, queries for the given property of the first
+     * matching document in this mapper's collection as a {@code String} value.
      *
-     * <p>Retrieves the string value of a specific property from the first document matching
-     * the filter. This is one of the most frequently used query methods for text data.</p>
-     * 
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored. Delegates to the underlying
+     * {@link MongoCollectionExecutor#queryForString(String, Bson)}.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the returned {@code Mono} completes <i>empty</i> when no
+     * document matches the filter, or when a matching document's named field is absent or BSON null.
+     * Otherwise it emits the converted {@code String} value and then completes. Subscribers cannot
+     * distinguish "no document matched" from "document matched but value is null" purely from the
+     * reactive signal — use {@code defaultIfEmpty(...)} or the blocking sync API when that
+     * distinction is required.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Bson filter = Filters.eq("userId", userId);
-     * Mono<String> username = userMapper.queryForString("username", filter);
-     * username.subscribe(name -> System.out.println("Username: " + name));
+     * Mono<String> username = userMapper.queryForString(
+     *     "username", Filters.eq("userId", userId));
+     * username.subscribe(n -> System.out.println("Username: " + n));
      * }</pre>
      *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against
-     * @return a Mono that emits the string value, or empty if not found
-     * @throws IllegalArgumentException if propName or filter is null
+     * @return a {@code Mono} that emits the {@code String} field value on subscription, or completes
+     *         empty when no document matches or the field is missing/null
+     * @throws IllegalArgumentException if {@code propName} is null or empty (signalled via {@code Mono})
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @see #queryForSingleValue(String, Bson, Class)
+     * @see MongoCollectionExecutor#queryForString(String, Bson)
      */
     @Beta
     public Mono<String> queryForString(final String propName, final Bson filter) {
@@ -976,22 +1072,34 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Queries for a single Date value from a document property.
+     * Returns a {@code Mono} that, on subscription, queries for the given property of the first
+     * matching document in this mapper's collection as a {@link Date} value.
      *
-     * <p>Retrieves the Date value of a specific property from the first document matching
-     * the filter. This is useful for retrieving timestamps and date fields.</p>
-     * 
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored. Commonly used for timestamp fields such as {@code createdAt} or
+     * {@code updatedAt}. Delegates to the underlying
+     * {@link MongoCollectionExecutor#queryForDate(String, Bson)}.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the returned {@code Mono} completes <i>empty</i> when no
+     * document matches the filter, or when a matching document's named field is absent or BSON null.
+     * Otherwise it emits the converted {@code Date} value and then completes.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Bson filter = Filters.eq("orderId", orderId);
-     * Mono<Date> orderDate = userMapper.queryForDate("createdAt", filter);
-     * orderDate.subscribe(date -> System.out.println("Order date: " + date));
+     * Mono<Date> orderDate = userMapper.queryForDate(
+     *     "createdAt", Filters.eq("orderId", orderId));
+     * orderDate.subscribe(d -> System.out.println("Order date: " + d));
      * }</pre>
      *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against
-     * @return a Mono that emits the Date value, or empty if not found
-     * @throws IllegalArgumentException if propName or filter is null
+     * @return a {@code Mono} that emits the {@code Date} field value on subscription, or completes
+     *         empty when no document matches or the field is missing/null
+     * @throws IllegalArgumentException if {@code propName} is null or empty (signalled via {@code Mono})
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @see #queryForDate(String, Bson, Class)
+     * @see #queryForSingleValue(String, Bson, Class)
+     * @see MongoCollectionExecutor#queryForDate(String, Bson)
      */
     @Beta
     public Mono<Date> queryForDate(final String propName, final Bson filter) {
@@ -999,51 +1107,74 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Queries for a typed Date subclass value from a document property.
+     * Returns a {@code Mono} that, on subscription, queries for the given property of the first
+     * matching document in this mapper's collection as a specific {@link Date} subclass value
+     * (e.g. {@link java.sql.Timestamp}).
      *
-     * <p>Retrieves a date value and converts it to a specific Date subclass. This is useful
-     * when working with custom date types like java.sql.Timestamp or java.sql.Date.</p>
-     * 
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored. The value is converted to the requested {@code Date} subclass. Delegates
+     * to {@link MongoCollectionExecutor#queryForDate(String, Bson, Class)}.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the returned {@code Mono} completes <i>empty</i> when no
+     * document matches the filter, or when a matching document's named field is absent or BSON null.
+     * Otherwise it emits the converted typed value and then completes.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Bson filter = Filters.eq("transactionId", txId);
-     * Mono<Timestamp> timestamp = userMapper.queryForDate("processedAt", filter, Timestamp.class);
-     * timestamp.subscribe(ts -> logTransaction(ts));
+     * Mono<Timestamp> processedAt = userMapper.queryForDate(
+     *     "processedAt", Filters.eq("transactionId", txId), Timestamp.class);
+     * processedAt.subscribe(ts -> logTransaction(ts));
      * }</pre>
      *
      * @param <P> the specific Date subclass type
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against
      * @param valueType the class of the Date subclass to convert to
-     * @return a Mono that emits the typed date value, or empty if not found
-     * @throws IllegalArgumentException if any parameter is null
+     * @return a {@code Mono} that emits the typed {@code Date} value on subscription, or completes
+     *         empty when no document matches or the field is missing/null
+     * @throws IllegalArgumentException if {@code propName} or {@code valueType} is null (signalled via {@code Mono})
      * @throws ClassCastException if the value cannot be converted to the specified type
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @see #queryForDate(String, Bson)
+     * @see #queryForSingleValue(String, Bson, Class)
+     * @see MongoCollectionExecutor#queryForDate(String, Bson, Class)
      */
     public <P extends Date> Mono<P> queryForDate(final String propName, final Bson filter, final Class<P> valueType) {
         return collectionExecutor.queryForDate(propName, filter, valueType);
     }
 
     /**
-     * Queries for a single value of any type from a document property.
+     * Returns a {@code Mono} that, on subscription, queries for the given property of the first
+     * matching document in this mapper's collection, converted to the specified type.
      *
-     * <p>Retrieves a value of the specified type from a specific property in the first document
-     * matching the filter. This is the most flexible single-value query method, supporting
-     * automatic type conversion for custom types.</p>
-     * 
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored. This is the underlying method delegated to by the primitive-wrapper
+     * convenience overloads ({@link #queryForBoolean}, {@link #queryForInt}, etc.). Delegates to
+     * {@link MongoCollectionExecutor#queryForSingleValue(String, Bson, Class)}.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the returned {@code Mono} completes <i>empty</i> when no
+     * document matches the filter, or when a matching document's named field is absent or BSON null.
+     * Otherwise it emits the converted value and then completes. Subscribers cannot distinguish "no
+     * document matched" from "document matched but value is null" purely from the reactive signal —
+     * use the blocking sync API when that distinction is required.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Bson filter = Filters.eq("id", entityId);
-     * Mono<BigDecimal> amount = userMapper.queryForSingleValue("amount", filter, BigDecimal.class);
-     * amount.subscribe(amt -> processPayment(amt));
+     * Mono<BigDecimal> amount = userMapper.queryForSingleValue(
+     *     "amount", Filters.eq("id", entityId), BigDecimal.class);
+     * amount.subscribe(a -> processPayment(a));
      * }</pre>
      *
      * @param <V> the type of value to retrieve
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against
      * @param valueType the class of the value type to convert to
-     * @return a Mono that emits the typed value, or empty if not found
-     * @throws IllegalArgumentException if any parameter is null
+     * @return a {@code Mono} that emits the converted field value on subscription, or completes empty
+     *         when no document matches or the field is missing/null
+     * @throws IllegalArgumentException if {@code propName} or {@code valueType} is null (signalled via {@code Mono})
      * @throws ClassCastException if the value cannot be converted to the specified type
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @see MongoCollectionExecutor#queryForSingleValue(String, Bson, Class)
      */
     public <V> Mono<V> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType) {
         return collectionExecutor.queryForSingleValue(propName, filter, valueType);

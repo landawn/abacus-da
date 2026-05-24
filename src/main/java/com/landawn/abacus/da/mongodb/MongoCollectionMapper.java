@@ -897,27 +897,35 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Queries for a single boolean value from entities matching the filter.
+     * Executes this query and returns the value of {@code propName} on the first matching document as a boolean value.
      *
-     * <p>This method retrieves the value of a specific boolean property from the first entity
-     * matching the filter. The result is wrapped in an OptionalBoolean which handles the case
-     * where no matching entity is found or the property value is null.</p>
+     * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> {@code OptionalBoolean.empty()} is returned <i>only</i> when
+     * no document matches the filter (or when the matched document carries no readable field for
+     * {@code propName}). If a document is found and the field is present, the returned
+     * {@code OptionalBoolean} is <i>present</i> and holds the unboxed {@code Boolean} value — when the
+     * field is missing or stored as BSON {@code null}, the JDBC-style primitive default {@code false}
+     * may surface inside a present Optional. Use {@link #queryForSingleValue(String, Bson, Class)} with
+     * {@code Boolean.class} if you need to distinguish a missing/{@code null} field from a real
+     * {@code false}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * OptionalBoolean isActive = mapper.queryForBoolean("active", Filters.eq("userId", "123"));
-     * if (isActive.isPresent()) {
-     *     System.out.println("Active: " + isActive.getAsBoolean());
-     * }
+     * boolean active = isActive.orElse(false);
      * }</pre>
      *
      * @param propName the name of the boolean property to retrieve
-     * @param filter the query filter to match entities against
-     * @return an OptionalBoolean containing the property value if found, or empty if not found
+     * @param filter the query filter to match documents against
+     * @return a <i>present</i> {@code OptionalBoolean} holding the field value (or {@code false} for a
+     *         missing/{@code null} field) when at least one document is matched;
+     *         {@code OptionalBoolean.empty()} when no document matches
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see OptionalBoolean
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
     public OptionalBoolean queryForBoolean(final String propName, final Bson filter) {
@@ -925,11 +933,18 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Queries for a single character value from entities matching the filter.
+     * Executes this query and returns the value of {@code propName} on the first matching document as a char value.
      *
-     * <p>This method retrieves the value of a specific character property from the first entity
-     * matching the filter. The result is wrapped in an OptionalChar which handles the case
-     * where no matching entity is found or the property value is null.</p>
+     * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> {@code OptionalChar.empty()} is returned <i>only</i> when
+     * no document matches the filter (or when the matched document carries no readable field for
+     * {@code propName}). If a document is found and the field is present, the returned
+     * {@code OptionalChar} is <i>present</i> and holds the unboxed {@code Character} value — when the
+     * field is missing or stored as BSON {@code null}, the JDBC-style primitive default {@code (char) 0}
+     * (the NUL character) may surface inside a present Optional. Use
+     * {@link #queryForSingleValue(String, Bson, Class)} with {@code Character.class} if you need to
+     * distinguish a missing/{@code null} field from a real {@code (char) 0}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -939,11 +954,14 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param propName the name of the character property to retrieve
-     * @param filter the query filter to match entities against
-     * @return an OptionalChar containing the property value if found, or empty if not found
+     * @param filter the query filter to match documents against
+     * @return a <i>present</i> {@code OptionalChar} holding the field value (or the default {@code char}
+     *         for a missing/{@code null} field) when at least one document is matched;
+     *         {@code OptionalChar.empty()} when no document matches
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see OptionalChar
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
     public OptionalChar queryForChar(final String propName, final Bson filter) {
@@ -951,11 +969,17 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Queries for a single byte value from entities matching the filter.
+     * Executes this query and returns the value of {@code propName} on the first matching document as a byte value.
      *
-     * <p>This method retrieves the value of a specific byte property from the first entity
-     * matching the filter. The result is wrapped in an OptionalByte which handles the case
-     * where no matching entity is found or the property value is null.</p>
+     * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> {@code OptionalByte.empty()} is returned <i>only</i> when
+     * no document matches the filter (or when the matched document carries no readable field for
+     * {@code propName}). If a document is found and the field is present, the returned
+     * {@code OptionalByte} is <i>present</i> and holds the unboxed {@code Byte} value — when the field
+     * is missing or stored as BSON {@code null}, the JDBC-style primitive default {@code (byte) 0} may
+     * surface inside a present Optional. Use {@link #queryForSingleValue(String, Bson, Class)} with
+     * {@code Byte.class} if you need to distinguish a missing/{@code null} field from a real {@code 0}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -965,11 +989,14 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param propName the name of the byte property to retrieve
-     * @param filter the query filter to match entities against
-     * @return an OptionalByte containing the property value if found, or empty if not found
+     * @param filter the query filter to match documents against
+     * @return a <i>present</i> {@code OptionalByte} holding the field value (or {@code 0} for a
+     *         missing/{@code null} field) when at least one document is matched;
+     *         {@code OptionalByte.empty()} when no document matches
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see OptionalByte
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
     public OptionalByte queryForByte(final String propName, final Bson filter) {
@@ -977,11 +1004,18 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Queries for a single short value from entities matching the filter.
+     * Executes this query and returns the value of {@code propName} on the first matching document as a short value.
      *
-     * <p>This method retrieves the value of a specific short property from the first entity
-     * matching the filter. The result is wrapped in an OptionalShort which handles the case
-     * where no matching entity is found or the property value is null.</p>
+     * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> {@code OptionalShort.empty()} is returned <i>only</i> when
+     * no document matches the filter (or when the matched document carries no readable field for
+     * {@code propName}). If a document is found and the field is present, the returned
+     * {@code OptionalShort} is <i>present</i> and holds the unboxed {@code Short} value — when the
+     * field is missing or stored as BSON {@code null}, the JDBC-style primitive default {@code (short) 0}
+     * may surface inside a present Optional. Use {@link #queryForSingleValue(String, Bson, Class)} with
+     * {@code Short.class} if you need to distinguish a missing/{@code null} field from a real
+     * {@code 0}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -991,11 +1025,14 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param propName the name of the short property to retrieve
-     * @param filter the query filter to match entities against
-     * @return an OptionalShort containing the property value if found, or empty if not found
+     * @param filter the query filter to match documents against
+     * @return a <i>present</i> {@code OptionalShort} holding the field value (or {@code 0} for a
+     *         missing/{@code null} field) when at least one document is matched;
+     *         {@code OptionalShort.empty()} when no document matches
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see OptionalShort
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
     public OptionalShort queryForShort(final String propName, final Bson filter) {
@@ -1003,25 +1040,35 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Queries for a single integer value from entities matching the filter.
+     * Executes this query and returns the value of {@code propName} on the first matching document as an int value.
      *
-     * <p>This method retrieves the value of a specific integer property from the first entity
-     * matching the filter. The result is wrapped in an OptionalInt which handles the case
-     * where no matching entity is found or the property value is null.</p>
+     * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> {@code OptionalInt.empty()} is returned <i>only</i> when
+     * no document matches the filter (or when the matched document carries no readable field for
+     * {@code propName}). If a document is found and the field is present, the returned
+     * {@code OptionalInt} is <i>present</i> and holds the unboxed {@code Integer} value — when the
+     * field is missing or stored as BSON {@code null}, the JDBC-style primitive default {@code 0} may
+     * surface inside a present Optional. Use {@link #queryForSingleValue(String, Bson, Class)} with
+     * {@code Integer.class} if you need to distinguish a missing/{@code null} field from a real
+     * {@code 0}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * OptionalInt age = mapper.queryForInt("age", Filters.eq("userId", "user123"));
-     * age.ifPresent(a -> System.out.println("Age: " + a));
+     * int years = age.orElse(0);
      * }</pre>
      *
      * @param propName the name of the integer property to retrieve
-     * @param filter the query filter to match entities against
-     * @return an OptionalInt containing the property value if found, or empty if not found
+     * @param filter the query filter to match documents against
+     * @return a <i>present</i> {@code OptionalInt} holding the field value (or {@code 0} for a
+     *         missing/{@code null} field) when at least one document is matched;
+     *         {@code OptionalInt.empty()} when no document matches
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see OptionalInt
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
     public OptionalInt queryForInt(final String propName, final Bson filter) {
@@ -1029,11 +1076,18 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Queries for a single long value from entities matching the filter.
+     * Executes this query and returns the value of {@code propName} on the first matching document as a long value.
      *
-     * <p>This method retrieves the value of a specific long property from the first entity
-     * matching the filter. The result is wrapped in an OptionalLong which handles the case
-     * where no matching entity is found or the property value is null.</p>
+     * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> {@code OptionalLong.empty()} is returned <i>only</i> when
+     * no document matches the filter (or when the matched document carries no readable field for
+     * {@code propName}). If a document is found and the field is present, the returned
+     * {@code OptionalLong} is <i>present</i> and holds the unboxed {@code Long} value — when the field
+     * is missing or stored as BSON {@code null}, the JDBC-style primitive default {@code 0L} may
+     * surface inside a present Optional. Use {@link #queryForSingleValue(String, Bson, Class)} with
+     * {@code Long.class} if you need to distinguish a missing/{@code null} field from a real
+     * {@code 0L}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1043,11 +1097,14 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param propName the name of the long property to retrieve
-     * @param filter the query filter to match entities against
-     * @return an OptionalLong containing the property value if found, or empty if not found
+     * @param filter the query filter to match documents against
+     * @return a <i>present</i> {@code OptionalLong} holding the field value (or {@code 0L} for a
+     *         missing/{@code null} field) when at least one document is matched;
+     *         {@code OptionalLong.empty()} when no document matches
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see OptionalLong
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
     public OptionalLong queryForLong(final String propName, final Bson filter) {
@@ -1055,11 +1112,18 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Queries for a single float value from entities matching the filter.
+     * Executes this query and returns the value of {@code propName} on the first matching document as a float value.
      *
-     * <p>This method retrieves the value of a specific float property from the first entity
-     * matching the filter. The result is wrapped in an OptionalFloat which handles the case
-     * where no matching entity is found or the property value is null.</p>
+     * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> {@code OptionalFloat.empty()} is returned <i>only</i> when
+     * no document matches the filter (or when the matched document carries no readable field for
+     * {@code propName}). If a document is found and the field is present, the returned
+     * {@code OptionalFloat} is <i>present</i> and holds the unboxed {@code Float} value — when the
+     * field is missing or stored as BSON {@code null}, the JDBC-style primitive default {@code 0.0f}
+     * may surface inside a present Optional. Use {@link #queryForSingleValue(String, Bson, Class)} with
+     * {@code Float.class} if you need to distinguish a missing/{@code null} field from a real
+     * {@code 0.0f}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1069,11 +1133,14 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param propName the name of the float property to retrieve
-     * @param filter the query filter to match entities against
-     * @return an OptionalFloat containing the property value if found, or empty if not found
+     * @param filter the query filter to match documents against
+     * @return a <i>present</i> {@code OptionalFloat} holding the field value (or {@code 0.0f} for a
+     *         missing/{@code null} field) when at least one document is matched;
+     *         {@code OptionalFloat.empty()} when no document matches
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see OptionalFloat
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
     public OptionalFloat queryForFloat(final String propName, final Bson filter) {
@@ -1081,11 +1148,18 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Queries for a single double value from entities matching the filter.
+     * Executes this query and returns the value of {@code propName} on the first matching document as a double value.
      *
-     * <p>This method retrieves the value of a specific double property from the first entity
-     * matching the filter. The result is wrapped in an OptionalDouble which handles the case
-     * where no matching entity is found or the property value is null.</p>
+     * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> {@code OptionalDouble.empty()} is returned <i>only</i> when
+     * no document matches the filter (or when the matched document carries no readable field for
+     * {@code propName}). If a document is found and the field is present, the returned
+     * {@code OptionalDouble} is <i>present</i> and holds the unboxed {@code Double} value — when the
+     * field is missing or stored as BSON {@code null}, the JDBC-style primitive default {@code 0.0d}
+     * may surface inside a present Optional. Use {@link #queryForSingleValue(String, Bson, Class)} with
+     * {@code Double.class} if you need to distinguish a missing/{@code null} field from a real
+     * {@code 0.0d}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1095,11 +1169,14 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param propName the name of the double property to retrieve
-     * @param filter the query filter to match entities against
-     * @return an OptionalDouble containing the property value if found, or empty if not found
+     * @param filter the query filter to match documents against
+     * @return a <i>present</i> {@code OptionalDouble} holding the field value (or {@code 0.0d} for a
+     *         missing/{@code null} field) when at least one document is matched;
+     *         {@code OptionalDouble.empty()} when no document matches
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see OptionalDouble
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
     public OptionalDouble queryForDouble(final String propName, final Bson filter) {
@@ -1107,25 +1184,34 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Queries for a single string value from entities matching the filter.
+     * Executes this query and returns the value of {@code propName} on the first matching document as a string value.
      *
-     * <p>This method retrieves the value of a specific string property from the first entity
-     * matching the filter. The result is wrapped in a Nullable which handles the case
-     * where no matching entity is found or the property value is null.</p>
+     * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned <i>only</i> when no
+     * document matches the filter (or when the matched document carries no readable field for
+     * {@code propName}). If a document is found and the field exists but is BSON {@code null}, the
+     * returned {@code Nullable} is <i>present-but-null</i> ({@code Nullable.of(null)}). {@link Nullable}
+     * preserves this distinction: callers can use {@link Nullable#isPresent()} to check for "document
+     * found" and {@link Nullable#isNotNull()} (or {@link Nullable#orElse(Object) orElse(...)}) to check
+     * for a non-null value.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * Nullable<String> email = mapper.queryForString("email", Filters.eq("userId", "user456"));
-     * email.ifPresent(e -> System.out.println("Email: " + e));
+     * String addr = email.orElse("unknown@example.com");
      * }</pre>
      *
      * @param propName the name of the string property to retrieve
-     * @param filter the query filter to match entities against
-     * @return a Nullable containing the property value if found, or empty if not found
+     * @param filter the query filter to match documents against
+     * @return a <i>present</i> {@code Nullable<String>} holding the field value (possibly {@code null}
+     *         for a BSON {@code null} field) when at least one document is matched;
+     *         {@code Nullable.empty()} when no document matches
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Nullable
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
     public Nullable<String> queryForString(final String propName, final Bson filter) {
@@ -1133,11 +1219,15 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Queries for a single date value from entities matching the filter.
+     * Executes this query and returns the value of {@code propName} on the first matching document as a Date value.
      *
-     * <p>This method retrieves the value of a specific date property from the first entity
-     * matching the filter. The result is wrapped in a Nullable which handles the case
-     * where no matching entity is found or the property value is null.</p>
+     * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned <i>only</i> when no
+     * document matches the filter (or when the matched document carries no readable field for
+     * {@code propName}). If a document is found and the field exists but is BSON {@code null}, the
+     * returned {@code Nullable} is <i>present-but-null</i> ({@code Nullable.of(null)}), preserving the
+     * distinction between "no document matched" and "document matched but value is null".</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1147,12 +1237,15 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param propName the name of the date property to retrieve
-     * @param filter the query filter to match entities against
-     * @return a Nullable containing the property value if found, or empty if not found
+     * @param filter the query filter to match documents against
+     * @return a <i>present</i> {@code Nullable<Date>} holding the field value (possibly {@code null}
+     *         for a BSON {@code null} field) when at least one document is matched;
+     *         {@code Nullable.empty()} when no document matches
      * @throws IllegalArgumentException if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Nullable
      * @see Date
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
     public Nullable<Date> queryForDate(final String propName, final Bson filter) {
@@ -1160,54 +1253,73 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Queries for a single date value of a specific type from entities matching the filter.
+     * Executes this query and returns the value of {@code propName} on the first matching document as the specified Date subtype.
      *
-     * <p>This method retrieves the value of a specific date property from the first entity
-     * matching the filter and converts it to the specified Date subtype. The result is wrapped
-     * in a Nullable which handles the case where no matching entity is found or the property value is null.</p>
+     * <p>Only the value of {@code propName} on the first matching document is read; any remaining
+     * documents or fields are ignored. The retrieved value is converted to the supplied
+     * {@code valueType} (e.g. {@link java.sql.Timestamp}, {@link java.sql.Date}).</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned <i>only</i> when no
+     * document matches the filter (or when the matched document carries no readable field for
+     * {@code propName}). If a document is found and the field exists but is BSON {@code null}, the
+     * returned {@code Nullable} is <i>present-but-null</i> ({@code Nullable.of(null)}), preserving the
+     * distinction between "no document matched" and "document matched but value is null".</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<Task> mapper = mongoDB.collectionMapper(Task.class);
-     * Nullable<Timestamp> created = mapper.queryForDate("createdAt", 
+     * Nullable<Timestamp> created = mapper.queryForDate("createdAt",
      *     Filters.eq("taskId", "TASK123"), Timestamp.class);
      * created.ifPresent(t -> System.out.println("Created: " + t));
      * }</pre>
      *
      * @param <P> the specific Date subtype to return
      * @param propName the name of the date property to retrieve
-     * @param filter the query filter to match entities against (null matches all)
+     * @param filter the query filter to match documents against (null matches all)
      * @param valueType the class of the Date subtype to convert to
-     * @return a Nullable containing the property value if found, or empty if not found
+     * @return a <i>present</i> {@code Nullable<P>} holding the field value (possibly {@code null} for
+     *         a BSON {@code null} field) when at least one document is matched;
+     *         {@code Nullable.empty()} when no document matches
      * @throws IllegalArgumentException if propName or valueType is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Nullable
      * @see Date
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     public <P extends Date> Nullable<P> queryForDate(final String propName, final Bson filter, final Class<P> valueType) {
         return collectionExecutor.queryForDate(propName, filter, valueType);
     }
 
     /**
-     * Queries for a single value of a specific type from entities matching the filter.
+     * Executes this query and returns the value of {@code propName} on the first matching document as the specified type.
      *
-     * <p>This method retrieves the value of a specific property from the first entity
-     * matching the filter and converts it to the specified type. The result is wrapped
-     * in a Nullable which handles the case where no matching entity is found or the property value is null.</p>
+     * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned <i>only</i> when no
+     * document matches the filter (or when the matched document carries no readable field for
+     * {@code propName}). If a document is found and the field exists but is BSON {@code null}, the
+     * returned {@code Nullable} is <i>present-but-null</i> ({@code Nullable.of(null)}). {@link Nullable}
+     * preserves the distinction between "no document matched" and "document matched but value is null".
+     * Unlike the primitive {@code queryForXxx} variants (which surface a missing/{@code null} field as
+     * the JDBC primitive default value wrapped in a present Optional), this overload — driven by a
+     * wrapper / object {@code Class<V>} — always conveys missing or BSON {@code null} fields precisely
+     * as Java {@code null} inside the Nullable.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<Document> mapper = mongoDB.collectionMapper(Document.class);
-     * Nullable<BigDecimal> price = mapper.queryForSingleValue("price", 
+     * Nullable<BigDecimal> price = mapper.queryForSingleValue("price",
      *     Filters.eq("productId", "PROD999"), BigDecimal.class);
      * price.ifPresent(p -> System.out.println("Price: $" + p));
      * }</pre>
      *
      * @param <V> the type to convert the property value to
      * @param propName the name of the property to retrieve
-     * @param filter the query filter to match entities against (null matches all)
+     * @param filter the query filter to match documents against (null matches all)
      * @param valueType the class of the type to convert to
-     * @return a Nullable containing the property value if found, or empty if not found
+     * @return a <i>present</i> {@code Nullable<V>} holding the field value (possibly {@code null} for
+     *         a missing or BSON {@code null} field) when at least one document is matched;
+     *         {@code Nullable.empty()} when no document matches
      * @throws IllegalArgumentException if propName or valueType is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Nullable

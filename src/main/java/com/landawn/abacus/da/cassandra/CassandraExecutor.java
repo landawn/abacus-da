@@ -940,34 +940,40 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Executes a CQL query and returns a single result value.
+     * Executes the given CQL query and returns the first column of the first row converted to
+     * {@code valueClass}.
      *
-     * <p>This method is designed for queries that return a single column and single row,
-     * such as aggregate functions (COUNT, SUM, MAX, etc.) or lookup queries that are
-     * expected to return at most one value. The result is automatically converted to
-     * the specified value class.</p>
+     * <p>This method is designed for queries that return a single column and a single row, such as
+     * aggregate functions ({@code COUNT}, {@code SUM}, {@code MAX}, ...) or lookup queries that are
+     * expected to return at most one value. Parameters are bound positionally to {@code ?} placeholders;
+     * only the first column of the first row of the {@code ResultSet} is consumed.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned <i>only</i> when the
+     * query produces no rows. If a row exists but the column is {@code NULL}, the returned
+     * {@code Nullable} is <i>present-but-null</i> ({@code Nullable.of(null)}), preserving the distinction
+     * between "no row matched" and "row matched but value is null".</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Count total users
      * Nullable<Long> userCount = executor.queryForSingleValue(
-     *     Long.class, "SELECT COUNT(*) FROM users");
+     *     Long.class, "SELECT count(*) FROM users");
      *
-     * // Get user name by ID
      * Nullable<String> userName = executor.queryForSingleValue(
      *     String.class, "SELECT name FROM users WHERE id = ?", userId);
      *
-     * // Get maximum timestamp
      * Nullable<Instant> maxTimestamp = executor.queryForSingleValue(
-     *     Instant.class, "SELECT MAX(created_at) FROM events WHERE date = ?", today);
+     *     Instant.class, "SELECT max(created_at) FROM events WHERE date = ?", today);
      * }</pre>
      *
-     * @param <E> the type of the expected result value
-     * @param valueClass the Java class to convert the result to
-     * @param query the CQL query string
-     * @param parameters the query parameters
-     * @return a Nullable containing the result value, or empty if no result was found
-     * @throws IllegalArgumentException if valueClass or query is null
+     * @param <E> the type of the single result value to be returned
+     * @param valueClass the Java class the column value is converted to
+     * @param query the CQL query string with {@code ?} placeholders for parameters
+     * @param parameters the values to bind, in declaration order
+     * @return a <i>present</i> {@code Nullable<E>} holding the column value (possibly {@code null} for
+     *         {@code NULL}) when at least one row is returned; {@code Nullable.empty()} when the query
+     *         returns no rows
+     * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}
+     * @see #queryForSingleNonNull(Class, String, Object...)
      */
     @Override
     public <E> Nullable<E> queryForSingleValue(final Class<E> valueClass, final String query, final Object... parameters) {
@@ -978,29 +984,35 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Executes a CQL query and returns a single non-null result value.
+     * Executes the given CQL query and returns the first column of the first row converted to
+     * {@code valueClass}, wrapped in an {@link Optional} that is guaranteed to be non-null when present.
      *
-     * <p>Similar to {@link #queryForSingleValue}, but returns an {@link Optional}
-     * that will be empty if the result is null. This method is useful when you need
-     * to distinguish between "no result found" and "result found but value is null".</p>
+     * <p>Only the first column of the first row of the {@code ResultSet} is read; remaining rows and
+     * columns are ignored. Parameters are bound positionally to {@code ?} placeholders.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> Unlike {@link #queryForSingleValue(Class, String, Object...)},
+     * this method collapses both "no row" and "row found with {@code NULL} column" into
+     * {@code Optional.empty()}, because {@code Optional} cannot carry a null payload. Use the
+     * {@code Nullable} overload when you need to distinguish those two cases.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Get active user count (never null for COUNT queries)
      * Optional<Long> activeUsers = executor.queryForSingleNonNull(
-     *     Long.class, "SELECT COUNT(*) FROM users WHERE status = 'active'");
+     *     Long.class, "SELECT count(*) FROM users WHERE status = 'active'");
      *
-     * // Get user email (could be null)
      * Optional<String> email = executor.queryForSingleNonNull(
      *     String.class, "SELECT email FROM users WHERE id = ?", userId);
      * }</pre>
      *
-     * @param <E> the type of the expected result value
-     * @param valueClass the Java class to convert the result to
-     * @param query the CQL query string
-     * @param parameters the query parameters
-     * @return an Optional containing the non-null result value, or empty if no result or null value
-     * @throws IllegalArgumentException if valueClass or query is null
+     * @param <E> the type of the single result value to be returned
+     * @param valueClass the Java class the column value is converted to
+     * @param query the CQL query string with {@code ?} placeholders for parameters
+     * @param parameters the values to bind, in declaration order
+     * @return a <i>present</i> {@code Optional<E>} holding the (non-null) column value when at least one
+     *         row is returned with a non-null value; {@code Optional.empty()} when the query returns no
+     *         rows or the column value is {@code NULL}
+     * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}
+     * @see #queryForSingleValue(Class, String, Object...)
      */
     @Override
     public <E> Optional<E> queryForSingleNonNull(final Class<E> valueClass, final String query, final Object... parameters) {
@@ -1011,41 +1023,46 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     }
 
     /**
-     * Finds the first row from a CQL query result and maps it to the specified type.
+     * Executes the given CQL query and returns the first row mapped to an instance of {@code targetClass}.
      *
-     * <p>This method executes the query and returns the first row as an entity of the
-     * specified target class. If no rows are found, an empty Optional is returned.
-     * This is particularly useful for lookup operations where you expect at most one result.</p>
+     * <p>Only the first row of the {@code ResultSet} is read; remaining rows are ignored. Parameters are
+     * bound positionally to {@code ?} placeholders.</p>
      *
-     * <p>The target class can be:</p>
+     * <p>{@code targetClass} can be:</p>
      * <ul>
      * <li><strong>Entity class:</strong> A POJO with getter/setter methods matching column names</li>
-     * <li><strong>Map.class:</strong> Results mapped to a {@code Map<String, Object>}</li>
-     * <li><strong>Collection class:</strong> Results mapped to List, Set, etc.</li>
-     * <li><strong>Array class:</strong> Results mapped to Object[] or typed arrays</li>
+     * <li><strong>{@code Map.class}:</strong> Results mapped to a {@code Map<String, Object>}</li>
+     * <li><strong>Collection class:</strong> Results mapped to {@code List}, {@code Set}, ...</li>
+     * <li><strong>Array class:</strong> Results mapped to {@code Object[]} or typed arrays</li>
      * </ul>
+     *
+     * <p><b>Empty vs. present semantics:</b> {@code Optional.empty()} is returned <i>only</i> when the
+     * query produces no rows. When a row is found, the mapped value is returned as a <i>present</i>
+     * {@code Optional}. Because {@code Optional} cannot carry a {@code null} payload, the mapped value
+     * itself must be non-null.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Find user by email
      * Optional<User> user = executor.findFirst(User.class,
      *     "SELECT * FROM users WHERE email = ? LIMIT 1", email);
      *
-     * // Get as map
-     * Optional<Map<String, Object>> userData = executor.findFirst(Map.class, 
+     * Optional<Map<String, Object>> userData = executor.findFirst(Map.class,
      *     "SELECT name, email FROM users WHERE id = ?", userId);
      *
-     * // Get as array
-     * Optional<Object[]> row = executor.findFirst(Object[].class, 
-     *     "SELECT COUNT(*), MAX(created_at) FROM events");
+     * Optional<Object[]> row = executor.findFirst(Object[].class,
+     *     "SELECT count(*), max(created_at) FROM events");
      * }</pre>
      *
      * @param <T> the type to map the result row to
-     * @param targetClass the entity class
-     * @param query the CQL query string
-     * @param parameters the query parameters
-     * @return an Optional containing the first result row mapped to the target type, or empty if no results
-     * @throws IllegalArgumentException if targetClass or query is null
+     * @param targetClass an entity class with getter/setter methods, {@code Map.class}, a collection, or
+     *        an array class
+     * @param query the CQL query string with {@code ?} placeholders for parameters
+     * @param parameters the values to bind, in declaration order
+     * @return a <i>present</i> {@code Optional<T>} holding the first mapped row when at least one row is
+     *         returned; {@code Optional.empty()} when the query returns no rows
+     * @throws IllegalArgumentException if {@code targetClass} or {@code query} is {@code null}
+     * @see #findFirst(String, Object...)
+     * @see #findFirst(Class, Condition)
      */
     @Override
     public <T> Optional<T> findFirst(final Class<T> targetClass, final String query, final Object... parameters) {

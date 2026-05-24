@@ -71,6 +71,13 @@ public class MongoCollectionExecutorTest extends TestBase {
         executor = new MongoCollectionExecutor(mockCollection, mockAsyncExecutor);
 
         when(mockCollection.find(any(Bson.class))).thenReturn(mockFindIterable);
+        // executeQuery() returns the iterable from coll.find(...) then chains fluent
+        // modifiers (projection/sort/skip/limit) — unstubbed they return null and break
+        // toEntity(...). Have each chained call return the same mock iterable.
+        when(mockFindIterable.projection(any())).thenReturn(mockFindIterable);
+        when(mockFindIterable.sort(any())).thenReturn(mockFindIterable);
+        when(mockFindIterable.skip(anyInt())).thenReturn(mockFindIterable);
+        when(mockFindIterable.limit(anyInt())).thenReturn(mockFindIterable);
         when(mockFindIterable.iterator()).thenReturn(mockCursor);
     }
 

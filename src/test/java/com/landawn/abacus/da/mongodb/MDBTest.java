@@ -139,8 +139,10 @@ public class MDBTest extends TestBase {
         String result = MongoDBBase.toJson(doc);
 
         Assertions.assertNotNull(result);
-        Assertions.assertTrue(result.contains("\"name\":\"test\""));
-        Assertions.assertTrue(result.contains("\"value\":123"));
+        // N.toJson formatting may include whitespace around the colon; normalize before assert.
+        String compact = result.replaceAll("\\s+", "");
+        Assertions.assertTrue(compact.contains("\"name\":\"test\""), "actual: " + result);
+        Assertions.assertTrue(compact.contains("\"value\":123"), "actual: " + result);
     }
 
     @Test
@@ -149,7 +151,8 @@ public class MDBTest extends TestBase {
         String result = MongoDBBase.toJson(obj);
 
         Assertions.assertNotNull(result);
-        Assertions.assertTrue(result.contains("\"name\":\"test\""));
+        String compact = result.replaceAll("\\s+", "");
+        Assertions.assertTrue(compact.contains("\"name\":\"test\""), "actual: " + result);
     }
 
     @Test
@@ -158,13 +161,17 @@ public class MDBTest extends TestBase {
         String result = MongoDBBase.toJson(obj);
 
         Assertions.assertNotNull(result);
-        Assertions.assertTrue(result.contains("\"name\":\"test\""));
+        String compact = result.replaceAll("\\s+", "");
+        Assertions.assertTrue(compact.contains("\"name\":\"test\""), "actual: " + result);
     }
 
     @Test
     public void testToBsonWithObject() {
         TestEntity entity = new TestEntity();
-        entity.setId("123");
+        // The id property maps to _id, which resetObjectId(...) parses as an
+        // ObjectId via new ObjectId(String). A non-24-hex string would throw
+        // IllegalArgumentException, so use a real ObjectId hex string here.
+        entity.setId("507f1f77bcf86cd799439011");
         entity.setName("test");
 
         Bson result = MongoDBBase.toBson(entity);
@@ -203,7 +210,7 @@ public class MDBTest extends TestBase {
     @Test
     public void testToDocumentWithEntity() {
         TestEntity entity = new TestEntity();
-        entity.setId("123");
+        entity.setId("507f1f77bcf86cd799439011");
         entity.setName("test");
 
         Document result = MongoDBBase.toDocument(entity);

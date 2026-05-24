@@ -1018,318 +1018,457 @@ public final class AsyncMongoCollectionExecutor {
     }
 
     /**
-     * Asynchronously queries for a single boolean value from the first matching document.
+     * Asynchronously queries for the given property of the first matching document as a boolean value.
      *
-     * <p>This method retrieves the value of a specific boolean field from the first document
-     * matching the filter. The result is wrapped in OptionalBoolean to handle cases where
-     * the field doesn't exist or is null.</p>
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the future completes with {@code OptionalBoolean.empty()}
+     * <i>only</i> when no document matches the filter. If a document is found but the named field is
+     * absent or BSON null, the future completes with a <i>present</i> {@code OptionalBoolean} holding
+     * the primitive default {@code false}. Use
+     * {@link #queryForSingleValue(String, Bson, Class) queryForSingleValue(propName, filter, Boolean.class)}
+     * if you need to distinguish missing/null fields from a real {@code false}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.queryForBoolean("isActive", Filters.eq("userId", "123"))
-     *      .thenRunAsync(isActive -> isActive.ifPresent(active -> System.out.println("Active: " + active)));
+     *      .thenAccept(active -> System.out.println("Active: " + active.orElse(false)));
      * }</pre>
      *
      * @param propName the name of the boolean property to retrieve
      * @param filter the query filter to match documents
-     * @return a ContinuableFuture that completes with OptionalBoolean containing the value if present
+     * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalBoolean}
+     *         holding the field value (or {@code false} for missing/null) when at least one document
+     *         matches; {@code OptionalBoolean.empty()} when no document matches
      * @throws IllegalArgumentException if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see OptionalBoolean
+     * @see MongoCollectionExecutor#queryForBoolean(String, Bson)
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     public ContinuableFuture<OptionalBoolean> queryForBoolean(final String propName, final Bson filter) {
         return asyncExecutor.execute(() -> collectionExecutor.queryForBoolean(propName, filter));
     }
 
     /**
-     * Asynchronously queries for a single character value from the first matching document.
+     * Asynchronously queries for the given property of the first matching document as a char value.
      *
-     * <p>This method retrieves the value of a specific character field from the first document
-     * matching the filter. The result is wrapped in OptionalChar to handle cases where
-     * the field doesn't exist or is null.</p>
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the future completes with {@code OptionalChar.empty()}
+     * <i>only</i> when no document matches the filter. If a document is found but the named field is
+     * absent or BSON null, the future completes with a <i>present</i> {@code OptionalChar} holding the
+     * primitive default {@code (char) 0} (the NUL character). Use
+     * {@link #queryForSingleValue(String, Bson, Class) queryForSingleValue(propName, filter, Character.class)}
+     * if you need to distinguish missing/null fields from a real {@code (char) 0}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.queryForChar("grade", Filters.eq("studentId", "456"))
-     *      .thenRunAsync(grade -> grade.ifPresent(g -> System.out.println("Grade: " + g)));
+     *      .thenAccept(grade -> grade.ifPresent(g -> System.out.println("Grade: " + g)));
      * }</pre>
      *
      * @param propName the name of the character property to retrieve
      * @param filter the query filter to match documents
-     * @return a ContinuableFuture that completes with OptionalChar containing the value if present
+     * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalChar}
+     *         holding the field value (or the default {@code char} for missing/null) when at least one
+     *         document matches; {@code OptionalChar.empty()} when no document matches
      * @throws IllegalArgumentException if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see OptionalChar
+     * @see MongoCollectionExecutor#queryForChar(String, Bson)
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     public ContinuableFuture<OptionalChar> queryForChar(final String propName, final Bson filter) {
         return asyncExecutor.execute(() -> collectionExecutor.queryForChar(propName, filter));
     }
 
     /**
-     * Asynchronously queries for a single byte value from the first matching document.
+     * Asynchronously queries for the given property of the first matching document as a byte value.
      *
-     * <p>This method retrieves the value of a specific byte field from the first document
-     * matching the filter. The result is wrapped in OptionalByte to handle cases where
-     * the field doesn't exist or is null.</p>
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the future completes with {@code OptionalByte.empty()}
+     * <i>only</i> when no document matches the filter. If a document is found but the named field is
+     * absent or BSON null, the future completes with a <i>present</i> {@code OptionalByte} holding the
+     * primitive default {@code (byte) 0}. Use
+     * {@link #queryForSingleValue(String, Bson, Class) queryForSingleValue(propName, filter, Byte.class)}
+     * if you need to distinguish missing/null fields from a real {@code 0}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.queryForByte("priority", Filters.eq("taskId", "789"))
-     *      .thenRunAsync(priority -> priority.ifPresent(p -> System.out.println("Priority: " + p)));
+     *      .thenAccept(priority -> priority.ifPresent(p -> System.out.println("Priority: " + p)));
      * }</pre>
      *
      * @param propName the name of the byte property to retrieve
      * @param filter the query filter to match documents
-     * @return a ContinuableFuture that completes with OptionalByte containing the value if present
+     * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalByte}
+     *         holding the field value (or {@code 0} for missing/null) when at least one document
+     *         matches; {@code OptionalByte.empty()} when no document matches
      * @throws IllegalArgumentException if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see OptionalByte
+     * @see MongoCollectionExecutor#queryForByte(String, Bson)
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     public ContinuableFuture<OptionalByte> queryForByte(final String propName, final Bson filter) {
         return asyncExecutor.execute(() -> collectionExecutor.queryForByte(propName, filter));
     }
 
     /**
-     * Asynchronously queries for a single short value from the first matching document.
+     * Asynchronously queries for the given property of the first matching document as a short value.
      *
-     * <p>This method retrieves the value of a specific short field from the first document
-     * matching the filter. The result is wrapped in OptionalShort to handle cases where
-     * the field doesn't exist or is null.</p>
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the future completes with {@code OptionalShort.empty()}
+     * <i>only</i> when no document matches the filter. If a document is found but the named field is
+     * absent or BSON null, the future completes with a <i>present</i> {@code OptionalShort} holding the
+     * primitive default {@code (short) 0}. Use
+     * {@link #queryForSingleValue(String, Bson, Class) queryForSingleValue(propName, filter, Short.class)}
+     * if you need to distinguish missing/null fields from a real {@code 0}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.queryForShort("year", Filters.eq("eventId", "2024"))
-     *      .thenRunAsync(year -> year.ifPresent(y -> System.out.println("Year: " + y)));
+     *      .thenAccept(year -> year.ifPresent(y -> System.out.println("Year: " + y)));
      * }</pre>
      *
      * @param propName the name of the short property to retrieve
      * @param filter the query filter to match documents
-     * @return a ContinuableFuture that completes with OptionalShort containing the value if present
+     * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalShort}
+     *         holding the field value (or {@code 0} for missing/null) when at least one document
+     *         matches; {@code OptionalShort.empty()} when no document matches
      * @throws IllegalArgumentException if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see OptionalShort
+     * @see MongoCollectionExecutor#queryForShort(String, Bson)
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     public ContinuableFuture<OptionalShort> queryForShort(final String propName, final Bson filter) {
         return asyncExecutor.execute(() -> collectionExecutor.queryForShort(propName, filter));
     }
 
     /**
-     * Asynchronously queries for a single integer value from the first matching document.
+     * Asynchronously queries for the given property of the first matching document as an int value.
      *
-     * <p>This method retrieves the value of a specific integer field from the first document
-     * matching the filter. The result is wrapped in OptionalInt to handle cases where
-     * the field doesn't exist or is null.</p>
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored. Commonly used for counter-style fields.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the future completes with {@code OptionalInt.empty()}
+     * <i>only</i> when no document matches the filter. If a document is found but the named field is
+     * absent or BSON null, the future completes with a <i>present</i> {@code OptionalInt} holding the
+     * primitive default {@code 0}. Use
+     * {@link #queryForSingleValue(String, Bson, Class) queryForSingleValue(propName, filter, Integer.class)}
+     * if you need to distinguish missing/null fields from a real {@code 0}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.queryForInt("age", Filters.eq("userId", "user123"))
-     *      .thenRunAsync(age -> age.ifPresent(a -> System.out.println("Age: " + a)));
+     *      .thenAccept(age -> System.out.println("Age: " + age.orElse(0)));
      * }</pre>
      *
      * @param propName the name of the integer property to retrieve
      * @param filter the query filter to match documents
-     * @return a ContinuableFuture that completes with OptionalInt containing the value if present
+     * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalInt}
+     *         holding the field value (or {@code 0} for missing/null) when at least one document
+     *         matches; {@code OptionalInt.empty()} when no document matches
      * @throws IllegalArgumentException if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see OptionalInt
+     * @see MongoCollectionExecutor#queryForInt(String, Bson)
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     public ContinuableFuture<OptionalInt> queryForInt(final String propName, final Bson filter) {
         return asyncExecutor.execute(() -> collectionExecutor.queryForInt(propName, filter));
     }
 
     /**
-     * Asynchronously queries for a single long value from the first matching document.
+     * Asynchronously queries for the given property of the first matching document as a long value.
      *
-     * <p>This method retrieves the value of a specific long field from the first document
-     * matching the filter. The result is wrapped in OptionalLong to handle cases where
-     * the field doesn't exist or is null.</p>
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the future completes with {@code OptionalLong.empty()}
+     * <i>only</i> when no document matches the filter. If a document is found but the named field is
+     * absent or BSON null, the future completes with a <i>present</i> {@code OptionalLong} holding the
+     * primitive default {@code 0L}. Use
+     * {@link #queryForSingleValue(String, Bson, Class) queryForSingleValue(propName, filter, Long.class)}
+     * if you need to distinguish missing/null fields from a real {@code 0L}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.queryForLong("timestamp", Filters.eq("eventId", "evt123"))
-     *      .thenRunAsync(ts -> ts.ifPresent(t -> System.out.println("Timestamp: " + t)));
+     *      .thenAccept(ts -> ts.ifPresent(t -> System.out.println("Timestamp: " + t)));
      * }</pre>
      *
      * @param propName the name of the long property to retrieve
      * @param filter the query filter to match documents
-     * @return a ContinuableFuture that completes with OptionalLong containing the value if present
+     * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalLong}
+     *         holding the field value (or {@code 0L} for missing/null) when at least one document
+     *         matches; {@code OptionalLong.empty()} when no document matches
      * @throws IllegalArgumentException if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see OptionalLong
+     * @see MongoCollectionExecutor#queryForLong(String, Bson)
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     public ContinuableFuture<OptionalLong> queryForLong(final String propName, final Bson filter) {
         return asyncExecutor.execute(() -> collectionExecutor.queryForLong(propName, filter));
     }
 
     /**
-     * Asynchronously queries for a single float value from the first matching document.
+     * Asynchronously queries for the given property of the first matching document as a float value.
      *
-     * <p>Retrieves a float field value from the first document matching the provided filter.
-     * Returns OptionalFloat to safely handle cases where the field is missing or null.</p>
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the future completes with {@code OptionalFloat.empty()}
+     * <i>only</i> when no document matches the filter. If a document is found but the named field is
+     * absent or BSON null, the future completes with a <i>present</i> {@code OptionalFloat} holding the
+     * primitive default {@code 0.0f}. Use
+     * {@link #queryForSingleValue(String, Bson, Class) queryForSingleValue(propName, filter, Float.class)}
+     * if you need to distinguish missing/null fields from a real {@code 0.0f}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.queryForFloat("price", Filters.eq("productId", "prod456"))
-     *      .thenRunAsync(price -> price.ifPresent(p -> System.out.println("Price: $" + p)));
+     *      .thenAccept(price -> price.ifPresent(p -> System.out.println("Price: $" + p)));
      * }</pre>
      *
      * @param propName the name of the float property to retrieve
      * @param filter the query filter to match documents
-     * @return a ContinuableFuture that completes with OptionalFloat containing the value if present
+     * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalFloat}
+     *         holding the field value (or {@code 0.0f} for missing/null) when at least one document
+     *         matches; {@code OptionalFloat.empty()} when no document matches
      * @throws IllegalArgumentException if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see OptionalFloat
      * @see #queryForDouble(String, Bson)
+     * @see MongoCollectionExecutor#queryForFloat(String, Bson)
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     public ContinuableFuture<OptionalFloat> queryForFloat(final String propName, final Bson filter) {
         return asyncExecutor.execute(() -> collectionExecutor.queryForFloat(propName, filter));
     }
 
     /**
-     * Asynchronously queries for a single double value from the first matching document.
+     * Asynchronously queries for the given property of the first matching document as a double value.
      *
-     * <p>Retrieves a double field value from the first document matching the filter criteria.
-     * Useful for retrieving numeric values like prices, scores, or measurements.</p>
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the future completes with {@code OptionalDouble.empty()}
+     * <i>only</i> when no document matches the filter. If a document is found but the named field is
+     * absent or BSON null, the future completes with a <i>present</i> {@code OptionalDouble} holding
+     * the primitive default {@code 0.0d}. Use
+     * {@link #queryForSingleValue(String, Bson, Class) queryForSingleValue(propName, filter, Double.class)}
+     * if you need to distinguish missing/null fields from a real {@code 0.0d}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.queryForDouble("averageRating", Filters.eq("movieId", "movie789"))
-     *      .thenRunAsync(rating -> rating.ifPresent(r -> System.out.println("Rating: " + r)));
+     *      .thenAccept(rating -> rating.ifPresent(r -> System.out.println("Rating: " + r)));
      * }</pre>
      *
      * @param propName the name of the double property to retrieve
      * @param filter the query filter to match documents
-     * @return a ContinuableFuture that completes with OptionalDouble containing the value if present
+     * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalDouble}
+     *         holding the field value (or {@code 0.0d} for missing/null) when at least one document
+     *         matches; {@code OptionalDouble.empty()} when no document matches
      * @throws IllegalArgumentException if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see OptionalDouble
      * @see #queryForFloat(String, Bson)
+     * @see MongoCollectionExecutor#queryForDouble(String, Bson)
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     public ContinuableFuture<OptionalDouble> queryForDouble(final String propName, final Bson filter) {
         return asyncExecutor.execute(() -> collectionExecutor.queryForDouble(propName, filter));
     }
 
     /**
-     * Asynchronously queries for a single string value from the first matching document.
+     * Asynchronously queries for the given property of the first matching document as a String value.
      *
-     * <p>Retrieves a string field value from the first document matching the filter.
-     * Returns Nullable to handle cases where the field is missing, null, or not a string type.</p>
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the future completes with {@code Nullable.empty()}
+     * <i>only</i> when no document matches the filter. If a document is found but the named field is
+     * absent or BSON null, the future completes with a <i>present-but-null</i> {@code Nullable}
+     * ({@code Nullable.of(null)}). {@link Nullable} preserves the distinction between "no document
+     * matched" and "document matched but value is null"; use {@link Nullable#isPresent()} and
+     * {@link Nullable#isNotNull()} accordingly.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.queryForString("username", Filters.eq("userId", "user123"))
-     *      .thenRunAsync(name -> System.out.println("Username: " + name.orElse("Unknown")));
+     *      .thenAccept(name -> System.out.println("Username: " + name.orElse("Unknown")));
      * }</pre>
      *
      * @param propName the name of the string property to retrieve
      * @param filter the query filter to match documents
-     * @return a ContinuableFuture that completes with Nullable containing the string value if present
+     * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code Nullable<String>}
+     *         holding the field value (possibly {@code null} for missing/null fields) when at least
+     *         one document matches; {@code Nullable.empty()} when no document matches
      * @throws IllegalArgumentException if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Nullable
+     * @see MongoCollectionExecutor#queryForString(String, Bson)
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     public ContinuableFuture<Nullable<String>> queryForString(final String propName, final Bson filter) {
         return asyncExecutor.execute(() -> collectionExecutor.queryForString(propName, filter));
     }
 
     /**
-     * Asynchronously queries for a single Date value from the first matching document.
+     * Asynchronously queries for the given property of the first matching document as a Date value.
      *
-     * <p>Retrieves a Date field value from the first document matching the filter.
-     * Commonly used for timestamp fields like createdAt, updatedAt, or lastLogin.</p>
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored. Commonly used for timestamp fields such as {@code createdAt},
+     * {@code updatedAt}, or {@code lastLogin}.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the future completes with {@code Nullable.empty()}
+     * <i>only</i> when no document matches the filter. If a document is found but the named field is
+     * absent or BSON null, the future completes with a <i>present-but-null</i> {@code Nullable}
+     * ({@code Nullable.of(null)}), preserving the distinction between "no document matched" and
+     * "document matched but value is null".</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.queryForDate("lastLogin", Filters.eq("username", "john.doe"))
-     *      .thenRunAsync(date -> date.ifPresent(d -> System.out.println("Last login: " + d)));
+     *      .thenAccept(date -> date.ifPresent(d -> System.out.println("Last login: " + d)));
      * }</pre>
      *
      * @param propName the name of the Date property to retrieve
      * @param filter the query filter to match documents
-     * @return a ContinuableFuture that completes with Nullable containing the Date value if present
+     * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code Nullable<Date>}
+     *         holding the field value (possibly {@code null} for missing/null fields) when at least
+     *         one document matches; {@code Nullable.empty()} when no document matches
      * @throws IllegalArgumentException if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Nullable
      * @see Date
      * @see #queryForDate(String, Bson, Class)
+     * @see MongoCollectionExecutor#queryForDate(String, Bson)
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     public ContinuableFuture<Nullable<Date>> queryForDate(final String propName, final Bson filter) {
         return asyncExecutor.execute(() -> collectionExecutor.queryForDate(propName, filter));
     }
 
     /**
-     * Asynchronously queries for a Date value with a specific Date subclass type.
+     * Asynchronously queries for the given property of the first matching document as a specific
+     * Date subclass value (e.g. {@link java.sql.Timestamp}).
      *
-     * <p>Retrieves a Date field and casts it to the specified Date subclass type.
-     * Useful when working with custom Date implementations or specific date types.</p>
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored. The value is converted to the requested {@code Date} subclass.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the future completes with {@code Nullable.empty()}
+     * <i>only</i> when no document matches the filter. If a document is found but the named field is
+     * absent or BSON null, the future completes with a <i>present-but-null</i> {@code Nullable}
+     * ({@code Nullable.of(null)}), preserving the distinction between "no document matched" and
+     * "document matched but value is null".</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.queryForDate("timestamp", Filters.eq("eventId", "evt123"), java.sql.Timestamp.class)
-     *      .thenRunAsync(ts -> ts.ifPresent(t -> System.out.println("SQL Timestamp: " + t)));
+     *      .thenAccept(ts -> ts.ifPresent(t -> System.out.println("SQL Timestamp: " + t)));
      * }</pre>
      *
      * @param <T> the specific Date subclass type
      * @param propName the name of the Date property to retrieve
      * @param filter the query filter to match documents (null matches all)
      * @param valueType the Class object representing the Date subclass type
-     * @return a ContinuableFuture that completes with Nullable containing the typed Date value if present
+     * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code Nullable<T>}
+     *         holding the typed Date value (possibly {@code null} for missing/null fields) when at
+     *         least one document matches; {@code Nullable.empty()} when no document matches
      * @throws IllegalArgumentException if propName or valueType is null or empty (propagated through future)
      * @throws ClassCastException if the value cannot be cast to the specified type (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #queryForDate(String, Bson)
+     * @see MongoCollectionExecutor#queryForDate(String, Bson, Class)
+     * @see #queryForSingleValue(String, Bson, Class)
      */
     public <T extends Date> ContinuableFuture<Nullable<T>> queryForDate(final String propName, final Bson filter, final Class<T> valueType) {
         return asyncExecutor.execute(() -> collectionExecutor.queryForDate(propName, filter, valueType));
     }
 
     /**
-     * Asynchronously queries for a single field value of a specified type from the first matching document.
+     * Asynchronously queries for the given property of the first matching document, converted to the
+     * specified type.
      *
-     * <p>Generic method to retrieve any field value with type safety. The value is automatically
-     * converted to the specified type using the configured codec registry.</p>
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored. The value is converted to {@code valueType} using the configured codec
+     * registry.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the future completes with {@code Nullable.empty()}
+     * <i>only</i> when no document matches the filter. If a document is found but the named field is
+     * absent or BSON null, the future completes with a <i>present-but-null</i> {@code Nullable}
+     * ({@code Nullable.of(null)}). Unlike the primitive {@code queryForXxx} variants (which surface
+     * missing/null fields as the primitive default wrapped in a present Optional), this method —
+     * driven by a wrapper / object {@code Class<V>} — always conveys missing/null precisely as Java
+     * {@code null} inside the Nullable.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.queryForSingleValue("metadata", Filters.eq("docId", "doc123"), MetadataClass.class)
-     *      .thenRunAsync(meta -> meta.ifPresent(m -> processMetadata(m)));
+     *      .thenAccept(meta -> meta.ifPresent(m -> processMetadata(m)));
      * }</pre>
      *
      * @param <V> the type of the value to retrieve
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents (null matches all)
      * @param valueType the Class object representing the value type
-     * @return a ContinuableFuture that completes with Nullable containing the typed value if present
+     * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code Nullable<V>}
+     *         holding the converted value (possibly {@code null} for missing/null fields) when at
+     *         least one document matches; {@code Nullable.empty()} when no document matches
      * @throws IllegalArgumentException if propName or valueType is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Nullable
      * @see #queryForSingleNonNull(String, Bson, Class)
+     * @see MongoCollectionExecutor#queryForSingleValue(String, Bson, Class)
      */
     public <V> ContinuableFuture<Nullable<V>> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType) {
         return asyncExecutor.execute(() -> collectionExecutor.queryForSingleValue(propName, filter, valueType));
     }
 
     /**
-     * Asynchronously queries for a single non-null field value from the first matching document.
+     * Asynchronously queries for the given property of the first matching document, converted to the
+     * specified type and wrapped in an {@link Optional} that is guaranteed non-null when present.
      *
-     * <p>Similar to queryForSingleValue but returns Optional instead of Nullable,
-     * ensuring the value is never null when present. Useful when null values should be treated as absent.</p>
+     * <p>Only the named property of the first matched document is read; any remaining documents or
+     * fields are ignored.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> the future completes with {@code Optional.empty()} when
+     * no document matches the filter, or when a document is found but the named field is absent or
+     * BSON null — both "absent" and "present-but-null" collapse to empty here. If a document is found
+     * and the converted value is non-null, the future completes with a <i>present</i> {@code Optional}
+     * holding that value. Use {@link #queryForSingleValue(String, Bson, Class)} (returns
+     * {@link Nullable}) when null is a legitimate value to convey.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * async.queryForSingleNonNull("config", Filters.eq("appId", "app123"), ConfigClass.class)
-     *      .thenRunAsync(config -> config.ifPresent(c -> applyConfiguration(c)));
+     *      .thenAccept(config -> config.ifPresent(c -> applyConfiguration(c)));
      * }</pre>
      *
      * @param <V> the type of the value to retrieve
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents (null matches all)
      * @param valueType the Class object representing the value type
-     * @return a ContinuableFuture that completes with Optional containing the non-null value if present
+     * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code Optional<V>}
+     *         holding the (non-null) converted value when at least one document matches with a
+     *         non-null value; {@code Optional.empty()} otherwise
      * @throws IllegalArgumentException if propName or valueType is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Optional
      * @see #queryForSingleValue(String, Bson, Class)
+     * @see MongoCollectionExecutor#queryForSingleNonNull(String, Bson, Class)
      */
     public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final String propName, final Bson filter, final Class<V> valueType) {
         return asyncExecutor.execute(() -> collectionExecutor.queryForSingleNonNull(propName, filter, valueType));

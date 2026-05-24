@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Date;
 import java.util.List;
+import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
 
@@ -258,7 +259,8 @@ public class MongoDBExecutorTest extends AbstractNoSQLTest {
     public void test_insertOne() {
         collectionExecutor.deleteMany(Filters.ne("lastName", Strings.uuid()));
 
-        Map<String, Object> m = N.asMap("lastName", Strings.uuid(), "firstName", Strings.uuid());
+        // N.asMap(...) returns an immutable map; wrap so we can add "props".
+        Map<String, Object> m = new HashMap<>(N.asMap("lastName", Strings.uuid(), "firstName", Strings.uuid()));
         m.put("props", N.asMap("prop1", 1, "prop2", 2));
 
         collectionExecutor.insertOne(m);
@@ -380,7 +382,9 @@ public class MongoDBExecutorTest extends AbstractNoSQLTest {
      */
     @Test
     public void test_query_asyn() throws InterruptedException, ExecutionException {
-        asyncCollExecutor.deleteMany(Filters.ne("lastName", Strings.uuid()));
+        // Must await deleteMany; otherwise it can race with the insertOne below
+        // and wipe the just-inserted account, leaving findFirst empty and NPE'ing.
+        asyncCollExecutor.deleteMany(Filters.ne("lastName", Strings.uuid())).get();
 
         Account account = createAccount();
         asyncCollExecutor.insertOne(account).get();
@@ -1569,7 +1573,8 @@ public class MongoDBExecutorTest extends AbstractNoSQLTest {
      */
     @Test
     public void test_update_async_2() throws InterruptedException, ExecutionException {
-        asyncCollExecutor.deleteMany(Filters.ne("lastName", Strings.uuid()));
+        // Must await deleteMany; see test_query_asyn for the race-condition rationale.
+        asyncCollExecutor.deleteMany(Filters.ne("lastName", Strings.uuid())).get();
 
         Account account = createAccount();
         asyncCollExecutor.insertOne(account).get();

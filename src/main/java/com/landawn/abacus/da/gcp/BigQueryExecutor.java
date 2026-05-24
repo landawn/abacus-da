@@ -1331,38 +1331,42 @@ public class BigQueryExecutor {
     }
 
     /**
-     * Queries for a single property value from a BigQuery table using a condition.
-     * <p>
-     * This method executes a SELECT query for a specific property/column and returns the first
-     * matching value wrapped in a Nullable. This is useful for retrieving single values like
-     * counts, sums, or specific field values.
+     * Builds a SELECT SQL query against the BigQuery table mapped to {@code targetClass} for the single
+     * column named by {@code propName}, applies {@code whereClause}, executes it, and returns the value
+     * of that column from the first row converted to {@code valueClass}.
+     *
+     * <p>Only the first column of the first row of the {@link TableResult} is read; any remaining rows
+     * or columns are ignored.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned <i>only</i> when the
+     * query produces no rows. If a row exists but the column is {@code NULL} in BigQuery, the returned
+     * {@code Nullable} is <i>present-but-null</i> ({@code Nullable.of(null)}). {@link Nullable} preserves
+     * the distinction between "no row matched" and "row matched but value is null".</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Query for a single property value
-     * Condition condition = Filters.eq("customerId", "CUST123");
+     * Condition condition = CF.eq("customerId", "CUST123");
      * Nullable<String> email = executor.queryForSingleValue(
-     *     Customer.class, String.class, "email", condition);
+     *         Customer.class, String.class, "email", condition);
      *
-     * if (email.isPresent()) {
-     *     System.out.println("Customer email: " + email.get());
-     * }
-     *
-     * // Get maximum order amount
-     * Condition activeOrders = Filters.eq("status", "active");
-     * Nullable<BigDecimal> maxAmount = executor.queryForSingleValue(
-     *     Order.class, BigDecimal.class, "orderAmount", activeOrders);
+     * email.ifPresent(e -> System.out.println("Customer email: " + e));
      * }</pre>
      *
      * @param <T> the target table entity type
      * @param <V> the expected value type
-     * @param targetClass the class representing the target table
-     * @param valueClass the expected class of the returned value
+     * @param targetClass the class representing the target BigQuery table
+     * @param valueClass the expected class of the returned value, used for type conversion
      * @param propName the property/column name to select
      * @param whereClause the condition to filter records, or {@code null} to omit the WHERE clause
-     * @return a Nullable containing the first matching value, or empty if no match found
-     * @throws IllegalArgumentException if targetClass is null
+     * @return a <i>present</i> {@code Nullable<V>} holding the column value (possibly {@code null} for
+     *         a BigQuery {@code NULL}) when at least one row is returned; {@code Nullable.empty()} when
+     *         the query returns no rows
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null} or otherwise rejected by
+     *         the SQL builder
+     * @throws RuntimeException if the underlying BigQuery query execution fails or the calling thread
+     *         is interrupted
      * @see #queryForSingleValue(Class, String, Object...)
+     * @see #execute(String, Object...)
      */
     public <T, V> Nullable<V> queryForSingleValue(final Class<T> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause) {
         final SP sp = prepareQuery(targetClass, N.asList(propName), whereClause);
@@ -1371,38 +1375,42 @@ public class BigQueryExecutor {
     }
 
     /**
-     * Executes a custom BigQuery SQL query and returns the first column of the first row.
-     * <p>
-     * This method is designed for queries that return a single value, such as COUNT(*),
-     * MAX(column), or single field lookups. If the query returns no rows, an empty
-     * Nullable is returned. The result is automatically converted to the specified value class.
+     * Executes a custom BigQuery SQL query with positional parameters and returns the value of the
+     * first column of the first row, converted to {@code valueClass}.
+     *
+     * <p>Only the first column of the first row of the returned {@link TableResult} is read; any
+     * remaining rows or columns are ignored. This method is designed for queries that return a single
+     * scalar, such as {@code COUNT(*)}, {@code MAX(column)}, or single-field lookups.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned <i>only</i> when the
+     * query produces no rows (including DML statements where BigQuery surfaces an affected-row count
+     * but {@code getValues()} is empty). If a row exists but the column is {@code NULL} in BigQuery,
+     * the returned {@code Nullable} is <i>present-but-null</i> ({@code Nullable.of(null)}).
+     * {@link Nullable} preserves the distinction between "no row matched" and "row matched but value
+     * is null".</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Get count of records
      * Nullable<Long> count = executor.queryForSingleValue(Long.class,
-     *     "SELECT COUNT(*) FROM customers WHERE status = ?", "active");
+     *         "SELECT COUNT(*) FROM customers WHERE status = ?", "active");
      * System.out.println("Active customers: " + count.orElse(0L));
      *
-     * // Get maximum value
-     * Nullable<BigDecimal> maxAmount = executor.queryForSingleValue(BigDecimal.class,
-     *     "SELECT MAX(order_amount) FROM orders WHERE order_date = ?",
-     *     LocalDate.now());
-     *
-     * // Get single field value
-     * Nullable<String> customerName = executor.queryForSingleValue(String.class,
-     *     "SELECT name FROM customers WHERE customer_id = ?", "CUST123");
-     *
-     * customerName.ifPresent(name -> System.out.println("Customer: " + name));
+     * Nullable<String> name = executor.queryForSingleValue(String.class,
+     *         "SELECT name FROM customers WHERE customer_id = ?", "CUST123");
      * }</pre>
      *
      * @param <V> the expected value type
-     * @param valueClass the expected class of the returned value
-     * @param query the SQL query string with ? parameter placeholders
-     * @param parameters the parameter values to bind to the query
-     * @return a Nullable containing the converted value from the first column of the first row,
-     *         or empty if the query returns no rows
-     * @throws NullPointerException if query is null
+     * @param valueClass the expected class of the returned value, used for type conversion
+     * @param query the BigQuery SQL query string with {@code ?} positional parameter placeholders
+     * @param parameters the parameter values to bind to the query, in positional order
+     * @return a <i>present</i> {@code Nullable<V>} holding the column value converted to
+     *         {@code valueClass} (possibly {@code null} for a BigQuery {@code NULL}) when at least one
+     *         row is returned; {@code Nullable.empty()} when the query returns no rows
+     * @throws IllegalArgumentException if {@code valueClass} or {@code query} is rejected by the
+     *         conversion / BigQuery client layer
+     * @throws RuntimeException if the underlying BigQuery query execution fails or the calling thread
+     *         is interrupted
+     * @see #queryForSingleValue(Class, Class, String, Condition)
      * @see #execute(String, Object...)
      */
     public final <V> Nullable<V> queryForSingleValue(final Class<V> valueClass, final String query, final Object... parameters) {
