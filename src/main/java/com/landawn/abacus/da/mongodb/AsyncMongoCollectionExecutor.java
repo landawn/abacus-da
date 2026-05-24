@@ -1446,9 +1446,11 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p><b>Empty vs. present semantics:</b> the future completes with {@code Optional.empty()} when
      * no document matches the filter, or when a document is found but the named field is absent or
-     * BSON null — both "absent" and "present-but-null" collapse to empty here. If a document is found
-     * and the converted value is non-null, the future completes with a <i>present</i> {@code Optional}
-     * holding that value. Use {@link #queryForSingleValue(String, Bson, Class)} (returns
+     * its raw BSON value is {@code null} — both "absent" and "raw null" collapse to empty here. When
+     * the raw field value is non-null, it is converted and wrapped in the {@code Optional} via
+     * {@link Optional#of(Object)}, which does not accept a null payload — so if the conversion of a
+     * non-null raw value yields {@code null}, the future completes exceptionally with
+     * {@link NullPointerException}. Use {@link #queryForSingleValue(String, Bson, Class)} (returns
      * {@link Nullable}) when null is a legitimate value to convey.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -1463,8 +1465,12 @@ public final class AsyncMongoCollectionExecutor {
      * @param valueType the Class object representing the value type
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code Optional<V>}
      *         holding the (non-null) converted value when at least one document matches with a
-     *         non-null value; {@code Optional.empty()} otherwise
+     *         non-null value; {@code Optional.empty()} when no document matches, the field is absent,
+     *         or the raw field value is {@code null}
      * @throws IllegalArgumentException if propName or valueType is null or empty (propagated through future)
+     * @throws NullPointerException if the raw field value is non-null but its conversion to
+     *         {@code valueType} yields {@code null}, because {@link Optional#of(Object)} rejects a null
+     *         payload (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Optional
      * @see #queryForSingleValue(String, Bson, Class)

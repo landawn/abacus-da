@@ -1888,10 +1888,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p>Only the first row of the {@code ResultSet} is read; remaining rows are ignored.</p>
      *
-     * <p><b>Empty vs. present semantics:</b> Unlike
-     * {@link #queryForSingleValue(Class, Class, String, Condition)}, this overload collapses both "no row"
-     * and "row found with {@code NULL} column" into {@code Optional.empty()}. Use the {@code Nullable}
-     * overload when you need to distinguish those two cases.</p>
+     * <p><b>Empty vs. present semantics:</b> {@code Optional.empty()} is returned <i>only</i> when the
+     * query returns no rows. When a row is returned, the column value is wrapped in the
+     * {@code Optional} via {@link Optional#of(Object)}, which does not accept a null payload — so if
+     * the column value is {@code NULL} (or the conversion to {@code valueClass} yields {@code null}),
+     * this method throws {@link NullPointerException} rather than returning {@code Optional.empty()}.
+     * Use {@link #queryForSingleValue(Class, Class, String, Condition)} (which returns
+     * {@link Nullable}) when the column may legitimately be {@code NULL}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1906,11 +1909,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param valueClass the Java class the column value is converted to
      * @param propName the property name (column) whose value is returned
      * @param whereClause the WHERE condition used to build the CQL query
-     * @return a <i>present</i> {@code Optional<V>} holding the (non-null) column value when at least one
-     *         row is returned with a non-null value; {@code Optional.empty()} when the query returns no
-     *         rows or the column value is {@code NULL}
+     * @return a <i>present</i> {@code Optional<V>} holding the (non-null) column value when at least
+     *         one row is returned with a non-null value; {@code Optional.empty()} when the query
+     *         returns no rows
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code valueClass} is
      *         {@code null}, or {@code propName} is {@code null} or empty
+     * @throws NullPointerException if a row is returned but the column value (or its conversion) is
+     *         {@code null}, because {@link Optional#of(Object)} rejects a null payload
      * @see #queryForSingleValue(Class, Class, String, Condition)
      * @see #queryForSingleNonNull(Class, String, Object...)
      */
@@ -2327,10 +2332,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p>Only the first column of the first row of the {@code ResultSet} is read; remaining rows and
      * columns are ignored. Parameters are bound positionally to {@code ?} placeholders.</p>
      *
-     * <p><b>Empty vs. present semantics:</b> Unlike {@link #queryForSingleValue(Class, String, Object...)},
-     * this method collapses both "no row" and "row found with {@code NULL} column" into
-     * {@code Optional.empty()}, because {@code Optional} cannot carry a null payload. Use the
-     * {@code Nullable} overload when you need to distinguish those two cases.</p>
+     * <p><b>Empty vs. present semantics:</b> {@code Optional.empty()} is returned <i>only</i> when the
+     * query produces no rows. When a row is returned, the column value is wrapped in the
+     * {@code Optional} via {@link Optional#of(Object)}, which does not accept a null payload — so if
+     * the column value is {@code NULL} (or the conversion to {@code valueClass} yields {@code null}),
+     * this method throws {@link NullPointerException} rather than returning {@code Optional.empty()}.
+     * Use {@link #queryForSingleValue(Class, String, Object...)} (which returns {@link Nullable})
+     * when the column may legitimately be {@code NULL}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2345,10 +2353,12 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param valueClass the Java class the column value is converted to
      * @param query the CQL query string with {@code ?} placeholders for parameters
      * @param parameters the values to bind, in declaration order
-     * @return a <i>present</i> {@code Optional<E>} holding the (non-null) column value when at least one
-     *         row is returned with a non-null value; {@code Optional.empty()} when the query returns no
-     *         rows or the column value is {@code NULL}
+     * @return a <i>present</i> {@code Optional<E>} holding the (non-null) column value when at least
+     *         one row is returned with a non-null value; {@code Optional.empty()} when the query
+     *         returns no rows
      * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}
+     * @throws NullPointerException if a row is returned but the column value (or its conversion) is
+     *         {@code null}, because {@link Optional#of(Object)} rejects a null payload
      * @see #queryForSingleValue(Class, String, Object...)
      */
     public abstract <E> Optional<E> queryForSingleNonNull(final Class<E> valueClass, final String query, final Object... parameters);

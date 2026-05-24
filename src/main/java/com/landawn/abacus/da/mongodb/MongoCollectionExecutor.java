@@ -1569,19 +1569,19 @@ public final class MongoCollectionExecutor {
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents
      * or fields are ignored.</p>
      *
-     * <p><b>Empty vs. present semantics:</b> Unlike the JDBC sibling, this Mongo implementation does
-     * <i>not</i> throw {@link NullPointerException} when the field value is null — it returns
-     * {@code Optional.empty()} instead. Specifically, {@code Optional.empty()} is returned when:
+     * <p><b>Empty vs. present semantics:</b> {@code Optional.empty()} is returned when:
      * <ul>
      *   <li>no document matches the filter,</li>
      *   <li>the matched document has no field named {@code propName}, or</li>
-     *   <li>the matched document carries the field but its value is {@code null}.</li>
+     *   <li>the matched document carries the field but its raw BSON value is {@code null}.</li>
      * </ul>
-     * Otherwise the returned {@code Optional} is <i>present</i> and holds the converted non-null value.
-     * Because {@code null} field values are collapsed into {@code Optional.empty()}, this method cannot
-     * distinguish "no document / missing field" from "field present but null"; use
-     * {@link #queryForSingleValue(String, Bson, Class)} (which returns {@link Nullable}) when that
-     * distinction matters.</p>
+     * Otherwise the raw field value is converted via {@link N#convert(Object, Class)} and wrapped in
+     * the {@code Optional} via {@link Optional#of(Object)}, which does not accept a null payload —
+     * so if the conversion of a non-null raw value yields {@code null}, this method throws
+     * {@link NullPointerException}. Because raw {@code null} field values are collapsed into
+     * {@code Optional.empty()}, this method cannot distinguish "no document / missing field" from
+     * "field present but null"; use {@link #queryForSingleValue(String, Bson, Class)} (which returns
+     * {@link Nullable}) when that distinction matters.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1596,8 +1596,11 @@ public final class MongoCollectionExecutor {
      * @param valueType the target type for conversion of the field value
      * @return a <i>present</i> {@code Optional<V>} holding the converted non-null value when a document
      *         is matched and the field is present with a non-null value; {@code Optional.empty()} when no
-     *         document matches, the field is absent, or the field value is {@code null}
+     *         document matches, the field is absent, or the raw field value is {@code null}
      * @throws IllegalArgumentException if propName or valueType is null or empty
+     * @throws NullPointerException if the raw field value is non-null but its conversion to
+     *         {@code valueType} yields {@code null}, because {@link Optional#of(Object)} rejects a null
+     *         payload
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
      * @see com.landawn.abacus.util.u.Optional
@@ -1613,7 +1616,7 @@ public final class MongoCollectionExecutor {
 
         final Object value = doc.get(propName);
 
-        return value == null ? (Optional<V>) Optional.empty() : Optional.ofNullable(N.convert(value, valueType));
+        return value == null ? (Optional<V>) Optional.empty() : Optional.of(N.convert(value, valueType));
     }
 
     /**

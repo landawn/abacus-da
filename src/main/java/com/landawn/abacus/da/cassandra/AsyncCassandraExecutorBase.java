@@ -451,7 +451,11 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
     }
 
     public <T> ContinuableFuture<Optional<T>> queryForSingleNonNull(final Class<T> valueClass, final String query, final Object... parameters) {
-        return queryForSingleValue(valueClass, query, parameters).map(Nullable::toOptional);
+        return execute(query, parameters).map(resultSet -> {
+            final java.util.Iterator<RW> iter = resultSet.iterator();
+
+            return iter.hasNext() ? Optional.of(cassandraExecutor.createRowMapper(valueClass).apply(iter.next())) : Optional.empty();
+        });
     }
 
     /**
