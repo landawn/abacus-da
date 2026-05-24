@@ -1444,14 +1444,13 @@ public final class AsyncMongoCollectionExecutor {
      * <p>Only the named property of the first matched document is read; any remaining documents or
      * fields are ignored.</p>
      *
-     * <p><b>Empty vs. present semantics:</b> the future completes with {@code Optional.empty()} when
-     * no document matches the filter, or when a document is found but the named field is absent or
-     * its raw BSON value is {@code null} — both "absent" and "raw null" collapse to empty here. When
-     * the raw field value is non-null, it is converted and wrapped in the {@code Optional} via
-     * {@link Optional#of(Object)}, which does not accept a null payload — so if the conversion of a
-     * non-null raw value yields {@code null}, the future completes exceptionally with
+     * <p><b>Empty vs. present semantics:</b> the future completes with {@code Optional.empty()}
+     * <i>only</i> when no document matches the filter. When a document is matched, its field value is
+     * converted and wrapped in the {@code Optional} via {@link Optional#of(Object)}, which does not
+     * accept a null payload — so if the field is absent, the raw BSON value is {@code null}, or the
+     * conversion yields {@code null}, the future completes exceptionally with
      * {@link NullPointerException}. Use {@link #queryForSingleValue(String, Bson, Class)} (returns
-     * {@link Nullable}) when null is a legitimate value to convey.</p>
+     * {@link Nullable}) when the field may legitimately be absent or {@code null}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1464,13 +1463,12 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to match documents (null matches all)
      * @param valueType the Class object representing the value type
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code Optional<V>}
-     *         holding the (non-null) converted value when at least one document matches with a
-     *         non-null value; {@code Optional.empty()} when no document matches, the field is absent,
-     *         or the raw field value is {@code null}
+     *         holding the (non-null) converted value when a document is matched and the field carries
+     *         a non-null value; {@code Optional.empty()} when no document matches the filter
      * @throws IllegalArgumentException if propName or valueType is null or empty (propagated through future)
-     * @throws NullPointerException if the raw field value is non-null but its conversion to
-     *         {@code valueType} yields {@code null}, because {@link Optional#of(Object)} rejects a null
-     *         payload (propagated through future)
+     * @throws NullPointerException if a document is matched but the field is absent, the raw value is
+     *         {@code null}, or the conversion to {@code valueType} yields {@code null}, because
+     *         {@link Optional#of(Object)} rejects a null payload (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Optional
      * @see #queryForSingleValue(String, Bson, Class)

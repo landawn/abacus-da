@@ -1569,19 +1569,13 @@ public final class MongoCollectionExecutor {
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents
      * or fields are ignored.</p>
      *
-     * <p><b>Empty vs. present semantics:</b> {@code Optional.empty()} is returned when:
-     * <ul>
-     *   <li>no document matches the filter,</li>
-     *   <li>the matched document has no field named {@code propName}, or</li>
-     *   <li>the matched document carries the field but its raw BSON value is {@code null}.</li>
-     * </ul>
-     * Otherwise the raw field value is converted via {@link N#convert(Object, Class)} and wrapped in
-     * the {@code Optional} via {@link Optional#of(Object)}, which does not accept a null payload —
-     * so if the conversion of a non-null raw value yields {@code null}, this method throws
-     * {@link NullPointerException}. Because raw {@code null} field values are collapsed into
-     * {@code Optional.empty()}, this method cannot distinguish "no document / missing field" from
-     * "field present but null"; use {@link #queryForSingleValue(String, Bson, Class)} (which returns
-     * {@link Nullable}) when that distinction matters.</p>
+     * <p><b>Empty vs. present semantics:</b> {@code Optional.empty()} is returned <i>only</i> when no
+     * document matches the filter. When a document is matched, its {@code propName} value is converted
+     * via {@link N#convert(Object, Class)} and wrapped in the {@code Optional} via
+     * {@link Optional#of(Object)}, which does not accept a null payload — so if the field is absent,
+     * the raw BSON value is {@code null}, or the conversion yields {@code null}, this method throws
+     * {@link NullPointerException}. Use {@link #queryForSingleValue(String, Bson, Class)} (which
+     * returns {@link Nullable}) when the field may legitimately be absent or {@code null}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1594,13 +1588,13 @@ public final class MongoCollectionExecutor {
      * @param propName the name of the field to retrieve the value from
      * @param filter BSON filter criteria to match documents (null matches all)
      * @param valueType the target type for conversion of the field value
-     * @return a <i>present</i> {@code Optional<V>} holding the converted non-null value when a document
-     *         is matched and the field is present with a non-null value; {@code Optional.empty()} when no
-     *         document matches, the field is absent, or the raw field value is {@code null}
+     * @return a <i>present</i> {@code Optional<V>} holding the converted non-null value when a
+     *         document is matched and the field carries a non-null value; {@code Optional.empty()}
+     *         when no document matches the filter
      * @throws IllegalArgumentException if propName or valueType is null or empty
-     * @throws NullPointerException if the raw field value is non-null but its conversion to
-     *         {@code valueType} yields {@code null}, because {@link Optional#of(Object)} rejects a null
-     *         payload
+     * @throws NullPointerException if a document is matched but the field is absent, the raw value is
+     *         {@code null}, or the conversion to {@code valueType} yields {@code null}, because
+     *         {@link Optional#of(Object)} rejects a null payload
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
      * @see com.landawn.abacus.util.u.Optional
@@ -1614,9 +1608,7 @@ public final class MongoCollectionExecutor {
             return (Optional<V>) Optional.empty();
         }
 
-        final Object value = doc.get(propName);
-
-        return value == null ? (Optional<V>) Optional.empty() : Optional.of(N.convert(value, valueType));
+        return Optional.of(N.convert(doc.get(propName), valueType));
     }
 
     /**
