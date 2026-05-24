@@ -196,28 +196,9 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testToItemWithEntity() {
-        class TestEntity {
-            private String id = "123";
-            private String name = "test";
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-
-            public String getName() {
-                return name;
-            }
-
-            public void setName(String name) {
-                this.name = name;
-            }
-        }
-
         TestEntity entity = new TestEntity();
+        entity.setId("123");
+        entity.setName("test");
         Map<String, AttributeValue> result = DynamoDBExecutor.toItem(entity);
 
         assertNotNull(result);
@@ -250,19 +231,8 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testToItemWithNamingPolicy() {
-        class TestEntity {
-            private String firstName = "John";
-
-            public String getFirstName() {
-                return firstName;
-            }
-
-            public void setFirstName(String firstName) {
-                this.firstName = firstName;
-            }
-        }
-
         TestEntity entity = new TestEntity();
+        entity.setFirstName("John");
         Map<String, AttributeValue> result = DynamoDBExecutor.toItem(entity, NamingPolicy.SNAKE_CASE);
 
         assertNotNull(result);
@@ -271,28 +241,9 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testToUpdateItem() {
-        class TestEntity {
-            private String id = "123";
-            private String name = "test";
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-
-            public String getName() {
-                return name;
-            }
-
-            public void setName(String name) {
-                this.name = name;
-            }
-        }
-
         TestEntity entity = new TestEntity();
+        entity.setId("123");
+        entity.setName("test");
         Map<String, AttributeValueUpdate> result = DynamoDBExecutor.toUpdateItem(entity);
 
         assertNotNull(result);
@@ -346,27 +297,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testToEntityWithGetItemResponse() {
-        class TestEntity {
-            private String id;
-            private String name;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-
-            public String getName() {
-                return name;
-            }
-
-            public void setName(String name) {
-                this.name = name;
-            }
-        }
-
         GetItemResponse response = GetItemResponse.builder()
                 .item(Map.of("id", AttributeValue.builder().s("123").build(), "name", AttributeValue.builder().s("test").build()))
                 .build();
@@ -380,20 +310,12 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testToEntityWithNullResponse() {
-        class TestEntity {
-            private String id;
-        }
-
         TestEntity result = DynamoDBExecutor.toEntity((GetItemResponse) null, TestEntity.class);
         assertNull(result);
     }
 
     @Test
     public void testToEntityWithEmptyResponse() {
-        class TestEntity {
-            private String id;
-        }
-
         GetItemResponse response = GetItemResponse.builder().build();
         TestEntity result = DynamoDBExecutor.toEntity(response, TestEntity.class);
         assertNull(result);
@@ -401,18 +323,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testToList() {
-        class TestEntity {
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         QueryResponse queryResponse = QueryResponse.builder()
                 .items(List.of(Map.of("id", AttributeValue.builder().s("1").build()), Map.of("id", AttributeValue.builder().s("2").build())))
                 .build();
@@ -491,27 +401,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testGetItemWithTargetClass() {
-        class TestEntity {
-            private String id;
-            private String name;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-
-            public String getName() {
-                return name;
-            }
-
-            public void setName(String name) {
-                this.name = name;
-            }
-        }
-
         String tableName = "TestTable";
         Map<String, AttributeValue> key = Map.of("id", AttributeValue.builder().s("123").build());
 
@@ -790,7 +679,7 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testConditionBuilderMultipleConditions() {
-        Map<String, Condition> result = Filters.builder().eq("status", "active").gt("age", 18).lt("age", 65).build();
+        Map<String, Condition> result = Filters.builder().eq("status", "active").gt("age", 18).lt("score", 65).build();
         assertNotNull(result);
         assertEquals(3, result.size());
     }
@@ -844,31 +733,12 @@ public class DynamoDBExecutorV2Test extends TestBase {
     // Tests for Mapper inner class
     @Test
     public void testMapperCreation() {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
         assertNotNull(mapper);
     }
 
     @Test
     public void testMapperWithInvalidEntity() {
-        class InvalidEntity {
-            // No @Id annotation
-            private String id;
-        }
-
         assertThrows(IllegalArgumentException.class, () -> {
             executor.mapper(InvalidEntity.class, "TestTable", NamingPolicy.CAMEL_CASE);
         });
@@ -876,29 +746,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperGetItem() {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-            private String name;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-
-            public String getName() {
-                return name;
-            }
-
-            public void setName(String name) {
-                this.name = name;
-            }
-        }
-
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         TestEntity entity = new TestEntity();
@@ -919,20 +766,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperGetItemWithConsistentRead() {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         TestEntity entity = new TestEntity();
@@ -950,20 +783,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperGetItemWithKey() {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         Map<String, AttributeValue> key = Map.of("id", AttributeValue.builder().s("123").build());
@@ -980,20 +799,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperGetItemWithRequest() {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         GetItemRequest request = GetItemRequest.builder().tableName("TestTable").key(Map.of("id", AttributeValue.builder().s("123").build())).build();
@@ -1010,20 +815,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperBatchGetItem() {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         List<TestEntity> entities = new ArrayList<>();
@@ -1051,20 +842,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperBatchGetItemWithReturnConsumedCapacity() {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         List<TestEntity> entities = List.of(new TestEntity());
@@ -1084,29 +861,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperPutItem() {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-            private String name;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-
-            public String getName() {
-                return name;
-            }
-
-            public void setName(String name) {
-                this.name = name;
-            }
-        }
-
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         TestEntity entity = new TestEntity();
@@ -1124,20 +878,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperPutItemWithReturnValues() {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         TestEntity entity = new TestEntity();
@@ -1154,20 +894,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperBatchPutItem() {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         List<TestEntity> entities = new ArrayList<>();
@@ -1186,29 +912,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperUpdateItem() {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-            private String name;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-
-            public String getName() {
-                return name;
-            }
-
-            public void setName(String name) {
-                this.name = name;
-            }
-        }
-
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         TestEntity entity = new TestEntity();
@@ -1226,20 +929,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperUpdateItemWithReturnValues() {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         TestEntity entity = new TestEntity();
@@ -1256,20 +945,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperDeleteItem() {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         TestEntity entity = new TestEntity();
@@ -1286,20 +961,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperDeleteItemWithReturnValues() {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         TestEntity entity = new TestEntity();
@@ -1316,20 +977,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperDeleteItemWithKey() {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         Map<String, AttributeValue> key = Map.of("id", AttributeValue.builder().s("123").build());
@@ -1345,20 +992,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperBatchDeleteItem() {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         List<TestEntity> entities = new ArrayList<>();
@@ -1377,20 +1010,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperList() {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
@@ -1407,20 +1026,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperQuery() {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
@@ -1437,20 +1042,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperStream() {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
@@ -1467,20 +1058,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperScanWithAttributesToGet() {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         List<String> attributesToGet = List.of("id");
@@ -1497,20 +1074,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperScanWithScanFilter() {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         Map<String, Condition> scanFilter = Filters.eq("status", "active");
@@ -1527,20 +1090,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperScanWithAllParameters() {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         List<String> attributesToGet = List.of("id");
@@ -1558,20 +1107,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperScanWithRequest() {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         ScanRequest scanRequest = ScanRequest.builder().tableName("TestTable").build();
@@ -1588,20 +1123,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperWithWrongTableName() {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
 
         GetItemRequest request = GetItemRequest.builder().tableName("WrongTable").key(Map.of("id", AttributeValue.builder().s("123").build())).build();
@@ -1712,31 +1233,9 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperBatchPutItemAppliesNamingPolicy() {
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-            private String userName;
+        DynamoDBExecutor.Mapper<NamingPolicyEntity> mapper = executor.mapper(NamingPolicyEntity.class, "TestTable", NamingPolicy.SNAKE_CASE);
 
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-
-            public String getUserName() {
-                return userName;
-            }
-
-            public void setUserName(String userName) {
-                this.userName = userName;
-            }
-        }
-
-        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class, "TestTable", NamingPolicy.SNAKE_CASE);
-
-        TestEntity entity = new TestEntity();
+        NamingPolicyEntity entity = new NamingPolicyEntity();
         entity.setId("123");
         entity.setUserName("Alice");
 
@@ -1764,31 +1263,9 @@ public class DynamoDBExecutorV2Test extends TestBase {
      */
     @Test
     public void testMapperGetItemAppliesNamingPolicyToKey() {
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String userId;
-            private String userName;
+        DynamoDBExecutor.Mapper<TestEntityWithUserId> mapper = executor.mapper(TestEntityWithUserId.class, "TestTable", NamingPolicy.SNAKE_CASE);
 
-            public String getUserId() {
-                return userId;
-            }
-
-            public void setUserId(String userId) {
-                this.userId = userId;
-            }
-
-            public String getUserName() {
-                return userName;
-            }
-
-            public void setUserName(String userName) {
-                this.userName = userName;
-            }
-        }
-
-        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class, "TestTable", NamingPolicy.SNAKE_CASE);
-
-        TestEntity entity = new TestEntity();
+        TestEntityWithUserId entity = new TestEntityWithUserId();
         entity.setUserId("u-1");
 
         when(mockDynamoDbClient.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().build());
@@ -1811,22 +1288,9 @@ public class DynamoDBExecutorV2Test extends TestBase {
      */
     @Test
     public void testMapperBatchDeleteItemAppliesNamingPolicyToKey() {
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String userId;
+        DynamoDBExecutor.Mapper<TestEntityWithUserId> mapper = executor.mapper(TestEntityWithUserId.class, "TestTable", NamingPolicy.SNAKE_CASE);
 
-            public String getUserId() {
-                return userId;
-            }
-
-            public void setUserId(String userId) {
-                this.userId = userId;
-            }
-        }
-
-        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class, "TestTable", NamingPolicy.SNAKE_CASE);
-
-        TestEntity entity = new TestEntity();
+        TestEntityWithUserId entity = new TestEntityWithUserId();
         entity.setUserId("u-42");
 
         when(mockDynamoDbClient.batchWriteItem(any(BatchWriteItemRequest.class))).thenReturn(BatchWriteItemResponse.builder().build());
@@ -1840,5 +1304,103 @@ public class DynamoDBExecutorV2Test extends TestBase {
         Map<String, AttributeValue> key = captor.getValue().requestItems().get("TestTable").get(0).deleteRequest().key();
         assertTrue(key.containsKey("user_id"), "delete key should contain converted attribute 'user_id', actual keys: " + key.keySet());
         assertEquals("u-42", key.get("user_id").s());
+    }
+
+    @com.landawn.abacus.annotation.Table(name = "TestTable")
+    private static class TestEntity {
+        @com.landawn.abacus.annotation.Id
+        private String id;
+        private String name;
+        private String firstName;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(String id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        public String getFirstName() {
+            return firstName;
+        }
+
+        public void setFirstName(String firstName) {
+            this.firstName = firstName;
+        }
+    }
+
+    private static class TestEntityWithUserId {
+        @com.landawn.abacus.annotation.Id
+        private String userId;
+        private String userName;
+
+        public String getUserId() {
+            return userId;
+        }
+
+        public void setUserId(String userId) {
+            this.userId = userId;
+        }
+
+        public String getUserName() {
+            return userName;
+        }
+
+        public void setUserName(String userName) {
+            this.userName = userName;
+        }
+    }
+
+    private static class NamingPolicyEntity {
+        @com.landawn.abacus.annotation.Id
+        private String id;
+        private String userName;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(String id) {
+            this.id = id;
+        }
+
+        public String getUserName() {
+            return userName;
+        }
+
+        public void setUserName(String userName) {
+            this.userName = userName;
+        }
+    }
+
+    private static class InvalidEntity {
+        // No @Id annotation and no field named "id" so no implicit id is detected
+        private String firstName;
+        private String lastName;
+
+        public String getFirstName() {
+            return firstName;
+        }
+
+        public void setFirstName(String firstName) {
+            this.firstName = firstName;
+        }
+
+        public String getLastName() {
+            return lastName;
+        }
+
+        public void setLastName(String lastName) {
+            this.lastName = lastName;
+        }
     }
 }

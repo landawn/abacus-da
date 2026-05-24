@@ -17,7 +17,8 @@
       "PowerShell(Remove-Item *)",
       "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\haiyangl\" -Filter \"ContinuableFuture.java\" -Recurse -ErrorAction SilentlyContinue | Select-Object -First 5 | ForEach-Object { $_.FullName })",
       "PowerShell(Select-String -Path \"C:\\\\Users\\\\haiyangl\\\\Landawn\\\\abacus-common\\\\src\\\\main\\\\java\\\\com\\\\landawn\\\\abacus\\\\util\\\\stream\\\\Stream.java\" -Pattern \"first\\\\\\(\\\\\\)\" | Select-Object -First 3 | ForEach-Object { $_.Line })",
-      "PowerShell(Stop-Process *)"
+      "PowerShell(Stop-Process *)",
+      "PowerShell(Get-Content *)"
     ],
     "deny": [],
     "ask": []

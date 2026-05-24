@@ -76,21 +76,6 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperWithTargetEntityClass() {
-        // Create a test entity class
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
         assertNotNull(mapper);
 
@@ -101,10 +86,6 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperWithTargetEntityClassNoTableAnnotation() {
-        class NoTableEntity {
-            private String id;
-        }
-
         assertThrows(IllegalArgumentException.class, () -> {
             asyncExecutor.mapper(NoTableEntity.class);
         });
@@ -112,19 +93,6 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperWithTableNameAndNamingPolicy() {
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class, "TestTable", NamingPolicy.CAMEL_CASE);
         assertNotNull(mapper);
     }
@@ -184,27 +152,6 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testGetItemWithTargetClass() throws ExecutionException, InterruptedException {
-        class TestEntity {
-            private String id;
-            private String name;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-
-            public String getName() {
-                return name;
-            }
-
-            public void setName(String name) {
-                this.name = name;
-            }
-        }
-
         String tableName = "TestTable";
         Map<String, AttributeValue> key = Map.of("id", AttributeValue.builder().s("123").build());
 
@@ -400,18 +347,6 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testListWithTargetClass() throws ExecutionException, InterruptedException {
-        class TestEntity {
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
 
         QueryResponse response = QueryResponse.builder().items(List.of(Map.of("id", AttributeValue.builder().s("123").build()))).build();
@@ -534,29 +469,6 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
     // Test for Mapper inner class
     @Test
     public void testMapperGetItem() throws ExecutionException, InterruptedException {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-            private String name;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-
-            public String getName() {
-                return name;
-            }
-
-            public void setName(String name) {
-                this.name = name;
-            }
-        }
-
         AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
 
         TestEntity entity = new TestEntity();
@@ -578,29 +490,6 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperPutItem() throws ExecutionException, InterruptedException {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-            private String name;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-
-            public String getName() {
-                return name;
-            }
-
-            public void setName(String name) {
-                this.name = name;
-            }
-        }
-
         AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
 
         TestEntity entity = new TestEntity();
@@ -619,29 +508,6 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperUpdateItem() throws ExecutionException, InterruptedException {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-            private String name;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-
-            public String getName() {
-                return name;
-            }
-
-            public void setName(String name) {
-                this.name = name;
-            }
-        }
-
         AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
 
         TestEntity entity = new TestEntity();
@@ -660,20 +526,6 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperDeleteItem() throws ExecutionException, InterruptedException {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
 
         TestEntity entity = new TestEntity();
@@ -691,20 +543,6 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperBatchGetItem() throws ExecutionException, InterruptedException {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
 
         List<TestEntity> entities = new ArrayList<>();
@@ -731,20 +569,6 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperBatchPutItem() throws ExecutionException, InterruptedException {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
 
         List<TestEntity> entities = new ArrayList<>();
@@ -764,20 +588,6 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperBatchDeleteItem() throws ExecutionException, InterruptedException {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
 
         List<TestEntity> entities = new ArrayList<>();
@@ -797,20 +607,6 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperList() throws ExecutionException, InterruptedException {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
 
         QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
@@ -828,20 +624,6 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperQuery() throws ExecutionException, InterruptedException {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
 
         QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
@@ -859,20 +641,6 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperStream() throws ExecutionException, InterruptedException {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
 
         QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
@@ -890,20 +658,6 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperScan() throws ExecutionException, InterruptedException {
-        @com.landawn.abacus.annotation.Table(name = "TestTable")
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
 
         ScanRequest scanRequest = ScanRequest.builder().tableName("TestTable").build();
@@ -1026,31 +780,9 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testMapperBatchPutItemAppliesNamingPolicy() throws InterruptedException, ExecutionException {
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String id;
-            private String userName;
+        AsyncDynamoDBExecutor.Mapper<NamingPolicyEntity> mapper = asyncExecutor.mapper(NamingPolicyEntity.class, "TestTable", NamingPolicy.SNAKE_CASE);
 
-            public String getId() {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-
-            public String getUserName() {
-                return userName;
-            }
-
-            public void setUserName(String userName) {
-                this.userName = userName;
-            }
-        }
-
-        AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class, "TestTable", NamingPolicy.SNAKE_CASE);
-
-        TestEntity entity = new TestEntity();
+        NamingPolicyEntity entity = new NamingPolicyEntity();
         entity.setId("123");
         entity.setUserName("Alice");
 
@@ -1080,31 +812,9 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
      */
     @Test
     public void testMapperGetItemAppliesNamingPolicyToKey() throws InterruptedException, ExecutionException {
-        class TestEntity {
-            @com.landawn.abacus.annotation.Id
-            private String userId;
-            private String userName;
+        AsyncDynamoDBExecutor.Mapper<NamingPolicyKeyEntity> mapper = asyncExecutor.mapper(NamingPolicyKeyEntity.class, "TestTable", NamingPolicy.SNAKE_CASE);
 
-            public String getUserId() {
-                return userId;
-            }
-
-            public void setUserId(String userId) {
-                this.userId = userId;
-            }
-
-            public String getUserName() {
-                return userName;
-            }
-
-            public void setUserName(String userName) {
-                this.userName = userName;
-            }
-        }
-
-        AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class, "TestTable", NamingPolicy.SNAKE_CASE);
-
-        TestEntity entity = new TestEntity();
+        NamingPolicyKeyEntity entity = new NamingPolicyKeyEntity();
         entity.setUserId("u-1");
 
         when(mockDynamoDbAsyncClient.getItem(any(GetItemRequest.class)))
@@ -1120,5 +830,84 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
         // With SNAKE_CASE the "userId" id must be mapped to "user_id" key, mirroring what putItem writes.
         assertTrue(key.containsKey("user_id"), "key should contain converted attribute 'user_id', actual keys: " + key.keySet());
         assertEquals("u-1", key.get("user_id").s());
+    }
+
+    @com.landawn.abacus.annotation.Table(name = "TestTable")
+    private static class TestEntity {
+        @com.landawn.abacus.annotation.Id
+        private String id;
+        private String name;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(String id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+    }
+
+    private static class NoTableEntity {
+        private String id;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(String id) {
+            this.id = id;
+        }
+    }
+
+    private static class NamingPolicyEntity {
+        @com.landawn.abacus.annotation.Id
+        private String id;
+        private String userName;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(String id) {
+            this.id = id;
+        }
+
+        public String getUserName() {
+            return userName;
+        }
+
+        public void setUserName(String userName) {
+            this.userName = userName;
+        }
+    }
+
+    private static class NamingPolicyKeyEntity {
+        @com.landawn.abacus.annotation.Id
+        private String userId;
+        private String userName;
+
+        public String getUserId() {
+            return userId;
+        }
+
+        public void setUserId(String userId) {
+            this.userId = userId;
+        }
+
+        public String getUserName() {
+            return userName;
+        }
+
+        public void setUserName(String userName) {
+            this.userName = userName;
+        }
     }
 }

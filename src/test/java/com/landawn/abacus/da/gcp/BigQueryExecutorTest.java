@@ -556,7 +556,7 @@ public class BigQueryExecutorTest extends TestBase {
         when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
 
         Collection<String> selectProps = Arrays.asList("name");
-        List<Map> list = executor.list(Map.class, selectProps, Filters.eq("id", 1));
+        List<TestEntity> list = executor.list(TestEntity.class, selectProps, Filters.eq("id", 1));
 
         assertNotNull(list);
         assertEquals(1, list.size());
@@ -729,7 +729,7 @@ public class BigQueryExecutorTest extends TestBase {
                 Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "999"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "NestedName")), nestedFields);
 
         Field field1 = Field.of("id", StandardSQLTypeName.INT64);
-        Field field2 = Field.of("nested", StandardSQLTypeName.STRUCT);
+        Field field2 = Field.of("nested", StandardSQLTypeName.STRUCT, nestedFields);
         FieldList fields = FieldList.of(field1, field2);
 
         FieldValueList fieldValueList = FieldValueList.of(
@@ -750,7 +750,7 @@ public class BigQueryExecutorTest extends TestBase {
         FieldValueList nestedFieldValueList = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "NestedValue")), nestedFields);
 
         Field field1 = Field.of("id", StandardSQLTypeName.INT64);
-        Field field2 = Field.of("nested", StandardSQLTypeName.STRUCT);
+        Field field2 = Field.of("nested", StandardSQLTypeName.STRUCT, nestedFields);
         FieldList fields = FieldList.of(field1, field2);
 
         FieldValueList fieldValueList = FieldValueList.of(

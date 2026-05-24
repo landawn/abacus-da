@@ -12,6 +12,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.Callable;
 import java.util.concurrent.ExecutionException;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -61,9 +62,13 @@ public class AsyncDynamoDBExecutorTest extends TestBase {
 
         // Configure mock async executor to execute synchronously for testing
         when(mockAsyncExecutor.execute(any(Throwables.Runnable.class))).thenAnswer(invocation -> {
-            Runnable task = invocation.getArgument(0);
+            Throwables.Runnable<?> task = invocation.getArgument(0);
             task.run();
             return ContinuableFuture.completed(null);
+        });
+        when(mockAsyncExecutor.execute(any(Callable.class))).thenAnswer(invocation -> {
+            Callable<?> task = invocation.getArgument(0);
+            return ContinuableFuture.completed(task.call());
         });
     }
 
@@ -134,27 +139,6 @@ public class AsyncDynamoDBExecutorTest extends TestBase {
 
     @Test
     public void testGetItemWithTargetClass() throws InterruptedException, ExecutionException {
-        class TestEntity {
-            private String id;
-            private String name;
-
-            public String getId() throws InterruptedException, ExecutionException {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-
-            public String getName() throws InterruptedException, ExecutionException {
-                return name;
-            }
-
-            public void setName(String name) {
-                this.name = name;
-            }
-        }
-
         String tableName = "TestTable";
         Map<String, AttributeValue> key = Map.of("id", new AttributeValue().withS("123"));
 
@@ -175,18 +159,6 @@ public class AsyncDynamoDBExecutorTest extends TestBase {
 
     @Test
     public void testGetItemWithConsistentReadAndTargetClass() throws InterruptedException, ExecutionException {
-        class TestEntity {
-            private String id;
-
-            public String getId() throws InterruptedException, ExecutionException {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         String tableName = "TestTable";
         Map<String, AttributeValue> key = Map.of("id", new AttributeValue().withS("123"));
         Boolean consistentRead = true;
@@ -206,18 +178,6 @@ public class AsyncDynamoDBExecutorTest extends TestBase {
 
     @Test
     public void testGetItemWithRequestAndTargetClass() throws InterruptedException, ExecutionException {
-        class TestEntity {
-            private String id;
-
-            public String getId() throws InterruptedException, ExecutionException {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         GetItemRequest request = new GetItemRequest().withTableName("TestTable").withKey(Map.of("id", new AttributeValue().withS("123")));
 
         TestEntity expectedEntity = new TestEntity();
@@ -288,18 +248,6 @@ public class AsyncDynamoDBExecutorTest extends TestBase {
 
     @Test
     public void testBatchGetItemWithTargetClass() throws InterruptedException, ExecutionException {
-        class TestEntity {
-            private String id;
-
-            public String getId() throws InterruptedException, ExecutionException {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         Map<String, KeysAndAttributes> requestItems = new HashMap<>();
         requestItems.put("TestTable", new KeysAndAttributes());
 
@@ -511,18 +459,6 @@ public class AsyncDynamoDBExecutorTest extends TestBase {
 
     @Test
     public void testListWithTargetClass() throws InterruptedException, ExecutionException {
-        class TestEntity {
-            private String id;
-
-            public String getId() throws InterruptedException, ExecutionException {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         QueryRequest queryRequest = new QueryRequest();
 
         List<TestEntity> expectedResult = new ArrayList<>();
@@ -558,18 +494,6 @@ public class AsyncDynamoDBExecutorTest extends TestBase {
 
     @Test
     public void testQueryWithTargetClass() throws InterruptedException, ExecutionException {
-        class TestEntity {
-            private String id;
-
-            public String getId() throws InterruptedException, ExecutionException {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         QueryRequest queryRequest = new QueryRequest();
 
         Dataset expectedResult = N.newEmptyDataset();
@@ -601,18 +525,6 @@ public class AsyncDynamoDBExecutorTest extends TestBase {
 
     @Test
     public void testStreamWithTargetClass() throws InterruptedException, ExecutionException {
-        class TestEntity {
-            private String id;
-
-            public String getId() throws InterruptedException, ExecutionException {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         QueryRequest queryRequest = new QueryRequest();
 
         TestEntity entity = new TestEntity();
@@ -699,18 +611,6 @@ public class AsyncDynamoDBExecutorTest extends TestBase {
 
     @Test
     public void testScanWithTargetClass() throws InterruptedException, ExecutionException {
-        class TestEntity {
-            private String id;
-
-            public String getId() throws InterruptedException, ExecutionException {
-                return id;
-            }
-
-            public void setId(String id) {
-                this.id = id;
-            }
-        }
-
         String tableName = "TestTable";
         List<String> attributesToGet = List.of("id");
 
@@ -726,5 +626,26 @@ public class AsyncDynamoDBExecutorTest extends TestBase {
         assertNotNull(result);
         assertEquals(1, result.count());
         verify(mockDynamoDBExecutor, times(1)).scan(tableName, attributesToGet, TestEntity.class);
+    }
+
+    private static class TestEntity {
+        private String id;
+        private String name;
+
+        public String getId() throws InterruptedException, ExecutionException {
+            return id;
+        }
+
+        public void setId(String id) {
+            this.id = id;
+        }
+
+        public String getName() throws InterruptedException, ExecutionException {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
     }
 }

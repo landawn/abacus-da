@@ -428,7 +428,7 @@ public class CosmosContainerExecutorTest extends TestBase {
         CosmosContainerExecutor executorWithPolicy = new CosmosContainerExecutor(mockCosmosContainer, namingPolicy);
         List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"), new TestItem("2", "Item2"));
         when(mockPagedIterable.stream()).thenReturn(items.stream());
-        when(mockCosmosContainer.queryItems(any(String.class), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
+        when(mockCosmosContainer.queryItems(any(SqlQuerySpec.class), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
         Stream<TestItem> stream = executorWithPolicy.streamItems(Filters.eq("id", "1"), TestItem.class);
 
@@ -441,7 +441,7 @@ public class CosmosContainerExecutorTest extends TestBase {
     public void testStreamItemsWithConditionAndOptions() {
         List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"), new TestItem("2", "Item2"));
         when(mockPagedIterable.stream()).thenReturn(items.stream());
-        when(mockCosmosContainer.queryItems(any(String.class), eq(queryRequestOptions), eq(TestItem.class))).thenReturn(mockPagedIterable);
+        when(mockCosmosContainer.queryItems(any(SqlQuerySpec.class), eq(queryRequestOptions), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
         Stream<TestItem> stream = executor.streamItems(Filters.eq("id", "1"), queryRequestOptions, TestItem.class);
 
@@ -455,7 +455,7 @@ public class CosmosContainerExecutorTest extends TestBase {
         Collection<String> selectProps = Arrays.asList("id", "name");
         List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"), new TestItem("2", "Item2"));
         when(mockPagedIterable.stream()).thenReturn(items.stream());
-        when(mockCosmosContainer.queryItems(any(String.class), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
+        when(mockCosmosContainer.queryItems(any(SqlQuerySpec.class), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
         Stream<TestItem> stream = executor.streamItems(selectProps, Filters.eq("id", "1"), TestItem.class);
 
@@ -469,7 +469,7 @@ public class CosmosContainerExecutorTest extends TestBase {
         Collection<String> selectProps = Arrays.asList("id", "name");
         List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"), new TestItem("2", "Item2"));
         when(mockPagedIterable.stream()).thenReturn(items.stream());
-        when(mockCosmosContainer.queryItems(any(String.class), eq(queryRequestOptions), eq(TestItem.class))).thenReturn(mockPagedIterable);
+        when(mockCosmosContainer.queryItems(any(SqlQuerySpec.class), eq(queryRequestOptions), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
         Stream<TestItem> stream = executor.streamItems(selectProps, Filters.eq("id", "1"), queryRequestOptions, TestItem.class);
 
@@ -482,7 +482,7 @@ public class CosmosContainerExecutorTest extends TestBase {
     public void testStreamItemsWithNullCondition() {
         List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"), new TestItem("2", "Item2"));
         when(mockPagedIterable.stream()).thenReturn(items.stream());
-        when(mockCosmosContainer.queryItems(any(String.class), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
+        when(mockCosmosContainer.queryItems(any(SqlQuerySpec.class), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
         Stream<TestItem> stream = executor.streamItems((Collection<String>) null, null, TestItem.class);
 
@@ -496,7 +496,7 @@ public class CosmosContainerExecutorTest extends TestBase {
         Collection<String> emptySelectProps = Arrays.asList();
         List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"), new TestItem("2", "Item2"));
         when(mockPagedIterable.stream()).thenReturn(items.stream());
-        when(mockCosmosContainer.queryItems(any(String.class), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
+        when(mockCosmosContainer.queryItems(any(SqlQuerySpec.class), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
         Stream<TestItem> stream = executor.streamItems(emptySelectProps, Filters.eq("id", "1"), TestItem.class);
 
