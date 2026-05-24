@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -28,6 +29,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.reactivestreams.Publisher;
+import org.reactivestreams.Subscriber;
 
 import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.util.Dataset;
@@ -200,9 +202,8 @@ public class MongoCollectionExecutorTest extends TestBase {
         Document doc = new Document("_id", new ObjectId(objectId)).append("name", "test");
 
         when(mockCollection.find(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any())).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<Document> result = executor.get(objectId);
 
@@ -215,9 +216,8 @@ public class MongoCollectionExecutorTest extends TestBase {
         Document doc = new Document("_id", objectId).append("name", "test");
 
         when(mockCollection.find(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any())).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<Document> result = executor.get(objectId);
 
@@ -230,9 +230,8 @@ public class MongoCollectionExecutorTest extends TestBase {
         Document doc = new Document("_id", new ObjectId(objectId)).append("value", "test");
 
         when(mockCollection.find(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any())).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<String> result = executor.get(objectId, String.class);
 
@@ -248,9 +247,8 @@ public class MongoCollectionExecutorTest extends TestBase {
         Document doc = new Document("_id", objectId).append("name", "test");
 
         when(mockCollection.find(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.projection(any())).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<Map> result = executor.get(objectId, Map.class);
 
@@ -266,7 +264,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockCollection.find(any(Bson.class))).thenReturn(mockFindPublisher);
         when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<Document> result = executor.get(objectId, selectPropNames, Document.class);
 
@@ -282,7 +280,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockCollection.find(any(Bson.class))).thenReturn(mockFindPublisher);
         when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<Document> result = executor.get(objectId, selectPropNames, Document.class);
 
@@ -296,7 +294,7 @@ public class MongoCollectionExecutorTest extends TestBase {
 
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<Document> result = executor.findFirst(filter);
 
@@ -310,7 +308,7 @@ public class MongoCollectionExecutorTest extends TestBase {
 
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<Integer> result = executor.findFirst(filter, Integer.class);
 
@@ -326,7 +324,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<Document> result = executor.findFirst(selectPropNames, filter, Document.class);
 
@@ -344,7 +342,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
         when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<Document> result = executor.findFirst(selectPropNames, filter, sort, Document.class);
 
@@ -362,7 +360,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockFindPublisher.projection(projection)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<Document> result = executor.findFirst(projection, filter, sort, Document.class);
 
@@ -375,7 +373,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         List<Document> docs = Arrays.asList(new Document("name", "doc1"), new Document("name", "doc2"));
 
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.skip(0)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, docs.get(0), docs.get(1));
 
         Flux<Document> result = executor.list(filter);
 
@@ -388,7 +386,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         List<Document> docs = Arrays.asList(new Document("value", 1), new Document("value", 2));
 
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.skip(0)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, docs.get(0), docs.get(1));
 
         Flux<Integer> result = executor.list(filter, Integer.class);
 
@@ -405,6 +403,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.skip(offset)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(count)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, docs.get(0), docs.get(1));
 
         Flux<Document> result = executor.list(filter, offset, count, Document.class);
 
@@ -420,7 +419,7 @@ public class MongoCollectionExecutorTest extends TestBase {
 
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.skip(0)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, docs.get(0), docs.get(1));
 
         Flux<Document> result = executor.list(selectPropNames, filter, Document.class);
 
@@ -455,7 +454,6 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.projection(projection)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.skip(0)).thenReturn(mockFindPublisher);
 
         Flux<Document> result = executor.list(projection, filter, sort, Document.class);
 
@@ -471,7 +469,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<Boolean> result = executor.queryForBoolean(propName, filter);
 
@@ -487,7 +485,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<Character> result = executor.queryForChar(propName, filter);
 
@@ -503,7 +501,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<Byte> result = executor.queryForByte(propName, filter);
 
@@ -519,7 +517,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<Short> result = executor.queryForShort(propName, filter);
 
@@ -535,7 +533,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<Integer> result = executor.queryForInt(propName, filter);
 
@@ -551,7 +549,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<Long> result = executor.queryForLong(propName, filter);
 
@@ -567,7 +565,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<Float> result = executor.queryForFloat(propName, filter);
 
@@ -583,7 +581,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<Double> result = executor.queryForDouble(propName, filter);
 
@@ -599,7 +597,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<String> result = executor.queryForString(propName, filter);
 
@@ -616,7 +614,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<Date> result = executor.queryForDate(propName, filter);
 
@@ -633,7 +631,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<Date> result = executor.queryForDate(propName, filter, Date.class);
 
@@ -649,7 +647,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<Integer> result = executor.queryForSingleValue(propName, filter, Integer.class);
 
@@ -662,7 +660,6 @@ public class MongoCollectionExecutorTest extends TestBase {
         List<Document> docs = Arrays.asList(new Document("name", "doc1"), new Document("name", "doc2"));
 
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.skip(0)).thenReturn(mockFindPublisher);
 
         Mono<Dataset> result = executor.query(filter);
 
@@ -674,7 +671,6 @@ public class MongoCollectionExecutorTest extends TestBase {
         Bson filter = new Document("type", "test");
 
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.skip(0)).thenReturn(mockFindPublisher);
 
         Mono<Dataset> result = executor.query(filter, Document.class);
 
@@ -1581,7 +1577,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(emptyDoc));
+        stubEmits(mockFindPublisher, emptyDoc);
 
         Mono<String> result = executor.queryForSingleValue(propName, filter, String.class);
 
@@ -1690,7 +1686,6 @@ public class MongoCollectionExecutorTest extends TestBase {
         Bson filter = new Document("active", true);
 
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.skip(0)).thenReturn(mockFindPublisher);
 
         Flux<Document> result = executor.list(selectPropNames, filter, Document.class);
 
@@ -1704,7 +1699,6 @@ public class MongoCollectionExecutorTest extends TestBase {
 
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.skip(0)).thenReturn(mockFindPublisher);
 
         Flux<Document> result = executor.list(selectPropNames, filter, Document.class);
 
@@ -1776,7 +1770,7 @@ public class MongoCollectionExecutorTest extends TestBase {
 
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(emptyDoc));
+        stubEmits(mockFindPublisher, emptyDoc);
 
         Mono<Integer> result = executor.findFirst(filter, Integer.class);
 
@@ -1796,7 +1790,7 @@ public class MongoCollectionExecutorTest extends TestBase {
 
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<Integer> result = executor.findFirst(filter, Integer.class);
 
@@ -1810,6 +1804,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         Bson filter = new Document("status", "active");
         Document alwaysFalse = new Document("$expr", false);
         when(mockCollection.find(eq(alwaysFalse))).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher);
 
         Flux<Document> result = executor.list(filter, 0, 0, Document.class);
 
@@ -1845,10 +1840,23 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
         when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
         when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
-        when(mockFindPublisher.first()).thenReturn(Mono.just(doc));
+        stubEmits(mockFindPublisher, doc);
 
         Mono<String> result = executor.queryForSingleValue(propName, filter, String.class);
 
         StepVerifier.create(result).verifyComplete();
+    }
+
+    @SuppressWarnings("unchecked")
+    @SafeVarargs
+    private static <T> void stubEmits(final Publisher<T> publisher, final T... items) {
+        // The executor consumes these publishers via Flux.from(publisher), which calls
+        // publisher.subscribe(...). Stubbing publisher.first()/limit()/etc. is useless —
+        // those are never invoked. We must stub subscribe() itself so the subscriber
+        // actually receives signals, otherwise StepVerifier hangs forever.
+        doAnswer(invocation -> {
+            Flux.fromArray(items).subscribe((Subscriber<? super T>) invocation.getArgument(0));
+            return null;
+        }).when(publisher).subscribe(any());
     }
 }

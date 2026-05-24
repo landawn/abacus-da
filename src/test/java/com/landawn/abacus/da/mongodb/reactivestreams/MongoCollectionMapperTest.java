@@ -490,7 +490,7 @@ public class MongoCollectionMapperTest extends TestBase {
     @Test
     public void testQueryWithFilter() {
         Bson filter = new Document("active", true);
-        Dataset mockDataset = mock(Dataset.class);
+        Dataset mockDataset = Dataset.empty();
 
         when(mockExecutor.query(filter, TestEntity.class)).thenReturn(Mono.just(mockDataset));
 
@@ -504,7 +504,7 @@ public class MongoCollectionMapperTest extends TestBase {
         Bson filter = new Document("type", "premium");
         int offset = 10;
         int count = 20;
-        Dataset mockDataset = mock(Dataset.class);
+        Dataset mockDataset = Dataset.empty();
 
         when(mockExecutor.query(filter, offset, count, TestEntity.class)).thenReturn(Mono.just(mockDataset));
 
@@ -517,7 +517,7 @@ public class MongoCollectionMapperTest extends TestBase {
     public void testQueryWithSelectPropNamesAndFilter() {
         Collection<String> selectPropNames = Arrays.asList("id", "name");
         Bson filter = new Document("status", "active");
-        Dataset mockDataset = mock(Dataset.class);
+        Dataset mockDataset = Dataset.empty();
 
         when(mockExecutor.query(selectPropNames, filter, TestEntity.class)).thenReturn(Mono.just(mockDataset));
 
@@ -532,7 +532,7 @@ public class MongoCollectionMapperTest extends TestBase {
         Bson filter = new Document("category", "books");
         int offset = 5;
         int count = 15;
-        Dataset mockDataset = mock(Dataset.class);
+        Dataset mockDataset = Dataset.empty();
 
         when(mockExecutor.query(selectPropNames, filter, offset, count, TestEntity.class)).thenReturn(Mono.just(mockDataset));
 
@@ -546,7 +546,7 @@ public class MongoCollectionMapperTest extends TestBase {
         Collection<String> selectPropNames = Arrays.asList("title", "author");
         Bson filter = new Document("published", true);
         Bson sort = new Document("date", -1);
-        Dataset mockDataset = mock(Dataset.class);
+        Dataset mockDataset = Dataset.empty();
 
         when(mockExecutor.query(selectPropNames, filter, sort, TestEntity.class)).thenReturn(Mono.just(mockDataset));
 
@@ -562,7 +562,7 @@ public class MongoCollectionMapperTest extends TestBase {
         Bson sort = new Document("priority", 1);
         int offset = 0;
         int count = 50;
-        Dataset mockDataset = mock(Dataset.class);
+        Dataset mockDataset = Dataset.empty();
 
         when(mockExecutor.query(selectPropNames, filter, sort, offset, count, TestEntity.class)).thenReturn(Mono.just(mockDataset));
 
@@ -576,7 +576,7 @@ public class MongoCollectionMapperTest extends TestBase {
         Bson projection = Projections.include("name", "description");
         Bson filter = new Document("visible", true);
         Bson sort = Sorts.ascending("name");
-        Dataset mockDataset = mock(Dataset.class);
+        Dataset mockDataset = Dataset.empty();
 
         when(mockExecutor.query(projection, filter, sort, TestEntity.class)).thenReturn(Mono.just(mockDataset));
 
@@ -592,7 +592,7 @@ public class MongoCollectionMapperTest extends TestBase {
         Bson sort = Sorts.descending("createdAt");
         int offset = 10;
         int count = 25;
-        Dataset mockDataset = mock(Dataset.class);
+        Dataset mockDataset = Dataset.empty();
 
         when(mockExecutor.query(projection, filter, sort, offset, count, TestEntity.class)).thenReturn(Mono.just(mockDataset));
 

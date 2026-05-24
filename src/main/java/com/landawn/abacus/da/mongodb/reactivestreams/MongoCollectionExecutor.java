@@ -1946,7 +1946,12 @@ public final class MongoCollectionExecutor {
     }
 
     private static Bson toBson(final Object update) {
-        final Bson bson = update instanceof Bson ? (Bson) update : MongoDBBase.toDocument(update, true);
+        // Note: the second argument (isForUpdate) on MongoDBBase.toDocument is a dead flag, AND
+        // MongoCollectionExecutor cannot see the protected (Object, boolean) overload from this
+        // package — passing it silently resolved to the public Object... varargs and treated
+        // (update, true) as a name/value pair, casting update to String -> ClassCastException
+        // for Map/entity updates. Call the public single-arg overload directly.
+        final Bson bson = update instanceof Bson ? (Bson) update : MongoDBBase.toDocument(update);
 
         if (bson instanceof final Document doc) {
             if (!doc.isEmpty() && doc.keySet().iterator().next().startsWith(_$)) {
