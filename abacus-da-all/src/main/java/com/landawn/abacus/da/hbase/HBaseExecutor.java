@@ -1667,8 +1667,8 @@ public final class HBaseExecutor implements AutoCloseable {
      * <pre>{@code
      * Scan scan = new Scan();
      * scan.addFamily(Bytes.toBytes("info"));
-     * scan.setStartRow(Bytes.toBytes("user_"));
-     * scan.setStopRow(Bytes.toBytes("user_zzz"));
+     * scan.withStartRow(Bytes.toBytes("user_"));
+     * scan.withStopRow(Bytes.toBytes("user_zzz"));
      *
      * try (Stream<Result> stream = executor.scan("users", scan)) {
      *     stream.limit(100)
@@ -1844,8 +1844,8 @@ public final class HBaseExecutor implements AutoCloseable {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Scan scan = new Scan();
-     * scan.setStartRow(Bytes.toBytes("user_a"));
-     * scan.setStopRow(Bytes.toBytes("user_z"));
+     * scan.withStartRow(Bytes.toBytes("user_a"));
+     * scan.withStopRow(Bytes.toBytes("user_z"));
      *
      * try (Stream<User> users = executor.scan("users", scan, User.class)) {
      *     List<User> activeUsers = users

@@ -40,7 +40,6 @@ import com.landawn.abacus.util.Strings;
  * and optimization features.</p>
  *
  * <h2>Key Features</h2>
- * <h3>Main Features</h3>
  * <ul>
  * <li><strong>Multi-format Parameter Support:</strong>
  *     <ul>
@@ -65,34 +64,31 @@ import com.landawn.abacus.util.Strings;
  * </li>
  * </ul>
  * 
- * <h3>Parameter Binding Styles</h3>
- * 
- * <h4>1. Positional Parameters (JDBC-style)</h4>
- * <p><b>Usage Examples:</b></p>
+ * <h2>Parameter Binding Styles</h2>
+ *
+ * <h3>1. Positional Parameters (JDBC-style)</h3>
  * <pre>{@code
  * String cql = "SELECT name, email FROM users WHERE id = ? AND status = ?";
  * ParsedCql parsed = ParsedCql.parse(cql, null);
  * // Parameters bound by position: [userId, "active"]
  * }</pre>
- * 
- * <h4>2. Named Parameters (Native Cassandra-style)</h4>
- * <p><b>Usage Examples:</b></p>
+ *
+ * <h3>2. Named Parameters (Native Cassandra-style)</h3>
  * <pre>{@code
  * String cql = "SELECT name, email FROM users WHERE id = :userId AND status = :status";
  * ParsedCql parsed = ParsedCql.parse(cql, null);
  * // Parameters: {"userId": 123, "status": "active"}
  * }</pre>
- * 
- * <h4>3. MyBatis-style Parameters</h4>
- * <p><b>Usage Examples:</b></p>
+ *
+ * <h3>3. MyBatis-style Parameters</h3>
  * <pre>{@code
  * String cql = "SELECT name, email FROM users WHERE id = #{userId} AND status = #{status}";
  * ParsedCql parsed = ParsedCql.parse(cql, null);
  * // Converted to: SELECT name, email FROM users WHERE id = ? AND status = ?
  * // With parameter mapping: {0: "userId", 1: "status"}
  * }</pre>
- * 
- * <h3>Caching Strategy</h3>
+ *
+ * <h2>Caching Strategy</h2>
  * <p>ParsedCql implements a sophisticated caching mechanism to avoid repeated parsing
  * of identical CQL statements:</p>
  * 
@@ -102,8 +98,8 @@ import com.landawn.abacus.util.Strings;
  * <li><strong>Max Live Time:</strong> 24 hours absolute TTL</li>
  * <li><strong>Max Idle Time:</strong> 24 hours since last access</li>
  * </ul>
- * 
- * <p><b>Usage Examples:</b></p>
+ *
+ * <h2>Usage Examples</h2>
  * <pre>{@code
  * // Basic parsing
  * String cql = "INSERT INTO users (id, name, email) VALUES (?, ?, ?)";
@@ -138,14 +134,14 @@ import com.landawn.abacus.util.Strings;
  * // call sees the attributes it provided.
  * }</pre>
  * 
- * <h3>Thread Safety</h3>
+ * <h2>Thread Safety</h2>
  * <p>The internal cache used by {@link #parse(String, Map)} is thread-safe. The parsed fields of
  * an individual {@code ParsedCql} instance (original CQL, parameterized CQL, named-parameter
  * mapping, parameter count) are effectively immutable after construction. The attribute map
  * returned by {@link #getAttributes()} is a live, mutable {@link Map}; callers that share an
  * instance across threads and mutate the attribute map must provide their own synchronization.</p>
- * 
- * <h3>Memory Management</h3>
+ *
+ * <h2>Memory Management</h2>
  * <p>The class uses object pooling to minimize memory allocation and garbage collection overhead.
  * The cache automatically manages memory usage through configurable eviction policies.</p>
  * 
@@ -292,13 +288,6 @@ public final class ParsedCql {
      * Caching only applies when the attributes map is empty; if a non-empty attributes
      * map is supplied, the cache is bypassed and a new instance is always created so
      * that statement-specific metadata is not shared across calls.</p>
-     * 
-     * <p>Cache performance characteristics:</p>
-     * <ul>
-     * <li><strong>Cache Hit:</strong> O(1) lookup, ~1-10 microseconds</li>
-     * <li><strong>Cache Miss:</strong> Full parsing + caching, typically &lt; 1 millisecond</li>
-     * <li><strong>Memory Usage:</strong> ~200-500 bytes per cached statement</li>
-     * </ul>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

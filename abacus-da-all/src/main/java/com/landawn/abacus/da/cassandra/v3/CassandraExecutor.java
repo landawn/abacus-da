@@ -130,7 +130,8 @@ import lombok.experimental.Accessors;
  *     <li>Batch operations with different batch types</li>
  *     <li>TTL and timestamp support</li>
  *     <li>Conditional operations (IF EXISTS, IF NOT EXISTS)</li>
- *     <li>Async operations with Guava ListenableFuture</li>
+ *     <li>Async operations exposed through {@link com.landawn.abacus.util.ContinuableFuture}
+ *         (the underlying driver 3.x produces Guava {@code ListenableFuture})</li>
  *     </ul>
  * </li>
  * <li><strong>Performance Optimizations:</strong>
@@ -213,15 +214,15 @@ import lombok.experimental.Accessors;
  * However, applications should properly manage the session and cluster lifecycle.</p>
  * 
  * <h3>Resource Management</h3>
- * <p>Always properly close resources to avoid connection leaks:</p>
- * <p><b>Usage Examples:</b></p>
+ * <p>Always properly close resources to avoid connection leaks. The executor's
+ * {@link #close()} closes the underlying {@link com.datastax.driver.core.Session},
+ * the associated {@link com.datastax.driver.core.Cluster}, and the internal statement
+ * caches, so try-with-resources alone is normally sufficient:</p>
  * <pre>{@code
  * try (CassandraExecutor executor = new CassandraExecutor(session)) {
  *     // Perform database operations
- * } finally {
- *     session.close();
- *     cluster.close();
  * }
+ * // executor.close() has already released session + cluster + caches.
  * }</pre>
  * 
  * @deprecated Use {@link com.landawn.abacus.da.cassandra.CassandraExecutor}

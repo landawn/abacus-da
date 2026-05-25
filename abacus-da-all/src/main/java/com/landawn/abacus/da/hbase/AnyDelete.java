@@ -96,13 +96,13 @@ import com.landawn.abacus.util.N;
  *
  * <h3>Key Features:</h3>
  * <ul>
- * <li><strong>Type Safety</strong>: Automatic conversion of row keys from Java objects to byte arrays</li>
+ * <li><strong>Type Conversion</strong>: Automatic conversion of row keys from Java objects to byte arrays</li>
  * <li><strong>Fluent API</strong>: Chainable method calls for readable delete operation construction</li>
  * <li><strong>Version Control</strong>: Precise control over which versions to delete</li>
  * <li><strong>Granular Deletion</strong>: From single columns to entire rows</li>
  * <li><strong>Timestamp Management</strong>: Support for time-based deletion strategies</li>
  * <li><strong>Performance Optimization</strong>: Efficient batch deletion capabilities</li>
- * <li><strong>Consistency Control</strong>: Transaction-safe deletion operations</li>
+ * <li><strong>Per-row atomicity</strong>: Each delete is atomic at the single-row level</li>
  * </ul>
  *
  * <h3>Deletion Strategies:</h3>
@@ -474,9 +474,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *                            .addFamily("activity_log");
      * }</pre>
      *
-     * @param family the name of the column family to delete
+     * @param family the name of the column family to delete; encoded via
+     *               {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if {@code family} resolves to a null/empty byte array
      * @see #addFamily(String, long)
      * @see #addFamilyVersion(String, long)
      */
@@ -501,11 +501,11 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *                            .addFamily("activity_log", retentionCutoff);
      * }</pre>
      *
-     * @param family the name of the column family to delete
-     * @param timestamp the maximum timestamp for versions to delete (inclusive)
+     * @param family the name of the column family to delete; encoded via
+     *               {@link HBaseExecutor#toFamilyQualifierBytes(String)}
+     * @param timestamp the maximum timestamp for versions to delete (inclusive); must be non-negative
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if {@code family} resolves to a null/empty byte array,
-     *         or if {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code timestamp} is negative
      * @see #addFamily(String)
      * @see #addFamilyVersion(String, long)
      */
@@ -530,7 +530,6 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * @param family the column family name as a byte array
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if family is null
      * @see #addFamily(String)
      * @see #addFamily(byte[], long)
      */
@@ -554,9 +553,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * }</pre>
      *
      * @param family the column family name as a byte array
-     * @param timestamp the maximum timestamp for versions to delete (inclusive)
+     * @param timestamp the maximum timestamp for versions to delete (inclusive); must be non-negative
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if family is null or timestamp is negative
+     * @throws IllegalArgumentException if {@code timestamp} is negative
      * @see #addFamily(byte[])
      * @see #addFamilyVersion(byte[], long)
      */
@@ -582,9 +581,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * }</pre>
      *
      * @param family the name of the column family
-     * @param timestamp the exact timestamp of the cells to delete
+     * @param timestamp the exact timestamp of the cells to delete; must be non-negative
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if {@code family} resolves to a null/empty byte array
+     * @throws IllegalArgumentException if {@code timestamp} is negative
      * @see #addFamily(String, long)
      * @see #addColumn(String, String, long)
      */
@@ -609,9 +608,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * }</pre>
      *
      * @param family the column family name as a byte array
-     * @param timestamp the exact timestamp of the version to delete
+     * @param timestamp the exact timestamp of the version to delete; must be non-negative
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if family is null
+     * @throws IllegalArgumentException if {@code timestamp} is negative
      * @see #addFamilyVersion(String, long)
      * @see #addFamily(byte[], long)
      */
@@ -638,11 +637,11 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *                            .addColumn("info", "phone");
      * }</pre>
      *
-     * @param family the column family name
-     * @param qualifier the column qualifier name
+     * @param family the column family name; encoded via
+     *               {@link HBaseExecutor#toFamilyQualifierBytes(String)}
+     * @param qualifier the column qualifier name; encoded via
+     *                  {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if {@code family} or {@code qualifier} resolves to a
-     *         null/empty byte array
      * @see #addColumn(String, String, long)
      * @see #addColumns(String, String)
      */
@@ -665,12 +664,13 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *                            .addColumn("info", "email", versionToDelete);
      * }</pre>
      *
-     * @param family the column family name
-     * @param qualifier the column qualifier name
+     * @param family the column family name; encoded via
+     *               {@link HBaseExecutor#toFamilyQualifierBytes(String)}
+     * @param qualifier the column qualifier name; encoded via
+     *                  {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @param timestamp the exact timestamp of the version to delete; must be non-negative
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if {@code family} or {@code qualifier} resolves to a
-     *         null/empty byte array, or if {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code timestamp} is negative
      * @see #addColumn(String, String)
      * @see #addColumns(String, String, long)
      */
@@ -699,7 +699,6 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param family the column family name as a byte array
      * @param qualifier the column qualifier name as a byte array
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if family or qualifier is null
      * @see #addColumn(byte[], byte[], long)
      * @see #addColumns(byte[], byte[])
      */
@@ -727,7 +726,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param qualifier the column qualifier name as a byte array
      * @param timestamp the exact timestamp of the version to delete; must be non-negative
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if {@code family} is null, or if {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code timestamp} is negative
      * @see #addColumn(byte[], byte[])
      * @see #addColumns(byte[], byte[], long)
      */
@@ -753,11 +752,11 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *                            .addColumns("info", "phone");
      * }</pre>
      *
-     * @param family the column family name
-     * @param qualifier the column qualifier name
+     * @param family the column family name; encoded via
+     *               {@link HBaseExecutor#toFamilyQualifierBytes(String)}
+     * @param qualifier the column qualifier name; encoded via
+     *                  {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if {@code family} or {@code qualifier} resolves to a
-     *         null/empty byte array
      * @see #addColumns(String, String, long)
      * @see #addColumn(String, String)
      */
@@ -780,12 +779,13 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *                            .addColumns("activity", "login_history", retentionCutoff);
      * }</pre>
      *
-     * @param family the column family name
-     * @param qualifier the column qualifier name
+     * @param family the column family name; encoded via
+     *               {@link HBaseExecutor#toFamilyQualifierBytes(String)}
+     * @param qualifier the column qualifier name; encoded via
+     *                  {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @param timestamp the maximum timestamp for versions to delete (inclusive); must be non-negative
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if {@code family} or {@code qualifier} resolves to a
-     *         null/empty byte array, or if {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code timestamp} is negative
      * @see #addColumns(String, String)
      * @see #addColumn(String, String, long)
      */
@@ -813,7 +813,6 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param family the column family name as a byte array
      * @param qualifier the column qualifier name as a byte array
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if family or qualifier is null
      * @see #addColumns(byte[], byte[], long)
      * @see #addColumn(byte[], byte[])
      */
@@ -839,9 +838,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * @param family the column family name as a byte array
      * @param qualifier the column qualifier name as a byte array
-     * @param timestamp the maximum timestamp for versions to delete (inclusive)
+     * @param timestamp the maximum timestamp for versions to delete (inclusive); must be non-negative
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if family or qualifier is null
+     * @throws IllegalArgumentException if {@code timestamp} is negative
      * @see #addColumns(byte[], byte[])
      * @see #addColumn(byte[], byte[], long)
      */

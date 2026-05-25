@@ -470,8 +470,9 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * <ul>
      * <li>The time range is half-open: includes minStamp (inclusive) but excludes maxStamp (exclusive)</li>
      * <li>Column family time ranges take precedence over any global time range</li>
-     * <li>Default behavior returns only the latest version (maxVersions = 1)</li>
-     * <li>To retrieve multiple versions within the time range, you must also increase maxVersions</li>
+     * <li>Default behaviour returns only the latest version (max-versions = 1)</li>
+     * <li>To retrieve multiple versions within the time range, also widen the max-versions setting
+     *     on the concrete query (e.g. {@code AnyGet.readVersions(int)} / {@code AnyScan.readVersions(int)})</li>
      * </ul>
      *
      * <p><b>Usage Examples:</b></p>
@@ -483,7 +484,7 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      *
      * // Get last 5 versions from the last 24 hours
      * AnyGet get = AnyGet.of(rowKey);
-     * get.setMaxVersions(5)
+     * get.readVersions(5)
      *    .setColumnFamilyTimeRange("data",
      *        System.currentTimeMillis() - TimeUnit.DAYS.toMillis(1),
      *        System.currentTimeMillis());
@@ -518,8 +519,9 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * <ul>
      * <li>The time range is half-open: includes minStamp (inclusive) but excludes maxStamp (exclusive)</li>
      * <li>Column family time ranges take precedence over any global time range</li>
-     * <li>Default behavior returns only the latest version (maxVersions = 1)</li>
-     * <li>To retrieve multiple versions within the time range, you must also increase maxVersions</li>
+     * <li>Default behaviour returns only the latest version (max-versions = 1)</li>
+     * <li>To retrieve multiple versions within the time range, also widen the max-versions setting
+     *     on the concrete query (e.g. {@code AnyGet.readVersions(int)} / {@code AnyScan.readVersions(int)})</li>
      * </ul>
      *
      * <p><b>Usage Examples:</b></p>

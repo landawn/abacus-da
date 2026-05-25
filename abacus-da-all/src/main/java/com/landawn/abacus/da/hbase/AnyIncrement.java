@@ -234,9 +234,11 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
     /**
      * Creates a new AnyIncrement instance by copying an existing HBase Increment object.
      * <p>
-     * This factory method creates a deep copy of the provided increment, allowing you
-     * to modify the copy without affecting the original. This is useful when you want
-     * to extend or modify an existing increment operation while preserving the original.
+     * Delegates to {@link Increment#Increment(Increment)}, which copies the row, timestamp,
+     * time range, and the family-to-cells map structure (the map and per-family
+     * {@code List<Cell>} are new collections, but the {@link Cell} instances themselves are
+     * shared with the source). Subsequent {@code addColumn} calls on the returned wrapper
+     * therefore do not mutate the source increment.
      * </p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -247,9 +249,9 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *                                     .setReturnResults(true);
      * }</pre>
      *
-     * @param incrementToCopy the HBase Increment object to copy; must not be null
-     * @return a new AnyIncrement instance that is a copy of the provided increment
-     * @throws IllegalArgumentException if incrementToCopy is null
+     * @param incrementToCopy the HBase Increment object to copy; must not be {@code null}
+     * @return a new AnyIncrement instance backed by a fresh Increment copied from {@code incrementToCopy}
+     * @throws NullPointerException if {@code incrementToCopy} is {@code null}
      * @see Increment
      */
     public static AnyIncrement of(final Increment incrementToCopy) {
@@ -318,10 +320,11 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *                                      .addColumn(familyBytes, qualifierBytes, 1L);
      * }</pre>
      *
-     * @param family the column-family name as a byte array
+     * @param family the column-family name as a byte array; must not be {@code null}
      * @param qualifier the column-qualifier name as a byte array
      * @param amount the long delta to apply to the existing cell value (negative for decrement)
      * @return this AnyIncrement instance, to allow fluent method chaining
+     * @throws IllegalArgumentException if {@code family} is {@code null}
      * @see #addColumn(String, String, long)
      */
     public AnyIncrement addColumn(final byte[] family, final byte[] qualifier, final long amount) {
@@ -393,19 +396,16 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
     }
 
     /**
-     * Sets the TimeRange to be used on the Get operation for this increment.
-     * <p>
-     * This is useful for when you have counters that only last for specific
-     * periods of time (i.e., counters that are partitioned by time).  By setting
-     * the range of valid times for this increment, you can potentially gain
-     * some performance with a more optimal Get operation.
-     * Be careful adding the time range to this class as you will update the old cell if the
-     * time range doesn't include the latest cells.
-     * </p>
-     * <p>
-     * This range is used as [minStamp, maxStamp), meaning minStamp is inclusive
-     * and maxStamp is exclusive.
-     * </p>
+     * Sets the TimeRange used by the pre-increment Get that HBase performs to read the existing
+     * cell value before applying the delta. Useful for time-partitioned counters where only
+     * recent values should be considered.
+     *
+     * <p><strong>Caution:</strong> if the time range does not cover the latest cell, the server
+     * will compute the new value from an older version, effectively basing the increment on
+     * stale data.</p>
+     *
+     * <p>The range is half-open: {@code [minStamp, maxStamp)} — {@code minStamp} is inclusive
+     * and {@code maxStamp} is exclusive.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -569,11 +569,14 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
     }
 
     /**
-     * Sets a custom attribute on this increment, using a raw byte-array value (no automatic
-     * conversion). This is a separate overload from
-     * {@link AnyOperationWithAttributes#setAttribute(String, Object)} — supplying a {@code byte[]}
-     * here stores the bytes verbatim, whereas the {@code Object} overload routes through
-     * {@link HBaseExecutor#toValueBytes(Object)} and may re-encode the array.
+     * Sets a custom attribute on this increment using a raw byte-array value. This overload
+     * bypasses {@link HBaseExecutor#toValueBytes(Object)} and stores the supplied array directly
+     * on the wrapped HBase {@link Increment}; a {@code null} value clears the attribute.
+     *
+     * <p>For a {@code byte[]} argument, this is observationally equivalent to
+     * {@link AnyOperationWithAttributes#setAttribute(String, Object)} (since {@code toValueBytes}
+     * returns {@code byte[]} arguments as-is), but its presence avoids the {@code Object}-overload
+     * dispatch path and makes the byte-array intent explicit at the call site.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -588,6 +591,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @return this AnyIncrement instance, to allow fluent method chaining
      * @see #getAttribute(String)
      * @see #getAttributesMap()
+     * @see AnyOperationWithAttributes#setAttribute(String, Object)
      */
     public AnyIncrement setAttribute(final String name, final byte[] value) {
         increment.setAttribute(name, value);

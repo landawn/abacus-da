@@ -57,7 +57,6 @@ import com.landawn.abacus.util.stream.Stream;
  *     <li>Create, read, update, delete operations with type safety</li>
  *     <li>Upsert operations for create-or-update scenarios</li>
  *     <li>Patch operations for efficient partial updates</li>
- *     <li>Batch operations for high-throughput scenarios</li>
  *     </ul>
  * </li>
  * <li><strong>Advanced Querying:</strong>
@@ -100,60 +99,46 @@ import com.landawn.abacus.util.stream.Stream;
  * 
  * // Document operations
  * Product product = new Product("prod123", "Laptop", "Electronics", 999.99);
- * 
+ *
  * // Create
  * CosmosItemResponse<Product> response = executor.createItem(product);
  * System.out.println("RUs consumed: " + response.getRequestCharge());
- * 
+ *
  * // Read
- * Product retrieved = executor.readItem("prod123", 
- *                                      new PartitionKey("Electronics"), 
- *                                      Product.class);
- * 
- * // Update
+ * Product retrieved = executor.readItem("prod123",
+ *                                      new PartitionKey("Electronics"),
+ *                                      Product.class).getItem();
+ *
+ * // Update (replace by id within the partition)
  * product.setPrice(899.99);
- * executor.replaceItem(product);
- * 
+ * executor.replaceItem("prod123", new PartitionKey("Electronics"), product, null);
+ *
  * // Delete
- * executor.deleteItem("prod123", new PartitionKey("Electronics"));
+ * executor.deleteItem("prod123", new PartitionKey("Electronics"), null);
  * }</pre>
  *
  * <p><b>Advanced Query Examples:</b></p>
  * <pre>{@code
- * // SQL queries with parameters
- * String sql = "SELECT * FROM c WHERE c.category = @category AND c.price > @minPrice";
- * List<Product> expensiveElectronics = executor.queryItems(
- *     sql, 
- *     N.asMap("category", "Electronics", "minPrice", 500.0),
- *     Product.class
- * ).toList();
- * 
- * // Using SqlBuilder for dynamic queries
- * String dynamicQuery = ACSB.select("id", "name", "price")
- *                          .from("c")
- *                          .where(Filters.eq("category", "Electronics"))
- *                          .and(Filters.between("price", 100, 1000))
- *                          .orderBy("price DESC")
- *                          .sql();
- * 
- * Stream<Product> products = executor.queryItems(dynamicQuery, Product.class);
- * 
+ * // Parameterized SQL queries via SqlQuerySpec
+ * SqlQuerySpec spec = new SqlQuerySpec(
+ *     "SELECT * FROM c WHERE c.category = @category AND c.price > @minPrice",
+ *     Arrays.asList(
+ *         new SqlParameter("@category", "Electronics"),
+ *         new SqlParameter("@minPrice", 500.0)
+ *     )
+ * );
+ * List<Product> expensiveElectronics = executor.streamItems(spec, Product.class)
+ *                                              .toList();
+ *
+ * // Condition-based queries built from the integrated query API
+ * Condition cond = Filters.eq("category", "Electronics")
+ *                         .and(Filters.between("price", 100, 1000));
+ * Stream<Product> products = executor.streamItems(cond, Product.class);
+ *
  * // Stream processing for large result sets
- * executor.queryItems("SELECT * FROM c WHERE c.inStock = true", Product.class)
+ * executor.streamItems("SELECT * FROM c WHERE c.inStock = true", Product.class)
  *        .filter(p -> p.getPrice() > 100)
  *        .forEach(this::processProduct);
- * }</pre>
- *
- * <p><b>Batch Operations:</b></p>
- * <pre>{@code
- * // Batch operations for performance
- * List<Product> products = Arrays.asList(product1, product2, product3);
- * List<CosmosItemResponse<Product>> responses = executor.createItems(products);
- * 
- * // Calculate total RUs consumed
- * double totalRUs = responses.stream()
- *                           .mapToDouble(CosmosItemResponse::getRequestCharge)
- *                           .sum();
  * }</pre>
  * 
  * <h3>Partition Key Considerations</h3>
@@ -1551,8 +1536,8 @@ public class CosmosContainerExecutor {
      *
      * // Build condition
      * Condition condition = eq("category", "Electronics")
-     *     .and(gte("price", 100.0))
-     *     .and(lte("price", 1000.0));
+     *     .and(ge("price", 100.0))
+     *     .and(le("price", 1000.0));
      *
      * // Configure options
      * CosmosQueryRequestOptions options = new CosmosQueryRequestOptions();

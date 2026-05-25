@@ -88,7 +88,7 @@ import com.landawn.abacus.annotation.SuppressFBWarnings;
  * <ul>
  * <li><strong>Per-row atomicity</strong>: the server applies all queued cells in one
  *     read-modify-write against the target row</li>
- * <li><strong>Type safety</strong>: Java objects are encoded to bytes via {@link HBaseExecutor}</li>
+ * <li><strong>Type conversion</strong>: Java objects are encoded to bytes via {@link HBaseExecutor}</li>
  * <li><strong>Performance control</strong>: {@link #setReturnResults(boolean)} can suppress the
  *     post-append result payload</li>
  * <li><strong>Time-range filtering</strong>: {@link #setTimeRange(long, long)} narrows the read
@@ -140,7 +140,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * Package-private constructor: prefer {@link #of(byte[])}. Wraps a new HBase {@link Append}
      * for the given byte-array row key.
      *
-     * @param rowKey the row key as a byte array
+     * @param rowKey the row key as a byte array; must not be {@code null}
      */
     AnyAppend(final byte[] rowKey) {
         super(new Append(rowKey));
@@ -286,10 +286,11 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
     /**
      * Creates a new AnyAppend instance by copying an existing HBase Append operation.
      *
-     * <p>This factory method creates a new AnyAppend instance that wraps a copy of the
-     * provided HBase Append object. All configuration, data, and attributes from the
-     * original append are preserved. This is useful for converting existing HBase
-     * Append objects to the AnyAppend wrapper for additional functionality.</p>
+     * <p>Delegates to {@link Append#Append(Append)}, which copies the row, timestamp, time
+     * range, and the family-to-cells map structure (the map and per-family {@code List<Cell>}
+     * are new collections, but the {@link Cell} instances themselves are shared with the source).
+     * Subsequent {@code addColumn} calls on the returned wrapper therefore do not mutate the
+     * source append.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -301,9 +302,9 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * append.addColumn("logs", "activity", "logout;");   // Add more data
      * }</pre>
      *
-     * @param appendToCopy the existing HBase Append object to copy
-     * @return a new AnyAppend instance that wraps a copy of the specified append
-     * @throws IllegalArgumentException if appendToCopy is null
+     * @param appendToCopy the existing HBase {@link Append} to copy; must not be {@code null}
+     * @return a new AnyAppend instance backed by a fresh Append copied from {@code appendToCopy}
+     * @throws NullPointerException if {@code appendToCopy} is {@code null}
      * @see org.apache.hadoop.hbase.client.Append
      */
     public static AnyAppend of(final Append appendToCopy) {
@@ -370,12 +371,12 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
     }
 
     /**
-     * Returns the time range configuration for this append operation.
+     * Returns the time range used by the pre-append read for this append operation.
      *
-     * <p>The time range specifies the minimum and maximum timestamps for cells that
-     * should be considered during the append operation. Only cells with timestamps
-     * within this range will be affected. If no time range has been set, this
-     * method returns the default time range (all timestamps).</p>
+     * <p>The time range specifies the minimum and maximum timestamps for cells considered
+     * by the {@code Get} that HBase performs before concatenating the new bytes. If no time
+     * range has been set, this method returns the underlying {@link Append}'s default
+     * {@link TimeRange} (covering all timestamps).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -384,7 +385,8 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * TimeRange range = append.getTimeRange();
      * }</pre>
      *
-     * @return the configured TimeRange, or the default TimeRange if no specific range is set
+     * @return the configured {@link TimeRange}, or the default {@link TimeRange} if no specific
+     *         range is set; never {@code null}
      * @see #setTimeRange(long, long)
      * @see org.apache.hadoop.hbase.io.TimeRange
      */
@@ -533,8 +535,10 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * encodes the value to append; for ordinary use prefer
      * {@link #addColumn(String, String, Object)}.
      *
-     * <p>The cell's row key must match this append's row key, otherwise the underlying
-     * {@link Append#add(Cell)} will reject it.</p>
+     * <p>The cell's row key should match this append's row key. The wrapped
+     * {@link Append#add(Cell)} logs and swallows the row-mismatch {@code IOException} rather
+     * than propagating it (kept for backwards compatibility), so callers must enforce row
+     * consistency themselves to avoid silently dropping the cell.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -564,11 +568,14 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
     }
 
     /**
-     * Sets a custom attribute on this append, using a raw byte-array value (no automatic
-     * conversion). This is a separate overload from
-     * {@link AnyOperationWithAttributes#setAttribute(String, Object)} — supplying a {@code byte[]}
-     * here stores the bytes verbatim, whereas the {@code Object} overload routes through
-     * {@link HBaseExecutor#toValueBytes(Object)} and may re-encode the array.
+     * Sets a custom attribute on this append using a raw byte-array value. This overload bypasses
+     * {@link HBaseExecutor#toValueBytes(Object)} and stores the supplied array directly on the
+     * wrapped HBase {@link Append}; a {@code null} value clears the attribute.
+     *
+     * <p>For a {@code byte[]} argument, this is observationally equivalent to
+     * {@link AnyOperationWithAttributes#setAttribute(String, Object)} (since {@code toValueBytes}
+     * returns {@code byte[]} arguments as-is), but its presence avoids the {@code Object}-overload
+     * dispatch path and makes the byte-array intent explicit at the call site.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -581,6 +588,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @param value the attribute value as a raw byte array; may be {@code null} to clear it
      * @return this AnyAppend instance, to allow fluent method chaining
      * @see #getAttribute(String)
+     * @see AnyOperationWithAttributes#setAttribute(String, Object)
      */
     public AnyAppend setAttribute(final String name, final byte[] value) {
         append.setAttribute(name, value);

@@ -113,7 +113,7 @@ import com.landawn.abacus.util.Tuple.Tuple3;
  * <h3>Selective Property Mapping</h3>
  * <pre>{@code
  * // Only insert specific properties
- * Set&lt;String&gt; selectedProps = Sets.of("name", "email");
+ * Set&lt;String&gt; selectedProps = Set.of("name", "email");
  * AnyPut selectivePut = AnyPut.create(user, selectedProps);
  *
  * // Custom naming policy
@@ -281,9 +281,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *                    .addColumn("info", "email", "john@example.com");
      * }</pre>
      *
-     * @param rowKey the row key for the put operation, automatically converted to bytes (String, Long, byte[], etc.)
+     * @param rowKey the row key for the put operation, automatically converted to bytes (String, Long, byte[], etc.); should not be {@code null}
      * @return a new AnyPut instance configured for the specified row
-     * @throws IllegalArgumentException if rowKey is null
      * @see #of(Object, long)
      * @see #of(ByteBuffer)
      */
@@ -313,7 +312,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param timestamp the default timestamp for cells added without an explicit timestamp
      *                  (milliseconds since epoch)
      * @return a new AnyPut configured with the specified default timestamp
-     * @throws IllegalArgumentException if {@code rowKey} is null or {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code timestamp} is negative (validated by the
+     *         underlying {@link Put} constructor)
      * @see #of(Object)
      * @see #addColumn(String, String, long, Object)
      */
@@ -341,7 +341,9 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowOffset the starting position (0-based) within the row key bytes
      * @param rowLength the number of bytes to use from the row key, starting at offset
      * @return a new AnyPut instance configured with the partial row key
-     * @throws IllegalArgumentException if rowKey is null, rowOffset is negative, or rowLength is invalid
+     * @throws IllegalArgumentException if {@code rowOffset}/{@code rowLength} do not describe a
+     *         valid sub-range of the row key bytes (validated by the underlying {@link Put}
+     *         constructor)
      * @see #of(Object)
      * @see #of(Object, int, int, long)
      */
@@ -371,8 +373,9 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param timestamp the default timestamp for cells added without an explicit timestamp
      *                  (milliseconds since epoch)
      * @return a new AnyPut configured with the partial row key and default timestamp
-     * @throws IllegalArgumentException if {@code rowKey} is null, {@code rowOffset}/{@code rowLength}
-     *         do not describe a valid sub-range of the row key bytes, or {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code rowOffset}/{@code rowLength} do not describe a
+     *         valid sub-range of the row key bytes, or if {@code timestamp} is negative
+     *         (validated by the underlying {@link Put} constructor)
      * @see #of(Object, int, int)
      * @see #of(Object, long)
      */
@@ -398,10 +401,9 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *                             .addColumn("info", "status", "active");
      * }</pre>
      *
-     * @param rowKey the row key for the put operation, automatically converted to bytes
+     * @param rowKey the row key for the put operation, automatically converted to bytes; should not be {@code null}
      * @param rowIsImmutable true if the row key byte array is guaranteed to be immutable
      * @return a new AnyPut instance with immutability control
-     * @throws IllegalArgumentException if rowKey is null
      * @see #of(Object, long, boolean)
      * @see #of(Object)
      */
@@ -430,7 +432,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowIsImmutable {@code true} if the row-key byte array is guaranteed not to be
      *                       modified after this Put is created
      * @return a new AnyPut with timestamp and immutability control
-     * @throws IllegalArgumentException if {@code rowKey} is null or {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code timestamp} is negative (validated by the
+     *         underlying {@link Put} constructor)
      * @see #of(Object, boolean)
      * @see #of(Object, long)
      */
@@ -513,7 +516,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * @param putToCopy the existing HBase Put object to copy; must not be null
      * @return a new AnyPut instance that is a deep copy of the specified put
-     * @throws IllegalArgumentException if putToCopy is null
+     * @throws NullPointerException if {@code putToCopy} is null (raised by the wrapped
+     *         {@link Put#Put(Put)} constructor)
      * @see Put
      * @see #val()
      */
@@ -935,12 +939,13 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * type — {@link String}, {@link Integer}, {@link Long}, {@link java.util.Date}, byte arrays, etc.</p>
      *
      * <p>This variant uses the timestamp the {@link Put} was constructed with (or
-     * {@code HConstants.LATEST_TIMESTAMP} if none was supplied, in which case the region server
-     * assigns the wall-clock time at flush). The same cell key is therefore reused on repeated
-     * calls within the same Put, which means a subsequent call with an identical
-     * {@code (family, qualifier)} pair <i>overwrites</i> the earlier cell rather than appending to
-     * it or creating a new version. To create multiple versions of the same column in one Put, use
-     * {@link #addColumn(String, String, long, Object)} with distinct timestamps.</p>
+     * {@code HConstants.LATEST_TIMESTAMP} when none was supplied, in which case the region server
+     * stamps the cell with its current wall-clock time when the mutation is applied). The same
+     * cell key is therefore reused on repeated calls within the same Put, which means a subsequent
+     * call with an identical {@code (family, qualifier)} pair <i>overwrites</i> the earlier cell
+     * rather than appending to it or creating a new version. To create multiple versions of the
+     * same column in one Put, use {@link #addColumn(String, String, long, Object)} with distinct
+     * timestamps.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1080,8 +1085,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p>Provides NIO {@link ByteBuffer} support for scenarios involving direct buffers or
      * off-heap memory, minimising memory copies and GC pressure. The bytes between each buffer's
-     * current position and limit are used; the buffers' positions are not modified by this call
-     * (HBase reads them by absolute index).</p>
+     * current position and limit are used.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

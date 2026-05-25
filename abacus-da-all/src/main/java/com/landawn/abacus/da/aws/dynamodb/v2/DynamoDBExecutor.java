@@ -2335,20 +2335,18 @@ public final class DynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * Puts an entity into the specified DynamoDB table.
+     * Package-private overload that converts the supplied entity to a DynamoDB item via
+     * {@link #toItem(Object)} and performs a {@code PutItem}.
      *
-     * <p>This method converts the provided entity to a DynamoDB item and performs a PutItem operation.</p>
+     * <p>This is intentionally not exposed publicly because the {@code Object} parameter would clash
+     * with {@link #putItem(String, Map)} and create overload-resolution ambiguity for callers
+     * passing a {@code Map}-typed entity. Public callers should serialize their entity via
+     * {@link #toItem(Object)} and use {@link #putItem(String, Map)}, or go through {@link Mapper}.</p>
      *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * MyEntity entity = new MyEntity("123", "John Doe");
-     * PutItemResponse response = executor.putItem("MyTable", entity);
-     * }</pre>
-     *
-     * @param tableName the name of the DynamoDB table to put the item into. Must not be null.
-     * @param entity the entity to put, must be a class with getter/setter methods. Must not be null.
-     * @return the response from the PutItem operation, containing metadata about the operation.
-     * @throws IllegalArgumentException if tableName or entity is null.
+     * @param tableName the name of the DynamoDB table to put the item into; must not be null
+     * @param entity the entity to put; a bean with getter/setter methods, a {@code Map}, or an
+     *               {@code Object[]} of alternating name/value pairs; must not be null
+     * @return the response from the PutItem operation, containing metadata about the operation
      */
     // There is no too much benefit to add method for "Object entity"
     // And it may cause error because the "Object" is ambiguous to any type.
@@ -2359,22 +2357,20 @@ public final class DynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * Puts an entity into the specified DynamoDB table with a specified return values option.
+     * Package-private overload that converts the supplied entity to a DynamoDB item via
+     * {@link #toItem(Object)}, performs a {@code PutItem}, and applies {@code returnValues}.
      *
-     * <p>This method converts the provided entity to a DynamoDB item and performs a PutItem operation.
-     * It allows specifying the return values option to control what is returned in the response.</p>
+     * <p>This is intentionally not exposed publicly for the same reason as
+     * {@link #putItem(String, Object)} — the {@code Object} parameter would clash with the
+     * {@code Map}-accepting public entry point. For DynamoDB {@code PutItem} the only valid
+     * {@code returnValues} are {@code "NONE"} (default) and {@code "ALL_OLD"}; the {@code UPDATED_*}
+     * and {@code ALL_NEW} forms apply to {@code UpdateItem}.</p>
      *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * MyEntity entity = new MyEntity("123", "John Doe");
-     * PutItemResponse response = executor.putItem("MyTable", entity, "ALL_OLD");
-     * }</pre>
-     *
-     * @param tableName the name of the DynamoDB table to put the item into. Must not be null.
-     * @param entity the entity to put, must be a class with getter/setter methods. Must not be null.
-     * @param returnValues specifies what values to return in the response. Can be "NONE", "ALL_OLD", "UPDATED_OLD", "ALL_NEW", or "UPDATED_NEW".
-     * @return the response from the PutItem operation, containing metadata and optionally the old item.
-     * @throws IllegalArgumentException if tableName or entity is null.
+     * @param tableName the name of the DynamoDB table to put the item into; must not be null
+     * @param entity the entity to put; a bean with getter/setter methods, a {@code Map}, or an
+     *               {@code Object[]} of alternating name/value pairs; must not be null
+     * @param returnValues {@code "NONE"} (default) or {@code "ALL_OLD"} to retrieve the previous item
+     * @return the response from the PutItem operation, containing metadata and optionally the old item
      */
     PutItemResponse putItem(final String tableName, final Object entity, final String returnValues) {
         PutItemRequest putItemRequest = PutItemRequest.builder().tableName(tableName).item(toItem(entity)).returnValues(returnValues).build();

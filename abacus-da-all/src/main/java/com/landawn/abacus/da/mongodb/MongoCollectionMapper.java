@@ -2012,9 +2012,11 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>If {@code update} is already a driver-built {@link Bson} update expression
      * (for example {@code Updates.set(...)}/{@code Updates.combine(...)}) it is used verbatim.
-     * Otherwise the entity is converted to a {@link Document} and wrapped in {@code {$set: ...}};
-     * fields whose values are {@code null} in the entity become {@code null} in the {@code $set}
-     * document, not omitted from it.</p>
+     * Otherwise the entity is converted to a {@link Document} via {@link MongoDBBase#toDocument(Object)}
+     * and wrapped in {@code {$set: ...}}; properties whose getter returns {@code null} are
+     * <i>dropped</i> by the bean conversion, so entity nulls cannot be used to clear fields through
+     * this path. Use a driver-built {@link Bson} update (e.g. {@code Updates.set(field, null)})
+     * when you need to explicitly write {@code null}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

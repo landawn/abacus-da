@@ -388,9 +388,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * <h4>Naming Policy Examples:</h4>
      * <ul>
-     * <li>{@code LOWER_CASE_WITH_UNDERSCORE}: {@code firstName} &rarr; {@code first_name}</li>
-     * <li>{@code UPPER_CASE_WITH_UNDERSCORE}: {@code firstName} &rarr; {@code FIRST_NAME}</li>
-     * <li>{@code LOWER_CAMEL_CASE}: {@code firstName} &rarr; {@code firstName}</li>
+     * <li>{@link NamingPolicy#SNAKE_CASE}: {@code firstName} &rarr; {@code first_name}</li>
+     * <li>{@link NamingPolicy#SCREAMING_SNAKE_CASE}: {@code firstName} &rarr; {@code FIRST_NAME}</li>
+     * <li>{@link NamingPolicy#CAMEL_CASE}: {@code firstName} &rarr; {@code firstName}</li>
      * </ul>
      *
      * @param session the Cassandra session to use for database operations

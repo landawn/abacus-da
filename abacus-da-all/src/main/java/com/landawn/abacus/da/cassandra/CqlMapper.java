@@ -86,14 +86,14 @@ import com.landawn.abacus.util.XmlUtil;
  * }</pre>
  *
  * <h3>Parameter Binding</h3>
- * <p>The CQL stored in the mapper may use either of the binding styles supported by the underlying
- * driver:</p>
+ * <p>The CQL stored in the mapper may use any of the binding styles supported by {@link ParsedCql}:</p>
  * <ul>
  * <li><strong>Positional parameters:</strong> {@code SELECT * FROM users WHERE id = ?}</li>
  * <li><strong>Named parameters:</strong> {@code SELECT * FROM users WHERE id = :userId}</li>
- * <li><strong>Mixed parameters:</strong> Not supported within a single statement (for example,
- *     do not combine {@code ?} and {@code :userId} in the same query).</li>
+ * <li><strong>MyBatis-style parameters:</strong> {@code SELECT * FROM users WHERE id = #{userId}}</li>
  * </ul>
+ * <p>Mixing different parameter styles ({@code ?}, {@code :name}, {@code #{name}}) within a single
+ * statement is not supported and is rejected at parse time.</p>
  *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code

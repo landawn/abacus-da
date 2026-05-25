@@ -85,10 +85,11 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
     }
 
     /**
-     * Converts this operation to a {@link Map} representation containing all operation details,
-     * up to HBase's default column limit (see {@link #toMap(int)} for an explicit limit). The
-     * resulting map combines the {@linkplain #getFingerprint() fingerprint} with row-, column-,
-     * and value-level details and is intended for debugging, logging, or serialization.
+     * Converts this operation to a {@link Map} representation. Delegates to the underlying HBase
+     * {@link Operation#toMap()}, which applies HBase's built-in per-family column cap (see
+     * {@link #toMap(int)} to specify an explicit limit). The resulting map combines the
+     * {@linkplain #getFingerprint() fingerprint} with row-, column-, and value-level details and
+     * is intended for debugging, logging, or serialization.
      *
      * @return a {@code Map} representation of this operation; never {@code null}
      * @see #toMap(int)

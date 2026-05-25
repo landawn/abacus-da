@@ -143,7 +143,8 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * Constructs a new AnyGet instance from a ByteBuffer row key.
      * Useful for NIO operations or when the row key is already in ByteBuffer format.
      *
-     * @param rowKey the row key as a ByteBuffer
+     * @param rowKey the row key as a ByteBuffer; must not be {@code null} and must have at
+     *               least one remaining byte
      */
     AnyGet(final ByteBuffer rowKey) {
         super(new Get(rowKey));
@@ -228,9 +229,12 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *                    .addFamily("profile");
      * }</pre>
      * 
-     * @param rowKey the row key as a ByteBuffer; must not be null
+     * @param rowKey the row key as a ByteBuffer; must not be {@code null} and must have at least
+     *               one remaining byte
      * @return a new AnyGet instance configured for the specified row
-     * @throws NullPointerException if {@code rowKey} is null (raised by the wrapped {@link org.apache.hadoop.hbase.client.Get#Get(ByteBuffer)} constructor)
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, empty
+     *         ({@code remaining() == 0}), or exceeds HBase's maximum row length (raised by the
+     *         wrapped {@link org.apache.hadoop.hbase.client.Get#Get(ByteBuffer)} constructor)
      * @see #of(Object)
      * @see java.nio.ByteBuffer
      */
@@ -290,11 +294,12 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
     }
 
     /**
-     * Adds a column family to retrieve all columns from that family.
+     * Adds a column family so that every column in that family is retrieved.
      *
-     * <p>When a family is added without specific qualifiers, all columns within that
-     * family will be retrieved. This is useful for getting all data associated with
-     * a particular column family in HBase.</p>
+     * <p>Delegates to {@link Get#addFamily(byte[])}. When a family is added without specific
+     * qualifiers, every column within that family will be retrieved. Per HBase semantics, this
+     * call overrides any previous {@link #addColumn(String, String)} entries for the same
+     * family on this Get.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -303,9 +308,9 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *                    .addFamily("preferences");
      * }</pre>
      *
-     * @param family the column family name to retrieve
+     * @param family the column family name to retrieve; encoded via
+     *               {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @return this AnyGet instance for method chaining
-     * @throws IllegalArgumentException if family is null or empty
      * @see #addColumn(String, String)
      * @see #addFamily(byte[])
      */
@@ -315,13 +320,12 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
     }
 
     /**
-     * Adds a column family to retrieve all columns from that family using byte array.
-     * 
-     * <p>This method is more efficient than the string version when you already have
-     * the family name as a byte array, as it avoids the conversion overhead. When a
-     * family is added without specific qualifiers, all columns within that family
-     * will be retrieved. This is useful for getting all data associated with a
-     * particular column family in HBase.</p>
+     * Adds a column family so that every column in that family is retrieved, using a byte-array
+     * family name.
+     *
+     * <p>Direct byte-array overload of {@link #addFamily(String)}, useful when the family name
+     * is already encoded. Per HBase semantics, this call overrides any previous
+     * {@link #addColumn(byte[], byte[])} entries for the same family on this Get.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -329,10 +333,9 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * AnyGet get = AnyGet.of("user123")
      *                    .addFamily(familyBytes);
      * }</pre>
-     * 
-     * @param family the column family name as a byte array, must not be null or empty
+     *
+     * @param family the column family name as a byte array
      * @return this AnyGet instance for method chaining
-     * @throws IllegalArgumentException if family is null or empty
      * @see #addFamily(String)
      * @see #addColumn(byte[], byte[])
      */
@@ -344,9 +347,10 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
     /**
      * Adds a specific column (family:qualifier combination) to retrieve.
      *
-     * <p>This method allows for precise column selection, retrieving only the specified
-     * column from the HBase table. This is more efficient than retrieving entire families
-     * when you only need specific columns.</p>
+     * <p>Delegates to {@link Get#addColumn(byte[], byte[])}. Allows precise column selection,
+     * retrieving only the specified column from the row — more efficient than retrieving entire
+     * families when you only need specific columns. Per HBase semantics, this call overrides
+     * any previous {@link #addFamily(String)} entry for the same family on this Get.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -356,10 +360,11 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *                    .addColumn("stats", "login_count");
      * }</pre>
      *
-     * @param family the column family name
-     * @param qualifier the column qualifier within the family
+     * @param family the column family name; encoded via
+     *               {@link HBaseExecutor#toFamilyQualifierBytes(String)}
+     * @param qualifier the column qualifier within the family; encoded via
+     *                  {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @return this AnyGet instance for method chaining
-     * @throws IllegalArgumentException if family or qualifier is null or empty
      * @see #addFamily(String)
      * @see #addColumn(byte[], byte[])
      */
@@ -369,11 +374,11 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
     }
 
     /**
-     * Adds a specific column to retrieve using byte array representation.
+     * Adds a specific column to retrieve using byte-array identifiers.
      *
-     * <p>This method provides direct byte array access for column specification,
-     * which is more efficient when working with pre-encoded column identifiers.
-     * It allows for precise column selection without the overhead of string conversion.</p>
+     * <p>Direct byte-array overload of {@link #addColumn(String, String)}, useful when the
+     * family/qualifier names are already encoded. Per HBase semantics, this call overrides any
+     * previous {@link #addFamily(byte[])} entry for the same family on this Get.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -386,7 +391,6 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @param family the column family name as a byte array
      * @param qualifier the column qualifier as a byte array
      * @return this AnyGet instance for method chaining
-     * @throws IllegalArgumentException if family or qualifier is null
      * @see #addColumn(String, String)
      * @see #addFamily(byte[])
      */
@@ -459,7 +463,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * boolean exists = executor.exists("users_table", existsCheck);
      * }</pre>
      *
-     * @param checkExistenceOnly true to only check existence, {@code false} to retrieve actual data
+     * @param checkExistenceOnly {@code true} to only check existence, {@code false} to retrieve actual data
      * @return this AnyGet instance for method chaining
      * @see HBaseExecutor#exists(String, AnyGet)
      * @see #isCheckExistenceOnly()
@@ -472,9 +476,10 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
     /**
      * Returns the configured time range for this Get operation.
      *
-     * <p>The time range specifies which versions of cells to retrieve based on their
-     * timestamps. Only cells with timestamps within this range will be returned.
-     * By default, the time range is [0, Long.MAX_VALUE), which includes all versions.</p>
+     * <p>The time range filters which cell versions are retrieved by timestamp: only cells whose
+     * timestamp lies in {@code [minStamp, maxStamp)} are returned. By default, no time-range
+     * filter is applied — the underlying {@link Get} returns {@link TimeRange#allTime()}, which
+     * covers every timestamp.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -485,7 +490,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * long max = range.getMax();   // endTime
      * }</pre>
      *
-     * @return the TimeRange configured for this Get operation, never null
+     * @return the {@link TimeRange} configured for this Get operation; never {@code null}
      * @see #setTimeRange(long, long)
      * @see #setTimestamp(long)
      * @see TimeRange
@@ -772,7 +777,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *                    .setCacheBlocks(false);
      * }</pre>
      *
-     * @param cacheBlocks true to enable block caching, {@code false} to disable
+     * @param cacheBlocks {@code true} to enable block caching, {@code false} to disable
      * @return this AnyGet instance for method chaining
      * @see #getCacheBlocks()
      */
@@ -878,11 +883,9 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
     }
 
     /**
-     * Compares this AnyGet with another Row operation for ordering.
-     *
-     * <p>The comparison is based on the row keys of the two operations.
-     * This ordering is consistent with the natural ordering of byte arrays
-     * in HBase, which uses lexicographic comparison.</p>
+     * Compares this AnyGet with another {@link Row} by row key. Implementation of
+     * {@link Row#compareTo(Row)}, delegated to the wrapped {@link Get}. The comparison uses
+     * lexicographic byte-array ordering, matching HBase's natural row-key order.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -891,10 +894,11 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * int comparison = get1.compareTo(get2);   // negative value (user123 < user456)
      * }</pre>
      *
-     * @param other the Row operation to compare with
-     * @return a negative integer, zero, or positive integer as this object is less than,
-     *         equal to, or greater than the specified object
-     * @see Row#compareTo(Row)
+     * @param other the {@link Row} to compare with
+     * @return a negative integer, zero, or a positive integer as this row key is less than,
+     *         equal to, or greater than the other row's key
+     * @deprecated As of HBase 2.0.0; will be removed in HBase 3.0.0. Use {@link Row#COMPARATOR}
+     *             instead.
      */
     @Override
     public int compareTo(final Row other) {

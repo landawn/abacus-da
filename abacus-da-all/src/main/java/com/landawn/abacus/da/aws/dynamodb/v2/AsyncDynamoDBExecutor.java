@@ -80,9 +80,11 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
  *
  * <p>This executor wraps the AWS SDK <b>v2</b> {@link DynamoDbAsyncClient} and exposes
  * {@link CompletableFuture}-based variants of all DynamoDB interactions. It is the modern counterpart to
- * {@code com.landawn.abacus.da.aws.dynamodb.AsyncDynamoDBExecutor} (which wraps the legacy AWS SDK v1
- * {@code AmazonDynamoDBAsyncClient}); v1 and v2 are independent — they cannot share clients, request
- * models, or {@code AttributeValue} types, and applications should standardize on one SDK generation.</p>
+ * {@code com.landawn.abacus.da.aws.dynamodb.AsyncDynamoDBExecutor} (which provides asynchrony by
+ * dispatching calls on the synchronous AWS SDK v1 {@code AmazonDynamoDBClient} through a
+ * {@code com.landawn.abacus.util.AsyncExecutor}); v1 and v2 are independent — they cannot share
+ * clients, request models, or {@code AttributeValue} types, and applications should standardize on
+ * one SDK generation.</p>
  *
  * <h2>Key Features and Architecture</h2>
  * <h3>Key Features:</h3>
@@ -955,15 +957,14 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * what values should be returned after the operation completes. This is useful for retrieving
      * the old item values or confirming the operation success with specific attributes.</p>
      * 
-     * <p><b>Return Value Options:</b></p>
+     * <p><b>Return Value Options (PutItem):</b></p>
      * <ul>
      * <li><b>NONE</b> - Nothing is returned (default, best performance)</li>
-     * <li><b>ALL_OLD</b> - Returns all attributes of the old item, if it existed</li>
-     * <li><b>UPDATED_OLD</b> - Returns only updated attributes of the old item</li>
-     * <li><b>ALL_NEW</b> - Returns all attributes of the new item</li>
-     * <li><b>UPDATED_NEW</b> - Returns only updated attributes of the new item</li>
+     * <li><b>ALL_OLD</b> - Returns all attributes of the replaced item, if one existed</li>
      * </ul>
-     * 
+     * <p>The {@code UPDATED_OLD} / {@code ALL_NEW} / {@code UPDATED_NEW} values apply to
+     * {@code UpdateItem}, not to {@code PutItem}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValue> newItem = Map.of(
@@ -971,7 +972,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     "name", AttributeValue.fromS("John Updated"),
      *     "version", AttributeValue.fromN("2")
      * );
-     * 
+     *
      * CompletableFuture<PutItemResponse> future =
      *     executor.putItem("Users", newItem, "ALL_OLD");
      *
@@ -988,10 +989,10 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *         return null;
      *     });
      * }</pre>
-     * 
+     *
      * @param tableName the name of the DynamoDB table to put the item into. Must not be null.
      * @param item the item to put, as a map of attribute names to AttributeValue objects. Must not be null.
-     * @param returnValues specifies what values to return: "NONE", "ALL_OLD", "UPDATED_OLD", "ALL_NEW", "UPDATED_NEW"
+     * @param returnValues specifies what values to return for PutItem: {@code "NONE"} or {@code "ALL_OLD"}
      * @return a CompletableFuture containing the PutItemResponse with requested return values
      * @throws IllegalArgumentException if tableName or item is null
      * @see #putItem(String, Map)
@@ -1061,62 +1062,21 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * Asynchronously puts an entity object into the specified DynamoDB table.
+     * Package-private overload that converts a Java entity object to a DynamoDB item via
+     * {@link com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor#toItem(Object)} and then puts it
+     * into {@code tableName}.
      *
-     * <p>This method converts a Java entity object to DynamoDB item format and performs an async
-     * put operation. The entity is automatically converted to AttributeValue objects using the
-     * executor's object mapping capabilities. This provides a convenient way to store POJOs directly
-     * without manual AttributeValue conversion.</p>
+     * <p>This overload is not exposed publicly because the {@code Object} parameter would clash with
+     * {@link #putItem(String, Map)} and create overload-resolution ambiguity for callers passing a
+     * {@code Map}-typed entity. Public callers should serialize their entity to a
+     * {@code Map<String, AttributeValue>} via {@code DynamoDBExecutor.toItem(...)} and use
+     * {@link #putItem(String, Map)} directly, or go through {@link Mapper}.</p>
      *
-     * <p><b>Entity Conversion Process:</b></p>
-     * <ul>
-     * <li>Bean properties are converted to DynamoDB attributes</li>
-     * <li>Null values are typically omitted from the item</li>
-     * <li>Collection and complex types are serialized appropriately</li>
-     * <li>Naming policies are applied for attribute name conversion</li>
-     * <li>Type-specific converters handle Java types to AttributeValue mapping</li>
-     * </ul>
-     *
-     * <p><b>Supported Entity Types:</b></p>
-     * <ul>
-     * <li>JavaBean objects with getter/setter methods</li>
-     * <li>Records and simple data classes</li>
-     * <li>Objects with proper constructor and field access</li>
-     * <li>Maps and other collection-based objects</li>
-     * </ul>
-     *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * public class User {
-     *     private String userId;
-     *     private String name;
-     *     private String email;
-     *     private Long createdAt;
-     *     // getters and setters...
-     * }
-     *
-     * User user = new User();
-     * user.setUserId("user123");
-     * user.setName("John Doe");
-     * user.setEmail("john@example.com");
-     * user.setCreatedAt(Instant.now().toEpochMilli());
-     *
-     * CompletableFuture<PutItemResponse> future = executor.putItem("Users", user);
-     *
-     * future.thenAccept(response -> {
-     *     System.out.println("User saved successfully");
-     * }).exceptionally(ex -> {
-     *     logger.error("Failed to save user", ex);
-     *     return null;
-     * });
-     * }</pre>
-     *
-     * @param tableName the name of the DynamoDB table to put the item into. Must not be null or empty.
-     * @param entity the entity object to convert and store. Must not be null.
+     * @param tableName the name of the DynamoDB table to put the item into; must not be null or empty
+     * @param entity the entity object to convert and store; must not be null
      * @return a CompletableFuture containing the PutItemResponse with operation metadata
-     * @throws IllegalArgumentException if tableName is null/empty, entity is null, or entity cannot be converted
-     * @see #putItem(String, Object, String) for operations with return values
-     * @see #putItem(String, Map) for direct AttributeValue operations
+     * @see #putItem(String, Object, String)
+     * @see #putItem(String, Map)
      */
     CompletableFuture<PutItemResponse> putItem(final String tableName, final Object entity) {
         // There is no too much benefit to add method for "Object entity"
@@ -1127,60 +1087,22 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * Asynchronously puts an entity object into DynamoDB table with return value specification.
+     * Package-private overload that converts a Java entity object to a DynamoDB item via
+     * {@link com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor#toItem(Object)}, puts it into
+     * {@code tableName}, and applies {@code returnValues}.
      *
-     * <p>This method converts a Java entity object to DynamoDB item format and performs an async
-     * put operation with the specified return value configuration. The entity is automatically
-     * converted to AttributeValue objects using the executor's object mapping capabilities.</p>
+     * <p>This overload is not exposed publicly for the same reason as
+     * {@link #putItem(String, Object)} — the {@code Object} parameter would clash with the
+     * {@code Map}-accepting public entry point. For DynamoDB v2 the valid values for
+     * {@code returnValues} on a {@code PutItem} are only {@code "NONE"} and {@code "ALL_OLD"} (the
+     * {@code UPDATED_*}/{@code ALL_NEW} forms apply to {@code UpdateItem}).</p>
      *
-     * <p><b>Entity Conversion:</b></p>
-     * <ul>
-     * <li>Bean properties are converted to DynamoDB attributes</li>
-     * <li>Null values are typically omitted from the item</li>
-     * <li>Collection and complex types are serialized appropriately</li>
-     * <li>Naming policies are applied for attribute name conversion</li>
-     * </ul>
-     *
-     * <p><b>Return Value Options:</b></p>
-     * <ul>
-     * <li><b>NONE</b> - Nothing is returned (best performance)</li>
-     * <li><b>ALL_OLD</b> - Returns all attributes of the old item</li>
-     * <li><b>UPDATED_OLD</b> - Returns only updated attributes of the old item</li>
-     * <li><b>ALL_NEW</b> - Returns all attributes of the new item</li>
-     * <li><b>UPDATED_NEW</b> - Returns only updated attributes of the new item</li>
-     * </ul>
-     *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * User user = new User();
-     * user.setUserId("user123");
-     * user.setName("John Doe Updated");
-     * user.setEmail("john.updated@example.com");
-     * user.setVersion(2);
-     *
-     * CompletableFuture<PutItemResponse> future =
-     *     executor.putItem("Users", user, "ALL_OLD");
-     *
-     * future.thenAccept(response -> {
-     *     Map<String, AttributeValue> oldAttributes = response.attributes();
-     *     if (oldAttributes != null && !oldAttributes.isEmpty()) {
-     *         System.out.println("Updated existing user");
-     *     } else {
-     *         System.out.println("Created new user");
-     *     }
-     * }).exceptionally(ex -> {
-     *     logger.error("Failed to save user", ex);
-     *     return null;
-     * });
-     * }</pre>
-     *
-     * @param tableName the name of the DynamoDB table to put the item into. Must not be null or empty.
-     * @param entity the entity object to convert and store. Must not be null.
-     * @param returnValues specifies what values to return: "NONE", "ALL_OLD", "UPDATED_OLD", "ALL_NEW", "UPDATED_NEW"
+     * @param tableName the name of the DynamoDB table to put the item into; must not be null or empty
+     * @param entity the entity object to convert and store; must not be null
+     * @param returnValues {@code "NONE"} (default) or {@code "ALL_OLD"} to retrieve the previous item
      * @return a CompletableFuture containing the PutItemResponse with requested return values
-     * @throws IllegalArgumentException if tableName is null/empty, entity is null, or entity cannot be converted
-     * @see #putItem(String, Object) for operations without return values
-     * @see #putItem(String, Map, String) for direct AttributeValue operations
+     * @see #putItem(String, Object)
+     * @see #putItem(String, Map, String)
      */
     CompletableFuture<PutItemResponse> putItem(final String tableName, final Object entity, final String returnValues) {
         final PutItemRequest putItemRequest = PutItemRequest.builder().tableName(tableName).item(toItem(entity)).returnValues(returnValues).build();

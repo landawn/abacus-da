@@ -88,6 +88,13 @@ import org.apache.hadoop.hbase.security.visibility.CellVisibility;
  */
 abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithAttributes<AM> implements Row {
 
+    /**
+     * The underlying HBase {@link Mutation} that every method on this class delegates to. The
+     * same instance is also stored as {@link AnyOperation#op} on the root superclass and as
+     * {@link AnyOperationWithAttributes#owa} on the immediate superclass — this typed reference
+     * avoids repeated casts in mutation-specific calls. Set once in the constructor and never
+     * reassigned.
+     */
     protected final Mutation mutation;
 
     /**
@@ -121,12 +128,12 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Returns the fingerprint for this mutation, overriding {@link AnyOperation#getFingerprint()}
-     * with the {@link Mutation}-specific implementation. The fingerprint includes the set of
-     * column families touched by this mutation but excludes per-cell data such as qualifiers,
-     * values, and the row key.
+     * Returns the fingerprint for this mutation. Delegates to {@link Mutation#getFingerprint()},
+     * which (per HBase) includes the set of column families touched by this mutation but
+     * excludes per-cell data such as qualifiers, values, and the row key.
      *
      * @return the fingerprint map produced by HBase; never {@code null} but may be empty
+     * @see AnyOperation#getFingerprint()
      * @see #toMap()
      */
     @Override

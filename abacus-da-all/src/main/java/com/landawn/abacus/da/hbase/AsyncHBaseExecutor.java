@@ -89,12 +89,12 @@ import com.landawn.abacus.util.stream.Stream;
  *
  * // Async scanning with filtering
  * ContinuableFuture<Stream<Result>> scanFuture =
- *     async.scan("users", AnyScan.of().setStartRow("user1").setStopRow("user2"));
+ *     async.scan("users", AnyScan.create().withStartRow("user1").withStopRow("user2"));
  *
  * // Chain async operations
  * async.get("users", "user123", User.class)
  *      .thenCallAsync(user -> { user.setLastLogin(new Date()); return user; })
- *      .thenCompose(user -> async.put("users", AnyPut.of(user)))
+ *      .thenCompose(user -> async.put("users", AnyPut.create(user)))
  *      .thenRunAsync(() -> System.out.println("User updated"));
  * }</pre>
  *
@@ -102,7 +102,7 @@ import com.landawn.abacus.util.stream.Stream;
  * <ul>
  * <li><strong>Thread Pool Sizing</strong>: Default pool size scales with CPU cores (8-16x)</li>
  * <li><strong>Connection Sharing</strong>: Shares the underlying HBase {@code Connection} with the wrapped {@link HBaseExecutor}</li>
- * <li><strong>Memory Management</strong>: Streams returned by {@code scan} are produced eagerly by HBase but consumed lazily by the caller; close them after use</li>
+ * <li><strong>Memory Management</strong>: Streams returned by {@code scan} are lazy and own the underlying HBase {@code ResultScanner}; close them after use</li>
  * <li><strong>Error Handling</strong>: Exceptions thrown by the underlying call are propagated through the returned {@code ContinuableFuture}</li>
  * </ul>
  *
@@ -511,7 +511,7 @@ public final class AsyncHBaseExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * async.scan("users", AnyScan.of().setStartRow("user1").setStopRow("user9").setLimit(100))
+     * async.scan("users", AnyScan.create().withStartRow("user1").withStopRow("user9").setLimit(100))
      *      .thenAcceptAsync(stream -> stream.forEach(System.out::println));
      * }</pre>
      *
@@ -661,7 +661,7 @@ public final class AsyncHBaseExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * async.scan("users", AnyScan.of().setStartRow("user1").setLimit(50), User.class)
+     * async.scan("users", AnyScan.create().withStartRow("user1").setLimit(50), User.class)
      *      .thenAcceptAsync(stream -> stream.forEach(user -> processUser(user)));
      * }</pre>
      *

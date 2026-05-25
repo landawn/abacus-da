@@ -153,9 +153,9 @@ import com.landawn.abacus.util.stream.Stream;
  * Stream<Customer> customerStream = executor.stream(Customer.class,
  *     "SELECT * FROM customers WHERE created_date > ?", yesterday);
  *
- * // Complex queries with conditions
+ * // Complex queries with conditions (Java property names; the naming policy maps them to columns)
  * Dataset results = executor.query(Customer.class,
- *     Filters.and(Filters.eq("status", "active"), Filters.gt("created_date", yesterday)));
+ *     Filters.and(Filters.eq("status", "active"), Filters.gt("createdDate", yesterday)));
  * }</pre>
  *
  * @see com.google.cloud.bigquery.BigQuery
@@ -1420,7 +1420,7 @@ public class BigQueryExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Condition condition = CF.eq("customerId", "CUST123");
+     * Condition condition = Filters.eq("customerId", "CUST123");
      * Nullable<String> email = executor.queryForSingleValue(
      *         Customer.class, String.class, "email", condition);
      *
@@ -1793,7 +1793,7 @@ public class BigQueryExecutor {
      *
      * // Stream and group by
      * Map<String, List<Customer>> byStatus = executor.stream(Customer.class,
-     *         Arrays.asList("customerId", "status"), Filters.notNull("status"))
+     *         Arrays.asList("customerId", "status"), Filters.isNotNull("status"))
      *     .collect(Collectors.groupingBy(Customer::getStatus));
      * }</pre>
      *

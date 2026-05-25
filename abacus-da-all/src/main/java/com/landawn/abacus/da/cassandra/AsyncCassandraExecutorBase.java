@@ -100,8 +100,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the entity class to fetch
      * @param ids the primary key value(s) identifying the row
      * @return a future whose payload is an {@link Optional} containing the entity, or empty if no
-     *         row matches; if more than one row matches the underlying call throws
-     *         {@code DuplicatedResultException}
+     *         row matches; if more than one row matches the future completes exceptionally with
+     *         {@link com.landawn.abacus.exception.DuplicateResultException}
      */
     public final <T> ContinuableFuture<Optional<T>> get(final Class<T> targetClass, final Object... ids) {
         return get(targetClass, null, ids);

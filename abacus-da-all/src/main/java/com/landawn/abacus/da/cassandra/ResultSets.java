@@ -29,34 +29,24 @@ import com.landawn.abacus.util.ImmutableList;
 import com.landawn.abacus.util.N;
 
 /**
- * Utility class for working with Cassandra ResultSet objects and async result handling.
- * 
- * <p>This utility class provides helper methods for converting between different types of
- * Cassandra result sets, particularly for bridging between asynchronous and synchronous
- * result processing. It's designed to work with the modern Cassandra Java Driver's
- * asynchronous API while providing familiar synchronous interfaces.</p>
- * 
- * <h3>Key Features</h3>
+ * Internal utility class for working with Cassandra {@link ResultSet} and {@link AsyncResultSet}.
+ *
+ * <p>This package-private utility class provides helper methods for bridging between the
+ * asynchronous and synchronous result types of the DataStax Java Driver (v4+, the
+ * {@code com.datastax.oss.driver} APIs). It is intended for internal use by the
+ * {@code com.landawn.abacus.da.cassandra} package.</p>
+ *
+ * <h2>Key Features</h2>
  * <ul>
- * <li><strong>Async-to-Sync Bridging:</strong> Converts AsyncResultSet to synchronous ResultSet</li>
- * <li><strong>Lazy Loading:</strong> Supports pagination and lazy fetching of large result sets</li>
- * <li><strong>Memory Efficiency:</strong> Processes results page by page to minimize memory usage</li>
- * <li><strong>Error Handling:</strong> Proper exception handling for network and timeout issues</li>
+ * <li><strong>Async-to-Sync Bridging:</strong> Wraps an {@link AsyncResultSet} as a {@link ResultSet}.</li>
+ * <li><strong>Transparent Paging:</strong> Automatically fetches subsequent pages during iteration.</li>
+ * <li><strong>Memory Efficient:</strong> Keeps only the current page in memory.</li>
  * </ul>
- * 
- * <h3>Use Cases</h3>
- * <ul>
- * <li>Converting async results for use with synchronous APIs</li>
- * <li>Processing large result sets that span multiple pages</li>
- * <li>Maintaining compatibility with existing synchronous code</li>
- * <li>Implementing custom result processing logic</li>
- * </ul>
- * 
- * <h3>Thread Safety</h3>
- * <p>This class is thread-safe as it contains only static utility methods and no mutable state.
- * However, the ResultSet instances created by these methods should be used from a single thread
- * unless otherwise documented.</p>
- * 
+ *
+ * <h2>Thread Safety</h2>
+ * <p>The static methods on this class are thread-safe, but the {@link ResultSet} returned by
+ * {@link #wrap(AsyncResultSet)} is not thread-safe and must be consumed from a single thread.</p>
+ *
  * @see com.datastax.oss.driver.api.core.cql.ResultSet
  * @see com.datastax.oss.driver.api.core.cql.AsyncResultSet
  */
@@ -66,61 +56,43 @@ final class ResultSets {
     }
 
     /**
-     * Wraps an AsyncResultSet to provide a synchronous ResultSet interface.
-     * 
-     * <p>This method creates a synchronous wrapper around an AsyncResultSet that allows
-     * traditional synchronous iteration while maintaining support for Cassandra's paging
-     * mechanism. The wrapper handles automatic page fetching when the current page is
-     * exhausted, providing seamless access to all results regardless of pagination.</p>
-     * 
-     * <h4>Key Features:</h4>
+     * Wraps an {@link AsyncResultSet} as a synchronous {@link ResultSet}.
+     *
+     * <p>The returned {@code ResultSet} iterates over the rows currently held by
+     * {@code asyncResultSet} and, when the current page is exhausted, transparently blocks to
+     * fetch the next page via {@link AsyncResultSet#fetchNextPage()}. The execution info of
+     * every fetched page is accumulated and returned by {@link ResultSet#getExecutionInfos()}.</p>
+     *
+     * <h2>Behavior</h2>
      * <ul>
-     * <li><strong>Transparent Paging:</strong> Automatically fetches additional pages when needed</li>
-     * <li><strong>Blocking Iteration:</strong> Iterator blocks until next page is available</li>
-     * <li><strong>Memory Efficient:</strong> Only keeps current page in memory</li>
-     * <li><strong>Exception Handling:</strong> Converts async exceptions to runtime exceptions</li>
+     * <li>{@link ResultSet#all()} consumes the iterator and therefore eagerly drains all
+     * remaining pages.</li>
+     * <li>{@link ResultSet#isFullyFetched()} reflects whether the current page is the last one
+     * known to the driver; it does not guarantee that all rows have already been iterated.</li>
+     * <li>{@link ResultSet#getAvailableWithoutFetching()} is <strong>not</strong> supported by
+     * this wrapper and always throws {@link UnsupportedOperationException}.</li>
+     * <li>Checked exceptions raised while fetching the next page (e.g.
+     * {@link java.util.concurrent.ExecutionException} or {@link InterruptedException}) are
+     * converted into runtime exceptions via {@link com.landawn.abacus.util.ExceptionUtil}.</li>
      * </ul>
-     * 
-     * <h4>Performance Considerations:</h4>
-     * <ul>
-     * <li>First page is immediately available (no additional network call)</li>
-     * <li>Subsequent pages trigger network requests and may cause blocking</li>
-     * <li>Large result sets are processed page by page to minimize memory usage</li>
-     * <li>Network timeouts and connection issues are propagated as runtime exceptions</li>
-     * </ul>
-     * 
-     * <p><b>Usage Examples:</b></p>
+     *
+     * <h2>Usage Example</h2>
      * <pre>{@code
-     * // Execute async query
-     * CompletionStage<AsyncResultSet> asyncStage = session.executeAsync(statement);
-     * AsyncResultSet asyncResultSet = asyncStage.toCompletableFuture().get();
-     * 
-     * // Wrap for synchronous processing
-     * ResultSet syncResultSet = ResultSets.wrap(asyncResultSet);
-     * 
-     * // Standard synchronous iteration
-     * for (Row row : syncResultSet) {
+     * CompletionStage<AsyncResultSet> stage = session.executeAsync(statement);
+     * AsyncResultSet asyncRs = stage.toCompletableFuture().get();
+     *
+     * ResultSet rs = ResultSets.wrap(asyncRs);
+     * for (Row row : rs) {
      *     String name = row.getString("name");
      *     int age = row.getInt("age");
-     *     // Process row...
+     *     // ...
      * }
-     * 
-     * // Or collect all results
-     * List<Row> allRows = syncResultSet.all();   // Fetches all pages if needed
-     * 
-     * // Check if more pages are available
-     * boolean hasMore = !syncResultSet.isFullyFetched();
      * }</pre>
-     * 
-     * <h4>Error Handling:</h4>
-     * <p>Network errors, timeouts, and other async exceptions are caught and wrapped
-     * in runtime exceptions during iteration. This ensures that synchronous code
-     * doesn't need to deal with checked exceptions but can still handle errors
-     * appropriately.</p>
-     * 
-     * @param asyncResultSet the AsyncResultSet to wrap for synchronous access
-     * @return a synchronous ResultSet that provides access to all rows across all pages
-     * @throws IllegalArgumentException if asyncResultSet is null
+     *
+     * @param asyncResultSet the async result set to wrap; must not be {@code null}
+     * @return a {@link ResultSet} that lazily iterates over all rows produced by
+     *         {@code asyncResultSet} and its subsequent pages
+     * @throws IllegalArgumentException if {@code asyncResultSet} is {@code null}
      * @see com.datastax.oss.driver.api.core.cql.AsyncResultSet
      * @see com.datastax.oss.driver.api.core.cql.ResultSet
      */

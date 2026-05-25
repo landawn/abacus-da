@@ -168,7 +168,7 @@ public final class MongoCollectionMapper<T> {
 
     /**
      * Package-private constructor; instances are obtained via
-     * {@code ReactiveMongoDB.collectionMapper(...)} rather than direct instantiation.
+     * {@link MongoDB#collectionMapper(Class)} (and its overloads) rather than direct instantiation.
      *
      * <p>Binds this mapper to a specific reactive collection executor and entity type. The
      * {@code resultClass} becomes the implicit decode target for every {@code Mono}/{@code Flux}
@@ -261,9 +261,9 @@ public final class MongoCollectionMapper<T> {
      * );
      * }</pre>
      *
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against; must not be null
      * @return a Mono that emits {@code true} if any documents match the filter, {@code false} otherwise
-     * @throws IllegalArgumentException if filter is null
+     * @throws NullPointerException if filter is null (signalled via {@code Mono}; thrown by the underlying MongoDB driver)
      * @see Bson
      * @see com.mongodb.client.model.Filters
      */
@@ -308,9 +308,9 @@ public final class MongoCollectionMapper<T> {
      * );
      * }</pre>
      *
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents; must not be null
      * @return a Mono that emits the count of documents matching the filter
-     * @throws IllegalArgumentException if filter is null
+     * @throws NullPointerException if filter is null (signalled via {@code Mono}; thrown by the underlying MongoDB driver)
      * @see Bson
      * @see com.mongodb.client.model.Filters
      */
@@ -334,10 +334,10 @@ public final class MongoCollectionMapper<T> {
      * );
      * }</pre>
      *
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents; must not be null
      * @param options the count options to apply (can be null)
      * @return a Mono that emits the count of documents matching the filter with applied options
-     * @throws IllegalArgumentException if filter is null
+     * @throws NullPointerException if filter is null (signalled via {@code Mono}; thrown by the underlying MongoDB driver)
      * @see Bson
      * @see CountOptions
      * @see com.mongodb.client.model.Filters

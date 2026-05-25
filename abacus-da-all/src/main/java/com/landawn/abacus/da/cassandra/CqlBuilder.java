@@ -68,17 +68,31 @@ import com.landawn.abacus.util.u.Optional;
  * supports advanced Cassandra features like TTL, timestamps, lightweight transactions, and filtering.</p>
  *
  * <h2>Key Features</h2>
- * <h3>Main Capabilities</h3>
  * <ul>
  *   <li><b>Fluent API Design:</b> Method chaining for readable query construction</li>
  *   <li><b>Type Safety:</b> Compile-time checking with parameterized queries</li>
  *   <li><b>Cassandra-Specific Features:</b> TTL, TIMESTAMP, IF conditions, ALLOW FILTERING</li>
- *   <li><b>Naming Policy Support:</b> Automatic column name transformation (camelCase ↔ snake_case)</li>
+ *   <li><b>Naming Policy Support:</b> Automatic column name transformation (camelCase &lt;-&gt; snake_case)</li>
  *   <li><b>Performance Optimized:</b> Efficient string building with resource management</li>
  *   <li><b>Lightweight Transactions:</b> IF, IF EXISTS, IF NOT EXISTS support</li>
  * </ul>
  *
- * <p><b>Usage Examples:</b></p>
+ * <h2>Builder Variants</h2>
+ * <p>{@code CqlBuilder} is abstract; use one of the inner subclasses depending on the parameter
+ * style and naming policy you want for the generated CQL:</p>
+ * <ul>
+ *   <li><b>Question-mark / positional parameters ({@code ?}):</b>
+ *       {@link SCCB} (snake_case columns), {@link ACCB} (SCREAMING_SNAKE_CASE columns),
+ *       {@link LCCB} (camelCase columns).</li>
+ *   <li><b>Question-mark / positional parameters from a properties bag:</b>
+ *       {@link PSC}, {@link PAC}, {@link PLC} (same casing pattern as above).</li>
+ *   <li><b>Named parameters ({@code :name}):</b>
+ *       {@link NSC} (snake_case columns), {@link NAC} (SCREAMING_SNAKE_CASE columns),
+ *       {@link NLC} (camelCase columns).</li>
+ *   <li><b>Named parameters from a properties bag:</b> {@link PSB}, {@link NSB}.</li>
+ * </ul>
+ *
+ * <h2>Usage Examples</h2>
  * <pre>{@code
  * // SELECT with WHERE clause
  * String selectCql = PSC.select("id", "name", "email")
@@ -111,7 +125,7 @@ import com.landawn.abacus.util.u.Optional;
  * // Result: DELETE FROM expired_sessions WHERE expires_at < ? IF EXISTS
  * }</pre>
  *
- * <h3>Cassandra-Specific Capabilities:</h3>
+ * <h2>Cassandra-Specific Capabilities</h2>
  * <ul>
  *   <li><b>TTL (Time To Live):</b> {@code usingTTL(seconds)} for automatic data expiration</li>
  *   <li><b>Timestamps:</b> {@code usingTimestamp(timestamp)} for precise operation timing</li>
@@ -121,18 +135,18 @@ import com.landawn.abacus.util.u.Optional;
  *   <li><b>Partition Keys:</b> Efficient query construction respecting Cassandra's data model</li>
  * </ul>
  *
- * <h3>Thread Safety:</h3>
- * <p>This builder is <b>NOT thread-safe</b>. Each thread should use its own builder instance. 
+ * <h2>Thread Safety</h2>
+ * <p>This builder is <b>NOT thread-safe</b>. Each thread should use its own builder instance.
  * The builder maintains internal state during query construction and must not be shared across threads.</p>
  *
- * <h3>Resource Management:</h3>
+ * <h2>Resource Management</h2>
  * <p>The builder uses internal resources that are automatically released when {@code build()} or {@code pair()}
  * is called. After calling either of these terminal methods, the builder cannot be reused. Always call one of them
  * to properly finalize the query and release resources.</p>
  *
- * <h3>Naming Policy:</h3>
- * <p>Column names are automatically transformed according to the configured naming policy. By default, 
- * Java camelCase property names are converted to Cassandra snake_case column names. Table names are 
+ * <h2>Naming Policy</h2>
+ * <p>Column names are automatically transformed according to the configured naming policy. By default,
+ * Java camelCase property names are converted to Cassandra snake_case column names. Table names are
  * NOT transformed and are used as-is.</p>
  *
  * <p><b>Supported Operations:</b></p>
@@ -176,11 +190,11 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
     }
 
     /**
-     * Repeat question mark({@code ?}) {@code count} times with delimiter {@code ", "}.
-     * 
-     * <p>This utility method generates a string of parameterized placeholders suitable for 
-     * batch CQL operations, particularly useful for IN clauses or VALUES lists with dynamic
-     * parameter counts.</p>
+     * Returns a string of {@code count} question-mark ({@code ?}) placeholders separated by
+     * {@code ", "}.
+     *
+     * <p>This utility is intended for IN clauses or VALUES lists whose parameter count is
+     * known only at runtime; for {@code count == 0} an empty string is returned.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -211,8 +225,9 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
     /**
      * Generates a string of comma-separated question mark placeholders.
      *
-     * @param count the number of placeholders to generate
-     * @return a comma-separated string of question mark placeholders
+     * @param count the number of placeholders to generate (must be non-negative)
+     * @return a comma-separated string of {@code count} question mark placeholders
+     * @throws IllegalArgumentException if {@code count} is negative
      * @deprecated Use {@link #repeatPlaceholders(int)} instead.
      */
     @Beta

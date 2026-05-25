@@ -63,6 +63,12 @@ import org.apache.hadoop.hbase.client.OperationWithAttributes;
  */
 abstract class AnyOperationWithAttributes<AOWA extends AnyOperationWithAttributes<AOWA>> extends AnyOperation<AOWA> {
 
+    /**
+     * The underlying HBase {@link OperationWithAttributes} that every method on this class
+     * delegates to. The same instance is also stored as {@link AnyOperation#op} on the superclass
+     * — this typed reference avoids repeated casts in attribute-related calls. Set once in the
+     * constructor and never reassigned.
+     */
     protected final OperationWithAttributes owa;
 
     /**
@@ -129,10 +135,10 @@ abstract class AnyOperationWithAttributes<AOWA extends AnyOperationWithAttribute
      * </ul>
      *
      * @param name the attribute name; must not be {@code null}
-     * @param value the attribute value, converted to bytes via {@link HBaseExecutor#toValueBytes(Object)};
-     *              the resulting byte-array semantics (including how {@code null} is handled) are
-     *              defined by {@link HBaseExecutor#toValueBytes(Object)} and the underlying HBase
-     *              {@link OperationWithAttributes#setAttribute(String, byte[])} contract
+     * @param value the attribute value, converted to bytes via {@link HBaseExecutor#toValueBytes(Object)}.
+     *              A {@code null} value is forwarded as a {@code null} byte array, which per the
+     *              {@link OperationWithAttributes#setAttribute(String, byte[])} contract removes
+     *              any attribute previously stored under {@code name}.
      * @return this instance, to allow fluent method chaining
      * @see #getAttribute(String)
      * @see HBaseExecutor#toValueBytes(Object)
@@ -191,9 +197,8 @@ abstract class AnyOperationWithAttributes<AOWA extends AnyOperationWithAttribute
      * use the value to order or throttle operations; the exact semantics depend on the server
      * configuration.
      *
-     * @return the priority value previously set via {@link #setPriority(int)}, or the value
-     *         returned by {@link OperationWithAttributes#getPriority()} (HBase's default) when
-     *         none has been set on this operation
+     * @return the priority value previously set via {@link #setPriority(int)}, or HBase's
+     *         {@code HConstants.PRIORITY_UNSET} sentinel when none has been set on this operation
      * @see #setPriority(int)
      */
     public int getPriority() {

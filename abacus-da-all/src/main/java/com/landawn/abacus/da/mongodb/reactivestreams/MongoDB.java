@@ -137,7 +137,7 @@ public final class MongoDB extends MongoDBBase {
      * }</pre>
      *
      * @param mongoDB the reactive MongoDB database instance to wrap
-     * @throws IllegalArgumentException if mongoDB is null
+     * @throws IllegalArgumentException if {@code mongoDB} is {@code null}
      * @see com.mongodb.reactivestreams.client.MongoDatabase
      */
     public MongoDB(final MongoDatabase mongoDB) {
@@ -426,13 +426,15 @@ public final class MongoDB extends MongoDBBase {
 
     /**
      * Converts a BSON {@link Document} into an instance of {@code rowType} using the same mapping
-     * rules as the synchronous variant. This is a package-visible bridge that delegates to
-     * {@link MongoDBBase#readRow(Document, Class)}; it exists so reactive subclasses in this
-     * package can decode rows without exposing the underlying helper publicly.
+     * rules as the synchronous variant. This {@code protected static} method is a bridge that
+     * delegates to {@link MongoDBBase#readRow(Document, Class)}; it exists so reactive
+     * collaborators in this package and subclasses can decode rows without referencing the
+     * protected helper on the base class directly.
      *
      * @param <T> the target row type
      * @param row the BSON document to convert; if {@code null}, the helper's null-handling
-     *            contract applies
+     *            contract applies (the default value of {@code rowType} is returned, or
+     *            {@code null} when {@code rowType} is {@code null})
      * @param rowType the target Java class to map the document to
      * @return an instance of {@code rowType} populated from {@code row}
      * @see MongoDBBase#readRow(Document, Class)
