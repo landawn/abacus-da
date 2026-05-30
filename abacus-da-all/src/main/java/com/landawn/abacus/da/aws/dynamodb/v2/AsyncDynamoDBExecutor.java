@@ -778,7 +778,8 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <ul>
      * <li>Maximum 100 items per request across all tables</li>
      * <li>Maximum 16 MB total response size</li>
-     * <li>Eventually consistent reads only</li>
+     * <li>Eventually consistent reads by default (set {@code consistentRead} per table on
+     *     {@link KeysAndAttributes} for strongly consistent reads)</li>
      * </ul>
      * 
      * <p><b>Usage Examples:</b></p>

@@ -72,8 +72,9 @@ import org.apache.hadoop.hbase.security.visibility.CellVisibility;
  * <ul>
  * <li><strong>SKIP_WAL</strong>: fastest, no durability guarantee</li>
  * <li><strong>ASYNC_WAL</strong>: fast, asynchronous write-ahead log</li>
- * <li><strong>SYNC_WAL</strong>: default, synchronous write-ahead log</li>
+ * <li><strong>SYNC_WAL</strong>: synchronous write-ahead log</li>
  * <li><strong>FSYNC_WAL</strong>: strongest, forces filesystem sync</li>
+ * <li><strong>USE_DEFAULT</strong>: the mutation default; defers to the table-level setting</li>
  * </ul>
  *
  * @param <AM> the concrete subtype of {@code AnyMutation}; declared so fluent setters can return

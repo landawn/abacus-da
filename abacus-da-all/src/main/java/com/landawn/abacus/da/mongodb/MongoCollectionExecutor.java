@@ -273,6 +273,7 @@ public final class MongoCollectionExecutor {
      *
      * @param objectId the ObjectId to check for existence
      * @return {@code true} if a document with the specified ObjectId exists, {@code false} otherwise
+     * @throws IllegalArgumentException if objectId is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @see ObjectId
      * @see #exists(String)

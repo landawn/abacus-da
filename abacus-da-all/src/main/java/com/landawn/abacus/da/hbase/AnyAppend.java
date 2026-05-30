@@ -275,7 +275,8 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @param timestamp the timestamp for all append operations (milliseconds since epoch)
      * @param familyMap a map of column family names to lists of cells to append
      * @return a new AnyAppend instance configured with the specified data
-     * @throws IllegalArgumentException if rowKey is null/empty, timestamp is negative, or familyMap is null
+     * @throws IllegalArgumentException if {@code rowKey} is empty (zero-length)
+     * @throws NullPointerException if {@code rowKey} or {@code familyMap} is {@code null}
      * @see #of(Object)
      * @see org.apache.hadoop.hbase.Cell
      */
@@ -445,7 +446,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @return {@code true} if results will be returned, {@code false} otherwise
      * @see #setReturnResults(boolean)
      */
-    // This method makes public the superclass's protected method.
+    // This method exposes the wrapped HBase Append's isReturnResults() through the AnyAppend API.
     public boolean isReturnResults() {
         return append.isReturnResults();
     }

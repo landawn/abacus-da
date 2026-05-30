@@ -3057,9 +3057,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
-     * @param attributesToGet a list of attribute names to retrieve for each item. Must not be null or empty.
-     * @return a stream of maps representing the items retrieved by the scan, containing only the specified attributes.
-     * @throws IllegalArgumentException if tableName or attributesToGet is null or empty.
+     * @param attributesToGet a list of attribute names to retrieve for each item, or null/empty to retrieve all attributes
+     * @return a stream of maps representing the items retrieved by the scan, containing only the specified attributes. Never null.
+     * @throws IllegalArgumentException if tableName is null
      */
     public Stream<Map<String, Object>> scan(final String tableName, final List<String> attributesToGet) {
         final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).attributesToGet(attributesToGet).build();

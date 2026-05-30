@@ -889,6 +889,47 @@ public class CassandraExecutorTest extends TestBase {
         assertTrue(ex.getMessage() == null || ex.getMessage().toLowerCase().contains("missing") || ex.getMessage().toLowerCase().contains("parameter"));
     }
 
+    /**
+     * Verifies that passing a single {@code null} parameter when the query
+     * expects multiple parameters produces an IllegalArgumentException
+     * (not a NullPointerException from {@code parameters[0].getClass()} and
+     * not an ArrayIndexOutOfBoundsException from the parameter-conversion loop).
+     */
+    @Test
+    public void test_prepareStatement_nullSingleParamMultiParamQuery_throwsIAE_notNPE() {
+        // The query has two ? placeholders, but only a single null arg is supplied.
+        // Previously this would NPE inside prepareStatement at parameters[0].getClass(),
+        // and even after the null-guard it would AIOOBE in the value-conversion loop.
+        // After the fix, values.length < parameterCount throws IAE.
+        try {
+            cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", (Object) null);
+            fail("Expected IllegalArgumentException for too-few parameters");
+        } catch (IllegalArgumentException e) {
+            // expected
+        } catch (NullPointerException e) {
+            fail("Got NPE instead of IllegalArgumentException: " + e);
+        } catch (ArrayIndexOutOfBoundsException e) {
+            fail("Got AIOOBE instead of IllegalArgumentException: " + e);
+        }
+    }
+
+    /**
+     * Verifies that passing fewer parameters than the query expects yields
+     * an IllegalArgumentException, not an ArrayIndexOutOfBoundsException
+     * from the parameter-type-conversion loop in prepareStatement.
+     */
+    @Test
+    public void test_prepareStatement_tooFewPositionalParams_throwsIAE_notAIOOBE() {
+        try {
+            cassandraExecutor.execute("INSERT INTO simplex.songs (id, title) VALUES (?, ?)", UUID.randomUUID());
+            fail("Expected IllegalArgumentException for too-few parameters");
+        } catch (IllegalArgumentException e) {
+            assertTrue(e.getMessage() == null || e.getMessage().toLowerCase().contains("parameter"), "Message should mention parameters: " + e.getMessage());
+        } catch (ArrayIndexOutOfBoundsException e) {
+            fail("Got AIOOBE instead of IllegalArgumentException: " + e);
+        }
+    }
+
     // ---------------------------------------------------------------------
     //  StringCodec (v4 driver) tests - access via registerTypeCodec since
     //  StringCodec is package-private with a protected constructor.

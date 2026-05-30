@@ -106,10 +106,9 @@ abstract class AnyOperationWithAttributes<AOWA extends AnyOperationWithAttribute
 
     /**
      * Returns the full attribute map for this operation. Keys are attribute names; values are the
-     * raw byte-array payloads. The map is the one held by the underlying HBase operation —
-     * whether changes to it propagate back depends on the HBase version and is best treated as
-     * unspecified, so callers should mutate attributes through {@link #setAttribute(String, Object)}
-     * rather than via the returned map.
+     * raw byte-array payloads. The returned map is a read-only view of the operation's attributes;
+     * callers must mutate attributes through {@link #setAttribute(String, Object)} rather than via
+     * the returned map.
      *
      * @return a {@link Map} of attribute name to byte-array value; never {@code null} but may be
      *         empty when no attributes have been set

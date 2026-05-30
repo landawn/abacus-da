@@ -270,7 +270,7 @@ public final class MongoCollectionMapper<T> {
      * Returns the total number of entities in the collection (blocking operation).
      *
      * <p>This method counts all entities of the mapped type in the collection.
-     * For large collections, consider using {@link #mongoCollectionExecutor()}{@code .estimatedDocumentCount()} for better performance
+     * For large collections, consider using {@link #mongoCollectionExecutor()}.{@code estimatedDocumentCount()} for better performance
      * when exact counts are not required.</p>
      *
      * <p><b>Note:</b> This method performs a blocking operation. For non-blocking operations, use

@@ -445,7 +445,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <p>The returned {@link AsyncCassandraExecutor} shares the same {@link CqlSession}, prepared
      * statement cache, codec registry, and {@link StatementSettings} as this synchronous executor;
      * it merely exposes non-blocking variants of the same operations that return
-     * {@code ContinuableFuture}-typed results. The async facade is created lazily at construction and
+     * {@code ContinuableFuture}-typed results. The async facade is created eagerly at construction and
      * is safe to call repeatedly.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -620,7 +620,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * @param <T> the type of objects in the returned list
      * @param resultSet the Cassandra ResultSet to convert
-     * @param targetClass the entity class
+     * @param targetClass the target type each row is converted to (entity class, {@code Map.class},
+     *        {@code Row.class}, an array class, a collection class, or a basic single-value type)
      * @return a List containing all rows converted to the specified type
      * @throws NullPointerException if resultSet or targetClass is null
      */
@@ -1602,7 +1603,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
         Object[] values = parameters;
 
-        if (parameters.length == 1 && (parameters[0] instanceof Map || Beans.isBeanClass(parameters[0].getClass()))) {
+        if (parameters.length == 1 && parameters[0] != null && (parameters[0] instanceof Map || Beans.isBeanClass(parameters[0].getClass()))) {
             values = new Object[parameterCount];
             final Object parameter_0 = parameters[0];
             final Map<Integer, String> namedParameters = parseCql.namedParameters();
@@ -1653,6 +1654,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             } else if (parameters[0] instanceof final Collection<?> c && (c.size() >= parseCql.parameterCount())) {
                 values = c.toArray(new Object[0]);
             }
+        }
+
+        if (values.length < parameterCount) {
+            throw new IllegalArgumentException(
+                    "Not enough parameters for parameterized query: expected " + parameterCount + " but got " + values.length + " for query: " + query);
         }
 
         for (int i = 0; i < parameterCount; i++) {
@@ -2102,8 +2108,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * <p>Values are serialized via {@link N#toJson(Object)} and deserialized via
      * {@link N#fromJson(String, Class)}; {@code null} payloads are represented by the literal
-     * {@code "null"} ({@code TypeCodec.NULL_STR}). Suitable for storing arbitrary POJOs as JSON in
-     * a {@code TEXT} column.</p>
+     * {@code "NULL"} ({@link CassandraExecutorBase#NULL_STR}). Suitable for storing arbitrary POJOs as
+     * JSON in a {@code TEXT} column.</p>
      *
      * @param <T> the Java class encoded/decoded by this codec
      */

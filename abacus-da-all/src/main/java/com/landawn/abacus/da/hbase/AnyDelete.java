@@ -364,7 +364,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param timestamp the timestamp to apply to the delete operation
      * @param familyMap a pre-populated NavigableMap of column families to their respective Cell lists
      * @return a new AnyDelete instance with the specified configuration
-     * @throws IllegalArgumentException if rowKey or familyMap is null
+     * @throws IllegalArgumentException if {@code rowKey} resolves to an empty (zero-length) byte array
+     * @throws NullPointerException if {@code rowKey} resolves to a null byte array or {@code familyMap} is {@code null}
      * @see #of(Object)
      * @see #of(Delete)
      * @see NavigableMap

@@ -334,8 +334,11 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * 
      * <p>The mapper handles automatic conversion between Java objects and DynamoDB AttributeValues,
      * including support for annotations like @DynamoDBTable, @DynamoDBHashKey, @DynamoDBAttribute, etc.
-     * This is the same mapper used internally by the executor's entity-based operations.</p>
-     * 
+     * Note that this is the AWS SDK {@link DynamoDBMapper}; it is exposed only as a convenience and is
+     * <em>not</em> the mechanism behind this executor's own entity-based operations (the {@link Mapper}
+     * inner class and {@code toItem}/{@code toEntity} helpers), which operate directly on the underlying
+     * {@link AmazonDynamoDBClient}.</p>
+     *
      * <p><b>Mapper Capabilities:</b></p>
      * <ul>
      * <li>Object-to-item mapping using annotations</li>

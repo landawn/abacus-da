@@ -412,7 +412,6 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param namingPolicy policy for mapping Java property names to Cassandra column names,
      *                     or null for SNAKE_CASE
      * @throws NullPointerException if session is null
-     * @see com.datastax.driver.core.Session#executeAsync
      * @see StatementSettings
      * @see NamingPolicy
      */

@@ -519,7 +519,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @param minStamp the minimum timestamp (inclusive) for cell versions to retrieve
      * @param maxStamp the maximum timestamp (exclusive) for cell versions to retrieve
      * @return this AnyGet instance for method chaining
-     * @throws IllegalArgumentException if minStamp is negative, maxStamp is negative, or minStamp >= maxStamp
+     * @throws IllegalArgumentException if minStamp is negative, maxStamp is negative, or minStamp &gt; maxStamp
      * @see #setTimestamp(long)
      * @see #getTimeRange()
      * @see TimeRange

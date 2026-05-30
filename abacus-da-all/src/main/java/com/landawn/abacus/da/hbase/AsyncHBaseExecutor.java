@@ -78,7 +78,7 @@ import com.landawn.abacus.util.stream.Stream;
  * ContinuableFuture<Boolean> existsFuture = async.exists("users", AnyGet.of("user123"));
  *
  * // Async get with entity mapping
- * ContinuableFuture<User> userFuture = async.get("users", "user123", User.class);
+ * ContinuableFuture<User> userFuture = async.get("users", AnyGet.of("user123"), User.class);
  *
  * // Async batch operations
  * List<AnyPut> puts = Arrays.asList(
@@ -92,7 +92,7 @@ import com.landawn.abacus.util.stream.Stream;
  *     async.scan("users", AnyScan.create().withStartRow("user1").withStopRow("user2"));
  *
  * // Chain async operations
- * async.get("users", "user123", User.class)
+ * async.get("users", AnyGet.of("user123"), User.class)
  *      .thenCallAsync(user -> { user.setLastLogin(new Date()); return user; })
  *      .thenCompose(user -> async.put("users", AnyPut.create(user)))
  *      .thenRunAsync(() -> System.out.println("User updated"));
@@ -1008,7 +1008,7 @@ public final class AsyncHBaseExecutor {
      * value. If a target cell does not yet exist, it is created with the supplied value. This is
      * useful for maintaining log-like or counter-like columns. The returned
      * {@link ContinuableFuture} completes with a {@link Result} containing the new (post-append)
-     * cell values, or an empty Result if the underlying call returned {@code null}.</p>
+     * cell values.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

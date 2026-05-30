@@ -81,15 +81,15 @@ import com.landawn.abacus.util.u.Optional;
  * <p>{@code CqlBuilder} is abstract; use one of the inner subclasses depending on the parameter
  * style and naming policy you want for the generated CQL:</p>
  * <ul>
- *   <li><b>Question-mark / positional parameters ({@code ?}):</b>
+ *   <li><b>Un-parameterized / raw CQL (values embedded directly):</b>
  *       {@link SCCB} (snake_case columns), {@link ACCB} (SCREAMING_SNAKE_CASE columns),
- *       {@link LCCB} (camelCase columns).</li>
- *   <li><b>Question-mark / positional parameters from a properties bag:</b>
- *       {@link PSC}, {@link PAC}, {@link PLC} (same casing pattern as above).</li>
+ *       {@link LCCB} (camelCase columns). These are deprecated due to CQL-injection risk.</li>
+ *   <li><b>Question-mark / positional parameters ({@code ?}):</b>
+ *       {@link PSB} (no name change), {@link PSC} (snake_case columns),
+ *       {@link PAC} (SCREAMING_SNAKE_CASE columns), {@link PLC} (camelCase columns).</li>
  *   <li><b>Named parameters ({@code :name}):</b>
- *       {@link NSC} (snake_case columns), {@link NAC} (SCREAMING_SNAKE_CASE columns),
- *       {@link NLC} (camelCase columns).</li>
- *   <li><b>Named parameters from a properties bag:</b> {@link PSB}, {@link NSB}.</li>
+ *       {@link NSB} (no name change), {@link NSC} (snake_case columns),
+ *       {@link NAC} (SCREAMING_SNAKE_CASE columns), {@link NLC} (camelCase columns).</li>
  * </ul>
  *
  * <h2>Usage Examples</h2>
@@ -543,7 +543,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      * <pre>{@code
      * // UPDATE only if row exists
      * String cql = PSC.update("users")
-     *                 .set("lastLogin", new Date())
+     *                 .set("lastLogin")
      *                 .where(Filters.eq("id", 123))
      *                 .ifExists()
      *                 .build().query();
@@ -589,7 +589,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      *
      * // Can also be used with UPDATE operations
      * String cql = PSC.update("users")
-     *                 .set("status", "new")
+     *                 .set("status")
      *                 .where(Filters.eq("id", 123))
      *                 .ifNotExists()
      *                 .build().query();
@@ -1384,7 +1384,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = SCCB.update("account")
-         *                  .set("status", "'ACTIVE'")
+         *                  .set(N.asMap("status", "ACTIVE"))
          *                  .where(Filters.eq("id", 1))
          *                  .build().query();
          * // Output: UPDATE account SET status = 'ACTIVE' WHERE id = 1
@@ -1414,7 +1414,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = SCCB.update("account", Account.class)
-         *                  .set("firstName", "'Jane'")
+         *                  .set(N.asMap("firstName", "Jane"))
          *                  .where(Filters.eq("id", 1))
          *                  .build().query();
          * // Output: UPDATE account SET first_name = 'Jane' WHERE id = 1
@@ -1447,7 +1447,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = SCCB.update(Account.class)
-         *                  .set("status", "'INACTIVE'")
+         *                  .set(N.asMap("status", "INACTIVE"))
          *                  .where(Filters.lt("lastLogin", "2023-01-01"))
          *                  .build().query();
          * // Output: UPDATE account SET status = 'INACTIVE' WHERE last_login < '2023-01-01'
@@ -1471,7 +1471,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <pre>{@code
          * Set<String> excluded = N.asSet("email", "createdDate");
          * String cql = SCCB.update(Account.class, excluded)
-         *                  .set("status", "'ACTIVE'")
+         *                  .set(N.asMap("status", "ACTIVE"))
          *                  .where(Filters.eq("id", 1))
          *                  .build().query();
          * // Output: UPDATE account SET status = 'ACTIVE' WHERE id = 1
@@ -2620,7 +2620,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = ACCB.update("users")
-         *                  .set("LAST_NAME", "'Smith'")
+         *                  .set(N.asMap("LAST_NAME", "Smith"))
          *                  .where(Filters.eq("ID", 123))
          *                  .build().query();
          * // Output: UPDATE users SET LAST_NAME = 'Smith' WHERE ID = 123
@@ -2650,7 +2650,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = ACCB.update("users", User.class)
-         *                  .set("age", 31)  // "age" is mapped to "AGE" column
+         *                  .set(N.asMap("age", 31))  // "age" is mapped to "AGE" column
          *                  .where(Filters.eq("firstName", "'John'"))
          *                  .build().query();
          * // Output: UPDATE users SET AGE = 31 WHERE FIRST_NAME = 'John'
@@ -2683,7 +2683,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = ACCB.update(User.class)
-         *                  .set("age", 31)
+         *                  .set(N.asMap("age", 31))
          *                  .where(Filters.eq("firstName", "'John'"))
          *                  .build().query();
          * // Output: UPDATE USER SET AGE = 31 WHERE FIRST_NAME = 'John'
@@ -2707,7 +2707,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <pre>{@code
          * Set<String> excluded = new HashSet<>(Arrays.asList("id", "createdDate"));
          * String cql = ACCB.update(User.class, excluded)
-         *                  .set("age", 31)
+         *                  .set(N.asMap("age", 31))
          *                  .where(Filters.eq("id", 1))
          *                  .build().query();
          * // Output: UPDATE USER SET AGE = 31 WHERE ID = 1
@@ -3499,7 +3499,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      * // Output: SELECT firstName, lastName FROM userAccount WHERE userId = 1
      * }</pre>
      * 
-     * @deprecated Use other naming policy implementations like {@link PSC}, {@link PAC}, {@link NSC} instead.
+     * @deprecated {@code PLC or NLC} is preferred for better security and performance.
      *             Un-parameterized CQL is vulnerable to CQL injection attacks.
      */
     @Deprecated
@@ -3856,7 +3856,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = LCCB.update("users")
-         *                  .set("lastName", "'Smith'")
+         *                  .set(N.asMap("lastName", "Smith"))
          *                  .where(Filters.eq("id", 123))
          *                  .build().query();
          * // Output: UPDATE users SET lastName = 'Smith' WHERE id = 123
@@ -3886,7 +3886,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = LCCB.update("users", User.class)
-         *                  .set("age", 31)
+         *                  .set(N.asMap("age", 31))
          *                  .where(Filters.eq("firstName", "'John'"))
          *                  .build().query();
          * // Output: UPDATE users SET age = 31 WHERE firstName = 'John'
@@ -3920,7 +3920,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = LCCB.update(User.class)
-         *                  .set("age", 31)
+         *                  .set(N.asMap("age", 31))
          *                  .where(Filters.eq("firstName", "'John'"))
          *                  .build().query();
          * // Output: UPDATE users SET age = 31 WHERE firstName = 'John'
@@ -3948,7 +3948,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <pre>{@code
          * Set<String> excluded = new HashSet<>(Arrays.asList("id", "createdDate"));
          * String cql = LCCB.update(User.class, excluded)
-         *                  .set("firstName", "'John'")
+         *                  .set(N.asMap("firstName", "John"))
          *                  .where(Filters.eq("id", 123))
          *                  .build().query();
          * // Output: UPDATE users SET firstName = 'John' WHERE id = 123
@@ -5915,8 +5915,8 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      * 
      * // UPDATE with specific fields
      * String cql = PSC.update("account")
-     *                 .set("firstName", "John")
-     *                 .set("lastName", "Smith")
+     *                 .set("firstName")
+     *                 .set("lastName")
      *                 .where(Filters.eq("id", 1))
      *                 .build().query();
      * // Output: UPDATE account SET first_name = ?, last_name = ? WHERE id = ?
@@ -6311,8 +6311,8 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = PSC.update("account")
-         *                 .set("firstName", "John")
-         *                 .set("lastName", "Smith")
+         *                 .set("firstName")
+         *                 .set("lastName")
          *                 .where(Filters.eq("id", 1))
          *                 .build().query();
          * // Output: UPDATE account SET first_name = ?, last_name = ? WHERE id = ?
@@ -6343,8 +6343,8 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = PSC.update("account", Account.class)
-         *                 .set("firstName", "John")
-         *                 .set("lastModified", new Date())
+         *                 .set("firstName")
+         *                 .set("lastModified")
          *                 .where(Filters.eq("id", 1))
          *                 .build().query();
          * // Output: UPDATE account SET first_name = ?, last_modified = ? WHERE id = ?
@@ -6378,7 +6378,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = PSC.update(Account.class)
-         *                 .set("status", "active")
+         *                 .set("status")
          *                 .where(Filters.eq("id", 1))
          *                 .build().query();
          * // Output: UPDATE account SET status = ? WHERE id = ?
@@ -8413,8 +8413,8 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      * 
      * // UPDATE with specific fields
      * String cql = PLC.update("account")
-     *                 .set("firstName", "John")
-     *                 .set("lastName", "Smith")
+     *                 .set("firstName")
+     *                 .set("lastName")
      *                 .where(Filters.eq("id", 1))
      *                 .build().query();
      * // Output: UPDATE account SET firstName = ?, lastName = ? WHERE id = ?
@@ -8858,18 +8858,19 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = PLC.update("account")
-         *                 .set("firstName", "John")
-         *                 .set("lastName", "Smith")
+         *                 .set("firstName")
+         *                 .set("lastName")
          *                 .where(Filters.eq("id", 1))
          *                 .build().query();
          * // Output: UPDATE account SET firstName = ?, lastName = ? WHERE id = ?
-         * 
+         *
          * // Update with expression
          * String cql2 = PLC.update("account")
-         *                  .set("loginCount", "loginCount + 1")
-         *                  .set("lastLoginDate", new Date())
+         *                  .set("loginCount = loginCount + 1")
+         *                  .set("lastLoginDate")
          *                  .where(Filters.eq("id", 1))
          *                  .build().query();
+         * // Output: UPDATE account SET loginCount = loginCount + 1, lastLoginDate = ? WHERE id = ?
          * }</pre>
          * 
          * @param tableName the name of the table to update
@@ -8935,8 +8936,8 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <pre>{@code
          * // Simple update
          * String cql = PLC.update(Account.class)
-         *                 .set("status", "active")
-         *                 .set("activatedDate", new Date())
+         *                 .set("status")
+         *                 .set("activatedDate")
          *                 .where(Filters.eq("id", 1))
          *                 .build().query();
          * // Output: UPDATE account SET status = ?, activatedDate = ? WHERE id = ?
@@ -8983,7 +8984,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * // Exclude version control fields
          * Set<String> versionExcluded = N.asSet("version", "previousVersion");
          * String cql = PLC.update(Document.class, versionExcluded)
-         *                 .set("content", newContent)
+         *                 .set("content")
          *                 .where(Filters.eq("id", docId))
          *                 .build().query();
          * }</pre>
@@ -11490,12 +11491,12 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = NSC.update("users")
-         *                 .set("firstName", "John")
+         *                 .set("firstName")
          *                 .where(Filters.eq("id", 1))
          *                 .build().query();
          * // Output: UPDATE users SET first_name = :firstName WHERE id = :id
          * }</pre>
-         * 
+         *
          * @param tableName the name of the table to update
          * @return a new CqlBuilder instance configured for UPDATE operation with named parameters
          * @throws IllegalArgumentException if tableName is null or empty
@@ -11517,7 +11518,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = NSC.update("users", User.class)
-         *                 .set("firstName", "John")
+         *                 .set("firstName")
          *                 .where(Filters.eq("id", 1))
          *                 .build().query();
          * // Output: UPDATE users SET first_name = :firstName WHERE id = :id
@@ -11547,8 +11548,8 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = NSC.update(User.class)
-         *                 .set("firstName", "John")
-         *                 .set("lastName", "Doe")
+         *                 .set("firstName")
+         *                 .set("lastName")
          *                 .where(Filters.eq("id", 1))
          *                 .build().query();
          * // Output: UPDATE users SET first_name = :firstName, last_name = :lastName WHERE id = :id
@@ -11569,7 +11570,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <pre>{@code
          * Set<String> excluded = Set.of("createdDate", "createdBy");
          * String cql = NSC.update(User.class, excluded)
-         *                 .set("firstName", "John")
+         *                 .set("firstName")
          *                 .where(Filters.eq("id", 1))
          *                 .build().query();
          * // Output: UPDATE users SET first_name = :firstName WHERE id = :id
@@ -12594,7 +12595,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = NAC.update("ACCOUNT")
-         *                 .set("STATUS", "ACTIVE")
+         *                 .set("STATUS")
          *                 .where(Filters.eq("ID", 1))
          *                 .build().query();
          * // Output: UPDATE ACCOUNT SET STATUS = :STATUS WHERE ID = :id
@@ -13773,7 +13774,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = NLC.update("account")
-         *                 .set("status", "active")
+         *                 .set("status")
          *                 .where(Filters.eq("id", 1))
          *                 .build().query();
          * // Output: UPDATE account SET status = :status WHERE id = :id
@@ -13802,8 +13803,8 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = NLC.update("account", Account.class)
-         *                 .set("firstName", "John")
-         *                 .set("lastName", "Doe")
+         *                 .set("firstName")
+         *                 .set("lastName")
          *                 .where(Filters.eq("id", 1))
          *                 .build().query();
          * // Output: UPDATE account SET firstName = :firstName, lastName = :lastName WHERE id = :id
@@ -13835,8 +13836,8 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = NLC.update(Account.class)
-         *                 .set("status", "active")
-         *                 .set("lastLoginTime", new Date())
+         *                 .set("status")
+         *                 .set("lastLoginTime")
          *                 .where(Filters.eq("id", 1))
          *                 .build().query();
          * // Output: UPDATE account SET status = :status, lastLoginTime = :lastLoginTime WHERE id = :id
@@ -13858,8 +13859,8 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = NLC.update(Account.class, Set.of("createdTime", "createdBy"))
-         *                 .set("status", "active")
-         *                 .set("modifiedTime", new Date())
+         *                 .set("status")
+         *                 .set("modifiedTime")
          *                 .where(Filters.eq("id", 1))
          *                 .build().query();
          * // Output: UPDATE account SET status = :status, modifiedTime = :modifiedTime WHERE id = :id

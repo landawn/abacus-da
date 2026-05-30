@@ -45,8 +45,9 @@ import com.landawn.abacus.annotation.SuppressFBWarnings;
  * {@link Row} so it can be passed directly to {@code Table#mutateRow(RowMutations)}-style APIs
  * via {@link #val()}.</p>
  *
- * <p>Only {@link Put} and {@link Delete} are accepted; other {@link Mutation} subtypes (such as
- * {@code Increment} or {@code Append}) are rejected by the underlying HBase API.</p>
+ * <p>Only {@link Put} and {@link Delete} mutations are supported by the underlying HBase
+ * {@link RowMutations}; other {@link Mutation} subtypes (such as {@code Increment} or
+ * {@code Append}) should not be added.</p>
  *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
@@ -166,9 +167,9 @@ public final class AnyRowMutations implements Row {
 
     /**
      * Appends a {@link Put} or {@link Delete} mutation to the batch. All mutations in the batch
-     * must share the row key this {@code AnyRowMutations} was created with; HBase rejects
-     * mismatches with an {@link IOException}. When this batch is later submitted to the server,
-     * the appended mutation participates in the row-level atomic apply described in the
+     * must share the row key this {@code AnyRowMutations} was created with; HBase rejects a
+     * mismatched row key with an {@link IOException}. When this batch is later submitted to the
+     * server, the appended mutation participates in the row-level atomic apply described in the
      * {@linkplain AnyRowMutations class-level javadoc}.
      *
      * <p><b>Usage Examples:</b></p>
@@ -188,8 +189,7 @@ public final class AnyRowMutations implements Row {
      *
      * @param mutation the {@link Put} or {@link Delete} to add
      * @return this AnyRowMutations instance, to allow fluent method chaining
-     * @throws IOException if {@code mutation}'s row key does not match this batch's row key, or
-     *         if {@code mutation} is not a {@link Put} or {@link Delete}
+     * @throws IOException if {@code mutation}'s row key does not match this batch's row key
      * @see Put
      * @see Delete
      * @see #add(List)
@@ -223,8 +223,7 @@ public final class AnyRowMutations implements Row {
      *
      * @param mutations the list of {@link Put} / {@link Delete} mutations to add
      * @return this AnyRowMutations instance, to allow fluent method chaining
-     * @throws IOException if any mutation's row key does not match this batch's row key, or if
-     *         the list contains an unsupported mutation type
+     * @throws IOException if any mutation's row key does not match this batch's row key
      * @see Put
      * @see Delete
      * @see #add(Mutation)

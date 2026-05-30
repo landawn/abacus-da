@@ -224,7 +224,8 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @param timestamp the timestamp to apply to all cells in this increment operation
      * @param familyMap a pre-populated NavigableMap of column families to their Cell lists
      * @return a new AnyIncrement instance with the specified configuration
-     * @throws IllegalArgumentException if rowKey is null
+     * @throws IllegalArgumentException if {@code rowKey} is empty (zero-length)
+     * @throws NullPointerException if {@code rowKey} or {@code familyMap} is {@code null}
      * @see #of(Increment)
      */
     public static AnyIncrement of(final byte[] rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap) {
