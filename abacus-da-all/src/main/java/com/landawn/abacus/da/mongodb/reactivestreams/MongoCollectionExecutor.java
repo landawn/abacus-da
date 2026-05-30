@@ -715,7 +715,7 @@ public final class MongoCollectionExecutor {
      * @see com.mongodb.client.model.Sorts
      */
     public <T> Mono<T> findFirst(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
-        return query(selectPropNames, filter, sort, 0, 1).next().map(toEntity(rowType));
+        return query(selectPropNames, filter, sort, 0, 1).next().mapNotNull(toEntity(rowType));
     }
 
     /**
@@ -740,7 +740,7 @@ public final class MongoCollectionExecutor {
      * @return a Mono that emits the first matching document converted to type T, or empty if no match
      */
     public <T> Mono<T> findFirst(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
-        return executeQuery(projection, filter, sort, 0, 1).next().map(toEntity(rowType));
+        return executeQuery(projection, filter, sort, 0, 1).next().mapNotNull(toEntity(rowType));
     }
 
     /**
@@ -916,7 +916,7 @@ public final class MongoCollectionExecutor {
      */
     public <T> Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
-        return query(selectPropNames, filter, sort, offset, count).map(toEntity(rowType));
+        return query(selectPropNames, filter, sort, offset, count).mapNotNull(toEntity(rowType));
     }
 
     /**
@@ -967,7 +967,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if offset or count is negative
      */
     public <T> Flux<T> list(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType) {
-        return executeQuery(projection, filter, sort, offset, count).map(toEntity(rowType));
+        return executeQuery(projection, filter, sort, offset, count).mapNotNull(toEntity(rowType));
     }
 
     /**
@@ -2715,7 +2715,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if filter, update, or rowType is null
      */
     public <T> Mono<T> findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options, final Class<T> rowType) {
-        return findOneAndUpdate(filter, update, options).map(toEntity(rowType));
+        return findOneAndUpdate(filter, update, options).mapNotNull(toEntity(rowType));
     }
 
     /**
@@ -2830,7 +2830,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if filter, objList, or rowType is null, or objList is empty
      */
     public <T> Mono<T> findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options, final Class<T> rowType) {
-        return findOneAndUpdate(filter, objList, options).map(toEntity(rowType));
+        return findOneAndUpdate(filter, objList, options).mapNotNull(toEntity(rowType));
     }
 
     /**
@@ -2947,7 +2947,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if filter, replacement, or rowType is null
      */
     public <T> Mono<T> findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options, final Class<T> rowType) {
-        return findOneAndReplace(filter, replacement, options).map(toEntity(rowType));
+        return findOneAndReplace(filter, replacement, options).mapNotNull(toEntity(rowType));
     }
 
     /**
@@ -3054,7 +3054,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if filter or rowType is null
      */
     public <T> Mono<T> findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options, final Class<T> rowType) {
-        return findOneAndDelete(filter, options).map(toEntity(rowType));
+        return findOneAndDelete(filter, options).mapNotNull(toEntity(rowType));
     }
 
     /**
@@ -3160,7 +3160,7 @@ public final class MongoCollectionExecutor {
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
      */
     public <T> Flux<T> aggregate(final List<? extends Bson> pipeline, final Class<T> rowType) {
-        return Flux.from(coll.aggregate(pipeline, Document.class)).map(toEntity(rowType));
+        return Flux.from(coll.aggregate(pipeline, Document.class)).mapNotNull(toEntity(rowType));
     }
 
     /**
@@ -3407,7 +3407,7 @@ public final class MongoCollectionExecutor {
      */
     @Deprecated
     public <T> Flux<T> mapReduce(final String mapFunction, final String reduceFunction, final Class<T> rowType) {
-        return Flux.from(coll.mapReduce(mapFunction, reduceFunction, Document.class)).map(toEntity(rowType));
+        return Flux.from(coll.mapReduce(mapFunction, reduceFunction, Document.class)).mapNotNull(toEntity(rowType));
     }
 
     //

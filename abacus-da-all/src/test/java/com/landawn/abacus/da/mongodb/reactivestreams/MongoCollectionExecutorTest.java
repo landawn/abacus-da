@@ -369,6 +369,46 @@ public class MongoCollectionExecutorTest extends TestBase {
         StepVerifier.create(result).expectNext(doc).verifyComplete();
     }
 
+    // Regression: an empty document (e.g. from an all-excluding projection) must complete empty,
+    // not error. toEntity(...) returns null for an empty doc, and Reactor's map() rejects a null
+    // mapper result with NullPointerException; mapNotNull(...) completes empty instead.
+    @Test
+    public void testFindFirstWithEmptyDocumentCompletesEmptyNotError() {
+        Collection<String> selectPropNames = Arrays.asList("name");
+        Bson filter = new Document("active", true);
+        Document emptyDoc = new Document();
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, emptyDoc);
+
+        Mono<Document> result = executor.findFirst(selectPropNames, filter, Document.class);
+
+        StepVerifier.create(result).verifyComplete();
+    }
+
+    // Regression: a field-less document in a multi-result stream must be skipped, not error the
+    // whole Flux. Before the fix, map() turned the null toEntity result into an NPE that aborted
+    // the stream after the first element; mapNotNull(...) skips it.
+    @Test
+    public void testListSkipsEmptyDocumentInsteadOfErroring() {
+        Bson filter = new Document("active", true);
+        int offset = 10;
+        int count = 5;
+        Document populated = new Document("name", "doc1");
+        Document emptyDoc = new Document();
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.skip(offset)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(count)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, populated, emptyDoc);
+
+        Flux<Document> result = executor.list(filter, offset, count, Document.class);
+
+        StepVerifier.create(result).expectNext(populated).verifyComplete();
+    }
+
     @Test
     public void testListWithFilter() {
         Bson filter = new Document("status", "active");
@@ -1761,9 +1801,11 @@ public class MongoCollectionExecutorTest extends TestBase {
      * {@code MongoDB.readRow(doc, rowType)}, which for a wrapper type like Integer
      * produced a bogus default value (0) instead of treating "no data" as null.
      *
-     * <p>With the fix, an empty Document is mapped to {@code null}. Because Reactor's
-     * {@code Mono.map} does not allow a mapper to return {@code null}, this now surfaces
-     * as a NullPointerException instead of silently emitting a fabricated {@code 0}.</p>
+     * <p>{@code toEntity(Class)} maps an empty Document to {@code null}. The reactive
+     * pipeline uses {@code mapNotNull(...)} (not {@code map(...)}), so a {@code null}
+     * mapped value completes the {@code Mono} empty — matching the documented "empty if
+     * no match" contract and the synchronous sibling — rather than emitting a fabricated
+     * {@code 0} or surfacing a {@link NullPointerException}.</p>
      */
     @Test
     public void testFindFirstTypedWithEmptyDocumentDoesNotProduceDefaultValue() {
@@ -1776,9 +1818,9 @@ public class MongoCollectionExecutorTest extends TestBase {
 
         Mono<Integer> result = executor.findFirst(filter, Integer.class);
 
-        // Before the fix this emitted a bogus 0 (default value of Integer).
-        // After the fix toEntity returns null for an empty document.
-        StepVerifier.create(result).verifyError(NullPointerException.class);
+        // An empty document produces neither a bogus 0 (default value of Integer) nor an
+        // error: mapNotNull completes the Mono empty.
+        StepVerifier.create(result).verifyComplete();
     }
 
     /**
