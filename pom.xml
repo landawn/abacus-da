@@ -42,7 +42,7 @@
 	</modules>
 
 	<properties>
-		<revision>2.7.3</revision>
+		<revision>2.7.4</revision>
 		<java.version>17</java.version>
 		<maven.compiler.source>17</maven.compiler.source>
 		<maven.compiler.target>17</maven.compiler.target>
