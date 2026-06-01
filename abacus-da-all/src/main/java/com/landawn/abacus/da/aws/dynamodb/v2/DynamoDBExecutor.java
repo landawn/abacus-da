@@ -3324,6 +3324,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *     executor.close();   // Ensure cleanup
      * }
      * }</pre>
+     *
      * @see AutoCloseable#close()
      * @see DynamoDbClient#close()
      */
