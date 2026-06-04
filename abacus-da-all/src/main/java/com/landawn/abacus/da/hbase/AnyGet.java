@@ -263,7 +263,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *
      * @param get the existing HBase Get object to wrap; must not be null
      * @return a new AnyGet instance that wraps the specified Get by reference
-     * @throws NullPointerException if {@code get} is null (raised when the wrapped Get is first dereferenced)
+     * @throws IllegalArgumentException if {@code get} is null
      * @see org.apache.hadoop.hbase.client.Get
      * @see #val()
      */

@@ -263,7 +263,7 @@ public final class MongoCollectionMapper<T> {
      *
      * @param filter the query filter to match documents against; must not be null
      * @return a Mono that emits {@code true} if any documents match the filter, {@code false} otherwise
-     * @throws NullPointerException if filter is null (signalled via {@code Mono}; thrown by the underlying MongoDB driver)
+     * @throws IllegalArgumentException if filter is null (signalled via {@code Mono})
      * @see Bson
      * @see com.mongodb.client.model.Filters
      */
@@ -310,7 +310,7 @@ public final class MongoCollectionMapper<T> {
      *
      * @param filter the query filter to match documents; must not be null
      * @return a Mono that emits the count of documents matching the filter
-     * @throws NullPointerException if filter is null (signalled via {@code Mono}; thrown by the underlying MongoDB driver)
+     * @throws IllegalArgumentException if filter is null (signalled via {@code Mono})
      * @see Bson
      * @see com.mongodb.client.model.Filters
      */
@@ -337,7 +337,7 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match documents; must not be null
      * @param options the count options to apply (can be null)
      * @return a Mono that emits the count of documents matching the filter with applied options
-     * @throws NullPointerException if filter is null (signalled via {@code Mono}; thrown by the underlying MongoDB driver)
+     * @throws IllegalArgumentException if filter is null (signalled via {@code Mono})
      * @see Bson
      * @see CountOptions
      * @see com.mongodb.client.model.Filters
@@ -2317,7 +2317,12 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Mapper bound to String.class (or use the executor directly for typed scalar values):
+     * // This (mapper) method decodes each distinct value as the mapper's row type T:
+     * userMapper.distinct("country")
+     *     .collectList()
+     *     .subscribe(countries -> System.out.println("Countries: " + countries));
+     *
+     * // For typed scalar values, use the executor directly:
      * userMapper.collectionExecutor().distinct("country", String.class)
      *     .collectList()
      *     .subscribe(countries -> System.out.println("Countries: " + countries));
@@ -2347,6 +2352,12 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson filter = Filters.eq("status", "active");
+     * // This (mapper) method decodes each distinct value as the mapper's row type T:
+     * userMapper.distinct("department", filter)
+     *     .collectList()
+     *     .subscribe(depts -> System.out.println("Active departments: " + depts));
+     *
+     * // For typed scalar values, use the executor directly:
      * userMapper.collectionExecutor().distinct("department", filter, String.class)
      *     .collectList()
      *     .subscribe(depts -> System.out.println("Active departments: " + depts));

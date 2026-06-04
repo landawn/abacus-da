@@ -166,9 +166,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     /**
      * Constructs a new AnyScan wrapping an existing HBase {@link Scan} object.
      *
-     * <p>The supplied {@link Scan} is wrapped by reference, not copied. No null-check is performed;
-     * passing {@code null} will result in a {@link NullPointerException} the first time the wrapped
-     * scan is dereferenced. Package-private; callers should use {@link #of(Scan)}.</p>
+     * <p>The supplied {@link Scan} is wrapped by reference, not copied. Passing {@code null} will
+     * result in an {@link IllegalArgumentException}. Package-private; callers should use
+     * {@link #of(Scan)}.</p>
      *
      * @param scan the HBase {@link Scan} object to wrap; must not be {@code null}
      */
@@ -312,7 +312,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * @param scan the HBase Scan object to wrap; must not be null
      * @return a new AnyScan instance that wraps the provided Scan by reference
-     * @throws NullPointerException if {@code scan} is null (raised on the first subsequent dereference of the wrapped Scan)
+     * @throws IllegalArgumentException if {@code scan} is null
      */
     public static AnyScan of(final Scan scan) {
         return new AnyScan(scan);
@@ -969,7 +969,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <p>
      * HBase stores multiple versions of each cell value. This setting controls
      * how many historical versions will be returned. The default is 1 (only the
-     * latest version).
+     * latest version). A value of Integer.MAX_VALUE indicates that all available
+     * versions should be retrieved.
      * </p>
      *
      * @return the maximum number of versions to retrieve per column
@@ -1094,7 +1095,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * which can be useful for controlling result set size.
      * </p>
      *
-     * @return the maximum number of results per column family
+     * @return the maximum number of results per column family, or -1 if no limit is set
      * @see #setMaxResultsPerColumnFamily(int)
      */
     public int getMaxResultsPerColumnFamily() {
@@ -1140,7 +1141,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * column family before returning results.
      * </p>
      *
-     * @return the current row offset per column family
+     * @return the current row offset per column family, or 0 if no offset is set
      * @see #setRowOffsetPerColumnFamily(int)
      */
     public int getRowOffsetPerColumnFamily() {

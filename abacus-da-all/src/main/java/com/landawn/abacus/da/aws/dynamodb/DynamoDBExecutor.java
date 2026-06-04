@@ -740,8 +740,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param value the value for the attribute, automatically converted to AttributeValue
      * @return a Map (currently a LinkedHashMap-backed result from {@link N#asMap}) containing the
      *         single attribute-value pair, never {@code null}
-     * @see #asItem(String, Object, String, Object) for multiple attributes
-     * @see #toAttributeValue(Object) for value conversion rules
+     * @see #asItem(String, Object, String, Object)
+     * @see #toAttributeValue(Object)
      */
     public static Map<String, AttributeValue> asItem(final String attrName, final Object value) {
         return N.asMap(attrName, toAttributeValue(value));
@@ -770,7 +770,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param attrName2 the name of the second attribute. Must not be {@code null}.
      * @param value2 the value for the second attribute
      * @return a Map containing both attribute-value pairs, never {@code null}
-     * @see #asItem(String, Object, String, Object, String, Object) for three attributes
+     * @see #asItem(String, Object, String, Object, String, Object)
      */
     public static Map<String, AttributeValue> asItem(final String attrName, final Object value, final String attrName2, final Object value2) {
         return N.asMap(attrName, toAttributeValue(value), attrName2, toAttributeValue(value2));
@@ -803,7 +803,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param attrName3 the name of the third attribute. Must not be {@code null}.
      * @param value3 the value for the third attribute
      * @return a Map containing all three attribute-value pairs, never {@code null}
-     * @see #asItem(Object...) for variable number of attributes
+     * @see #asItem(Object...)
      */
     public static Map<String, AttributeValue> asItem(final String attrName, final Object value, final String attrName2, final Object value2,
             final String attrName3, final Object value3) {
@@ -872,8 +872,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param attrName the name of the attribute to update. Must not be {@code null}.
      * @param value the new value for the attribute, automatically converted
      * @return a Map containing the single attribute update, never {@code null}
-     * @see #asUpdateItem(String, Object, String, Object) for multiple updates
-     * @see #toAttributeValueUpdate(Object) for update creation
+     * @see #asUpdateItem(String, Object, String, Object)
+     * @see #toAttributeValueUpdate(Object)
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final String attrName, final Object value) {
         return N.asMap(attrName, toAttributeValueUpdate(value));
@@ -905,7 +905,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param attrName2 the name of the second attribute to update. Must not be {@code null}.
      * @param value2 the new value for the second attribute
      * @return a Map containing both attribute updates, never {@code null}
-     * @see #asUpdateItem(String, Object, String, Object, String, Object) for three updates
+     * @see #asUpdateItem(String, Object, String, Object, String, Object)
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final String attrName, final Object value, final String attrName2, final Object value2) {
         return N.asMap(attrName, toAttributeValueUpdate(value), attrName2, toAttributeValueUpdate(value2));
@@ -938,7 +938,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param attrName3 the name of the third attribute to update. Must not be {@code null}.
      * @param value3 the new value for the third attribute
      * @return a Map containing all three attribute updates, never {@code null}
-     * @see #asUpdateItem(Object...) for variable number of updates
+     * @see #asUpdateItem(Object...)
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final String attrName, final Object value, final String attrName2, final Object value2,
             final String attrName3, final Object value3) {
@@ -1492,9 +1492,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * Converts a map of table items (from batch operations) to entity classes.
      * This method is typically used internally to process batch get results.
      *
+     * @param <T> the target entity type
      * @param tableItems map of table names to lists of items (AttributeValue maps)
      * @param targetClass entity classes with getter/setter methods or basic single value type (Primitive/String/Date...)
-     * @param <T> the target entity type
      * @return map of table names to lists of converted entities
      */
     static <T> Map<String, List<T>> toEntities(final Map<String, List<Map<String, AttributeValue>>> tableItems, final Class<T> targetClass) {
@@ -1605,9 +1605,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * Converts a list of DynamoDB items to entities.
      * Internal method for converting raw item lists.
      *
+     * @param <T> the target entity type
      * @param items list of DynamoDB items as AttributeValue maps
      * @param targetClass entity classes with getter/setter methods or basic single value type (Primitive/String/Date...)
-     * @param <T> the target entity type
      * @return list of converted entities
      */
     static <T> List<T> toList(final List<Map<String, AttributeValue>> items, final Class<T> targetClass) {
@@ -1618,11 +1618,11 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * Converts a list of DynamoDB items to entities with pagination.
      * Internal method for converting raw item lists with offset and count.
      *
+     * @param <T> the target entity type
      * @param items list of DynamoDB items as AttributeValue maps
      * @param offset number of items to skip
      * @param count maximum number of items to convert
      * @param targetClass entity classes with getter/setter methods or basic single value type (Primitive/String/Date...)
-     * @param <T> the target entity type
      * @return list of converted entities within the specified range
      */
     static <T> List<T> toList(final List<Map<String, AttributeValue>> items, final int offset, int count, final Class<T> targetClass) {
@@ -1920,7 +1920,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param key the primary key of the item to retrieve. Must not be null or empty.
      * @param targetClass the class to convert the result to. Must not be null.
      * @return an instance of targetClass containing the item data, or null if item doesn't exist
-     * @throws IllegalArgumentException if any parameter is null, tableName is empty, or targetClass is unsupported
+     * @throws IllegalArgumentException if targetClass is unsupported
+     * @throws RuntimeException if the request is rejected by the underlying DynamoDB client (for example, when tableName or key is null or invalid)
      * @see #getItem(String, Map, Boolean, Class)
      */
     public <T> T getItem(final String tableName, final Map<String, AttributeValue> key, final Class<T> targetClass) {
@@ -1946,7 +1947,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param consistentRead true for strongly consistent reads, false/null for eventually consistent reads
      * @param targetClass the class to convert the result to. Must not be null.
      * @return an instance of targetClass containing the item data, or null if item doesn't exist
-     * @throws IllegalArgumentException if any parameter is null, tableName is empty, or targetClass is unsupported
+     * @throws IllegalArgumentException if targetClass is unsupported
+     * @throws RuntimeException if the request is rejected by the underlying DynamoDB client (for example, when tableName or key is null or invalid)
      */
     public <T> T getItem(final String tableName, final Map<String, AttributeValue> key, final Boolean consistentRead, final Class<T> targetClass) {
         return readRow(dynamoDBClient.getItem(tableName, key, consistentRead).getItem(), targetClass);
@@ -1968,7 +1970,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param getItemRequest the complete request with all parameters
      * @param targetClass the class to convert the result to
      * @return an instance of targetClass containing the item data, or null if item doesn't exist
-     * @throws IllegalArgumentException if any parameter is null or targetClass is unsupported
+     * @throws IllegalArgumentException if targetClass is unsupported
+     * @throws RuntimeException if the request is rejected by the underlying DynamoDB client (for example, when getItemRequest is null or invalid)
      */
     public <T> T getItem(final GetItemRequest getItemRequest, final Class<T> targetClass) {
         return readRow(dynamoDBClient.getItem(getItemRequest).getItem(), targetClass);
@@ -2012,7 +2015,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *
      * @param requestItems a map of table names to KeysAndAttributes specifying which items to retrieve. Must not be null.
      * @return a map of table names to lists of retrieved items, never null. Unprocessed keys are not included.
-     * @throws IllegalArgumentException if requestItems is null or empty
+     * @throws IllegalArgumentException if requestItems is null
      * @see #batchGetItem(Map, String)
      * @see #batchGetItem(Map, Class)
      */
@@ -2162,8 +2165,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param item the item to put, as a map of attribute names to AttributeValues. Must not be {@code null}.
      * @return a {@link PutItemResult} containing operation metadata and consumed capacity
      * @throws IllegalArgumentException if tableName is null/empty or item is null
-     * @see #putItem(String, Map, String) to retrieve the replaced item
-     * @see #updateItem for partial updates
+     * @see #putItem(String, Map, String)
+     * @see #updateItem
      */
     public PutItemResult putItem(final String tableName, final Map<String, AttributeValue> item) {
         if (logger.isDebugEnabled()) {
@@ -2206,7 +2209,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param returnValues specifies what to return: "NONE" or "ALL_OLD"
      * @return a {@link PutItemResult} containing operation metadata and optionally the replaced item
      * @throws IllegalArgumentException if tableName is null/empty or item is null
-     * @see com.amazonaws.services.dynamodbv2.model.ReturnValue for valid return value options
+     * @see com.amazonaws.services.dynamodbv2.model.ReturnValue
      */
     public PutItemResult putItem(final String tableName, final Map<String, AttributeValue> item, final String returnValues) {
         return dynamoDBClient.putItem(tableName, item, returnValues);
@@ -2297,7 +2300,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param requestItems map of table names to lists of write requests (puts/deletes). Must not be {@code null}.
      * @return a {@link BatchWriteItemResult} containing unprocessed items and consumed capacity
      * @throws IllegalArgumentException if requestItems is null or exceeds batch limits
-     * @see #batchWriteItem(BatchWriteItemRequest) for more control
+     * @see #batchWriteItem(BatchWriteItemRequest)
      */
     public BatchWriteItemResult batchWriteItem(final Map<String, List<WriteRequest>> requestItems) {
         return dynamoDBClient.batchWriteItem(requestItems);
@@ -2363,7 +2366,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param attributeUpdates map of attribute names to update actions. Must not be {@code null}.
      * @return an {@link UpdateItemResult} containing operation metadata
      * @throws IllegalArgumentException if any parameter is null or tableName is empty
-     * @see #updateItem(String, Map, Map, String) to retrieve updated values
+     * @see #updateItem(String, Map, Map, String)
      */
     public UpdateItemResult updateItem(final String tableName, final Map<String, AttributeValue> key,
             final Map<String, AttributeValueUpdate> attributeUpdates) {
@@ -2480,7 +2483,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param key the primary key of the item to delete. Must not be {@code null}.
      * @return a {@link DeleteItemResult} containing operation metadata
      * @throws IllegalArgumentException if tableName is null/empty or key is null
-     * @see #deleteItem(String, Map, String) to retrieve the deleted item
+     * @see #deleteItem(String, Map, String)
      */
     public DeleteItemResult deleteItem(final String tableName, final Map<String, AttributeValue> key) {
         if (logger.isDebugEnabled()) {
@@ -2736,14 +2739,14 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param queryRequest the query parameters. Must not be {@code null}.
      * @return a {@link Dataset} containing all query results in tabular format, never {@code null};
      *         empty when the query matches nothing
-     * @throws IllegalArgumentException if queryRequest is null
-     * @see #query(QueryRequest, Class) for typed Dataset operations
+     * @throws NullPointerException if queryRequest is null
+     * @see #query(QueryRequest, Class)
      */
     public Dataset query(final QueryRequest queryRequest) {
         return query(queryRequest, Clazz.PROPS_MAP);
     }
 
-    /**     
+    /**
      * Executes a DynamoDB query and returns results as a Dataset for the specified target class.
      * 
      * <p>This method performs a Query operation and converts results to a {@link Dataset} of the
@@ -2767,7 +2770,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param targetClass the class to convert retrieved items to; if {@code null} or a {@link Map} type,
      *                    results are extracted as raw attribute maps
      * @return a {@link Dataset} containing all query results in tabular format
-     * @throws IllegalArgumentException if queryRequest is null
+     * @throws NullPointerException if queryRequest is null
      */
     public Dataset query(final QueryRequest queryRequest, final Class<?> targetClass) {
         if (targetClass == null || Map.class.isAssignableFrom(targetClass)) {
@@ -2869,8 +2872,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *
      * @param queryRequest the query parameters. Must not be {@code null}.
      * @return a {@link Stream} of maps representing query results with automatic pagination
-     * @throws IllegalArgumentException if queryRequest is null
-     * @see #stream(QueryRequest, Class) for typed stream operations
+     * @throws NullPointerException if queryRequest is null
+     * @see #stream(QueryRequest, Class)
      */
     public Stream<Map<String, Object>> stream(final QueryRequest queryRequest) {
         return stream(queryRequest, Clazz.PROPS_MAP);
@@ -2912,7 +2915,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param queryRequest the query parameters. Must not be {@code null}.
      * @param targetClass the class to convert retrieved items to. Must not be {@code null}.
      * @return a {@link Stream} of converted objects with automatic pagination
-     * @throws IllegalArgumentException if queryRequest or targetClass is null or unsupported
+     * @throws NullPointerException if queryRequest is null
+     * @throws IllegalArgumentException if targetClass is null or unsupported
      */
     public <T> Stream<T> stream(final QueryRequest queryRequest, final Class<T> targetClass) {
         final Iterator<List<Map<String, AttributeValue>>> iterator = new ObjIterator<>() {
@@ -3212,7 +3216,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param targetClass the class to convert retrieved items to. Must not be {@code null}.
      * @return a {@link Stream} of converted objects with automatic pagination
      * @throws IllegalArgumentException if scanRequest or targetClass is null or unsupported
-     * @see #scan(ScanRequest) for untyped stream operations
+     * @see #scan(ScanRequest)
      */
     public <T> Stream<T> scan(final ScanRequest scanRequest, final Class<T> targetClass) {
         final Iterator<List<Map<String, AttributeValue>>> iterator = new ObjIterator<>() {
@@ -3498,9 +3502,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * List<User> retrieved = mapper.batchGetItem(users, "TOTAL");
          * }</pre>
          *
-         * @param entities collection of entities containing the key values to search for
+         * @param entities collection of entities containing the key values to search for, must not be {@code null}
          * @param returnConsumedCapacity specifies the level of detail about consumed capacity to return
          * @return list of retrieved entities from DynamoDB; empty list if none found
+         * @throws IllegalArgumentException if entities is {@code null}
          */
         public List<T> batchGetItem(final Collection<? extends T> entities, final String returnConsumedCapacity) {
             final Map<String, List<T>> map = dynamoDBExecutor.batchGetItem(createKeys(entities), returnConsumedCapacity, targetEntityClass);
@@ -3571,9 +3576,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * PutItemResult result = mapper.putItem(user, "ALL_OLD");
          * }</pre>
          * 
-         * @param entity the entity to save to DynamoDB
+         * @param entity the entity to save to DynamoDB, must not be {@code null}
          * @param returnValues specifies which attributes to return (e.g., "ALL_OLD", "NONE")
          * @return the PutItemResult containing operation metadata and optionally old values
+         * @throws IllegalArgumentException if entity is {@code null}
          */
         public PutItemResult putItem(final T entity, final String returnValues) {
             return dynamoDBExecutor.putItem(tableName, DynamoDBExecutor.toItem(entity, namingPolicy), returnValues);
@@ -3610,6 +3616,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          *
          * @param entities collection of entities to save to DynamoDB
          * @return the BatchWriteItemResult containing operation metadata
+         * @throws com.amazonaws.AmazonServiceException if the request exceeds the 25-item batch limit
          */
         public BatchWriteItemResult batchPutItem(final Collection<? extends T> entities) {
             return dynamoDBExecutor.batchWriteItem(createBatchPutRequest(entities));
@@ -3651,9 +3658,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * UpdateItemResult result = mapper.updateItem(user, "ALL_NEW");
          * }</pre>
          * 
-         * @param entity the entity containing updated values and key information
+         * @param entity the entity containing updated values and key information, must not be {@code null}
          * @param returnValues specifies which attributes to return (e.g., "ALL_NEW", "ALL_OLD", "UPDATED_NEW")
          * @return the UpdateItemResult containing operation metadata and optionally attribute values
+         * @throws IllegalArgumentException if entity is {@code null}
          */
         public UpdateItemResult updateItem(final T entity, final String returnValues) {
             return dynamoDBExecutor.updateItem(tableName, createKey(entity), DynamoDBExecutor.toUpdateItem(entity, namingPolicy), returnValues);
@@ -3895,7 +3903,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @param queryRequest the QueryRequest containing query parameters, must not be {@code null}
          * @return list of entities matching the query conditions, never {@code null}
          * @throws IllegalArgumentException if the request specifies a different table than configured, or if queryRequest is {@code null}
-         * @see #stream(QueryRequest) for memory-efficient processing of large result sets
+         * @see #stream(QueryRequest)
          */
         public List<T> list(final QueryRequest queryRequest) {
             return dynamoDBExecutor.list(checkQueryRequest(queryRequest), targetEntityClass);
@@ -3935,8 +3943,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @param queryRequest the QueryRequest containing query parameters, must not be {@code null}
          * @return Dataset containing the query results with tabular structure, never {@code null}
          * @throws IllegalArgumentException if the request specifies a different table than configured, or if queryRequest is {@code null}
-         * @see #list(QueryRequest) for list-based results
-         * @see #stream(QueryRequest) for streaming results
+         * @see #list(QueryRequest)
+         * @see #stream(QueryRequest)
          */
         public Dataset query(final QueryRequest queryRequest) {
             return dynamoDBExecutor.query(checkQueryRequest(queryRequest), targetEntityClass);
@@ -3976,7 +3984,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @param queryRequest the QueryRequest containing query parameters, must not be {@code null}
          * @return Stream of entities matching the query conditions with lazy evaluation and automatic pagination
          * @throws IllegalArgumentException if the request specifies a different table than configured, or if queryRequest is {@code null}
-         * @see #list(QueryRequest) when you need all results in memory
+         * @see #list(QueryRequest)
          */
         public Stream<T> stream(final QueryRequest queryRequest) {
             return dynamoDBExecutor.stream(checkQueryRequest(queryRequest), targetEntityClass);
@@ -4003,7 +4011,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          *
          * @param attributesToGet list of attribute names to retrieve; {@code null} retrieves all attributes
          * @return Stream of all entities in the table with specified attributes, providing lazy evaluation
-         * @see #scan(ScanRequest) for more control over scan operations
+         * @see #scan(ScanRequest)
          */
         public Stream<T> scan(final List<String> attributesToGet) {
             return dynamoDBExecutor.scan(tableName, attributesToGet, targetEntityClass);
@@ -4035,7 +4043,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          *                  must not be {@code null}
          * @return Stream of entities matching the filter conditions
          * @throws IllegalArgumentException if scanFilter is {@code null}
-         * @see #scan(ScanRequest) for more efficient filtering with filter expressions
+         * @see #scan(ScanRequest)
          */
         public Stream<T> scan(final Map<String, Condition> scanFilter) {
             return dynamoDBExecutor.scan(tableName, scanFilter, targetEntityClass);
@@ -4072,7 +4080,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          *                  must not be {@code null}
          * @return Stream of entities with specified attributes matching the filter conditions
          * @throws IllegalArgumentException if scanFilter is {@code null}
-         * @see #scan(ScanRequest) for full control with filter expressions
+         * @see #scan(ScanRequest)
          */
         public Stream<T> scan(final List<String> attributesToGet, final Map<String, Condition> scanFilter) {
             return dynamoDBExecutor.scan(tableName, attributesToGet, scanFilter, targetEntityClass);
@@ -4117,7 +4125,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @param scanRequest the ScanRequest containing scan parameters, must not be {@code null}
          * @return Stream of entities matching the scan parameters with lazy evaluation and automatic pagination
          * @throws IllegalArgumentException if the request specifies a different table than configured, or if scanRequest is {@code null}
-         * @see #scan(List, Map) for simpler scan API
+         * @see #scan(List, Map)
          */
         public Stream<T> scan(final ScanRequest scanRequest) {
             return dynamoDBExecutor.scan(checkScanRequest(scanRequest), targetEntityClass);

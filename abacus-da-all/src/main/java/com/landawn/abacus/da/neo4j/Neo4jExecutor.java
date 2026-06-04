@@ -347,7 +347,7 @@ public final class Neo4jExecutor {
      * @param targetClass the class representing the node type
      * @param ids collection of unique Neo4j node IDs to load
      * @return collection of loaded node entities, empty collection if no nodes found
-     * @throws IllegalArgumentException if targetClass is null or ids is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Collection, int)
      * @see #load(Class, Long)
      */
@@ -372,7 +372,7 @@ public final class Neo4jExecutor {
      * @param ids collection of unique Neo4j node IDs to load
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of loaded node entities with relationships, may be empty if no nodes found
-     * @throws IllegalArgumentException if targetClass is null or ids is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Collection)
      * @see #load(Class, Long, int)
      */
@@ -397,7 +397,7 @@ public final class Neo4jExecutor {
      * @param ids collection of unique Neo4j node IDs to load
      * @param sortOrder the sort order specification for results
      * @return collection of loaded node entities sorted as specified, may be empty if no nodes found
-     * @throws IllegalArgumentException if targetClass is null or ids is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Collection, SortOrder, int)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
@@ -423,7 +423,7 @@ public final class Neo4jExecutor {
      * @param sortOrder the sort order specification for results
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of loaded node entities with relationships, sorted as specified
-     * @throws IllegalArgumentException if targetClass is null or ids is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Collection, SortOrder)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
@@ -448,7 +448,7 @@ public final class Neo4jExecutor {
      * @param ids collection of unique Neo4j node IDs to load
      * @param pagination pagination settings (page offset and size)
      * @return collection of loaded node entities for the specified page, may be empty
-     * @throws IllegalArgumentException if targetClass is null or ids is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Collection, Pagination, int)
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
@@ -474,7 +474,7 @@ public final class Neo4jExecutor {
      * @param pagination pagination settings (page offset and size)
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of loaded node entities with relationships for the specified page
-     * @throws IllegalArgumentException if targetClass is null or ids is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Collection, Pagination)
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
@@ -501,7 +501,7 @@ public final class Neo4jExecutor {
      * @param sortOrder the sort order specification for results
      * @param pagination pagination settings (page offset and size)
      * @return collection of loaded, sorted node entities for the specified page
-     * @throws IllegalArgumentException if targetClass is null or ids is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Collection, SortOrder, Pagination, int)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination
@@ -530,7 +530,7 @@ public final class Neo4jExecutor {
      * @param pagination pagination settings (page offset and size)
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of loaded, sorted node entities with relationships for the specified page
-     * @throws IllegalArgumentException if targetClass is null or ids is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Collection, SortOrder, Pagination)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination
@@ -556,7 +556,7 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param objects collection of node entities to reload
      * @return collection of reloaded node entities with current database state
-     * @throws IllegalArgumentException if objects is null or contains entities without IDs
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Collection, int)
      */
     public <T> Collection<T> loadAll(final Collection<T> objects) {
@@ -580,7 +580,7 @@ public final class Neo4jExecutor {
      * @param objects collection of node entities to reload
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of reloaded node entities with relationships and current database state
-     * @throws IllegalArgumentException if objects is null or contains entities without IDs
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Collection)
      */
     public <T> Collection<T> loadAll(final Collection<T> objects, final int depth) {
@@ -604,7 +604,7 @@ public final class Neo4jExecutor {
      * @param objects collection of node entities to reload
      * @param sortOrder the sort order specification for results
      * @return collection of reloaded, sorted node entities with current database state
-     * @throws IllegalArgumentException if objects is null or contains entities without IDs
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Collection, SortOrder, int)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
@@ -630,7 +630,7 @@ public final class Neo4jExecutor {
      * @param sortOrder the sort order specification for results
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of reloaded, sorted node entities with relationships
-     * @throws IllegalArgumentException if objects is null or contains entities without IDs
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Collection, SortOrder)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
@@ -655,7 +655,7 @@ public final class Neo4jExecutor {
      * @param objects collection of node entities to reload
      * @param pagination pagination settings (page offset and size)
      * @return paginated collection of reloaded node entities with current database state
-     * @throws IllegalArgumentException if objects is null or contains entities without IDs
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Collection, Pagination, int)
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
@@ -681,7 +681,7 @@ public final class Neo4jExecutor {
      * @param pagination pagination settings (page offset and size)
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of reloaded node entities with relationships
-     * @throws IllegalArgumentException if objects is null or contains entities without IDs
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Collection, Pagination)
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
@@ -707,7 +707,7 @@ public final class Neo4jExecutor {
      * @param sortOrder the sort order specification for results
      * @param pagination pagination settings (page offset and size)
      * @return paginated collection of reloaded, sorted node entities
-     * @throws IllegalArgumentException if objects is null or contains entities without IDs
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Collection, SortOrder, Pagination, int)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination
@@ -735,7 +735,7 @@ public final class Neo4jExecutor {
      * @param pagination pagination settings (page offset and size)
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of reloaded, sorted node entities with relationships
-     * @throws IllegalArgumentException if objects is null or contains entities without IDs
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Collection, SortOrder, Pagination)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination

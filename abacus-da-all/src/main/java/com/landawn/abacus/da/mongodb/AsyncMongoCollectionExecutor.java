@@ -1532,7 +1532,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to match documents
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing the query results
-     * @throws IllegalArgumentException if any parameter is null (propagated through future)
+     * @throws IllegalArgumentException if {@code rowType} is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Dataset
      * @see #query(Bson)
@@ -1559,7 +1559,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param count the maximum number of documents to return
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing the paginated results
-     * @throws IllegalArgumentException if any parameter is null or offset/count is negative (propagated through future)
+     * @throws IllegalArgumentException if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Dataset
      * @see #query(Bson, Class)
@@ -1585,7 +1585,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to match documents
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing projected results
-     * @throws IllegalArgumentException if any parameter is null (propagated through future)
+     * @throws IllegalArgumentException if {@code rowType} is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Dataset
      * @see com.mongodb.client.model.Projections
@@ -1613,7 +1613,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param count the maximum number of documents to return
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing paginated projected results
-     * @throws IllegalArgumentException if any parameter is null or offset/count is negative (propagated through future)
+     * @throws IllegalArgumentException if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Dataset
      */
@@ -1641,7 +1641,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param sort the sort specification
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing sorted projected results
-     * @throws IllegalArgumentException if any parameter is null (propagated through future)
+     * @throws IllegalArgumentException if {@code rowType} is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Dataset
      * @see com.mongodb.client.model.Sorts
@@ -1671,7 +1671,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param count the maximum number of documents to return
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing the complete query results
-     * @throws IllegalArgumentException if any parameter is null or offset/count is negative (propagated through future)
+     * @throws IllegalArgumentException if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Dataset
      */
@@ -1702,7 +1702,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param sort the sort specification
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing projected and sorted results
-     * @throws IllegalArgumentException if any parameter is null (propagated through future)
+     * @throws IllegalArgumentException if {@code rowType} is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Dataset
      * @see com.mongodb.client.model.Projections
@@ -1733,7 +1733,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param count the maximum number of documents to return
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing the complete query results
-     * @throws IllegalArgumentException if any parameter is null or offset/count is negative (propagated through future)
+     * @throws IllegalArgumentException if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Dataset
      * @see com.mongodb.client.model.Projections
@@ -1784,7 +1784,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to match documents
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Stream
-     * @throws IllegalArgumentException if any parameter is null (propagated through future)
+     * @throws IllegalArgumentException if {@code rowType} is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Stream
      */
@@ -1810,7 +1810,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param count the maximum number of documents to stream
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a paginated typed Stream
-     * @throws IllegalArgumentException if any parameter is null or offset/count is negative (propagated through future)
+     * @throws IllegalArgumentException if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Stream
      */
@@ -1835,7 +1835,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to match documents
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a projected typed Stream
-     * @throws IllegalArgumentException if any parameter is null (propagated through future)
+     * @throws IllegalArgumentException if {@code rowType} is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Stream
      */
@@ -1863,7 +1863,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param count the maximum number of documents to stream
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a paginated projected typed Stream
-     * @throws IllegalArgumentException if any parameter is null or offset/count is negative (propagated through future)
+     * @throws IllegalArgumentException if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Stream
      */
@@ -1891,7 +1891,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param sort the sort specification
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a sorted projected typed Stream
-     * @throws IllegalArgumentException if any parameter is null (propagated through future)
+     * @throws IllegalArgumentException if {@code rowType} is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Stream
      * @see com.mongodb.client.model.Sorts
@@ -1921,7 +1921,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param count the maximum number of documents to stream
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a fully configured typed Stream
-     * @throws IllegalArgumentException if any parameter is null or offset/count is negative (propagated through future)
+     * @throws IllegalArgumentException if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Stream
      */
@@ -1950,7 +1950,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param sort the sort specification
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a projected and sorted typed Stream
-     * @throws IllegalArgumentException if any parameter is null (propagated through future)
+     * @throws IllegalArgumentException if {@code rowType} is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Stream
      * @see com.mongodb.client.model.Projections
@@ -1984,7 +1984,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param count the maximum number of documents to stream
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a fully configured typed Stream
-     * @throws IllegalArgumentException if any parameter is null or offset/count is negative (propagated through future)
+     * @throws IllegalArgumentException if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Stream
      * @see com.mongodb.client.model.Projections
@@ -2258,7 +2258,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param objectId the string representation of the ObjectId to identify the document
      * @param update the update specification (can be update operators or replacement document)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
-     * @throws IllegalArgumentException if objectId format is invalid or update is null (propagated through future)
+     * @throws IllegalArgumentException if {@code objectId} is null, empty, or not a valid hex ObjectId, or {@code update} is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see UpdateResult
      * @see #updateOne(ObjectId, Object)
@@ -3511,7 +3511,6 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param fieldName the field name to group by
      * @return a ContinuableFuture that completes with a Stream of grouped Documents
-     * @throws IllegalArgumentException if fieldName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #groupBy(Collection)
      * @see #aggregate(List)
@@ -3574,7 +3573,6 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param fieldName the field name to group by and count
      * @return a ContinuableFuture that completes with a Stream of Documents containing group keys and counts
-     * @throws IllegalArgumentException if fieldName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #groupByAndCount(Collection)
      * @see #groupBy(String)

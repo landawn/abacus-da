@@ -328,7 +328,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      *                 .values(123, "historical data")
      *                 .usingTimestamp(specificTime)
      *                 .build().query();
-     * // Output: INSERT INTO events (id, data) VALUES (?, ?) USING TIMESTAMP 1234567890123000
+     * // Output: INSERT INTO events (id, data) VALUES (?, ?) USING TIMESTAMP <microseconds>
      * }</pre>
      *
      * @param timestamp the timestamp as a Date object
@@ -355,7 +355,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      *                 .where(Filters.eq("id", 123))
      *                 .usingTimestamp(specificTime)
      *                 .build().query();
-     * // Output: UPDATE users SET last_login = ? WHERE id = ? USING TIMESTAMP 1234567890123000
+     * // Output: UPDATE users SET last_login = ? WHERE id = ? USING TIMESTAMP <microseconds>
      * }</pre>
      *
      * @param timestamp the timestamp in milliseconds since Unix epoch
@@ -388,7 +388,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      *                 .values(123, "John", new Date())
      *                 .usingTimestamp(timestamp)
      *                 .build().query();
-     * // Output: INSERT INTO users (id, name, created_at) VALUES (?, ?, ?) USING TIMESTAMP 1234567890123000
+     * // Output: INSERT INTO users (id, name, created_at) VALUES (?, ?, ?) USING TIMESTAMP <microseconds>
      * }</pre>
      *
      * @param timestamp the timestamp as a string (should represent microseconds since Unix epoch)
@@ -7251,7 +7251,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = PAC.insert("name").into("users").build().query();
-         * // Output: INSERT INTO USERS (NAME) VALUES (?)
+         * // Output: INSERT INTO users (NAME) VALUES (?)
          * }</pre>
          * 
          * @param expr the column name or expression to insert
@@ -7275,7 +7275,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * String cql = PAC.insert("firstName", "lastName", "email")
          *                 .into("users")
          *                 .build().query();
-         * // Output: INSERT INTO USERS (FIRST_NAME, LAST_NAME, EMAIL) VALUES (?, ?, ?)
+         * // Output: INSERT INTO users (FIRST_NAME, LAST_NAME, EMAIL) VALUES (?, ?, ?)
          * }</pre>
          * 
          * @param propOrColumnNames the property or column names to include in the INSERT
@@ -7303,7 +7303,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <pre>{@code
          * List<String> columns = Arrays.asList("firstName", "lastName", "email");
          * String cql = PAC.insert(columns).into("users").build().query();
-         * // Output: INSERT INTO USERS (FIRST_NAME, LAST_NAME, EMAIL) VALUES (?, ?, ?)
+         * // Output: INSERT INTO users (FIRST_NAME, LAST_NAME, EMAIL) VALUES (?, ?, ?)
          * }</pre>
          * 
          * @param propOrColumnNames collection of property or column names to insert
@@ -7333,7 +7333,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * data.put("firstName", "John");
          * data.put("lastName", "Doe");
          * String cql = PAC.insert(data).into("users").build().query();
-         * // Output: INSERT INTO USERS (FIRST_NAME, LAST_NAME) VALUES (?, ?)
+         * // Output: INSERT INTO users (FIRST_NAME, LAST_NAME) VALUES (?, ?)
          * }</pre>
          * 
          * @param props map of property names to values
@@ -7362,7 +7362,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <pre>{@code
          * User user = new User("John", "Doe", "john@example.com");
          * String cql = PAC.insert(user).into("users").build().query();
-         * // Output: INSERT INTO USERS (FIRST_NAME, LAST_NAME, EMAIL) VALUES (?, ?, ?)
+         * // Output: INSERT INTO users (FIRST_NAME, LAST_NAME, EMAIL) VALUES (?, ?, ?)
          * }</pre>
          * 
          * @param entity the entity object to insert
@@ -7384,7 +7384,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * User user = new User("John", "Doe", "john@example.com");
          * Set<String> exclude = new HashSet<>(Arrays.asList("createdDate", "modifiedDate"));
          * String cql = PAC.insert(user, exclude).into("users").build().query();
-         * // Output: INSERT INTO USERS (FIRST_NAME, LAST_NAME, EMAIL) VALUES (?, ?, ?)
+         * // Output: INSERT INTO users (FIRST_NAME, LAST_NAME, EMAIL) VALUES (?, ?, ?)
          * }</pre>
          * 
          * @param entity the entity object to insert
@@ -7414,7 +7414,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = PAC.insert(User.class).into("users").build().query();
-         * // Output: INSERT INTO USERS (FIRST_NAME, LAST_NAME, EMAIL) VALUES (?, ?, ?)
+         * // Output: INSERT INTO users (FIRST_NAME, LAST_NAME, EMAIL) VALUES (?, ?, ?)
          * }</pre>
          * 
          * @param entityClass the entity class
@@ -7435,7 +7435,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <pre>{@code
          * Set<String> exclude = new HashSet<>(Arrays.asList("id", "version"));
          * String cql = PAC.insert(User.class, exclude).into("users").build().query();
-         * // Output: INSERT INTO USERS (FIRST_NAME, LAST_NAME, EMAIL) VALUES (?, ?, ?)
+         * // Output: INSERT INTO users (FIRST_NAME, LAST_NAME, EMAIL) VALUES (?, ?, ?)
          * }</pre>
          * 
          * @param entityClass the entity class
@@ -7549,7 +7549,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *                 .set("firstName", "lastName")
          *                 .where(Filters.eq("id", 1))
          *                 .build().query();
-         * // Output: UPDATE USERS SET FIRST_NAME = ?, LAST_NAME = ? WHERE ID = ?
+         * // Output: UPDATE users SET FIRST_NAME = ?, LAST_NAME = ? WHERE ID = ?
          * }</pre>
          * 
          * @param tableName the name of the table to update
@@ -7579,7 +7579,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *                 .set("firstName", "lastName")
          *                 .where(Filters.eq("id", 1))
          *                 .build().query();
-         * // Output: UPDATE USERS SET FIRST_NAME = ?, LAST_NAME = ? WHERE ID = ?
+         * // Output: UPDATE users SET FIRST_NAME = ?, LAST_NAME = ? WHERE ID = ?
          * }</pre>
          * 
          * @param tableName the name of the table to update
@@ -7816,7 +7816,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * String cql = PAC.deleteFrom("users")
          *                 .where(Filters.eq("id", 1))
          *                 .build().query();
-         * // Output: DELETE FROM USERS WHERE ID = ?
+         * // Output: DELETE FROM users WHERE ID = ?
          * }</pre>
          * 
          * @param tableName the name of the table to delete from
@@ -7845,7 +7845,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * String cql = PAC.deleteFrom("users", User.class)
          *                 .where(Filters.eq("email", "john@example.com"))
          *                 .build().query();
-         * // Output: DELETE FROM USERS WHERE EMAIL = ?
+         * // Output: DELETE FROM users WHERE EMAIL = ?
          * }</pre>
          * 
          * @param tableName the name of the table to delete from
@@ -7906,10 +7906,10 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = PAC.select("count(*)").from("users").build().query();
-         * // Output: SELECT count(*) FROM USERS
+         * // Output: SELECT count(*) FROM users
          *
          * String cql2 = PAC.select("max(age)").from("users").build().query();
-         * // Output: SELECT max(age) FROM USERS
+         * // Output: SELECT max(age) FROM users
          * }</pre>
          *
          * @param selectPart the select expression
@@ -7937,7 +7937,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * String cql = PAC.select("firstName", "lastName", "email")
          *                 .from("users")
          *                 .build().query();
-         * // Output: SELECT FIRST_NAME AS "firstName", LAST_NAME AS "lastName", EMAIL AS "email" FROM USERS
+         * // Output: SELECT FIRST_NAME AS "firstName", LAST_NAME AS "lastName", EMAIL AS "email" FROM users
          * }</pre>
          * 
          * @param propOrColumnNames the property or column names to select
@@ -7965,7 +7965,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <pre>{@code
          * List<String> columns = Arrays.asList("firstName", "lastName", "email");
          * String cql = PAC.select(columns).from("users").build().query();
-         * // Output: SELECT FIRST_NAME AS "firstName", LAST_NAME AS "lastName", EMAIL AS "email" FROM USERS
+         * // Output: SELECT FIRST_NAME AS "firstName", LAST_NAME AS "lastName", EMAIL AS "email" FROM users
          * }</pre>
          * 
          * @param propOrColumnNames collection of property or column names to select
@@ -7995,7 +7995,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * aliases.put("firstName", "fname");
          * aliases.put("lastName", "lname");
          * String cql = PAC.select(aliases).from("users").build().query();
-         * // Output: SELECT FIRST_NAME AS "fname", LAST_NAME AS "lname" FROM USERS
+         * // Output: SELECT FIRST_NAME AS "fname", LAST_NAME AS "lname" FROM users
          * }</pre>
          * 
          * @param propOrColumnNameAliases map of column names to their aliases
@@ -8022,7 +8022,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = PAC.select(User.class).from("users").build().query();
-         * // Output: SELECT ID AS "id", FIRST_NAME AS "firstName", LAST_NAME AS "lastName", EMAIL AS "email" FROM USERS
+         * // Output: SELECT ID AS "id", FIRST_NAME AS "firstName", LAST_NAME AS "lastName", EMAIL AS "email" FROM users
          * }</pre>
          * 
          * @param entityClass the entity class
@@ -12213,7 +12213,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *                     Filters.gt("age", 18)
          *                 ))
          *                 .build().query();
-         * // Output: SELECT count(*) FROM users WHERE first_name = :firstName AND age = :age
+         * // Output: SELECT count(*) FROM users WHERE first_name = :firstName AND age > :age
          * }</pre>
          * 
          * @param entityClass the entity class

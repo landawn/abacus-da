@@ -904,7 +904,7 @@ public class CosmosContainerExecutor {
      * }</pre>
      *
      * @param <T> the type of the items to read
-     * @param itemIdentityList list of item identities (id and partition key pairs, must not be null or empty)
+     * @param itemIdentityList list of item identities (id and partition key pairs, must not be null)
      * @param classType the class type for deserializing the response items (must not be null)
      * @return a FeedResponse containing all found items (items not found will be omitted)
      * @throws CosmosException if the operation fails
@@ -949,7 +949,7 @@ public class CosmosContainerExecutor {
      * }</pre>
      *
      * @param <T> the type of the items to read
-     * @param itemIdentityList list of item identities (id and partition key pairs, must not be null or empty)
+     * @param itemIdentityList list of item identities (id and partition key pairs, must not be null)
      * @param sessionToken the session token for consistency (can be null for default consistency)
      * @param classType the class type for deserializing the response items (must not be null)
      * @return a FeedResponse containing all found items
@@ -1265,11 +1265,12 @@ public class CosmosContainerExecutor {
      * }</pre>
      *
      * @param <T> the type of the items in the query result
-     * @param querySpec the SQL query specification with parameters
-     * @param classType the class type for deserializing the query results
+     * @param querySpec the SQL query specification with parameters (must not be null)
+     * @param classType the class type for deserializing the query results (must not be null)
      * @return a CosmosPagedIterable for iterating through query results
      * @throws CosmosException if the query fails or contains syntax errors
-     * 
+     * @throws IllegalArgumentException if the underlying Cosmos client rejects querySpec or classType (e.g. when null)
+     *
      * @see SqlQuerySpec for parameterized query construction
      * @see com.azure.cosmos.models.SqlParameter for parameter specification
      */
@@ -1285,11 +1286,12 @@ public class CosmosContainerExecutor {
      * or consistency level.</p>
      *
      * @param <T> the type of the items in the query result
-     * @param querySpec the SQL query specification with bound parameters
+     * @param querySpec the SQL query specification with bound parameters (must not be null)
      * @param options query options controlling execution behavior (can be null for defaults)
-     * @param classType the class type for deserializing the query results
+     * @param classType the class type for deserializing the query results (must not be null)
      * @return a CosmosPagedIterable for iterating through query results
      * @throws CosmosException if the query fails or contains syntax errors
+     * @throws IllegalArgumentException if the underlying Cosmos client rejects querySpec or classType (e.g. when null)
      * @see SqlQuerySpec
      * @see CosmosQueryRequestOptions
      */

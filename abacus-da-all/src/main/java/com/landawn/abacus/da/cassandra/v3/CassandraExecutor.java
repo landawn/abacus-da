@@ -482,7 +482,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * Returns an asynchronous facade backed by this executor.
      *
      * <p>The returned {@link AsyncCassandraExecutor} exposes the same Cassandra operations
-     * but submits them to an internal executor service and returns
+     * but executes statements through the driver's {@code executeAsync} API and returns
      * {@link com.landawn.abacus.util.ContinuableFuture} results, allowing non-blocking
      * composition of multiple Cassandra calls.</p>
      *
@@ -1378,7 +1378,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param query the CQL query to execute
      * @return the ResultSet containing query results
      * @throws NullPointerException if query is null
-     * @throws com.datastax.driver.core.exceptions.NoHostAvailableException if no Cassandra nodes are available
+     * @throws com.datastax.driver.core.exceptions.NoHostAvailableException if all contact points are unreachable
      */
     @Override
     public ResultSet execute(final String query) {
@@ -2079,6 +2079,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param targetClass the per-row target type (see {@link #toList(ResultSet, Class)} for supported kinds)
      * @param rs the ResultSet to convert
      * @return a list of converted rows
+     * @throws IllegalArgumentException if {@code targetClass} is a single-value type but
+     *         the result set has more than one column
      */
     @Override
     protected <T> List<T> toList(final Class<T> targetClass, final ResultSet rs) {

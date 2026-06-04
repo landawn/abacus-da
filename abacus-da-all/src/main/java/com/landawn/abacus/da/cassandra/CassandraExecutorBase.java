@@ -690,7 +690,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param entity the entity to insert
      * @return the result set from the INSERT operation
-     * @throws IllegalArgumentException if entity is null
+     * @throws NullPointerException if entity is null
      */
     public RS insert(final Object entity) {
         final SP cp = prepareInsert(entity);
@@ -795,7 +795,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param entity the entity to update
      * @return the result set from the UPDATE operation
-     * @throws IllegalArgumentException if entity is null
+     * @throws NullPointerException if entity is null
      */
     public RS update(final Object entity) {
         final Class<?> entityClass = entity.getClass();
@@ -1018,7 +1018,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param entity the entity to delete (must have primary key values set)
      * @return the result set from the DELETE operation
-     * @throws IllegalArgumentException if entity is null
+     * @throws NullPointerException if entity is null
      */
     public RS delete(final Object entity) {
         return delete(entity, null);
@@ -1043,7 +1043,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param entity the entity identifying the row to delete from
      * @param propNamesToDelete the property names to delete (null for entire row)
      * @return the result set from the DELETE operation
-     * @throws IllegalArgumentException if entity is null or propNamesToDelete is empty (but not null)
+     * @throws IllegalArgumentException if propNamesToDelete is empty (but not null)
+     * @throws NullPointerException if entity is null
      */
     public RS delete(final Object entity, final Collection<String> propNamesToDelete) {
         N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be null or empty");

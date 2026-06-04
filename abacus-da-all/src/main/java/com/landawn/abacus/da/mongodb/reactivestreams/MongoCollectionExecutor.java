@@ -266,6 +266,7 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to match documents against; must not be null
      * @return a {@code Mono} that, on subscription, emits a single {@code Boolean} ({@code true} when
      *         at least one document matches the filter, {@code false} otherwise), then completes
+     * @throws IllegalArgumentException if {@code filter} is null (signalled via {@code Mono})
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see Bson
      * @see com.mongodb.client.model.Filters
@@ -321,6 +322,7 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to match documents against; must not be null
      * @return a {@code Mono} that, on subscription, emits a single {@code Long} count of documents
      *         matching the filter, then completes
+     * @throws IllegalArgumentException if {@code filter} is null (signalled via {@code Mono})
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see Bson
      * @see com.mongodb.client.model.Filters
@@ -349,6 +351,7 @@ public final class MongoCollectionExecutor {
      * @param options the count options to apply (may be null to use driver defaults)
      * @return a {@code Mono} that, on subscription, emits a single {@code Long} count of documents
      *         matching the filter with the applied options, then completes
+     * @throws IllegalArgumentException if {@code filter} is null (signalled via {@code Mono})
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see Bson
      * @see CountOptions
@@ -554,6 +557,7 @@ public final class MongoCollectionExecutor {
      * @param <T> the type to convert the projected document to
      * @param objectId the ObjectId as a string to search for
      * @param selectPropNames the collection of field names to include in the projection
+     *                        (null/empty selects all fields)
      * @param rowType the Class representing the target type for conversion
      * @return a Mono that emits the converted projected object, or empty if no document matches the ObjectId
      * @throws IllegalArgumentException if objectId is null/empty, selectPropNames is null, rowType is null, or objectId is not a valid ObjectId hex string
@@ -585,6 +589,7 @@ public final class MongoCollectionExecutor {
      * @param <T> the type to convert the projected document to
      * @param objectId the ObjectId to search for
      * @param selectPropNames the collection of field names to include in the projection
+     *                        (null/empty selects all fields)
      * @param rowType the Class representing the target type for conversion
      * @return a Mono that emits the converted projected object, or empty if no document matches the ObjectId
      * @throws IllegalArgumentException if objectId, selectPropNames, or rowType is null

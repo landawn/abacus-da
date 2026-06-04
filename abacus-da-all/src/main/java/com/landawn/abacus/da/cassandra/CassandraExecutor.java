@@ -1239,7 +1239,6 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @return the raw ResultSet from Cassandra
      * @throws IllegalArgumentException if query is null or empty
      * @throws com.datastax.oss.driver.api.core.AllNodesFailedException if all contact points are unreachable
-     * @throws com.datastax.oss.driver.api.core.servererrors.QueryValidationException if the query is invalid
      */
     @Override
     public ResultSet execute(final String query) {
@@ -2045,10 +2044,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * Parses the given string value into a Java object of type T.
          *
          * <p>This method converts a JSON string representation of the object into an instance of type T.
-         * If the string is empty or equals to {@link #NULL_STR}, it returns null.</p>
+         * If the string is empty or equals to {@link CassandraExecutorBase#NULL_STR}, it returns null.</p>
          *
          * @param value the JSON string to parse
-         * @return an instance of type T, or null if the input is empty or equals to {@link #NULL_STR}
+         * @return an instance of type T, or null if the input is empty or equals to {@link CassandraExecutorBase#NULL_STR}
          */
         @Override
         public T parse(final String value) {
@@ -2059,10 +2058,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * Formats the given value into a JSON string representation.
          *
          * <p>This method converts the object of type T into its JSON string representation.
-         * If the value is null, it returns {@link #NULL_STR}.</p>
+         * If the value is null, it returns {@link CassandraExecutorBase#NULL_STR}.</p>
          *
          * @param value the value to format
-         * @return a JSON string representation of the value, or {@link #NULL_STR} if the value is null
+         * @return a JSON string representation of the value, or {@link CassandraExecutorBase#NULL_STR} if the value is null
          */
         @Override
         public String format(final T value) {
@@ -2191,10 +2190,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * Parses the given string value into a Java object of type T.
          *
          * <p>This method converts a JSON string representation of the object into an instance of type T.
-         * If the string is empty or equals to {@link #NULL_STR}, it returns null.</p>
+         * If the string is empty or equals to {@link CassandraExecutorBase#NULL_STR}, it returns null.</p>
          *
          * @param value the JSON string to parse
-         * @return an instance of type T, or null if the input is empty or equals to {@link #NULL_STR}
+         * @return an instance of type T, or null if the input is empty or equals to {@link CassandraExecutorBase#NULL_STR}
          */
         @Override
         public T parse(final String value) {
@@ -2205,10 +2204,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * Formats the given value into a JSON string representation.
          *
          * <p>This method converts the object of type T into its JSON string representation.
-         * If the value is null, it returns {@link #NULL_STR}.</p>
+         * If the value is null, it returns {@link CassandraExecutorBase#NULL_STR}.</p>
          *
          * @param value the value to format
-         * @return a JSON string representation of the value, or {@link #NULL_STR} if the value is null
+         * @return a JSON string representation of the value, or {@link CassandraExecutorBase#NULL_STR} if the value is null
          */
         @Override
         public String format(final T value) {

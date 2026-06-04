@@ -109,7 +109,7 @@ import com.landawn.abacus.util.stream.Stream;
  * public static class Account {
  *     @Id
  *     private String id;            // HBase: "id:"          (columnFamily=id,  qualifier="")
- *     private String gui;           // HBase: "gui:"         (columnFamily=gui, qualifier="")
+ *     private String guid;          // HBase: "guid:"        (columnFamily=guid, qualifier="")
  *     private Name name;            // HBase: "name:firstName" and "name:lastName"
  *     private String emailAddress;  // HBase: "emailAddress:"
  * }
@@ -131,7 +131,7 @@ import com.landawn.abacus.util.stream.Stream;
  *     @Id
  *     private String id;            // HBase: "cf:id"
  *     @Column("guid")
- *     private String gui;           // HBase: "cf:guid"
+ *     private String guid;          // HBase: "cf:guid"
  *     @ColumnFamily("name")
  *     private Name name;            // HBase: "name:givenName" and "name:lastName"
  * }
@@ -2875,7 +2875,8 @@ public final class HBaseExecutor implements AutoCloseable {
          * Retrieves an entity using an AnyGet operation.
          *
          * @param anyGet the AnyGet operation specifying what to retrieve
-         * @return the entity object, or null if not found
+         * @return the entity object, or the type's default value (typically {@code null} for bean classes)
+         *         when no row matches
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @see AnyGet
          */
@@ -2886,8 +2887,12 @@ public final class HBaseExecutor implements AutoCloseable {
         /**
          * Retrieves multiple entities using AnyGet operations.
          *
+         * <p>AnyGet operations whose rows do not exist in the table are skipped — the returned list
+         * may contain fewer elements than {@code anyGets} and the order does not
+         * necessarily correspond positionally to the input list.</p>
+         *
          * @param anyGets the list of AnyGet operations to execute
-         * @return a list of entity objects
+         * @return a list of entity objects for the operations whose rows were found
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @see AnyGet
          */
@@ -3053,12 +3058,12 @@ public final class HBaseExecutor implements AutoCloseable {
         /**
          * Atomically increments a single column value with specified durability.
          *
-         * @param rowKey the row key
-         * @param family the column family name
-         * @param qualifier the column qualifier name
-         * @param amount the amount to increment
+         * @param rowKey the row key (converted via {@link HBaseExecutor#toRowKeyBytes(Object)})
+         * @param family the column family name (converted via {@link HBaseExecutor#toFamilyQualifierBytes(String)})
+         * @param qualifier the column qualifier name (converted via {@link HBaseExecutor#toFamilyQualifierBytes(String)})
+         * @param amount the amount to add (negative values decrement)
          * @param durability the durability level for this operation
-         * @return the new value after the increment
+         * @return the value of the column after the increment
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @see Durability
          */
@@ -3070,11 +3075,11 @@ public final class HBaseExecutor implements AutoCloseable {
         /**
          * Atomically increments a single column value using byte arrays.
          *
-         * @param rowKey the row key
-         * @param family the column family as a byte array
-         * @param qualifier the column qualifier as a byte array
-         * @param amount the amount to increment
-         * @return the new value after the increment
+         * @param rowKey the row key (converted via {@link HBaseExecutor#toRowKeyBytes(Object)})
+         * @param family the column family bytes (used as-is)
+         * @param qualifier the column qualifier bytes (used as-is)
+         * @param amount the amount to add (negative values decrement)
+         * @return the value of the column after the increment
          * @throws UncheckedIOException if an I/O error occurs during the operation
          */
         public long incrementColumnValue(final Object rowKey, final byte[] family, final byte[] qualifier, final long amount) throws UncheckedIOException {
@@ -3084,12 +3089,12 @@ public final class HBaseExecutor implements AutoCloseable {
         /**
          * Atomically increments a single column value using byte arrays with specified durability.
          *
-         * @param rowKey the row key
-         * @param family the column family as a byte array
-         * @param qualifier the column qualifier as a byte array
-         * @param amount the amount to increment
+         * @param rowKey the row key (converted via {@link HBaseExecutor#toRowKeyBytes(Object)})
+         * @param family the column family bytes (used as-is)
+         * @param qualifier the column qualifier bytes (used as-is)
+         * @param amount the amount to add (negative values decrement)
          * @param durability the durability level for this operation
-         * @return the new value after the increment
+         * @return the value of the column after the increment
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @see Durability
          */

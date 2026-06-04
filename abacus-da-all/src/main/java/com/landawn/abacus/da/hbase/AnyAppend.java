@@ -446,7 +446,6 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @return {@code true} if results will be returned, {@code false} otherwise
      * @see #setReturnResults(boolean)
      */
-    // This method exposes the wrapped HBase Append's isReturnResults() through the AnyAppend API.
     public boolean isReturnResults() {
         return append.isReturnResults();
     }
@@ -485,10 +484,13 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      *                             .addColumn(familyBytes, qualifierBytes, valueBytes);
      * }</pre>
      *
-     * @param family the column-family name as a byte array
-     * @param qualifier the column-qualifier name as a byte array
-     * @param value the byte array to append to the existing cell value
+     * @param family the column-family name as a byte array; must not be null or empty
+     * @param qualifier the column-qualifier name as a byte array; may be {@code null} to denote an
+     *                  empty qualifier
+     * @param value the byte array to append to the existing cell value; may be {@code null}
      * @return this AnyAppend instance, to allow fluent method chaining
+     * @throws IllegalArgumentException if {@code family} is null or empty (validated by the
+     *         underlying {@link Append})
      * @see #addColumn(String, String, Object)
      */
     public AnyAppend addColumn(final byte[] family, final byte[] qualifier, final byte[] value) {

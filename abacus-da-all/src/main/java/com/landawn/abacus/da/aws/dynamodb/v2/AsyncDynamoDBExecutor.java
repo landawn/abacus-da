@@ -256,6 +256,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * @param targetEntityClass the entity class to create a mapper for. Must be annotated with one of
      *                          the supported {@code @Table} annotations. Must not be null.
      * @return a cached async {@link Mapper} instance for the specified entity class, never null
+     * @throws NullPointerException if {@code targetEntityClass} is null
      * @throws IllegalArgumentException if {@code targetEntityClass} is not a bean class, is missing
      *                                  the {@code @Table} annotation, or does not have exactly one
      *                                  {@code @Id} field
@@ -404,9 +405,10 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * @param tableName the name of the table to get the item from. Must not be null or empty.
      * @param key the primary key of the item to retrieve. Must include all key attributes. Must not be null.
      * @param consistentRead whether to perform a consistent read (true) or eventually consistent read (false/null)
-     * @return a CompletableFuture containing the item as a Map of attribute names to values,
-     *         or null if not found
-     * @throws IllegalArgumentException if tableName is null/empty or key is null
+     * @return a {@code CompletableFuture} that completes with the item as a {@code Map<String, Object>}
+     *         (or {@code null}/empty map when the item does not exist), or completes exceptionally with
+     *         a {@link java.util.concurrent.CompletionException} wrapping the underlying
+     *         {@link software.amazon.awssdk.services.dynamodb.model.DynamoDbException}
      */
     public CompletableFuture<Map<String, Object>> getItem(final String tableName, final Map<String, AttributeValue> key, final Boolean consistentRead) {
         return getItem(tableName, key, consistentRead, Clazz.PROPS_MAP);
@@ -537,8 +539,10 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * @param key the primary key of the item to retrieve. Must not be null or empty.
      * @param consistentRead true for strongly consistent reads, false/null for eventually consistent reads
      * @param targetClass the class to convert the result to. Must not be null.
-     * @return a CompletableFuture that completes with the converted item, or null if item doesn't exist
-     * @throws IllegalArgumentException if any parameter is null, tableName is empty, or targetClass is unsupported
+     * @return a {@code CompletableFuture} that completes with the converted item, or {@code null}
+     *         when the item does not exist; completes exceptionally with a
+     *         {@link java.util.concurrent.CompletionException} wrapping the underlying SDK exception
+     *         on failure
      * @see DynamoDbAsyncClient#getItem(GetItemRequest)
      * @see <a href="https://docs.aws.amazon.com/amazondynamodb/latest/APIReference/API_GetItem.html">GetItem API Reference</a>
      */
@@ -654,7 +658,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * @return a CompletableFuture containing a map of table names to lists of retrieved items,
      *         where each item is represented as a Map of attribute names to values
      * @throws IllegalArgumentException if requestItems is null or exceeds batch limits
-     * @see #batchGetItem(Map, String) to include consumed capacity information
+     * @see #batchGetItem(Map, String)
      */
     public CompletableFuture<Map<String, List<Map<String, Object>>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems) {
         return batchGetItem(requestItems, Clazz.PROPS_MAP);
@@ -942,7 +946,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *            Must include all required attributes. Must not be null.
      * @return a CompletableFuture containing the PutItemResponse with operation metadata
      * @throws IllegalArgumentException if tableName or item is null
-     * @see #putItem(String, Map, String) to retrieve old item values
+     * @see #putItem(String, Map, String)
      * @see PutItemResponse
      */
     public CompletableFuture<PutItemResponse> putItem(final String tableName, final Map<String, AttributeValue> item) {
@@ -1543,8 +1547,8 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * @param queryRequest the QueryRequest with all parameters configured. Must not be null.
      * @return a CompletableFuture containing a list of all matching items as Maps
      * @throws IllegalArgumentException if queryRequest is null
-     * @see #list(QueryRequest, Class) for type-safe results
-     * @see #stream(QueryRequest) for memory-efficient processing
+     * @see #list(QueryRequest, Class)
+     * @see #stream(QueryRequest)
      */
     public CompletableFuture<List<Map<String, Object>>> list(final QueryRequest queryRequest) {
         return list(queryRequest, Clazz.PROPS_MAP);
@@ -1659,7 +1663,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * @param queryRequest the QueryRequest with query parameters. Must not be null.
      * @return a CompletableFuture containing a Dataset with all query results
      * @throws IllegalArgumentException if queryRequest is null
-     * @see #query(QueryRequest, Class) for typed Dataset results
+     * @see #query(QueryRequest, Class)
      */
     public CompletableFuture<Dataset> query(final QueryRequest queryRequest) {
         return query(queryRequest, Map.class);
@@ -1781,8 +1785,8 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * @param queryRequest the QueryRequest with all parameters configured. Must not be null.
      * @return a CompletableFuture containing a Stream of matching items as Maps
      * @throws IllegalArgumentException if queryRequest is null
-     * @see #stream(QueryRequest, Class) for type-safe streaming
-     * @see #list(QueryRequest) for loading all results into memory
+     * @see #stream(QueryRequest, Class)
+     * @see #list(QueryRequest)
      */
     public CompletableFuture<Stream<Map<String, Object>>> stream(final QueryRequest queryRequest) {
         return stream(queryRequest, Clazz.PROPS_MAP);
@@ -2044,7 +2048,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * @param scanRequest the complete ScanRequest with all parameters. Must not be null.
      * @return a CompletableFuture containing a Stream of items as Maps
      * @throws IllegalArgumentException if scanRequest is null
-     * @see #scan(ScanRequest, Class) for type-safe results
+     * @see #scan(ScanRequest, Class)
      */
     public CompletableFuture<Stream<Map<String, Object>>> scan(final ScanRequest scanRequest) {
         return scan(scanRequest, Clazz.PROPS_MAP);
@@ -2334,6 +2338,8 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *
      * @param <T> the type of entity this mapper handles. Must be a valid bean class with getter/setter methods
      *            and exactly one field annotated with {@code @Id}.
+     * @author haiyangli
+     * @since 1.0
      */
     public static class Mapper<T> {
         private final AsyncDynamoDBExecutor dynamoDBExecutor;

@@ -423,7 +423,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @param maxStamp maximum timestamp value, exclusive
      * @return this AnyIncrement instance, to allow fluent method chaining
      * @throws IllegalArgumentException if {@code minStamp} or {@code maxStamp} is negative or if
-     *         {@code minStamp >= maxStamp} (wraps the underlying {@link IOException})
+     *         {@code maxStamp < minStamp} (wraps the underlying {@link IOException})
      * @see #getTimeRange()
      * @see TimeRange
      */

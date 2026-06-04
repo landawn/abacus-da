@@ -830,8 +830,8 @@ public final class MongoCollectionExecutor {
      * Finds the first document matching the filter with field projection, sorting, and type conversion.
      *
      * <p>This method provides comprehensive document finding with field projection, sorting, and automatic
-     * type conversion. The result is sorted according to the specified criteria, then the first document
-     * is retrieved with only the specified fields and converted to the target type.</p>
+     * type conversion. The sort parameter determines which document is considered "first" when multiple
+     * documents match the filter; only the specified fields are retrieved and the document is converted to the target type.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

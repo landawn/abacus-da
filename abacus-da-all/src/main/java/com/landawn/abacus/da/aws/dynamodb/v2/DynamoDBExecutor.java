@@ -1654,7 +1654,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @return a Dataset containing the items from this single response page, never {@code null};
      *         empty when the response carries no items
      * @throws NullPointerException if {@code queryResult} is {@code null}
-     * @see #extractData(QueryResponse, int, int) for offset/count slicing on the same single page
+     * @see #extractData(QueryResponse, int, int)
      */
     public static Dataset extractData(final QueryResponse queryResult) {
         return extractData(queryResult, 0, Integer.MAX_VALUE);
@@ -1688,7 +1688,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @return a Dataset containing the items from this single response page, never {@code null};
      *         empty when the response carries no items
      * @throws NullPointerException if {@code scanResult} is {@code null}
-     * @see #extractData(ScanResponse, int, int) for offset/count slicing on the same single page
+     * @see #extractData(ScanResponse, int, int)
      */
     public static Dataset extractData(final ScanResponse scanResult) {
         return extractData(scanResult, 0, Integer.MAX_VALUE);
@@ -1798,12 +1798,12 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * }
      * }</pre>
      *
-     * @param tableName the name of the DynamoDB table to retrieve the item from. Must not be null.
+     * @param tableName the name of the DynamoDB table to retrieve the item from. Must not be null or empty.
      * @param key the primary key of the item to retrieve, must include all key attributes. Must not be null.
      * @return the item as a Map of attribute names to values, or null if the item doesn't exist
      * @throws IllegalArgumentException if tableName or key is null
-     * @see #getItem(String, Map, Boolean) for consistent read operations
-     * @see #getItem(String, Map, Class) for type-safe retrieval
+     * @see #getItem(String, Map, Boolean)
+     * @see #getItem(String, Map, Class)
      */
     public Map<String, Object> getItem(final String tableName, final Map<String, AttributeValue> key) {
         if (logger.isDebugEnabled()) {
@@ -1852,13 +1852,13 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * }
      * }</pre>
      *
-     * @param tableName the name of the DynamoDB table to retrieve from. Must not be null.
+     * @param tableName the name of the DynamoDB table to retrieve from. Must not be null or empty.
      * @param key the primary key of the item to retrieve, must include all key attributes. Must not be null.
      * @param consistentRead true for strongly consistent reads, false/null for eventually consistent reads
      * @return the item as a Map of attribute names to values, or null if the item doesn't exist
      * @throws IllegalArgumentException if tableName or key is null
-     * @see #getItem(String, Map) for eventually consistent reads
-     * @see #getItem(String, Map, Boolean, Class) for type-safe retrieval
+     * @see #getItem(String, Map)
+     * @see #getItem(String, Map, Boolean, Class)
      */
     public Map<String, Object> getItem(final String tableName, final Map<String, AttributeValue> key, final Boolean consistentRead) {
         return getItem(tableName, key, consistentRead, Clazz.PROPS_MAP);
@@ -1909,7 +1909,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * performance and improved resource management for better efficiency.</p>
      *
      * @param <T> the type of the entity to convert to
-     * @param tableName the name of the DynamoDB table to retrieve from. Must not be null.
+     * @param tableName the name of the DynamoDB table to retrieve from. Must not be null or empty.
      * @param key the primary key of the item to retrieve, must include all key attributes. Must not be null.
      * @param targetClass the class of the entity to convert to. Must not be null.
      * @return an instance of the target class representing the item, or null if the item doesn't exist
@@ -1943,7 +1943,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * }</pre>
      *
      * @param <T> the type of the entity to convert to
-     * @param tableName the name of the DynamoDB table to retrieve from. Must not be null.
+     * @param tableName the name of the DynamoDB table to retrieve from. Must not be null or empty.
      * @param key the primary key of the item to retrieve, must include all key attributes. Must not be null.
      * @param consistentRead true for strongly consistent reads, false/null for eventually consistent reads
      * @param targetClass the class of the entity to convert to. Must not be null.
@@ -1958,7 +1958,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
     /**
      * Retrieves an item using a GetItemRequest and converts it to the specified type.
-     * This method combines the flexibility of a complete request with automatic type conversion.
+     *
+     * <p>This method combines the flexibility of a complete request with automatic type conversion.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2050,7 +2051,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *         as a Map of attribute names to values
      * @throws IllegalArgumentException if requestItems is null or exceeds batch limits
      * @see KeysAndAttributes
-     * @see #batchGetItem(Map, String) for capacity monitoring
+     * @see #batchGetItem(Map, String)
      */
     public Map<String, List<Map<String, Object>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems) {
         return batchGetItem(requestItems, Clazz.PROPS_MAP);
@@ -2237,8 +2238,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param item the item to put, as a map of attribute names to AttributeValues. Must not be null.
      * @return a {@link PutItemResponse} containing operation metadata and consumed capacity
      * @throws IllegalArgumentException if tableName is null/empty or item is null
-     * @see #putItem(String, Map, String) to retrieve the replaced item
-     * @see #updateItem for partial updates
+     * @see #putItem(String, Map, String)
+     * @see #updateItem
      */
     public PutItemResponse putItem(final String tableName, final Map<String, AttributeValue> item) {
         if (logger.isDebugEnabled()) {
@@ -2426,7 +2427,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param requestItems map of table names to lists of write requests (puts/deletes). Must not be null.
      * @return a {@link BatchWriteItemResponse} containing unprocessed items and consumed capacity
      * @throws IllegalArgumentException if requestItems is null or exceeds batch limits
-     * @see #batchWriteItem(BatchWriteItemRequest) for more control
+     * @see #batchWriteItem(BatchWriteItemRequest)
      */
     public BatchWriteItemResponse batchWriteItem(final Map<String, List<WriteRequest>> requestItems) {
         final BatchWriteItemRequest batchWriteItemRequest = BatchWriteItemRequest.builder().requestItems(requestItems).build();
@@ -2497,7 +2498,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param attributeUpdates map of attribute names to update actions. Must not be null.
      * @return an {@link UpdateItemResponse} containing operation metadata
      * @throws IllegalArgumentException if any parameter is null or tableName is empty
-     * @see #updateItem(String, Map, Map, String) to retrieve updated values
+     * @see #updateItem(String, Map, Map, String)
      */
     public UpdateItemResponse updateItem(final String tableName, final Map<String, AttributeValue> key,
             final Map<String, AttributeValueUpdate> attributeUpdates) {
@@ -2624,7 +2625,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param key the primary key of the item to delete. Must not be null.
      * @return a {@link DeleteItemResponse} containing operation metadata
      * @throws IllegalArgumentException if tableName is null/empty or key is null
-     * @see #deleteItem(String, Map, String) to retrieve the deleted item
+     * @see #deleteItem(String, Map, String)
      */
     public DeleteItemResponse deleteItem(final String tableName, final Map<String, AttributeValue> key) {
         if (logger.isDebugEnabled()) {
@@ -3365,7 +3366,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * userMapper.batchPutItem(users);
      * }</pre>
      *
-     * @param <T> the type of the entity class this mapper handles
+     * @param <T> the type of entity this mapper handles. Must be a valid bean class with getter/setter methods
+     *            and exactly one field annotated with {@code @Id}.
      * @author haiyangli
      * @since 1.0
      */
@@ -3436,6 +3438,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * 
          * @param entity an entity instance with populated key fields
          * @return the retrieved entity with all attributes populated, or null if not found
+         * @throws NullPointerException if {@code entity} is null
          */
         public T getItem(final T entity) {
             return dynamoDBExecutor.getItem(tableName, createKey(entity), targetEntityClass);
@@ -3458,6 +3461,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @param entity an entity instance with populated key fields
          * @param consistentRead true for strongly consistent read, {@code false} for eventually consistent, null to use default
          * @return the retrieved entity with all attributes populated, or null if not found
+         * @throws NullPointerException if {@code entity} is null
          */
         public T getItem(final T entity, final Boolean consistentRead) {
             return dynamoDBExecutor.getItem(tableName, createKey(entity), consistentRead, targetEntityClass);
@@ -3527,6 +3531,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * 
          * @param entities collection of entities with populated key fields
          * @return list of retrieved entities; may be smaller than input if some items don't exist
+         * @throws NullPointerException if {@code entities} (or any element in it) is null
          */
         public List<T> batchGetItem(final Collection<? extends T> entities) {
             final Map<String, List<T>> map = dynamoDBExecutor.batchGetItem(createKeys(entities), targetEntityClass);
@@ -3554,6 +3559,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @param entities collection of entities with populated key fields
          * @param returnConsumedCapacity specify "INDEXES", "TOTAL", or "NONE" for capacity details
          * @return list of retrieved entities; may be smaller than input if some items don't exist
+         * @throws NullPointerException if {@code entities} (or any element in it) is null
          */
         public List<T> batchGetItem(final Collection<? extends T> entities, final String returnConsumedCapacity) {
             final Map<String, List<T>> map = dynamoDBExecutor.batchGetItem(createKeys(entities), returnConsumedCapacity, targetEntityClass);
@@ -3610,6 +3616,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * 
          * @param entity the entity to save; all non-null fields will be written
          * @return the response from DynamoDB containing metadata about the operation
+         * @throws NullPointerException if {@code entity} is null
          */
         public PutItemResponse putItem(final T entity) {
             return dynamoDBExecutor.putItem(tableName, DynamoDBExecutor.toItem(entity, namingPolicy));
@@ -3631,6 +3638,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @param entity the entity to save
          * @param returnValues specify "ALL_OLD", "NONE", etc. for what to return
          * @return the response from DynamoDB, potentially containing old item attributes
+         * @throws NullPointerException if {@code entity} is null
          */
         public PutItemResponse putItem(final T entity, final String returnValues) {
             return dynamoDBExecutor.putItem(tableName, DynamoDBExecutor.toItem(entity, namingPolicy), returnValues);
@@ -3682,6 +3690,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * 
          * @param entities collection of entities to save
          * @return the response containing information about unprocessed items if any
+         * @throws NullPointerException if {@code entities} (or any element in it) is null
          */
         public BatchWriteItemResponse batchPutItem(final Collection<? extends T> entities) {
             return dynamoDBExecutor.batchWriteItem(createBatchPutRequest(entities));
@@ -3705,6 +3714,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * 
          * @param entity the entity containing updates; key fields must be populated
          * @return the response from DynamoDB containing metadata about the operation
+         * @throws NullPointerException if {@code entity} is null
          */
         public UpdateItemResponse updateItem(final T entity) {
             return dynamoDBExecutor.updateItem(tableName, createKey(entity), DynamoDBExecutor.toUpdateItem(entity, namingPolicy));
@@ -3728,6 +3738,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @param entity the entity containing updates
          * @param returnValues specify "ALL_NEW", "ALL_OLD", "UPDATED_NEW", "UPDATED_OLD", or "NONE"
          * @return the response from DynamoDB, potentially containing item attributes
+         * @throws NullPointerException if {@code entity} is null
          */
         public UpdateItemResponse updateItem(final T entity, final String returnValues) {
             return dynamoDBExecutor.updateItem(tableName, createKey(entity), DynamoDBExecutor.toUpdateItem(entity, namingPolicy), returnValues);
@@ -3774,6 +3785,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * 
          * @param entity an entity instance with populated key fields
          * @return the response from DynamoDB containing metadata about the operation
+         * @throws NullPointerException if {@code entity} is null
          */
         public DeleteItemResponse deleteItem(final T entity) {
             return dynamoDBExecutor.deleteItem(tableName, createKey(entity));
@@ -3796,6 +3808,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @param entity an entity instance with populated key fields
          * @param returnValues specify "ALL_OLD" or "NONE" for what to return
          * @return the response from DynamoDB, potentially containing the deleted item's attributes
+         * @throws NullPointerException if {@code entity} is null
          */
         public DeleteItemResponse deleteItem(final T entity, final String returnValues) {
             return dynamoDBExecutor.deleteItem(tableName, createKey(entity), returnValues);
@@ -3866,6 +3879,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * 
          * @param entities collection of entities with populated key fields to delete
          * @return the response containing information about unprocessed items if any
+         * @throws NullPointerException if {@code entities} (or any element in it) is null
          */
         public BatchWriteItemResponse batchDeleteItem(final Collection<? extends T> entities) {
             return dynamoDBExecutor.batchWriteItem(createBatchDeleteRequest(entities));

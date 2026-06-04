@@ -669,8 +669,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
     }
 
     /**
-     * Asynchronously executes the supplied CQL query and returns the result as a {@link Dataset}
-     * with columns inferred from the result set metadata.
+     * Asynchronously executes the supplied CQL query and returns the result as a {@link Dataset}.
+     *
+     * <p>Each row is converted to a {@code Map<String, Object>} entry.</p>
      *
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind

@@ -1135,8 +1135,9 @@ public class BigQueryExecutor {
      * @param targetClass the class representing the target table (used for table name and key resolution)
      * @param ids the primary key values to identify records for deletion
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if targetClass is null, ids is null or empty,
+     * @throws IllegalArgumentException if ids is null or empty,
      *                                  or the number of IDs doesn't match the primary key structure
+     * @throws NullPointerException if targetClass is null
      * @see #delete(Class, Condition)
      */
     public final TableResult delete(final Class<?> targetClass, final Object... ids) {
@@ -1223,8 +1224,9 @@ public class BigQueryExecutor {
      * @param targetClass the class representing the target table (used for table name and key resolution)
      * @param ids the primary key values to check for existence
      * @return {@code true} if a record exists with the specified key values, {@code false} otherwise
-     * @throws IllegalArgumentException if targetClass is null, ids is null or empty,
+     * @throws IllegalArgumentException if ids is null or empty,
      *                                  or the number of IDs doesn't match the primary key structure
+     * @throws NullPointerException if targetClass is null
      * @see #exists(Class, Condition)
      */
     public final boolean exists(final Class<?> targetClass, final Object... ids) {

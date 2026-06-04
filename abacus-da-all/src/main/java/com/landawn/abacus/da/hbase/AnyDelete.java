@@ -250,7 +250,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * @param rowKey the row key object to delete, automatically converted to bytes
      * @return a new AnyDelete instance configured for the specified row
-     * @throws IllegalArgumentException if rowKey is null
+     * @throws IllegalArgumentException if {@code rowKey} resolves to a null/empty byte array
      * @see #of(Object, long)
      * @see #addColumn(String, String)
      * @see #addFamily(String)
@@ -307,7 +307,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param rowOffset the starting position (0-based) within the row key bytes
      * @param rowLength the number of bytes to use from the row key, starting at offset
      * @return a new AnyDelete instance configured with the partial row key
-     * @throws IllegalArgumentException if rowKey is null, rowOffset is negative, or rowLength is invalid
+     * @throws IllegalArgumentException if {@code rowKey} resolves to a null/empty byte array, or if
+     *         {@code rowOffset}/{@code rowLength} do not describe a valid sub-range of the row key
+     *         bytes
      * @see #of(Object)
      * @see #of(Object, int, int, long)
      */
@@ -337,7 +339,10 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param rowLength the number of bytes to use from the row key, starting at offset
      * @param timestamp the maximum timestamp for versions to delete (inclusive)
      * @return a new AnyDelete instance configured with partial row key and timestamp control
-     * @throws IllegalArgumentException if parameters are invalid
+     * @throws IllegalArgumentException if {@code rowKey} resolves to a null/empty byte array, if
+     *         {@code rowOffset}/{@code rowLength} do not describe a valid sub-range of the row key
+     *         bytes, or if {@code timestamp} is negative (validated by the underlying
+     *         {@link Delete} constructor)
      * @see #of(Object, int, int)
      * @see #of(Object, long)
      */

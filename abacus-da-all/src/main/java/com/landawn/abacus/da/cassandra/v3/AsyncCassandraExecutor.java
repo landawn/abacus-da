@@ -40,7 +40,7 @@ import com.landawn.abacus.util.stream.Stream;
  *             {@link com.landawn.abacus.da.cassandra.AsyncCassandraExecutor} for new
  *             applications (which requires Cassandra Java Driver 4.x).
  * @see CassandraExecutor
- * @see com.landawn.abacus.da.cassandra.AsyncCassandraExecutorBase
+ * @see com.landawn.abacus.da.cassandra.AsyncCassandraExecutor
  */
 public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row, ResultSet, Statement, PreparedStatement, BatchStatement.Type> {
 

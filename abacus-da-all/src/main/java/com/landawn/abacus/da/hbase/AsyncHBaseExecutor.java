@@ -1219,7 +1219,7 @@ public final class AsyncHBaseExecutor {
      *
      * <p>Invokes a coprocessor service method on every region whose row range overlaps
      * {@code [startRowKey, endRowKey)}. The {@code callable} is executed on each region server,
-     * and results are collected into a map keyed by the region's start row key. This enables
+     * and results are collected into a map keyed by region name bytes. This enables
      * distributed server-side processing across multiple regions. The returned
      * {@link ContinuableFuture} completes with the aggregated map once every region has
      * responded.</p>
@@ -1231,7 +1231,8 @@ public final class AsyncHBaseExecutor {
      * @param startRowKey the starting row key (inclusive) for the range
      * @param endRowKey the ending row key (exclusive) for the range
      * @param callable the callable to execute on each region
-     * @return a {@link ContinuableFuture} containing a map of region start keys to results. Wraps
+     * @return a {@link ContinuableFuture} containing a map from region name bytes to the result
+     *         returned by {@code callable} for that region. Wraps
      *         {@link HBaseExecutor#coprocessorService(String, Class, Object, Object, Batch.Call)}.
      * @see HBaseExecutor#coprocessorService(String, Class, Object, Object, Batch.Call)
      * @see Batch.Call
@@ -1281,8 +1282,8 @@ public final class AsyncHBaseExecutor {
      * <p>Invokes the coprocessor method identified by {@code methodDescriptor} on every region
      * whose row range overlaps {@code [startRowKey, endRowKey)}, passing the supplied
      * {@code request} message and parsing each response against {@code responsePrototype}. The
-     * returned {@link ContinuableFuture} completes with a map of region start keys to response
-     * messages once every region has responded.</p>
+     * returned {@link ContinuableFuture} completes with a map of region names (byte arrays) to their
+     * corresponding response messages once every region has responded.</p>
      *
      * @param <R> the response message type
      * @param tableName the name of the HBase table
@@ -1291,8 +1292,8 @@ public final class AsyncHBaseExecutor {
      * @param startRowKey the starting row key (inclusive) for the range
      * @param endRowKey the ending row key (exclusive) for the range
      * @param responsePrototype the prototype instance used to parse responses
-     * @return a {@link ContinuableFuture} containing a map of region start keys to response
-     *         messages. Wraps {@link HBaseExecutor#batchCoprocessorService(String, Descriptors.MethodDescriptor, Message, Object, Object, Message)}.
+     * @return a {@link ContinuableFuture} containing a map of region names (byte arrays) to their
+     *         corresponding response messages. Wraps {@link HBaseExecutor#batchCoprocessorService(String, Descriptors.MethodDescriptor, Message, Object, Object, Message)}.
      * @see HBaseExecutor#batchCoprocessorService(String, Descriptors.MethodDescriptor, Message, Object, Object, Message)
      * @see Descriptors.MethodDescriptor
      */
