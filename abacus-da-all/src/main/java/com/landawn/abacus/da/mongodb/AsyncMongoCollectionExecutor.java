@@ -72,9 +72,9 @@ import com.mongodb.client.result.UpdateResult;
  *       the database work runs on the supplied {@link AsyncExecutor}'s thread pool.</li>
  *   <li><strong>Thread pool control:</strong> The {@link AsyncExecutor} provided at construction
  *       determines parallelism and queueing policy.</li>
- *   <li><strong>Future composition:</strong> {@link ContinuableFuture} supports {@code thenApply},
- *       {@code thenRun}, {@code thenCompose} style chaining and conversion to
- *       {@link java.util.concurrent.CompletableFuture}.</li>
+ *   <li><strong>Future composition:</strong> {@link ContinuableFuture} supports {@code thenRunAsync}
+ *       (Runnable/Consumer/BiConsumer), {@code thenCallAsync}, and {@code map} style chaining, plus
+ *       conversion to {@link java.util.concurrent.CompletableFuture} via {@code toCompletableFuture()}.</li>
  *   <li><strong>Exception propagation:</strong> Exceptions thrown by the underlying sync call
  *       surface as the future's completion exception.</li>
  * </ul>
@@ -1048,8 +1048,18 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // thenRunAsync(Consumer) delivers the completed value; ContinuableFuture has no thenAccept.
      * async.queryForBoolean("isActive", Filters.eq("userId", "123"))
-     *      .thenAccept(active -> System.out.println("Active: " + active.orElse(false)));
+     *      .thenRunAsync((OptionalBoolean active) ->                  // a matching doc -> present
+     *          System.out.println("Active: " + active.orElse(false)));
+     *
+     * // Block for the value when needed (get() throws InterruptedException, ExecutionException):
+     * OptionalBoolean active = async.queryForBoolean("isActive", Filters.eq("userId", "123")).get();
+     * // returns OptionalBoolean.of(true) when the matched doc's "isActive" is true // throws InterruptedException, ExecutionException
+     *
+     * // No document matches the filter:
+     * OptionalBoolean none = async.queryForBoolean("isActive", Filters.eq("userId", "absent")).get();
+     * // returns OptionalBoolean.empty()  -> none.isPresent() == false // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param propName the name of the boolean property to retrieve
@@ -1082,8 +1092,10 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // thenRunAsync(Consumer) delivers the value; ifPresent runs only when a document matched.
      * async.queryForChar("grade", Filters.eq("studentId", "456"))
-     *      .thenAccept(grade -> grade.ifPresent(g -> System.out.println("Grade: " + g)));
+     *      .thenRunAsync((OptionalChar grade) -> grade.ifPresent(g -> System.out.println("Grade: " + g)));
+     * // OptionalChar.empty() when no doc matches; present (default NUL char) if matched but field absent/null
      * }</pre>
      *
      * @param propName the name of the character property to retrieve
@@ -1116,8 +1128,10 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // thenRunAsync(Consumer) delivers the value; ContinuableFuture has no thenAccept.
      * async.queryForByte("priority", Filters.eq("taskId", "789"))
-     *      .thenAccept(priority -> priority.ifPresent(p -> System.out.println("Priority: " + p)));
+     *      .thenRunAsync((OptionalByte priority) -> priority.ifPresent(p -> System.out.println("Priority: " + p)));
+     * // OptionalByte.empty() when no doc matches; present (default 0) if matched but field absent/null
      * }</pre>
      *
      * @param propName the name of the byte property to retrieve
@@ -1150,8 +1164,10 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // thenRunAsync(Consumer) delivers the value; ContinuableFuture has no thenAccept.
      * async.queryForShort("year", Filters.eq("eventId", "2024"))
-     *      .thenAccept(year -> year.ifPresent(y -> System.out.println("Year: " + y)));
+     *      .thenRunAsync((OptionalShort year) -> year.ifPresent(y -> System.out.println("Year: " + y)));
+     * // OptionalShort.empty() when no doc matches; present (default 0) if matched but field absent/null
      * }</pre>
      *
      * @param propName the name of the short property to retrieve
@@ -1184,8 +1200,13 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // thenRunAsync(Consumer) delivers the value; ContinuableFuture has no thenAccept.
      * async.queryForInt("age", Filters.eq("userId", "user123"))
-     *      .thenAccept(age -> System.out.println("Age: " + age.orElse(0)));
+     *      .thenRunAsync((OptionalInt age) -> System.out.println("Age: " + age.orElse(0)));
+     *
+     * // Block for the value:
+     * OptionalInt age = async.queryForInt("age", Filters.eq("userId", "user123")).get();
+     * // returns OptionalInt.of(30) for a matched doc; OptionalInt.empty() if none match // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param propName the name of the integer property to retrieve
@@ -1218,8 +1239,10 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // thenRunAsync(Consumer) delivers the value; ContinuableFuture has no thenAccept.
      * async.queryForLong("timestamp", Filters.eq("eventId", "evt123"))
-     *      .thenAccept(ts -> ts.ifPresent(t -> System.out.println("Timestamp: " + t)));
+     *      .thenRunAsync((OptionalLong ts) -> ts.ifPresent(t -> System.out.println("Timestamp: " + t)));
+     * // OptionalLong.empty() when no doc matches; present (default 0L) if matched but field absent/null
      * }</pre>
      *
      * @param propName the name of the long property to retrieve
@@ -1252,8 +1275,10 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // thenRunAsync(Consumer) delivers the value; ContinuableFuture has no thenAccept.
      * async.queryForFloat("price", Filters.eq("productId", "prod456"))
-     *      .thenAccept(price -> price.ifPresent(p -> System.out.println("Price: $" + p)));
+     *      .thenRunAsync((OptionalFloat price) -> price.ifPresent(p -> System.out.println("Price: $" + p)));
+     * // OptionalFloat.empty() when no doc matches; present (default 0.0f) if matched but field absent/null
      * }</pre>
      *
      * @param propName the name of the float property to retrieve
@@ -1287,8 +1312,10 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // thenRunAsync(Consumer) delivers the value; ContinuableFuture has no thenAccept.
      * async.queryForDouble("averageRating", Filters.eq("movieId", "movie789"))
-     *      .thenAccept(rating -> rating.ifPresent(r -> System.out.println("Rating: " + r)));
+     *      .thenRunAsync((OptionalDouble rating) -> rating.ifPresent(r -> System.out.println("Rating: " + r)));
+     * // OptionalDouble.empty() when no doc matches; present (default 0.0d) if matched but field absent/null
      * }</pre>
      *
      * @param propName the name of the double property to retrieve
@@ -1322,8 +1349,10 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // thenRunAsync(Consumer) delivers the value; ContinuableFuture has no thenAccept.
      * async.queryForString("username", Filters.eq("userId", "user123"))
-     *      .thenAccept(name -> System.out.println("Username: " + name.orElse("Unknown")));
+     *      .thenRunAsync((Nullable<String> name) -> System.out.println("Username: " + name.orElse("Unknown")));
+     * // Nullable.empty() when no doc matches; present-but-null (Nullable.of(null)) if matched but field absent/null
      * }</pre>
      *
      * @param propName the name of the string property to retrieve
@@ -1356,8 +1385,10 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // thenRunAsync(Consumer) delivers the value; ContinuableFuture has no thenAccept.
      * async.queryForDate("lastLogin", Filters.eq("username", "john.doe"))
-     *      .thenAccept(date -> date.ifPresent(d -> System.out.println("Last login: " + d)));
+     *      .thenRunAsync((Nullable<Date> date) -> date.ifNotNull(d -> System.out.println("Last login: " + d)));
+     * // Nullable.empty() when no doc matches; present-but-null (Nullable.of(null)) if matched but field absent/null
      * }</pre>
      *
      * @param propName the name of the Date property to retrieve
@@ -1392,8 +1423,11 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // thenRunAsync(Consumer) delivers the value; ContinuableFuture has no thenAccept.
      * async.queryForDate("timestamp", Filters.eq("eventId", "evt123"), java.sql.Timestamp.class)
-     *      .thenAccept(ts -> ts.ifPresent(t -> System.out.println("SQL Timestamp: " + t)));
+     *      .thenRunAsync((Nullable<java.sql.Timestamp> ts) ->
+     *          ts.ifNotNull(t -> System.out.println("SQL Timestamp: " + t)));
+     * // Nullable.empty() when no doc matches; present-but-null if matched but field absent/null
      * }</pre>
      *
      * @param <T> the specific Date subclass type
@@ -1432,8 +1466,10 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // thenRunAsync(Consumer) delivers the value; ContinuableFuture has no thenAccept.
      * async.queryForSingleValue("metadata", Filters.eq("docId", "doc123"), MetadataClass.class)
-     *      .thenAccept(meta -> meta.ifPresent(m -> processMetadata(m)));
+     *      .thenRunAsync((Nullable<MetadataClass> meta) -> meta.ifNotNull(m -> processMetadata(m)));
+     * // Nullable.empty() when no doc matches; present-but-null (Nullable.of(null)) if matched but field absent/null
      * }</pre>
      *
      * @param <V> the type of the value to retrieve
@@ -1470,8 +1506,10 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // thenRunAsync(Consumer) delivers the value; ContinuableFuture has no thenAccept.
      * async.queryForSingleNonNull("config", Filters.eq("appId", "app123"), ConfigClass.class)
-     *      .thenAccept(config -> config.ifPresent(c -> applyConfiguration(c)));
+     *      .thenRunAsync((Optional<ConfigClass> config) -> config.ifPresent(c -> applyConfiguration(c)));
+     * // Optional.empty() when no doc matches; completes exceptionally (NullPointerException) if matched but value is null
      * }</pre>
      *
      * @param <V> the type of the value to retrieve
@@ -2124,7 +2162,7 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param obj the object to insert - can be Document, {@code Map<String, Object>}, or entity class with getter/setter methods
      * @return a ContinuableFuture that completes when the insert operation finishes
-     * @throws IllegalArgumentException if obj is null (propagated through future)
+     * @throws NullPointerException if obj is null (propagated through future)
      * @throws com.mongodb.MongoWriteException if the insert operation fails (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #insertOne(Object, InsertOneOptions)
@@ -2156,7 +2194,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param obj the object to insert, which will be converted to a Document
      * @param options the options to apply to the insert operation
      * @return a ContinuableFuture that completes when the insertion finishes
-     * @throws IllegalArgumentException if obj is null (propagated through future)
+     * @throws NullPointerException if obj is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see InsertOneOptions
      * @see #insertOne(Object)

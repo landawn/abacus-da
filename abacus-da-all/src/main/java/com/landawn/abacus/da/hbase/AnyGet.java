@@ -173,7 +173,13 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * <pre>{@code
      * AnyGet get = AnyGet.of("user123")
      *                    .addColumn("info", "name");
-     * Result result = executor.get("users_table", get);
+     * byte[] row = get.getRow();   // bytes of "user123"
+     *
+     * // A numeric key is also accepted (converted via its string form):
+     * AnyGet numericKeyGet = AnyGet.of(12345);   // row key = bytes of "12345"
+     *
+     * // Edge: a null row key is rejected.
+     * AnyGet.of((Object) null);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param rowKey the row key object to retrieve, automatically converted to bytes
@@ -198,15 +204,25 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * <pre>{@code
      * // Use first 7 bytes of a composite key as row key
      * String compositeKey = "user123_session456";
-     * AnyGet get = AnyGet.of(compositeKey, 0, 7) // "user123"
+     * AnyGet get = AnyGet.of(compositeKey, 0, 7)   // row key = bytes of "user123"
      *                    .addFamily("sessions");
+     * byte[] row = get.getRow();   // bytes of "user123"
+     *
+     * // Edge: a null row key is rejected.
+     * AnyGet.of((Object) null, 0, 7);   // throws IllegalArgumentException
+     *
+     * // Edge: a negative offset (or out-of-range offset/length) overruns the
+     * // converted byte array and is reported by the underlying array copy.
+     * AnyGet.of("abc", -1, 2);   // throws ArrayIndexOutOfBoundsException
      * }</pre>
      *
      * @param rowKey the row key object to retrieve, automatically converted to bytes
      * @param rowOffset the starting offset within the row key byte array
      * @param rowLength the number of bytes to use from the row key
      * @return a new AnyGet instance configured with the partial row key
-     * @throws IllegalArgumentException if rowKey is null, rowOffset is negative, or rowLength is invalid
+     * @throws IllegalArgumentException if {@code rowKey} is null
+     * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative, or
+     *         {@code rowOffset + rowLength} exceeds the length of the converted row-key bytes
      * @see #of(Object)
      * @see #of(ByteBuffer)
      */
@@ -227,8 +243,12 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * ByteBuffer keyBuffer = ByteBuffer.wrap("user123".getBytes());
      * AnyGet get = AnyGet.of(keyBuffer)
      *                    .addFamily("profile");
+     * byte[] row = get.getRow();   // bytes of "user123"
+     *
+     * // Edge: a null ByteBuffer is rejected.
+     * AnyGet.of((ByteBuffer) null);   // throws IllegalArgumentException
      * }</pre>
-     * 
+     *
      * @param rowKey the row key as a ByteBuffer; must not be {@code null} and must have at least
      *               one remaining byte
      * @return a new AnyGet instance configured for the specified row
@@ -258,7 +278,11 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *
      * AnyGet get = AnyGet.of(existingGet)
      *                    .addColumn("stats", "login_count");
-     * // existingGet now also contains the "stats:login_count" column.
+     * boolean sameInstance = get.val() == existingGet;   // true: wraps by reference
+     * int families = existingGet.numFamilies();          // 2 — "stats:login_count" is now on existingGet too
+     *
+     * // Edge: a null Get is rejected.
+     * AnyGet.of((Get) null);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param get the existing HBase Get object to wrap; must not be null
@@ -281,8 +305,9 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyGet anyGet = AnyGet.of("user123").addFamily("info");
-     * Get hbaseGet = anyGet.val();
-     * Result result = table.get(hbaseGet);   // Use with native HBase API
+     * Get hbaseGet = anyGet.val();                     // the wrapped Get, never null
+     * boolean stable = anyGet.val() == anyGet.val();   // true: same instance every call
+     * Result result = table.get(hbaseGet);             // Use with native HBase API
      * }</pre>
      *
      * @return the underlying HBase Get object
@@ -304,8 +329,10 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyGet get = AnyGet.of("user123")
-     *                    .addFamily("info")
+     *                    .addFamily("info")        // returns same builder for chaining
      *                    .addFamily("preferences");
+     * int families = get.numFamilies();   // 2
+     * boolean has = get.hasFamilies();    // true
      * }</pre>
      *
      * @param family the column family name to retrieve; encoded via
@@ -331,7 +358,8 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * <pre>{@code
      * byte[] familyBytes = Bytes.toBytes("profile");
      * AnyGet get = AnyGet.of("user123")
-     *                    .addFamily(familyBytes);
+     *                    .addFamily(familyBytes);   // returns same builder for chaining
+     * int families = get.numFamilies();             // 1
      * }</pre>
      *
      * @param family the column family name as a byte array
@@ -355,9 +383,10 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyGet get = AnyGet.of("user123")
-     *                    .addColumn("info", "name")
+     *                    .addColumn("info", "name")     // returns same builder for chaining
      *                    .addColumn("info", "email")
      *                    .addColumn("stats", "login_count");
+     * int families = get.numFamilies();   // 2 — two distinct families ("info", "stats")
      * }</pre>
      *
      * @param family the column family name; encoded via
@@ -385,7 +414,8 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * byte[] familyBytes = Bytes.toBytes("info");
      * byte[] qualifierBytes = Bytes.toBytes("email");
      * AnyGet get = AnyGet.of("user123")
-     *                    .addColumn(familyBytes, qualifierBytes);
+     *                    .addColumn(familyBytes, qualifierBytes);   // returns same builder for chaining
+     * int families = get.numFamilies();                             // 1
      * }</pre>
      *
      * @param family the column family name as a byte array
@@ -416,7 +446,11 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *                    .addColumn("info", "name")
      *                    .addFamily("stats");
      * Map&lt;byte[], NavigableSet&lt;byte[]&gt;&gt; familyMap = get.getFamilyMap();
-     * // familyMap contains mapping of families to their qualifiers
+     * int size = familyMap.size();   // 2 — "info" (explicit qualifiers) and "stats" (null = all)
+     *
+     * // Edge: a get with no families/columns yields an empty (but non-null) map.
+     * Map&lt;byte[], NavigableSet&lt;byte[]&gt;&gt; empty = AnyGet.of("user123").getFamilyMap();
+     * boolean isEmpty = empty.isEmpty();   // true
      * }</pre>
      *
      * @return the live family map, never null (possibly empty)
@@ -439,6 +473,9 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * AnyGet get = AnyGet.of("user123")
      *                    .setCheckExistenceOnly(true);
      * boolean existsOnly = get.isCheckExistenceOnly();   // returns true
+     *
+     * // Default: a freshly created get is not existence-only.
+     * boolean def = AnyGet.of("user123").isCheckExistenceOnly();   // returns false
      * }</pre>
      *
      * @return {@code true} if the operation is set to check existence only, {@code false} otherwise
@@ -459,8 +496,12 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * <pre>{@code
      * // Efficient existence check
      * AnyGet existsCheck = AnyGet.of("user123")
-     *                            .setCheckExistenceOnly(true);
-     * boolean exists = executor.exists("users_table", existsCheck);
+     *                            .setCheckExistenceOnly(true);   // returns same builder for chaining
+     * boolean existsOnly = existsCheck.isCheckExistenceOnly();   // true
+     *
+     * // It can be turned back off:
+     * existsCheck.setCheckExistenceOnly(false);
+     * boolean off = existsCheck.isCheckExistenceOnly();   // false
      * }</pre>
      *
      * @param checkExistenceOnly {@code true} to only check existence, {@code false} to retrieve actual data
@@ -484,10 +525,15 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyGet get = AnyGet.of("user123")
-     *                    .setTimeRange(startTime, endTime);
+     *                    .setTimeRange(100L, 200L);
      * TimeRange range = get.getTimeRange();
-     * long min = range.getMin();   // startTime
-     * long max = range.getMax();   // endTime
+     * long min = range.getMin();   // 100
+     * long max = range.getMax();   // 200
+     *
+     * // Default: no filter -> the full timestamp range (TimeRange.allTime()).
+     * TimeRange all = AnyGet.of("user123").getTimeRange();
+     * long defMin = all.getMin();   // 0
+     * long defMax = all.getMax();   // Long.MAX_VALUE
      * }</pre>
      *
      * @return the {@link TimeRange} configured for this Get operation; never {@code null}
@@ -513,7 +559,14 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * long startTime = endTime - (24 * 60 * 60 * 1000);
      * AnyGet get = AnyGet.of("user123")
      *                    .addFamily("activity")
-     *                    .setTimeRange(startTime, endTime);
+     *                    .setTimeRange(startTime, endTime);   // returns same builder for chaining
+     * long min = get.getTimeRange().getMin();                 // startTime
+     *
+     * // Edge: minStamp &gt; maxStamp is rejected.
+     * AnyGet.of("user123").setTimeRange(200L, 100L);   // throws IllegalArgumentException
+     *
+     * // Edge: a negative stamp is rejected.
+     * AnyGet.of("user123").setTimeRange(-1L, 100L);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param minStamp the minimum timestamp (inclusive) for cell versions to retrieve
@@ -547,7 +600,12 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * long snapshotTime = 1609459200000L;  // Jan 1, 2021
      * AnyGet get = AnyGet.of("user123")
      *                    .addFamily("profile")
-     *                    .setTimestamp(snapshotTime);
+     *                    .setTimestamp(snapshotTime);   // returns same builder for chaining
+     * long min = get.getTimeRange().getMin();           // snapshotTime
+     * long max = get.getTimeRange().getMax();           // snapshotTime + 1 (exclusive upper bound)
+     *
+     * // Edge: a negative timestamp is rejected.
+     * AnyGet.of("user123").setTimestamp(-1L);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param timestamp the exact timestamp for which to retrieve cell versions
@@ -573,6 +631,9 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * AnyGet get = AnyGet.of("user123")
      *                    .readVersions(5);
      * int maxVersions = get.getMaxVersions();   // returns 5
+     *
+     * // Default: only the latest version is read.
+     * int def = AnyGet.of("user123").getMaxVersions();   // returns 1
      * }</pre>
      *
      * @return the maximum number of versions to retrieve for each column
@@ -596,7 +657,11 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * // Retrieve last 5 versions of each column
      * AnyGet get = AnyGet.of("user123")
      *                    .addColumn("info", "status")
-     *                    .readVersions(5);
+     *                    .readVersions(5);      // returns same builder for chaining
+     * int maxVersions = get.getMaxVersions();   // 5
+     *
+     * // Edge: a non-positive version count is rejected.
+     * AnyGet.of("user123").readVersions(0);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param versions the maximum number of versions to retrieve for each column (must be positive)
@@ -627,7 +692,8 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * // Retrieve complete history for audit purposes
      * AnyGet get = AnyGet.of("user123")
      *                    .addColumn("audit", "changes")
-     *                    .readAllVersions();
+     *                    .readAllVersions();    // returns same builder for chaining
+     * int maxVersions = get.getMaxVersions();   // Integer.MAX_VALUE
      * }</pre>
      *
      * @return this AnyGet instance for method chaining
@@ -651,6 +717,9 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * AnyGet get = AnyGet.of("user123")
      *                    .setMaxResultsPerColumnFamily(100);
      * int limit = get.getMaxResultsPerColumnFamily();   // returns 100
+     *
+     * // Default: no limit is set.
+     * int def = AnyGet.of("user123").getMaxResultsPerColumnFamily();   // returns -1
      * }</pre>
      *
      * @return the maximum results per column family, or -1 if no limit is set
@@ -675,7 +744,8 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * // Limit results to first 50 cells per family
      * AnyGet get = AnyGet.of("user123")
      *                    .addFamily("large_family")
-     *                    .setMaxResultsPerColumnFamily(50);
+     *                    .setMaxResultsPerColumnFamily(50);   // returns same builder for chaining
+     * int limit = get.getMaxResultsPerColumnFamily();         // 50
      * }</pre>
      *
      * @param limit the maximum number of results per column family; use {@code -1} to disable
@@ -700,6 +770,9 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * AnyGet get = AnyGet.of("user123")
      *                    .setRowOffsetPerColumnFamily(10);
      * int offset = get.getRowOffsetPerColumnFamily();   // returns 10
+     *
+     * // Default: no offset is set.
+     * int def = AnyGet.of("user123").getRowOffsetPerColumnFamily();   // returns 0
      * }</pre>
      *
      * @return the row offset per column family, or 0 if no offset is set
@@ -724,8 +797,9 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * // Skip first 20 cells, then get next 10 cells per family
      * AnyGet get = AnyGet.of("user123")
      *                    .addFamily("large_family")
-     *                    .setRowOffsetPerColumnFamily(20)
+     *                    .setRowOffsetPerColumnFamily(20)   // returns same builder for chaining
      *                    .setMaxResultsPerColumnFamily(10);
+     * int offset = get.getRowOffsetPerColumnFamily();   // 20
      * }</pre>
      *
      * @param offset the number of cells to skip per column family
@@ -751,6 +825,9 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * AnyGet get = AnyGet.of("user123")
      *                    .setCacheBlocks(false);
      * boolean useCache = get.getCacheBlocks();   // returns false
+     *
+     * // Default: block caching is enabled.
+     * boolean def = AnyGet.of("user123").getCacheBlocks();   // returns true
      * }</pre>
      *
      * @return {@code true} if cache blocks is enabled, {@code false} otherwise
@@ -774,7 +851,8 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * // Disable caching for a one-time large read
      * AnyGet get = AnyGet.of("user123")
      *                    .addFamily("large_data")
-     *                    .setCacheBlocks(false);
+     *                    .setCacheBlocks(false);   // returns same builder for chaining
+     * boolean useCache = get.getCacheBlocks();     // false
      * }</pre>
      *
      * @param cacheBlocks {@code true} to enable block caching, {@code false} to disable
@@ -796,7 +874,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyGet get = AnyGet.of("user123");
-     * byte[] rowKey = get.getRow();
+     * byte[] rowKey = get.getRow();                // bytes of "user123"
      * String keyString = Bytes.toString(rowKey);   // "user123"
      * }</pre>
      *
@@ -845,7 +923,10 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *                    .addFamily("info")
      *                    .addFamily("stats")
      *                    .addColumn("prefs", "theme");
-     * int count = get.numFamilies();   // returns 3
+     * int count = get.numFamilies();   // returns 3 ("info", "stats", "prefs")
+     *
+     * // Edge: a get with no families/columns reports 0.
+     * int none = AnyGet.of("user123").numFamilies();   // returns 0
      * }</pre>
      *
      * @return the number of column families specified
@@ -871,7 +952,10 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *                    .addFamily("info")
      *                    .addFamily("stats");
      * Set&lt;byte[]&gt; families = get.familySet();
-     * // families contains byte arrays for "info" and "stats"
+     * int size = families.size();   // 2 — byte arrays for "info" and "stats"
+     *
+     * // Edge: a get with no families yields an empty set.
+     * boolean empty = AnyGet.of("user123").familySet().isEmpty();   // true
      * }</pre>
      *
      * @return a live keySet view of column-family byte arrays; never null, possibly empty
@@ -891,7 +975,9 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * <pre>{@code
      * AnyGet get1 = AnyGet.of("user123");
      * AnyGet get2 = AnyGet.of("user456");
-     * int comparison = get1.compareTo(get2);   // negative value (user123 < user456)
+     * int comparison = get1.compareTo(get2);             // negative value (user123 < user456)
+     * int reverse = get2.compareTo(get1);                // positive value (user456 > user123)
+     * int same = get1.compareTo(AnyGet.of("user123"));   // 0 (equal row keys)
      * }</pre>
      *
      * @param other the {@link Row} to compare with
@@ -908,9 +994,20 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
     /**
      * Returns the hash code value for this AnyGet instance.
      *
-     * <p>The hash code is based on the underlying HBase Get object and is consistent
-     * with the {@link #equals(Object)} method. Two AnyGet instances with equivalent
-     * Get operations will have the same hash code.</p>
+     * <p>The hash code is based on the underlying HBase Get object (which derives it from the row
+     * key only) and is consistent with the {@link #equals(Object)} method. Two AnyGet instances on
+     * the same row key will have the same hash code.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyGet a = AnyGet.of("rowKey");
+     * a.hashCode() == a.hashCode();   // returns true (stable; delegates to the wrapped HBase Get)
+     *
+     * // Consistent with the value-based equals: two Gets on the same row are equal and share a hash:
+     * AnyGet b = AnyGet.of("rowKey");
+     * a.equals(b);                    // returns true
+     * a.hashCode() == b.hashCode();   // returns true
+     * }</pre>
      *
      * @return the hash code value for this AnyGet
      * @see #equals(Object)
@@ -924,14 +1021,23 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * Compares this AnyGet instance with another object for equality.
      *
      * <p>Two AnyGet instances are considered equal if they wrap equivalent HBase Get
-     * operations. This comparison is based on the underlying Get object's equality,
-     * which considers row key, column specifications, time ranges, and other settings.</p>
+     * operations. This comparison is based on the underlying {@link Get#equals(Object)}, which
+     * compares the row key only — column specifications, time ranges, and other settings are
+     * <em>not</em> considered. Consequently two Gets on the same row are equal even if they request
+     * different columns.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyGet get1 = AnyGet.of("user123").addFamily("info");
      * AnyGet get2 = AnyGet.of("user123").addFamily("info");
      * boolean equal = get1.equals(get2);   // returns true
+     *
+     * // Edge: a different row key is not equal.
+     * boolean diff = get1.equals(AnyGet.of("user999").addFamily("info"));   // returns false
+     *
+     * // Edge: null and non-AnyGet objects are never equal.
+     * boolean vsNull = get1.equals(null);             // returns false
+     * boolean vsOther = get1.equals("not an AnyGet"); // returns false
      * }</pre>
      *
      * @param obj the object to compare with
@@ -959,6 +1065,13 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * and includes information about the row key, column families, qualifiers,
      * time ranges, and other configuration settings.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyGet a = AnyGet.of("rowKey");
+     * String s = a.toString();        // delegates to Get.toString(); never null
+     * s.contains("rowKey");           // returns true (the row key appears in the description)
+     * }</pre>
+     *
      * @return a string representation of the get operation
      */
     @Override
@@ -981,8 +1094,17 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *     AnyGet.of("user2").addFamily("info"),
      *     AnyGet.of("user3").addFamily("info")
      * );
-     * List&lt;Get&gt; gets = AnyGet.toGet(anyGets);
-     * Result[] results = table.get(gets);   // Batch get with native HBase API
+     * List&lt;Get&gt; gets = AnyGet.toGet(anyGets);   // 3 Get objects, in iteration order
+     * Result[] results = table.get(gets);             // Batch get with native HBase API
+     *
+     * // Edge: an empty collection yields an empty list (not null).
+     * List&lt;Get&gt; empty = AnyGet.toGet(java.util.Collections.emptyList());   // size 0
+     *
+     * // Edge: null elements are silently skipped.
+     * List&lt;Get&gt; skipped = AnyGet.toGet(Arrays.asList(AnyGet.of("user1"), null));   // size 1
+     *
+     * // Edge: a null collection is rejected.
+     * AnyGet.toGet(null);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param anyGets the collection of AnyGet instances to convert; must not be null

@@ -225,6 +225,23 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
     /**
      * Generates a string of comma-separated question mark placeholders.
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * String placeholders = CqlBuilder.repeatQM(3);
+     * // returns "?, ?, ?"
+     *
+     * String single = CqlBuilder.repeatQM(1);
+     * // returns "?"
+     *
+     * // Edge case: zero placeholders yields an empty string
+     * String none = CqlBuilder.repeatQM(0);
+     * // returns ""
+     *
+     * // Negative count is rejected
+     * CqlBuilder.repeatQM(-1);
+     * // throws IllegalArgumentException
+     * }</pre>
+     *
      * @param count the number of placeholders to generate (must be non-negative)
      * @return a comma-separated string of {@code count} question mark placeholders
      * @throws IllegalArgumentException if {@code count} is negative
@@ -415,6 +432,24 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      * <p>Prefer this method over {@link #iF(String)}. The {@code iF} method is kept for
      * backward compatibility because {@code if} is a Java keyword.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * // INSERT with a raw expression (appended verbatim)
+     * String cql = PSC.insert("id", "name")
+     *                 .into("users")
+     *                 .onlyIf("name = NULL")
+     *                 .build().query();
+     * // Output: INSERT INTO users (id, name) VALUES (?, ?) IF name = NULL
+     *
+     * // UPDATE with a raw expression
+     * String cql = PSC.update("users")
+     *                 .set("status")
+     *                 .where(Filters.eq("id", 123))
+     *                 .onlyIf("status = 'inactive'")
+     *                 .build().query();
+     * // Output: UPDATE users SET status = ? WHERE id = ? IF status = 'inactive'
+     * }</pre>
+     *
      * @param expr the conditional expression as a string
      * @return this CqlBuilder instance for method chaining
      * @see #onlyIf(Condition)
@@ -429,6 +464,24 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      *
      * <p>Prefer this method over {@link #iF(Condition)}. The {@code iF} method is kept for
      * backward compatibility because {@code if} is a Java keyword.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * // INSERT with a single condition
+     * String cql = PSC.insert("id", "name")
+     *                 .into("users")
+     *                 .onlyIf(Filters.isNull("name"))
+     *                 .build().query();
+     * // Output: INSERT INTO users (id, name) VALUES (?, ?) IF name IS NULL
+     *
+     * // UPDATE with a compound condition (each operand is parenthesized)
+     * String cql = PSC.update("users")
+     *                 .set("status")
+     *                 .where(Filters.eq("id", 123))
+     *                 .onlyIf(Filters.and(Filters.eq("status", "inactive"), Filters.lt("retryCount", 3)))
+     *                 .build().query();
+     * // Output: UPDATE users SET status = ? WHERE id = ? IF (status = ?) AND (retry_count < ?)
+     * }</pre>
      *
      * @param cond the condition object for the IF clause
      * @return this CqlBuilder instance for method chaining
@@ -513,7 +566,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      *                 .where(Filters.eq("id", 123))
      *                 .iF(Filters.and(Filters.eq("status", "inactive"), Filters.lt("retryCount", 3)))
      *                 .build().query();
-     * // Output: UPDATE users SET status = ? WHERE id = ? IF status = ? AND retry_count < ?
+     * // Output: UPDATE users SET status = ? WHERE id = ? IF (status = ?) AND (retry_count < ?)
      * }</pre>
      *
      * @param cond the condition object for the IF clause
@@ -639,7 +692,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      *                 .where(Filters.and(Filters.eq("type", "login"), Filters.gte("timestamp", yesterday)))
      *                 .allowFiltering()
      *                 .build().query();
-     * // Output: SELECT * FROM events WHERE type = ? AND timestamp >= ? ALLOW FILTERING
+     * // Output: SELECT * FROM events WHERE (type = ?) AND (timestamp >= ?) ALLOW FILTERING
      * }</pre>
      *
      * <p><b>Performance Warning:</b> Use this clause sparingly as it can cause full table scans
@@ -1713,11 +1766,11 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <pre>{@code
          * String cql = SCCB.deleteFrom(Account.class)
          *                  .where(Filters.and(
-         *                      Filters.eq("status", "'INACTIVE'"),
+         *                      Filters.eq("status", "INACTIVE"),
          *                      Filters.lt("lastLogin", "2022-01-01")
          *                  ))
          *                  .build().query();
-         * // Output: DELETE FROM account WHERE status = 'INACTIVE' AND last_login < '2022-01-01'
+         * // Output: DELETE FROM account WHERE (status = 'INACTIVE') AND (last_login < '2022-01-01')
          * }</pre>
          *
          * @param entityClass the entity class
@@ -2223,11 +2276,11 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Condition cond = Filters.and(
-         *     Filters.eq("status", "'ACTIVE'"),
+         *     Filters.eq("status", "ACTIVE"),
          *     Filters.gt("balance", 1000)
          * );
          * String cql = SCCB.parse(cond, Account.class).build().query();
-         * // Output: status = 'ACTIVE' AND balance > 1000
+         * // Output: (status = 'ACTIVE') AND (balance > 1000)
          * }</pre>
          *
          * @param cond the condition to parse
@@ -3455,9 +3508,9 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * 
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * Condition cond = Filters.and(Filters.eq("firstName", "'John'"), Filters.gt("age", 18));
+         * Condition cond = Filters.and(Filters.eq("firstName", "John"), Filters.gt("age", 18));
          * String cql = ACCB.parse(cond, User.class).build().query();
-         * // Output: FIRST_NAME = 'John' AND AGE > 18
+         * // Output: (FIRST_NAME = 'John') AND (AGE > 18)
          * }</pre>
          *
          * @param cond the condition to parse
@@ -4702,7 +4755,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * );
          * 
          * String cql = LCCB.parse(cond, User.class).build().query();
-         * // Output: active = true AND age > 18
+         * // Output: (active = true) AND (age > 18)
          * }</pre>
          * 
          * @param cond the condition to parse
@@ -4741,6 +4794,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      *                 .build().query();
      * // Output: SELECT first_Name, last_NaMe FROM account WHERE last_NaMe = ?
      * }</pre>
+     *
      */
     public static class PSB extends CqlBuilder {
 
@@ -5861,7 +5915,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *     Filters.gt("age", 18)
          * );
          * String cql = PSB.parse(cond, User.class).build().query();
-         * // Result: "status = ? AND age > ?"
+         * // Result: "(status = ?) AND (age > ?)"
          * }</pre>
          * 
          * @param cond the condition to parse
@@ -7174,7 +7228,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * );
          * 
          * String cql = PSC.parse(cond, Account.class).build().query();
-         * // Output: first_name = ? AND email LIKE ?
+         * // Output: (first_name = ?) AND (email LIKE ?)
          * }</pre>
          * 
          * @param cond the condition to parse
@@ -7218,6 +7272,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      *                 .build().query();
      * // Output: SELECT FIRST_NAME AS "firstName", LAST_NAME AS "lastName" FROM account WHERE ID = ?
      * }</pre>
+     *
      */
     public static class PAC extends CqlBuilder {
 
@@ -8358,7 +8413,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * <pre>{@code
          * Condition cond = Filters.and(Filters.eq("firstName", "John"), Filters.gt("age", 21));
          * String cql = PAC.parse(cond, User.class).build().query();
-         * // Output: FIRST_NAME = ? AND AGE > ?
+         * // Output: (FIRST_NAME = ?) AND (AGE > ?)
          * }</pre>
          * 
          * @param cond the condition to parse
@@ -9895,7 +9950,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * );
          *
          * String cql = PLC.parse(cond, Account.class).build().query();
-         * // Output: firstName = ? AND status = ?
+         * // Output: (firstName = ?) AND (status = ?)
          * }</pre>
          *
          * @param cond the condition to parse
@@ -9929,6 +9984,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      * N.println(NSB.select("first_Name", "last_NaMe").from("account").where(Filters.eq("last_NaMe", 1)).build().query());
      * // SELECT first_Name, last_NaMe FROM account WHERE last_NaMe = :last_NaMe
      * }</pre>
+     *
      */
     public static class NSB extends CqlBuilder {
 
@@ -11124,7 +11180,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *     Filters.gt("age", 18)
          * );
          * String cql = NSB.parse(cond, User.class).build().query();
-         * // status = :status AND age > :age
+         * // (status = :status) AND (age > :age)
          * }</pre>
          *
          * @param cond the condition to parse
@@ -11175,6 +11231,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      * String cql = NSC.insert(account).into("account").build().query();
      * // Output: INSERT INTO account (first_name, last_name) VALUES (:firstName, :lastName)
      * }</pre>
+     *
      */
     public static class NSC extends CqlBuilder {
 
@@ -12213,7 +12270,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *                     Filters.gt("age", 18)
          *                 ))
          *                 .build().query();
-         * // Output: SELECT count(*) FROM users WHERE first_name = :firstName AND age > :age
+         * // Output: SELECT count(*) FROM users WHERE (first_name = :firstName) AND (age > :age)
          * }</pre>
          * 
          * @param entityClass the entity class
@@ -12239,7 +12296,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *     Filters.like("email", "%@example.com")
          * );
          * String cql = NSC.parse(cond, User.class).build().query();
-         * // Output: first_name = :firstName AND age = :age AND email LIKE :email
+         * // Output: (first_name = :firstName) AND (age > :age) AND (email LIKE :email)
          * }</pre>
          * 
          * @param cond the condition to parse
@@ -12279,6 +12336,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      * String cql = NAC.insert(account).into("ACCOUNT").build().query();
      * // Output: INSERT INTO ACCOUNT (FIRST_NAME, LAST_NAME) VALUES (:firstName, :lastName)
      * }</pre>
+     *
      */
     public static class NAC extends CqlBuilder {
 
@@ -12914,7 +12972,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * String cql = NAC.deleteFrom(Account.class)
          *                 .where(Filters.and(Filters.eq("status", "INACTIVE"), Filters.lt("lastLogin", yesterday)))
          *                 .build().query();
-         * // Output: DELETE FROM ACCOUNT WHERE STATUS = :status AND LAST_LOGIN < :lastLogin
+         * // Output: DELETE FROM ACCOUNT WHERE (STATUS = :status) AND (LAST_LOGIN < :lastLogin)
          * }</pre>
          * 
          * @param entityClass the entity class
@@ -13358,7 +13416,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *                     Filters.gt("balance", 0)
          *                 ))
          *                 .build().query();
-         * // Output: SELECT count(*) FROM ACCOUNT WHERE STATUS = :status AND BALANCE > :balance
+         * // Output: SELECT count(*) FROM ACCOUNT WHERE (STATUS = :status) AND (BALANCE > :balance)
          * }</pre>
          * 
          * @param entityClass the entity class
@@ -13383,7 +13441,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *     Filters.like("lastName", "Smith%")
          * );
          * String cql = NAC.parse(cond, Account.class).build().query();
-         * // Output: STATUS = :status AND BALANCE > :balance AND LAST_NAME LIKE :lastName
+         * // Output: (STATUS = :status) AND (BALANCE > :balance) AND (LAST_NAME LIKE :lastName)
          * }</pre>
          * 
          * @param cond the condition to parse
@@ -13435,6 +13493,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      * String cql = NLC.insert(account).into("account").build().query();
      * // Output: INSERT INTO account (firstName, lastName) VALUES (:firstName, :lastName)
      * }</pre>
+     *
      */
     public static class NLC extends CqlBuilder {
 
@@ -14072,7 +14131,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *                     Filters.lt("lastLoginTime", oneYearAgo)
          *                 ))
          *                 .build().query();
-         * // Output: DELETE FROM account WHERE status = :status AND lastLoginTime < :lastLoginTime
+         * // Output: DELETE FROM account WHERE (status = :status) AND (lastLoginTime < :lastLoginTime)
          * }</pre>
          * 
          * @param tableName the name of the table to delete from
@@ -14584,7 +14643,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *                      Filters.between("orderDate", startDate, endDate)
          *                  ))
          *                  .build().query();
-         * // Output: SELECT count(*) FROM orders WHERE amount > :amount AND orderDate BETWEEN :minOrderDate AND :maxOrderDate
+         * // Output: SELECT count(*) FROM orders WHERE (amount > :amount) AND (orderDate BETWEEN :minOrderDate AND :maxOrderDate)
          * }</pre>
          * 
          * @param entityClass the entity class
@@ -14609,7 +14668,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          *     Filters.like("lastName", "Smith%")
          * );
          * String cql = NLC.parse(cond, Account.class).build().query();
-         * // Output: status = :status AND balance > :balance AND lastName LIKE :lastName
+         * // Output: (status = :status) AND (balance > :balance) AND (lastName LIKE :lastName)
          * }</pre>
          * 
          * @param cond the condition to parse

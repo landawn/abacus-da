@@ -279,10 +279,22 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * AnyPut put = AnyPut.of("user123")
      *                    .addColumn("info", "name", "John Doe")
      *                    .addColumn("info", "email", "john@example.com");
+     * byte[] row = put.getRow();          // bytes of "user123"
+     *
+     * // A non-String key is converted via its string form:
+     * AnyPut numericKey = AnyPut.of(12345);   // row key = bytes of "12345"
+     *
+     * // Edge: a null row key is rejected.
+     * AnyPut.of((Object) null);           // throws NullPointerException
+     *
+     * // Edge: an empty byte[] row key is rejected (row length is 0).
+     * AnyPut.of(new byte[0]);             // throws IllegalArgumentException
      * }</pre>
      *
      * @param rowKey the row key for the put operation, automatically converted to bytes (String, Long, byte[], etc.); should not be {@code null}
      * @return a new AnyPut instance configured for the specified row
+     * @throws NullPointerException if {@code rowKey} is {@code null}
+     * @throws IllegalArgumentException if the converted row key is an empty byte array
      * @see #of(Object, long)
      * @see #of(ByteBuffer)
      */
@@ -306,6 +318,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * AnyPut timestampedPut = AnyPut.of("user123", eventTime)
      *                               .addColumn("events", "action", "login")
      *                               .addColumn("events", "location", "NYC");
+     * long ts = timestampedPut.getTimestamp();   // 1609459200000L
+     *
+     * // Edge: a negative timestamp is rejected.
+     * AnyPut.of("user123", -1L);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param rowKey the row key for the put operation, automatically converted to bytes
@@ -335,15 +351,19 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * String compositeKey = "user123456_session789";
      * AnyPut partialKeyPut = AnyPut.of(compositeKey, 0, 10)
      *                              .addColumn("data", "value", "sample");
+     * byte[] row = partialKeyPut.getRow();   // bytes of "user123456"
+     *
+     * // Edge: a negative offset (or out-of-range offset/length) overruns the
+     * // converted byte array and is reported by the underlying array copy.
+     * AnyPut.of("abc", -1, 2);   // throws ArrayIndexOutOfBoundsException
      * }</pre>
      *
      * @param rowKey the row key object whose byte representation will be sliced
      * @param rowOffset the starting position (0-based) within the row key bytes
      * @param rowLength the number of bytes to use from the row key, starting at offset
      * @return a new AnyPut instance configured with the partial row key
-     * @throws IllegalArgumentException if {@code rowOffset}/{@code rowLength} do not describe a
-     *         valid sub-range of the row key bytes (validated by the underlying {@link Put}
-     *         constructor)
+     * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative, or
+     *         {@code rowOffset + rowLength} exceeds the length of the converted row-key bytes
      * @see #of(Object)
      * @see #of(Object, int, int, long)
      */
@@ -365,6 +385,14 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * long backfillTime = 1609459200000L;
      * AnyPut complexPut = AnyPut.of(compositeKey, 0, 10, backfillTime)
      *                           .addColumn("data", "imported", true);
+     * byte[] row = complexPut.getRow();          // bytes of "user123456"
+     * long ts = complexPut.getTimestamp();       // 1609459200000L
+     *
+     * // Edge: a negative offset overruns the converted byte array.
+     * AnyPut.of("abc", -1, 2, backfillTime);     // throws ArrayIndexOutOfBoundsException
+     *
+     * // Edge: a negative timestamp is rejected.
+     * AnyPut.of("abc", 0, 3, -1L);               // throws IllegalArgumentException
      * }</pre>
      *
      * @param rowKey the row key object whose byte representation will be sliced
@@ -373,9 +401,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param timestamp the default timestamp for cells added without an explicit timestamp
      *                  (milliseconds since epoch)
      * @return a new AnyPut configured with the partial row key and default timestamp
-     * @throws IllegalArgumentException if {@code rowOffset}/{@code rowLength} do not describe a
-     *         valid sub-range of the row key bytes, or if {@code timestamp} is negative
-     *         (validated by the underlying {@link Put} constructor)
+     * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative, or
+     *         {@code rowOffset + rowLength} exceeds the length of the converted row-key bytes
+     * @throws IllegalArgumentException if {@code timestamp} is negative (validated by the
+     *         underlying {@link Put} constructor)
      * @see #of(Object, int, int)
      * @see #of(Object, long)
      */
@@ -399,11 +428,17 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * // Safe to mark as immutable since we won't modify the byte array
      * AnyPut immutablePut = AnyPut.of("user123", true)
      *                             .addColumn("info", "status", "active");
+     * byte[] row = immutablePut.getRow();   // bytes of "user123"
+     *
+     * // Edge: a null row key is rejected (the underlying buffer is null).
+     * AnyPut.of((Object) null, true);       // throws IllegalArgumentException
      * }</pre>
      *
      * @param rowKey the row key for the put operation, automatically converted to bytes; should not be {@code null}
      * @param rowIsImmutable true if the row key byte array is guaranteed to be immutable
      * @return a new AnyPut instance with immutability control
+     * @throws IllegalArgumentException if the converted row key is {@code null} or empty
+     *         (validated by the underlying {@link Put} constructor)
      * @see #of(Object, long, boolean)
      * @see #of(Object)
      */
@@ -421,9 +456,13 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * long importTime = System.currentTimeMillis();
+     * long importTime = 1609459200000L;
      * AnyPut optimizedPut = AnyPut.of("user123", importTime, true)
      *                             .addColumn("import", "source", "legacy_system");
+     * long ts = optimizedPut.getTimestamp();   // 1609459200000L
+     *
+     * // Edge: a negative timestamp is rejected.
+     * AnyPut.of("user123", -1L, true);         // throws IllegalArgumentException
      * }</pre>
      *
      * @param rowKey the row key for the put operation, automatically converted to bytes
@@ -454,11 +493,15 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * ByteBuffer keyBuffer = ByteBuffer.wrap("user123".getBytes());
      * AnyPut bufferPut = AnyPut.of(keyBuffer)
      *                          .addColumn("data", "value", "sample");
+     * byte[] row = bufferPut.getRow();   // bytes of "user123"
+     *
+     * // Edge: a null ByteBuffer is rejected (the row buffer is null).
+     * AnyPut.of((ByteBuffer) null);      // throws IllegalArgumentException
      * }</pre>
      *
      * @param rowKey the row key as a ByteBuffer; must not be null
      * @return a new AnyPut instance configured for the ByteBuffer row key
-     * @throws NullPointerException if {@code rowKey} is null (raised by the wrapped {@link Put#Put(ByteBuffer)} constructor)
+     * @throws IllegalArgumentException if {@code rowKey} is null (raised by the wrapped {@link Put#Put(ByteBuffer)} constructor)
      * @see #of(ByteBuffer, long)
      * @see #of(Object)
      */
@@ -479,16 +522,22 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * ByteBuffer keyBuffer = ByteBuffer.allocateDirect(16);
      * keyBuffer.put("user123".getBytes());
      * keyBuffer.flip();
-     * long timestamp = System.currentTimeMillis();
+     * long timestamp = 1609459200000L;
      * AnyPut timestampedBufferPut = AnyPut.of(keyBuffer, timestamp)
      *                                     .addColumn("events", "action", "login");
+     * long ts = timestampedBufferPut.getTimestamp();   // 1609459200000L
+     *
+     * // Edge: a null ByteBuffer is rejected (the row buffer is null).
+     * AnyPut.of((ByteBuffer) null, timestamp);         // throws IllegalArgumentException
+     *
+     * // Edge: a negative timestamp is rejected.
+     * AnyPut.of(ByteBuffer.wrap("k".getBytes()), -1L); // throws IllegalArgumentException
      * }</pre>
      *
      * @param rowKey the row key as a ByteBuffer; must not be null
      * @param timestamp the timestamp for all cells in this put operation (milliseconds since epoch)
      * @return a new AnyPut instance with ByteBuffer row key and timestamp control
-     * @throws NullPointerException if {@code rowKey} is null (raised by the wrapped {@link Put#Put(ByteBuffer, long)} constructor)
-     * @throws IllegalArgumentException if {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code rowKey} is null (raised by the wrapped {@link Put#Put(ByteBuffer, long)} constructor), or if {@code timestamp} is negative
      * @see #of(ByteBuffer)
      * @see #of(Object, long)
      */
@@ -511,7 +560,11 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * AnyPut copiedPut = AnyPut.of(existingPut)
      *                          .addColumn("info", "email", "john@example.com");
-     * // existingPut remains unchanged
+     * boolean hasEmail = copiedPut.has("info", "email");                                       // true
+     * boolean origUnchanged = !existingPut.has(Bytes.toBytes("info"), Bytes.toBytes("email")); // true
+     *
+     * // Edge: a null Put is rejected.
+     * AnyPut.of((Put) null);   // throws NullPointerException
      * }</pre>
      *
      * @param putToCopy the existing HBase Put object to copy; must not be null
@@ -549,6 +602,11 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * User user = new User("user123", "John Doe", "john@example.com");
      * AnyPut put = AnyPut.create(user);
+     * byte[] row = put.getRow();             // bytes of "user123"
+     * boolean hasName = put.has("info", "name");   // true
+     *
+     * // Edge: a null entity is rejected.
+     * AnyPut.create((Object) null);          // throws IllegalArgumentException
      * }</pre>
      *
      * @param entity the Java object to convert to a put operation; must not be null and must
@@ -574,9 +632,16 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * User user = new User("user123", "John Doe");
+     * User user = new User("user123", "John Doe", "john@example.com");
      * AnyPut snakeCasePut = AnyPut.create(user, NamingPolicy.SNAKE_CASE);
      * // Property "userName" becomes column "user_name"
+     * byte[] row = snakeCasePut.getRow();   // bytes of "user123"
+     *
+     * // Edge: a null naming policy is rejected.
+     * AnyPut.create(user, (NamingPolicy) null);                 // throws IllegalArgumentException
+     *
+     * // Edge: a null entity is rejected.
+     * AnyPut.create((Object) null, NamingPolicy.CAMEL_CASE);    // throws IllegalArgumentException
      * }</pre>
      *
      * @param entity the Java object to convert to a put operation; must not be null
@@ -607,7 +672,13 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * <pre>{@code
      * List&lt;User&gt; users = Arrays.asList(user1, user2, user3);
      * List&lt;AnyPut&gt; puts = AnyPut.create(users);
-     * executor.put("users_table", puts);
+     * int count = puts.size();   // 3
+     *
+     * // Edge: an empty collection yields an empty list.
+     * List&lt;AnyPut&gt; none = AnyPut.create(Collections.emptyList());   // size() == 0
+     *
+     * // Edge: a null collection is rejected.
+     * AnyPut.create((Collection&lt;?&gt;) null);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param entities the collection of Java objects to convert; must not be null
@@ -639,6 +710,13 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * <pre>{@code
      * List&lt;User&gt; users = loadUsersFromLegacySystem();
      * List&lt;AnyPut&gt; puts = AnyPut.create(users, NamingPolicy.SNAKE_CASE);
+     * int count = puts.size();   // one AnyPut per entity
+     *
+     * // Edge: a null naming policy is rejected.
+     * AnyPut.create(users, (NamingPolicy) null);              // throws IllegalArgumentException
+     *
+     * // Edge: a null collection is rejected.
+     * AnyPut.create((Collection&lt;?&gt;) null, NamingPolicy.SNAKE_CASE);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param entities the collection of Java objects to convert; must not be null
@@ -670,13 +748,19 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * User user = loadUser("user123");
-     * user.setEmail("newemail@example.com");
-     * user.setLastLogin(new Date());
+     * User user = new User("user123", "Alice", "alice@example.com");
      *
-     * // Update only email and lastLogin, leave other properties unchanged
-     * Set&lt;String&gt; propsToUpdate = Set.of("email", "lastLogin");
-     * AnyPut partialPut = AnyPut.create(user, propsToUpdate);
+     * // Include only the "name" property; "email" is left out
+     * AnyPut partialPut = AnyPut.create(user, Arrays.asList("name"));
+     * boolean hasName = partialPut.has("info", "name");     // true
+     * boolean hasEmail = partialPut.has("info", "email");   // false
+     *
+     * // Edge: a null selection includes all properties.
+     * AnyPut allProps = AnyPut.create(user, (Collection&lt;String&gt;) null);
+     * boolean nameAndEmail = allProps.has("info", "email"); // true
+     *
+     * // Edge: a null entity is rejected.
+     * AnyPut.create((Object) null, Arrays.asList("name"));  // throws IllegalArgumentException
      * }</pre>
      *
      * @param entity the Java object to convert; must not be null
@@ -699,12 +783,14 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * User user = loadUser("user123");
-     * user.setUserStatus("active");
+     * User user = new User("user123", "Alice", "alice@example.com");
      *
-     * Set&lt;String&gt; updateProps = Set.of("userStatus");
-     * AnyPut put = AnyPut.create(user, updateProps, NamingPolicy.SNAKE_CASE);
-     * // Creates put with column "user_status"
+     * AnyPut put = AnyPut.create(user, Arrays.asList("name"), NamingPolicy.CAMEL_CASE);
+     * boolean hasName = put.has("info", "name");     // true
+     * boolean hasEmail = put.has("info", "email");   // false
+     *
+     * // Edge: a null naming policy is rejected.
+     * AnyPut.create(user, Arrays.asList("name"), (NamingPolicy) null);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param entity the Java object to convert; must not be null
@@ -737,12 +823,15 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * List&lt;User&gt; users = loadActiveUsers();
-     * users.forEach(u -> u.setLastChecked(new Date()));
+     * List&lt;User&gt; users = Arrays.asList(new User("u1", "A", "a@x"), new User("u2", "B", "b@x"));
      *
-     * Set&lt;String&gt; updateProps = Set.of("lastChecked");
-     * List&lt;AnyPut&gt; puts = AnyPut.create(users, updateProps);
-     * executor.put("users_table", puts);
+     * List&lt;AnyPut&gt; puts = AnyPut.create(users, Arrays.asList("name"));
+     * int count = puts.size();                             // 2
+     * boolean hasName = puts.get(0).has("info", "name");   // true
+     * boolean hasEmail = puts.get(0).has("info", "email"); // false
+     *
+     * // Edge: a null collection is rejected.
+     * AnyPut.create((Collection&lt;?&gt;) null, Arrays.asList("name"));   // throws IllegalArgumentException
      * }</pre>
      *
      * @param entities the collection of Java objects to convert; must not be null
@@ -773,11 +862,13 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * List&lt;User&gt; users = importFromLegacySystem();
-     * users.forEach(u -> u.setMigrationStatus("completed"));
+     * List&lt;User&gt; users = Arrays.asList(new User("u1", "A", "a@x"));
      *
-     * Set&lt;String&gt; props = Set.of("migrationStatus", "migrationDate");
-     * List&lt;AnyPut&gt; puts = AnyPut.create(users, props, NamingPolicy.SNAKE_CASE);
+     * List&lt;AnyPut&gt; puts = AnyPut.create(users, Arrays.asList("name"), NamingPolicy.CAMEL_CASE);
+     * int count = puts.size();   // 1
+     *
+     * // Edge: a null naming policy is rejected.
+     * AnyPut.create(users, Arrays.asList("name"), (NamingPolicy) null);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param entities the collection of Java objects to convert; must not be null
@@ -920,7 +1011,9 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * <pre>{@code
      * AnyPut anyPut = AnyPut.of("user123").addColumn("info", "name", "John");
      * Put hbasePut = anyPut.val();
-     * table.put(hbasePut);   // Use with native HBase API
+     * byte[] row = hbasePut.getRow();                // bytes of "user123"
+     * boolean same = anyPut.val() == anyPut.val();   // true: same underlying instance each call
+     * table.put(hbasePut);                           // Use with native HBase API
      * }</pre>
      *
      * @return the underlying HBase Put object; never null
@@ -950,10 +1043,15 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyPut put = AnyPut.of("user123")
-     *     .addColumn("info", "name", "John Doe")      // String value
-     *     .addColumn("info", "age", 30)               // Integer value
-     *     .addColumn("stats", "balance", 1000.50)     // Double value
-     *     .addColumn("meta", "created", new Date());  // Date value
+     *     .addColumn("info", "name", "John Doe")             // String value; returns the same AnyPut
+     *     .addColumn("info", "age", 30)                      // Integer value
+     *     .addColumn("stats", "balance", 1000.50)            // Double value
+     *     .addColumn("meta", "created", new Date());         // Date value
+     * boolean stored = put.has("info", "name", "John Doe");  // true
+     *
+     * // A null value is permitted and stored as an empty value.
+     * AnyPut p2 = AnyPut.of("row").addColumn("info", "q", (Object) null);
+     * int size = p2.size();   // 1 (the cell is still added)
      * }</pre>
      *
      * @param family the column family name; must not be null or empty
@@ -987,8 +1085,12 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * <pre>{@code
      * long eventTime = 1609459200000L;  // Jan 1, 2021 00:00:00
      * AnyPut put = AnyPut.of("user123")
-     *     .addColumn("events", "login", eventTime, "NYC")
+     *     .addColumn("events", "login", eventTime, "NYC")           // returns the same AnyPut
      *     .addColumn("events", "action", eventTime, "view_dashboard");
+     * boolean stored = put.has("events", "login", eventTime, "NYC");   // true
+     *
+     * // Edge: a negative timestamp is rejected.
+     * AnyPut.of("row").addColumn("cf", "q", -1L, "v");   // throws IllegalArgumentException
      * }</pre>
      *
      * @param family the column family name; must not be null or empty
@@ -1026,7 +1128,12 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * byte[] family = Bytes.toBytes("info");
      * byte[] qualifier = Bytes.toBytes("name");
      * byte[] value = Bytes.toBytes("John Doe");
-     * AnyPut put = AnyPut.of("user123").addColumn(family, qualifier, value);
+     * AnyPut put = AnyPut.of("user123").addColumn(family, qualifier, value);   // returns the same AnyPut
+     * boolean stored = put.has(family, qualifier, value);                      // true
+     *
+     * // A null qualifier denotes an empty qualifier; a null value is permitted.
+     * AnyPut p2 = AnyPut.of("row").addColumn(family, null, (byte[]) null);
+     * int size = p2.size();   // 1 (the cell is still added)
      * }</pre>
      *
      * @param family the column family name as a byte array; must not be null or empty
@@ -1059,8 +1166,12 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * byte[] family = Bytes.toBytes("events");
      * byte[] qualifier = Bytes.toBytes("action");
      * byte[] value = Bytes.toBytes("login");
-     * long timestamp = System.currentTimeMillis();
-     * AnyPut put = AnyPut.of("user123").addColumn(family, qualifier, timestamp, value);
+     * long timestamp = 1609459200000L;
+     * AnyPut put = AnyPut.of("user123").addColumn(family, qualifier, timestamp, value);   // returns the same AnyPut
+     * boolean stored = put.has(family, qualifier, timestamp, value);                      // true
+     *
+     * // Edge: a negative timestamp is rejected.
+     * AnyPut.of("row").addColumn(family, qualifier, -1L, value);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param family the column family name as a byte array; must not be null or empty
@@ -1091,12 +1202,14 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * <pre>{@code
      * byte[] familyBytes = Bytes.toBytes("data");
      * ByteBuffer qualifier = ByteBuffer.wrap(Bytes.toBytes("value"));
-     * ByteBuffer value = ByteBuffer.allocateDirect(1024);
-     * value.put(someData);
-     * value.flip();
-     * long timestamp = System.currentTimeMillis();
+     * ByteBuffer value = ByteBuffer.wrap(Bytes.toBytes("payload"));
+     * long timestamp = 1609459200000L;
      *
-     * AnyPut put = AnyPut.of("user123").addColumn(familyBytes, qualifier, timestamp, value);
+     * AnyPut put = AnyPut.of("user123").addColumn(familyBytes, qualifier, timestamp, value);   // returns the same AnyPut
+     * boolean stored = put.has(Bytes.toBytes("data"), Bytes.toBytes("value"), timestamp);      // true
+     *
+     * // Edge: a negative timestamp is rejected.
+     * AnyPut.of("row").addColumn(familyBytes, qualifier, -1L, value);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param family the column family name as a byte array; must not be null or empty
@@ -1224,16 +1337,16 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Cell cell = CellUtil.createCell(
-     *     Bytes.toBytes("user123"),      // row
-     *     Bytes.toBytes("info"),         // family
-     *     Bytes.toBytes("name"),         // qualifier
-     *     System.currentTimeMillis(),    // timestamp
-     *     Cell.Type.Put,                 // type
-     *     Bytes.toBytes("John Doe")      // value
-     * );
+     * byte[] row = Bytes.toBytes("user123");
+     * Cell cell = new KeyValue(row, Bytes.toBytes("info"), Bytes.toBytes("name"), Bytes.toBytes("John Doe"));
      *
-     * AnyPut put = AnyPut.of("user123").add(cell);
+     * AnyPut put = AnyPut.of("user123").add(cell);   // returns the same AnyPut; throws IOException
+     * boolean stored = put.has("info", "name");      // true
+     *
+     * // Edge: a cell whose row key differs from this Put's row key is rejected.
+     * Cell wrongRow = new KeyValue(Bytes.toBytes("other"), Bytes.toBytes("info"),
+     *                              Bytes.toBytes("n"), Bytes.toBytes("v"));
+     * AnyPut.of("user123").add(wrongRow);            // throws IOException
      * }</pre>
      *
      * @param kv the Cell to add; must not be null and must have the same row key as this put
@@ -1254,8 +1367,18 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * Returns the hash code value for this AnyPut instance.
      *
      * <p>The hash code is based on the underlying HBase Put object and is consistent
-     * with the {@link #equals(Object)} method. Two AnyPut instances with equivalent
-     * Put operations will have the same hash code.</p>
+     * with the {@link #equals(Object)} method (both are identity-based on the wrapped Put).</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyPut a = AnyPut.of("rowKey").addColumn("info", "name", "John");
+     * a.hashCode() == a.hashCode();   // returns true (stable; delegates to the wrapped HBase Put)
+     *
+     * // Identity-based: two distinct puts built the same way are not equal and need not
+     * // share a hash code:
+     * AnyPut b = AnyPut.of("rowKey").addColumn("info", "name", "John");
+     * a.equals(b);                    // returns false
+     * }</pre>
      *
      * @return the hash code value for this AnyPut
      * @see #equals(Object)
@@ -1268,19 +1391,30 @@ public final class AnyPut extends AnyMutation<AnyPut> {
     /**
      * Compares this AnyPut instance with another object for equality.
      *
-     * <p>Two AnyPut instances are considered equal if they wrap equivalent HBase Put
-     * operations. This comparison is based on the underlying Put object's equality,
-     * which considers row key, column specifications, timestamps, and all cell data.</p>
+     * <p>The comparison is delegated to the underlying HBase {@link Put#equals(Object)}. Note that
+     * {@code Put.equals} does <i>not</i> perform a deep structural value comparison: two separately
+     * constructed Puts are not reported as equal even when they carry the same row key and identical
+     * cells. In practice, therefore, {@code equals} returns {@code true} only for the same instance
+     * (or instances backed by the same {@link Put}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * AnyPut put1 = AnyPut.of("user123").addColumn("info", "name", "John");
-     * AnyPut put2 = AnyPut.of("user123").addColumn("info", "name", "John");
-     * boolean equal = put1.equals(put2);   // returns true
+     * AnyPut put = AnyPut.of("user123").addColumn("info", "name", "John");
+     * boolean selfEqual = put.equals(put);   // returns true (same instance)
+     *
+     * // Two separately built puts are NOT equal, even with identical row and cells:
+     * AnyPut p1 = AnyPut.of("user123").addColumn("info", "name", 100L, "John");
+     * AnyPut p2 = AnyPut.of("user123").addColumn("info", "name", 100L, "John");
+     * boolean equal = p1.equals(p2);         // returns false
+     *
+     * // A non-AnyPut object (or null) is never equal:
+     * boolean other = put.equals("not an AnyPut");   // returns false
+     * boolean isNull = put.equals(null);             // returns false
      * }</pre>
      *
      * @param obj the object to compare with
-     * @return {@code true} if the specified object represents an equivalent put operation, {@code false} otherwise
+     * @return {@code true} if the specified object is an {@code AnyPut} whose underlying {@link Put}
+     *         is equal to this one's, {@code false} otherwise
      * @see #hashCode()
      */
     @SuppressFBWarnings
@@ -1304,6 +1438,13 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * and includes information about the row key, column families, qualifiers, timestamps,
      * and values contained in this put operation.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyPut a = AnyPut.of("rowKey").addColumn("info", "name", "John");
+     * String s = a.toString();        // delegates to Put.toString(); never null
+     * s.contains("rowKey");           // returns true (the row key appears in the description)
+     * }</pre>
+     *
      * @return a string representation of the put operation
      */
     @Override
@@ -1323,12 +1464,21 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List&lt;Object&gt; mixed = new ArrayList&lt;&gt;();
-     * mixed.add(new User("user1", "John"));                             // Entity
-     * mixed.add(new User("user2", "Jane"));                             // Entity
-     * mixed.add(AnyPut.of("user3").addColumn("info", "name", "Bob"));   // AnyPut
+     * mixed.add(new User("user1", "John", "j@x"));                      // Entity
+     * mixed.add(new User("user2", "Jane", "ja@x"));                     // Entity
+     * AnyPut anyPut = AnyPut.of("user3").addColumn("info", "name", "Bob");
+     * mixed.add(anyPut);                                                // AnyPut
      *
      * List&lt;Put&gt; puts = AnyPut.toPut(mixed);
-     * table.put(puts);   // Batch put with native HBase API
+     * int count = puts.size();                         // 3
+     * boolean sameRef = puts.get(2) == anyPut.val();   // true: AnyPut.val() returned directly
+     * table.put(puts);                                 // Batch put with native HBase API
+     *
+     * // Edge: an empty collection yields an empty list.
+     * List&lt;Put&gt; none = AnyPut.toPut(Collections.emptyList());   // size() == 0
+     *
+     * // Edge: a null collection is rejected.
+     * AnyPut.toPut(null);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param entities the collection of entities and/or AnyPut instances to convert; must not be null and must not contain null elements
@@ -1359,11 +1509,18 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * List&lt;User&gt; users = loadUsersFromLegacySystem();
+     * List&lt;User&gt; users = Arrays.asList(new User("u1", "Alice", "a@x"));
      *
      * // Convert entities using snake_case naming
      * List&lt;Put&gt; puts = AnyPut.toPut(users, NamingPolicy.SNAKE_CASE);
-     * table.put(puts);   // All column names will be in snake_case
+     * byte[] row = puts.get(0).getRow();   // bytes of "u1"
+     * table.put(puts);                     // All column names will be in snake_case
+     *
+     * // Edge: a null collection is rejected.
+     * AnyPut.toPut(null, NamingPolicy.CAMEL_CASE);   // throws IllegalArgumentException
+     *
+     * // Edge: a null naming policy is rejected.
+     * AnyPut.toPut(users, (NamingPolicy) null);      // throws IllegalArgumentException
      * }</pre>
      *
      * @param entities the collection of entities and/or AnyPut instances to convert; must not be null and must not contain null elements

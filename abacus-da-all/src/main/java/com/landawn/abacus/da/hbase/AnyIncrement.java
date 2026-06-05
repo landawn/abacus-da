@@ -65,7 +65,8 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * {@link HBaseExecutor#toRowBytes(Object)}.
      *
      * @param rowKey the row key for the increment operation
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}
+     * @throws NullPointerException if {@code rowKey} is {@code null} (its converted row bytes are
+     *         {@code null}, which the underlying {@link Increment} constructor rejects)
      */
     AnyIncrement(final Object rowKey) {
         super(new Increment(toRowBytes(rowKey)));
@@ -132,16 +133,23 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * // Create increment for page view counter
      * AnyIncrement pageViews = AnyIncrement.of("user123")
      *                                      .addColumn("stats", "page_views", 1L);
+     * pageViews.getRow();      // returns Bytes.toBytes("user123")
+     * pageViews.hasFamilies(); // returns true
      *
-     * // Create increment for multiple counters
+     * // Create increment for multiple counters (same family => one family entry)
      * AnyIncrement metrics = AnyIncrement.of("daily_stats")
      *                                    .addColumn("counters", "logins", 1L)
      *                                    .addColumn("counters", "signups", 1L);
+     * metrics.getFamilyMapOfLongs().size(); // returns 1
+     *
+     * // Edge: null row key is rejected by the underlying HBase Increment constructor
+     * AnyIncrement.of((Object) null);       // throws NullPointerException
      * }</pre>
      *
      * @param rowKey the row key for the increment operation; automatically converted to bytes
      * @return a new AnyIncrement instance configured for the specified row
-     * @throws IllegalArgumentException if rowKey is null
+     * @throws NullPointerException if {@code rowKey} is {@code null} (its byte conversion yields
+     *         {@code null}, which the {@link Increment} constructor rejects)
      * @see #of(byte[])
      * @see #addColumn(String, String, long)
      */
@@ -162,11 +170,19 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * byte[] keyBytes = Bytes.toBytes("counter_row_123");
      * AnyIncrement increment = AnyIncrement.of(keyBytes)
      *                                      .addColumn("metrics", "hits", 1L);
+     * increment.getRow(); // returns keyBytes ("counter_row_123")
+     *
+     * // Edge: a null row key is rejected by the HBase Increment constructor
+     * AnyIncrement.of((byte[]) null); // throws NullPointerException
+     *
+     * // Edge: an empty (zero-length) row key is rejected with IllegalArgumentException
+     * AnyIncrement.of(new byte[0]);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param rowKey the row key for the increment operation as a byte array
      * @return a new AnyIncrement instance configured for the specified row
-     * @throws IllegalArgumentException if rowKey is null
+     * @throws NullPointerException if {@code rowKey} is {@code null}
+     * @throws IllegalArgumentException if {@code rowKey} is empty (zero-length)
      * @see #of(Object)
      */
     public static AnyIncrement of(final byte[] rowKey) {
@@ -183,17 +199,27 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Extract user ID from composite key
-     * byte[] compositeKey = buildCompositeKey("user123", "session456");
-     * AnyIncrement increment = AnyIncrement.of(compositeKey, 0, 7)  // "user123"
+     * // Extract user ID from a composite key (use the first 7 bytes -> "user123")
+     * byte[] compositeKey = Bytes.toBytes("user123session456");
+     * AnyIncrement increment = AnyIncrement.of(compositeKey, 0, 7)
      *                                      .addColumn("counters", "sessions", 1L);
+     * increment.getRow(); // returns Bytes.toBytes("user123")
+     *
+     * // Edge: a null row key is rejected with IllegalArgumentException ("Row buffer is null")
+     * AnyIncrement.of((byte[]) null, 0, 1);   // throws IllegalArgumentException
+     *
+     * // Edge: a negative offset overflows the slice copy
+     * AnyIncrement.of(compositeKey, -1, 3);   // throws ArrayIndexOutOfBoundsException
      * }</pre>
      *
      * @param rowKey the byte array containing the row key data
      * @param offset the starting position within the rowKey array (0-based)
      * @param length the number of bytes to use from the rowKey array
      * @return a new AnyIncrement instance configured for the partial row key
-     * @throws IllegalArgumentException if rowKey is null, offset is negative, or length is invalid
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or if the resulting
+     *         slice is empty or exceeds HBase's maximum row-key length
+     * @throws ArrayIndexOutOfBoundsException if {@code offset} or {@code length} addresses bytes
+     *         outside {@code rowKey} (for example a negative {@code offset})
      * @see #of(byte[])
      */
     public static AnyIncrement of(final byte[] rowKey, final int offset, final int length) {
@@ -211,13 +237,18 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * NavigableMap<byte[], List<Cell>> familyMap = buildIncrementFamilyMap();
-     * long timestamp = System.currentTimeMillis();
-     * AnyIncrement increment = AnyIncrement.of(
-     *     Bytes.toBytes("counter_row"),
-     *     timestamp,
-     *     familyMap
-     * );
+     * NavigableMap<byte[], List<Cell>> familyMap = new TreeMap<>(Bytes.BYTES_COMPARATOR);
+     * long timestamp = 1234L;
+     * AnyIncrement increment = AnyIncrement.of(Bytes.toBytes("counter_row"), timestamp, familyMap);
+     * increment.getRow();       // returns Bytes.toBytes("counter_row")
+     * increment.getTimestamp(); // returns 1234L
+     *
+     * // Edge: an empty (zero-length) row key is rejected
+     * AnyIncrement.of(new byte[0], timestamp, familyMap);                  // throws IllegalArgumentException
+     *
+     * // Edge: a null row key or null family map is rejected
+     * AnyIncrement.of((byte[]) null, timestamp, familyMap);                // throws NullPointerException
+     * AnyIncrement.of(Bytes.toBytes("r"), timestamp, (NavigableMap) null); // throws NullPointerException
      * }</pre>
      *
      * @param rowKey the row key for the increment operation as a byte array
@@ -244,10 +275,18 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Increment existingIncrement = buildStandardIncrement();
+     * Increment existingIncrement = new Increment(Bytes.toBytes("r"));
+     * existingIncrement.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), 1L);
+     *
      * AnyIncrement extended = AnyIncrement.of(existingIncrement)
      *                                     .addColumn("additional", "counter", 5L)
      *                                     .setReturnResults(true);
+     * extended.val() == existingIncrement;            // false (a fresh copy is wrapped)
+     * extended.getFamilyMapOfLongs().size();          // returns 2
+     * existingIncrement.getFamilyMapOfLongs().size(); // returns 1 (source map is unchanged)
+     *
+     * // Edge: a null source increment is rejected
+     * AnyIncrement.of((Increment) null);            // throws NullPointerException
      * }</pre>
      *
      * @param incrementToCopy the HBase Increment object to copy; must not be {@code null}
@@ -271,7 +310,9 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * AnyIncrement anyIncrement = AnyIncrement.of("user123")
      *                                         .addColumn("stats", "count", 1L);
      * Increment hbaseIncrement = anyIncrement.val();
-     * table.increment(hbaseIncrement);   // Use with native HBase API
+     * hbaseIncrement.getRow();                 // returns Bytes.toBytes("user123")
+     * anyIncrement.val() == hbaseIncrement;    // true (same wrapped instance every call)
+     * table.increment(hbaseIncrement);         // Use with native HBase API
      * }</pre>
      *
      * @return the underlying HBase Increment object
@@ -289,6 +330,21 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *
      * <p>The cell's row key must match this increment's row key; HBase's {@link Increment#add(Cell)}
      * throws an {@link IOException} otherwise.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyIncrement increment = AnyIncrement.of("row1");
+     * Cell cell = CellUtil.createCell(Bytes.toBytes("row1"), Bytes.toBytes("cf"),
+     *         Bytes.toBytes("q"), 0L, KeyValue.Type.Put.getCode(), Bytes.toBytes(1L));
+     * AnyIncrement same = increment.add(cell); // throws IOException
+     * same == increment;                       // true (returns this for chaining)
+     * increment.hasFamilies();                 // returns true
+     *
+     * // Edge: a cell whose row key differs from this increment's row is rejected
+     * Cell badCell = CellUtil.createCell(Bytes.toBytes("OTHER"), Bytes.toBytes("cf"),
+     *         Bytes.toBytes("q"), 0L, KeyValue.Type.Put.getCode(), Bytes.toBytes(1L));
+     * AnyIncrement.of("row1").add(badCell);    // throws IOException
+     * }</pre>
      *
      * @param cell the {@link Cell} to add
      * @return this AnyIncrement instance, to allow fluent method chaining
@@ -317,8 +373,13 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * byte[] familyBytes = Bytes.toBytes("counters");
      * byte[] qualifierBytes = Bytes.toBytes("page_views");
      *
-     * AnyIncrement increment = AnyIncrement.of("user123")
-     *                                      .addColumn(familyBytes, qualifierBytes, 1L);
+     * AnyIncrement increment = AnyIncrement.of("user123");
+     * AnyIncrement same = increment.addColumn(familyBytes, qualifierBytes, 1L);
+     * same == increment;         // true (returns this for chaining)
+     * increment.hasFamilies();   // returns true
+     *
+     * // Edge: a null family is rejected
+     * AnyIncrement.of("user123").addColumn((byte[]) null, qualifierBytes, 1L); // throws IllegalArgumentException
      * }</pre>
      *
      * @param family the column-family name as a byte array; must not be {@code null}
@@ -345,16 +406,22 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Increment page view counter
-     * anyIncrement.addColumn("stats", "pageViews", 1L);
+     * AnyIncrement anyIncrement = AnyIncrement.of("user123");
+     *
+     * // Increment page view counter (returns the same builder for chaining)
+     * AnyIncrement same = anyIncrement.addColumn("stats", "pageViews", 1L);
+     * same == anyIncrement; // true
      *
      * // Increment multiple counters
      * anyIncrement.addColumn("metrics", "sessions", 1L)
      *            .addColumn("metrics", "events", 5L)
      *            .addColumn("counters", "clicks", 3L);
      *
-     * // Decrement (negative increment)
+     * // Decrement: a negative amount is stored as-is
      * anyIncrement.addColumn("inventory", "stock", -1L);
+     * anyIncrement.getFamilyMapOfLongs()
+     *             .get(Bytes.toBytes("inventory"))
+     *             .get(Bytes.toBytes("stock")); // returns -1L
      * }</pre>
      *
      * @param family the column-family name; converted to bytes via
@@ -382,10 +449,15 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyIncrement increment = AnyIncrement.of("counter_row")
-     *                                      .setTimeRange(startTime, endTime);
+     *                                      .setTimeRange(100L, 200L);
      * TimeRange range = increment.getTimeRange();
-     * long min = range.getMin();
-     * long max = range.getMax();
+     * range.getMin(); // returns 100L
+     * range.getMax(); // returns 200L
+     *
+     * // Edge: when no range is set, the default spans all timestamps
+     * TimeRange def = AnyIncrement.of("row").getTimeRange();
+     * def.getMin(); // returns 0L
+     * def.getMax(); // returns Long.MAX_VALUE
      * }</pre>
      *
      * @return the current TimeRange for this increment, or the default TimeRange if no specific range is set
@@ -410,13 +482,21 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Increment counter for current hour only
-     * long hourStart = System.currentTimeMillis() / 3600000 * 3600000;
-     * long hourEnd = hourStart + 3600000;
+     * // Increment counter for one hour only (returns the same builder for chaining)
+     * long hourStart = 3600000L;
+     * long hourEnd = hourStart + 3600000L;
      *
      * AnyIncrement hourlyCounter = AnyIncrement.of("hourly_stats")
      *                                          .setTimeRange(hourStart, hourEnd)
      *                                          .addColumn("metrics", "events", 1L);
+     * hourlyCounter.getTimeRange().getMin(); // returns 3600000L
+     * hourlyCounter.getTimeRange().getMax(); // returns 7200000L
+     *
+     * // Edge: maxStamp < minStamp is rejected
+     * AnyIncrement.of("row").setTimeRange(200L, 100L); // throws IllegalArgumentException
+     *
+     * // Edge: a negative timestamp is rejected
+     * AnyIncrement.of("row").setTimeRange(-1L, 100L);  // throws IllegalArgumentException
      * }</pre>
      *
      * @param minStamp minimum timestamp value, inclusive
@@ -459,11 +539,17 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * AnyIncrement fastCounter = AnyIncrement.of("counter_key")
      *                                        .addColumn("stats", "hits", 1L)
      *                                        .setReturnResults(false);
+     * fastCounter.isReturnResults(); // returns false
      *
      * // Standard increment with result retrieval for verification
      * AnyIncrement verifiableIncrement = AnyIncrement.of("important_counter")
      *                                                .addColumn("metrics", "value", 5L)
      *                                                .setReturnResults(true);
+     * verifiableIncrement.isReturnResults(); // returns true
+     *
+     * // Returns the same builder for chaining
+     * AnyIncrement inc = AnyIncrement.of("row");
+     * inc.setReturnResults(true) == inc;     // true
      * }</pre>
      *
      * @param returnResults {@code true} to return the post-increment values (HBase's historical
@@ -493,6 +579,10 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *                                      .addColumn("stats", "count", 1L)
      *                                      .setReturnResults(false);
      * boolean returnsResults = increment.isReturnResults();   // returns false
+     *
+     * // After re-enabling, the flag reflects the latest setting
+     * increment.setReturnResults(true);
+     * increment.isReturnResults();                            // returns true
      * }</pre>
      *
      * @return {@code true} if the increment will return results, {@code false} otherwise
@@ -550,6 +640,10 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *                                      .addColumn("stats", "clicks", 3L);
      *
      * Map<byte[], NavigableMap<byte[], Long>> familyMap = increment.getFamilyMapOfLongs();
+     * familyMap.size();                                                   // returns 1 (one family: "stats")
+     * familyMap.get(Bytes.toBytes("stats")).get(Bytes.toBytes("views"));  // returns 5L
+     * familyMap.get(Bytes.toBytes("stats")).get(Bytes.toBytes("clicks")); // returns 3L
+     *
      * // Process the increment data programmatically
      * for (Map.Entry<byte[], NavigableMap<byte[], Long>> entry : familyMap.entrySet()) {
      *     String family = Bytes.toString(entry.getKey());
@@ -559,6 +653,9 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *         System.out.println(family + ":" + qualifier + " += " + amount);
      *     }
      * }
+     *
+     * // Edge: an increment with no columns yields a non-null, empty map
+     * AnyIncrement.of("row").getFamilyMapOfLongs().size();             // returns 0
      * }</pre>
      *
      * @return a Map of column families to their qualifier-value mappings; never null but may be empty
@@ -585,6 +682,12 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *                                      .addColumn("stats", "count", 1L)
      *                                      .setAttribute("trace_id", Bytes.toBytes("trace-456"))
      *                                      .setAttribute("priority", Bytes.toBytes("high"));
+     * increment.getAttribute("trace_id"); // returns Bytes.toBytes("trace-456")
+     * increment.getAttribute("priority"); // returns Bytes.toBytes("high")
+     *
+     * // Edge: passing a null value clears (removes) the attribute
+     * increment.setAttribute("priority", (byte[]) null);
+     * increment.getAttribute("priority"); // returns null
      * }</pre>
      *
      * @param name the attribute name
@@ -606,6 +709,18 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * <p>The hash code is based on the underlying HBase Increment object and is consistent
      * with the {@link #equals(Object)} method.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyIncrement increment = AnyIncrement.of("row");
+     * increment.hashCode() == increment.val().hashCode(); // true (delegates to the wrapped Increment)
+     *
+     * // Equal increments share the same hash code
+     * AnyIncrement a = AnyIncrement.of("row").addColumn("cf", "q", 1L);
+     * AnyIncrement b = AnyIncrement.of("row").addColumn("cf", "q", 1L);
+     * a.equals(b);                         // true
+     * a.hashCode() == b.hashCode();        // true
+     * }</pre>
+     *
      * @return the hash code value for this AnyIncrement
      * @see #equals(Object)
      */
@@ -620,6 +735,20 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *
      * <p>Two AnyIncrement instances are considered equal if they wrap equivalent HBase Increment
      * operations. This comparison is based on the underlying Increment object's equality.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyIncrement increment = AnyIncrement.of("row");
+     * increment.equals(increment);                 // returns true (same instance)
+     *
+     * AnyIncrement a = AnyIncrement.of("row").addColumn("cf", "q", 1L);
+     * AnyIncrement b = AnyIncrement.of("row").addColumn("cf", "q", 1L);
+     * a.equals(b);                                 // returns true (equivalent increments)
+     *
+     * // Edge: a non-AnyIncrement object and null are never equal
+     * increment.equals("not an AnyIncrement");     // returns false
+     * increment.equals(null);                      // returns false
+     * }</pre>
      *
      * @param obj the object to compare with
      * @return {@code true} if the specified object represents an equivalent increment operation, {@code false} otherwise
@@ -646,6 +775,14 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * <p>The string representation is delegated to the underlying HBase Increment object
      * and includes information about the row key, column families, qualifiers,
      * and other configuration settings.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyIncrement increment = AnyIncrement.of("row").addColumn("cf", "q", 1L);
+     * String text = increment.toString();
+     * text.equals(increment.val().toString()); // returns true (delegates to the wrapped Increment)
+     * // text contains the row key, families and qualifiers, e.g. "row=row, ..."
+     * }</pre>
      *
      * @return a string representation of the increment operation
      */

@@ -129,7 +129,8 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * for the given row key, which is converted to bytes via {@link HBaseExecutor#toRowBytes(Object)}.
      *
      * @param rowKey the row key for the append operation
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}
+     * @throws NullPointerException if {@code rowKey} is {@code null} (its converted row bytes are
+     *         {@code null}, which the underlying {@link Append} constructor rejects)
      */
     AnyAppend(final Object rowKey) {
         super(new Append(toRowBytes(rowKey)));
@@ -193,13 +194,17 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * AnyAppend append = AnyAppend.of("user123");
-     * append.addColumn("logs", "activity", "login;");
+     * AnyAppend append = AnyAppend.of("user123");            // returns a new AnyAppend; row = "user123"
+     * append.addColumn("logs", "activity", "login;");        // returns the same AnyAppend (for chaining); queues the append
+     *
+     * AnyAppend numKey = AnyAppend.of(1001L);                // returns a new AnyAppend; numeric key encoded to bytes
+     * AnyAppend.of((Object) null);                           // throws NullPointerException (row bytes resolve to null)
      * }</pre>
      *
      * @param rowKey the row key to append data to; converted to bytes automatically
      * @return a new AnyAppend instance configured for the specified row
-     * @throws IllegalArgumentException if rowKey is null
+     * @throws NullPointerException if {@code rowKey} is {@code null} (its converted row bytes are
+     *         {@code null}, which the underlying {@link Append} constructor rejects)
      * @see #addColumn(String, String, Object)
      */
     public static AnyAppend of(final Object rowKey) {
@@ -216,13 +221,17 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * byte[] keyBytes = Bytes.toBytes("user123");
-     * AnyAppend append = AnyAppend.of(keyBytes);
-     * append.addColumn("logs", "activity", "login;");
+     * AnyAppend append = AnyAppend.of(keyBytes);             // returns a new AnyAppend; row = keyBytes
+     * append.addColumn("logs", "activity", "login;");        // returns the same AnyAppend (for chaining)
+     *
+     * AnyAppend.of((byte[]) null);                           // throws NullPointerException
+     * AnyAppend.of(new byte[0]);                             // throws IllegalArgumentException (empty row key)
      * }</pre>
      *
-     * @param rowKey the row key as a byte array, must not be null or empty
+     * @param rowKey the row key as a byte array; must not be {@code null} or empty
      * @return a new AnyAppend instance configured for the specified row
-     * @throws IllegalArgumentException if rowKey is null or empty
+     * @throws NullPointerException if {@code rowKey} is {@code null}
+     * @throws IllegalArgumentException if {@code rowKey} is empty (zero-length)
      * @see #of(Object)
      */
     public static AnyAppend of(final byte[] rowKey) {
@@ -239,15 +248,22 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * byte[] data = "prefix:user123:suffix".getBytes();
-     * AnyAppend append = AnyAppend.of(data, 7, 7);   // Extract "user123"
-     * append.addColumn("logs", "activity", "login;");
+     * AnyAppend append = AnyAppend.of(data, 7, 7);           // returns a new AnyAppend; row = "user123"
+     * append.addColumn("logs", "activity", "login;");        // returns the same AnyAppend (for chaining)
+     *
+     * AnyAppend.of((byte[]) null, 0, 1);                     // throws IllegalArgumentException ("Row buffer is null")
+     * AnyAppend.of(Bytes.toBytes("abc"), 1, 5);              // throws ArrayIndexOutOfBoundsException (offset+length > 3)
+     * AnyAppend.of(Bytes.toBytes("abc"), -1, 2);             // throws ArrayIndexOutOfBoundsException (negative offset)
      * }</pre>
      *
      * @param rowKey the source byte array containing the row key
      * @param offset the starting position within the byte array (0-based)
      * @param length the number of bytes to use for the row key
      * @return a new AnyAppend instance configured for the specified row key portion
-     * @throws IllegalArgumentException if rowKey is null, offset is negative, length is negative, or offset+length exceeds array bounds
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null} (validated by the underlying
+     *         {@link Append} constructor via {@code checkRow})
+     * @throws ArrayIndexOutOfBoundsException if {@code offset} is negative or {@code offset + length}
+     *         exceeds the array length (the slice copy goes out of bounds)
      * @see #of(byte[])
      */
     public static AnyAppend of(final byte[] rowKey, final int offset, final int length) {
@@ -264,11 +280,13 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * long ts = System.currentTimeMillis();
      * NavigableMap<byte[], List<Cell>> familyMap = new TreeMap<>(Bytes.BYTES_COMPARATOR);
-     * List<Cell> cells = Arrays.asList(CellUtil.createCell(Bytes.toBytes("row"), ...));
-     * familyMap.put(Bytes.toBytes("cf"), cells);
+     * AnyAppend append = AnyAppend.of(Bytes.toBytes("user123"), ts, familyMap);
+     * // returns a new AnyAppend; row = "user123", timestamp = ts
      *
-     * AnyAppend append = AnyAppend.of(Bytes.toBytes("user123"), System.currentTimeMillis(), familyMap);
+     * AnyAppend.of(Bytes.toBytes("k"), ts, null);            // throws NullPointerException (familyMap is null)
+     * AnyAppend.of(new byte[0], ts, familyMap);              // throws IllegalArgumentException (empty row key)
      * }</pre>
      *
      * @param rowKey the row key as a byte array, must not be null or empty
@@ -299,8 +317,11 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * existingAppend.addColumn(Bytes.toBytes("logs"), Bytes.toBytes("activity"),
      *                          Bytes.toBytes("login;"));
      *
-     * AnyAppend append = AnyAppend.of(existingAppend);
-     * append.addColumn("logs", "activity", "logout;");   // Add more data
+     * AnyAppend append = AnyAppend.of(existingAppend);       // returns a new AnyAppend wrapping a fresh copy
+     * append.val() != existingAppend;                        // true: the wrapped Append is a distinct copy
+     * append.addColumn("logs", "activity", "logout;");       // returns the same AnyAppend; does not mutate existingAppend
+     *
+     * AnyAppend.of((Append) null);                           // throws NullPointerException
      * }</pre>
      *
      * @param appendToCopy the existing HBase {@link Append} to copy; must not be {@code null}
@@ -323,8 +344,10 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * <pre>{@code
      * AnyAppend anyAppend = AnyAppend.of("user123")
      *                                .addColumn("logs", "activity", "login;");
-     * Append hbaseAppend = anyAppend.val();
-     * table.append(hbaseAppend);   // Use with native HBase API
+     * Append hbaseAppend = anyAppend.val();                  // returns the wrapped Append; row = "user123"
+     * table.append(hbaseAppend);                             // use with the native HBase API
+     *
+     * anyAppend.val() == anyAppend.val();                    // true: always returns the same wrapped instance
      * }</pre>
      *
      * @return the underlying HBase Append object
@@ -353,8 +376,11 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * long hourStart = System.currentTimeMillis() / 3600000 * 3600000;
      * long hourEnd = hourStart + 3600000;
      * AnyAppend append = AnyAppend.of("hourly_log")
-     *                             .setTimeRange(hourStart, hourEnd)
+     *                             .setTimeRange(hourStart, hourEnd)   // returns the same AnyAppend; range = [hourStart, hourEnd)
      *                             .addColumn("logs", "events", "evt;");
+     *
+     * AnyAppend.of("k").setTimeRange(-1L, 10L);              // throws IllegalArgumentException (negative minStamp)
+     * AnyAppend.of("k").setTimeRange(200L, 100L);            // throws IllegalArgumentException (maxStamp < minStamp)
      * }</pre>
      *
      * @param minStamp minimum timestamp value, inclusive
@@ -382,8 +408,13 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyAppend append = AnyAppend.of("user123");
-     * append.setTimeRange(startTime, endTime);
-     * TimeRange range = append.getTimeRange();
+     * append.getTimeRange().getMin();                        // returns 0 (default: covers all timestamps)
+     * append.getTimeRange().getMax();                        // returns Long.MAX_VALUE
+     *
+     * append.setTimeRange(100L, 200L);
+     * TimeRange range = append.getTimeRange();               // returns the configured TimeRange; never null
+     * range.getMin();                                        // returns 100
+     * range.getMax();                                        // returns 200
      * }</pre>
      *
      * @return the configured {@link TimeRange}, or the default {@link TimeRange} if no specific
@@ -408,12 +439,13 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * // Disable result return for better performance
      * AnyAppend highThroughput = AnyAppend.of("log_key")
      *                                     .addColumn("logs", "events", "evt;")
-     *                                     .setReturnResults(false);
+     *                                     .setReturnResults(false);   // returns the same AnyAppend; isReturnResults() now false
      *
      * // Enable result return to inspect the concatenated value
+     * Object someData = "v;";
      * AnyAppend withResults = AnyAppend.of("important_key")
      *                                  .addColumn("data", "value", someData)
-     *                                  .setReturnResults(true);
+     *                                  .setReturnResults(true);       // returns the same AnyAppend; isReturnResults() now true
      * }</pre>
      *
      * @param returnResults {@code true} to return the post-append values (HBase's historical
@@ -440,7 +472,10 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * AnyAppend append = AnyAppend.of("user123")
      *                             .addColumn("logs", "activity", "login;")
      *                             .setReturnResults(false);
-     * boolean returnsResults = append.isReturnResults();   // returns false
+     * boolean returnsResults = append.isReturnResults();    // returns false
+     *
+     * AnyAppend fresh = AnyAppend.of("k");
+     * fresh.isReturnResults();                              // returns true (default for a new Append)
      * }</pre>
      *
      * @return {@code true} if results will be returned, {@code false} otherwise
@@ -481,7 +516,12 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * byte[] valueBytes = Bytes.toBytes("login_event");
      *
      * AnyAppend append = AnyAppend.of("user123")
-     *                             .addColumn(familyBytes, qualifierBytes, valueBytes);
+     *                             .addColumn(familyBytes, qualifierBytes, valueBytes);   // returns the same AnyAppend; queues the cell
+     *
+     * append.addColumn(familyBytes, (byte[]) null, valueBytes);       // ok: null qualifier means empty qualifier
+     * append.addColumn(familyBytes, qualifierBytes, (byte[]) null);   // ok: null value accepted
+     * append.addColumn((byte[]) null, qualifierBytes, valueBytes);    // throws IllegalArgumentException (null family)
+     * append.addColumn(new byte[0], qualifierBytes, valueBytes);      // throws IllegalArgumentException (empty family)
      * }</pre>
      *
      * @param family the column-family name as a byte array; must not be null or empty
@@ -513,9 +553,11 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyAppend append = AnyAppend.of("user123");
-     * append.addColumn("logs", "activity", "login;");
-     * append.addColumn("audit", "trail", "ACTION:LOGIN;");
-     * append.addColumn("settings", "history", "theme=dark;");
+     * append.addColumn("logs", "activity", "login;");         // returns the same AnyAppend (for chaining); queues the cell
+     * append.addColumn("audit", "trail", "ACTION:LOGIN;");    // returns the same AnyAppend; second cell queued
+     * append.addColumn("settings", "history", "theme=dark;"); // returns the same AnyAppend; three families now present
+     *
+     * append.addColumn("metrics", "count", 12345);           // ok: non-string value encoded via toValueBytes
      * }</pre>
      *
      * @param family the column-family name; converted via {@link HBaseExecutor#toFamilyQualifierBytes(String)}
@@ -545,18 +587,13 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * byte[] row = Bytes.toBytes("user123");
      * AnyAppend append = AnyAppend.of("user123");
      *
-     * Cell cell = CellUtil.createCell(
-     *     Bytes.toBytes("user123"),
-     *     Bytes.toBytes("logs"),
-     *     Bytes.toBytes("activity"),
-     *     System.currentTimeMillis(),
-     *     KeyValue.Type.Put.getCode(),
-     *     Bytes.toBytes("login;")
-     * );
+     * Cell cell = new KeyValue(row, Bytes.toBytes("logs"),
+     *                          Bytes.toBytes("activity"), Bytes.toBytes("login;"));
      *
-     * append.add(cell);
+     * append.add(cell);                                      // returns the same AnyAppend (for chaining); cell queued
      * }</pre>
      *
      * @param cell the {@link Cell} to add to this append operation
@@ -583,8 +620,10 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyAppend append = AnyAppend.of("user123");
-     * append.setAttribute("trace_id", Bytes.toBytes("trace-12345"));
-     * append.setAttribute("priority", Bytes.toBytes("high"));
+     * append.setAttribute("trace_id", Bytes.toBytes("trace-12345"));   // returns the same AnyAppend; getAttribute("trace_id") -> "trace-12345" bytes
+     * append.setAttribute("priority", Bytes.toBytes("high"));          // returns the same AnyAppend; attribute stored
+     *
+     * append.setAttribute("trace_id", (byte[]) null);       // returns the same AnyAppend; clears the "trace_id" attribute
      * }</pre>
      *
      * @param name the attribute name
@@ -605,6 +644,17 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * <p>The hash code is based on the underlying HBase Append object and is consistent
      * with the {@link #equals(Object)} method.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyAppend a = AnyAppend.of("rowKey").addColumn("cf", "qualifier", "v");
+     * a.hashCode() == a.hashCode();   // returns true (stable; delegates to the wrapped HBase Append)
+     *
+     * // equals/hashCode are identity-based on the wrapped Append, so two distinct instances
+     * // built the same way are not equal and need not share a hash code:
+     * AnyAppend b = AnyAppend.of("rowKey").addColumn("cf", "qualifier", "v");
+     * a.equals(b);                    // returns false
+     * }</pre>
+     *
      * @return the hash code value for this AnyAppend
      * @see #equals(Object)
      */
@@ -616,11 +666,27 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
     /**
      * Compares this AnyAppend instance with another object for equality.
      *
-     * <p>Two AnyAppend instances are considered equal if they wrap equivalent HBase Append
-     * operations. This comparison is based on the underlying Append object's equality.</p>
+     * <p>The comparison is delegated to the underlying HBase {@link Append#equals(Object)}, which is
+     * identity-based: two separately constructed AnyAppend instances are not equal even when they
+     * wrap Appends with the same row key and identical columns. In practice {@code equals} returns
+     * {@code true} only for the same instance (or instances backed by the same {@link Append}).</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyAppend a = AnyAppend.of("rowKey").addColumn("cf", "qualifier", "v");
+     * a.equals(a);                    // returns true (same instance)
+     *
+     * // Two separately built appends are NOT equal, even with identical row and columns:
+     * AnyAppend b = AnyAppend.of("rowKey").addColumn("cf", "qualifier", "v");
+     * a.equals(b);                    // returns false
+     *
+     * a.equals(null);                 // returns false
+     * a.equals("not an AnyAppend");   // returns false
+     * }</pre>
      *
      * @param obj the object to compare with
-     * @return {@code true} if the specified object represents an equivalent append operation, {@code false} otherwise
+     * @return {@code true} if the specified object is an {@code AnyAppend} whose underlying {@link Append}
+     *         is equal to this one's, {@code false} otherwise
      * @see #hashCode()
      */
     @SuppressFBWarnings
@@ -643,6 +709,13 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * <p>The string representation is delegated to the underlying HBase Append object
      * and includes information about the row key, column families, qualifiers,
      * and other configuration settings.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyAppend a = AnyAppend.of("rowKey").addColumn("cf", "qualifier", "v");
+     * String s = a.toString();        // delegates to Append.toString(); never null
+     * s.contains("rowKey");           // returns true (the row key appears in the description)
+     * }</pre>
      *
      * @return a string representation of the append operation
      */

@@ -118,8 +118,9 @@ import reactor.core.publisher.Mono;
  * MongoCollectionMapper<User> userMapper = reactiveMongoDB.collectionMapper("users", User.class);
  * 
  * // Reactive type-safe operations with Project Reactor:
- * userMapper.insertOne(new User("John", "john@example.com"));
- * 
+ * // (insertOne returns a cold Mono; the insert only runs once it is subscribed)
+ * userMapper.insertOne(new User("John", "john@example.com")).subscribe();
+ *
  * Flux<User> activeUsers = userMapper.list(Filters.eq("status", "active"))
  *     .filter(user -> user.getCreatedAt().after(cutoffDate))
  *     .take(100)  // Backpressure control
@@ -186,9 +187,33 @@ public final class MongoCollectionMapper<T> {
      * Returns the underlying reactive MongoCollectionExecutor for advanced operations.
      *
      * <p>This method provides access to the lower-level reactive executor, allowing for advanced
-     * operations not directly exposed by this mapper while maintaining reactive capabilities.</p>
+     * operations not directly exposed by this mapper while maintaining reactive capabilities.
+     * This is a pure accessor: it performs no database I/O and simply returns the executor instance
+     * that was supplied when this mapper was created.</p>
      *
-     * @return the reactive MongoCollectionExecutor instance
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * MongoCollectionMapper<User> userMapper = reactiveMongoDB.collectionMapper("users", User.class);
+     *
+     * // Typical: reach the executor for an overload not exposed on the mapper, e.g. a typed
+     * // distinct that decodes scalar values rather than the mapper's entity type T.
+     * MongoCollectionExecutor exec = userMapper.collectionExecutor();   // returns the backing executor (never null)
+     * exec.distinct("country", String.class)
+     *     .collectList()
+     *     .subscribe(countries -> System.out.println("Countries: " + countries));
+     *
+     * // Typical: the accessor itself triggers no I/O — only the chained publisher does, on subscription.
+     * Flux<String> names = userMapper.collectionExecutor().distinct("name", String.class);   // cold, nothing run yet
+     *
+     * // Edge: repeated calls always return the SAME instance (identity-stable accessor).
+     * boolean same = userMapper.collectionExecutor() == userMapper.collectionExecutor();   // returns true
+     *
+     * // Edge/negative: it is never null, so no null-guard is needed before chaining.
+     * Mono<Long> total = userMapper.collectionExecutor().count();   // safe: collectionExecutor() != null
+     * }</pre>
+     *
+     * @return the reactive {@link MongoCollectionExecutor} instance backing this mapper; never null
+     *         and identity-stable across calls
      * @see MongoCollectionExecutor
      */
     public MongoCollectionExecutor collectionExecutor() {
@@ -205,10 +230,19 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * MongoCollectionMapper<User> userMapper = reactiveMongoDB.collectionMapper("users", User.class);
      *
-     * Mono<Boolean> existsMono = userMapper.exists("507f1f77bcf86cd799439011");
-     * existsMono.subscribe(
-     *     exists -> System.out.println(exists ? "User found" : "User not found")
-     * );
+     * // Typical: existing id -> emits true.
+     * Mono<Boolean> found = userMapper.exists("507f1f77bcf86cd799439011");   // cold; emits true on subscribe if present
+     * found.subscribe(exists -> System.out.println(exists ? "User found" : "User not found"));
+     *
+     * // Edge: a well-formed but unused id -> emits false (always exactly one value, never empty).
+     * Mono<Boolean> missing = userMapper.exists("000000000000000000000000");   // emits false
+     *
+     * // Edge: the Mono is cold — building it runs no query until subscribed.
+     * Mono<Boolean> notRunYet = userMapper.exists("507f1f77bcf86cd799439011");   // nothing executed yet
+     *
+     * // Negative: a non-hex / wrong-length id -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.exists("not-a-valid-hex")
+     *     .subscribe(e -> {}, err -> System.err.println("Invalid id: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param objectId the string representation of the ObjectId to check for existence
@@ -228,12 +262,20 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: check a known ObjectId.
      * ObjectId userId = new ObjectId("507f1f77bcf86cd799439011");
-     * Mono<Boolean> existsMono = userMapper.exists(userId);
-     * 
-     * existsMono.subscribe(
-     *     exists -> System.out.println("Document exists: " + exists)
-     * );
+     * Mono<Boolean> exists = userMapper.exists(userId);   // cold; emits true/false on subscribe
+     * exists.subscribe(e -> System.out.println("Document exists: " + e));
+     *
+     * // Edge: a freshly generated, never-stored ObjectId -> emits false.
+     * Mono<Boolean> missing = userMapper.exists(new ObjectId());   // emits false
+     *
+     * // Edge: always emits exactly one boolean (never completes empty), so defaultIfEmpty is unnecessary.
+     * boolean present = userMapper.exists(userId).block();   // present == true or false, never null from empty
+     *
+     * // Negative: null id -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.exists((ObjectId) null)
+     *     .subscribe(e -> {}, err -> System.err.println("Null id rejected: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param objectId the ObjectId to check for existence
@@ -253,12 +295,20 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: at least one matching document -> emits true.
      * Bson activeUserFilter = Filters.eq("status", "active");
-     * Mono<Boolean> existsMono = userMapper.exists(activeUserFilter);
-     * 
-     * existsMono.subscribe(
-     *     exists -> System.out.println("Active users exist: " + exists)
-     * );
+     * Mono<Boolean> any = userMapper.exists(activeUserFilter);   // cold; emits true on subscribe if any match
+     * any.subscribe(e -> System.out.println("Active users exist: " + e));
+     *
+     * // Edge: a filter matching nothing -> emits false (not empty).
+     * Mono<Boolean> none = userMapper.exists(Filters.eq("status", "no-such-status"));   // emits false
+     *
+     * // Edge: empty filter matches every document -> emits true unless the collection is empty.
+     * Mono<Boolean> anyAtAll = userMapper.exists(Filters.empty());   // emits true iff collection is non-empty
+     *
+     * // Negative: null filter -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.exists((Bson) null)
+     *     .subscribe(e -> {}, err -> System.err.println("Null filter rejected: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param filter the query filter to match documents against; must not be null
@@ -279,11 +329,20 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Mono<Long> countMono = userMapper.count();
-     * 
-     * countMono.subscribe(
-     *     count -> System.out.println("Total users: " + count)
-     * );
+     * // Typical: count every document; emits a single Long on subscribe.
+     * Mono<Long> total = userMapper.count();   // cold; e.g. emits 100L
+     * total.subscribe(count -> System.out.println("Total users: " + count));
+     *
+     * // Typical: combine with the reactive pipeline.
+     * userMapper.count()
+     *     .map(c -> "There are " + c + " users")
+     *     .subscribe(System.out::println);
+     *
+     * // Edge: an empty collection still emits exactly one value -> 0L (never completes empty).
+     * long n = userMapper.count().block();   // n == 0L for an empty collection
+     *
+     * // Edge: the Mono is cold — building it issues no count command until subscribed.
+     * Mono<Long> notRunYet = userMapper.count();   // nothing executed yet
      * }</pre>
      *
      * @return a Mono that emits the total count of documents in the collection
@@ -300,12 +359,20 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: count documents matching a filter.
      * Bson activeFilter = Filters.eq("status", "active");
-     * Mono<Long> countMono = userMapper.count(activeFilter);
+     * Mono<Long> active = userMapper.count(activeFilter);   // cold; e.g. emits 25L
+     * active.subscribe(count -> System.out.println("Active users: " + count));
      *
-     * countMono.subscribe(
-     *     count -> System.out.println("Active users: " + count)
-     * );
+     * // Edge: a filter matching nothing -> emits 0L (one value, never empty).
+     * long zero = userMapper.count(Filters.eq("status", "no-such-status")).block();   // zero == 0L
+     *
+     * // Edge: an empty filter counts the whole collection (same result as count()).
+     * Mono<Long> all = userMapper.count(Filters.empty());   // emits total document count
+     *
+     * // Negative: null filter -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.count((Bson) null)
+     *     .subscribe(c -> {}, err -> System.err.println("Null filter rejected: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param filter the query filter to match documents; must not be null
@@ -326,12 +393,20 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: cap the count via the limit option (result never exceeds the limit).
      * CountOptions options = new CountOptions().limit(1000).maxTime(30, TimeUnit.SECONDS);
-     * Mono<Long> countMono = userMapper.count(Filters.gte("age", 18), options);
+     * Mono<Long> capped = userMapper.count(Filters.gte("age", 18), options);   // emits min(matches, 1000)
+     * capped.subscribe(count -> System.out.println("Adult users (max 1000): " + count));
      *
-     * countMono.subscribe(
-     *     count -> System.out.println("Adult users (max 1000): " + count)
-     * );
+     * // Edge: skip option offsets the count, so count(filter, skip(n)) == max(0, matches - n).
+     * Mono<Long> afterSkip = userMapper.count(Filters.empty(), new CountOptions().skip(10));   // emits max(0, total - 10)
+     *
+     * // Edge: null options behaves like the no-options overload (default counting).
+     * Mono<Long> defaults = userMapper.count(Filters.eq("status", "active"), (CountOptions) null);   // same as count(filter)
+     *
+     * // Negative: null filter -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.count((Bson) null, options)
+     *     .subscribe(c -> {}, err -> System.err.println("Null filter rejected: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param filter the query filter to match documents; must not be null
@@ -354,13 +429,25 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Mono<User> userMono = userMapper.get("507f1f77bcf86cd799439011");
-     *
+     * // Typical: existing id -> emits the decoded entity, then completes.
+     * Mono<User> userMono = userMapper.get("507f1f77bcf86cd799439011");   // cold; emits one User on subscribe
      * userMono.subscribe(
      *     user -> System.out.println("Found user: " + user.getName()),
      *     error -> System.err.println("Error: " + error),
-     *     () -> System.out.println("User not found")
+     *     () -> System.out.println("Completed (empty == not found)")
      * );
+     *
+     * // Edge: no document with that id -> Mono completes EMPTY (onComplete with no onNext).
+     * userMapper.get("000000000000000000000000")
+     *     .defaultIfEmpty(User.GUEST)   // supply a fallback when not found
+     *     .subscribe(u -> System.out.println("User or guest: " + u));
+     *
+     * // Edge: cold publisher — building it runs no query until subscribed.
+     * Mono<User> notRunYet = userMapper.get("507f1f77bcf86cd799439011");   // nothing executed yet
+     *
+     * // Negative: malformed hex id -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.get("xyz")
+     *     .subscribe(u -> {}, err -> System.err.println("Invalid id: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param objectId the string representation of the ObjectId to search for
@@ -380,13 +467,22 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: existing id -> emits one decoded entity, then completes.
      * ObjectId userId = new ObjectId("507f1f77bcf86cd799439011");
-     * Mono<User> userMono = userMapper.get(userId);
-     * 
-     * userMono.subscribe(
-     *     user -> processUser(user),
-     *     error -> handleError(error)
-     * );
+     * Mono<User> userMono = userMapper.get(userId);   // cold; emits one User on subscribe
+     * userMono.subscribe(user -> processUser(user), error -> handleError(error));
+     *
+     * // Edge: an unused ObjectId -> Mono completes EMPTY (no onNext).
+     * userMapper.get(new ObjectId())
+     *     .switchIfEmpty(Mono.error(new NoSuchElementException("user missing")))
+     *     .subscribe(u -> {}, err -> System.err.println(err.getMessage()));   // onError on empty
+     *
+     * // Edge: cold publisher — nothing runs until subscription.
+     * Mono<User> notRunYet = userMapper.get(userId);   // no query issued yet
+     *
+     * // Negative: null id -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.get((ObjectId) null)
+     *     .subscribe(u -> {}, err -> System.err.println("Null id: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param objectId the ObjectId to search for
@@ -407,18 +503,28 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: fetch only the listed fields; unselected fields stay at their default values.
      * Collection<String> fields = Arrays.asList("name", "email", "status");
-     * Mono<User> userMono = userMapper.get("507f1f77bcf86cd799439011", fields);
+     * Mono<User> userMono = userMapper.get("507f1f77bcf86cd799439011", fields);   // cold; partially populated User
+     * userMono.subscribe(user -> System.out.println("User basic info: " + user.getName()));
      *
-     * userMono.subscribe(
-     *     user -> System.out.println("User basic info: " + user.getName())
-     * );
+     * // Edge: no matching id -> Mono completes EMPTY regardless of projection.
+     * userMapper.get("000000000000000000000000", fields)
+     *     .hasElement()
+     *     .subscribe(present -> System.out.println("found? " + present));   // emits false
+     *
+     * // Edge: a null or empty projection list selects ALL fields (no projection is applied).
+     * Mono<User> fullUser = userMapper.get("507f1f77bcf86cd799439011", Collections.emptyList());
+     *
+     * // Negative: malformed id -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.get("nope", fields)
+     *     .subscribe(u -> {}, err -> System.err.println("Invalid id: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param objectId the string representation of the ObjectId to search for
-     * @param selectPropNames the collection of field names to include in the projection
+     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @return a Mono that emits the projected entity, or empty if no document matches the ObjectId
-     * @throws IllegalArgumentException if objectId is null/empty, selectPropNames is null, or objectId is not a valid ObjectId hex string
+     * @throws IllegalArgumentException if objectId is null/empty, or objectId is not a valid ObjectId hex string
      * @see ObjectId
      * @see com.mongodb.client.model.Projections
      */
@@ -435,19 +541,29 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: typed id + projection -> partially populated entity.
      * ObjectId userId = new ObjectId("507f1f77bcf86cd799439011");
      * Collection<String> fields = Arrays.asList("name", "email");
-     * Mono<User> userMono = userMapper.get(userId, fields);
-     * 
-     * userMono.subscribe(
-     *     user -> processUserBasicInfo(user)
-     * );
+     * Mono<User> userMono = userMapper.get(userId, fields);   // cold; only name/email populated
+     * userMono.subscribe(user -> processUserBasicInfo(user));
+     *
+     * // Edge: unused id -> Mono completes EMPTY.
+     * userMapper.get(new ObjectId(), fields)
+     *     .defaultIfEmpty(User.GUEST)
+     *     .subscribe(u -> System.out.println("User or guest: " + u));
+     *
+     * // Edge: cold publisher — building it issues no query until subscribed.
+     * Mono<User> notRunYet = userMapper.get(userId, fields);   // nothing executed yet
+     *
+     * // Negative: null id -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.get((ObjectId) null, fields)
+     *     .subscribe(u -> {}, err -> System.err.println("Null id: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param objectId the ObjectId to search for
-     * @param selectPropNames the collection of field names to include in the projection
+     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @return a Mono that emits the projected entity, or empty if no document matches the ObjectId
-     * @throws IllegalArgumentException if objectId or selectPropNames is null
+     * @throws IllegalArgumentException if objectId is null
      * @see ObjectId
      * @see com.mongodb.client.model.Projections
      */
@@ -467,13 +583,25 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: at least one match -> emits the first decoded entity, then completes.
      * Bson filter = Filters.eq("status", "active");
-     * Mono<User> userMono = userMapper.findFirst(filter);
-     *
+     * Mono<User> userMono = userMapper.findFirst(filter);   // cold; emits one User on subscribe
      * userMono.subscribe(
      *     user -> System.out.println("First active user: " + user.getName()),
      *     error -> System.err.println("Error: " + error)
      * );
+     *
+     * // Edge: no match -> Mono completes EMPTY (onComplete with no onNext).
+     * userMapper.findFirst(Filters.eq("status", "no-such-status"))
+     *     .switchIfEmpty(Mono.error(new NoSuchElementException("none")))
+     *     .subscribe(u -> {}, err -> System.err.println(err.getMessage()));   // onError on empty
+     *
+     * // Edge: empty filter returns the natural-order first document of the collection.
+     * Mono<User> anyOne = userMapper.findFirst(Filters.empty());   // first document, or empty if none
+     *
+     * // Negative: null filter -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.findFirst((Bson) null)
+     *     .subscribe(u -> {}, err -> System.err.println("Null filter: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param filter the query filter to match documents
@@ -497,19 +625,29 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: first match, only the listed fields populated.
      * Collection<String> fields = Arrays.asList("name", "email", "createdAt");
      * Bson filter = Filters.eq("department", "Engineering");
-     * Mono<User> userMono = userMapper.findFirst(fields, filter);
+     * Mono<User> userMono = userMapper.findFirst(fields, filter);   // cold; partially populated User
+     * userMono.subscribe(user -> System.out.println("Engineer: " + user.getName()));
      *
-     * userMono.subscribe(
-     *     user -> System.out.println("Engineer: " + user.getName())
-     * );
+     * // Edge: no match -> Mono completes EMPTY (no onNext).
+     * userMapper.findFirst(fields, Filters.eq("department", "no-such-dept"))
+     *     .hasElement()
+     *     .subscribe(present -> System.out.println("found? " + present));   // emits false
+     *
+     * // Edge: cold publisher — building it issues no query until subscribed.
+     * Mono<User> notRunYet = userMapper.findFirst(fields, filter);   // nothing executed yet
+     *
+     * // Negative: null filter -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.findFirst(fields, (Bson) null)
+     *     .subscribe(u -> {}, err -> System.err.println("Null filter: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
-     * @param selectPropNames the collection of field names to include in the projection
+     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents
      * @return a Mono that emits the first matching projected entity, or empty if no documents match
-     * @throws IllegalArgumentException if selectPropNames or filter is null
+     * @throws IllegalArgumentException if filter is null
      * @see Bson
      * @see com.mongodb.client.model.Filters
      * @see com.mongodb.client.model.Projections
@@ -527,21 +665,29 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: sort picks WHICH document becomes "first" — descending score yields the top scorer.
      * Collection<String> fields = Arrays.asList("name", "score", "updatedAt");
      * Bson filter = Filters.gte("score", 90);
      * Bson sort = Sorts.descending("score");
-     * Mono<User> userMono = userMapper.findFirst(fields, filter, sort);
+     * Mono<User> top = userMapper.findFirst(fields, filter, sort);   // cold; highest-score match
+     * top.subscribe(user -> System.out.println("Top scorer: " + user.getName()));
      *
-     * userMono.subscribe(
-     *     user -> System.out.println("Top scorer: " + user.getName())
-     * );
+     * // Typical: reversing the sort selects the opposite extreme (lowest qualifying score).
+     * Mono<User> lowest = userMapper.findFirst(fields, filter, Sorts.ascending("score"));   // lowest match
+     *
+     * // Edge: no match -> Mono completes EMPTY regardless of sort.
+     * userMapper.findFirst(fields, Filters.gte("score", 1000), sort)
+     *     .hasElement().subscribe(present -> System.out.println("found? " + present));   // emits false
+     *
+     * // Edge: a null sort is tolerated and simply applies no ordering (natural/index order).
+     * Mono<User> unsorted = userMapper.findFirst(fields, filter, (Bson) null);   // no sort applied; not an error
      * }</pre>
      *
-     * @param selectPropNames the collection of field names to include in the projection
+     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents
-     * @param sort the sort specification for ordering results
+     * @param sort the sort specification for ordering results (can be null for natural order)
      * @return a Mono that emits the first matching projected entity with applied sorting, or empty if no documents match
-     * @throws IllegalArgumentException if selectPropNames, filter, or sort is null
+     * @throws IllegalArgumentException if filter is null
      * @see Bson
      * @see com.mongodb.client.model.Filters
      * @see com.mongodb.client.model.Projections
@@ -567,18 +713,25 @@ public final class MongoCollectionMapper<T> {
      * Bson filter = Filters.eq("active", true);
      * Bson sort = Sorts.ascending("name");
      *
-     * Mono<User> userMono = userMapper.findFirst(projection, filter, sort);
+     * Mono<User> userMono = userMapper.findFirst(projection, filter, sort);   // cold; first active user
+     * userMono.subscribe(user -> System.out.println("Active user: " + user.getName()));
      *
-     * userMono.subscribe(
-     *     user -> System.out.println("Active user: " + user.getName())
-     * );
+     * // Edge: no match -> Mono completes EMPTY (no onNext).
+     * userMapper.findFirst(projection, Filters.eq("active", false), sort)
+     *     .hasElement().subscribe(present -> System.out.println("found? " + present));   // emits false (if none inactive)
+     *
+     * // Edge: cold publisher — nothing runs until subscription.
+     * Mono<User> notRunYet = userMapper.findFirst(projection, filter, sort);   // no query issued yet
+     *
+     * // Edge: a null projection is tolerated and simply selects all fields.
+     * Mono<User> allFields = userMapper.findFirst((Bson) null, filter, sort);   // no projection applied; not an error
      * }</pre>
      *
-     * @param projection the BSON projection specification for field selection
+     * @param projection the BSON projection specification for field selection (can be null to select all fields)
      * @param filter the query filter to match documents
-     * @param sort the sort specification for ordering results
+     * @param sort the sort specification for ordering results (can be null for natural order)
      * @return a Mono that emits the first matching projected entity with applied sorting, or empty if no documents match
-     * @throws IllegalArgumentException if projection, filter, or sort is null
+     * @throws IllegalArgumentException if filter is null
      * @see Bson
      * @see com.mongodb.client.model.Filters
      * @see com.mongodb.client.model.Projections
@@ -598,9 +751,9 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: stream each matching entity; take(100) bounds the demand (backpressure).
      * Bson filter = Filters.eq("status", "active");
-     * Flux<User> userFlux = userMapper.list(filter);
-     *
+     * Flux<User> userFlux = userMapper.list(filter);   // cold; emits one User per matching doc
      * userFlux
      *     .take(100)  // Limit to 100 users for backpressure control
      *     .subscribe(
@@ -608,6 +761,18 @@ public final class MongoCollectionMapper<T> {
      *         error -> System.err.println("Error: " + error),
      *         () -> System.out.println("All active users processed")
      *     );
+     *
+     * // Typical: aggregate the stream — count without materialising every entity in user code.
+     * Mono<Long> activeCount = userMapper.list(filter).count();   // emits number of matches
+     *
+     * // Edge: no match -> Flux completes with ZERO emissions (immediate onComplete).
+     * userMapper.list(Filters.eq("status", "no-such-status"))
+     *     .switchIfEmpty(Flux.just(User.GUEST))
+     *     .subscribe(u -> System.out.println("User or guest: " + u));
+     *
+     * // Negative: null filter -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.list((Bson) null)
+     *     .subscribe(u -> {}, err -> System.err.println("Null filter: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param filter the query filter to match documents
@@ -629,9 +794,20 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: a single page — skip 20, take up to 10 (emits at most 10 entities).
      * Bson filter = Filters.gt("age", 18);
-     * Flux<User> adults = userMapper.list(filter, 20, 10);   // Skip 20, take 10
-     * adults.subscribe(user -> processUser(user));
+     * Flux<User> page = userMapper.list(filter, 20, 10);   // cold; skip 20, take 10
+     * page.subscribe(user -> processUser(user));
+     *
+     * // Typical: offset 0 takes the first page.
+     * Flux<User> firstPage = userMapper.list(filter, 0, 10);   // first 10 matches
+     *
+     * // Edge: offset beyond the number of matches -> Flux completes with ZERO emissions.
+     * userMapper.list(filter, 1_000_000, 10)
+     *     .count().subscribe(n -> System.out.println("rows: " + n));   // emits 0
+     *
+     * // Negative: a negative offset is rejected with IllegalArgumentException.
+     * userMapper.list(filter, -1, 10);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param filter the query filter to match documents against
@@ -654,15 +830,28 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: stream entities with only name/email populated.
      * List<String> fields = Arrays.asList("name", "email");
      * Bson filter = Filters.eq("department", "IT");
-     * Flux<User> itUsers = userMapper.list(fields, filter);
+     * Flux<User> itUsers = userMapper.list(fields, filter);   // cold; partially populated Users
+     * itUsers.subscribe(u -> System.out.println(u.getName() + " <" + u.getEmail() + ">"));
+     *
+     * // Edge: no match -> Flux completes with ZERO emissions.
+     * userMapper.list(fields, Filters.eq("department", "no-such-dept"))
+     *     .count().subscribe(n -> System.out.println("rows: " + n));   // emits 0
+     *
+     * // Edge: cold publisher — nothing runs until subscription.
+     * Flux<User> notRunYet = userMapper.list(fields, filter);   // no query issued yet
+     *
+     * // Negative: null filter -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.list(fields, (Bson) null)
+     *     .subscribe(u -> {}, err -> System.err.println("Null filter: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
-     * @param selectPropNames the collection of property names to include in the results
+     * @param selectPropNames the collection of property names to include in the results (null or empty selects all fields)
      * @param filter the query filter to match documents
      * @return a Flux that emits matching entities with only the specified fields populated
-     * @throws IllegalArgumentException if selectPropNames is empty or filter is null
+     * @throws IllegalArgumentException if filter is null
      */
     public Flux<T> list(final Collection<String> selectPropNames, final Bson filter) {
         return collectionExecutor.list(selectPropNames, filter, rowType);
@@ -677,9 +866,21 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: projected first page — skip 0, take up to 50.
      * List<String> fields = Arrays.asList("id", "name", "status");
      * Bson filter = Filters.eq("active", true);
-     * Flux<User> users = userMapper.list(fields, filter, 0, 50);
+     * Flux<User> users = userMapper.list(fields, filter, 0, 50);   // cold; up to 50 partial Users
+     * users.subscribe(u -> processUser(u));
+     *
+     * // Edge: offset past the end -> Flux completes with ZERO emissions.
+     * userMapper.list(fields, filter, 1_000_000, 50)
+     *     .count().subscribe(n -> System.out.println("rows: " + n));   // emits 0
+     *
+     * // Edge: cold publisher — building it issues no query until subscribed.
+     * Flux<User> notRunYet = userMapper.list(fields, filter, 0, 50);   // nothing executed yet
+     *
+     * // Negative: a negative count is rejected with IllegalArgumentException.
+     * userMapper.list(fields, filter, 0, -1);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param selectPropNames the collection of property names to include in the results
@@ -701,10 +902,22 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: newest-first ordering via a descending sort on createdAt.
      * List<String> fields = Arrays.asList("name", "createdAt");
      * Bson filter = Filters.eq("status", "pending");
      * Bson sort = Sorts.descending("createdAt");
-     * Flux<User> recentPending = userMapper.list(fields, filter, sort);
+     * Flux<User> recentPending = userMapper.list(fields, filter, sort);   // cold; newest pending first
+     * recentPending.subscribe(u -> System.out.println(u.getName()));
+     *
+     * // Typical: reverse the sort to stream oldest-first instead.
+     * Flux<User> oldestFirst = userMapper.list(fields, filter, Sorts.ascending("createdAt"));   // oldest pending first
+     *
+     * // Edge: no match -> Flux completes with ZERO emissions.
+     * userMapper.list(fields, Filters.eq("status", "no-such-status"), sort)
+     *     .count().subscribe(n -> System.out.println("rows: " + n));   // emits 0
+     *
+     * // Edge: a null sort is tolerated and simply applies no ordering (natural/index order).
+     * Flux<User> unsorted = userMapper.list(fields, filter, (Bson) null);   // no sort applied; not an error
      * }</pre>
      *
      * @param selectPropNames the collection of property names to include in the results
@@ -726,10 +939,22 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: top-10 leaderboard — descending score, first page.
      * List<String> fields = Arrays.asList("id", "name", "score");
      * Bson filter = Filters.gte("score", 80);
      * Bson sort = Sorts.descending("score");
-     * Flux<User> topScorers = userMapper.list(fields, filter, sort, 0, 10);
+     * Flux<User> topScorers = userMapper.list(fields, filter, sort, 0, 10);   // cold; up to 10 highest scorers
+     * topScorers.subscribe(u -> System.out.println(u.getName() + ": " + u.getScore()));
+     *
+     * // Typical: next page of 10.
+     * Flux<User> nextTen = userMapper.list(fields, filter, sort, 10, 10);   // ranks 11..20
+     *
+     * // Edge: offset past the end -> Flux completes with ZERO emissions.
+     * userMapper.list(fields, filter, sort, 1_000_000, 10)
+     *     .count().subscribe(n -> System.out.println("rows: " + n));   // emits 0
+     *
+     * // Negative: a negative offset is rejected with IllegalArgumentException.
+     * userMapper.list(fields, filter, sort, -1, 10);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param selectPropNames the collection of property names to include in the results
@@ -752,11 +977,23 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: include name/email, drop _id; null sort means natural order (sort is optional here).
      * Bson projection = Projections.fields(
      *     Projections.include("name", "email"),
      *     Projections.excludeId()
      * );
-     * Flux<User> users = userMapper.list(projection, Filters.empty(), null);
+     * Flux<User> users = userMapper.list(projection, Filters.empty(), null);   // cold; all docs, no _id, unsorted
+     * users.subscribe(u -> System.out.println(u.getName()));
+     *
+     * // Typical: supply a sort to order the stream.
+     * Flux<User> sorted = userMapper.list(projection, Filters.empty(), Sorts.ascending("name"));   // name-ordered
+     *
+     * // Edge: filter matching nothing -> Flux completes with ZERO emissions.
+     * userMapper.list(projection, Filters.eq("status", "no-such-status"), null)
+     *     .count().subscribe(n -> System.out.println("rows: " + n));   // emits 0
+     *
+     * // Edge: cold publisher — nothing runs until subscription.
+     * Flux<User> notRunYet = userMapper.list(projection, Filters.empty(), null);   // no query issued yet
      * }</pre>
      *
      * @param projection the BSON projection document for field selection
@@ -779,10 +1016,22 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: projected, sorted first page of up to 100.
      * Bson projection = Projections.include("id", "name", "tags");
      * Bson filter = Filters.in("tags", "premium", "verified");
      * Bson sort = Sorts.ascending("name");
-     * Flux<User> premiumUsers = userMapper.list(projection, filter, sort, 0, 100);
+     * Flux<User> premiumUsers = userMapper.list(projection, filter, sort, 0, 100);   // cold; up to 100 projected Users
+     * premiumUsers.subscribe(u -> System.out.println(u.getName()));
+     *
+     * // Edge: offset past the end -> Flux completes with ZERO emissions.
+     * userMapper.list(projection, filter, sort, 1_000_000, 100)
+     *     .count().subscribe(n -> System.out.println("rows: " + n));   // emits 0
+     *
+     * // Edge: null sort is tolerated -> natural order, still paginated.
+     * Flux<User> unsortedPage = userMapper.list(projection, filter, (Bson) null, 0, 100);   // no sort applied
+     *
+     * // Negative: a negative offset is rejected with IllegalArgumentException.
+     * userMapper.list(projection, filter, sort, -1, 100);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param projection the BSON projection document for field selection
@@ -813,9 +1062,22 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: field present on the first match -> emits its Boolean value.
      * Mono<Boolean> isActive = userMapper.queryForBoolean(
      *     "isActive", Filters.eq("username", "admin"));
-     * isActive.subscribe(a -> System.out.println("Admin active: " + a));
+     * isActive.subscribe(a -> System.out.println("Admin active: " + a));   // emits true/false
+     *
+     * // Edge: no document matches OR the field is missing/null -> Mono completes EMPTY.
+     * userMapper.queryForBoolean("isActive", Filters.eq("username", "ghost"))
+     *     .defaultIfEmpty(false)   // wrapper type: missing surfaces as empty, NOT primitive false
+     *     .subscribe(a -> System.out.println("active (default false): " + a));
+     *
+     * // Edge: cold publisher — building it issues no query until subscribed.
+     * Mono<Boolean> notRunYet = userMapper.queryForBoolean("isActive", Filters.eq("username", "admin"));
+     *
+     * // Negative: null/empty propName -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.queryForBoolean("", Filters.empty())
+     *     .subscribe(a -> {}, err -> System.err.println("Bad propName: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param propName the name of the property to retrieve
@@ -846,8 +1108,20 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: field present -> emits its Character value.
      * Mono<Character> grade = userMapper.queryForChar("grade", Filters.eq("id", userId));
-     * grade.subscribe(g -> System.out.println("Grade: " + g));
+     * grade.subscribe(g -> System.out.println("Grade: " + g));   // e.g. emits 'A'
+     *
+     * // Edge: no match OR missing/null field -> Mono completes EMPTY.
+     * userMapper.queryForChar("grade", Filters.eq("id", "missing"))
+     *     .hasElement().subscribe(present -> System.out.println("present? " + present));   // emits false
+     *
+     * // Edge: cold publisher — building it issues no query until subscribed.
+     * Mono<Character> notRunYet = userMapper.queryForChar("grade", Filters.empty());
+     *
+     * // Negative: null/empty propName -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.queryForChar("", Filters.empty())
+     *     .subscribe(g -> {}, err -> System.err.println("Bad propName: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param propName the name of the property to retrieve
@@ -878,9 +1152,22 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: field present -> emits its Byte value.
      * Mono<Byte> status = userMapper.queryForByte(
      *     "statusCode", Filters.eq("productId", productId));
-     * status.subscribe(code -> processStatusCode(code));
+     * status.subscribe(code -> processStatusCode(code));   // e.g. emits (byte) 5
+     *
+     * // Edge: no match OR missing/null field -> Mono completes EMPTY (not the primitive default 0).
+     * userMapper.queryForByte("statusCode", Filters.eq("productId", "missing"))
+     *     .defaultIfEmpty((byte) -1)
+     *     .subscribe(code -> System.out.println("status (default -1): " + code));   // emits -1 when absent
+     *
+     * // Edge: cold publisher — building it issues no query until subscribed.
+     * Mono<Byte> notRunYet = userMapper.queryForByte("statusCode", Filters.empty());
+     *
+     * // Negative: null/empty propName -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.queryForByte("", Filters.empty())
+     *     .subscribe(c -> {}, err -> System.err.println("Bad propName: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param propName the name of the property to retrieve
@@ -911,9 +1198,22 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: field present -> emits its Short value.
      * Mono<Short> quantity = userMapper.queryForShort(
      *     "quantity", Filters.eq("orderId", orderId));
-     * quantity.subscribe(q -> System.out.println("Quantity: " + q));
+     * quantity.subscribe(q -> System.out.println("Quantity: " + q));   // e.g. emits (short) 100
+     *
+     * // Edge: no match OR missing/null field -> Mono completes EMPTY (not the primitive default 0).
+     * userMapper.queryForShort("quantity", Filters.eq("orderId", "missing"))
+     *     .defaultIfEmpty((short) -1)
+     *     .subscribe(q -> System.out.println("qty (default -1): " + q));   // emits -1 when absent
+     *
+     * // Edge: cold publisher — building it issues no query until subscribed.
+     * Mono<Short> notRunYet = userMapper.queryForShort("quantity", Filters.empty());
+     *
+     * // Negative: null/empty propName -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.queryForShort("", Filters.empty())
+     *     .subscribe(q -> {}, err -> System.err.println("Bad propName: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param propName the name of the property to retrieve
@@ -944,9 +1244,22 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: field present -> emits its Integer value.
      * Mono<Integer> age = userMapper.queryForInt(
      *     "age", Filters.eq("email", "user@example.com"));
-     * age.subscribe(a -> System.out.println("User age: " + a));
+     * age.subscribe(a -> System.out.println("User age: " + a));   // e.g. emits 42
+     *
+     * // Edge: no match OR missing/null field -> Mono completes EMPTY (not the primitive default 0).
+     * userMapper.queryForInt("age", Filters.eq("email", "ghost@example.com"))
+     *     .defaultIfEmpty(-1)
+     *     .subscribe(a -> System.out.println("age (default -1): " + a));   // emits -1 when absent
+     *
+     * // Edge: cold publisher — building it issues no query until subscribed.
+     * Mono<Integer> notRunYet = userMapper.queryForInt("age", Filters.empty());
+     *
+     * // Negative: null/empty propName -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.queryForInt("", Filters.empty())
+     *     .subscribe(a -> {}, err -> System.err.println("Bad propName: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param propName the name of the property to retrieve
@@ -977,9 +1290,22 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: field present -> emits its Long value.
      * Mono<Long> timestamp = userMapper.queryForLong(
      *     "lastAccessTime", Filters.eq("sessionId", sessionId));
-     * timestamp.subscribe(t -> updateLastAccess(t));
+     * timestamp.subscribe(t -> updateLastAccess(t));   // e.g. emits 1234567890L
+     *
+     * // Edge: no match OR missing/null field -> Mono completes EMPTY (not the primitive default 0).
+     * userMapper.queryForLong("lastAccessTime", Filters.eq("sessionId", "missing"))
+     *     .defaultIfEmpty(0L)
+     *     .subscribe(t -> System.out.println("ts (default 0): " + t));   // emits 0 when absent
+     *
+     * // Edge: cold publisher — building it issues no query until subscribed.
+     * Mono<Long> notRunYet = userMapper.queryForLong("lastAccessTime", Filters.empty());
+     *
+     * // Negative: null/empty propName -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.queryForLong("", Filters.empty())
+     *     .subscribe(t -> {}, err -> System.err.println("Bad propName: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param propName the name of the property to retrieve
@@ -1010,9 +1336,22 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: field present -> emits its Float value.
      * Mono<Float> price = userMapper.queryForFloat(
      *     "price", Filters.eq("productId", productId));
-     * price.subscribe(p -> System.out.println("Price: $" + p));
+     * price.subscribe(p -> System.out.println("Price: $" + p));   // e.g. emits 19.99f
+     *
+     * // Edge: no match OR missing/null field -> Mono completes EMPTY (not the primitive default 0).
+     * userMapper.queryForFloat("price", Filters.eq("productId", "missing"))
+     *     .defaultIfEmpty(0.0f)
+     *     .subscribe(p -> System.out.println("price (default 0): " + p));   // emits 0.0 when absent
+     *
+     * // Edge: cold publisher — building it issues no query until subscribed.
+     * Mono<Float> notRunYet = userMapper.queryForFloat("price", Filters.empty());
+     *
+     * // Negative: null/empty propName -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.queryForFloat("", Filters.empty())
+     *     .subscribe(p -> {}, err -> System.err.println("Bad propName: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param propName the name of the property to retrieve
@@ -1044,9 +1383,22 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: field present -> emits its Double value.
      * Mono<Double> balance = userMapper.queryForDouble(
      *     "balance", Filters.eq("accountId", accountId));
-     * balance.subscribe(b -> System.out.println("Balance: " + b));
+     * balance.subscribe(b -> System.out.println("Balance: " + b));   // e.g. emits 37.7749
+     *
+     * // Edge: no match OR missing/null field -> Mono completes EMPTY (not the primitive default 0).
+     * userMapper.queryForDouble("balance", Filters.eq("accountId", "missing"))
+     *     .defaultIfEmpty(0.0)
+     *     .subscribe(b -> System.out.println("balance (default 0): " + b));   // emits 0.0 when absent
+     *
+     * // Edge: cold publisher — building it issues no query until subscribed.
+     * Mono<Double> notRunYet = userMapper.queryForDouble("balance", Filters.empty());
+     *
+     * // Negative: null/empty propName -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.queryForDouble("", Filters.empty())
+     *     .subscribe(b -> {}, err -> System.err.println("Bad propName: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param propName the name of the property to retrieve
@@ -1081,9 +1433,22 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: field present -> emits its String value.
      * Mono<String> username = userMapper.queryForString(
      *     "username", Filters.eq("userId", userId));
-     * username.subscribe(n -> System.out.println("Username: " + n));
+     * username.subscribe(n -> System.out.println("Username: " + n));   // emits e.g. "John Doe"
+     *
+     * // Edge: no match OR missing/null field -> Mono completes EMPTY; cannot distinguish the two from the signal.
+     * userMapper.queryForString("username", Filters.eq("userId", "missing"))
+     *     .defaultIfEmpty("<unknown>")
+     *     .subscribe(n -> System.out.println("Username: " + n));   // emits "<unknown>" when absent
+     *
+     * // Edge: cold publisher — building it issues no query until subscribed.
+     * Mono<String> notRunYet = userMapper.queryForString("username", Filters.empty());
+     *
+     * // Negative: null/empty propName -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.queryForString("", Filters.empty())
+     *     .subscribe(n -> {}, err -> System.err.println("Bad propName: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param propName the name of the property to retrieve
@@ -1115,9 +1480,21 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: timestamp field present -> emits its Date value.
      * Mono<Date> orderDate = userMapper.queryForDate(
      *     "createdAt", Filters.eq("orderId", orderId));
-     * orderDate.subscribe(d -> System.out.println("Order date: " + d));
+     * orderDate.subscribe(d -> System.out.println("Order date: " + d));   // emits a java.util.Date
+     *
+     * // Edge: no match OR missing/null field -> Mono completes EMPTY.
+     * userMapper.queryForDate("createdAt", Filters.eq("orderId", "missing"))
+     *     .hasElement().subscribe(present -> System.out.println("present? " + present));   // emits false
+     *
+     * // Edge: cold publisher — building it issues no query until subscribed.
+     * Mono<Date> notRunYet = userMapper.queryForDate("createdAt", Filters.empty());
+     *
+     * // Negative: null/empty propName -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.queryForDate("", Filters.empty())
+     *     .subscribe(d -> {}, err -> System.err.println("Bad propName: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param propName the name of the property to retrieve
@@ -1150,9 +1527,21 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: field present -> emits the value converted to the requested Date subclass.
      * Mono<Timestamp> processedAt = userMapper.queryForDate(
      *     "processedAt", Filters.eq("transactionId", txId), Timestamp.class);
-     * processedAt.subscribe(ts -> logTransaction(ts));
+     * processedAt.subscribe(ts -> logTransaction(ts));   // emits a java.sql.Timestamp
+     *
+     * // Edge: no match OR missing/null field -> Mono completes EMPTY.
+     * userMapper.queryForDate("processedAt", Filters.eq("transactionId", "missing"), Timestamp.class)
+     *     .hasElement().subscribe(present -> System.out.println("present? " + present));   // emits false
+     *
+     * // Edge: cold publisher — building it issues no query until subscribed.
+     * Mono<Timestamp> notRunYet = userMapper.queryForDate("processedAt", Filters.empty(), Timestamp.class);
+     *
+     * // Negative: null valueType -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.queryForDate("processedAt", Filters.empty(), (Class<Timestamp>) null)
+     *     .subscribe(ts -> {}, err -> System.err.println("Null valueType: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param <P> the specific Date subclass type
@@ -1188,9 +1577,22 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: convert the field to an arbitrary target type.
      * Mono<BigDecimal> amount = userMapper.queryForSingleValue(
      *     "amount", Filters.eq("id", entityId), BigDecimal.class);
-     * amount.subscribe(a -> processPayment(a));
+     * amount.subscribe(a -> processPayment(a));   // emits the converted BigDecimal
+     *
+     * // Edge: no match OR missing/null field -> Mono completes EMPTY.
+     * userMapper.queryForSingleValue("amount", Filters.eq("id", "missing"), BigDecimal.class)
+     *     .defaultIfEmpty(BigDecimal.ZERO)
+     *     .subscribe(a -> System.out.println("amount: " + a));   // emits 0 when absent
+     *
+     * // Edge: cold publisher — building it issues no query until subscribed.
+     * Mono<BigDecimal> notRunYet = userMapper.queryForSingleValue("amount", Filters.empty(), BigDecimal.class);
+     *
+     * // Negative: null valueType -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.queryForSingleValue("amount", Filters.empty(), (Class<BigDecimal>) null)
+     *     .subscribe(a -> {}, err -> System.err.println("Null valueType: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param <V> the type of value to retrieve
@@ -1221,9 +1623,21 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: collect matches into one Dataset, emitted exactly once.
      * Bson filter = Filters.eq("department", "Sales");
-     * Mono<Dataset> salesData = userMapper.query(filter);
+     * Mono<Dataset> salesData = userMapper.query(filter);   // cold; emits one Dataset on subscribe
      * salesData.subscribe(data -> generateReport(data));
+     *
+     * // Edge: no match -> still emits exactly one (EMPTY) Dataset, never completes empty.
+     * userMapper.query(Filters.eq("department", "no-such-dept"))
+     *     .subscribe(data -> System.out.println("rows: " + data.size()));   // emits Dataset with size 0
+     *
+     * // Edge: cold publisher — building it issues no query until subscribed.
+     * Mono<Dataset> notRunYet = userMapper.query(filter);   // nothing executed yet
+     *
+     * // Negative: null filter -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.query((Bson) null)
+     *     .subscribe(d -> {}, err -> System.err.println("Null filter: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param filter the query filter to match documents
@@ -1245,9 +1659,20 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: first page of up to 100 as one Dataset.
      * Bson filter = Filters.gte("score", 90);
-     * Mono<Dataset> topScorers = userMapper.query(filter, 0, 100);
+     * Mono<Dataset> topScorers = userMapper.query(filter, 0, 100);   // cold; one Dataset (<=100 rows)
      * topScorers.subscribe(data -> displayLeaderboard(data));
+     *
+     * // Edge: offset past the end -> still emits one Dataset, but it is EMPTY.
+     * userMapper.query(filter, 1_000_000, 100)
+     *     .subscribe(data -> System.out.println("rows: " + data.size()));   // emits Dataset with size 0
+     *
+     * // Edge: cold publisher — nothing runs until subscription.
+     * Mono<Dataset> notRunYet = userMapper.query(filter, 0, 100);   // no query issued yet
+     *
+     * // Negative: a negative offset is rejected with IllegalArgumentException.
+     * userMapper.query(filter, -1, 100);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param filter the query filter to match documents against
@@ -1268,15 +1693,28 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: Dataset whose columns are exactly the selected fields.
      * List<String> fields = Arrays.asList("name", "email", "department");
      * Bson filter = Filters.eq("active", true);
-     * Mono<Dataset> activeUsers = userMapper.query(fields, filter);
+     * Mono<Dataset> activeUsers = userMapper.query(fields, filter);   // cold; one Dataset with 3 columns
+     * activeUsers.subscribe(data -> System.out.println("columns: " + data.columnNames()));
+     *
+     * // Edge: no match -> still emits one (EMPTY) Dataset.
+     * userMapper.query(fields, Filters.eq("active", false))
+     *     .subscribe(data -> System.out.println("rows: " + data.size()));   // emits Dataset with size 0
+     *
+     * // Edge: cold publisher — nothing runs until subscription.
+     * Mono<Dataset> notRunYet = userMapper.query(fields, filter);   // no query issued yet
+     *
+     * // Negative: null filter -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.query(fields, (Bson) null)
+     *     .subscribe(d -> {}, err -> System.err.println("Null filter: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
-     * @param selectPropNames the collection of property names to include in the results
+     * @param selectPropNames the collection of property names to include in the results (null or empty selects all fields)
      * @param filter the query filter to match documents
      * @return a Mono that emits a Dataset with projected fields
-     * @throws IllegalArgumentException if selectPropNames is empty or filter is null
+     * @throws IllegalArgumentException if filter is null
      */
     public Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter) {
         return collectionExecutor.query(selectPropNames, filter, rowType);
@@ -1290,9 +1728,21 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: projected first page of up to 50 rows.
      * List<String> fields = Arrays.asList("id", "name", "salary");
      * Bson filter = Filters.gt("salary", 50000);
-     * Mono<Dataset> highEarners = userMapper.query(fields, filter, 0, 50);
+     * Mono<Dataset> highEarners = userMapper.query(fields, filter, 0, 50);   // cold; one Dataset (<=50 rows)
+     * highEarners.subscribe(data -> System.out.println("rows: " + data.size()));
+     *
+     * // Edge: offset past the end -> still emits one (EMPTY) Dataset.
+     * userMapper.query(fields, filter, 1_000_000, 50)
+     *     .subscribe(data -> System.out.println("rows: " + data.size()));   // emits Dataset with size 0
+     *
+     * // Edge: cold publisher — nothing runs until subscription.
+     * Mono<Dataset> notRunYet = userMapper.query(fields, filter, 0, 50);   // no query issued yet
+     *
+     * // Negative: a negative offset is rejected with IllegalArgumentException.
+     * userMapper.query(fields, filter, -1, 50);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param selectPropNames the collection of property names to include in the results
@@ -1314,10 +1764,23 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: rows ordered newest-first by joinDate.
      * List<String> fields = Arrays.asList("name", "joinDate", "level");
      * Bson filter = Filters.eq("status", "member");
      * Bson sort = Sorts.descending("joinDate");
-     * Mono<Dataset> members = userMapper.query(fields, filter, sort);
+     * Mono<Dataset> members = userMapper.query(fields, filter, sort);   // cold; one Dataset, newest-first
+     * members.subscribe(data -> System.out.println("rows: " + data.size()));
+     *
+     * // Edge: no match -> still emits one (EMPTY) Dataset.
+     * userMapper.query(fields, Filters.eq("status", "no-such-status"), sort)
+     *     .subscribe(data -> System.out.println("rows: " + data.size()));   // emits Dataset with size 0
+     *
+     * // Edge: null sort is tolerated -> rows in natural order.
+     * Mono<Dataset> unsorted = userMapper.query(fields, filter, (Bson) null);   // no sort applied; not an error
+     *
+     * // Negative: null filter -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.query(fields, (Bson) null, sort)
+     *     .subscribe(d -> {}, err -> System.err.println("Null filter: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param selectPropNames the collection of property names to include in the results
@@ -1338,10 +1801,22 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: top-10 leaderboard Dataset.
      * List<String> fields = Arrays.asList("id", "name", "score", "rank");
      * Bson filter = Filters.gte("score", 80);
      * Bson sort = Sorts.descending("score");
-     * Mono<Dataset> topPlayers = userMapper.query(fields, filter, sort, 0, 10);
+     * Mono<Dataset> topPlayers = userMapper.query(fields, filter, sort, 0, 10);   // cold; one Dataset (<=10 rows)
+     * topPlayers.subscribe(data -> System.out.println("rows: " + data.size()));
+     *
+     * // Edge: offset past the end -> still emits one (EMPTY) Dataset.
+     * userMapper.query(fields, filter, sort, 1_000_000, 10)
+     *     .subscribe(data -> System.out.println("rows: " + data.size()));   // emits Dataset with size 0
+     *
+     * // Edge: cold publisher — nothing runs until subscription.
+     * Mono<Dataset> notRunYet = userMapper.query(fields, filter, sort, 0, 10);   // no query issued yet
+     *
+     * // Negative: a negative offset is rejected with IllegalArgumentException.
+     * userMapper.query(fields, filter, sort, -1, 10);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param selectPropNames the collection of property names to include in the results
@@ -1364,13 +1839,26 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: include name/stats, drop _id, sort by name.
      * Bson projection = Projections.fields(
      *     Projections.include("name", "stats"),
      *     Projections.excludeId()
      * );
      * Bson filter = Filters.eq("type", "player");
      * Bson sort = Sorts.ascending("name");
-     * Mono<Dataset> playerStats = userMapper.query(projection, filter, sort);
+     * Mono<Dataset> playerStats = userMapper.query(projection, filter, sort);   // cold; one projected, sorted Dataset
+     * playerStats.subscribe(data -> System.out.println("rows: " + data.size()));
+     *
+     * // Edge: no match -> still emits one (EMPTY) Dataset.
+     * userMapper.query(projection, Filters.eq("type", "no-such-type"), sort)
+     *     .subscribe(data -> System.out.println("rows: " + data.size()));   // emits Dataset with size 0
+     *
+     * // Edge: null sort is tolerated (it is optional here) -> natural order.
+     * Mono<Dataset> unsorted = userMapper.query(projection, filter, (Bson) null);   // no sort applied; not an error
+     *
+     * // Negative: null filter -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.query(projection, (Bson) null, sort)
+     *     .subscribe(d -> {}, err -> System.err.println("Null filter: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param projection the BSON projection document for field selection
@@ -1391,10 +1879,22 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: most-recent 1000 metrics as one projected, sorted Dataset.
      * Bson projection = Projections.include("id", "metrics", "timestamp");
      * Bson filter = Filters.gte("timestamp", startDate);
      * Bson sort = Sorts.descending("timestamp");
-     * Mono<Dataset> recentMetrics = userMapper.query(projection, filter, sort, 0, 1000);
+     * Mono<Dataset> recentMetrics = userMapper.query(projection, filter, sort, 0, 1000);   // cold; one Dataset (<=1000 rows)
+     * recentMetrics.subscribe(data -> System.out.println("rows: " + data.size()));
+     *
+     * // Edge: offset past the end -> still emits one (EMPTY) Dataset.
+     * userMapper.query(projection, filter, sort, 1_000_000, 1000)
+     *     .subscribe(data -> System.out.println("rows: " + data.size()));   // emits Dataset with size 0
+     *
+     * // Edge: null sort is tolerated -> natural order, still paginated.
+     * Mono<Dataset> unsorted = userMapper.query(projection, filter, (Bson) null, 0, 1000);   // no sort applied
+     *
+     * // Negative: a negative offset is rejected with IllegalArgumentException.
+     * userMapper.query(projection, filter, sort, -1, 1000);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param projection the BSON projection document for field selection
@@ -1418,9 +1918,23 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: insert one entity; subscribing performs the write and emits the result.
      * User newUser = new User("John Doe", "john@example.com");
      * userMapper.insertOne(newUser)
-     *     .subscribe(result -> System.out.println("Inserted: " + result.getInsertedId()));
+     *     .subscribe(result -> System.out.println("Inserted: " + result.getInsertedId()));   // emits one InsertOneResult
+     *
+     * // Edge: cold publisher — building the Mono does NOT insert until subscribed.
+     * Mono<InsertOneResult> pending = userMapper.insertOne(newUser);   // nothing written yet
+     * pending.subscribe();                                             // subscription actually performs the insert
+     *
+     * // Edge: subscribing the SAME publisher twice issues the underlying insert twice.
+     * Mono<InsertOneResult> ins = userMapper.insertOne(newUser);
+     * ins.subscribe();   // first insert
+     * ins.subscribe();   // second insert (likely a duplicate-key MongoWriteException via onError if _id repeats)
+     *
+     * // Negative: inserting an entity whose _id already exists -> MongoWriteException on subscription.
+     * userMapper.insertOne(existingUser)
+     *     .subscribe(r -> {}, err -> System.err.println("Duplicate key: " + err));   // onError(MongoWriteException)
      * }</pre>
      *
      * @param obj the entity to insert
@@ -1446,10 +1960,21 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: insert bypassing schema validation.
      * User newUser = new User("John Doe", "john@example.com");
      * InsertOneOptions options = new InsertOneOptions().bypassDocumentValidation(true);
      * userMapper.insertOne(newUser, options)
-     *     .subscribe(result -> System.out.println("Inserted: " + result.getInsertedId()));
+     *     .subscribe(result -> System.out.println("Inserted: " + result.getInsertedId()));   // emits one InsertOneResult
+     *
+     * // Edge: null options behaves like the no-options overload (driver defaults).
+     * userMapper.insertOne(newUser, (InsertOneOptions) null).subscribe();   // default insert
+     *
+     * // Edge: cold publisher — building it inserts nothing until subscribed.
+     * Mono<InsertOneResult> pending = userMapper.insertOne(newUser, options);   // nothing written yet
+     *
+     * // Negative: duplicate _id -> MongoWriteException on subscription.
+     * userMapper.insertOne(existingUser, options)
+     *     .subscribe(r -> {}, err -> System.err.println("Duplicate key: " + err));   // onError(MongoWriteException)
      * }</pre>
      *
      * @param obj the entity to insert
@@ -1477,12 +2002,23 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: insert several entities; result reports one inserted id per entity.
      * List<User> users = Arrays.asList(
      *     new User("John", "john@example.com"),
      *     new User("Jane", "jane@example.com")
      * );
      * userMapper.insertMany(users)
-     *     .subscribe(result -> System.out.println("Inserted: " + result.getInsertedIds().size()));
+     *     .subscribe(result -> System.out.println("Inserted: " + result.getInsertedIds().size()));   // emits 2 ids
+     *
+     * // Edge: cold publisher — building it inserts nothing until subscribed.
+     * Mono<InsertManyResult> pending = userMapper.insertMany(users);   // nothing written yet
+     *
+     * // Negative: a null or empty collection -> IllegalArgumentException.
+     * userMapper.insertMany(Collections.emptyList());   // throws IllegalArgumentException
+     *
+     * // Negative: if any document fails (e.g. duplicate _id) the batch fails via onError.
+     * userMapper.insertMany(usersWithDuplicate)
+     *     .subscribe(r -> {}, err -> System.err.println("Bulk insert failed: " + err));   // onError(MongoBulkWriteException)
      * }</pre>
      *
      * @param objList the collection of entities to insert
@@ -1533,10 +2069,21 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: matched id -> getModifiedCount() == 1 (when a value actually changed).
      * User updatedUser = new User();
      * updatedUser.setEmail("newemail@example.com");
-     * Mono<UpdateResult> result = userMapper.updateOne("507f1f77bcf86cd799439011", updatedUser);
-     * result.subscribe(r -> System.out.println("Modified: " + r.getModifiedCount()));
+     * Mono<UpdateResult> result = userMapper.updateOne("507f1f77bcf86cd799439011", updatedUser);   // cold
+     * result.subscribe(r -> System.out.println("Modified: " + r.getModifiedCount()));              // emits 1 on a real change
+     *
+     * // Edge: no document with that id -> result has matchedCount == 0 and modifiedCount == 0.
+     * userMapper.updateOne("000000000000000000000000", updatedUser)
+     *     .subscribe(r -> System.out.println("matched: " + r.getMatchedCount()));   // emits 0
+     *
+     * // Edge: cold publisher — building it writes nothing until subscribed.
+     * Mono<UpdateResult> pending = userMapper.updateOne("507f1f77bcf86cd799439011", updatedUser);   // nothing written yet
+     *
+     * // Negative: a malformed id -> IllegalArgumentException.
+     * userMapper.updateOne("not-hex", updatedUser);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param objectId the string representation of the MongoDB ObjectId
@@ -1677,11 +2224,23 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: update every matching document; modifiedCount reflects how many changed.
      * Bson filter = Filters.eq("department", "Engineering");
      * User updates = new User();
      * updates.setSalaryMultiplier(1.1);
-     * Mono<UpdateResult> result = userMapper.updateMany(filter, updates);
+     * Mono<UpdateResult> result = userMapper.updateMany(filter, updates);   // cold
      * result.subscribe(r -> System.out.println("Updated " + r.getModifiedCount() + " documents"));
+     *
+     * // Edge: a filter matching nothing -> matchedCount == 0 and modifiedCount == 0.
+     * userMapper.updateMany(Filters.eq("department", "no-such-dept"), updates)
+     *     .subscribe(r -> System.out.println("matched: " + r.getMatchedCount()));   // emits 0
+     *
+     * // Edge: cold publisher — building it writes nothing until subscribed.
+     * Mono<UpdateResult> pending = userMapper.updateMany(filter, updates);   // nothing written yet
+     *
+     * // Negative: null filter -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.updateMany((Bson) null, updates)
+     *     .subscribe(r -> {}, err -> System.err.println("Null filter: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param filter the query filter to match documents against
@@ -1772,9 +2331,20 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: matched id -> the whole document (except _id) is overwritten; modifiedCount == 1 on change.
      * User newUser = new User("John", "john@example.com");
-     * Mono<UpdateResult> result = userMapper.replaceOne("507f1f77bcf86cd799439011", newUser);
-     * result.subscribe(r -> System.out.println("Replaced: " + r.getModifiedCount()));
+     * Mono<UpdateResult> result = userMapper.replaceOne("507f1f77bcf86cd799439011", newUser);   // cold
+     * result.subscribe(r -> System.out.println("Replaced: " + r.getModifiedCount()));           // emits 1 on a real change
+     *
+     * // Edge: no document with that id -> matchedCount == 0, nothing replaced.
+     * userMapper.replaceOne("000000000000000000000000", newUser)
+     *     .subscribe(r -> System.out.println("matched: " + r.getMatchedCount()));   // emits 0
+     *
+     * // Edge: cold publisher — building it writes nothing until subscribed.
+     * Mono<UpdateResult> pending = userMapper.replaceOne("507f1f77bcf86cd799439011", newUser);   // nothing written yet
+     *
+     * // Negative: a malformed id -> IllegalArgumentException.
+     * userMapper.replaceOne("not-hex", newUser);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param objectId the string representation of the MongoDB ObjectId
@@ -1863,8 +2433,19 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Mono<DeleteResult> result = userMapper.deleteOne("507f1f77bcf86cd799439011");
-     * result.subscribe(r -> System.out.println("Deleted: " + r.getDeletedCount()));
+     * // Typical: existing id -> getDeletedCount() == 1.
+     * Mono<DeleteResult> result = userMapper.deleteOne("507f1f77bcf86cd799439011");   // cold
+     * result.subscribe(r -> System.out.println("Deleted: " + r.getDeletedCount()));   // emits 1 when present
+     *
+     * // Edge: an unused id -> getDeletedCount() == 0 (no error).
+     * userMapper.deleteOne("000000000000000000000000")
+     *     .subscribe(r -> System.out.println("deleted: " + r.getDeletedCount()));   // emits 0
+     *
+     * // Edge: cold publisher — building it deletes nothing until subscribed.
+     * Mono<DeleteResult> pending = userMapper.deleteOne("507f1f77bcf86cd799439011");   // nothing deleted yet
+     *
+     * // Negative: a malformed id -> IllegalArgumentException.
+     * userMapper.deleteOne("not-hex");   // throws IllegalArgumentException
      * }</pre>
      *
      * @param objectId the string representation of the MongoDB ObjectId
@@ -1904,9 +2485,21 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: deletes at most one matching document.
      * Bson filter = Filters.eq("email", "user@example.com");
-     * Mono<DeleteResult> result = userMapper.deleteOne(filter);
-     * result.subscribe(r -> System.out.println("Deleted: " + r.getDeletedCount()));
+     * Mono<DeleteResult> result = userMapper.deleteOne(filter);                       // cold
+     * result.subscribe(r -> System.out.println("Deleted: " + r.getDeletedCount()));   // emits 0 or 1
+     *
+     * // Edge: a filter matching nothing -> getDeletedCount() == 0 (no error).
+     * userMapper.deleteOne(Filters.eq("email", "missing@example.com"))
+     *     .subscribe(r -> System.out.println("deleted: " + r.getDeletedCount()));   // emits 0
+     *
+     * // Edge: cold publisher — building it deletes nothing until subscribed.
+     * Mono<DeleteResult> pending = userMapper.deleteOne(filter);   // nothing deleted yet
+     *
+     * // Negative: null filter -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.deleteOne((Bson) null)
+     *     .subscribe(r -> {}, err -> System.err.println("Null filter: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param filter the query filter to match documents against
@@ -1950,9 +2543,21 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: bulk-delete every matching document.
      * Bson filter = Filters.lt("lastLogin", oneYearAgo);
-     * Mono<DeleteResult> result = userMapper.deleteMany(filter);
+     * Mono<DeleteResult> result = userMapper.deleteMany(filter);   // cold
      * result.subscribe(r -> System.out.println("Deleted " + r.getDeletedCount() + " inactive users"));
+     *
+     * // Edge: a filter matching nothing -> getDeletedCount() == 0 (no error).
+     * userMapper.deleteMany(Filters.eq("status", "no-such-status"))
+     *     .subscribe(r -> System.out.println("deleted: " + r.getDeletedCount()));   // emits 0
+     *
+     * // Edge: an empty filter deletes EVERY document in the collection — use with care.
+     * userMapper.deleteMany(Filters.empty()).subscribe(r -> System.out.println("wiped: " + r.getDeletedCount()));
+     *
+     * // Negative: null filter -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.deleteMany((Bson) null)
+     *     .subscribe(r -> {}, err -> System.err.println("Null filter: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param filter the query filter to match documents against
@@ -2001,9 +2606,20 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: emits the inserted-document count (one per entity on success).
      * List<User> newUsers = Arrays.asList(user1, user2, user3);
      * userMapper.bulkInsert(newUsers)
-     *     .subscribe(count -> System.out.println("Inserted " + count + " users"));
+     *     .subscribe(count -> System.out.println("Inserted " + count + " users"));   // emits 3
+     *
+     * // Edge: cold publisher — building it inserts nothing until subscribed.
+     * Mono<Integer> pending = userMapper.bulkInsert(newUsers);   // nothing written yet
+     *
+     * // Negative: a null or empty collection -> IllegalArgumentException.
+     * userMapper.bulkInsert(Collections.emptyList());   // throws IllegalArgumentException
+     *
+     * // Negative: a per-document failure (e.g. duplicate _id) -> onError(MongoBulkWriteException).
+     * userMapper.bulkInsert(usersWithDuplicate)
+     *     .subscribe(c -> {}, err -> System.err.println("Bulk insert failed: " + err));   // onError(MongoBulkWriteException)
      * }</pre>
      *
      * @param entities the collection of entities to insert (must not be null or empty)
@@ -2050,12 +2666,23 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: mixed insert/update/delete in one round-trip; result aggregates per-type counts.
      * List<WriteModel<Document>> operations = Arrays.asList(
      *     new InsertOneModel<>(doc1),
      *     new UpdateOneModel<>(filter, update),
      *     new DeleteOneModel<>(deleteFilter));
-     * userMapper.bulkWrite(operations).subscribe(result -> 
-     *     System.out.println("Modified: " + result.getModifiedCount()));
+     * userMapper.bulkWrite(operations).subscribe(result ->
+     *     System.out.println("Modified: " + result.getModifiedCount()));   // emits one BulkWriteResult
+     *
+     * // Edge: cold publisher — building it writes nothing until subscribed.
+     * Mono<BulkWriteResult> pending = userMapper.bulkWrite(operations);   // nothing written yet
+     *
+     * // Negative: a null or empty request list -> IllegalArgumentException.
+     * userMapper.bulkWrite(Collections.emptyList());   // throws IllegalArgumentException
+     *
+     * // Negative: a failing operation (e.g. duplicate _id on insert) -> onError(MongoBulkWriteException).
+     * userMapper.bulkWrite(operationsWithConflict)
+     *     .subscribe(r -> {}, err -> System.err.println("Bulk write failed: " + err));   // onError(MongoBulkWriteException)
      * }</pre>
      *
      * @param requests list of write operations to execute (must not be null or empty)
@@ -2105,9 +2732,21 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: match -> emits the PRE-update document (default returnDocument is BEFORE).
      * User updatedUser = new User().setStatus("active");
      * userMapper.findOneAndUpdate(Filters.eq("_id", userId), updatedUser)
-     *     .subscribe(user -> System.out.println("Updated user: " + user.getName()));
+     *     .subscribe(user -> System.out.println("Old status was: " + user.getStatus()));   // emits doc before update
+     *
+     * // Edge: no match -> Mono completes EMPTY and NO update is performed.
+     * userMapper.findOneAndUpdate(Filters.eq("_id", "missing"), updatedUser)
+     *     .hasElement().subscribe(present -> System.out.println("updated? " + present));   // emits false
+     *
+     * // Edge: cold publisher — building it performs no update until subscribed.
+     * Mono<User> pending = userMapper.findOneAndUpdate(Filters.eq("_id", userId), updatedUser);   // nothing written yet
+     *
+     * // Negative: null filter -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.findOneAndUpdate((Bson) null, updatedUser)
+     *     .subscribe(u -> {}, err -> System.err.println("Null filter: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param filter the query filter to identify the document to update
@@ -2210,9 +2849,21 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: match -> emits the PRE-replacement document (default returnDocument is BEFORE).
      * User newUser = new User("John", "john@example.com", "active");
      * userMapper.findOneAndReplace(Filters.eq("_id", userId), newUser)
-     *     .subscribe(oldUser -> System.out.println("Replaced: " + oldUser.getName()));
+     *     .subscribe(oldUser -> System.out.println("Replaced: " + oldUser.getName()));   // emits doc before replace
+     *
+     * // Edge: no match -> Mono completes EMPTY and nothing is replaced (without upsert).
+     * userMapper.findOneAndReplace(Filters.eq("_id", "missing"), newUser)
+     *     .hasElement().subscribe(present -> System.out.println("replaced? " + present));   // emits false
+     *
+     * // Edge: cold publisher — building it performs no replace until subscribed.
+     * Mono<User> pending = userMapper.findOneAndReplace(Filters.eq("_id", userId), newUser);   // nothing written yet
+     *
+     * // Negative: null filter -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.findOneAndReplace((Bson) null, newUser)
+     *     .subscribe(u -> {}, err -> System.err.println("Null filter: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param filter the query filter to identify the document to replace
@@ -2265,9 +2916,20 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: match -> emits the just-deleted document, then completes.
      * userMapper.findOneAndDelete(Filters.eq("status", "deleted"))
-     *     .subscribe(deletedUser ->
-     *         System.out.println("Removed user: " + deletedUser.getName()));
+     *     .subscribe(deletedUser -> System.out.println("Removed user: " + deletedUser.getName()));   // emits deleted doc
+     *
+     * // Edge: no match -> Mono completes EMPTY and nothing is deleted.
+     * userMapper.findOneAndDelete(Filters.eq("status", "no-such-status"))
+     *     .hasElement().subscribe(present -> System.out.println("deleted? " + present));   // emits false
+     *
+     * // Edge: cold publisher — building it deletes nothing until subscribed.
+     * Mono<User> pending = userMapper.findOneAndDelete(Filters.eq("status", "deleted"));   // nothing deleted yet
+     *
+     * // Negative: null filter -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.findOneAndDelete((Bson) null)
+     *     .subscribe(u -> {}, err -> System.err.println("Null filter: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param filter the query filter to identify the document to delete
@@ -2326,6 +2988,15 @@ public final class MongoCollectionMapper<T> {
      * userMapper.collectionExecutor().distinct("country", String.class)
      *     .collectList()
      *     .subscribe(countries -> System.out.println("Countries: " + countries));
+     *
+     * // Edge: an empty collection (no documents) -> Flux completes with ZERO emissions.
+     * userMapper.distinct("country").count().subscribe(n -> System.out.println("distinct: " + n));   // emits 0 if empty
+     *
+     * // Edge: cold publisher — building it issues no query until subscribed.
+     * Flux<T> notRunYet = userMapper.distinct("country");   // nothing executed yet
+     *
+     * // Negative: a null fieldName is rejected with IllegalArgumentException.
+     * userMapper.distinct((String) null);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param fieldName the name of the field to get distinct values for
@@ -2385,11 +3056,23 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: match then group; each output document is decoded as T.
      * List<Bson> pipeline = Arrays.asList(
      *     Aggregates.match(Filters.gte("age", 18)),
      *     Aggregates.group("$country", Accumulators.sum("count", 1)));
      * userMapper.aggregate(pipeline)
-     *     .subscribe(result -> System.out.println("Aggregation result: " + result));
+     *     .subscribe(result -> System.out.println("Aggregation result: " + result));   // one emission per group
+     *
+     * // Edge: an empty pipeline returns every document (no transformation).
+     * Flux<T> all = userMapper.aggregate(Collections.emptyList());   // emits each document as T
+     *
+     * // Edge: a pipeline that matches nothing -> Flux completes with ZERO emissions.
+     * userMapper.aggregate(Arrays.asList(Aggregates.match(Filters.gte("age", 1000))))
+     *     .count().subscribe(n -> System.out.println("groups: " + n));   // emits 0
+     *
+     * // Negative: null pipeline -> error signal (IllegalArgumentException) on subscription.
+     * userMapper.aggregate((List<Bson>) null)
+     *     .subscribe(r -> {}, err -> System.err.println("Null pipeline: " + err));   // onError(IllegalArgumentException)
      * }</pre>
      *
      * @param pipeline list of aggregation stages to execute in order; the pipeline itself may be
@@ -2413,9 +3096,21 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: one emission per distinct department value.
      * userMapper.groupBy("department")
      *     .collectList()
-     *     .subscribe(groups -> System.out.println("Grouped by department: " + groups));
+     *     .subscribe(groups -> System.out.println("Grouped by department: " + groups));   // one group per department
+     *
+     * // Edge: an empty collection -> Flux completes with ZERO emissions.
+     * userMapper.groupBy("department").count().subscribe(n -> System.out.println("groups: " + n));   // emits 0 if empty
+     *
+     * // Edge: cold publisher — building it issues no aggregation until subscribed.
+     * Flux<T> notRunYet = userMapper.groupBy("department");   // nothing executed yet
+     *
+     * // Negative: a database/pipeline failure is delivered through onError, never thrown to the subscriber.
+     * userMapper.groupBy("department")
+     *     .onErrorResume(err -> { System.err.println("group failed: " + err); return Flux.empty(); })
+     *     .subscribe(g -> handleGroup(g));   // errors routed to onErrorResume
      * }</pre>
      *
      * @param fieldName the field name to group documents by
@@ -2437,10 +3132,20 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: one emission per unique (country, department) combination.
      * List<String> fields = Arrays.asList("country", "department");
      * userMapper.groupBy(fields)
      *     .collectList()
-     *     .subscribe(groups -> System.out.println("Multi-field groups: " + groups));
+     *     .subscribe(groups -> System.out.println("Multi-field groups: " + groups));   // one group per combo
+     *
+     * // Edge: an empty collection -> Flux completes with ZERO emissions.
+     * userMapper.groupBy(fields).count().subscribe(n -> System.out.println("groups: " + n));   // emits 0 if empty
+     *
+     * // Edge: cold publisher — building it issues no aggregation until subscribed.
+     * Flux<T> notRunYet = userMapper.groupBy(fields);   // nothing executed yet
+     *
+     * // Negative: a null or empty fieldNames collection -> IllegalArgumentException.
+     * userMapper.groupBy(Collections.emptyList());   // throws IllegalArgumentException
      * }</pre>
      *
      * @param fieldNames collection of field names to compose the group key
@@ -2462,9 +3167,21 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: one emission per status, each carrying its document count.
      * userMapper.groupByAndCount("status")
      *     .collectList()
-     *     .subscribe(counts -> System.out.println("Status counts: " + counts));
+     *     .subscribe(counts -> System.out.println("Status counts: " + counts));   // one entry per status
+     *
+     * // Edge: an empty collection -> Flux completes with ZERO emissions.
+     * userMapper.groupByAndCount("status").count().subscribe(n -> System.out.println("groups: " + n));   // emits 0
+     *
+     * // Edge: cold publisher — building it issues no aggregation until subscribed.
+     * Flux<T> notRunYet = userMapper.groupByAndCount("status");   // nothing executed yet
+     *
+     * // Edge: a database/pipeline failure is delivered through onError, never thrown synchronously.
+     * userMapper.groupByAndCount("status")
+     *     .onErrorResume(err -> Flux.empty())
+     *     .subscribe(g -> handleCount(g));   // errors routed to onErrorResume
      * }</pre>
      *
      * @param fieldName the field name to group and count by
@@ -2486,10 +3203,20 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: one emission per unique (country, status) combination, each with its count.
      * List<String> fields = Arrays.asList("country", "status");
      * userMapper.groupByAndCount(fields)
      *     .collectList()
-     *     .subscribe(counts -> System.out.println("Distribution: " + counts));
+     *     .subscribe(counts -> System.out.println("Distribution: " + counts));   // one entry per combo
+     *
+     * // Edge: an empty collection -> Flux completes with ZERO emissions.
+     * userMapper.groupByAndCount(fields).count().subscribe(n -> System.out.println("groups: " + n));   // emits 0
+     *
+     * // Edge: cold publisher — building it issues no aggregation until subscribed.
+     * Flux<T> notRunYet = userMapper.groupByAndCount(fields);   // nothing executed yet
+     *
+     * // Negative: a null or empty fieldNames collection -> IllegalArgumentException.
+     * userMapper.groupByAndCount(Collections.emptyList());   // throws IllegalArgumentException
      * }</pre>
      *
      * @param fieldNames collection of field names to compose the group key
@@ -2512,10 +3239,21 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: classic count-by-category map-reduce; each output document decoded as T.
      * String mapFunction = "function() { emit(this.category, 1); }";
      * String reduceFunction = "function(key, values) { return Array.sum(values); }";
      * userMapper.mapReduce(mapFunction, reduceFunction)
-     *     .subscribe(result -> System.out.println("Map-reduce result: " + result));
+     *     .subscribe(result -> System.out.println("Map-reduce result: " + result));   // one emission per key
+     *
+     * // Edge: an empty collection -> Flux completes with ZERO emissions.
+     * userMapper.mapReduce(mapFunction, reduceFunction)
+     *     .count().subscribe(n -> System.out.println("keys: " + n));   // emits 0 if empty
+     *
+     * // Edge: cold publisher — building it issues no map-reduce until subscribed.
+     * Flux<T> notRunYet = userMapper.mapReduce(mapFunction, reduceFunction);   // nothing executed yet
+     *
+     * // Negative: a null map function is rejected with IllegalArgumentException.
+     * userMapper.mapReduce((String) null, reduceFunction);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param mapFunction the JavaScript map function; must not be null

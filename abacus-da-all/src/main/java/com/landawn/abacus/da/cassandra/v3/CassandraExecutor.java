@@ -156,6 +156,7 @@ import lombok.experimental.Accessors;
  * </ul>
  * 
  * <h3>Basic Usage Examples</h3>
+ *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * // Initialize with Cluster and Session (Driver 3.x)
@@ -186,6 +187,7 @@ import lombok.experimental.Accessors;
  * }</pre>
  * 
  * <h3>Advanced Features</h3>
+ *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * // Custom type codec registration
@@ -317,9 +319,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <pre>{@code
      * Cluster cluster = Cluster.builder().addContactPoint("127.0.0.1").build();
      * Session session = cluster.connect("mykeyspace");
-     * CassandraExecutor executor = new CassandraExecutor(session);
+     * CassandraExecutor executor = new CassandraExecutor(session); // ready to use; null session throws NullPointerException
      * }</pre>
-     * 
+     *
      * @param session the Cassandra session from Driver 3.x (com.datastax.driver.core.Session)
      * @throws NullPointerException if session is null
      */
@@ -340,9 +342,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *     .consistency(ConsistencyLevel.QUORUM)
      *     .fetchSize(1000)
      *     .build();
-     * CassandraExecutor executor = new CassandraExecutor(session, settings);
+     * CassandraExecutor executor = new CassandraExecutor(session, settings); // settings may be null (driver defaults are used)
      * }</pre>
-     * 
+     *
      * @param session the Cassandra session from Driver 3.x
      * @param settings default statement configuration, or null for driver defaults
      * @throws NullPointerException if session is null
@@ -362,9 +364,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <pre>{@code
      * CqlMapper cqlMapper = new CqlMapper("queries.xml");
      * CassandraExecutor executor = new CassandraExecutor(session, settings, cqlMapper);
-     * // Now you can use named queries: executor.execute(cqlMapper.get("findUserById"), userId);
+     * // Pass the mapper KEY (id) as the query; the executor resolves it via the CqlMapper:
+     * ResultSet rs = executor.execute("findUserById", userId); // "findUserById" is looked up in cqlMapper
      * }</pre>
-     * 
+     *
      * @param session the Cassandra session from Driver 3.x
      * @param settings default statement configuration, or null for driver defaults
      * @param cqlMapper mapper containing pre-configured CQL statements, or null if not needed
@@ -403,9 +406,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *     .build();
      * 
      * CassandraExecutor executor = new CassandraExecutor(
-     *     session, settings, cqlMapper, NamingPolicy.SNAKE_CASE);
+     *     session, settings, cqlMapper, NamingPolicy.SNAKE_CASE); // null namingPolicy defaults to SNAKE_CASE
      * }</pre>
-     * 
+     *
      * @param session the Cassandra session from Driver 3.x
      * @param settings default statement configuration, or null for driver defaults
      * @param cqlMapper mapper containing pre-configured CQL statements, or null
@@ -445,13 +448,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Cluster cluster = executor.cluster();
+     * Cluster cluster = executor.cluster();       // returns the same Cluster used to build this executor
      * // Access metadata
      * Metadata metadata = cluster.getMetadata();
      * // Get keyspace information
      * KeyspaceMetadata keyspace = metadata.getKeyspace("mykeyspace");
      * }</pre>
-     * 
+     *
      * @return the Cassandra cluster instance from Driver 3.x
      */
     public Cluster cluster() {
@@ -467,11 +470,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Session session = executor.session();
+     * Session session = executor.session();       // returns the underlying Session (never null)
      * // Direct statement execution
      * ResultSet rs = session.execute("SELECT * FROM users");
      * }</pre>
-     * 
+     *
      * @return the Cassandra session instance
      */
     public Session session() {
@@ -491,8 +494,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * ContinuableFuture<List<User>> future = executor.async().list(User.class,
-     *     "SELECT * FROM users WHERE status = ?", "active");
+     * AsyncCassandraExecutor async = executor.async(); // returns the same facade on every call (executor.async() == executor.async())
+     *
+     * ContinuableFuture<List<User>> future = async.list(User.class,
+     *     "SELECT * FROM users WHERE status = ?", "active"); // non-blocking; resolve with future.get()
      * }</pre>
      *
      * @return the {@link AsyncCassandraExecutor} bound to this executor
@@ -520,9 +525,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *     // getters and setters
      * }
      *
-     * Mapper<User> mapper = executor.mapper(User.class);
+     * Mapper<User> mapper = executor.mapper(User.class); // returns the driver's object Mapper for User
      * mapper.save(user);
-     * User found = mapper.get(userId);
+     * User found = mapper.get(userId);                    // returns the row mapped to a User (or null if absent)
      * }</pre>
      *
      * @param <T> the type of the entity
@@ -578,7 +583,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * CodecRegistry registry = cluster.getConfiguration().getCodecRegistry();
-     * CassandraExecutor.registerTypeCodec(registry, CustomData.class);
+     * CassandraExecutor.registerTypeCodec(registry, CustomData.class); // CustomData now (de)serializes as JSON varchar
+     *
+     * CassandraExecutor.registerTypeCodec(registry, null);                         // throws NullPointerException (null class)
+     * CassandraExecutor.registerTypeCodec((CodecRegistry) null, CustomData.class); // throws NullPointerException (null registry)
      * }</pre>
      *
      * @param codecRegistry the codec registry to register the codec in
@@ -604,7 +612,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ResultSet rs = executor.execute("SELECT * FROM users");
-     * Dataset dataset = CassandraExecutor.extractData(rs);
+     * Dataset dataset = CassandraExecutor.extractData(rs); // returns a Dataset with raw driver values, no type conversion
      * // Access data by column name
      * List<String> names = dataset.getColumn("name");
      * }</pre>
@@ -633,9 +641,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ResultSet rs = executor.execute("SELECT * FROM users");
-     * Dataset dataset = CassandraExecutor.extractData(rs, User.class);
+     * Dataset dataset = CassandraExecutor.extractData(rs, User.class); // returns a Dataset whose column values are converted to User property types
      * // Column types match User property types
      * List<User> users = dataset.toList(User.class);
+     *
+     * // With Map.class (or null) no per-column conversion is performed:
+     * Dataset raw = CassandraExecutor.extractData(rs, Map.class);     // returns a Dataset with raw driver values
      * }</pre>
      *
      * @param resultSet the Cassandra ResultSet to extract data from
@@ -708,14 +719,18 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <pre>{@code
      * // Convert to entity list
      * ResultSet rs = executor.execute("SELECT * FROM users");
-     * List<User> users = CassandraExecutor.toList(rs, User.class);
+     * List<User> users = CassandraExecutor.toList(rs, User.class);   // returns one User per row
      *
      * // Convert to Map list
-     * List<Map> maps = CassandraExecutor.toList(rs, Map.class);
+     * List<Map> maps = CassandraExecutor.toList(rs, Map.class);      // returns one Map<String,Object> per row
      *
      * // Convert single column to value list
      * ResultSet names = executor.execute("SELECT name FROM users");
-     * List<String> nameList = CassandraExecutor.toList(names, String.class);
+     * List<String> nameList = CassandraExecutor.toList(names, String.class); // returns one String per row
+     *
+     * // Single-value type but multiple columns selected -> error
+     * ResultSet multi = executor.execute("SELECT id, name FROM users");
+     * CassandraExecutor.toList(multi, String.class); // throws IllegalArgumentException (more than one column)
      * }</pre>
      *
      * @param <T> the target type
@@ -770,14 +785,14 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * Row row = resultSet.one();
      *
      * if (row != null) {
-     *     User user = CassandraExecutor.toEntity(row, User.class);
+     *     User user = CassandraExecutor.toEntity(row, User.class); // returns a populated User instance (never null for a non-null row)
      *     System.out.println("User: " + user.getName() + " (" + user.getEmail() + ")");
      * }
      *
      * // With UDT (User Defined Type)
      * Row addressRow = session.execute("SELECT id, name, address FROM users WHERE id = ?", userId).one();
-     * User userWithAddress = CassandraExecutor.toEntity(addressRow, User.class);
-     * // address UDT is automatically mapped to Address object
+     * User userWithAddress = CassandraExecutor.toEntity(addressRow, User.class); // returns a User with nested properties populated
+     * // the address UDT is mapped to an Address object only when a UDTCodec for Address is registered
      *
      * // Batch conversion
      * ResultSet allUsers = session.execute("SELECT * FROM users");
@@ -785,6 +800,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *     User user = CassandraExecutor.toEntity(userRow, User.class);
      *     processUser(user);
      * }
+     *
+     * // Edge case: a null row throws NullPointerException
+     * CassandraExecutor.toEntity((Row) null, User.class); // throws NullPointerException
      * }</pre>
      *
      * @param <T> the entity type
@@ -848,8 +866,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Row row = resultSet.one();
-     * Map<String, Object> map = CassandraExecutor.toMap(row);
+     * Map<String, Object> map = CassandraExecutor.toMap(row); // returns a HashMap of column name -> value (column order NOT preserved)
      * Object value = map.get("column_name");
+     *
+     * CassandraExecutor.toMap((Row) null); // throws NullPointerException (null row)
      * }</pre>
      *
      * @param row the Cassandra Row to convert
@@ -873,10 +893,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <pre>{@code
      * Row row = resultSet.one();
      * // Use LinkedHashMap to preserve column order
-     * Map<String, Object> map = CassandraExecutor.toMap(row, LinkedHashMap::new);
+     * Map<String, Object> map = CassandraExecutor.toMap(row, LinkedHashMap::new); // returns a LinkedHashMap (column order preserved)
      *
      * // Use TreeMap for sorted keys
-     * Map<String, Object> sortedMap = CassandraExecutor.toMap(row, size -> new TreeMap<>());
+     * Map<String, Object> sortedMap = CassandraExecutor.toMap(row, size -> new TreeMap<>()); // returns a TreeMap (keys sorted)
      * }</pre>
      *
      * @param row the Cassandra Row to convert
@@ -1094,11 +1114,14 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * User user = executor.gett(User.class, 
+     * User user = executor.gett(User.class,
      *     Arrays.asList("id", "name", "email"),
-     *     Filters.eq("id", userId));
+     *     Filters.eq("id", userId)); // returns the single matching User, or null if none matched
+     *
+     * // If more than one row matches the condition:
+     * executor.gett(User.class, null, Filters.eq("status", "active")); // throws DuplicateResultException when >1 match
      * }</pre>
-     * 
+     *
      * @param <T> the entity type
      * @param targetClass the entity class
      * @param selectPropNames the property names to select (null for all properties)
@@ -1130,13 +1153,18 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Nullable<Long> count = executor.queryForSingleValue(Long.class,
-     *     "SELECT count(*) FROM users WHERE status = ?", "active");
+     *     "SELECT count(*) FROM users WHERE status = ?", "active"); // present Nullable holding the count
      *
      * Nullable<BigDecimal> maxSalary = executor.queryForSingleValue(
-     *     BigDecimal.class, "SELECT max(salary) FROM employees WHERE department = ?", "engineering");
+     *     BigDecimal.class, "SELECT max(salary) FROM employees WHERE department = ?", "engineering"); // present Nullable (value may be null if no aggregate)
      *
+     * // No rows matched -> Nullable.empty()
      * Nullable<String> email = executor.queryForSingleValue(
-     *     String.class, "SELECT email FROM users WHERE id = ?", userId);
+     *     String.class, "SELECT email FROM users WHERE id = ?", unknownId); // returns Nullable.empty() when no row matches
+     *
+     * // Row matched but column is NULL -> present-but-null (NOT empty)
+     * Nullable<String> nick = executor.queryForSingleValue(
+     *     String.class, "SELECT nickname FROM users WHERE id = ?", userId); // Nullable.of(null) when the row exists but column is NULL
      * }</pre>
      *
      * @param <E> the type of the single result value to be returned
@@ -1175,7 +1203,15 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Optional<String> email = executor.queryForSingleNonNull(String.class,
-     *     "SELECT email FROM users WHERE id = ?", userId);
+     *     "SELECT email FROM users WHERE id = ?", userId); // present Optional holding the email
+     *
+     * // No rows matched -> Optional.empty()
+     * Optional<String> none = executor.queryForSingleNonNull(String.class,
+     *     "SELECT email FROM users WHERE id = ?", unknownId); // returns Optional.empty() when no row matches
+     *
+     * // Row matched but column is NULL -> throws (Optional cannot hold null)
+     * executor.queryForSingleNonNull(String.class,
+     *     "SELECT nickname FROM users WHERE id = ?", userId); // throws NullPointerException when the matched value is NULL
      * }</pre>
      *
      * @param <E> the type of the single result value to be returned
@@ -1219,16 +1255,17 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Optional<User> user = executor.findFirst(User.class,
-     *     "SELECT * FROM users WHERE email = ? LIMIT 1", email);
+     *     "SELECT * FROM users WHERE email = ? LIMIT 1", email); // present Optional with the first matching User
      *
-     * Optional<User> latestUser = executor.findFirst(User.class,
-     *     "SELECT * FROM users ORDER BY created_at DESC LIMIT 1");
+     * // No rows matched -> Optional.empty()
+     * Optional<User> none = executor.findFirst(User.class,
+     *     "SELECT * FROM users WHERE email = ?", unknownEmail); // returns Optional.empty() when no row matches
      *
      * Optional<Map<String, Object>> userData = executor.findFirst(Map.class,
-     *     "SELECT name, email FROM users WHERE id = ?", userId);
+     *     "SELECT name, email FROM users WHERE id = ?", userId); // present Optional holding a Map of the row
      *
      * Optional<Object[]> stats = executor.findFirst(Object[].class,
-     *     "SELECT count(*), max(created_at) FROM events WHERE type = ?", "login");
+     *     "SELECT count(*), max(created_at) FROM events WHERE type = ?", "login"); // present Optional holding an Object[] of the columns
      * }</pre>
      *
      * @param <T> the type to map the result row to
@@ -1566,6 +1603,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *     executor.close();   // Closes session, cluster, and internal pools
      * }
      * }</pre>
+     *
      */
     @Override
     public void close() {
@@ -2409,6 +2447,16 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * Serializes a Java value into the binary representation of its UDT, delegating
          * to {@link #serialize(Object)} and then to the underlying {@link UDTValue} codec.
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * UDTCodec<Address> codec = UDTCodec.create(addressType, Address.class);
+         *
+         * Address address = new Address("123 Main St", "Springfield");
+         * ByteBuffer bytes = codec.serialize(address, ProtocolVersion.V4); // returns a non-null ByteBuffer
+         *
+         * ByteBuffer none = codec.serialize(null, ProtocolVersion.V4);     // returns null for a null value
+         * }</pre>
+         *
          * @param value the value to serialize, or {@code null}
          * @param protocolVersion the native protocol version negotiated with the cluster
          * @return the serialized {@link ByteBuffer}, or {@code null} for a {@code null} input
@@ -2422,6 +2470,16 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         /**
          * Deserializes the binary representation of a UDT into the target Java type, delegating
          * to the underlying {@link UDTValue} codec and then to {@link #deserialize(UDTValue)}.
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * UDTCodec<Address> codec = UDTCodec.create(addressType, Address.class);
+         *
+         * ByteBuffer bytes = codec.serialize(new Address("123 Main St", "Springfield"), ProtocolVersion.V4);
+         * Address address = codec.deserialize(bytes, ProtocolVersion.V4); // returns the reconstructed Address
+         *
+         * Address none = codec.deserialize(null, ProtocolVersion.V4);     // returns null for a null payload
+         * }</pre>
          *
          * @param bytes the binary UDT payload, or {@code null}
          * @param protocolVersion the native protocol version negotiated with the cluster
@@ -2439,6 +2497,16 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * <p>An empty string or the literal {@code "NULL"} ({@code TypeCodec#NULL_STR}) is
          * decoded as {@code null}.</p>
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * UDTCodec<Address> codec = UDTCodec.create(addressType, Address.class);
+         *
+         * Address a = codec.parse("{\"street\":\"123 Main St\",\"city\":\"Springfield\"}"); // returns the parsed Address
+         *
+         * Address empty = codec.parse("");     // returns null (empty input)
+         * Address nullS = codec.parse("NULL"); // returns null (the "NULL" sentinel)
+         * }</pre>
+         *
          * @param value the string to parse
          * @return the parsed object, or {@code null} for empty/{@code "NULL"} input
          * @throws InvalidTypeException if the string is not valid JSON for {@code T}
@@ -2453,6 +2521,15 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          *
          * <p>A {@code null} value is rendered as the literal {@code "NULL"}
          * ({@code TypeCodec#NULL_STR}).</p>
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * UDTCodec<Address> codec = UDTCodec.create(addressType, Address.class);
+         *
+         * String json = codec.format(new Address("123 Main St", "Springfield")); // returns a JSON string, e.g. {"street":"123 Main St",...}
+         *
+         * String nullStr = codec.format(null); // returns "NULL"
+         * }</pre>
          *
          * @param value the value to format
          * @return the JSON string (or {@code "NULL"} if {@code value} is {@code null})
@@ -2628,6 +2705,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * 
      * CassandraExecutor executor = new CassandraExecutor(session, settings);
      * }</pre>
+     *
      */
     @Builder
     @Data
@@ -2650,11 +2728,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * StatementSettings settings = new StatementSettings();
-         * settings.consistency(ConsistencyLevel.QUORUM)
+         * StatementSettings settings = new StatementSettings(); // every field is null (driver defaults)
+         * settings.consistency(ConsistencyLevel.QUORUM)         // fluent setters return the same instance
          *         .fetchSize(1000);
          * CassandraExecutor executor = new CassandraExecutor(session, settings);
          * }</pre>
+         *
          */
         public StatementSettings() {
         }

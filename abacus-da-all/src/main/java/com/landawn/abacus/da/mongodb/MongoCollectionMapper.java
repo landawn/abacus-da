@@ -180,9 +180,9 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> userMapper = mongoDB.collectionMapper(User.class);
-     * MongoCollectionExecutor executor = userMapper.mongoCollectionExecutor();
-     * // Use raw executor for complex operations:
-     * Document complexResult = executor.aggregate(complexPipeline).first();
+     * MongoCollectionExecutor executor = userMapper.mongoCollectionExecutor(); // never null; same instance on each call
+     * // Use raw executor for operations not exposed by the mapper, e.g. an untyped aggregate:
+     * Document complexResult = executor.aggregate(complexPipeline).first(); // raw Document, not the mapped entity
      * }</pre>
      *
      * @return the underlying MongoCollectionExecutor instance
@@ -202,10 +202,11 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> userMapper = mongoDB.collectionMapper(User.class);
-     * String userId = "507f1f77bcf86cd799439011";
-     * if (userMapper.exists(userId)) {
-     *     System.out.println("User exists");
-     * }
+     * boolean present = userMapper.exists("507f1f77bcf86cd799439011"); // returns true if a doc with that _id exists
+     * boolean absent  = userMapper.exists("000000000000000000000000"); // returns false when nothing matches
+     *
+     * // A malformed (non-24-hex) string is rejected before any DB call:
+     * userMapper.exists("not-a-valid-id"); // throws IllegalArgumentException
      * }</pre>
      *
      * @param objectId the string representation of the ObjectId to check
@@ -226,9 +227,11 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * ObjectId userId = new ObjectId();
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
-     * boolean userExists = mapper.exists(userId);
+     * ObjectId userId = new ObjectId("507f1f77bcf86cd799439011");
+     * boolean userExists = mapper.exists(userId);  // returns true / false depending on the collection
+     *
+     * boolean missing = mapper.exists(new ObjectId()); // returns false: a brand-new id is almost certainly absent
      * }</pre>
      *
      * @param objectId the ObjectId to check for existence
@@ -251,9 +254,10 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * // Check if any active users exist:
-     * boolean hasActiveUsers = mapper.exists(Filters.eq("status", "active"));
-     * // Check using JSON filter:
-     * boolean hasRecentUsers = mapper.exists("{createdAt: {$gte: ISODate('2023-01-01')}}");
+     * boolean hasActiveUsers = mapper.exists(Filters.eq("status", "active")); // returns true if >=1 match
+     * // Filters parsed from JSON must be wrapped in a Bson (Document.parse), not passed as a raw String:
+     * boolean hasRecent = mapper.exists(Document.parse("{ createdAt: { $gte: ISODate('2023-01-01') } }"));
+     * boolean none = mapper.exists(Filters.eq("status", "no-such-status")); // returns false: empty match set
      * }</pre>
      *
      * @param filter the query filter to match entities against
@@ -279,8 +283,9 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> userMapper = mongoDB.collectionMapper(User.class);
-     * long totalUsers = userMapper.count();
-     * System.out.println("Total users: " + totalUsers);
+     * long totalUsers = userMapper.count();   // returns the exact document count, e.g. 1500
+     * // An empty collection counts as 0 (never negative, never null):
+     * long emptyCount = mongoDB.collectionMapper(Audit.class).count(); // returns 0L when nothing has been inserted
      * }</pre>
      *
      * @return the total number of entities in the collection
@@ -301,10 +306,10 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
-     * // Count active users:
-     * long activeUsers = mapper.count(Filters.eq("status", "active"));
-     * // Count using JSON filter:
-     * long adultUsers = mapper.count("{age: {$gte: 18}}");
+     * long activeUsers = mapper.count(Filters.eq("status", "active")); // returns the number of active users
+     * // A JSON filter must be a Bson (Document.parse), not a raw String:
+     * long adults = mapper.count(Document.parse("{ age: { $gte: 18 } }"));
+     * long none = mapper.count(Filters.eq("status", "no-such-status")); // returns 0L when nothing matches
      * }</pre>
      *
      * @param filter the query filter to count matching entities
@@ -326,9 +331,11 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
-     * // Count with limit to avoid expensive operations:
+     * // Cap the count so a huge match set never costs more than scanning 1000 docs:
      * CountOptions options = new CountOptions().limit(1000);
-     * long limitedCount = mapper.count(Filters.exists("email"), options);
+     * long limitedCount = mapper.count(Filters.exists("email"), options); // returns at most 1000
+     * // skip() shifts the window: skip the first 10 matches before counting the rest:
+     * long afterSkip = mapper.count(Filters.exists("email"), new CountOptions().skip(10));
      * }</pre>
      *
      * @param filter the query filter to count matching entities
@@ -352,9 +359,13 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
-     * String userId = "507f1f77bcf86cd799439011";
-     * Optional<User> user = mapper.get(userId);
-     * user.ifPresent(u -> System.out.println("Found: " + u.getName()));
+     * Optional<User> user = mapper.get("507f1f77bcf86cd799439011"); // returns Optional with the entity, or empty
+     * String name = user.map(User::getName).orElse("<unknown>");    // safe access without an explicit isPresent() check
+     *
+     * Optional<User> missing = mapper.get("000000000000000000000000"); // returns Optional.empty() when no match
+     * boolean absent = missing.isPresent() == false;                   // absent == true
+     *
+     * mapper.get("xyz"); // throws IllegalArgumentException: not a 24-hex ObjectId
      * }</pre>
      *
      * @param objectId the string representation of the ObjectId to retrieve
@@ -378,9 +389,13 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
-     * ObjectId userId = new ObjectId();
-     * Optional<User> user = mapper.get(userId);
-     * user.ifPresent(u -> System.out.println("Found: " + u.getName()));
+     * ObjectId userId = new ObjectId("507f1f77bcf86cd799439011");
+     * Optional<User> user = mapper.get(userId); // returns Optional with the entity, or empty
+     * if (user.isPresent()) {
+     *     User u = user.get();                  // safe: only called when present
+     * }
+     *
+     * Optional<User> fresh = mapper.get(new ObjectId()); // returns Optional.empty(): unused id has no document
      * }</pre>
      *
      * @param objectId the ObjectId to search for
@@ -405,9 +420,12 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
-     * String userId = "507f1f77bcf86cd799439011";
      * Collection<String> fields = Arrays.asList("name", "email", "status");
-     * Optional<User> partialUser = mapper.get(userId, fields);
+     * // Only name/email/status are populated; _id is always returned, other props stay null:
+     * Optional<User> partialUser = mapper.get("507f1f77bcf86cd799439011", fields); // returns Optional, possibly empty
+     *
+     * // Passing null for selectPropNames is equivalent to fetching every field:
+     * Optional<User> fullUser = mapper.get("507f1f77bcf86cd799439011", (Collection<String>) null);
      * }</pre>
      *
      * @param objectId the string representation of the ObjectId to search for
@@ -432,9 +450,12 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
-     * ObjectId id = new ObjectId();
+     * ObjectId id = new ObjectId("507f1f77bcf86cd799439011");
      * Collection<String> fields = Set.of("name", "email");
-     * Optional<User> user = mapper.get(id, fields);
+     * Optional<User> user = mapper.get(id, fields);     // returns Optional with name/email populated, or empty
+     * String email = user.map(User::getEmail).orElse(null);
+     *
+     * Optional<User> missing = mapper.get(new ObjectId(), fields); // returns Optional.empty() when no match
      * }</pre>
      *
      * @param objectId the ObjectId to search for
@@ -459,10 +480,13 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
-     * User user = mapper.gett("507f1f77bcf86cd799439011");
+     * User user = mapper.gett("507f1f77bcf86cd799439011"); // returns the entity, or null if absent
      * if (user != null) {
-     *     System.out.println("Found user: " + user.getName());
+     *     process(user);                                   // null guard required, unlike the Optional-based get
      * }
+     *
+     * User missing = mapper.gett("000000000000000000000000"); // returns null: no document with that _id
+     * mapper.gett("bad");                                      // throws IllegalArgumentException: not 24-hex
      * }</pre>
      *
      * @param objectId the string representation of the ObjectId (24 hex characters)
@@ -486,11 +510,13 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
-     * ObjectId id = new ObjectId();
-     * User user = mapper.gett(id);
+     * ObjectId id = new ObjectId("507f1f77bcf86cd799439011");
+     * User user = mapper.gett(id); // returns the entity, or null if absent
      * if (user != null) {
-     *     processUser(user);
+     *     processUser(user);       // null guard required
      * }
+     *
+     * User missing = mapper.gett(new ObjectId()); // returns null: unused id has no document
      * }</pre>
      *
      * @param objectId the ObjectId to search for
@@ -515,9 +541,10 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * Collection<String> fields = Arrays.asList("name", "email", "department");
-     * User partialUser = mapper.gett("507f1f77bcf86cd799439011", fields);
+     * // Only the listed props (plus _id) are populated; others stay null:
+     * User partialUser = mapper.gett("507f1f77bcf86cd799439011", fields); // returns the entity, or null if absent
      * if (partialUser != null) {
-     *     System.out.println("User department: " + partialUser.getDepartment());
+     *     String dept = partialUser.getDepartment(); // populated; e.g. getStatus() would be null (not selected)
      * }
      * }</pre>
      *
@@ -544,12 +571,14 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
-     * ObjectId id = new ObjectId();
+     * ObjectId id = new ObjectId("507f1f77bcf86cd799439011");
      * Collection<String> fields = Set.of("name", "email");
-     * User user = mapper.gett(id, fields);
+     * User user = mapper.gett(id, fields); // returns the entity (name/email populated), or null if absent
      * if (user != null) {
-     *     sendEmail(user.getEmail());
+     *     sendEmail(user.getEmail());      // null guard required
      * }
+     *
+     * User missing = mapper.gett(new ObjectId(), fields); // returns null: unused id has no document
      * }</pre>
      *
      * @param objectId the ObjectId to search for
@@ -575,10 +604,12 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
-     * // Find the first active user:
-     * Optional<User> user = mapper.findFirst(Filters.eq("status", "active"));
-     * // Using JSON filter with Document.parse():
-     * Optional<User> recentUser = mapper.findFirst(Document.parse("{createdAt: {$gte: ISODate('2023-01-01')}}"));
+     * // Find the first active user (natural order; pass a sort overload for a stable "first"):
+     * Optional<User> user = mapper.findFirst(Filters.eq("status", "active")); // returns Optional, possibly empty
+     * user.ifPresent(u -> process(u));
+     * // Using a JSON filter (must be a Bson via Document.parse, not a raw String):
+     * Optional<User> recentUser = mapper.findFirst(Document.parse("{ createdAt: { $gte: ISODate('2023-01-01') } }"));
+     * Optional<User> none = mapper.findFirst(Filters.eq("status", "no-such")); // returns Optional.empty()
      * }</pre>
      *
      * @param filter the query filter to match entities against
@@ -604,8 +635,11 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * Collection<String> fields = Arrays.asList("name", "email");
-     * // Get first active user with only name and email:
-     * Optional<User> user = mapper.findFirst(fields, Filters.eq("status", "active"));
+     * // First active user, with only name/email (plus _id) populated:
+     * Optional<User> user = mapper.findFirst(fields, Filters.eq("status", "active")); // returns Optional, possibly empty
+     * String email = user.map(User::getEmail).orElse(null);
+     * // null fields means "all fields":
+     * Optional<User> full = mapper.findFirst(null, Filters.eq("status", "active"));
      * }</pre>
      *
      * @param selectPropNames collection of field names to include in the projection (null for all fields)
@@ -634,7 +668,9 @@ public final class MongoCollectionMapper<T> {
      * Collection<String> fields = Arrays.asList("orderId", "total", "status");
      * Bson filter = Filters.eq("customerId", "CUST123");
      * Bson sort = Sorts.descending("createdAt");   // Most recent first
-     * Optional<Order> recentOrder = mapper.findFirst(fields, filter, sort);
+     * // Sort makes "first" deterministic: the newest order for this customer:
+     * Optional<Order> recentOrder = mapper.findFirst(fields, filter, sort);                    // returns Optional, possibly empty
+     * Optional<Order> oldest = mapper.findFirst(fields, filter, Sorts.ascending("createdAt")); // earliest instead
      * }</pre>
      *
      * @param selectPropNames collection of field names to include in the projection (null for all fields)
@@ -668,7 +704,9 @@ public final class MongoCollectionMapper<T> {
      * );
      * Bson filter = Filters.eq("status", "published");
      * Bson sort = Sorts.descending("views");
-     * Optional<Article> popularArticle = mapper.findFirst(projection, filter, sort);
+     * // Most-viewed published article, with tags trimmed to the first 5 entries:
+     * Optional<Article> popularArticle = mapper.findFirst(projection, filter, sort);              // returns Optional, possibly empty
+     * Optional<Article> none = mapper.findFirst(projection, Filters.eq("status", "draft"), sort); // empty if no drafts
      * }</pre>
      *
      * @param projection the BSON projection specification for field selection (null for all fields)
@@ -696,9 +734,10 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
-     * // Find all active users:
-     * List<User> activeUsers = mapper.list(Filters.eq("status", "active"));
+     * List<User> activeUsers = mapper.list(Filters.eq("status", "active")); // returns all matches, e.g. size 42
      * activeUsers.forEach(user -> processUser(user));
+     * // No match yields an empty (never null) list:
+     * List<User> none = mapper.list(Filters.eq("status", "no-such")); // returns an empty List, none.isEmpty() == true
      * }</pre>
      *
      * @param filter the query filter to match entities against
@@ -723,8 +762,10 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * MongoCollectionMapper<Product> mapper = mongoDB.collectionMapper(Product.class);
      * Bson filter = Filters.eq("category", "electronics");
-     * // Get page 2 (next 20 products):
-     * List<Product> page2 = mapper.list(filter, 20, 20);
+     * List<Product> page1 = mapper.list(filter, 0, 20);  // returns up to 20 matches (the first page)
+     * List<Product> page2 = mapper.list(filter, 20, 20); // returns the next 20 (skip 20, limit 20)
+     * // Past the end of the result set yields an empty list:
+     * List<Product> empty = mapper.list(filter, 1_000_000, 20); // returns an empty List
      * }</pre>
      *
      * @param filter the query filter to match entities against
@@ -751,8 +792,10 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * Collection<String> fields = Arrays.asList("name", "email", "status");
-     * // Get all active users with only name, email, and status:
-     * List<User> users = mapper.list(fields, Filters.eq("status", "active"));
+     * // All active users with only name/email/status (plus _id) populated:
+     * List<User> users = mapper.list(fields, Filters.eq("status", "active")); // returns all matches (empty if none)
+     * // null fields means "all fields":
+     * List<User> full = mapper.list(null, Filters.eq("status", "active"));
      * }</pre>
      *
      * @param selectPropNames collection of field names to include in the projection (null for all fields)
@@ -779,8 +822,9 @@ public final class MongoCollectionMapper<T> {
      * MongoCollectionMapper<Product> mapper = mongoDB.collectionMapper(Product.class);
      * Collection<String> fields = Arrays.asList("name", "price", "category");
      * Bson filter = Filters.eq("inStock", true);
-     * // Get second page of available products with minimal data:
-     * List<Product> page2 = mapper.list(fields, filter, 20, 20);
+     * // Second page of in-stock products, only name/price/category populated:
+     * List<Product> page2 = mapper.list(fields, filter, 20, 20); // returns up to 20 matches (skip 20, limit 20)
+     * List<Product> page1 = mapper.list(fields, filter, 0, 20);  // returns the first page
      * }</pre>
      *
      * @param selectPropNames collection of field names to include in the projection (null for all fields)
@@ -810,7 +854,9 @@ public final class MongoCollectionMapper<T> {
      * Collection<String> fields = Arrays.asList("title", "author", "publishedAt", "viewCount");
      * Bson filter = Filters.eq("status", "published");
      * Bson sort = Sorts.descending("viewCount");   // Most viewed first
-     * List<Article> articles = mapper.list(fields, filter, sort);
+     * // Published articles, most-viewed first, only the listed props populated:
+     * List<Article> articles = mapper.list(fields, filter, sort);                            // returns all matches in sorted order (empty if none)
+     * List<Article> leastViewed = mapper.list(fields, filter, Sorts.ascending("viewCount")); // reverse order
      * }</pre>
      *
      * @param selectPropNames collection of field names to include in the projection (null for all fields)
@@ -840,8 +886,9 @@ public final class MongoCollectionMapper<T> {
      * Collection<String> fields = Arrays.asList("username", "email", "lastLoginAt");
      * Bson filter = Filters.eq("status", "active");
      * Bson sort = Sorts.descending("lastLoginAt");
-     * // Get second page of active users sorted by last login:
-     * List<User> recentUsers = mapper.list(fields, filter, sort, 25, 25);
+     * // Second page (rows 26-50) of active users, most-recent login first:
+     * List<User> recentUsers = mapper.list(fields, filter, sort, 25, 25); // returns up to 25 matches (skip 25)
+     * List<User> firstPage = mapper.list(fields, filter, sort, 0, 25);    // returns the first 25
      * }</pre>
      *
      * @param selectPropNames collection of field names to include in the projection (null for all fields)
@@ -876,7 +923,9 @@ public final class MongoCollectionMapper<T> {
      * );
      * Bson filter = Filters.gte("orderDate", LocalDate.now().minusDays(30));
      * Bson sort = Sorts.descending("orderDate");
-     * List<Order> recentOrders = mapper.list(projection, filter, sort);
+     * // Last 30 days of orders, newest first, with a computed totalAmount per order:
+     * List<Order> recentOrders = mapper.list(projection, filter, sort); // returns all matches in sorted order
+     * // A computed field only surfaces on the entity if it has a matching property/setter.
      * }</pre>
      *
      * @param projection the BSON projection specification for field selection and transformation
@@ -909,8 +958,9 @@ public final class MongoCollectionMapper<T> {
      * );
      * Bson filter = Filters.eq("category", "electronics");
      * Bson sort = Sorts.descending("avgRating");
-     * // Get top-rated electronics, page 1:
-     * List<Product> topRated = mapper.list(projection, filter, sort, 0, 20);
+     * // Top-rated electronics, first page of 20:
+     * List<Product> topRated = mapper.list(projection, filter, sort, 0, 20);  // returns up to 20 matches, sorted
+     * List<Product> nextPage = mapper.list(projection, filter, sort, 20, 20); // the following 20
      * }</pre>
      *
      * @param projection the BSON projection specification for field selection and transformation
@@ -946,7 +996,10 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * OptionalBoolean isActive = mapper.queryForBoolean("active", Filters.eq("userId", "123"));
-     * boolean active = isActive.orElse(false);
+     * boolean active = isActive.orElse(false); // present -> the field value; empty (no match) -> the false fallback
+     * // No matching document yields empty (NOT a present false):
+     * OptionalBoolean none = mapper.queryForBoolean("active", Filters.eq("userId", "missing"));
+     * boolean isEmpty = none.isPresent() == false; // isEmpty == true
      * }</pre>
      *
      * @param propName the name of the boolean property to retrieve
@@ -981,7 +1034,10 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * MongoCollectionMapper<Entity> mapper = mongoDB.collectionMapper(Entity.class);
      * OptionalChar grade = mapper.queryForChar("grade", Filters.eq("studentId", "456"));
-     * grade.ifPresent(g -> System.out.println("Grade: " + g));
+     * char g = grade.orElse('?'); // present -> the field value; empty (no match) -> the '?' fallback
+     * // No match yields empty:
+     * OptionalChar none = mapper.queryForChar("grade", Filters.eq("studentId", "missing"));
+     * boolean isEmpty = none.isPresent() == false; // isEmpty == true
      * }</pre>
      *
      * @param propName the name of the character property to retrieve
@@ -1015,7 +1071,10 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * MongoCollectionMapper<Entity> mapper = mongoDB.collectionMapper(Entity.class);
      * OptionalByte flags = mapper.queryForByte("flags", Filters.eq("id", "789"));
-     * flags.ifPresent(f -> System.out.println("Flags: " + f));
+     * byte f = flags.orElse((byte) 0); // present -> the field value; empty (no match) -> the 0 fallback
+     * // No match yields empty:
+     * OptionalByte none = mapper.queryForByte("flags", Filters.eq("id", "missing"));
+     * boolean isEmpty = none.isPresent() == false; // isEmpty == true
      * }</pre>
      *
      * @param propName the name of the byte property to retrieve
@@ -1050,7 +1109,10 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * MongoCollectionMapper<Product> mapper = mongoDB.collectionMapper(Product.class);
      * OptionalShort quantity = mapper.queryForShort("quantity", Filters.eq("sku", "ABC123"));
-     * quantity.ifPresent(q -> System.out.println("Quantity: " + q));
+     * short q = quantity.orElse((short) 0); // present -> the field value; empty (no match) -> the 0 fallback
+     * // No match yields empty:
+     * OptionalShort none = mapper.queryForShort("quantity", Filters.eq("sku", "missing"));
+     * boolean isEmpty = none.isPresent() == false; // isEmpty == true
      * }</pre>
      *
      * @param propName the name of the short property to retrieve
@@ -1085,7 +1147,10 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * OptionalInt age = mapper.queryForInt("age", Filters.eq("userId", "user123"));
-     * int years = age.orElse(0);
+     * int years = age.orElse(0); // present -> the field value; empty (no match) -> the 0 fallback
+     * // No match yields empty:
+     * OptionalInt none = mapper.queryForInt("age", Filters.eq("userId", "missing"));
+     * boolean isEmpty = none.isPresent() == false; // isEmpty == true
      * }</pre>
      *
      * @param propName the name of the integer property to retrieve
@@ -1120,7 +1185,10 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * MongoCollectionMapper<Transaction> mapper = mongoDB.collectionMapper(Transaction.class);
      * OptionalLong timestamp = mapper.queryForLong("timestamp", Filters.eq("txnId", "TXN789"));
-     * timestamp.ifPresent(t -> System.out.println("Timestamp: " + new Date(t)));
+     * long epoch = timestamp.orElse(0L); // present -> the field value; empty (no match) -> the 0L fallback
+     * // No match yields empty:
+     * OptionalLong none = mapper.queryForLong("timestamp", Filters.eq("txnId", "missing"));
+     * boolean isEmpty = none.isPresent() == false; // isEmpty == true
      * }</pre>
      *
      * @param propName the name of the long property to retrieve
@@ -1155,7 +1223,10 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * MongoCollectionMapper<Product> mapper = mongoDB.collectionMapper(Product.class);
      * OptionalFloat rating = mapper.queryForFloat("rating", Filters.eq("productId", "PROD456"));
-     * rating.ifPresent(r -> System.out.println("Rating: " + r));
+     * float r = rating.orElse(0.0f); // present -> the field value; empty (no match) -> the 0.0f fallback
+     * // No match yields empty:
+     * OptionalFloat none = mapper.queryForFloat("rating", Filters.eq("productId", "missing"));
+     * boolean isEmpty = none.isPresent() == false; // isEmpty == true
      * }</pre>
      *
      * @param propName the name of the float property to retrieve
@@ -1190,7 +1261,10 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * MongoCollectionMapper<Order> mapper = mongoDB.collectionMapper(Order.class);
      * OptionalDouble total = mapper.queryForDouble("totalAmount", Filters.eq("orderId", "ORD123"));
-     * total.ifPresent(t -> System.out.println("Total: $" + t));
+     * double amount = total.orElse(0.0d); // present -> the field value; empty (no match) -> the 0.0d fallback
+     * // No match yields empty:
+     * OptionalDouble none = mapper.queryForDouble("totalAmount", Filters.eq("orderId", "missing"));
+     * boolean isEmpty = none.isPresent() == false; // isEmpty == true
      * }</pre>
      *
      * @param propName the name of the double property to retrieve
@@ -1225,7 +1299,10 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * Nullable<String> email = mapper.queryForString("email", Filters.eq("userId", "user456"));
-     * String addr = email.orElse("unknown@example.com");
+     * String addr = email.orElse("unknown@example.com"); // value if non-null; fallback if empty OR present-but-null
+     * // No match yields empty; a matched doc with a null/absent "email" yields present-but-null:
+     * Nullable<String> none = mapper.queryForString("email", Filters.eq("userId", "missing"));
+     * boolean isEmpty = none.isPresent() == false; // isEmpty == true (no document matched)
      * }</pre>
      *
      * @param propName the name of the string property to retrieve
@@ -1258,7 +1335,10 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * MongoCollectionMapper<Event> mapper = mongoDB.collectionMapper(Event.class);
      * Nullable<Date> startDate = mapper.queryForDate("startDate", Filters.eq("eventId", "EVT789"));
-     * startDate.ifPresent(d -> System.out.println("Start Date: " + d));
+     * Date d = startDate.orElse(null); // value if present-and-non-null; null if empty OR present-but-null
+     * // No match yields empty:
+     * Nullable<Date> none = mapper.queryForDate("startDate", Filters.eq("eventId", "missing"));
+     * boolean isEmpty = none.isPresent() == false; // isEmpty == true
      * }</pre>
      *
      * @param propName the name of the date property to retrieve
@@ -1293,9 +1373,13 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<Task> mapper = mongoDB.collectionMapper(Task.class);
+     * // The stored date is converted to the requested Date subtype (here java.sql.Timestamp):
      * Nullable<Timestamp> created = mapper.queryForDate("createdAt",
      *     Filters.eq("taskId", "TASK123"), Timestamp.class);
-     * created.ifPresent(t -> System.out.println("Created: " + t));
+     * Timestamp t = created.orElse(null); // value if present-and-non-null; null if empty OR present-but-null
+     * // No match yields empty:
+     * Nullable<Timestamp> none = mapper.queryForDate("createdAt", Filters.eq("taskId", "missing"), Timestamp.class);
+     * boolean isEmpty = none.isPresent() == false; // isEmpty == true
      * }</pre>
      *
      * @param <P> the specific Date subtype to return
@@ -1332,10 +1416,14 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<Document> mapper = mongoDB.collectionMapper(Document.class);
+     * MongoCollectionMapper<Product> mapper = mongoDB.collectionMapper(Product.class);
      * Nullable<BigDecimal> price = mapper.queryForSingleValue("price",
      *     Filters.eq("productId", "PROD999"), BigDecimal.class);
-     * price.ifPresent(p -> System.out.println("Price: $" + p));
+     * BigDecimal value = price.orElse(BigDecimal.ZERO); // value if present-and-non-null; ZERO otherwise
+     * // No match yields empty; a matched doc whose "price" is null/absent yields present-but-null:
+     * Nullable<BigDecimal> none = mapper.queryForSingleValue("price",
+     *     Filters.eq("productId", "missing"), BigDecimal.class);
+     * boolean isEmpty = none.isPresent() == false; // isEmpty == true (no document matched)
      * }</pre>
      *
      * @param <V> the type to convert the property value to
@@ -1363,8 +1451,10 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<Sales> mapper = mongoDB.collectionMapper(Sales.class);
-     * Dataset ds = mapper.query(Filters.gte("amount", 1000));
-     * ds.forEach(row -> System.out.println(row));
+     * Dataset ds = mapper.query(Filters.gte("amount", 1000)); // returns a Dataset (one row per matching doc)
+     * int rows = ds.size();                                   // number of matching documents
+     * // No match yields a Dataset with zero rows (never null):
+     * Dataset none = mapper.query(Filters.gte("amount", Long.MAX_VALUE)); // none.size() == 0
      * }</pre>
      *
      * @param filter the query filter to match entities against
@@ -1387,8 +1477,8 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<Sales> mapper = mongoDB.collectionMapper(Sales.class);
-     * Dataset ds = mapper.query(Filters.gte("amount", 1000), 0, 100);
-     * System.out.println("First 100 high-value sales: " + ds.size());
+     * Dataset page1 = mapper.query(Filters.gte("amount", 1000), 0, 100);   // returns up to 100 rows (first page)
+     * Dataset page2 = mapper.query(Filters.gte("amount", 1000), 100, 100); // the next 100 (skip 100, limit 100)
      * }</pre>
      *
      * @param filter the query filter to match entities against
@@ -1414,7 +1504,9 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * MongoCollectionMapper<Customer> mapper = mongoDB.collectionMapper(Customer.class);
      * Collection<String> fields = Arrays.asList("name", "email", "city");
-     * Dataset ds = mapper.query(fields, Filters.eq("status", "active"));
+     * // The Dataset has one column per selected field (plus _id):
+     * Dataset ds = mapper.query(fields, Filters.eq("status", "active")); // returns a Dataset, possibly 0 rows
+     * List<String> columns = ds.columnNames();
      * }</pre>
      *
      * @param selectPropNames collection of field names to include in the projection (null for all fields)
@@ -1438,10 +1530,10 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Collection<String> fields = Arrays.asList("orderId", "total", "status");
-     * Dataset orders = mapper.query(fields, Filters.gte("total", 1000), 20, 10);
-     * // Returns 10 orders starting from the 21st match
+     * Dataset orders = mapper.query(fields, Filters.gte("total", 1000), 20, 10);   // returns up to 10 rows (skip 20)
+     * Dataset firstPage = mapper.query(fields, Filters.gte("total", 1000), 0, 10); // the first 10 instead
      * }</pre>
-     * 
+     *
      * @param selectPropNames collection of field names to include in the projection (null for all fields)
      * @param filter the query filter to match entities against
      * @param offset the number of matching documents to skip (0-based)
@@ -1466,9 +1558,11 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * Collection<String> fields = Arrays.asList("username", "score", "level");
      * Bson sort = Sorts.descending("score");
-     * Dataset topPlayers = mapper.query(fields, Filters.exists("score"), sort);
+     * // Highest score first:
+     * Dataset topPlayers = mapper.query(fields, Filters.exists("score"), sort);                    // returns a sorted Dataset
+     * Dataset lowToHigh = mapper.query(fields, Filters.exists("score"), Sorts.ascending("score")); // reversed
      * }</pre>
-     * 
+     *
      * @param selectPropNames collection of field names to include in the projection (null for all fields)
      * @param filter the query filter to match entities against
      * @param sort the sort specification for result ordering
@@ -1492,9 +1586,11 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * Collection<String> fields = Arrays.asList("productName", "price", "rating");
      * Bson sort = Sorts.orderBy(Sorts.descending("rating"), Sorts.ascending("price"));
-     * Dataset products = mapper.query(fields, Filters.gte("rating", 4.0), sort, 0, 20);
+     * // Best-rated (cheapest as tie-breaker), first page of 20:
+     * Dataset products = mapper.query(fields, Filters.gte("rating", 4.0), sort, 0, 20);  // returns up to 20 rows
+     * Dataset nextPage = mapper.query(fields, Filters.gte("rating", 4.0), sort, 20, 20); // the next 20
      * }</pre>
-     * 
+     *
      * @param selectPropNames collection of field names to include in the projection (null for all fields)
      * @param filter the query filter to match entities against
      * @param sort the sort specification for result ordering
@@ -1520,11 +1616,12 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * Bson projection = Projections.fields(
      *     Projections.include("name", "address"),
-     *     Projections.excludeId()
+     *     Projections.excludeId()   // drop the _id column entirely
      * );
-     * Dataset results = mapper.query(projection, Filters.eq("city", "NYC"), Sorts.ascending("name"));
+     * // Name + address columns, _id excluded, sorted by name:
+     * Dataset results = mapper.query(projection, Filters.eq("city", "NYC"), Sorts.ascending("name")); // returns Dataset
      * }</pre>
-     * 
+     *
      * @param projection the BSON projection specification for field selection and transformation
      * @param filter the query filter to match entities against
      * @param sort the sort specification for result ordering
@@ -1550,10 +1647,13 @@ public final class MongoCollectionMapper<T> {
      *     Projections.include("customer", "items"),
      *     Projections.computed("itemCount", new Document("$size", "$items"))
      * );
-     * Dataset orders = mapper.query(projection, Filters.gte("date", startDate), 
-     *                               Sorts.descending("date"), 0, 50);
+     * // Computed itemCount column, newest first, first page of 50:
+     * Dataset orders = mapper.query(projection, Filters.gte("date", startDate),
+     *                               Sorts.descending("date"), 0, 50); // returns up to 50 rows
+     * Dataset nextPage = mapper.query(projection, Filters.gte("date", startDate),
+     *                                 Sorts.descending("date"), 50, 50); // the next 50
      * }</pre>
-     * 
+     *
      * @param projection the BSON projection specification for field selection and transformation
      * @param filter the query filter to match entities against
      * @param sort the sort specification for result ordering
@@ -1579,19 +1679,17 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * 
-     * // Stream active users for processing:
-     * try (Stream<User> userStream = mapper.stream(Filters.eq("status", "active"))) {
+     * // Stream active users for processing (close it to free the underlying cursor):
+     * try (Stream<User> userStream = mapper.stream(Filters.eq("status", "active"))) { // returns a lazy Stream
      *     userStream
      *         .filter(user -> user.getAge() >= 18)
      *         .forEach(user -> processUser(user));
      * }
-     * 
-     * // Stream with JSON filter:
+     *
+     * // A JSON filter must be a Bson (Document.parse), not a raw String:
      * try (Stream<User> recentUsers = mapper.stream(
-     *     "{createdAt: {$gte: ISODate('2023-01-01')}}")) {
-     *     
-     *     long count = recentUsers.count();
-     *     System.out.println("Recent users: " + count);
+     *         Document.parse("{ createdAt: { $gte: ISODate('2023-01-01') } }"))) {
+     *     long count = recentUsers.count(); // terminal op; 0 when nothing matches
      * }
      * }</pre>
      *
@@ -1619,8 +1717,8 @@ public final class MongoCollectionMapper<T> {
      * MongoCollectionMapper<Order> mapper = mongoDB.collectionMapper(Order.class);
      * Bson filter = Filters.gte("orderDate", LocalDate.now().minusDays(7));
      * 
-     * // Process second batch of recent orders:
-     * try (Stream<Order> orderStream = mapper.stream(filter, 100, 100)) {
+     * // Process the second batch of recent orders (rows 101-200):
+     * try (Stream<Order> orderStream = mapper.stream(filter, 100, 100)) { // returns a lazy Stream, skip 100 limit 100
      *     double avgValue = orderStream
      *         .mapToDouble(Order::getTotalAmount)
      *         .average()
@@ -1655,8 +1753,8 @@ public final class MongoCollectionMapper<T> {
      * Collection<String> fields = Arrays.asList("email", "preferences.newsletter");
      * Bson filter = Filters.eq("preferences.newsletter", true);
      * 
-     * // Stream newsletter subscribers with minimal data:
-     * try (Stream<User> subscriberStream = mapper.stream(fields, filter)) {
+     * // Stream newsletter subscribers with only the projected fields populated:
+     * try (Stream<User> subscriberStream = mapper.stream(fields, filter)) { // returns a lazy Stream
      *     subscriberStream
      *         .map(User::getEmail)
      *         .forEach(email -> sendNewsletter(email));
@@ -1688,8 +1786,8 @@ public final class MongoCollectionMapper<T> {
      * Collection<String> fields = Arrays.asList("name", "price", "category");
      * Bson filter = Filters.lt("price", 100.0);
      * 
-     * // Process affordable products in batches:
-     * try (Stream<Product> productStream = mapper.stream(fields, filter, 0, 500)) {
+     * // Process affordable products, first 500 only:
+     * try (Stream<Product> productStream = mapper.stream(fields, filter, 0, 500)) { // returns a lazy Stream, limit 500
      *     Map<String, Long> categoryCount = productStream
      *         .collect(Collectors.groupingBy(
      *             Product::getCategory,
@@ -1728,8 +1826,8 @@ public final class MongoCollectionMapper<T> {
      * Bson filter = Filters.eq("status", "published");
      * Bson sort = Sorts.descending("publishedAt");   // Latest first
      * 
-     * // Stream articles in chronological order:
-     * try (Stream<Article> articleStream = mapper.stream(fields, filter, sort)) {
+     * // Stream articles newest-first, take the top 50:
+     * try (Stream<Article> articleStream = mapper.stream(fields, filter, sort)) { // returns a lazy, sorted Stream
      *     articleStream
      *         .limit(50) // Top 50 recent articles
      *         .forEach(article -> indexForSearch(article));
@@ -1768,8 +1866,7 @@ public final class MongoCollectionMapper<T> {
      * int batchSize = 100;
      * for (int page = 0; page < 10; page++) {
      *     try (Stream<Transaction> txnStream = mapper.stream(
-     *             fields, filter, sort, page * batchSize, batchSize)) {
-     *         
+     *             fields, filter, sort, page * batchSize, batchSize)) { // returns a lazy, sorted Stream per page
      *         txnStream.forEach(txn -> auditTransaction(txn));
      *     }
      * }
@@ -1809,8 +1906,8 @@ public final class MongoCollectionMapper<T> {
      * Bson filter = Filters.gte("orderDate", LocalDate.now().minusMonths(1));
      * Bson sort = Sorts.descending("total");   // Highest value first
      * 
-     * // Stream high-value recent orders:
-     * try (Stream<Order> orderStream = mapper.stream(projection, filter, sort)) {
+     * // Stream high-value recent orders, with a computed total per order:
+     * try (Stream<Order> orderStream = mapper.stream(projection, filter, sort)) { // returns a lazy, sorted Stream
      *     orderStream
      *         .filter(order -> order.getTotal() > 500.0)
      *         .forEach(order -> processHighValueOrder(order));
@@ -1855,10 +1952,9 @@ public final class MongoCollectionMapper<T> {
      * Bson filter = Filters.gte("lastActivity", LocalDate.now().minusWeeks(2));
      * Bson sort = Sorts.descending("conversionRate");
      * 
-     * // Process top performers in batches:
+     * // Process the top 100 performers by conversion rate:
      * try (Stream<Analytics> analyticsStream = mapper.stream(
-     *         projection, filter, sort, 0, 100)) {
-     *     
+     *         projection, filter, sort, 0, 100)) { // returns a lazy, sorted Stream, limit 100
      *     analyticsStream.forEach(analytics -> generateReport(analytics));
      * }
      * }</pre>
@@ -1893,10 +1989,10 @@ public final class MongoCollectionMapper<T> {
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      *
      * User newUser = new User("John Doe", "john@example.com", 30);
-     * mapper.insertOne(newUser);
+     * mapper.insertOne(newUser);            // void; on return newUser.getId() is the server-assigned _id (was null)
+     * String assignedId = newUser.getId();  // post-state: now non-null
      *
-     * // The entity's ID field will be automatically populated if it was null
-     * System.out.println("Inserted user with ID: " + newUser.getId());
+     * mapper.insertOne((User) null);        // throws IllegalArgumentException
      * }</pre>
      *
      * @param obj the entity to insert
@@ -1923,12 +2019,10 @@ public final class MongoCollectionMapper<T> {
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * User newUser = new User("Jane Smith", "jane@example.com", 25);
      *
-     * // Insert with custom write concern:
      * InsertOneOptions options = new InsertOneOptions()
      *     .bypassDocumentValidation(false);
-     *
-     * mapper.insertOne(newUser, options);
-     * System.out.println("User inserted with options: " + newUser.getId());
+     * mapper.insertOne(newUser, options);  // void; on return newUser.getId() holds the server-assigned _id
+     * String assignedId = newUser.getId(); // post-state: now non-null
      * }</pre>
      *
      * @param obj the entity to insert
@@ -1961,10 +2055,10 @@ public final class MongoCollectionMapper<T> {
      *     new User("Bob", "bob@example.com", 35)
      * );
      *
-     * mapper.insertMany(users);
+     * mapper.insertMany(users);                                             // void; on return every element has a server-assigned _id
+     * boolean allHaveIds = users.stream().allMatch(u -> u.getId() != null); // post-state: allHaveIds == true
      *
-     * // All users' ID fields will be automatically populated
-     * users.forEach(user -> System.out.println("Inserted: " + user.getId()));
+     * mapper.insertMany(Collections.emptyList()); // throws IllegalArgumentException: empty list
      * }</pre>
      *
      * @param objList collection of entities to insert
@@ -1989,11 +2083,11 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * List<Product> products = loadProductsFromFile();
      * InsertManyOptions options = new InsertManyOptions()
-     *     .ordered(false)  // Continue on error
+     *     .ordered(false)  // unordered: attempt every insert, report errors at the end
      *     .bypassDocumentValidation(true);
-     * mapper.insertMany(products, options);
+     * mapper.insertMany(products, options); // void; on return each product has a server-assigned _id
      * }</pre>
-     * 
+     *
      * @param objList collection of entities to insert
      * @param options additional options for the insert operation (null uses defaults)
      * @throws IllegalArgumentException if objList is null or empty
@@ -2027,8 +2121,10 @@ public final class MongoCollectionMapper<T> {
      * updateData.setStatus("inactive");
      * updateData.setLastSeen(new Date());
      *
-     * UpdateResult result = mapper.updateOne(userId, updateData);
-     * System.out.println("Modified " + result.getModifiedCount() + " entity");
+     * UpdateResult result = mapper.updateOne(userId, updateData); // returns UpdateResult; never null
+     * long modified = result.getModifiedCount();                  // 1 if the doc existed and changed, else 0
+     *
+     * mapper.updateOne("not-a-hex-id", updateData);               // throws IllegalArgumentException
      * }</pre>
      *
      * @param objectId the 24-hex-character ObjectId string identifying the entity to update
@@ -2056,9 +2152,10 @@ public final class MongoCollectionMapper<T> {
      * ObjectId id = new ObjectId("507f1f77bcf86cd799439011");
      * User updates = new User();
      * updates.setLastLogin(new Date());
-     * UpdateResult result = mapper.updateOne(id, updates);
+     * UpdateResult result = mapper.updateOne(id, updates); // returns UpdateResult; never null
+     * long matched = result.getMatchedCount();             // 1 if the doc existed, else 0 (no upsert)
      * }</pre>
-     * 
+     *
      * @param objectId the ObjectId identifying the entity to update
      * @param update the entity containing update data
      * @return UpdateResult containing information about the update operation
@@ -2083,10 +2180,11 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * User updates = new User();
      * updates.setVerified(true);
+     * // Only the FIRST matching document is updated, even if several match:
      * UpdateResult result = mapper.updateOne(
-     *     Filters.eq("email", "user@example.com"), updates);
+     *     Filters.eq("email", "user@example.com"), updates); // returns UpdateResult; getModifiedCount() in {0,1}
      * }</pre>
-     * 
+     *
      * @param filter the query filter to match the entity to update
      * @param update the entity containing update data
      * @return UpdateResult containing information about the update operation
@@ -2110,14 +2208,16 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * UpdateOptions options = new UpdateOptions()
-     *     .upsert(true)  // Create if not exists
+     *     .upsert(true)  // insert a new doc if nothing matches
      *     .bypassDocumentValidation(false);
      * User updates = new User();
      * updates.setActive(true);
      * UpdateResult result = mapper.updateOne(
-     *     Filters.eq("username", "newuser"), updates, options);
+     *     Filters.eq("username", "newuser"), updates, options); // returns UpdateResult
+     * // With upsert and no prior match, getUpsertedId() is non-null and getMatchedCount() == 0:
+     * Object upsertedId = result.getUpsertedId();
      * }</pre>
-     * 
+     *
      * @param filter the query filter to match the entity to update
      * @param update the entity containing update data
      * @param options additional options for the update operation (null uses defaults)
@@ -2146,9 +2246,9 @@ public final class MongoCollectionMapper<T> {
      *     new User().setUpdatedAt(new Date())
      * );
      * UpdateResult result = mapper.updateOne(
-     *     Filters.eq("status", "pending"), updatePipeline);
+     *     Filters.eq("status", "pending"), updatePipeline); // returns UpdateResult; getModifiedCount() in {0,1}
      * }</pre>
-     * 
+     *
      * @param filter the query filter to match the entity to update
      * @param objList collection of entities forming the update pipeline
      * @return UpdateResult containing information about the update operation
@@ -2173,9 +2273,9 @@ public final class MongoCollectionMapper<T> {
      * UpdateOptions options = new UpdateOptions().upsert(true);
      * List<Product> pipeline = createComplexUpdatePipeline();
      * UpdateResult result = mapper.updateOne(
-     *     Filters.eq("sku", "PROD-123"), pipeline, options);
+     *     Filters.eq("sku", "PROD-123"), pipeline, options); // returns UpdateResult; getUpsertedId() set on insert
      * }</pre>
-     * 
+     *
      * @param filter the query filter to match the entity to update
      * @param objList collection of entities forming the update pipeline
      * @param options additional options for the update operation (null uses defaults)
@@ -2204,9 +2304,10 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * User updates = new User();
      * updates.setNewsletterOptIn(false);
+     * // EVERY matching document is updated (contrast with updateOne):
      * UpdateResult result = mapper.updateMany(
-     *     Filters.eq("country", "EU"), updates);
-     * System.out.println("Updated " + result.getModifiedCount() + " users");
+     *     Filters.eq("country", "EU"), updates); // returns UpdateResult; getModifiedCount() may be > 1
+     * long updated = result.getModifiedCount();  // e.g. 250; 0 when nothing matched
      * }</pre>
      *
      * @param filter the query filter to match entities to update
@@ -2237,9 +2338,9 @@ public final class MongoCollectionMapper<T> {
      * Product updates = new Product();
      * updates.setDiscontinued(true);
      * UpdateResult result = mapper.updateMany(
-     *     Filters.lt("stock", 10), updates, options);
+     *     Filters.lt("stock", 10), updates, options); // returns UpdateResult; getModifiedCount() may be > 1
      * }</pre>
-     * 
+     *
      * @param filter the query filter to match entities to update
      * @param update the entity containing update data
      * @param options additional options for the update operation (null uses defaults)
@@ -2268,9 +2369,9 @@ public final class MongoCollectionMapper<T> {
      *     new Order().setProcessedDate(new Date())
      * );
      * UpdateResult result = mapper.updateMany(
-     *     Filters.eq("status", "pending"), pipeline);
+     *     Filters.eq("status", "pending"), pipeline); // returns UpdateResult; getModifiedCount() may be > 1
      * }</pre>
-     * 
+     *
      * @param filter the query filter to match entities to update
      * @param objList collection of entities forming the update pipeline
      * @return UpdateResult containing information about the update operation
@@ -2296,9 +2397,9 @@ public final class MongoCollectionMapper<T> {
      *     .collation(Collation.builder().locale("en").build());
      * List<Customer> pipeline = createBulkUpdatePipeline();
      * UpdateResult result = mapper.updateMany(
-     *     Filters.regex("name", "^Corp"), pipeline, options);
+     *     Filters.regex("name", "^Corp"), pipeline, options); // returns UpdateResult; getModifiedCount() may be > 1
      * }</pre>
-     * 
+     *
      * @param filter the query filter to match entities to update
      * @param objList collection of entities forming the update pipeline
      * @param options additional options for the update operation (null uses defaults)
@@ -2324,9 +2425,13 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * String userId = "507f1f77bcf86cd799439011";
      * User newUserData = new User("John Updated", "john.new@example.com", 31);
-     * UpdateResult result = mapper.replaceOne(userId, newUserData);
+     * // Replaces the whole document (keeping _id); fields absent from newUserData are removed:
+     * UpdateResult result = mapper.replaceOne(userId, newUserData); // returns UpdateResult; never null
+     * long modified = result.getModifiedCount();                    // 1 if the doc existed, else 0
+     *
+     * mapper.replaceOne("bad-id", newUserData);                     // throws IllegalArgumentException
      * }</pre>
-     * 
+     *
      * @param objectId the string representation of the ObjectId identifying the entity to replace
      * @param replacement the new entity to replace the existing one
      * @return UpdateResult containing information about the replace operation
@@ -2351,9 +2456,10 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * ObjectId id = new ObjectId("507f1f77bcf86cd799439011");
      * Product newProduct = createUpdatedProduct();
-     * UpdateResult result = mapper.replaceOne(id, newProduct);
+     * UpdateResult result = mapper.replaceOne(id, newProduct); // returns UpdateResult; never null
+     * long modified = result.getModifiedCount();               // 1 if the doc existed, else 0
      * }</pre>
-     * 
+     *
      * @param objectId the ObjectId identifying the entity to replace
      * @param replacement the new entity to replace the existing one
      * @return UpdateResult containing information about the replace operation
@@ -2377,10 +2483,11 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Customer newCustomer = createCustomerFromForm();
+     * // Replaces only the FIRST match; no upsert without ReplaceOptions:
      * UpdateResult result = mapper.replaceOne(
-     *     Filters.eq("customerId", "CUST-123"), newCustomer);
+     *     Filters.eq("customerId", "CUST-123"), newCustomer); // returns UpdateResult; getModifiedCount() in {0,1}
      * }</pre>
-     * 
+     *
      * @param filter the query filter to match the entity to replace
      * @param replacement the new entity to replace the existing one
      * @return UpdateResult containing information about the replace operation
@@ -2404,13 +2511,15 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ReplaceOptions options = new ReplaceOptions()
-     *     .upsert(true)  // Insert if not found
+     *     .upsert(true)  // insert if no document matches
      *     .bypassDocumentValidation(false);
      * Article article = new Article(title, content, author);
      * UpdateResult result = mapper.replaceOne(
-     *     Filters.eq("slug", articleSlug), article, options);
+     *     Filters.eq("slug", articleSlug), article, options); // returns UpdateResult
+     * // On an upsert insert, getUpsertedId() is non-null and getMatchedCount() == 0:
+     * Object upsertedId = result.getUpsertedId();
      * }</pre>
-     * 
+     *
      * @param filter the query filter to match the entity to replace
      * @param replacement the new entity to replace the existing one
      * @param options additional options for the replace operation (null uses defaults)
@@ -2435,10 +2544,12 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * String userId = "507f1f77bcf86cd799439011";
-     * DeleteResult result = mapper.deleteOne(userId);
-     * System.out.println("Deleted " + result.getDeletedCount() + " entity");
+     * DeleteResult result = mapper.deleteOne(userId); // returns DeleteResult; never null
+     * long deleted = result.getDeletedCount();        // 1 if a doc was deleted, else 0
+     *
+     * mapper.deleteOne("not-a-hex-id");               // throws IllegalArgumentException
      * }</pre>
-     * 
+     *
      * @param objectId the string representation of the ObjectId identifying the entity to delete
      * @return DeleteResult containing information about the delete operation
      * @throws IllegalArgumentException if objectId is null or has invalid format
@@ -2461,12 +2572,10 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ObjectId id = new ObjectId("507f1f77bcf86cd799439011");
-     * DeleteResult result = mapper.deleteOne(id);
-     * if (result.getDeletedCount() > 0) {
-     *     System.out.println("Entity deleted successfully");
-     * }
+     * DeleteResult result = mapper.deleteOne(id);     // returns DeleteResult; never null
+     * boolean removed = result.getDeletedCount() > 0; // true only if a matching doc existed
      * }</pre>
-     * 
+     *
      * @param objectId the ObjectId identifying the entity to delete
      * @return DeleteResult containing information about the delete operation
      * @throws IllegalArgumentException if objectId is null
@@ -2488,14 +2597,15 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Only the FIRST matching document is deleted, even if many match:
      * DeleteResult result = mapper.deleteOne(
      *     Filters.and(
      *         Filters.eq("status", "inactive"),
      *         Filters.lt("lastLogin", thirtyDaysAgo)
      *     )
-     * );
+     * ); // returns DeleteResult; getDeletedCount() in {0,1}
      * }</pre>
-     * 
+     *
      * @param filter the query filter to match the entity to delete
      * @return DeleteResult containing information about the delete operation
      * @throws IllegalArgumentException if filter is null
@@ -2520,9 +2630,9 @@ public final class MongoCollectionMapper<T> {
      * DeleteOptions options = new DeleteOptions()
      *     .collation(Collation.builder().locale("en").build());
      * DeleteResult result = mapper.deleteOne(
-     *     Filters.eq("email", "user@example.com"), options);
+     *     Filters.eq("email", "user@example.com"), options); // returns DeleteResult; getDeletedCount() in {0,1}
      * }</pre>
-     * 
+     *
      * @param filter the query filter to match the entity to delete
      * @param options additional options for the delete operation (null uses defaults)
      * @return DeleteResult containing information about the delete operation
@@ -2548,10 +2658,11 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // EVERY matching document is deleted (contrast with deleteOne):
      * DeleteResult result = mapper.deleteMany(
      *     Filters.lt("expiryDate", new Date())
-     * );
-     * System.out.println("Deleted " + result.getDeletedCount() + " expired entities");
+     * );                                       // returns DeleteResult; getDeletedCount() may be > 1
+     * long removed = result.getDeletedCount(); // e.g. 37; 0 when nothing matched
      * }</pre>
      *
      * @param filter the query filter to match entities to delete
@@ -2582,9 +2693,9 @@ public final class MongoCollectionMapper<T> {
      *     Filters.and(
      *         Filters.eq("status", "archived"),
      *         Filters.lt("createdDate", oneYearAgo)
-     *     ), options);
+     *     ), options); // returns DeleteResult; getDeletedCount() may be > 1
      * }</pre>
-     * 
+     *
      * @param filter the query filter to match entities to delete
      * @param options additional options for the delete operation (null uses defaults)
      * @return DeleteResult containing information about the delete operation
@@ -2609,9 +2720,10 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * List<Product> products = loadLargeProductCatalog();
-     * int insertedCount = mapper.bulkInsert(products);
-     * System.out.println("Bulk inserted " + insertedCount + " products");
+     * List<Product> products = loadLargeProductCatalog(); // e.g. 5000 products
+     * int insertedCount = mapper.bulkInsert(products);    // returns the inserted count, e.g. 5000
+     *
+     * mapper.bulkInsert(Collections.emptyList());         // throws IllegalArgumentException: empty collection
      * }</pre>
      *
      * @param entities collection of entities to insert in bulk
@@ -2636,12 +2748,12 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * BulkWriteOptions options = new BulkWriteOptions()
-     *     .ordered(false)  // Continue on error for maximum throughput
+     *     .ordered(false)  // unordered: attempt every insert even if some fail
      *     .bypassDocumentValidation(true);
      * List<LogEntry> logs = collectLogEntries();
-     * int count = mapper.bulkInsert(logs, options);
+     * int count = mapper.bulkInsert(logs, options); // returns the inserted count
      * }</pre>
-     * 
+     *
      * @param entities collection of entities to insert in bulk
      * @param options additional options for the bulk write operation (null uses defaults)
      * @return the number of entities successfully inserted
@@ -2669,9 +2781,10 @@ public final class MongoCollectionMapper<T> {
      *     new UpdateOneModel<>(filter1, update1),
      *     new DeleteOneModel<>(filter2)
      * );
-     * BulkWriteResult result = mapper.bulkWrite(operations);
+     * BulkWriteResult result = mapper.bulkWrite(operations); // returns BulkWriteResult; never null
+     * int inserted = result.getInsertedCount();              // per-type counts available on the result
      * }</pre>
-     * 
+     *
      * @param requests list of write models defining the operations to perform
      * @return BulkWriteResult containing detailed information about the bulk operation
      * @throws IllegalArgumentException if requests is null or empty
@@ -2694,12 +2807,12 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * BulkWriteOptions options = new BulkWriteOptions()
-     *     .ordered(true)  // Execute in order, stop on error
+     *     .ordered(true)  // ordered: stop at the first failing op (earlier ops stay applied)
      *     .bypassDocumentValidation(false);
      * List<WriteModel<Document>> operations = createComplexBatch();
-     * BulkWriteResult result = mapper.bulkWrite(operations, options);
+     * BulkWriteResult result = mapper.bulkWrite(operations, options); // returns BulkWriteResult; never null
      * }</pre>
-     * 
+     *
      * @param requests list of write models defining the operations to perform
      * @param options additional options for the bulk write operation (null uses defaults)
      * @return BulkWriteResult containing detailed information about the bulk operation
@@ -2726,8 +2839,9 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * User updates = new User();
      * updates.setLoginCount(5);
+     * // Returns the PRE-update entity by default (ReturnDocument.BEFORE):
      * User user = mapper.findOneAndUpdate(
-     *     Filters.eq("email", "user@example.com"), updates);
+     *     Filters.eq("email", "user@example.com"), updates); // returns the matched entity, or null if none matched
      * }</pre>
      *
      * @param filter the query filter to match the entity to update
@@ -2752,13 +2866,13 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * FindOneAndUpdateOptions options = new FindOneAndUpdateOptions()
-     *     .returnDocument(ReturnDocument.AFTER)  // Return updated document
+     *     .returnDocument(ReturnDocument.AFTER)  // return the POST-update document instead of the default BEFORE
      *     .upsert(true)
      *     .projection(Projections.include("name", "status"));
      * User updates = new User();
      * updates.setLastSeen(new Date());
      * User updatedUser = mapper.findOneAndUpdate(
-     *     Filters.eq("email", "user@example.com"), updates, options);
+     *     Filters.eq("email", "user@example.com"), updates, options); // returns the AFTER entity, or null if no match
      * }</pre>
      *
      * @param filter the query filter to match the entity to update
@@ -2788,8 +2902,9 @@ public final class MongoCollectionMapper<T> {
      *     new User().setVisitCount(5),  // Increment visits
      *     new User().setLastUpdated(new Date())
      * );
+     * // Pre-update entity by default (ReturnDocument.BEFORE):
      * User user = mapper.findOneAndUpdate(
-     *     Filters.eq("userId", "USER123"), updatePipeline);
+     *     Filters.eq("userId", "USER123"), updatePipeline); // returns the matched entity, or null if none matched
      * }</pre>
      *
      * @param filter the query filter to match the entity to update
@@ -2815,11 +2930,11 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * FindOneAndUpdateOptions options = new FindOneAndUpdateOptions()
-     *     .returnDocument(ReturnDocument.AFTER)
+     *     .returnDocument(ReturnDocument.AFTER) // return the POST-update document
      *     .upsert(true);
      * List<Product> pipeline = createPriceUpdatePipeline();
      * Product updated = mapper.findOneAndUpdate(
-     *     Filters.eq("sku", "PROD-456"), pipeline, options);
+     *     Filters.eq("sku", "PROD-456"), pipeline, options); // returns the AFTER entity (upsert guarantees non-null)
      * }</pre>
      *
      * @param filter the query filter to match the entity to update
@@ -2846,8 +2961,9 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * User replacement = new User("John Updated", "john.new@example.com", 32);
+     * // Returns the original (pre-replacement) entity by default:
      * User originalUser = mapper.findOneAndReplace(
-     *     Filters.eq("username", "john"), replacement);
+     *     Filters.eq("username", "john"), replacement); // returns the original entity, or null if no match
      * }</pre>
      *
      * @param filter the query filter to match the entity to replace
@@ -2873,12 +2989,12 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * FindOneAndReplaceOptions options = new FindOneAndReplaceOptions()
-     *     .returnDocument(ReturnDocument.AFTER)  // Return new document
+     *     .returnDocument(ReturnDocument.AFTER)  // return the replacement document, not the original
      *     .upsert(true)
      *     .projection(Projections.exclude("_id"));
      * Article newArticle = createUpdatedArticle();
      * Article result = mapper.findOneAndReplace(
-     *     Filters.eq("slug", "article-slug"), newArticle, options);
+     *     Filters.eq("slug", "article-slug"), newArticle, options); // returns the AFTER entity (upsert -> non-null)
      * }</pre>
      *
      * @param filter the query filter to match the entity to replace
@@ -2909,9 +3025,9 @@ public final class MongoCollectionMapper<T> {
      *         Filters.eq("status", "inactive"),
      *         Filters.lt("lastLogin", thirtyDaysAgo)
      *     )
-     * );
+     * ); // returns the just-deleted entity, or null if nothing matched
      * if (deletedUser != null) {
-     *     auditUserDeletion(deletedUser);
+     *     auditUserDeletion(deletedUser); // null guard: only the matched doc was removed
      * }
      * }</pre>
      *
@@ -2937,10 +3053,11 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * FindOneAndDeleteOptions options = new FindOneAndDeleteOptions()
-     *     .sort(Sorts.ascending("createdAt"))  // Delete oldest first
+     *     .sort(Sorts.ascending("createdAt"))  // among matches, delete the oldest one
      *     .projection(Projections.include("email", "name"));
+     * // Only email/name (plus _id) are populated on the returned entity:
      * User deletedUser = mapper.findOneAndDelete(
-     *     Filters.eq("status", "pending"), options);
+     *     Filters.eq("status", "pending"), options); // returns the deleted entity, or null if nothing matched
      * }</pre>
      *
      * @param filter the query filter to match the entity to delete
@@ -2965,11 +3082,11 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Get all unique categories:
-     * try (Stream<Product> categoryStream = mapper.distinct("category")) {
+     * // Stream the unique "category" values across the whole collection:
+     * try (Stream<Product> categoryStream = mapper.distinct("category")) { // returns a lazy Stream of distinct values
      *     List<String> categories = categoryStream
      *         .map(Product::getCategory)
-     *         .collect(Collectors.toList());
+     *         .toList();
      * }
      * }</pre>
      *
@@ -2993,9 +3110,9 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Get distinct categories for active products:
+     * // Distinct "category" values, but only among active products:
      * try (Stream<Product> stream = mapper.distinct("category",
-     *         Filters.eq("active", true))) {
+     *         Filters.eq("active", true))) { // returns a lazy Stream of distinct values from matches only
      *     stream.map(Product::getCategory)
      *           .forEach(System.out::println);
      * }
@@ -3027,7 +3144,7 @@ public final class MongoCollectionMapper<T> {
      *     Aggregates.group("$category", Accumulators.avg("avgPrice", "$price")),
      *     Aggregates.sort(Sorts.descending("avgPrice"))
      * );
-     * try (Stream<Product> results = mapper.aggregate(pipeline)) {
+     * try (Stream<Product> results = mapper.aggregate(pipeline)) { // returns a lazy Stream of pipeline output docs
      *     results.forEach(stat -> System.out.println(
      *         stat.getCategory() + ": $" + stat.getAvgPrice()));
      * }
@@ -3055,8 +3172,9 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * try (Stream<User> groupedStream = mapper.groupBy("department")) {
-     *     groupedStream.forEach(group -> 
+     * // One entity per distinct "department" value:
+     * try (Stream<User> groupedStream = mapper.groupBy("department")) { // returns a lazy Stream, one row per group
+     *     groupedStream.forEach(group ->
      *         System.out.println("Department: " + group.getDepartment()));
      * }
      * }</pre>
@@ -3084,7 +3202,8 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Collection<String> groupFields = Arrays.asList("department", "level");
-     * try (Stream<Employee> groups = mapper.groupBy(groupFields)) {
+     * // One entity per unique (department, level) combination:
+     * try (Stream<Employee> groups = mapper.groupBy(groupFields)) { // returns a lazy Stream, one row per combination
      *     groups.forEach(group -> System.out.println(
      *         group.getDepartment() + "/" + group.getLevel()));
      * }
@@ -3112,7 +3231,8 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * try (Stream<Order> countedGroups = mapper.groupByAndCount("status")) {
+     * // One entity per "status" group, each carrying its member count:
+     * try (Stream<Order> countedGroups = mapper.groupByAndCount("status")) { // returns a lazy Stream, one row per group
      *     countedGroups.forEach(group -> System.out.println(
      *         group.getStatus() + ": " + group.getCount() + " orders"));
      * }
@@ -3142,9 +3262,10 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Collection<String> fields = Arrays.asList("region", "productType");
-     * try (Stream<Sale> stats = mapper.groupByAndCount(fields)) {
+     * // One entity per (region, productType) combination, each carrying its count:
+     * try (Stream<Sale> stats = mapper.groupByAndCount(fields)) { // returns a lazy Stream, one row per combination
      *     stats.forEach(stat -> System.out.println(
-     *         stat.getRegion() + "/" + stat.getProductType() + ": " + 
+     *         stat.getRegion() + "/" + stat.getProductType() + ": " +
      *         stat.getCount() + " sales"));
      * }
      * }</pre>
@@ -3174,7 +3295,8 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * String mapFunction = "function() { emit(this.category, this.price); }";
      * String reduceFunction = "function(key, values) { return Array.sum(values); }";
-     * try (Stream<Product> results = mapper.mapReduce(mapFunction, reduceFunction)) {
+     * // Prefer the aggregate pipeline in new code; mapReduce is retained for legacy scripts:
+     * try (Stream<Product> results = mapper.mapReduce(mapFunction, reduceFunction)) { // returns a lazy Stream
      *     results.forEach(result -> System.out.println(result));
      * }
      * }</pre>

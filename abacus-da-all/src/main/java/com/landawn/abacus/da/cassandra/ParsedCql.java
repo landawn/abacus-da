@@ -291,34 +291,30 @@ public final class ParsedCql {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Basic parsing (cached)
+     * // Basic parsing (cached): same CQL + null attrs returns the same instance
      * ParsedCql parsed1 = ParsedCql.parse("SELECT * FROM users WHERE id = ?", null);
-     *
-     * // Same query - returns cached instance
      * ParsedCql parsed2 = ParsedCql.parse("SELECT * FROM users WHERE id = ?", null);
-     * assert parsed1 == parsed2;  // Same object reference
+     * boolean cachedHit = parsed1 == parsed2;          // returns true (same cached reference)
+     * int count = parsed1.parameterCount();            // returns 1
      *
-     * // Parsing with attributes - non-empty attrs bypass the cache
+     * // Parsing with attributes - non-empty attrs bypass the cache (always a fresh instance)
      * Map<String, String> attrs = new HashMap<>();
      * attrs.put("consistency", "QUORUM");
      * attrs.put("timeout", "30000");
-     * ParsedCql parsedWithAttrs = ParsedCql.parse("INSERT INTO sessions (id, token) VALUES (?, ?)", attrs);
+     * ParsedCql withAttrs = ParsedCql.parse("INSERT INTO sessions (id, token) VALUES (?, ?)", attrs);
+     * withAttrs.getAttributes().get("consistency");    // returns "QUORUM"
      *
-     * // Accessing parsed information
-     * String originalCql = parsedWithAttrs.originalCql();
-     * String parameterizedCql = parsedWithAttrs.getParameterizedCql();
-     * int paramCount = parsedWithAttrs.parameterCount();
-     * Map<String, String> attributes = parsedWithAttrs.getAttributes();
-     * // attributes will contain "consistency" -> "QUORUM", "timeout" -> "30000"
+     * // Same CQL with different non-empty attrs => different instance
+     * Map<String, String> other = new HashMap<>();
+     * other.put("consistency", "LOCAL_ONE");
+     * ParsedCql withOther = ParsedCql.parse("INSERT INTO sessions (id, token) VALUES (?, ?)", other);
+     * boolean distinct = withOther != withAttrs;       // returns true (attrs bypass cache)
      *
-     * // Calling parse() again with same CQL and non-empty attrs creates a new instance
-     * Map<String, String> differentAttrs = new HashMap<>();
-     * differentAttrs.put("consistency", "LOCAL_ONE");  // Different attributes!
-     * ParsedCql cached = ParsedCql.parse("INSERT INTO sessions (id, token) VALUES (?, ?)", differentAttrs);
-     * assert cached != parsedWithAttrs;  // Different instances when attrs are provided
-     * assert cached.getAttributes().get("consistency").equals("LOCAL_ONE");
+     * ParsedCql.parse(null, null);                                          // throws IllegalArgumentException (cql is null)
+     * ParsedCql.parse("SELECT * FROM u WHERE a = ? AND b = :x", null);      // throws IllegalArgumentException (mixed '?'/':name' styles)
+     * ParsedCql.parse("SELECT * FROM u WHERE id = #{}", null);              // throws IllegalArgumentException (empty named parameter)
      * }</pre>
-     * 
+     *
      * @param cql the CQL statement to parse (used as cache key)
      * @param attrs optional attributes map for statement metadata; when non-empty, parsing bypasses cache
      * @return a ParsedCql instance, either newly created or retrieved from cache
@@ -361,8 +357,17 @@ public final class ParsedCql {
      * <p>This method returns the CQL statement as it was provided to the parser, after
      * applying a {@code trim()} on the leading and trailing whitespace. Internal formatting,
      * whitespace, and the original parameter placeholders ({@code ?}, {@code :name},
-     * {@code #{name}}) are preserved. This is useful for logging, debugging, or when you
+     * {@code #{name}}) are preserved, as is a trailing semicolon (which is only stripped from
+     * the parameterized form). This is useful for logging, debugging, or when you
      * need to preserve the original query format.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * ParsedCql.parse("   SELECT * FROM u WHERE id = ?   ", null).originalCql(); // returns "SELECT * FROM u WHERE id = ?" (trimmed)
+     * ParsedCql.parse("SELECT * FROM u WHERE id = :userId", null).originalCql(); // returns "SELECT * FROM u WHERE id = :userId" (placeholders kept)
+     * ParsedCql.parse("SELECT id FROM u WHERE id = ?;", null).originalCql();     // returns "SELECT id FROM u WHERE id = ?;" (trailing ';' kept)
+     * ParsedCql.parse(null, null).originalCql();                                 // throws IllegalArgumentException (from parse(), cql is null)
+     * }</pre>
      *
      * @return the trimmed original CQL statement string
      */
@@ -382,17 +387,26 @@ public final class ParsedCql {
      * </ul>
      * 
      * <p>This parameterized version is what gets sent to Cassandra for prepared statement creation.</p>
-     * 
-     * <p>Example transformations:</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Original:      "SELECT * FROM users WHERE name = :userName AND id = :userId;"
-     * Parameterized: "SELECT * FROM users WHERE name = ? AND id = ?"
+     * // Named parameters converted to '?', trailing ';' removed
+     * ParsedCql.parse("SELECT * FROM u WHERE name = :userName AND id = :userId;", null).getParameterizedCql();
+     * // returns "SELECT * FROM u WHERE name = ? AND id = ?"
      *
-     * Original:      "INSERT INTO users (id, name) VALUES (?, ?)  "
-     * Parameterized: "INSERT INTO users (id, name) VALUES (?, ?)"
+     * // MyBatis-style #{name} also converted to '?'
+     * ParsedCql.parse("INSERT INTO u VALUES (#{id}, #{name}, #{email})", null).getParameterizedCql();
+     * // returns "INSERT INTO u VALUES (?, ?, ?)"
+     *
+     * // Positional parameters unchanged; trailing whitespace stripped
+     * ParsedCql.parse("INSERT INTO u (id, name) VALUES (?, ?)  ", null).getParameterizedCql();
+     * // returns "INSERT INTO u (id, name) VALUES (?, ?)"
+     *
+     * // No parameters: returned as-is (after strip/semicolon handling)
+     * ParsedCql.parse("SELECT * FROM u", null).getParameterizedCql();
+     * // returns "SELECT * FROM u"
      * }</pre>
-     * 
+     *
      * @return the normalized CQL statement ready for prepared statement creation
      */
     public String getParameterizedCql() {
@@ -412,17 +426,21 @@ public final class ParsedCql {
      * <p>The returned map is the instance's internal map; it is populated during construction and
      * is not intended to be modified by callers. Treat it as read-only.</p>
      *
-     * <p>Example mappings:</p>
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * CQL: "SELECT * FROM users WHERE name = :userName AND status = :status"
-     * Returns: {0: "userName", 1: "status"}
+     * Map<Integer, String> m1 = ParsedCql.parse("SELECT * FROM u WHERE name = :userName AND status = :status", null).namedParameters();
+     * m1.get(0);   // returns "userName"
+     * m1.get(1);   // returns "status"
      *
-     * CQL: "INSERT INTO users VALUES (#{id}, #{name}, #{email})"
-     * Returns: {0: "id", 1: "name", 2: "email"}
+     * Map<Integer, String> m2 = ParsedCql.parse("INSERT INTO u VALUES (#{id}, #{name}, #{email})", null).namedParameters();
+     * m2.get(0);   // returns "id"
+     * m2.get(2);   // returns "email"
      *
-     * CQL: "SELECT * FROM users WHERE id = ? AND status = ?"
-     * Returns: {} (empty map)
+     * // Positional-only parameters => empty map
+     * ParsedCql.parse("SELECT * FROM u WHERE id = ? AND status = ?", null).namedParameters().isEmpty(); // returns true
+     *
+     * // No parameters at all => empty map
+     * ParsedCql.parse("SELECT * FROM u", null).namedParameters().isEmpty();                             // returns true
      * }</pre>
      *
      * @return a map from parameter index (0-based) to parameter name, empty if no named parameters
@@ -444,7 +462,15 @@ public final class ParsedCql {
      * <li>Allocating arrays for parameter binding</li>
      * <li>Iterating through parameter positions during binding</li>
      * </ul>
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * ParsedCql.parse("SELECT * FROM u WHERE id = ? AND status = ?", null).parameterCount();         // returns 2 (positional)
+     * ParsedCql.parse("SELECT * FROM u WHERE id = :id AND status = :status", null).parameterCount(); // returns 2 (named)
+     * ParsedCql.parse("SELECT * FROM u", null).parameterCount();                                     // returns 0 (no parameters)
+     * ParsedCql.parse("CREATE TABLE t (id INT PRIMARY KEY)", null).parameterCount();                 // returns 0 (DDL: no parameter scanning)
+     * }</pre>
+     *
      * @return the number of parameters in the statement (0 or positive integer)
      */
     public int parameterCount() {
@@ -471,22 +497,23 @@ public final class ParsedCql {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Map<String, String> attrs = parsedCql.getAttributes();
-     * 
-     * // Check for timeout setting
-     * String timeout = attrs.get("timeout");
-     * if (timeout != null) {
-     *     int timeoutMs = Integer.parseInt(timeout);
-     *     // Apply timeout to statement...
-     * }
-     * 
-     * // Check consistency level
-     * String consistency = attrs.get("consistency");
-     * if ("QUORUM".equals(consistency)) {
-     *     // Set QUORUM consistency...
-     * }
+     * // No attributes supplied => empty (never null) map
+     * ParsedCql.parse("SELECT 1 FROM t", null).getAttributes().isEmpty();   // returns true
+     *
+     * // Attributes supplied at parse time are preserved
+     * Map<String, String> input = new HashMap<>();
+     * input.put("timeout", "5000");
+     * input.put("consistency", "QUORUM");
+     * ParsedCql parsed = ParsedCql.parse("SELECT * FROM t WHERE id = ?", input);
+     * parsed.getAttributes().get("timeout");        // returns "5000"
+     * parsed.getAttributes().get("consistency");    // returns "QUORUM"
+     *
+     * // The returned map is mutable; changes are reflected on subsequent reads
+     * parsed.getAttributes().put("fetchSize", "100");
+     * parsed.getAttributes().get("fetchSize");      // returns "100"
+     * parsed.getAttributes().get("missingKey");     // returns null (absent key)
      * }</pre>
-     * 
+     *
      * @return a mutable map of attribute name-value pairs, never null but may be empty
      */
     public Map<String, String> getAttributes() {
@@ -499,7 +526,21 @@ public final class ParsedCql {
      * <p>The hash code is computed based solely on the original CQL statement string,
      * ensuring that ParsedCql instances created from identical CQL strings will have
      * the same hash code. This is essential for the caching mechanism to work correctly.</p>
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * ParsedCql a = ParsedCql.parse("SELECT 1 FROM t WHERE id = ?", null);
+     * ParsedCql b = ParsedCql.parse("SELECT 1 FROM t WHERE id = ?", null);
+     * a.hashCode() == b.hashCode();      // returns true (same CQL text)
+     *
+     * // Attributes are not part of the hash; same text => same hash code
+     * Map<String, String> attrs = new HashMap<>();
+     * attrs.put("consistency", "ONE");
+     * ParsedCql c = ParsedCql.parse("SELECT 2 FROM t WHERE id = ?", attrs);
+     * ParsedCql d = ParsedCql.parse("SELECT 2 FROM t WHERE id = ?", null);
+     * c.hashCode() == d.hashCode();      // returns true (attributes ignored)
+     * }</pre>
+     *
      * @return hash code based on the original CQL statement
      */
     @Override
@@ -517,7 +558,25 @@ public final class ParsedCql {
      * <p>This equality contract is essential for the caching mechanism, ensuring
      * that identical CQL statements can be properly cached and retrieved regardless
      * of when or how they were parsed.</p>
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * ParsedCql a = ParsedCql.parse("SELECT 1 FROM t WHERE id = ?", null);
+     * ParsedCql b = ParsedCql.parse("SELECT 1 FROM t WHERE id = ?", null);
+     * ParsedCql c = ParsedCql.parse("SELECT 1 FROM other WHERE id = ?", null);
+     * a.equals(a);                              // returns true (same instance)
+     * a.equals(b);                              // returns true (identical CQL text)
+     * a.equals(c);                              // returns false (different CQL text)
+     * a.equals("SELECT 1 FROM t WHERE id = ?"); // returns false (not a ParsedCql)
+     * a.equals(null);                           // returns false
+     *
+     * // Attributes do not affect equality; same text still equals
+     * Map<String, String> attrs = new HashMap<>();
+     * attrs.put("consistency", "ONE");
+     * ParsedCql d = ParsedCql.parse("SELECT 1 FROM t WHERE id = ?", attrs);
+     * a.equals(d);                  // returns true (attributes ignored)
+     * }</pre>
+     *
      * @param obj the reference object with which to compare
      * @return {@code true} if this object represents the same CQL statement as the obj argument; false otherwise
      */
@@ -543,7 +602,16 @@ public final class ParsedCql {
      * purposes to understand how the CQL was parsed and what parameters were extracted.</p>
      * 
      * <p>The format is: {@code [cql] <original> [parameterizedCql] <normalized> [Attributes] <attrs>}</p>
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * ParsedCql.parse("SELECT id FROM t WHERE id = :uid", null).toString();
+     * // returns "[cql] SELECT id FROM t WHERE id = :uid [parameterizedCql] SELECT id FROM t WHERE id = ? [Attributes] {}"
+     *
+     * ParsedCql.parse("SELECT id FROM t WHERE id = ?", null).toString();
+     * // returns "[cql] SELECT id FROM t WHERE id = ? [parameterizedCql] SELECT id FROM t WHERE id = ? [Attributes] {}"
+     * }</pre>
+     *
      * @return a detailed string representation of this ParsedCql instance
      */
     @Override

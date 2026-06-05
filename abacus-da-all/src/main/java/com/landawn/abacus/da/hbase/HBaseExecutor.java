@@ -133,7 +133,7 @@ import com.landawn.abacus.util.stream.Stream;
  *     @Column("guid")
  *     private String guid;          // HBase: "cf:guid"
  *     @ColumnFamily("name")
- *     private Name name;            // HBase: "name:givenName" and "name:lastName"
+ *     private Name name;            // HBase: "name:firstName" and "name:lastName"
  * }
  * }</pre>
  *
@@ -211,6 +211,16 @@ public final class HBaseExecutor implements AutoCloseable {
      * <p>The supplied {@code conn} is not copied; closing this executor closes the
      * connection it wraps (see {@link #close()}).</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Configuration config = HBaseConfiguration.create();
+     * Connection conn = ConnectionFactory.createConnection(config);
+     *
+     * try (HBaseExecutor executor = new HBaseExecutor(conn)) {  // throws UncheckedIOException if conn.getAdmin() fails
+     *     // ... perform HBase operations; closing executor closes conn too
+     * }
+     * }</pre>
+     *
      * @param conn the HBase connection to use for database operations
      * @throws UncheckedIOException if obtaining the {@link Admin} interface from the
      *         connection fails with an {@link IOException}
@@ -229,6 +239,17 @@ public final class HBaseExecutor implements AutoCloseable {
      * <p>If {@link Connection#getAdmin()} throws, the partially constructed admin is closed
      * quietly and the underlying {@link IOException} is rethrown wrapped in
      * {@link UncheckedIOException}.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AsyncExecutor sharedPool = new AsyncExecutor(16, 32, 60L, TimeUnit.SECONDS);
+     * Connection conn = ConnectionFactory.createConnection(HBaseConfiguration.create());
+     *
+     * try (HBaseExecutor executor = new HBaseExecutor(conn, sharedPool)) {  // throws UncheckedIOException if conn.getAdmin() fails
+     *     ContinuableFuture<Result> future = executor.async().get("users", AnyGet.of("user123"));
+     * }
+     * // sharedPool is NOT shut down by closing the executor — the caller owns it
+     * }</pre>
      *
      * @param conn the HBase connection to use for database operations; not copied — closing
      *        this executor closes the connection
@@ -261,6 +282,12 @@ public final class HBaseExecutor implements AutoCloseable {
      * (create/drop tables, manage regions, etc.). The returned instance is owned by this
      * executor and is closed by {@link #close()}; do not close it independently.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Admin admin = executor.admin();
+     * boolean tableExists = admin.tableExists(TableName.valueOf("users"));  // throws IOException
+     * }</pre>
+     *
      * @return the HBase admin interface bound to this executor
      * @see Admin
      */
@@ -274,6 +301,14 @@ public final class HBaseExecutor implements AutoCloseable {
      * <p>The connection is shared by every operation performed through this executor
      * and is closed by {@link #close()}. Exposed for advanced scenarios that need to
      * issue calls directly against the native HBase API.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Connection conn = executor.connection();
+     * try (Table table = conn.getTable(TableName.valueOf("users"))) {  // throws IOException
+     *     Result result = table.get(new Get(Bytes.toBytes("user123")));
+     * }
+     * }</pre>
      *
      * @return the wrapped HBase {@link Connection}
      * @see Connection
@@ -321,6 +356,18 @@ public final class HBaseExecutor implements AutoCloseable {
      *   <li>{@code javax.persistence.Id}</li>
      *   <li>{@code jakarta.persistence.Id}</li>
      * </ul>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * // Register "id" as the row key for the Account entity
+     * HBaseExecutor.registerRowKeyProperty(Account.class, "id");   // void; no return value
+     *
+     * // Unknown property -> IllegalArgumentException
+     * HBaseExecutor.registerRowKeyProperty(Account.class, "noSuchProp");   // throws IllegalArgumentException
+     *
+     * // A property whose type is HBaseColumn is rejected
+     * HBaseExecutor.registerRowKeyProperty(Account.class, "hc1");   // throws IllegalArgumentException (hc1 is an HBaseColumn property)
+     * }</pre>
      *
      * @param cls the entity class (must be a JavaBean class) on which to register the row-key property
      * @param rowKeyPropertyName the name of the property to use as the row key
@@ -496,6 +543,17 @@ public final class HBaseExecutor implements AutoCloseable {
      * The scanner is always closed (via {@link IOUtil#closeQuietly(java.io.Closeable)})
      * before this method returns, even on exception.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * try (Table table = executor.getTable("users")) {              // throws IOException
+     *     ResultScanner scanner = table.getScanner(new Scan());
+     *     List<User> users = HBaseExecutor.toList(scanner, User.class);  // scanner is closed inside toList
+     * }
+     *
+     * // A null scanner is dereferenced once iteration begins -> NullPointerException
+     * HBaseExecutor.toList((ResultScanner) null, User.class);       // throws NullPointerException
+     * }</pre>
+     *
      * @param <T> the target type for conversion
      * @param resultScanner the HBase result scanner to drain
      * @param targetClass the target class — a JavaBean class or a single-value type
@@ -520,7 +578,14 @@ public final class HBaseExecutor implements AutoCloseable {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Skip the first 50 results, then take up to 100
-     * List<User> users = HBaseExecutor.toList(scanner, 50, 100, User.class);
+     * List<User> users = HBaseExecutor.toList(scanner, 50, 100, User.class);  // scanner closed inside toList
+     *
+     * // count == 0 reads (and discards) the first 50 rows, then returns an empty list
+     * List<User> none = HBaseExecutor.toList(scanner2, 50, 0, User.class);    // returns [] (empty list)
+     *
+     * // A negative offset or count is rejected up front
+     * HBaseExecutor.toList(scanner3, -1, 100, User.class);   // throws IllegalArgumentException
+     * HBaseExecutor.toList(scanner4, 0, -1, User.class);     // throws IllegalArgumentException
      * }</pre>
      *
      * @param <T> the target type for conversion
@@ -633,10 +698,16 @@ public final class HBaseExecutor implements AutoCloseable {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Result result = table.get(new Get(Bytes.toBytes("user123")));
-     * User user = HBaseExecutor.toEntity(result, User.class);
+     * User user = HBaseExecutor.toEntity(result, User.class);   // mapped entity, or null if result is empty
      *
      * // Single-cell single-value extraction
      * String name = HBaseExecutor.toEntity(result, String.class);
+     *
+     * // An empty Result yields the target type's default value (null for a bean type)
+     * User none = HBaseExecutor.toEntity(Result.EMPTY_RESULT, User.class);   // returns null
+     *
+     * // Map target types are rejected (the check runs even for an empty Result)
+     * HBaseExecutor.toEntity(Result.EMPTY_RESULT, Map.class);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param <T> the target type
@@ -1322,6 +1393,14 @@ public final class HBaseExecutor implements AutoCloseable {
      * <p>This is a convenience wrapper around {@link #exists(String, Get)} that accepts
      * an AnyGet instance, which provides a fluent API for building Get operations.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * boolean exists = executor.exists("users", AnyGet.of("user123"));   // true if user123 has any cell
+     *
+     * // Narrow the existence check to a single column
+     * boolean hasEmail = executor.exists("users", AnyGet.of("user123").addColumn("info", "email"));
+     * }</pre>
+     *
      * @param tableName the name of the HBase table
      * @param anyGet the AnyGet operation to test for existence
      * @return {@code true} if the Get operation would return results, {@code false} otherwise
@@ -1338,6 +1417,16 @@ public final class HBaseExecutor implements AutoCloseable {
      *
      * <p>This is a convenience wrapper around {@link #exists(String, List)} that accepts
      * a collection of AnyGet instances for batch existence checking.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * List<Boolean> results = executor.exists("users",
+     *         N.asList(AnyGet.of("user123"), AnyGet.of("user456")));
+     * // results.get(0) == true if user123 exists; results.get(1) == true if user456 exists
+     *
+     * // An empty collection yields an empty result list (no server round trip needed)
+     * List<Boolean> empty = executor.exists("users", N.<AnyGet> emptyList());   // returns [] (empty list)
+     * }</pre>
      *
      * @param tableName the name of the HBase table
      * @param anyGets the collection of AnyGet operations to test for existence
@@ -1436,6 +1525,17 @@ public final class HBaseExecutor implements AutoCloseable {
      * <p>This is a convenience wrapper around {@link #get(String, Get)} that accepts
      * an AnyGet instance, which provides a fluent API for building Get operations.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Result result = executor.get("users", AnyGet.of("user123"));
+     * if (!result.isEmpty()) {
+     *     // process the cells of the row
+     * }
+     *
+     * // A non-existent row yields a present-but-empty Result (never null)
+     * Result missing = executor.get("users", AnyGet.of("no_such_row"));   // missing.isEmpty() == true
+     * }</pre>
+     *
      * @param tableName the name of the HBase table
      * @param anyGet the AnyGet operation specifying what data to retrieve
      * @return the HBase Result containing the retrieved data
@@ -1452,6 +1552,16 @@ public final class HBaseExecutor implements AutoCloseable {
      *
      * <p>This is a convenience wrapper around {@link #get(String, List)} that accepts
      * a collection of AnyGet instances for batch retrieval.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * List<Result> results = executor.get("users",
+     *         N.asList(AnyGet.of("user123"), AnyGet.of("user456")));
+     * // results is positionally aligned with the input; entries for missing rows are empty Results
+     *
+     * // An empty collection yields an empty result list
+     * List<Result> empty = executor.get("users", N.<AnyGet> emptyList());   // returns [] (empty list)
+     * }</pre>
      *
      * @param tableName the name of the HBase table
      * @param anyGets the collection of AnyGet operations to execute
@@ -1540,6 +1650,14 @@ public final class HBaseExecutor implements AutoCloseable {
      * <p>This is a convenience wrapper that combines {@link #get(String, AnyGet)} with
      * automatic type conversion.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * User user = executor.get("users", AnyGet.of("user123"), User.class);   // null if the row is missing
+     *
+     * // A non-existent row converts to the target type's default value (null for a bean)
+     * User missing = executor.get("users", AnyGet.of("no_such_row"), User.class);   // returns null
+     * }</pre>
+     *
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table
      * @param anyGet the AnyGet operation specifying what data to retrieve
@@ -1558,6 +1676,16 @@ public final class HBaseExecutor implements AutoCloseable {
      *
      * <p>This is a convenience wrapper that combines {@link #get(String, Collection)} with
      * automatic batch type conversion.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * List<User> users = executor.get("users",
+     *         N.asList(AnyGet.of("user123"), AnyGet.of("user456")), User.class);
+     * // rows that do not exist are skipped, so users may be shorter than the input
+     *
+     * // An empty collection yields an empty result list
+     * List<User> empty = executor.get("users", N.<AnyGet> emptyList(), User.class);   // returns [] (empty list)
+     * }</pre>
      *
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table
@@ -1580,6 +1708,16 @@ public final class HBaseExecutor implements AutoCloseable {
      * <p>This convenience method creates a Scan operation that retrieves all columns from
      * the specified column family across all rows in the table.</p>
      *
+     * <p>The returned stream is lazy and owns the underlying table/scanner; always close it
+     * (a try-with-resources block) to avoid leaking the table connection.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * try (Stream<Result> stream = executor.scan("users", "info")) {
+     *     long count = stream.count();   // number of rows that have at least one cell in family "info"
+     * }
+     * }</pre>
+     *
      * @param tableName the name of the HBase table to scan
      * @param family the name of the column family to scan
      * @return a lazy stream of HBase Results from the scan operation
@@ -1594,6 +1732,14 @@ public final class HBaseExecutor implements AutoCloseable {
      *
      * <p>This convenience method creates a Scan operation that retrieves only the specified
      * column (family:qualifier) across all rows in the table.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * // Each emitted Result carries only the info:email column
+     * try (Stream<Result> stream = executor.scan("users", "info", "email")) {
+     *     List<Result> rows = stream.toList();
+     * }
+     * }</pre>
      *
      * @param tableName the name of the HBase table to scan
      * @param family the name of the column family
@@ -1610,6 +1756,13 @@ public final class HBaseExecutor implements AutoCloseable {
      *
      * <p>This is the byte array version of {@link #scan(String, String)}.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * try (Stream<Result> stream = executor.scan("users", Bytes.toBytes("info"))) {
+     *     long count = stream.count();
+     * }
+     * }</pre>
+     *
      * @param tableName the name of the HBase table to scan
      * @param family the column family as a byte array
      * @return a lazy stream of HBase Results from the scan operation
@@ -1623,6 +1776,14 @@ public final class HBaseExecutor implements AutoCloseable {
      * Performs a scan operation on a specific column (byte arrays) and returns a stream of Results.
      *
      * <p>This is the byte array version of {@link #scan(String, String, String)}.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * try (Stream<Result> stream = executor.scan("users",
+     *         Bytes.toBytes("info"), Bytes.toBytes("email"))) {
+     *     List<Result> rows = stream.toList();
+     * }
+     * }</pre>
      *
      * @param tableName the name of the HBase table to scan
      * @param family the column family as a byte array
@@ -1639,6 +1800,18 @@ public final class HBaseExecutor implements AutoCloseable {
      *
      * <p>This is a convenience wrapper around {@link #scan(String, Scan)} that accepts
      * an AnyScan instance, which provides a fluent API for building Scan operations.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan anyScan = AnyScan.create()
+     *         .addFamily("info")
+     *         .withStartRow("user_")
+     *         .withStopRow("user_zzz");
+     *
+     * try (Stream<Result> stream = executor.scan("users", anyScan)) {
+     *     stream.limit(100).forEach(this::process);
+     * }
+     * }</pre>
      *
      * @param tableName the name of the HBase table to scan
      * @param anyScan the AnyScan operation defining the scan parameters
@@ -1769,6 +1942,13 @@ public final class HBaseExecutor implements AutoCloseable {
      * <p>This method scans only the specified column (family:qualifier) and converts
      * each result to the target type.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * try (Stream<String> emails = executor.scan("users", "info", "email", String.class)) {
+     *     List<String> all = emails.toList();
+     * }
+     * }</pre>
+     *
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to scan
      * @param family the name of the column family
@@ -1787,6 +1967,13 @@ public final class HBaseExecutor implements AutoCloseable {
      *
      * <p>This is the byte array version of {@link #scan(String, String, Class)}.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * try (Stream<User> users = executor.scan("users", Bytes.toBytes("info"), User.class)) {
+     *     long count = users.count();
+     * }
+     * }</pre>
+     *
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to scan
      * @param family the column family as a byte array
@@ -1803,6 +1990,14 @@ public final class HBaseExecutor implements AutoCloseable {
      * Scans a specific column (byte arrays) and converts results to the specified target type.
      *
      * <p>This is the byte array version of {@link #scan(String, String, String, Class)}.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * try (Stream<String> emails = executor.scan("users",
+     *         Bytes.toBytes("info"), Bytes.toBytes("email"), String.class)) {
+     *     List<String> all = emails.toList();
+     * }
+     * }</pre>
      *
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to scan
@@ -1821,6 +2016,15 @@ public final class HBaseExecutor implements AutoCloseable {
      * Scans using AnyScan specification and converts results to the specified target type.
      *
      * <p>This method combines the fluent AnyScan API with automatic type conversion.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan anyScan = AnyScan.create().withStartRow("user_a").withStopRow("user_z");
+     *
+     * try (Stream<User> users = executor.scan("users", anyScan, User.class)) {
+     *     List<User> page = users.limit(100).toList();
+     * }
+     * }</pre>
      *
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to scan
@@ -1938,6 +2142,16 @@ public final class HBaseExecutor implements AutoCloseable {
      * <p>This is a convenience wrapper around {@link #put(String, Put)} that accepts
      * an AnyPut instance, which provides a fluent API for building Put operations.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * executor.put("users", AnyPut.of("user123")
+     *         .addColumn("info", "name", "John Doe")
+     *         .addColumn("info", "email", "john@example.com"));   // void; row stored after the call
+     *
+     * // An AnyPut created from an entity maps its @Id field to the row key
+     * executor.put("users", AnyPut.create(user));   // void
+     * }</pre>
+     *
      * @param tableName the name of the HBase table
      * @param anyPut the AnyPut operation containing the data to store
      * @throws UncheckedIOException if an I/O error occurs during the operation
@@ -1953,6 +2167,16 @@ public final class HBaseExecutor implements AutoCloseable {
      *
      * <p>This is a convenience wrapper around {@link #put(String, List)} that accepts
      * a collection of AnyPut instances for batch storage.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * executor.put("users", N.asList(
+     *         AnyPut.of("user123").addColumn("info", "name", "John"),
+     *         AnyPut.of("user456").addColumn("info", "name", "Jane")));   // void; both rows stored
+     *
+     * // An empty collection is a no-op
+     * executor.put("users", N.<AnyPut> emptyList());   // void; nothing written
+     * }</pre>
      *
      * @param tableName the name of the HBase table
      * @param anyPuts the collection of AnyPut operations to execute
@@ -2043,6 +2267,15 @@ public final class HBaseExecutor implements AutoCloseable {
      * <p>This is a convenience wrapper around {@link #delete(String, Delete)} that accepts
      * an AnyDelete instance, which provides a fluent API for building Delete operations.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * // Delete the entire row
+     * executor.delete("users", AnyDelete.of("user123"));   // void
+     *
+     * // Delete a single column only
+     * executor.delete("users", AnyDelete.of("user123").addColumn("info", "email"));   // void
+     * }</pre>
+     *
      * @param tableName the name of the HBase table
      * @param anyDelete the AnyDelete operation specifying what data to remove
      * @throws UncheckedIOException if an I/O error occurs during the operation
@@ -2059,6 +2292,15 @@ public final class HBaseExecutor implements AutoCloseable {
      * <p>This is a convenience wrapper around {@link #delete(String, List)} that accepts
      * a collection of AnyDelete instances for batch deletion.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * executor.delete("users", N.asList(
+     *         AnyDelete.of("user123"), AnyDelete.of("user456")));   // void; both rows deleted
+     *
+     * // An empty collection is a no-op
+     * executor.delete("users", N.<AnyDelete> emptyList());   // void; nothing deleted
+     * }</pre>
+     *
      * @param tableName the name of the HBase table
      * @param anyDeletes the collection of AnyDelete operations to execute
      * @throws UncheckedIOException if an I/O error occurs during the operation
@@ -2073,6 +2315,17 @@ public final class HBaseExecutor implements AutoCloseable {
      * Performs multiple mutations atomically on a single row using an AnyRowMutations operation.
      *
      * <p>This is a convenience wrapper around {@link #mutateRow(String, RowMutations)}.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyRowMutations rm = AnyRowMutations.of("user123")
+     *         .add(new Put(Bytes.toBytes("user123"))
+     *                 .addColumn(Bytes.toBytes("info"), Bytes.toBytes("name"), Bytes.toBytes("John")))
+     *         .add(new Delete(Bytes.toBytes("user123"))
+     *                 .addColumns(Bytes.toBytes("temp"), Bytes.toBytes("old")));   // add(..) throws IOException
+     *
+     * executor.mutateRow("users", rm);   // void; all mutations applied atomically
+     * }</pre>
      *
      * @param tableName the name of the HBase table
      * @param rm the AnyRowMutations containing the atomic mutations to perform
@@ -2122,6 +2375,13 @@ public final class HBaseExecutor implements AutoCloseable {
      *
      * <p>This is a convenience wrapper around {@link #append(String, Append)}.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Result result = executor.append("users",
+     *         AnyAppend.of("user123").addColumn("logs", "access", ",2023-10-15"));
+     * // result holds the post-append cell values (the appended bytes concatenated onto the prior value)
+     * }</pre>
+     *
      * @param tableName the name of the HBase table
      * @param append the AnyAppend operation specifying the values to append
      * @return the Result containing the new values after the append operation
@@ -2170,6 +2430,15 @@ public final class HBaseExecutor implements AutoCloseable {
      * Increments one or more column values within a single row using an AnyIncrement operation.
      *
      * <p>This is a convenience wrapper around {@link #increment(String, Increment)}.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Result result = executor.increment("users",
+     *         AnyIncrement.of("user123")
+     *                 .addColumn("stats", "login_count", 1)
+     *                 .addColumn("stats", "points", -5));   // negative amount decrements
+     * // result holds the new post-increment values for each affected column
+     * }</pre>
      *
      * @param tableName the name of the HBase table
      * @param increment the AnyIncrement operation specifying the values to increment
@@ -2249,6 +2518,12 @@ public final class HBaseExecutor implements AutoCloseable {
      * <p>{@code rowKey}, {@code family}, and {@code qualifier} are converted to bytes as
      * documented on {@link #incrementColumnValue(String, Object, String, String, long)}.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * long newValue = executor.incrementColumnValue(
+     *         "users", "user123", "stats", "login_count", 1, Durability.SKIP_WAL);
+     * }</pre>
+     *
      * @param tableName the name of the HBase table
      * @param rowKey the row key (converted via {@link #toRowKeyBytes(Object)})
      * @param family the column family name (converted via {@link #toFamilyQualifierBytes(String)})
@@ -2270,6 +2545,12 @@ public final class HBaseExecutor implements AutoCloseable {
      * <p>{@code family} and {@code qualifier} are passed through to HBase unchanged (no
      * encoding cache is consulted); {@code rowKey} is still converted via
      * {@link #toRowKeyBytes(Object)}.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * long newValue = executor.incrementColumnValue(
+     *         "users", "user123", Bytes.toBytes("stats"), Bytes.toBytes("login_count"), 1);
+     * }</pre>
      *
      * @param tableName the name of the HBase table
      * @param rowKey the row key (converted via {@link #toRowKeyBytes(Object)})
@@ -2298,6 +2579,13 @@ public final class HBaseExecutor implements AutoCloseable {
      *
      * <p>{@code family} and {@code qualifier} are passed through to HBase unchanged;
      * {@code rowKey} is still converted via {@link #toRowKeyBytes(Object)}.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * long newValue = executor.incrementColumnValue(
+     *         "users", "user123", Bytes.toBytes("stats"), Bytes.toBytes("login_count"),
+     *         1, Durability.SKIP_WAL);
+     * }</pre>
      *
      * @param tableName the name of the HBase table
      * @param rowKey the row key (converted via {@link #toRowKeyBytes(Object)})
@@ -2365,6 +2653,14 @@ public final class HBaseExecutor implements AutoCloseable {
      * {@link #toRowKeyBytes(Object)}. The underlying {@link Table} is closed in a
      * {@code finally} block.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Map<byte[], Long> rowCounts = executor.coprocessorService(
+     *         "users", MyService.class, "user_a", "user_z",
+     *         instance -> instance.countRows());
+     * // one entry per region overlapping [user_a, user_z); key = region name bytes
+     * }</pre>
+     *
      * @param <T> the service type
      * @param <R> the result type produced by {@code callable}
      * @param tableName the name of the HBase table
@@ -2403,6 +2699,14 @@ public final class HBaseExecutor implements AutoCloseable {
      * {@link #toRowKeyBytes(Object)}. The underlying {@link Table} is closed in a
      * {@code finally} block.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * executor.coprocessorService(
+     *         "users", MyService.class, "user_a", "user_z",
+     *         instance -> instance.countRows(),
+     *         (region, count) -> total.addAndGet(count));   // callback runs per region as results arrive
+     * }</pre>
+     *
      * @param <T> the service type
      * @param <R> the result type produced by {@code callable}
      * @param tableName the name of the HBase table
@@ -2440,6 +2744,17 @@ public final class HBaseExecutor implements AutoCloseable {
      * row range using Protocol Buffers for serialization. Results from each region are
      * collected and returned.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Map<byte[], MyResponse> responses = executor.batchCoprocessorService(
+     *         "users",
+     *         MyService.getDescriptor().findMethodByName("count"),
+     *         MyRequest.getDefaultInstance(),
+     *         "user_a", "user_z",
+     *         MyResponse.getDefaultInstance());
+     * // one entry per region overlapping [user_a, user_z); key = region name bytes
+     * }</pre>
+     *
      * @param <R> the response message type
      * @param tableName the name of the HBase table
      * @param methodDescriptor the Protocol Buffers method descriptor
@@ -2475,6 +2790,17 @@ public final class HBaseExecutor implements AutoCloseable {
      * <p>This method invokes a coprocessor method on all regions that span the specified
      * row range using Protocol Buffers, invoking the callback with each region's result
      * as it becomes available.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * executor.batchCoprocessorService(
+     *         "users",
+     *         MyService.getDescriptor().findMethodByName("count"),
+     *         MyRequest.getDefaultInstance(),
+     *         "user_a", "user_z",
+     *         MyResponse.getDefaultInstance(),
+     *         (region, response) -> total.addAndGet(response.getCount()));   // callback runs per region
+     * }</pre>
      *
      * @param <R> the response message type
      * @param tableName the name of the HBase table
@@ -2726,6 +3052,12 @@ public final class HBaseExecutor implements AutoCloseable {
         /**
          * Checks if an entity with the specified row key exists in the table.
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * HBaseMapper<User, String> mapper = executor.mapper(User.class);
+         * boolean present = mapper.exists("user123");   // true if a row keyed "user123" exists
+         * }</pre>
+         *
          * @param rowKey the row key to check
          * @return {@code true} if an entity with the given row key exists, {@code false} otherwise
          * @throws UncheckedIOException if an I/O error occurs during the operation
@@ -2736,6 +3068,14 @@ public final class HBaseExecutor implements AutoCloseable {
 
         /**
          * Checks if entities with the specified row keys exist in the table.
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * List<Boolean> flags = mapper.exists(N.asList("user123", "user456"));
+         * // flags is positionally aligned with the input keys
+         *
+         * List<Boolean> empty = mapper.exists(N.<String> emptyList());   // returns [] (empty list)
+         * }</pre>
          *
          * @param rowKeys the collection of row keys to check
          * @return a list of Boolean values corresponding to each row key, where {@code true}
@@ -2750,6 +3090,12 @@ public final class HBaseExecutor implements AutoCloseable {
 
         /**
          * Retrieves an entity by its row key.
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * User user = mapper.get("user123");      // mapped entity
+         * User missing = mapper.get("no_such");   // returns null (no matching row)
+         * }</pre>
          *
          * @param rowKey the row key of the entity to retrieve
          * @return the entity object, or the type's default value (typically {@code null} for bean classes)
@@ -2766,6 +3112,14 @@ public final class HBaseExecutor implements AutoCloseable {
          * <p>Row keys that do not exist in the table are skipped — the returned list
          * may contain fewer elements than {@code rowKeys} and the order does not
          * necessarily correspond positionally to the input collection.</p>
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * List<User> users = mapper.get(N.asList("user123", "user456"));
+         * // users contains only the rows that were found
+         *
+         * List<User> empty = mapper.get(N.<String> emptyList());   // returns [] (empty list)
+         * }</pre>
          *
          * @param rowKeys the collection of row keys to retrieve
          * @return a list of entity objects for the row keys that were found
@@ -2784,6 +3138,14 @@ public final class HBaseExecutor implements AutoCloseable {
          * and the entity's properties are mapped to HBase columns according to the
          * configured naming policy.</p>
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * User user = new User();
+         * user.setId("user123");
+         * user.setName("John");
+         * mapper.put(user);   // void; row keyed by user.getId() is stored
+         * }</pre>
+         *
          * @param entityToPut the entity to store
          * @throws UncheckedIOException if an I/O error occurs during the operation
          */
@@ -2793,6 +3155,13 @@ public final class HBaseExecutor implements AutoCloseable {
 
         /**
          * Stores multiple entities in the table in a batch operation.
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * mapper.put(N.asList(user1, user2, user3));   // void; all three rows stored
+         *
+         * mapper.put(N.<User> emptyList());   // void; no-op
+         * }</pre>
          *
          * @param entitiesToPut the collection of entities to store
          * @throws UncheckedIOException if an I/O error occurs during the operation
@@ -2806,6 +3175,12 @@ public final class HBaseExecutor implements AutoCloseable {
          *
          * <p>The row key is extracted from the entity's {@code @Id} annotated field.</p>
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * User user = mapper.get("user123");
+         * mapper.delete(user);   // void; row keyed by user.getId() is removed
+         * }</pre>
+         *
          * @param entityToDelete the entity to delete
          * @throws UncheckedIOException if an I/O error occurs during the operation
          */
@@ -2816,6 +3191,12 @@ public final class HBaseExecutor implements AutoCloseable {
 
         /**
          * Deletes multiple entities from the table in a batch operation.
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * List<User> users = mapper.get(N.asList("user123", "user456"));
+         * mapper.delete(users);   // void; the row of every entity is removed
+         * }</pre>
          *
          * @param entitiesToDelete the collection of entities to delete
          * @throws UncheckedIOException if an I/O error occurs during the operation
@@ -2828,6 +3209,11 @@ public final class HBaseExecutor implements AutoCloseable {
         /**
          * Deletes an entity by its row key.
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * mapper.deleteByRowKey("user123");   // void; row "user123" removed (no-op if absent)
+         * }</pre>
+         *
          * @param rowKey the row key of the entity to delete
          * @throws UncheckedIOException if an I/O error occurs during the operation
          */
@@ -2837,6 +3223,13 @@ public final class HBaseExecutor implements AutoCloseable {
 
         /**
          * Deletes multiple entities by their row keys in a batch operation.
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * mapper.deleteByRowKey(N.asList("user123", "user456"));   // void; both rows removed
+         *
+         * mapper.deleteByRowKey(N.<String> emptyList());   // void; no-op
+         * }</pre>
          *
          * @param rowKeys the collection of row keys to delete
          * @throws UncheckedIOException if an I/O error occurs during the operation
@@ -2850,6 +3243,11 @@ public final class HBaseExecutor implements AutoCloseable {
         /**
          * Checks if data exists for the specified AnyGet operation.
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * boolean hasEmail = mapper.exists(AnyGet.of("user123").addColumn("info", "email"));
+         * }</pre>
+         *
          * @param anyGet the AnyGet operation specifying what to check
          * @return {@code true} if the data exists, {@code false} otherwise
          * @throws UncheckedIOException if an I/O error occurs during the operation
@@ -2862,6 +3260,13 @@ public final class HBaseExecutor implements AutoCloseable {
         /**
          * Checks if data exists for multiple AnyGet operations.
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * List<Boolean> flags = mapper.exists(N.asList(
+         *         AnyGet.of("user123"), AnyGet.of("user456")));
+         * // flags is positionally aligned with the input list
+         * }</pre>
+         *
          * @param anyGets the list of AnyGet operations to check
          * @return a list of Boolean values corresponding to each AnyGet operation
          * @throws UncheckedIOException if an I/O error occurs during the operation
@@ -2873,6 +3278,12 @@ public final class HBaseExecutor implements AutoCloseable {
 
         /**
          * Retrieves an entity using an AnyGet operation.
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * // Read up to 1000 versions of each cell for this row
+         * User user = mapper.get(AnyGet.of("user123").readVersions(1000));   // null if the row is missing
+         * }</pre>
          *
          * @param anyGet the AnyGet operation specifying what to retrieve
          * @return the entity object, or the type's default value (typically {@code null} for bean classes)
@@ -2891,6 +3302,13 @@ public final class HBaseExecutor implements AutoCloseable {
          * may contain fewer elements than {@code anyGets} and the order does not
          * necessarily correspond positionally to the input list.</p>
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * List<User> users = mapper.get(N.asList(
+         *         AnyGet.of("user123"), AnyGet.of("user456")));
+         * // users contains only the rows that were found
+         * }</pre>
+         *
          * @param anyGets the list of AnyGet operations to execute
          * @return a list of entity objects for the operations whose rows were found
          * @throws UncheckedIOException if an I/O error occurs during the operation
@@ -2903,6 +3321,16 @@ public final class HBaseExecutor implements AutoCloseable {
         /**
          * Scans a column family and returns a stream of entities.
          *
+         * <p>The stream is lazy and owns the underlying table/scanner; always close it
+         * (a try-with-resources block) to avoid leaking the table connection.</p>
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * try (Stream<User> users = mapper.scan("info")) {
+         *     List<User> all = users.toList();
+         * }
+         * }</pre>
+         *
          * @param family the name of the column family to scan
          * @return a lazy stream of entity objects
          * @see Stream
@@ -2913,6 +3341,13 @@ public final class HBaseExecutor implements AutoCloseable {
 
         /**
          * Scans a specific column and returns a stream of entities.
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * try (Stream<User> users = mapper.scan("info", "email")) {
+         *     users.forEach(System.out::println);
+         * }
+         * }</pre>
          *
          * @param family the name of the column family
          * @param qualifier the column qualifier
@@ -2926,6 +3361,13 @@ public final class HBaseExecutor implements AutoCloseable {
         /**
          * Scans a column family (byte array) and returns a stream of entities.
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * try (Stream<User> users = mapper.scan(Bytes.toBytes("info"))) {
+         *     long count = users.count();
+         * }
+         * }</pre>
+         *
          * @param family the column family as a byte array
          * @return a lazy stream of entity objects
          * @see Stream
@@ -2936,6 +3378,13 @@ public final class HBaseExecutor implements AutoCloseable {
 
         /**
          * Scans a specific column (byte arrays) and returns a stream of entities.
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * try (Stream<User> users = mapper.scan(Bytes.toBytes("info"), Bytes.toBytes("email"))) {
+         *     List<User> all = users.toList();
+         * }
+         * }</pre>
          *
          * @param family the column family as a byte array
          * @param qualifier the column qualifier as a byte array
@@ -2949,6 +3398,13 @@ public final class HBaseExecutor implements AutoCloseable {
         /**
          * Scans using an AnyScan specification and returns a stream of entities.
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * try (Stream<User> users = mapper.scan(AnyScan.create())) {
+         *     long total = users.count();   // every row in the mapper's table
+         * }
+         * }</pre>
+         *
          * @param anyScan the AnyScan operation defining the scan parameters
          * @return a lazy stream of entity objects
          * @see AnyScan
@@ -2961,6 +3417,11 @@ public final class HBaseExecutor implements AutoCloseable {
         /**
          * Stores data using an AnyPut operation.
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * mapper.put(AnyPut.of("user123").addColumn("info", "name", "John"));   // void
+         * }</pre>
+         *
          * @param anyPut the AnyPut operation containing the data to store
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @see AnyPut
@@ -2971,6 +3432,13 @@ public final class HBaseExecutor implements AutoCloseable {
 
         /**
          * Stores data using multiple AnyPut operations in a batch.
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * mapper.put(N.asList(
+         *         AnyPut.of("user123").addColumn("info", "name", "John"),
+         *         AnyPut.of("user456").addColumn("info", "name", "Jane")));   // void
+         * }</pre>
          *
          * @param anyPuts the list of AnyPut operations to execute
          * @throws UncheckedIOException if an I/O error occurs during the operation
@@ -2983,6 +3451,12 @@ public final class HBaseExecutor implements AutoCloseable {
         /**
          * Deletes data using an AnyDelete operation.
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * // Delete a single column rather than the whole row
+         * mapper.delete(AnyDelete.of("user123").addColumn("info", "email"));   // void
+         * }</pre>
+         *
          * @param anyDelete the AnyDelete operation specifying what to delete
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @see AnyDelete
@@ -2993,6 +3467,12 @@ public final class HBaseExecutor implements AutoCloseable {
 
         /**
          * Deletes data using multiple AnyDelete operations in a batch.
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * mapper.delete(N.asList(
+         *         AnyDelete.of("user123"), AnyDelete.of("user456")));   // void; both rows removed
+         * }</pre>
          *
          * @param anyDeletes the list of AnyDelete operations to execute
          * @throws UncheckedIOException if an I/O error occurs during the operation
@@ -3005,6 +3485,14 @@ public final class HBaseExecutor implements AutoCloseable {
         /**
          * Performs multiple atomic mutations on a single row.
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * AnyRowMutations rm = AnyRowMutations.of("user123")
+         *         .add(new Put(Bytes.toBytes("user123"))
+         *                 .addColumn(Bytes.toBytes("info"), Bytes.toBytes("name"), Bytes.toBytes("John")));   // add(..) throws IOException
+         * mapper.mutateRow(rm);                                                                               // void; mutations applied atomically
+         * }</pre>
+         *
          * @param rm the AnyRowMutations containing the mutations to perform
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @see AnyRowMutations
@@ -3015,6 +3503,13 @@ public final class HBaseExecutor implements AutoCloseable {
 
         /**
          * Appends values to columns.
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * Result result = mapper.append(
+         *         AnyAppend.of("user123").addColumn("logs", "access", ",2023-10-15"));
+         * // result holds the post-append cell values
+         * }</pre>
          *
          * @param append the AnyAppend operation specifying the values to append
          * @return the Result containing the new values after the append
@@ -3027,6 +3522,13 @@ public final class HBaseExecutor implements AutoCloseable {
 
         /**
          * Increments column values.
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * Result result = mapper.increment(
+         *         AnyIncrement.of("user123").addColumn("stats", "login_count", 1));
+         * // result holds the new post-increment values
+         * }</pre>
          *
          * @param increment the AnyIncrement operation specifying the values to increment
          * @return the Result containing the new values after the increment
@@ -3044,6 +3546,11 @@ public final class HBaseExecutor implements AutoCloseable {
          * {@link HBaseExecutor#incrementColumnValue(String, Object, String, String, long)}
          * with the mapper's bound table name.</p>
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * long newValue = mapper.incrementColumnValue("user123", "stats", "login_count", 1);
+         * }</pre>
+         *
          * @param rowKey the row key (converted via {@link HBaseExecutor#toRowKeyBytes(Object)})
          * @param family the column family name (converted via {@link HBaseExecutor#toFamilyQualifierBytes(String)})
          * @param qualifier the column qualifier name (converted via {@link HBaseExecutor#toFamilyQualifierBytes(String)})
@@ -3057,6 +3564,12 @@ public final class HBaseExecutor implements AutoCloseable {
 
         /**
          * Atomically increments a single column value with specified durability.
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * long newValue = mapper.incrementColumnValue(
+         *         "user123", "stats", "login_count", 1, Durability.SKIP_WAL);
+         * }</pre>
          *
          * @param rowKey the row key (converted via {@link HBaseExecutor#toRowKeyBytes(Object)})
          * @param family the column family name (converted via {@link HBaseExecutor#toFamilyQualifierBytes(String)})
@@ -3075,6 +3588,12 @@ public final class HBaseExecutor implements AutoCloseable {
         /**
          * Atomically increments a single column value using byte arrays.
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * long newValue = mapper.incrementColumnValue(
+         *         "user123", Bytes.toBytes("stats"), Bytes.toBytes("login_count"), 1);
+         * }</pre>
+         *
          * @param rowKey the row key (converted via {@link HBaseExecutor#toRowKeyBytes(Object)})
          * @param family the column family bytes (used as-is)
          * @param qualifier the column qualifier bytes (used as-is)
@@ -3088,6 +3607,13 @@ public final class HBaseExecutor implements AutoCloseable {
 
         /**
          * Atomically increments a single column value using byte arrays with specified durability.
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * long newValue = mapper.incrementColumnValue(
+         *         "user123", Bytes.toBytes("stats"), Bytes.toBytes("login_count"),
+         *         1, Durability.SKIP_WAL);
+         * }</pre>
          *
          * @param rowKey the row key (converted via {@link HBaseExecutor#toRowKeyBytes(Object)})
          * @param family the column family bytes (used as-is)
@@ -3106,6 +3632,13 @@ public final class HBaseExecutor implements AutoCloseable {
         /**
          * Gets a CoprocessorRpcChannel for communicating with a coprocessor.
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * CoprocessorRpcChannel channel = mapper.coprocessorService("user123");
+         * MyService.BlockingInterface stub = MyService.newBlockingStub(channel);
+         * MyResponse response = stub.myMethod(null, request);
+         * }</pre>
+         *
          * @param rowKey the row key to identify which region server to connect to
          * @return the CoprocessorRpcChannel for the specified row's region
          * @throws UncheckedIOException if an I/O error occurs while obtaining the underlying {@link Table}
@@ -3117,6 +3650,14 @@ public final class HBaseExecutor implements AutoCloseable {
 
         /**
          * Executes a coprocessor call against a range of rows and returns results.
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * Map<byte[], Long> counts = mapper.coprocessorService(
+         *         MyService.class, "user_a", "user_z",
+         *         instance -> instance.countRows());
+         * // one entry per region overlapping [user_a, user_z)
+         * }</pre>
          *
          * @param <S> the service type
          * @param <R> the result type
@@ -3136,6 +3677,14 @@ public final class HBaseExecutor implements AutoCloseable {
 
         /**
          * Executes a coprocessor call against a range of rows with a callback for results.
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * mapper.coprocessorService(
+         *         MyService.class, "user_a", "user_z",
+         *         instance -> instance.countRows(),
+         *         (region, count) -> total.addAndGet(count));   // callback runs per region
+         * }</pre>
          *
          * @param <S> the service type
          * @param <R> the result type
@@ -3158,6 +3707,16 @@ public final class HBaseExecutor implements AutoCloseable {
         /**
          * Executes a batch coprocessor service call against a range of rows and returns results.
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * Map<byte[], MyResponse> responses = mapper.batchCoprocessorService(
+         *         MyService.getDescriptor().findMethodByName("count"),
+         *         MyRequest.getDefaultInstance(),
+         *         "user_a", "user_z",
+         *         MyResponse.getDefaultInstance());
+         * // one entry per region overlapping [user_a, user_z)
+         * }</pre>
+         *
          * @param <R> the response message type
          * @param methodDescriptor the Protocol Buffers method descriptor
          * @param request the Protocol Buffers request message
@@ -3177,6 +3736,16 @@ public final class HBaseExecutor implements AutoCloseable {
 
         /**
          * Executes a batch coprocessor service call against a range of rows with a callback for results.
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * mapper.batchCoprocessorService(
+         *         MyService.getDescriptor().findMethodByName("count"),
+         *         MyRequest.getDefaultInstance(),
+         *         "user_a", "user_z",
+         *         MyResponse.getDefaultInstance(),
+         *         (region, response) -> total.addAndGet(response.getCount()));   // callback runs per region
+         * }</pre>
          *
          * @param <R> the response message type
          * @param methodDescriptor the Protocol Buffers method descriptor

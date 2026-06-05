@@ -81,9 +81,6 @@ abstract class AnyOperationWithAttributes<AOWA extends AnyOperationWithAttribute
      */
     protected AnyOperationWithAttributes(final OperationWithAttributes owa) {
         super(owa);
-        if (owa == null) {
-            throw new IllegalArgumentException("OperationWithAttributes must not be null");
-        }
         this.owa = owa;
     }
 

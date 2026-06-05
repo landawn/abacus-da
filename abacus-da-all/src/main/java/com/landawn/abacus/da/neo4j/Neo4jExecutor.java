@@ -127,6 +127,19 @@ public final class Neo4jExecutor {
      * that are reused across calls. The session pool is populated lazily on first use; no sessions
      * are opened by this constructor.
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * SessionFactory factory = new SessionFactory(configuration, "com.example.model");
+     * Neo4jExecutor executor = new Neo4jExecutor(factory);   // ready to use; no session opened yet
+     * assert executor.sessionFactory() == factory;           // factory is retained
+     *
+     * // A pre-built factory can be shared by many executors
+     * Neo4jExecutor reader = new Neo4jExecutor(factory);
+     *
+     * // Passing null is rejected immediately
+     * Neo4jExecutor bad = new Neo4jExecutor(null);           // throws IllegalArgumentException
+     * }</pre>
+     *
      * @param sessionFactory the Neo4j {@link SessionFactory} used to open new sessions on demand
      * @throws IllegalArgumentException if {@code sessionFactory} is {@code null}
      */
@@ -142,6 +155,18 @@ public final class Neo4jExecutor {
      * <p>
      * Use this to access OGM features not surfaced by the executor (for example, direct
      * configuration introspection or opening sessions that are not pooled by this executor).
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * SessionFactory factory = new SessionFactory(configuration, "com.example.model");
+     * Neo4jExecutor executor = new Neo4jExecutor(factory);
+     *
+     * SessionFactory same = executor.sessionFactory();   // returns the exact instance passed in
+     * assert same == factory;                            // true
+     *
+     * // Open an unpooled session straight from the factory for OGM-only features
+     * Session adHoc = executor.sessionFactory().openSession();   // never null
+     * }</pre>
      *
      * @return the {@link SessionFactory} supplied at construction time; never {@code null}
      * @see org.neo4j.ogm.session.SessionFactory
@@ -343,6 +368,22 @@ public final class Neo4jExecutor {
      * Only the node properties are loaded; relationships are not included. For loading
      * relationships, use {@link #loadAll(Class, Collection, int)} with depth > 0.
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Collection<Person> people = executor.loadAll(Person.class, Arrays.asList(1L, 2L, 3L));
+     * // returns the matching Person nodes; IDs with no node are simply absent from the result
+     *
+     * for (Person p : executor.loadAll(Person.class, List.of(42L))) {
+     *     System.out.println(p.getName());   // single-ID convenience
+     * }
+     *
+     * // Empty id collection -> empty result
+     * Collection<Person> none = executor.loadAll(Person.class, Collections.emptyList()); // returns empty collection
+     *
+     * // An unregistered/unmapped type yields an (immutable) empty collection rather than throwing
+     * Collection<Object> unmapped = executor.loadAll(Object.class, List.of(1L));          // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type
      * @param ids collection of unique Neo4j node IDs to load
@@ -366,7 +407,20 @@ public final class Neo4jExecutor {
      * <p>
      * This method efficiently retrieves multiple nodes and their relationships in a single
      * database operation. The depth parameter controls how deeply connected nodes are loaded.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Collection<Long> ids = Arrays.asList(1L, 2L);
+     * Collection<Person> flat = executor.loadAll(Person.class, ids, 0);     // properties only, no relationships
+     * Collection<Person> withRels = executor.loadAll(Person.class, ids, 1); // each node plus immediate relationships
+     *
+     * // depth -1 pulls the entire reachable sub-graph for each node (use with care on large graphs)
+     * Collection<Person> deep = executor.loadAll(Person.class, ids, -1);
+     *
+     * // No matches -> empty collection
+     * Collection<Person> none = executor.loadAll(Person.class, Collections.emptyList(), 1); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type
      * @param ids collection of unique Neo4j node IDs to load
@@ -391,7 +445,23 @@ public final class Neo4jExecutor {
      * <p>
      * This method retrieves multiple nodes and applies the specified sorting to the results.
      * Only the node properties are loaded; relationships are not included.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Collection<Long> ids = Arrays.asList(1L, 2L, 3L);
+     * SortOrder byName = new SortOrder().add("name");
+     * Collection<Person> sorted = executor.loadAll(Person.class, ids, byName); // ordered by name ascending
+     *
+     * SortOrder byAgeDesc = new SortOrder(SortOrder.Direction.DESC, "age");
+     * Collection<Person> oldestFirst = executor.loadAll(Person.class, ids, byAgeDesc);
+     *
+     * // An empty SortOrder simply returns the matches in id order
+     * Collection<Person> unordered = executor.loadAll(Person.class, ids, new SortOrder());
+     *
+     * // No matching ids -> empty collection
+     * Collection<Person> none = executor.loadAll(Person.class, Collections.emptyList(), byName); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type
      * @param ids collection of unique Neo4j node IDs to load
@@ -416,7 +486,20 @@ public final class Neo4jExecutor {
      * <p>
      * This method retrieves multiple nodes and their relationships, applying the specified sorting
      * to the results. The depth parameter controls how deeply connected nodes are loaded.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Collection<Long> ids = Arrays.asList(1L, 2L);
+     * SortOrder byName = new SortOrder().add("name");
+     * Collection<Person> sorted = executor.loadAll(Person.class, ids, byName, 1); // sorted, with immediate relationships
+     *
+     * // Sorted nodes, properties only
+     * Collection<Person> flat = executor.loadAll(Person.class, ids, byName, 0);
+     *
+     * // No matches -> empty collection
+     * Collection<Person> none = executor.loadAll(Person.class, Collections.emptyList(), byName, 1); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type
      * @param ids collection of unique Neo4j node IDs to load
@@ -442,7 +525,21 @@ public final class Neo4jExecutor {
      * <p>
      * This method retrieves a subset of nodes based on pagination settings, allowing
      * efficient handling of large result sets. Only node properties are loaded.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Collection<Long> ids = Arrays.asList(1L, 2L, 3L, 4L, 5L);
+     * Pagination firstPage = new Pagination(0, 2);                               // page index 0, size 2
+     * Collection<Person> page0 = executor.loadAll(Person.class, ids, firstPage); // at most 2 nodes
+     *
+     * Pagination secondPage = new Pagination(1, 2);    // page index 1, size 2
+     * Collection<Person> page1 = executor.loadAll(Person.class, ids, secondPage);
+     *
+     * // A page beyond the available data -> empty collection
+     * Pagination farPage = new Pagination(99, 2);
+     * Collection<Person> none = executor.loadAll(Person.class, ids, farPage);     // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type
      * @param ids collection of unique Neo4j node IDs to load
@@ -467,7 +564,20 @@ public final class Neo4jExecutor {
      * <p>
      * This method retrieves a subset of nodes and their relationships based on pagination settings,
      * allowing efficient handling of large result sets with related data.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Collection<Long> ids = Arrays.asList(1L, 2L, 3L, 4L);
+     * Pagination page = new Pagination(0, 2);
+     * Collection<Person> withRels = executor.loadAll(Person.class, ids, page, 1); // <=2 nodes, each with relationships
+     *
+     * // Same page, properties only
+     * Collection<Person> flat = executor.loadAll(Person.class, ids, page, 0);
+     *
+     * // No matching ids -> empty collection
+     * Collection<Person> none = executor.loadAll(Person.class, Collections.emptyList(), page, 1); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type
      * @param ids collection of unique Neo4j node IDs to load
@@ -494,7 +604,20 @@ public final class Neo4jExecutor {
      * This method retrieves a subset of sorted nodes based on pagination settings.
      * The combination of sorting and pagination provides efficient navigation through
      * large, ordered result sets.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Collection<Long> ids = Arrays.asList(1L, 2L, 3L, 4L, 5L);
+     * SortOrder byName = new SortOrder().add("name");
+     * Pagination firstPage = new Pagination(0, 2);
+     * Collection<Person> page0 = executor.loadAll(Person.class, ids, byName, firstPage); // first 2 by name
+     *
+     * Collection<Person> page1 = executor.loadAll(Person.class, ids, byName, new Pagination(1, 2)); // next 2 by name
+     *
+     * // Page past the end -> empty collection
+     * Collection<Person> none = executor.loadAll(Person.class, ids, byName, new Pagination(99, 2)); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type
      * @param ids collection of unique Neo4j node IDs to load
@@ -522,7 +645,22 @@ public final class Neo4jExecutor {
      * This is the most comprehensive loadAll method, providing full control over sorting,
      * pagination, and relationship loading. Ideal for building complex data views with
      * navigation and detailed relationship information.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Collection<Long> ids = Arrays.asList(1L, 2L, 3L, 4L);
+     * SortOrder byAgeDesc = new SortOrder(SortOrder.Direction.DESC, "age");
+     * Pagination page = new Pagination(0, 2);
+     * Collection<Person> top2 = executor.loadAll(Person.class, ids, byAgeDesc, page, 1); // 2 oldest, with relationships
+     *
+     * // Properties only, sorted and paged
+     * Collection<Person> flat = executor.loadAll(Person.class, ids, byAgeDesc, page, 0);
+     *
+     * // No matches -> empty collection
+     * Collection<Person> none =
+     *     executor.loadAll(Person.class, Collections.emptyList(), byAgeDesc, page, 1); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type
      * @param ids collection of unique Neo4j node IDs to load
@@ -552,7 +690,19 @@ public final class Neo4jExecutor {
      * This method refreshes the provided entities from the database, updating their
      * properties to the current state in Neo4j. The entities must already have IDs.
      * Only node properties are reloaded; relationships are not included.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Collection<Person> stale = executor.loadAll(Person.class, Arrays.asList(1L, 2L));
+     * Collection<Person> fresh = executor.loadAll(stale);   // re-reads current state from the graph
+     *
+     * // A null collection is passed straight through and returned as-is
+     * Collection<Person> nil = executor.loadAll((Collection<Person>) null); // returns null
+     *
+     * // An empty collection is returned unchanged (the same empty instance, no DB round-trip)
+     * Collection<Person> empty = executor.loadAll(Collections.<Person> emptyList()); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param objects collection of node entities to reload
      * @return collection of reloaded node entities with current database state
@@ -575,7 +725,20 @@ public final class Neo4jExecutor {
      * This method refreshes the provided entities from the database and loads their
      * relationships up to the specified depth. Useful for ensuring entities have
      * the most current data and relationship information.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Collection<Person> people = executor.loadAll(Person.class, Arrays.asList(1L, 2L));
+     * Collection<Person> withRels = executor.loadAll(people, 1);  // refreshed, with immediate relationships
+     * Collection<Person> deep = executor.loadAll(people, -1);     // refreshed, whole reachable sub-graph
+     *
+     * // null in, null out
+     * Collection<Person> nil = executor.loadAll((Collection<Person>) null, 1); // returns null
+     *
+     * // Empty in, same empty collection out
+     * Collection<Person> empty = executor.loadAll(Collections.<Person> emptyList(), 1); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param objects collection of node entities to reload
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
@@ -599,7 +762,23 @@ public final class Neo4jExecutor {
      * This method refreshes the provided entities from the database and returns them
      * sorted according to the specified order. Useful for maintaining consistent
      * ordering when refreshing entity collections.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Collection<Person> people = executor.loadAll(Person.class, Arrays.asList(1L, 2L, 3L));
+     * SortOrder byName = new SortOrder().add("name");
+     * Collection<Person> sorted = executor.loadAll(people, byName);   // refreshed and ordered by name
+     *
+     * SortOrder byAgeDesc = new SortOrder(SortOrder.Direction.DESC, "age");
+     * Collection<Person> oldestFirst = executor.loadAll(people, byAgeDesc);
+     *
+     * // null in, null out
+     * Collection<Person> nil = executor.loadAll((Collection<Person>) null, byName); // returns null
+     *
+     * // Empty in, same empty collection out
+     * Collection<Person> empty = executor.loadAll(Collections.<Person> emptyList(), byName); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param objects collection of node entities to reload
      * @param sortOrder the sort order specification for results
@@ -624,7 +803,21 @@ public final class Neo4jExecutor {
      * This method refreshes the provided entities, loads their relationships to the specified
      * depth, and returns them sorted according to the specified order. Provides comprehensive
      * entity refresh with related data and ordering.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Collection<Person> people = executor.loadAll(Person.class, Arrays.asList(1L, 2L));
+     * SortOrder byName = new SortOrder().add("name");
+     * Collection<Person> sortedWithRels = executor.loadAll(people, byName, 1); // ordered, with relationships
+     * Collection<Person> sortedFlat = executor.loadAll(people, byName, 0);     // ordered, properties only
+     *
+     * // null in, null out
+     * Collection<Person> nil = executor.loadAll((Collection<Person>) null, byName, 1); // returns null
+     *
+     * // Empty in, same empty collection out
+     * Collection<Person> empty = executor.loadAll(Collections.<Person> emptyList(), byName, 1); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param objects collection of node entities to reload
      * @param sortOrder the sort order specification for results
@@ -650,7 +843,22 @@ public final class Neo4jExecutor {
      * This method refreshes the provided entities and returns a paginated subset.
      * Useful for refreshing large collections of entities while managing memory usage
      * and response times.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Collection<Person> people = executor.loadAll(Person.class, Arrays.asList(1L, 2L, 3L, 4L));
+     * Pagination page = new Pagination(0, 2);
+     * Collection<Person> firstTwo = executor.loadAll(people, page);   // at most 2 refreshed entities
+     *
+     * Collection<Person> nextTwo = executor.loadAll(people, new Pagination(1, 2));
+     *
+     * // null in, null out
+     * Collection<Person> nil = executor.loadAll((Collection<Person>) null, page); // returns null
+     *
+     * // Empty in, same empty collection out
+     * Collection<Person> empty = executor.loadAll(Collections.<Person> emptyList(), page); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param objects collection of node entities to reload
      * @param pagination pagination settings (page offset and size)
@@ -675,7 +883,21 @@ public final class Neo4jExecutor {
      * This method refreshes the provided entities with their relationships and returns a
      * paginated subset. Combines entity refresh, relationship loading, and pagination
      * for comprehensive data management.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Collection<Person> people = executor.loadAll(Person.class, Arrays.asList(1L, 2L, 3L, 4L));
+     * Pagination page = new Pagination(0, 2);
+     * Collection<Person> withRels = executor.loadAll(people, page, 1); // <=2 refreshed entities, with relationships
+     * Collection<Person> flat = executor.loadAll(people, page, 0);     // <=2 refreshed entities, properties only
+     *
+     * // null in, null out
+     * Collection<Person> nil = executor.loadAll((Collection<Person>) null, page, 1); // returns null
+     *
+     * // Empty in, same empty collection out
+     * Collection<Person> empty = executor.loadAll(Collections.<Person> emptyList(), page, 1); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param objects collection of node entities to reload
      * @param pagination pagination settings (page offset and size)
@@ -701,7 +923,23 @@ public final class Neo4jExecutor {
      * This method refreshes the provided entities, sorts them according to the specified
      * order, and returns a paginated subset. Ideal for building sorted, paginated views
      * of refreshed entity data.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Collection<Person> people = executor.loadAll(Person.class, Arrays.asList(1L, 2L, 3L, 4L));
+     * SortOrder byName = new SortOrder().add("name");
+     * Pagination page = new Pagination(0, 2);
+     * Collection<Person> firstTwoByName = executor.loadAll(people, byName, page); // first 2 refreshed, by name
+     *
+     * Collection<Person> nextTwoByName = executor.loadAll(people, byName, new Pagination(1, 2));
+     *
+     * // null in, null out
+     * Collection<Person> nil = executor.loadAll((Collection<Person>) null, byName, page); // returns null
+     *
+     * // Empty in, same empty collection out
+     * Collection<Person> empty = executor.loadAll(Collections.<Person> emptyList(), byName, page); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param objects collection of node entities to reload
      * @param sortOrder the sort order specification for results
@@ -728,7 +966,23 @@ public final class Neo4jExecutor {
      * This is the most comprehensive reload method for existing entities, providing full control
      * over sorting, pagination, and relationship loading. Perfect for building complex data views
      * that require refreshed entity data with complete relationship information.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Collection<Person> people = executor.loadAll(Person.class, Arrays.asList(1L, 2L, 3L, 4L));
+     * SortOrder byAgeDesc = new SortOrder(SortOrder.Direction.DESC, "age");
+     * Pagination page = new Pagination(0, 2);
+     * Collection<Person> top2WithRels = executor.loadAll(people, byAgeDesc, page, 1); // 2 oldest, with relationships
+     * Collection<Person> top2Flat = executor.loadAll(people, byAgeDesc, page, 0);     // 2 oldest, properties only
+     *
+     * // null in, null out
+     * Collection<Person> nil = executor.loadAll((Collection<Person>) null, byAgeDesc, page, 1); // returns null
+     *
+     * // Empty in, same empty collection out
+     * Collection<Person> empty =
+     *     executor.loadAll(Collections.<Person> emptyList(), byAgeDesc, page, 1); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param objects collection of node entities to reload
      * @param sortOrder the sort order specification for results
@@ -756,11 +1010,27 @@ public final class Neo4jExecutor {
      * This method retrieves all nodes of the given type from the database.
      * Only node properties are loaded; relationships are not included.
      * Use with caution on large datasets as it loads all matching nodes.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Collection<Person> everyone = executor.loadAll(Person.class);
+     * System.out.println("Total persons: " + everyone.size());
+     *
+     * for (Person p : executor.loadAll(Person.class)) {
+     *     System.out.println(p.getName());
+     * }
+     *
+     * // A type with no stored nodes -> empty collection
+     * Collection<Company> noneYet = executor.loadAll(Company.class); // returns empty collection when none exist
+     *
+     * // An unregistered/unmapped type returns an (immutable) empty collection rather than throwing
+     * Collection<Object> unmapped = executor.loadAll(Object.class);  // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @return collection of all nodes of the specified type, may be empty
-     * @throws IllegalArgumentException if targetClass is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, int)
      * @see #loadAll(Class, Pagination)
      */
@@ -780,12 +1050,22 @@ public final class Neo4jExecutor {
      * This method retrieves all nodes of the given type and their relationships
      * up to the specified depth. Use with caution on large datasets as it loads
      * all matching nodes and their relationships.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Collection<Person> flat = executor.loadAll(Person.class, 0);     // every Person, properties only
+     * Collection<Person> withRels = executor.loadAll(Person.class, 1); // every Person plus immediate relationships
+     * Collection<Person> deep = executor.loadAll(Person.class, -1);    // entire reachable graph (use with care)
+     *
+     * // Unmapped type -> empty collection (no exception)
+     * Collection<Object> unmapped = executor.loadAll(Object.class, 1); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of all nodes of the specified type with relationships, may be empty
-     * @throws IllegalArgumentException if targetClass is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class)
      * @see #loadAll(Class, Pagination, int)
      */
@@ -805,12 +1085,24 @@ public final class Neo4jExecutor {
      * This method retrieves all nodes of the given type and sorts them according
      * to the specified order. Only node properties are loaded. Use with caution
      * on large datasets as it loads and sorts all matching nodes.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * SortOrder byName = new SortOrder().add("name");
+     * Collection<Person> byNameAsc = executor.loadAll(Person.class, byName); // all Persons, name ascending
+     *
+     * SortOrder byAgeDesc = new SortOrder(SortOrder.Direction.DESC, "age");
+     * Collection<Person> oldestFirst = executor.loadAll(Person.class, byAgeDesc);
+     *
+     * // Unmapped type -> empty collection (no exception)
+     * Collection<Object> unmapped = executor.loadAll(Object.class, byName); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param sortOrder the sort order specification for results
      * @return collection of all sorted nodes of the specified type, may be empty
-     * @throws IllegalArgumentException if targetClass is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, SortOrder, int)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
@@ -830,13 +1122,23 @@ public final class Neo4jExecutor {
      * This method retrieves all nodes of the given type, loads their relationships to
      * the specified depth, and sorts the results. Use with caution on large datasets
      * as it loads all matching nodes with their relationships.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * SortOrder byName = new SortOrder().add("name");
+     * Collection<Person> sortedWithRels = executor.loadAll(Person.class, byName, 1); // all Persons, sorted, with relationships
+     * Collection<Person> sortedFlat = executor.loadAll(Person.class, byName, 0);     // all Persons, sorted, properties only
+     *
+     * // Unmapped type -> empty collection (no exception)
+     * Collection<Object> unmapped = executor.loadAll(Object.class, byName, 1); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param sortOrder the sort order specification for results
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of all sorted nodes with relationships, may be empty
-     * @throws IllegalArgumentException if targetClass is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, SortOrder)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
@@ -856,12 +1158,24 @@ public final class Neo4jExecutor {
      * This method retrieves a specific page of nodes of the given type, allowing
      * efficient navigation through large datasets. Only node properties are loaded.
      * Recommended approach for handling large node collections.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Pagination firstPage = new Pagination(0, 20);                         // page index 0, size 20
+     * Collection<Person> page0 = executor.loadAll(Person.class, firstPage); // up to 20 Persons
+     *
+     * Pagination secondPage = new Pagination(1, 20);
+     * Collection<Person> page1 = executor.loadAll(Person.class, secondPage);
+     *
+     * // A page beyond the stored data -> empty collection
+     * Collection<Person> none = executor.loadAll(Person.class, new Pagination(9999, 20)); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param pagination pagination settings (page offset and size)
      * @return paginated collection of nodes of the specified type, may be empty
-     * @throws IllegalArgumentException if targetClass is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Pagination, int)
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
@@ -881,13 +1195,23 @@ public final class Neo4jExecutor {
      * This method retrieves a specific page of nodes and their relationships, providing
      * efficient navigation through large datasets with related data. Combines pagination
      * with relationship loading for optimal memory usage.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Pagination page = new Pagination(0, 20);
+     * Collection<Person> withRels = executor.loadAll(Person.class, page, 1); // up to 20 Persons, with relationships
+     * Collection<Person> flat = executor.loadAll(Person.class, page, 0);     // up to 20 Persons, properties only
+     *
+     * // A page beyond the stored data -> empty collection
+     * Collection<Person> none = executor.loadAll(Person.class, new Pagination(9999, 20), 1); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param pagination pagination settings (page offset and size)
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of nodes with relationships, may be empty
-     * @throws IllegalArgumentException if targetClass is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Pagination)
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
@@ -907,13 +1231,25 @@ public final class Neo4jExecutor {
      * This method retrieves a specific page of nodes, sorted according to the specified
      * order. Ideal for building paginated, sorted views of large node collections.
      * Only node properties are loaded.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * SortOrder byName = new SortOrder().add("name");
+     * Pagination firstPage = new Pagination(0, 20);
+     * Collection<Person> page0 = executor.loadAll(Person.class, byName, firstPage); // first 20 by name
+     *
+     * Collection<Person> page1 = executor.loadAll(Person.class, byName, new Pagination(1, 20)); // next 20 by name
+     *
+     * // A page beyond the stored data -> empty collection
+     * Collection<Person> none = executor.loadAll(Person.class, byName, new Pagination(9999, 20)); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param sortOrder the sort order specification for results
      * @param pagination pagination settings (page offset and size)
      * @return paginated collection of sorted nodes of the specified type, may be empty
-     * @throws IllegalArgumentException if targetClass is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, SortOrder, Pagination, int)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination
@@ -934,14 +1270,26 @@ public final class Neo4jExecutor {
      * This is the most comprehensive loadAll method for class-based loading, providing full control
      * over sorting, pagination, and relationship loading. Perfect for building complex, navigable
      * data views with complete relationship information.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * SortOrder byAgeDesc = new SortOrder(SortOrder.Direction.DESC, "age");
+     * Pagination page = new Pagination(0, 20);
+     * Collection<Person> oldest20WithRels = executor.loadAll(Person.class, byAgeDesc, page, 1); // 20 oldest, with relationships
+     * Collection<Person> oldest20Flat = executor.loadAll(Person.class, byAgeDesc, page, 0);     // 20 oldest, properties only
+     *
+     * // A page beyond the stored data -> empty collection
+     * Collection<Person> none =
+     *     executor.loadAll(Person.class, byAgeDesc, new Pagination(9999, 20), 1); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param sortOrder the sort order specification for results
      * @param pagination pagination settings (page offset and size)
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of sorted nodes with relationships, may be empty
-     * @throws IllegalArgumentException if targetClass is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, SortOrder, Pagination)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination
@@ -962,12 +1310,25 @@ public final class Neo4jExecutor {
      * This method retrieves nodes that satisfy the specified filter conditions.
      * Only node properties are loaded; relationships are not included.
      * This is the primary method for filtered node retrieval.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Filter nameIsJohn = new Filter("name", ComparisonOperator.EQUALS, "John");
+     * Collection<Person> johns = executor.loadAll(Person.class, nameIsJohn); // every Person named "John"
+     *
+     * Filter adult = new Filter("age", ComparisonOperator.GREATER_THAN, 18);
+     * Collection<Person> adults = executor.loadAll(Person.class, adult);
+     *
+     * // A filter that matches nothing -> empty collection
+     * Filter impossible = new Filter("name", ComparisonOperator.EQUALS, " no-such-name");
+     * Collection<Person> none = executor.loadAll(Person.class, impossible); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filter the filter criteria to apply when loading nodes
      * @return collection of nodes matching the filter criteria, may be empty
-     * @throws IllegalArgumentException if targetClass is null or filter is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filter, int)
      * @see org.neo4j.ogm.cypher.Filter
      */
@@ -987,13 +1348,24 @@ public final class Neo4jExecutor {
      * This method retrieves nodes that satisfy the filter conditions and loads their
      * relationships up to the specified depth. Combines filtering with relationship
      * loading for comprehensive data retrieval.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Filter adult = new Filter("age", ComparisonOperator.GREATER_THAN, 18);
+     * Collection<Person> withRels = executor.loadAll(Person.class, adult, 1); // matching Persons, with relationships
+     * Collection<Person> flat = executor.loadAll(Person.class, adult, 0);     // matching Persons, properties only
+     *
+     * // A filter that matches nothing -> empty collection
+     * Filter impossible = new Filter("name", ComparisonOperator.EQUALS, " no-such-name");
+     * Collection<Person> none = executor.loadAll(Person.class, impossible, 1); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filter the filter criteria to apply when loading nodes
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of filtered nodes with relationships, may be empty
-     * @throws IllegalArgumentException if targetClass is null or filter is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filter)
      * @see org.neo4j.ogm.cypher.Filter
      */
@@ -1013,13 +1385,27 @@ public final class Neo4jExecutor {
      * This method retrieves nodes that satisfy the filter conditions and sorts them
      * according to the specified order. Combines filtering with sorting for organized
      * data retrieval. Only node properties are loaded.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Filter adult = new Filter("age", ComparisonOperator.GREATER_THAN, 18);
+     * SortOrder byName = new SortOrder().add("name");
+     * Collection<Person> sorted = executor.loadAll(Person.class, adult, byName); // matching Persons, ordered by name
+     *
+     * SortOrder byAgeDesc = new SortOrder(SortOrder.Direction.DESC, "age");
+     * Collection<Person> oldestFirst = executor.loadAll(Person.class, adult, byAgeDesc);
+     *
+     * // A filter that matches nothing -> empty collection
+     * Filter impossible = new Filter("name", ComparisonOperator.EQUALS, " no-such-name");
+     * Collection<Person> none = executor.loadAll(Person.class, impossible, byName); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filter the filter criteria to apply when loading nodes
      * @param sortOrder the sort order specification for results
      * @return collection of filtered, sorted nodes, may be empty
-     * @throws IllegalArgumentException if targetClass, filter, or sortOrder is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filter, SortOrder, int)
      * @see org.neo4j.ogm.cypher.Filter
      * @see org.neo4j.ogm.cypher.query.SortOrder
@@ -1040,14 +1426,26 @@ public final class Neo4jExecutor {
      * This method retrieves nodes that satisfy the filter conditions, loads their relationships
      * to the specified depth, and sorts the results. Provides comprehensive filtered data
      * retrieval with complete relationship information.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Filter adult = new Filter("age", ComparisonOperator.GREATER_THAN, 18);
+     * SortOrder byName = new SortOrder().add("name");
+     * Collection<Person> sortedWithRels = executor.loadAll(Person.class, adult, byName, 1); // filtered, sorted, with relationships
+     * Collection<Person> sortedFlat = executor.loadAll(Person.class, adult, byName, 0);     // filtered, sorted, properties only
+     *
+     * // A filter that matches nothing -> empty collection
+     * Filter impossible = new Filter("name", ComparisonOperator.EQUALS, " no-such-name");
+     * Collection<Person> none = executor.loadAll(Person.class, impossible, byName, 1); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filter the filter criteria to apply when loading nodes
      * @param sortOrder the sort order specification for results
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of filtered, sorted nodes with relationships, may be empty
-     * @throws IllegalArgumentException if targetClass, filter, or sortOrder is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filter, SortOrder)
      * @see org.neo4j.ogm.cypher.Filter
      * @see org.neo4j.ogm.cypher.query.SortOrder
@@ -1068,13 +1466,25 @@ public final class Neo4jExecutor {
      * This method retrieves a specific page of nodes that satisfy the filter conditions.
      * Combines filtering with pagination for efficient handling of large filtered datasets.
      * Only node properties are loaded.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Filter adult = new Filter("age", ComparisonOperator.GREATER_THAN, 18);
+     * Pagination firstPage = new Pagination(0, 20);
+     * Collection<Person> page0 = executor.loadAll(Person.class, adult, firstPage); // up to 20 matching Persons
+     *
+     * Collection<Person> page1 = executor.loadAll(Person.class, adult, new Pagination(1, 20)); // next page
+     *
+     * // A page beyond the matches -> empty collection
+     * Collection<Person> none = executor.loadAll(Person.class, adult, new Pagination(9999, 20)); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filter the filter criteria to apply when loading nodes
      * @param pagination pagination settings (page offset and size)
      * @return paginated collection of filtered nodes, may be empty
-     * @throws IllegalArgumentException if targetClass, filter, or pagination is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filter, Pagination, int)
      * @see org.neo4j.ogm.cypher.Filter
      * @see org.neo4j.ogm.cypher.query.Pagination
@@ -1095,14 +1505,25 @@ public final class Neo4jExecutor {
      * This method retrieves a specific page of nodes that satisfy the filter conditions
      * and loads their relationships to the specified depth. Combines filtering, pagination,
      * and relationship loading for comprehensive data management.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Filter adult = new Filter("age", ComparisonOperator.GREATER_THAN, 18);
+     * Pagination page = new Pagination(0, 20);
+     * Collection<Person> withRels = executor.loadAll(Person.class, adult, page, 1); // up to 20 matches, with relationships
+     * Collection<Person> flat = executor.loadAll(Person.class, adult, page, 0);     // up to 20 matches, properties only
+     *
+     * // A page beyond the matches -> empty collection
+     * Collection<Person> none = executor.loadAll(Person.class, adult, new Pagination(9999, 20), 1); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filter the filter criteria to apply when loading nodes
      * @param pagination pagination settings (page offset and size)
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of filtered nodes with relationships, may be empty
-     * @throws IllegalArgumentException if targetClass, filter, or pagination is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filter, Pagination)
      * @see org.neo4j.ogm.cypher.Filter
      * @see org.neo4j.ogm.cypher.query.Pagination
@@ -1123,14 +1544,28 @@ public final class Neo4jExecutor {
      * This method retrieves a specific page of nodes that satisfy the filter conditions
      * and sorts them according to the specified order. Combines filtering, sorting,
      * and pagination for building organized, navigable data views.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Filter adult = new Filter("age", ComparisonOperator.GREATER_THAN, 18);
+     * SortOrder byName = new SortOrder().add("name");
+     * Pagination firstPage = new Pagination(0, 20);
+     * Collection<Person> page0 = executor.loadAll(Person.class, adult, byName, firstPage); // first 20 matches, by name
+     *
+     * Collection<Person> page1 = executor.loadAll(Person.class, adult, byName, new Pagination(1, 20));
+     *
+     * // A page beyond the matches -> empty collection
+     * Collection<Person> none =
+     *     executor.loadAll(Person.class, adult, byName, new Pagination(9999, 20)); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filter the filter criteria to apply when loading nodes
      * @param sortOrder the sort order specification for results
      * @param pagination pagination settings (page offset and size)
      * @return paginated collection of filtered, sorted nodes, may be empty
-     * @throws IllegalArgumentException if targetClass, filter, sortOrder, or pagination is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filter, SortOrder, Pagination, int)
      * @see org.neo4j.ogm.cypher.Filter
      * @see org.neo4j.ogm.cypher.query.SortOrder
@@ -1152,7 +1587,20 @@ public final class Neo4jExecutor {
      * This is the most comprehensive filtered loadAll method, providing full control over
      * filtering, sorting, pagination, and relationship loading. Perfect for building
      * complex, navigable, filtered data views with complete relationship information.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Filter adult = new Filter("age", ComparisonOperator.GREATER_THAN, 18);
+     * SortOrder byAgeDesc = new SortOrder(SortOrder.Direction.DESC, "age");
+     * Pagination page = new Pagination(0, 20);
+     * Collection<Person> withRels = executor.loadAll(Person.class, adult, byAgeDesc, page, 1); // filtered/sorted/paged, with relationships
+     * Collection<Person> flat = executor.loadAll(Person.class, adult, byAgeDesc, page, 0);     // filtered/sorted/paged, properties only
+     *
+     * // A page beyond the matches -> empty collection
+     * Collection<Person> none =
+     *     executor.loadAll(Person.class, adult, byAgeDesc, new Pagination(9999, 20), 1); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filter the filter criteria to apply when loading nodes
@@ -1160,7 +1608,7 @@ public final class Neo4jExecutor {
      * @param pagination pagination settings (page offset and size)
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of filtered, sorted nodes with relationships, may be empty
-     * @throws IllegalArgumentException if any required parameter is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filter, SortOrder, Pagination)
      * @see org.neo4j.ogm.cypher.Filter
      * @see org.neo4j.ogm.cypher.query.SortOrder
@@ -1182,12 +1630,27 @@ public final class Neo4jExecutor {
      * This method retrieves nodes that satisfy all the specified filter conditions.
      * The Filters object allows combining multiple filter criteria with logical operators.
      * Only node properties are loaded; relationships are not included.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Filters filters = new Filters()
+     *         .add(new Filter("status", ComparisonOperator.EQUALS, "active"))
+     *         .add(new Filter("age", ComparisonOperator.GREATER_THAN, 18));
+     * Collection<Person> activeAdults = executor.loadAll(Person.class, filters); // matches every supplied condition
+     *
+     * // An empty Filters object matches everything (equivalent to loadAll(Person.class))
+     * Collection<Person> everyone = executor.loadAll(Person.class, new Filters());
+     *
+     * // Filters that match nothing -> empty collection
+     * Filters impossible = new Filters().add(new Filter("name", ComparisonOperator.EQUALS, " none"));
+     * Collection<Person> none = executor.loadAll(Person.class, impossible); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes
      * @return collection of nodes matching all filter criteria, may be empty
-     * @throws IllegalArgumentException if targetClass is null or filters is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filters, int)
      * @see #loadAll(Class, Filter)
      * @see org.neo4j.ogm.cypher.Filters
@@ -1208,13 +1671,26 @@ public final class Neo4jExecutor {
      * This method retrieves nodes that satisfy all the filter conditions and loads their
      * relationships up to the specified depth. Combines complex filtering with relationship
      * loading for comprehensive data retrieval with multiple criteria.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Filters filters = new Filters()
+     *         .add(new Filter("status", ComparisonOperator.EQUALS, "active"))
+     *         .add(new Filter("age", ComparisonOperator.GREATER_THAN, 18));
+     * Collection<Person> withRels = executor.loadAll(Person.class, filters, 1); // matches, with immediate relationships
+     * Collection<Person> flat = executor.loadAll(Person.class, filters, 0);     // matches, properties only
+     *
+     * // Filters that match nothing -> empty collection
+     * Filters impossible = new Filters().add(new Filter("name", ComparisonOperator.EQUALS, " none"));
+     * Collection<Person> none = executor.loadAll(Person.class, impossible, 1); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of filtered nodes with relationships, may be empty
-     * @throws IllegalArgumentException if targetClass is null or filters is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filters)
      * @see org.neo4j.ogm.cypher.Filters
      */
@@ -1234,13 +1710,29 @@ public final class Neo4jExecutor {
      * This method retrieves nodes that satisfy all the filter conditions and sorts them
      * according to the specified order. Combines complex filtering with sorting for
      * organized data retrieval with multiple criteria. Only node properties are loaded.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Filters filters = new Filters()
+     *         .add(new Filter("status", ComparisonOperator.EQUALS, "active"))
+     *         .add(new Filter("age", ComparisonOperator.GREATER_THAN, 18));
+     * SortOrder byName = new SortOrder().add("name");
+     * Collection<Person> sorted = executor.loadAll(Person.class, filters, byName); // matches, ordered by name
+     *
+     * SortOrder byAgeDesc = new SortOrder(SortOrder.Direction.DESC, "age");
+     * Collection<Person> oldestFirst = executor.loadAll(Person.class, filters, byAgeDesc);
+     *
+     * // Filters that match nothing -> empty collection
+     * Filters impossible = new Filters().add(new Filter("name", ComparisonOperator.EQUALS, " none"));
+     * Collection<Person> none = executor.loadAll(Person.class, impossible, byName); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes
      * @param sortOrder the sort order specification for results
      * @return collection of filtered, sorted nodes, may be empty
-     * @throws IllegalArgumentException if targetClass, filters, or sortOrder is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filters, SortOrder, int)
      * @see org.neo4j.ogm.cypher.Filters
      * @see org.neo4j.ogm.cypher.query.SortOrder
@@ -1261,14 +1753,28 @@ public final class Neo4jExecutor {
      * This method retrieves nodes that satisfy all the filter conditions, loads their
      * relationships to the specified depth, and sorts the results. Provides comprehensive
      * filtered data retrieval with complete relationship information and multiple criteria.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Filters filters = new Filters()
+     *         .add(new Filter("status", ComparisonOperator.EQUALS, "active"))
+     *         .add(new Filter("age", ComparisonOperator.GREATER_THAN, 18));
+     * SortOrder byName = new SortOrder().add("name");
+     * Collection<Person> sortedWithRels = executor.loadAll(Person.class, filters, byName, 1); // filtered, sorted, with relationships
+     * Collection<Person> sortedFlat = executor.loadAll(Person.class, filters, byName, 0);     // filtered, sorted, properties only
+     *
+     * // Filters that match nothing -> empty collection
+     * Filters impossible = new Filters().add(new Filter("name", ComparisonOperator.EQUALS, " none"));
+     * Collection<Person> none = executor.loadAll(Person.class, impossible, byName, 1); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes
      * @param sortOrder the sort order specification for results
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of filtered, sorted nodes with relationships, may be empty
-     * @throws IllegalArgumentException if targetClass, filters, or sortOrder is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filters, SortOrder)
      * @see org.neo4j.ogm.cypher.Filters
      * @see org.neo4j.ogm.cypher.query.SortOrder
@@ -1289,13 +1795,26 @@ public final class Neo4jExecutor {
      * This method retrieves a specific page of nodes that satisfy all the filter conditions.
      * Combines complex filtering with pagination for efficient handling of large filtered
      * datasets with multiple criteria. Only node properties are loaded.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Filters filters = new Filters()
+     *         .add(new Filter("status", ComparisonOperator.EQUALS, "active"));
+     * Pagination firstPage = new Pagination(0, 20);
+     * Collection<Person> page0 = executor.loadAll(Person.class, filters, firstPage); // up to 20 matches
+     *
+     * Collection<Person> page1 = executor.loadAll(Person.class, filters, new Pagination(1, 20));
+     *
+     * // A page beyond the matches -> empty collection
+     * Collection<Person> none = executor.loadAll(Person.class, filters, new Pagination(9999, 20)); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes
      * @param pagination pagination settings (page offset and size)
      * @return paginated collection of filtered nodes, may be empty
-     * @throws IllegalArgumentException if targetClass, filters, or pagination is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filters, Pagination, int)
      * @see org.neo4j.ogm.cypher.Filters
      * @see org.neo4j.ogm.cypher.query.Pagination
@@ -1316,14 +1835,26 @@ public final class Neo4jExecutor {
      * This method retrieves a specific page of nodes that satisfy all the filter conditions
      * and loads their relationships to the specified depth. Combines complex filtering,
      * pagination, and relationship loading for comprehensive data management.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Filters filters = new Filters()
+     *         .add(new Filter("status", ComparisonOperator.EQUALS, "active"));
+     * Pagination page = new Pagination(0, 20);
+     * Collection<Person> withRels = executor.loadAll(Person.class, filters, page, 1); // up to 20 matches, with relationships
+     * Collection<Person> flat = executor.loadAll(Person.class, filters, page, 0);     // up to 20 matches, properties only
+     *
+     * // A page beyond the matches -> empty collection
+     * Collection<Person> none = executor.loadAll(Person.class, filters, new Pagination(9999, 20), 1); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes
      * @param pagination pagination settings (page offset and size)
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of filtered nodes with relationships, may be empty
-     * @throws IllegalArgumentException if targetClass, filters, or pagination is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filters, Pagination)
      * @see org.neo4j.ogm.cypher.Filters
      * @see org.neo4j.ogm.cypher.query.Pagination
@@ -1344,14 +1875,29 @@ public final class Neo4jExecutor {
      * This method retrieves a specific page of nodes that satisfy all the filter conditions
      * and sorts them according to the specified order. Combines complex filtering, sorting,
      * and pagination for building sophisticated, navigable data views with multiple criteria.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Filters filters = new Filters()
+     *         .add(new Filter("status", ComparisonOperator.EQUALS, "active"));
+     * SortOrder byName = new SortOrder().add("name");
+     * Pagination firstPage = new Pagination(0, 20);
+     * Collection<Person> page0 = executor.loadAll(Person.class, filters, byName, firstPage); // first 20 matches, by name
+     *
+     * Collection<Person> page1 = executor.loadAll(Person.class, filters, byName, new Pagination(1, 20));
+     *
+     * // A page beyond the matches -> empty collection
+     * Collection<Person> none =
+     *     executor.loadAll(Person.class, filters, byName, new Pagination(9999, 20)); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes
      * @param sortOrder the sort order specification for results
      * @param pagination pagination settings (page offset and size)
      * @return paginated collection of filtered, sorted nodes, may be empty
-     * @throws IllegalArgumentException if any required parameter is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filters, SortOrder, Pagination, int)
      * @see org.neo4j.ogm.cypher.Filters
      * @see org.neo4j.ogm.cypher.query.SortOrder
@@ -1373,7 +1919,22 @@ public final class Neo4jExecutor {
      * This is the most comprehensive filtered loadAll method using Filters, providing complete control
      * over complex filtering, sorting, pagination, and relationship loading. Perfect for building
      * sophisticated, navigable data views with multiple filter criteria and full relationship information.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Filters filters = new Filters()
+     *         .add(new Filter("status", ComparisonOperator.EQUALS, "active"))
+     *         .add(new Filter("age", ComparisonOperator.GREATER_THAN, 18));
+     * SortOrder byAgeDesc = new SortOrder(SortOrder.Direction.DESC, "age");
+     * Pagination page = new Pagination(0, 20);
+     * Collection<Person> withRels = executor.loadAll(Person.class, filters, byAgeDesc, page, 1); // filtered/sorted/paged, with relationships
+     * Collection<Person> flat = executor.loadAll(Person.class, filters, byAgeDesc, page, 0);     // filtered/sorted/paged, properties only
+     *
+     * // A page beyond the matches -> empty collection
+     * Collection<Person> none =
+     *     executor.loadAll(Person.class, filters, byAgeDesc, new Pagination(9999, 20), 1); // returns empty collection
+     * }</pre>
+     *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes
@@ -1381,7 +1942,7 @@ public final class Neo4jExecutor {
      * @param pagination pagination settings (page offset and size)
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of filtered, sorted nodes with relationships, may be empty
-     * @throws IllegalArgumentException if any required parameter is null
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filters, SortOrder, Pagination)
      * @see org.neo4j.ogm.cypher.Filters
      * @see org.neo4j.ogm.cypher.query.SortOrder
@@ -1411,13 +1972,13 @@ public final class Neo4jExecutor {
      * <pre>{@code
      * // Create and save a new node
      * Person person = new Person("John Doe", 30);
-     * executor.save(person);
+     * executor.save(person);   // post-state: node persisted; person.getId() is now populated
      * System.out.println("Saved with ID: " + person.getId());
      *
      * // Update an existing node together with its (potentially deep) relationships
      * Person existing = executor.load(Person.class, 123L, 1);
      * existing.setAge(31);
-     * executor.save(existing);
+     * executor.save(existing); // post-state: the matching node is updated in place
      * }</pre>
      *
      * @param <T> the entity type mapped by OGM
@@ -1482,12 +2043,12 @@ public final class Neo4jExecutor {
      * <pre>{@code
      * Person person = executor.load(Person.class, 123L);
      * if (person != null) {
-     *     executor.delete(person);
+     *     executor.delete(person);   // post-state: the node and its relationships are removed
      * }
      *
      * Collection<Person> inactive = executor.loadAll(Person.class,
      *     new Filter("status", ComparisonOperator.EQUALS, "inactive"));
-     * inactive.forEach(executor::delete);
+     * inactive.forEach(executor::delete);   // post-state: every inactive Person node is removed
      * }</pre>
      *
      * @param <T> the entity type mapped by OGM
@@ -1510,6 +2071,20 @@ public final class Neo4jExecutor {
      * <p>
      * Delegates to {@link Session#deleteAll(Class)}. <strong>WARNING:</strong> this is a destructive
      * bulk operation that cannot be undone; verify the target class before invoking it.
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * // Remove every Person node (and its relationships) from the graph
+     * executor.deleteAll(Person.class);
+     * assert executor.countEntitiesOfType(Person.class) == 0; // post-state: no Person nodes remain
+     *
+     * // Typical teardown after a test run
+     * executor.deleteAll(Company.class);
+     * executor.deleteAll(Person.class);
+     *
+     * // Re-running on an already-empty type is harmless (still no-op deletes)
+     * executor.deleteAll(Person.class); // nothing left to delete
+     * }</pre>
      *
      * @param <T> the entity type mapped by OGM
      * @param targetClass the OGM-mapped class whose nodes are to be deleted
@@ -1644,6 +2219,25 @@ public final class Neo4jExecutor {
      * <p>
      * The returned stream is lazy and borrows a pooled session for its lifetime; close the stream
      * (try-with-resources) to release the session back to the pool.
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * // Read-only query: eligible for read-replica routing in a cluster
+     * Map<String, Object> params = Map.of("minAge", 25);
+     * try (Stream<Map<String, Object>> rows =
+     *         executor.query("MATCH (p:Person) WHERE p.age > $minAge RETURN p.name AS name", params, true)) {
+     *     rows.forEach(row -> System.out.println(row.get("name")));
+     * }
+     *
+     * // Mutating query MUST pass readOnly = false
+     * try (Stream<Map<String, Object>> created =
+     *         executor.query("CREATE (p:Person {name: $name}) RETURN id(p) AS id",
+     *                 Map.of("name", "John"), false)) {
+     *     created.forEach(row -> System.out.println("new id: " + row.get("id")));
+     * }
+     *
+     * // Failing to close the stream leaks a pooled session - always use try-with-resources
+     * }</pre>
      *
      * @param cypher the Cypher query string with {@code $name} parameter placeholders
      * @param parameters named parameters bound by the OGM session
@@ -1821,8 +2415,8 @@ public final class Neo4jExecutor {
      * Long graphId = executor.resolveGraphIdFor(person); // 123
      *
      * Person newPerson = new Person("John Doe");
-     * executor.resolveGraphIdFor(newPerson); // null - not yet saved
-     * executor.save(newPerson);
+     * executor.resolveGraphIdFor(newPerson);                // null - not yet saved
+     * executor.save(newPerson);                             // post-state: newPerson now has a generated id
      * Long savedId = executor.resolveGraphIdFor(newPerson); // assigned by Neo4j
      * }</pre>
      *

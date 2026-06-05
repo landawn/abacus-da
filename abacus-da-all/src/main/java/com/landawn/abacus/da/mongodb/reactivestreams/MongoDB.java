@@ -133,7 +133,11 @@ public final class MongoDB extends MongoDBBase {
      * MongoClient reactiveClient = MongoClients.create("mongodb://localhost:27017");
      * com.mongodb.reactivestreams.client.MongoDatabase reactiveDb =
      *     reactiveClient.getDatabase("myapp");
-     * MongoDB reactiveMongoDB = new MongoDB(reactiveDb);
+     *
+     * MongoDB reactiveMongoDB = new MongoDB(reactiveDb);          // non-null wrapper; wraps reactiveDb with the framework codec registry
+     *
+     * // Edge case - null database is rejected eagerly:
+     * new MongoDB(null);                                         // throws IllegalArgumentException: 'mongoDB' cannot be null
      * }</pre>
      *
      * @param mongoDB the reactive MongoDB database instance to wrap
@@ -155,10 +159,14 @@ public final class MongoDB extends MongoDBBase {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoDB reactiveMongoDB = new MongoDB(reactiveDatabase);
-     * MongoDatabase db = reactiveMongoDB.db();
      *
-     * // Use reactive driver features directly:
-     * Publisher<String> collectionNames = db.listCollectionNames();
+     * MongoDatabase db = reactiveMongoDB.db();                   // returns the codec-configured reactive MongoDatabase (never null)
+     *
+     * // Use reactive driver features directly (results are Reactive Streams Publishers, not abacus Stream):
+     * Publisher<String> collectionNames = db.listCollectionNames();  // a cold Publisher; no I/O until subscribed
+     *
+     * // Repeated calls return the same wrapped instance:
+     * boolean same = (db == reactiveMongoDB.db());              // returns true
      * }</pre>
      *
      * @return the reactive MongoDB database instance
@@ -177,12 +185,17 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollection<Document> userCollection = reactiveMongoDB.collection("users");
-     * Publisher<Document> findPublisher = userCollection.find();
+     * MongoDB reactiveMongoDB = new MongoDB(reactiveDatabase);
      *
-     * // Process with reactive streams:
+     * MongoCollection<Document> userCollection = reactiveMongoDB.collection("users");  // returns a reactive MongoCollection<Document> (never null)
+     * Publisher<Document> findPublisher = userCollection.find();                       // a cold Publisher; no query runs until subscribed
+     *
+     * // Process with reactive streams (a Reactive Streams Publisher, not abacus Stream):
      * Flux.from(findPublisher)
      *     .subscribe(doc -> System.out.println(doc.toJson()));
+     *
+     * // The name need not pre-exist: MongoDB creates the collection lazily on first write.
+     * MongoCollection<Document> brandNew = reactiveMongoDB.collection("not_yet_created");  // returns a handle; no server round-trip here
      * }</pre>
      *
      * @param collectionName the name of the MongoDB collection to retrieve
@@ -203,14 +216,19 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollection<User> userCollection = reactiveMongoDB.collection("users", User.class);
-     * Publisher<User> userPublisher = userCollection.find();
+     * MongoDB reactiveMongoDB = new MongoDB(reactiveDatabase);
      *
-     * // Type-safe reactive processing:
+     * MongoCollection<User> userCollection = reactiveMongoDB.collection("users", User.class);  // returns a reactive MongoCollection<User> (never null)
+     * Publisher<User> userPublisher = userCollection.find();                                   // a cold Publisher; decoding uses the codec registry on subscription
+     *
+     * // Type-safe reactive processing (a Reactive Streams Publisher, not abacus Stream):
      * Flux.from(userPublisher)
      *     .filter(User::isActive)
      *     .map(User::getName)
      *     .subscribe(System.out::println);
+     *
+     * // Document.class is also valid and yields the same untyped view as collection(name):
+     * MongoCollection<Document> raw = reactiveMongoDB.collection("users", Document.class);     // returns a Document-typed reactive collection
      * }</pre>
      *
      * @param <T> the Java type for documents in this reactive collection
@@ -232,16 +250,24 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionExecutor executor = reactiveMongoDB.collectionExecutor("users");
+     * MongoDB reactiveMongoDB = new MongoDB(reactiveDatabase);
      *
-     * // Reactive operations return Flux/Mono:
-     * Flux<Document> findPublisher = executor.list(Filters.eq("status", "active"));
-     * Mono<InsertOneResult> insertPublisher = executor.insertOne(newUser);
+     * MongoCollectionExecutor executor = reactiveMongoDB.collectionExecutor("users");  // returns a new executor wrapping the "users" collection (never null)
+     *
+     * // Reactive operations return Reactive Streams Publishers (Flux/Mono), not abacus Stream:
+     * Flux<Document> findPublisher = executor.list(Filters.eq("status", "active"));    // cold Flux; query runs on subscription
+     * Mono<InsertOneResult> insertPublisher = executor.insertOne(newUser);             // cold Mono; insert runs on subscription
      *
      * // Chain reactive operations:
      * executor.list(Filters.eq("priority", "high"))
      *     .take(10)
      *     .subscribe(doc -> processHighPriorityItem(doc));
+     *
+     * // Each call returns a distinct executor instance (no pooling):
+     * boolean shared = (executor == reactiveMongoDB.collectionExecutor("users"));      // returns false
+     *
+     * // Edge case - null name is rejected eagerly:
+     * reactiveMongoDB.collectionExecutor((String) null);                               // throws IllegalArgumentException: 'collectionName' cannot be null
      * }</pre>
      *
      * @param collectionName the name of the MongoDB collection
@@ -274,14 +300,21 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * MongoDB reactiveMongoDB = new MongoDB(reactiveDatabase);
      * MongoCollection<Document> customCollection = reactiveDatabase
      *     .getCollection("users")
      *     .withReadPreference(ReadPreference.secondaryPreferred());
      *
-     * MongoCollectionExecutor executor = reactiveMongoDB.collectionExecutor(customCollection);
+     * MongoCollectionExecutor executor = reactiveMongoDB.collectionExecutor(customCollection);  // returns a new executor wrapping the supplied collection (never null)
      *
-     * // All operations will use the custom collection settings:
-     * Publisher<Long> countPublisher = executor.count();
+     * // The provided collection is wrapped as-is, so its custom settings are preserved:
+     * boolean same = (executor.coll() == customCollection);                                    // returns true
+     *
+     * // All operations will use the custom collection settings; results are Reactive Streams Publishers:
+     * Publisher<Long> countPublisher = executor.count();                                       // a cold Publisher; counts on subscription
+     *
+     * // Edge case - null collection is rejected eagerly:
+     * reactiveMongoDB.collectionExecutor((MongoCollection<Document>) null);                    // throws IllegalArgumentException: 'collection' cannot be null
      * }</pre>
      *
      * @param collection the reactive MongoDB collection instance to wrap
@@ -314,19 +347,27 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> userMapper = reactiveMongoDB.collectionMapper(User.class);
-     * // Uses "User" as collection name
+     * MongoDB reactiveMongoDB = new MongoDB(reactiveDatabase);
      *
-     * Flux<User> userFlux = userMapper.list(Filters.eq("active", true));
+     * MongoCollectionMapper<User> userMapper = reactiveMongoDB.collectionMapper(User.class);  // returns a mapper bound to the "User" collection (simple class name)
+     *
+     * // Reactive operations return a Reactive Streams Publisher (Flux/Mono), not abacus Stream:
+     * Flux<User> userFlux = userMapper.list(Filters.eq("active", true));                      // cold Flux; query runs on subscription
      * userFlux
      *     .doOnNext(user -> System.out.println("Active user: " + user.getName()))
      *     .subscribe();
+     *
+     * // The collection name is derived from the SIMPLE class name, not the fully-qualified name:
+     * MongoCollectionMapper<Order> orderMapper = reactiveMongoDB.collectionMapper(Order.class);  // uses "Order", not "com.example.Order"
+     *
+     * // Edge case - null rowType is rejected eagerly (the simple-name lookup dereferences it first):
+     * reactiveMongoDB.collectionMapper((Class<User>) null);                                  // throws NullPointerException
      * }</pre>
      *
      * @param <T> the entity type for reactive mapping
      * @param rowType the Class object representing the entity type
      * @return a reactive MongoCollectionMapper for the specified entity type
-     * @throws IllegalArgumentException if rowType is null
+     * @throws NullPointerException if rowType is null (the simple-name lookup dereferences it first)
      * @see org.reactivestreams.Publisher
      */
     public <T> MongoCollectionMapper<T> collectionMapper(final Class<T> rowType) {
@@ -342,16 +383,24 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> userMapper = reactiveMongoDB.collectionMapper("users", User.class);
+     * MongoDB reactiveMongoDB = new MongoDB(reactiveDatabase);
      *
-     * // Reactive type-safe operations:
-     * Flux<User> activeUsers = userMapper.list(Filters.eq("status", "active"));
-     * Mono<InsertOneResult> insertResult = userMapper.insertOne(newUser);
+     * MongoCollectionMapper<User> userMapper = reactiveMongoDB.collectionMapper("users", User.class);  // returns a mapper bound to the "users" collection (never null)
+     *
+     * // Reactive type-safe operations return Reactive Streams Publishers (Flux/Mono), not abacus Stream:
+     * Flux<User> activeUsers = userMapper.list(Filters.eq("status", "active"));            // cold Flux; query runs on subscription
+     * Mono<InsertOneResult> insertResult = userMapper.insertOne(newUser);                  // cold Mono; insert runs on subscription
      *
      * // Process with backpressure:
      * activeUsers
      *     .buffer(100)  // Process in batches
      *     .subscribe(batch -> processBatch(batch));
+     *
+     * // Edge case - null collection name is rejected eagerly:
+     * reactiveMongoDB.collectionMapper((String) null, User.class);                        // throws IllegalArgumentException: 'collectionName' cannot be null
+     *
+     * // Edge case - null rowType is rejected eagerly:
+     * reactiveMongoDB.collectionMapper("users", (Class<User>) null);                      // throws IllegalArgumentException: 'rowType' cannot be null
      * }</pre>
      *
      * @param <T> the entity type for reactive object-document mapping
@@ -388,15 +437,25 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * MongoDB reactiveMongoDB = new MongoDB(reactiveDatabase);
      * MongoCollection<Document> customCollection = reactiveDatabase
      *     .getCollection("users")
      *     .withWriteConcern(WriteConcern.MAJORITY)
      *     .withReadPreference(ReadPreference.primaryPreferred());
      *
-     * MongoCollectionMapper<User> mapper = reactiveMongoDB.collectionMapper(customCollection, User.class);
+     * MongoCollectionMapper<User> mapper = reactiveMongoDB.collectionMapper(customCollection, User.class);  // returns a mapper wrapping the supplied collection (never null)
      *
-     * // All operations use custom collection settings with reactive streams:
-     * Flux<User> users = mapper.list(Filters.eq("department", "Engineering"));
+     * // The provided collection is wrapped as-is, so its custom settings are preserved:
+     * boolean same = (mapper.collectionExecutor().coll() == customCollection);                            // returns true
+     *
+     * // All operations use custom collection settings; results are Reactive Streams Publishers, not abacus Stream:
+     * Flux<User> users = mapper.list(Filters.eq("department", "Engineering"));                            // cold Flux; query runs on subscription
+     *
+     * // Edge case - null collection is rejected eagerly:
+     * reactiveMongoDB.collectionMapper((MongoCollection<Document>) null, User.class);                    // throws IllegalArgumentException: 'collection' cannot be null
+     *
+     * // Edge case - null rowType is rejected eagerly:
+     * reactiveMongoDB.collectionMapper(customCollection, (Class<User>) null);                            // throws IllegalArgumentException: 'rowType' cannot be null
      * }</pre>
      *
      * @param <T> the entity type for reactive object-document mapping

@@ -132,10 +132,13 @@ public final class AsyncDynamoDBExecutor {
      * AsyncDynamoDBExecutor asyncExecutor = ...;
      *
      * // Switch to synchronous operations when needed
-     * DynamoDBExecutor syncExecutor = asyncExecutor.sync();
-     * Map<String, Object> item = syncExecutor.getItem("MyTable", key);
+     * DynamoDBExecutor syncExecutor = asyncExecutor.sync();            // returns the wrapped (non-null) executor instance
+     * Map<String, Object> item = syncExecutor.getItem("MyTable", key); // blocking call on the same client
+     *
+     * // The returned instance is the very one this wrapper delegates to:
+     * boolean same = (asyncExecutor.sync() == syncExecutor); // returns true (identity, never a copy)
      * }</pre>
-     * 
+     *
      * @return the underlying synchronous {@link DynamoDBExecutor} instance
      */
     public DynamoDBExecutor sync() {
@@ -152,12 +155,21 @@ public final class AsyncDynamoDBExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValue> key = Map.of("userId", new AttributeValue("12345"));
+     *
+     * // Typical: react to the item on a callback (non-blocking)
      * asyncExecutor.getItem("Users", key)
      *     .thenRunAsync(item -> {
      *         if (item != null) {
      *             System.out.println("User found: " + item.get("name"));
      *         }
-     *     });
+     *     }); // returns ContinuableFuture<Map<String, Object>>; callback receives the item map or null
+     *
+     * // Typical: block for the result
+     * Map<String, Object> item = asyncExecutor.getItem("Users", key).get(); // returns the attribute map, e.g. {userId=12345, name=...}
+     *
+     * // Edge: a key that matches no row completes with a null payload
+     * Map<String, AttributeValue> missing = Map.of("userId", new AttributeValue("does-not-exist"));
+     * Map<String, Object> none = asyncExecutor.getItem("Users", missing).get(); // returns null
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table to retrieve the item from, must not be {@code null}
@@ -188,17 +200,19 @@ public final class AsyncDynamoDBExecutor {
      * <pre>{@code
      * Map<String, AttributeValue> key = Map.of("accountId", new AttributeValue("ACC-789"));
      *
-     * // Use strong consistency for critical operations
+     * // Typical: strong consistency for critical operations
      * asyncExecutor.getItem("Accounts", key, true)
      *     .thenRunAsync(account -> {
      *         if (account != null) {
      *             System.out.println("Account balance: " + account.get("balance"));
      *         }
-     *     });
+     *     }); // returns ContinuableFuture<Map<String, Object>>; payload is the item map or null
      *
-     * // Use eventual consistency for non-critical reads
-     * asyncExecutor.getItem("Products", productKey, false)
-     *     .thenRunAsync(product -> System.out.println("Product: " + product.get("name")));
+     * // Typical: eventual consistency (Boolean.FALSE) for non-critical reads
+     * Map<String, Object> product = asyncExecutor.getItem("Products", productKey, false).get(); // returns the item map, or null if absent
+     *
+     * // Edge: a null consistentRead is treated as an eventually consistent read (same as false)
+     * Map<String, Object> acct = asyncExecutor.getItem("Accounts", key, (Boolean) null).get(); // returns the item map, or null if absent
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table to retrieve the item from, must not be {@code null}
@@ -240,6 +254,7 @@ public final class AsyncDynamoDBExecutor {
      *     .withConsistentRead(true)
      *     .withReturnConsumedCapacity(ReturnConsumedCapacity.TOTAL);
      *
+     * // Typical: callback that also handles failures via the (result, exception) form
      * asyncExecutor.getItem(request)
      *     .thenRunAsync((user, ex) -> {
      *         if (ex != null) {
@@ -249,7 +264,15 @@ public final class AsyncDynamoDBExecutor {
      *         } else {
      *             System.out.println("User not found");
      *         }
-     *     });
+     *     }); // returns ContinuableFuture<Map<String, Object>>; payload is the projected item map or null
+     *
+     * // Typical: block for the result
+     * Map<String, Object> user = asyncExecutor.getItem(request).get(); // returns the projected attribute map, or null if absent
+     *
+     * // Edge: a request whose key matches nothing completes with a null payload
+     * GetItemRequest miss = new GetItemRequest().withTableName("Users")
+     *     .withKey(Map.of("userId", new AttributeValue("nope")));
+     * Map<String, Object> none = asyncExecutor.getItem(miss).get(); // returns null
      * }</pre>
      *
      * @param getItemRequest the complete GetItemRequest with all parameters configured, must not be {@code null}
@@ -283,6 +306,7 @@ public final class AsyncDynamoDBExecutor {
      * <pre>{@code
      * Map<String, AttributeValue> key = Map.of("orderId", new AttributeValue("ORDER-123"));
      *
+     * // Typical: callback with type conversion to a POJO
      * asyncExecutor.getItem("Orders", key, Order.class)
      *     .thenRunAsync((order, ex) -> {
      *         if (ex != null) {
@@ -293,7 +317,14 @@ public final class AsyncDynamoDBExecutor {
      *         } else {
      *             System.out.println("Order not found");
      *         }
-     *     });
+     *     }); // returns ContinuableFuture<Order>; payload is the converted Order or null
+     *
+     * // Typical: block for the converted entity
+     * Order order = asyncExecutor.getItem("Orders", key, Order.class).get(); // returns an Order instance, or null if absent
+     *
+     * // Edge: a missing key completes with a null payload (no exception)
+     * Map<String, AttributeValue> miss = Map.of("orderId", new AttributeValue("nope"));
+     * Order none = asyncExecutor.getItem("Orders", miss, Order.class).get(); // returns null
      * }</pre>
      *
      * @param <T> the type to convert the item to
@@ -325,7 +356,7 @@ public final class AsyncDynamoDBExecutor {
      * <pre>{@code
      * Map<String, AttributeValue> key = Map.of("accountId", new AttributeValue("ACC-456"));
      *
-     * // Use strong consistency for financial data
+     * // Typical: strong consistency for financial data, converted to a POJO
      * executor.getItem("Accounts", key, true, Account.class)
      *     .thenRunAsync((account, ex) -> {
      *         if (ex != null) {
@@ -333,7 +364,14 @@ public final class AsyncDynamoDBExecutor {
      *         } else if (account != null) {
      *             System.out.println("Balance: $" + account.getBalance());
      *         }
-     *     });
+     *     }); // returns ContinuableFuture<Account>; payload is the converted Account or null
+     *
+     * // Typical: block for the converted entity using an eventually consistent read
+     * Account acct = executor.getItem("Accounts", key, false, Account.class).get(); // returns an Account instance, or null if absent
+     *
+     * // Edge: a null consistentRead means eventual consistency; a missing key yields null
+     * Map<String, AttributeValue> miss = Map.of("accountId", new AttributeValue("nope"));
+     * Account none = executor.getItem("Accounts", miss, (Boolean) null, Account.class).get(); // returns null
      * }</pre>
      *
      * @param <T> the type to convert the item to
@@ -375,6 +413,7 @@ public final class AsyncDynamoDBExecutor {
      *     .withConsistentRead(true)
      *     .withReturnConsumedCapacity(ReturnConsumedCapacity.TOTAL);
      *
+     * // Typical: callback that converts the projected item to a POJO
      * executor.getItem(request, ProductSummary.class)
      *     .thenRunAsync((product, ex) -> {
      *         if (ex != null) {
@@ -382,7 +421,15 @@ public final class AsyncDynamoDBExecutor {
      *         } else if (product != null && product.isInStock()) {
      *             processAvailableProduct(product);
      *         }
-     *     });
+     *     }); // returns ContinuableFuture<ProductSummary>; payload is the converted item or null
+     *
+     * // Typical: block for the converted entity
+     * ProductSummary product = executor.getItem(request, ProductSummary.class).get(); // returns a ProductSummary, or null if absent
+     *
+     * // Edge: a request whose key matches nothing completes with a null payload
+     * GetItemRequest miss = new GetItemRequest().withTableName("Products")
+     *     .withKey(Map.of("productId", new AttributeValue("nope")));
+     * ProductSummary none = executor.getItem(miss, ProductSummary.class).get(); // returns null
      * }</pre>
      *
      * @param <T> the type to convert the item to
@@ -414,11 +461,18 @@ public final class AsyncDynamoDBExecutor {
      *     "Products", keysAndAttrs
      * );
      *
+     * // Typical: callback over the per-table results
      * asyncExecutor.batchGetItem(requestItems)
      *     .thenRunAsync(results -> {
      *         List<Map<String, Object>> products = results.get("Products");
      *         products.forEach(System.out::println);
-     *     });
+     *     }); // returns ContinuableFuture<Map<String, List<Map<String, Object>>>>; keyed by table name
+     *
+     * // Typical: block for the result map
+     * Map<String, List<Map<String, Object>>> results = asyncExecutor.batchGetItem(requestItems).get(); // returns e.g. {Products=[{id=item1}, {id=item2}]}
+     *
+     * // Edge: keys that match no rows are simply omitted; a table with no hits maps to an empty list
+     * List<Map<String, Object>> products = results.get("Products"); // returns a (possibly empty) list, never null for a requested table
      * }</pre>
      *
      * @param requestItems a map where keys are table names and values are {@link KeysAndAttributes}
@@ -465,6 +519,7 @@ public final class AsyncDynamoDBExecutor {
      *
      * Map<String, KeysAndAttributes> requestItems = Map.of("Users", userKeys);
      *
+     * // Typical: callback over the per-table results
      * executor.batchGetItem(requestItems, "TOTAL")
      *     .thenRunAsync((results, ex) -> {
      *         if (ex != null) {
@@ -475,7 +530,13 @@ public final class AsyncDynamoDBExecutor {
      *         System.out.println("Retrieved " + users.size() + " users");
      *         // Note: this overload extracts only the per-table results. To inspect
      *         // ConsumedCapacity, use batchGetItem(BatchGetItemRequest) instead.
-     *     });
+     *     }); // returns ContinuableFuture<Map<String, List<Map<String, Object>>>> (capacity not exposed by this overload)
+     *
+     * // Typical: block for the result map ("NONE" disables capacity reporting on the wire)
+     * Map<String, List<Map<String, Object>>> results = executor.batchGetItem(requestItems, "NONE").get(); // returns e.g. {Users=[...]}
+     *
+     * // Edge: keys with no matching rows are omitted, so the per-table list may be empty
+     * boolean empty = results.getOrDefault("Users", List.of()).isEmpty(); // returns true when nothing matched
      * }</pre>
      *
      * @param requestItems a map of table names to KeysAndAttributes specifying the items to retrieve, must not be {@code null}
@@ -531,6 +592,7 @@ public final class AsyncDynamoDBExecutor {
      *     ))
      *     .withReturnConsumedCapacity(ReturnConsumedCapacity.TOTAL);
      *
+     * // Typical: callback over results from multiple tables
      * asyncExecutor.batchGetItem(request)
      *     .thenRunAsync((results, ex) -> {
      *         if (ex != null) {
@@ -540,7 +602,13 @@ public final class AsyncDynamoDBExecutor {
      *         List<Map<String, Object>> users = results.get("Users");
      *         List<Map<String, Object>> orders = results.get("Orders");
      *         System.out.println("Retrieved " + users.size() + " users and " + orders.size() + " orders");
-     *     });
+     *     }); // returns ContinuableFuture<Map<String, List<Map<String, Object>>>> keyed by table name
+     *
+     * // Typical: block for the result map
+     * Map<String, List<Map<String, Object>>> results = asyncExecutor.batchGetItem(request).get(); // returns e.g. {Users=[...], Orders=[...]}
+     *
+     * // Edge: a request whose keys all miss yields empty per-table lists
+     * boolean noUsers = results.getOrDefault("Users", List.of()).isEmpty(); // returns true when no Users matched
      * }</pre>
      *
      * @param batchGetItemRequest the complete BatchGetItemRequest with all parameters configured, must not be {@code null}
@@ -578,7 +646,8 @@ public final class AsyncDynamoDBExecutor {
      *     .withProjectionExpression("orderId, customerId, total, status");
      * 
      * Map<String, KeysAndAttributes> requestItems = Map.of("Orders", orderKeys);
-     * 
+     *
+     * // Typical: callback over per-table lists of converted POJOs
      * executor.batchGetItem(requestItems, Order.class)
      *     .thenRunAsync((results, ex) -> {
      *         if (ex != null) {
@@ -590,7 +659,13 @@ public final class AsyncDynamoDBExecutor {
      *             System.out.println("Order " + order.getOrderId() +
      *                              ": $" + order.getTotal());
      *         });
-     *     });
+     *     }); // returns ContinuableFuture<Map<String, List<Order>>> keyed by table name
+     *
+     * // Typical: block for the converted result map
+     * Map<String, List<Order>> results = executor.batchGetItem(requestItems, Order.class).get(); // returns e.g. {Orders=[Order@.., Order@..]}
+     *
+     * // Edge: a table whose keys all miss maps to an empty list
+     * boolean none = results.getOrDefault("Orders", List.of()).isEmpty(); // returns true when no orders matched
      * }</pre>
      *
      * @param <T> the type to convert retrieved items to
@@ -627,7 +702,8 @@ public final class AsyncDynamoDBExecutor {
      *     .withConsistentRead(false);   // Use eventually consistent for cost savings
      * 
      * Map<String, KeysAndAttributes> requestItems = Map.of("Products", productKeys);
-     * 
+     *
+     * // Typical: callback over converted POJOs while requesting capacity reporting
      * executor.batchGetItem(requestItems, "TOTAL", Product.class)
      *     .thenRunAsync((results, ex) -> {
      *         if (ex != null) {
@@ -637,7 +713,13 @@ public final class AsyncDynamoDBExecutor {
      *         List<Product> products = results.get("Products");
      *         logger.info("Retrieved {} products", products.size());
      *         products.forEach(this::processProduct);
-     *     });
+     *     }); // returns ContinuableFuture<Map<String, List<Product>>> (capacity not exposed by this overload)
+     *
+     * // Typical: block for the converted result map
+     * Map<String, List<Product>> results = executor.batchGetItem(requestItems, "NONE", Product.class).get(); // returns e.g. {Products=[Product@..]}
+     *
+     * // Edge: a table whose keys all miss maps to an empty list
+     * boolean none = results.getOrDefault("Products", List.of()).isEmpty(); // returns true when no products matched
      * }</pre>
      *
      * @param <T> the type to convert retrieved items to
@@ -667,11 +749,18 @@ public final class AsyncDynamoDBExecutor {
      *             .withProjectionExpression("userId, name, age")
      *     ));
      *
+     * // Typical: callback over per-table lists of converted POJOs
      * asyncExecutor.batchGetItem(request, User.class)
      *     .thenRunAsync(results -> {
      *         List<User> users = results.get("Users");
      *         users.forEach(user -> System.out.println(user.getName()));
-     *     });
+     *     }); // returns ContinuableFuture<Map<String, List<User>>> keyed by table name
+     *
+     * // Typical: block for the converted result map
+     * Map<String, List<User>> results = asyncExecutor.batchGetItem(request, User.class).get(); // returns e.g. {Users=[User@..]}
+     *
+     * // Edge: tables not in the request are absent from the map (not present as empty)
+     * boolean hasOrders = results.containsKey("Orders"); // returns false when "Orders" was not requested
      * }</pre>
      *
      * @param <T> the type to convert retrieved items to
@@ -698,9 +787,16 @@ public final class AsyncDynamoDBExecutor {
      * item.put("userId", new AttributeValue("12345"));
      * item.put("name", new AttributeValue("John Doe"));
      * item.put("age", new AttributeValue().withN("30"));
-     * 
+     *
+     * // Typical: fire-and-react callback
      * asyncExecutor.putItem("Users", item)
-     *     .thenRunAsync(result -> System.out.println("Item saved successfully"));
+     *     .thenRunAsync(result -> System.out.println("Item saved successfully")); // returns ContinuableFuture<PutItemResult>
+     *
+     * // Typical: block until the write completes
+     * PutItemResult result = asyncExecutor.putItem("Users", item).get(); // returns a non-null PutItemResult
+     *
+     * // Edge: without a returnValues setting, no previous attributes are reported
+     * Map<String, AttributeValue> old = result.getAttributes(); // returns null (use the returnValues overload for ALL_OLD)
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table to put the item into, must not be {@code null}
@@ -738,6 +834,7 @@ public final class AsyncDynamoDBExecutor {
      *     "version", new AttributeValue().withN("2")
      * );
      *
+     * // Typical: request the previous attributes via "ALL_OLD"
      * asyncExecutor.putItem("Users", newItem, "ALL_OLD")
      *     .thenRunAsync((result, ex) -> {
      *         if (ex != null) {
@@ -751,7 +848,13 @@ public final class AsyncDynamoDBExecutor {
      *         } else {
      *             System.out.println("Created new user");
      *         }
-     *     });
+     *     }); // returns ContinuableFuture<PutItemResult>; getAttributes() holds the prior item when it existed
+     *
+     * // Typical: block and inspect the prior attributes
+     * PutItemResult result = asyncExecutor.putItem("Users", newItem, "ALL_OLD").get(); // returns a non-null PutItemResult
+     *
+     * // Edge: with "NONE" the result carries no prior attributes
+     * Map<String, AttributeValue> old = asyncExecutor.putItem("Users", newItem, "NONE").get().getAttributes(); // returns null
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table to put the item into, must not be {@code null}
@@ -797,9 +900,10 @@ public final class AsyncDynamoDBExecutor {
      *     ))
      *     .withReturnValues(ReturnValue.ALL_OLD)
      *     .withReturnConsumedCapacity(ReturnConsumedCapacity.TOTAL);
-     * 
-     * ContinuableFuture<PutItemResult> future = executor.putItem(request);
-     * 
+     *
+     * ContinuableFuture<PutItemResult> future = executor.putItem(request); // returns immediately; work runs on the AsyncExecutor
+     *
+     * // Typical: handle success or a failed conditional check on a callback
      * future.thenRunAsync((result, ex) -> {
      *         if (ex != null) {
      *             if (ex.getCause() instanceof ConditionalCheckFailedException) {
@@ -811,9 +915,12 @@ public final class AsyncDynamoDBExecutor {
      *         if (result.getAttributes() != null) {
      *             System.out.println("Replaced existing item");
      *         }
-     *     });
+     *     }); // returns ContinuableFuture<Void>; runs after the put completes
+     *
+     * // Typical: block for the result
+     * PutItemResult result = future.get(); // returns a non-null PutItemResult (the request used ReturnValue.ALL_OLD)
      * }</pre>
-     * 
+     *
      * @param putItemRequest the complete PutItemRequest with all parameters configured. Must not be null.
      * @return a ContinuableFuture containing the PutItemResult with operation results
      * @throws IllegalArgumentException if putItemRequest is null
@@ -900,6 +1007,7 @@ public final class AsyncDynamoDBExecutor {
      *
      * Map<String, List<WriteRequest>> requestItems = Map.of("Users", writeRequests);
      *
+     * // Typical: callback that checks for unprocessed items
      * executor.batchWriteItem(requestItems)
      *     .thenRunAsync((result, ex) -> {
      *         if (ex != null) {
@@ -911,7 +1019,13 @@ public final class AsyncDynamoDBExecutor {
      *         } else {
      *             System.out.println("All items processed successfully");
      *         }
-     *     });
+     *     }); // returns ContinuableFuture<BatchWriteItemResult>
+     *
+     * // Typical: block for the result
+     * BatchWriteItemResult result = executor.batchWriteItem(requestItems).get(); // returns a non-null BatchWriteItemResult
+     *
+     * // Edge: when everything was processed, the unprocessed-items map is empty (or null)
+     * Map<String, List<WriteRequest>> unprocessed = result.getUnprocessedItems(); // returns an empty map (or null) on full success
      * }</pre>
      *
      * @param requestItems a map where keys are table names and values are lists of {@link WriteRequest} objects
@@ -965,8 +1079,9 @@ public final class AsyncDynamoDBExecutor {
      *     .withReturnConsumedCapacity(ReturnConsumedCapacity.TOTAL)
      *     .withReturnItemCollectionMetrics(ReturnItemCollectionMetrics.SIZE);
      *
-     * ContinuableFuture<BatchWriteItemResult> future = executor.batchWriteItem(request);
+     * ContinuableFuture<BatchWriteItemResult> future = executor.batchWriteItem(request); // returns immediately; work runs on the AsyncExecutor
      *
+     * // Typical: callback that sums capacity and retries unprocessed items
      * future.thenRunAsync((result, ex) -> {
      *         if (ex != null) {
      *             logger.error("Batch write failed", ex);
@@ -983,7 +1098,10 @@ public final class AsyncDynamoDBExecutor {
      *             System.out.println("Retrying " + unprocessed.size() + " unprocessed items");
      *             retryWithBackoff(unprocessed);
      *         }
-     *     });
+     *     }); // returns ContinuableFuture<Void>; runs after the batch write completes
+     *
+     * // Typical: block for the result
+     * BatchWriteItemResult result = future.get(); // returns a non-null BatchWriteItemResult
      * }</pre>
      *
      * @param batchWriteItemRequest the complete BatchWriteItemRequest with all parameters configured. Must not be null.
@@ -1016,9 +1134,16 @@ public final class AsyncDynamoDBExecutor {
      * updates.put("loginCount", new AttributeValueUpdate()
      *     .withAction(AttributeAction.ADD)
      *     .withValue(new AttributeValue().withN("1")));
-     * 
+     *
+     * // Typical: fire-and-react callback
      * asyncExecutor.updateItem("Users", key, updates)
-     *     .thenRunAsync(result -> System.out.println("User updated"));
+     *     .thenRunAsync(result -> System.out.println("User updated")); // returns ContinuableFuture<UpdateItemResult>
+     *
+     * // Typical: block until the update completes
+     * UpdateItemResult result = asyncExecutor.updateItem("Users", key, updates).get(); // returns a non-null UpdateItemResult
+     *
+     * // Edge: without a returnValues setting, no attributes are reported back
+     * Map<String, AttributeValue> changed = result.getAttributes(); // returns null (use the returnValues overload to fetch them)
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table containing the item to update, must not be {@code null}
@@ -1063,6 +1188,7 @@ public final class AsyncDynamoDBExecutor {
      *     .withAction(AttributeAction.ADD)
      *     .withValue(new AttributeValue().withN("-1")));  // Decrement by 1
      *
+     * // Typical: request the post-update state via "ALL_NEW"
      * asyncExecutor.updateItem("Products", key, updates, "ALL_NEW")
      *     .thenRunAsync((result, ex) -> {
      *         if (ex != null) {
@@ -1072,7 +1198,13 @@ public final class AsyncDynamoDBExecutor {
      *         Map<String, AttributeValue> updatedItem = result.getAttributes();
      *         System.out.println("New price: $" + updatedItem.get("price").getN());
      *         System.out.println("Remaining stock: " + updatedItem.get("stock").getN());
-     *     });
+     *     }); // returns ContinuableFuture<UpdateItemResult>; getAttributes() holds all post-update attributes
+     *
+     * // Typical: block and read the post-update attributes
+     * UpdateItemResult result = asyncExecutor.updateItem("Products", key, updates, "ALL_NEW").get(); // returns a non-null UpdateItemResult
+     *
+     * // Edge: with "NONE" the result carries no attributes
+     * Map<String, AttributeValue> attrs = asyncExecutor.updateItem("Products", key, updates, "NONE").get().getAttributes(); // returns null
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table containing the item to update, must not be {@code null}
@@ -1126,9 +1258,10 @@ public final class AsyncDynamoDBExecutor {
      *         "userId", new ExpectedAttributeValue(true)  // Only update if exists
      *     ))
      *     .withReturnValues(ReturnValue.UPDATED_NEW);
-     * 
-     * ContinuableFuture<UpdateItemResult> future = executor.updateItem(request);
-     * 
+     *
+     * ContinuableFuture<UpdateItemResult> future = executor.updateItem(request); // returns immediately; work runs on the AsyncExecutor
+     *
+     * // Typical: handle success or a failed conditional check on a callback
      * future.thenRunAsync((result, ex) -> {
      *         if (ex != null) {
      *             if (ex.getCause() instanceof ConditionalCheckFailedException) {
@@ -1138,9 +1271,12 @@ public final class AsyncDynamoDBExecutor {
      *         }
      *         Map<String, AttributeValue> updatedAttrs = result.getAttributes();
      *         System.out.println("Updated attributes: " + updatedAttrs);
-     *     });
+     *     }); // returns ContinuableFuture<Void>; getAttributes() holds the updated attributes (ReturnValue.UPDATED_NEW)
+     *
+     * // Typical: block for the result
+     * UpdateItemResult result = future.get(); // returns a non-null UpdateItemResult
      * }</pre>
-     * 
+     *
      * @param updateItemRequest the complete UpdateItemRequest with all parameters configured. Must not be null.
      * @return a ContinuableFuture containing the UpdateItemResult with operation results
      * @throws IllegalArgumentException if updateItemRequest is null
@@ -1163,7 +1299,8 @@ public final class AsyncDynamoDBExecutor {
      * Map<String, AttributeValue> key = Map.of(
      *     "userId", new AttributeValue("12345")
      * );
-     * 
+     *
+     * // Typical: fire-and-react callback
      * asyncExecutor.deleteItem("Users", key)
      *     .thenRunAsync((result, ex) -> {
      *         if (ex != null) {
@@ -1171,7 +1308,14 @@ public final class AsyncDynamoDBExecutor {
      *         } else {
      *             System.out.println("Item deleted");
      *         }
-     *     });
+     *     }); // returns ContinuableFuture<DeleteItemResult>
+     *
+     * // Typical: block until the delete completes
+     * DeleteItemResult result = asyncExecutor.deleteItem("Users", key).get(); // returns a non-null DeleteItemResult
+     *
+     * // Edge: deleting a key that does not exist still completes normally (no error)
+     * Map<String, AttributeValue> absent = Map.of("userId", new AttributeValue("does-not-exist"));
+     * DeleteItemResult none = asyncExecutor.deleteItem("Users", absent).get(); // returns a non-null DeleteItemResult; getAttributes() is null
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table to delete the item from, must not be {@code null}
@@ -1205,6 +1349,7 @@ public final class AsyncDynamoDBExecutor {
      *     "orderId", new AttributeValue("ORDER-789")
      * );
      *
+     * // Typical: request the deleted attributes via "ALL_OLD"
      * asyncExecutor.deleteItem("Orders", key, "ALL_OLD")
      *     .thenRunAsync((result, ex) -> {
      *         if (ex != null) {
@@ -1219,7 +1364,14 @@ public final class AsyncDynamoDBExecutor {
      *         } else {
      *             System.out.println("Order did not exist");
      *         }
-     *     });
+     *     }); // returns ContinuableFuture<DeleteItemResult>; getAttributes() holds the deleted item when it existed
+     *
+     * // Typical: block and inspect the deleted attributes
+     * DeleteItemResult result = asyncExecutor.deleteItem("Orders", key, "ALL_OLD").get(); // returns a non-null DeleteItemResult
+     *
+     * // Edge: deleting a missing key with "ALL_OLD" returns a result whose getAttributes() is null
+     * Map<String, AttributeValue> miss = Map.of("orderId", new AttributeValue("nope"));
+     * Map<String, AttributeValue> old = asyncExecutor.deleteItem("Orders", miss, "ALL_OLD").get().getAttributes(); // returns null
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table to delete the item from, must not be {@code null}
@@ -1262,9 +1414,10 @@ public final class AsyncDynamoDBExecutor {
      *     ))
      *     .withReturnValues(ReturnValue.ALL_OLD)
      *     .withReturnConsumedCapacity(ReturnConsumedCapacity.TOTAL);
-     * 
-     * ContinuableFuture<DeleteItemResult> future = executor.deleteItem(request);
-     * 
+     *
+     * ContinuableFuture<DeleteItemResult> future = executor.deleteItem(request); // returns immediately; work runs on the AsyncExecutor
+     *
+     * // Typical: handle success or a failed conditional check on a callback
      * future.thenRunAsync((result, ex) -> {
      *         if (ex != null) {
      *             if (ex.getCause() instanceof ConditionalCheckFailedException) {
@@ -1278,9 +1431,12 @@ public final class AsyncDynamoDBExecutor {
      *             System.out.println("User was already deleted");
      *         }
      *         System.out.println("Consumed capacity: " + result.getConsumedCapacity().getCapacityUnits());
-     *     });
+     *     }); // returns ContinuableFuture<Void>; getAttributes() holds the deleted item (ReturnValue.ALL_OLD)
+     *
+     * // Typical: block for the result
+     * DeleteItemResult result = future.get(); // returns a non-null DeleteItemResult
      * }</pre>
-     * 
+     *
      * @param deleteItemRequest the complete DeleteItemRequest with all parameters configured. Must not be null.
      * @return a ContinuableFuture containing the DeleteItemResult with operation results
      * @throws IllegalArgumentException if deleteItemRequest is null
@@ -1308,12 +1464,19 @@ public final class AsyncDynamoDBExecutor {
      *         ":custId", new AttributeValue("12345")
      *     ))
      *     .withScanIndexForward(false);   // Sort descending
-     * 
+     *
+     * // Typical: callback over all matching rows (pagination handled internally)
      * asyncExecutor.list(request)
      *     .thenRunAsync(orders -> {
      *         System.out.println("Found " + orders.size() + " orders");
      *         orders.forEach(order -> System.out.println(order.get("orderId")));
-     *     });
+     *     }); // returns ContinuableFuture<List<Map<String, Object>>>
+     *
+     * // Typical: block for the full list
+     * List<Map<String, Object>> orders = asyncExecutor.list(request).get(); // returns a list of attribute maps
+     *
+     * // Edge: a query that matches nothing yields an empty list (never null)
+     * List<Map<String, Object>> empty = asyncExecutor.list(noMatchRequest).get(); // returns an empty list
      * }</pre>
      *
      * @param queryRequest the {@link QueryRequest} specifying table name, key conditions,
@@ -1364,8 +1527,9 @@ public final class AsyncDynamoDBExecutor {
      *         ":status", new AttributeValue("SHIPPED")
      *     ));
      * 
-     * ContinuableFuture<List<Order>> future = executor.list(queryRequest, Order.class);
-     * 
+     * ContinuableFuture<List<Order>> future = executor.list(queryRequest, Order.class); // returns immediately; work runs on the AsyncExecutor
+     *
+     * // Typical: callback over the converted list
      * future.thenRunAsync((orders, ex) -> {
      *         if (ex != null) {
      *             logger.error("Query failed", ex);
@@ -1374,9 +1538,15 @@ public final class AsyncDynamoDBExecutor {
      *         System.out.println("Found " + orders.size() + " shipped orders");
      *         orders.forEach(order ->
      *             System.out.println("Order " + order.getOrderId() + ": $" + order.getTotal()));
-     *     });
+     *     }); // returns ContinuableFuture<Void>; runs after the query completes
+     *
+     * // Typical: block for the converted list
+     * List<Order> orders = future.get(); // returns a list of Order instances
+     *
+     * // Edge: a query that matches nothing yields an empty list (never null)
+     * List<Order> empty = executor.list(noMatchRequest, Order.class).get(); // returns an empty list
      * }</pre>
-     * 
+     *
      * @param <T> the type to convert each item to
      * @param queryRequest the QueryRequest with all parameters configured. Must not be null.
      * @param targetClass the class to convert each item to. Must not be null.
@@ -1406,14 +1576,21 @@ public final class AsyncDynamoDBExecutor {
      *         ":cat", new AttributeValue("Electronics")
      *     ));
      * 
+     * // Typical: callback over the resulting Dataset
      * asyncExecutor.query(request)
      *     .thenRunAsync(dataset -> {
      *         dataset.println();   // Print tabular view
-     *         double avgPrice = dataset.getColumn("price")
+     *         double avgPrice = dataset.<String>getColumn("price").stream()
      *             .mapToDouble(Double::parseDouble)
      *             .average().orElse(0);
      *         System.out.println("Average price: " + avgPrice);
-     *     });
+     *     }); // returns ContinuableFuture<Dataset>
+     *
+     * // Typical: block for the Dataset
+     * Dataset ds = asyncExecutor.query(request).get(); // returns a non-null Dataset (rows may be 0)
+     *
+     * // Edge: a query that matches nothing yields an empty (non-null) Dataset
+     * boolean empty = asyncExecutor.query(noMatchRequest).get().isEmpty(); // returns true
      * }</pre>
      *
      * @param queryRequest the {@link QueryRequest} specifying table name, key conditions,
@@ -1453,6 +1630,7 @@ public final class AsyncDynamoDBExecutor {
      *         ":date", new AttributeValue("2024-01-15")
      *     ));
      *
+     * // Typical: callback that analyzes the typed Dataset
      * asyncExecutor.query(request, Sale.class)
      *     .thenRunAsync((dataset, ex) -> {
      *         if (ex != null) {
@@ -1473,7 +1651,13 @@ public final class AsyncDynamoDBExecutor {
      *             .filter(sale -> sale.getAmount() > 1000)
      *             .count();
      *         System.out.println("High-value sales: " + highValueCount);
-     *     });
+     *     }); // returns ContinuableFuture<Dataset>
+     *
+     * // Typical: block for the Dataset
+     * Dataset ds = asyncExecutor.query(request, Sale.class).get(); // returns a non-null Dataset
+     *
+     * // Edge: a query that matches nothing yields an empty (non-null) Dataset
+     * boolean empty = asyncExecutor.query(noMatchRequest, Sale.class).get().isEmpty(); // returns true
      * }</pre>
      *
      * @param <T> the type to associate with the Dataset columns for type operations
@@ -1509,13 +1693,20 @@ public final class AsyncDynamoDBExecutor {
      *         ":ts", new AttributeValue().withN("1609459200")
      *     ));
      * 
+     * // Typical: callback that consumes the lazy stream
      * asyncExecutor.stream(request)
      *     .thenRunAsync(stream -> {
      *         long errorCount = stream
      *             .filter(log -> "ERROR".equals(log.get("level")))
      *             .count();
      *         System.out.println("Error logs: " + errorCount);
-     *     });
+     *     }); // returns ContinuableFuture<Stream<Map<String, Object>>>
+     *
+     * // Typical: block for the stream, then run a single terminal op (a stream is consumed once)
+     * long total = asyncExecutor.stream(request).get().count(); // returns the number of matching rows
+     *
+     * // Edge: a query that matches nothing yields an empty stream
+     * long none = asyncExecutor.stream(noMatchRequest).get().count(); // returns 0
      * }</pre>
      *
      * @param queryRequest the {@link QueryRequest} specifying table name, key conditions,
@@ -1560,6 +1751,7 @@ public final class AsyncDynamoDBExecutor {
      *     ))
      *     .withScanIndexForward(false);  // Most recent first
      *
+     * // Typical: callback that consumes the typed lazy stream
      * asyncExecutor.stream(request, Transaction.class)
      *     .thenRunAsync((stream, ex) -> {
      *         if (ex != null) {
@@ -1572,7 +1764,13 @@ public final class AsyncDynamoDBExecutor {
      *             .mapToDouble(Transaction::getAmount)
      *             .sum();
      *         System.out.println("Total completed: $" + total);
-     *     });
+     *     }); // returns ContinuableFuture<Stream<Transaction>>
+     *
+     * // Typical: block for the typed stream, then run one terminal op
+     * long count = asyncExecutor.stream(request, Transaction.class).get().count(); // returns the number of matching rows
+     *
+     * // Edge: a query that matches nothing yields an empty stream
+     * long none = asyncExecutor.stream(noMatchRequest, Transaction.class).get().count(); // returns 0
      * }</pre>
      *
      * @param <T> the type to convert each query result item to
@@ -1599,13 +1797,20 @@ public final class AsyncDynamoDBExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<String> attributes = Arrays.asList("userId", "name", "email");
-     * 
+     *
+     * // Typical: callback that iterates projected items
      * asyncExecutor.scan("Users", attributes)
      *     .thenRunAsync(stream -> {
      *         stream.forEach(user -> {
      *             System.out.println(user.get("name") + ": " + user.get("email"));
      *         });
-     *     });
+     *     }); // returns ContinuableFuture<Stream<Map<String, Object>>>
+     *
+     * // Typical: block for the stream, then run one terminal op
+     * long total = asyncExecutor.scan("Users", attributes).get().count(); // returns the number of rows scanned
+     *
+     * // Edge: passing null projects all attributes (rather than none)
+     * long all = asyncExecutor.scan("Users", (List<String>) null).get().count(); // returns the full row count
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table to scan, must not be {@code null}
@@ -1636,12 +1841,19 @@ public final class AsyncDynamoDBExecutor {
      * scanFilter.put("age", new Condition()
      *     .withComparisonOperator(ComparisonOperator.GT)
      *     .withAttributeValueList(new AttributeValue().withN("18")));
-     * 
+     *
+     * // Typical: callback over the filtered stream
      * asyncExecutor.scan("Users", scanFilter)
      *     .thenRunAsync(stream -> {
      *         long count = stream.count();
      *         System.out.println("Active adult users: " + count);
-     *     });
+     *     }); // returns ContinuableFuture<Stream<Map<String, Object>>>
+     *
+     * // Typical: block for the stream, then count the matches
+     * long count = asyncExecutor.scan("Users", scanFilter).get().count(); // returns the number of matching rows
+     *
+     * // Edge: a filter that matches nothing yields an empty stream
+     * long none = asyncExecutor.scan("Users", noMatchFilter).get().count(); // returns 0
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table to scan, must not be {@code null}
@@ -1684,6 +1896,7 @@ public final class AsyncDynamoDBExecutor {
      *     .withComparisonOperator(ComparisonOperator.LT)
      *     .withAttributeValueList(new AttributeValue().withN("100")));
      *
+     * // Typical: callback that takes the first 50 matches
      * asyncExecutor.scan("Products", attributes, filter)
      *     .thenRunAsync((stream, ex) -> {
      *         if (ex != null) {
@@ -1694,7 +1907,13 @@ public final class AsyncDynamoDBExecutor {
      *             .limit(50)  // Process first 50 matches
      *             .toList();
      *         System.out.println("Found " + products.size() + " affordable electronics");
-     *     });
+     *     }); // returns ContinuableFuture<Stream<Map<String, Object>>>
+     *
+     * // Typical: block for the stream, then count the matches
+     * long count = asyncExecutor.scan("Products", attributes, filter).get().count(); // returns the number of matching rows
+     *
+     * // Edge: a filter that matches nothing yields an empty stream
+     * long none = asyncExecutor.scan("Products", attributes, noMatchFilter).get().count(); // returns 0
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table to scan, must not be {@code null}
@@ -1751,20 +1970,24 @@ public final class AsyncDynamoDBExecutor {
      *     .withProjectionExpression("userId, name, email, age")
      *     .withReturnConsumedCapacity(ReturnConsumedCapacity.TOTAL);
      *
+     * // Typical: callback over the filtered scan
      * asyncExecutor.scan(request)
      *     .thenRunAsync(stream -> {
      *         long count = stream.count();
      *         System.out.println("Active adult users: " + count);
-     *     });
+     *     }); // returns ContinuableFuture<Stream<Map<String, Object>>>
+     *
+     * // Typical: block for the stream, then count
+     * long count = asyncExecutor.scan(request).get().count(); // returns the number of matching rows
      *
      * // Parallel scan example (segment 1 of 4)
      * ScanRequest parallelRequest = new ScanRequest()
      *     .withTableName("LargeTable")
-     *     .withSegment(0)       // This segment number (0-based)
+     *     .withSegment(0)        // This segment number (0-based)
      *     .withTotalSegments(4); // Total number of segments
      *
      * asyncExecutor.scan(parallelRequest)
-     *     .thenRunAsync(stream -> processSegment(stream));
+     *     .thenRunAsync(stream -> processSegment(stream)); // returns ContinuableFuture<Stream<Map<String, Object>>> for segment 0
      * }</pre>
      *
      * @param scanRequest the complete ScanRequest with all parameters configured, must not be {@code null}
@@ -1788,13 +2011,20 @@ public final class AsyncDynamoDBExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<String> attributes = Arrays.asList("userId", "name", "email");
-     * 
+     *
+     * // Typical: callback that iterates converted POJOs
      * asyncExecutor.scan("Users", attributes, User.class)
      *     .thenRunAsync(stream -> {
      *         stream.forEach(user -> {
      *             System.out.println(user.getName() + ": " + user.getEmail());
      *         });
-     *     });
+     *     }); // returns ContinuableFuture<Stream<User>>
+     *
+     * // Typical: block for the typed stream, then count
+     * long total = asyncExecutor.scan("Users", attributes, User.class).get().count(); // returns the number of rows scanned
+     *
+     * // Edge: passing null projects all attributes (rather than none)
+     * long all = asyncExecutor.scan("Users", (List<String>) null, User.class).get().count(); // returns the full row count
      * }</pre>
      *
      * @param <T> the type to convert the scan results to
@@ -1821,12 +2051,19 @@ public final class AsyncDynamoDBExecutor {
      * filter.put("status", new Condition()
      *     .withComparisonOperator(ComparisonOperator.EQ)
      *     .withAttributeValueList(new AttributeValue("active")));
-     * 
+     *
+     * // Typical: callback over the filtered, converted stream
      * asyncExecutor.scan("Users", filter, User.class)
      *     .thenRunAsync(stream -> {
      *         long count = stream.count();
      *         System.out.println("Active users: " + count);
-     *     });
+     *     }); // returns ContinuableFuture<Stream<User>>
+     *
+     * // Typical: block for the typed stream, then count
+     * long count = asyncExecutor.scan("Users", filter, User.class).get().count(); // returns the number of matching rows
+     *
+     * // Edge: a filter that matches nothing yields an empty stream
+     * long none = asyncExecutor.scan("Users", noMatchFilter, User.class).get().count(); // returns 0
      * }</pre>
      *
      * @param <T> the type to convert the scan results to
@@ -1856,10 +2093,17 @@ public final class AsyncDynamoDBExecutor {
      *     .withComparisonOperator(ComparisonOperator.EQ)
      *     .withAttributeValueList(new AttributeValue("Electronics")));
      *
+     * // Typical: callback that iterates projected, filtered, converted POJOs
      * asyncExecutor.scan("Products", attributes, filter, Product.class)
      *     .thenRunAsync(stream -> {
      *         stream.forEach(p -> System.out.println(p.getName() + ": $" + p.getPrice()));
-     *     });
+     *     }); // returns ContinuableFuture<Stream<Product>>
+     *
+     * // Typical: block for the typed stream, then count
+     * long count = asyncExecutor.scan("Products", attributes, filter, Product.class).get().count(); // returns the number of matching rows
+     *
+     * // Edge: a filter that matches nothing yields an empty stream
+     * long none = asyncExecutor.scan("Products", attributes, noMatchFilter, Product.class).get().count(); // returns 0
      * }</pre>
      *
      * @param <T> the type to convert the scan results to
@@ -1886,11 +2130,19 @@ public final class AsyncDynamoDBExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ScanRequest request = new ScanRequest().withTableName("Users");
-     * 
+     *
+     * // Typical: callback that iterates converted POJOs
      * asyncExecutor.scan(request, User.class)
      *     .thenRunAsync(stream -> {
      *         stream.forEach(user -> System.out.println(user.getName()));
-     *     });
+     *     }); // returns ContinuableFuture<Stream<User>>
+     *
+     * // Typical: block for the typed stream, then count
+     * long total = asyncExecutor.scan(request, User.class).get().count(); // returns the number of rows scanned
+     *
+     * // Edge: scanning an empty table yields an empty stream
+     * ScanRequest empty = new ScanRequest().withTableName("EmptyTable");
+     * long none = asyncExecutor.scan(empty, User.class).get().count(); // returns 0
      * }</pre>
      *
      * @param <T> the type to convert the scan results to

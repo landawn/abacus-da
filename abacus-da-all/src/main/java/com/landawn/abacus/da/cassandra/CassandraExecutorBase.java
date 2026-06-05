@@ -240,15 +240,22 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <pre>{@code
      * // Legacy approach (deprecated)
      * CassandraExecutorBase.registerKeys(User.class, Arrays.asList("userId", "tenantId"));
-     * 
+     * // post-state: getKeyNames(User.class) now returns ["userId", "tenantId"]
+     *
+     * CassandraExecutorBase.registerKeys(User.class, Arrays.asList("userId"));
+     * // post-state: a single-column key; getKeyNames(User.class) returns ["userId"]
+     *
+     * CassandraExecutorBase.registerKeys(User.class, null);              // throws IllegalArgumentException
+     * CassandraExecutorBase.registerKeys(User.class, new ArrayList<>()); // throws IllegalArgumentException (empty)
+     *
      * // Preferred approach
      * public class User {
      *     @Id
      *     private String userId;
-     *     
+     *
      *     @Id  // Composite key
      *     private String tenantId;
-     *     
+     *
      *     // other fields...
      * }
      * }</pre>
@@ -505,9 +512,15 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Optional<User> user = executor.get(User.class, "user123");
+     * // single-key entity
+     * Optional<User> user = executor.get(User.class, "user123"); // returns present Optional<User> when one row matches
      * user.ifPresent(u -> System.out.println("Found: " + u.getName()));
-     * }</pre>
+     *
+     * Optional<User> missing = executor.get(User.class, "nope");  // returns Optional.empty() when no row matches
+     *
+     * executor.get(User.class);              // throws IllegalArgumentException (ids is empty)
+     * executor.get(User.class, "a", "b");    // throws IllegalArgumentException (id count != single key column)
+     * }</pre> // throws DuplicateResultException if more than one row matches
      *
      * @param <T> the entity type
      * @param targetClass the entity class
@@ -530,8 +543,14 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Optional<User> user = executor.get(User.class,
-     *     Arrays.asList("name", "email"), "user123");
-     * }</pre>
+     *     Arrays.asList("name", "email"), "user123"); // returns present Optional with only name/email populated
+     *
+     * Optional<User> all = executor.get(User.class,
+     *     (Collection<String>) null, "user123");      // returns present Optional with all properties populated
+     *
+     * executor.get(User.class, Arrays.asList("name"));            // throws IllegalArgumentException (ids is empty)
+     * executor.get(User.class, Arrays.asList("name"), "a", "b");  // throws IllegalArgumentException (id count mismatch)
+     * }</pre> // throws DuplicateResultException if more than one row matches
      *
      * @param <T> the entity type
      * @param targetClass the entity class
@@ -555,9 +574,12 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Condition cond = Filters.eq("email", "user@example.com");
-     * Optional<User> user = executor.get(User.class, cond);
-     * }</pre>
-     * 
+     * Optional<User> user = executor.get(User.class, cond);            // returns present Optional when a row matches
+     *
+     * Optional<User> none = executor.get(User.class,
+     *     Filters.eq("email", "missing@example.com"));                 // returns Optional.empty() when no row matches
+     * }</pre> // throws DuplicateResultException if more than one row matches
+     *
      * @param <T> the entity type
      * @param targetClass the entity class
      * @param whereClause the WHERE condition
@@ -578,10 +600,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Condition cond = Filters.and(Filters.eq("status", "active"), Filters.gte("age", 18));
-     * Optional<User> user = executor.get(User.class, 
-     *     Arrays.asList("name", "email"), cond);
-     * }</pre>
-     * 
+     * Optional<User> user = executor.get(User.class,
+     *     Arrays.asList("name", "email"), cond);                       // returns present Optional (name/email only) when a row matches
+     *
+     * Optional<User> none = executor.get(User.class,
+     *     Arrays.asList("name", "email"), Filters.eq("status", "x"));  // returns Optional.empty() when no row matches
+     * }</pre> // throws DuplicateResultException if more than one row matches
+     *
      * @param <T> the entity type
      * @param targetClass the entity class
      * @param selectPropNames the property names to select (null for all properties)
@@ -603,11 +628,14 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * User user = executor.gett(User.class, "user123");
+     * User user = executor.gett(User.class, "user123"); // returns the mapped User, or null when no row matches
      * if (user != null) {
      *     System.out.println("Found: " + user.getName());
      * }
-     * }</pre>
+     *
+     * executor.gett(User.class);            // throws IllegalArgumentException (ids is empty)
+     * executor.gett(User.class, "a", "b");  // throws IllegalArgumentException (id count != single key column)
+     * }</pre> // throws DuplicateResultException if more than one row matches
      *
      * @param <T> the entity type
      * @param targetClass the entity class
@@ -627,6 +655,18 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * based on the provided primary key values. It mirrors {@link #get(Class, Collection, Object...)}
      * but returns the mapped entity directly or {@code null} instead of {@link Optional}.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * User user = executor.gett(User.class,
+     *     Arrays.asList("name", "email"), "user123"); // returns User with only name/email set, or null when no row matches
+     *
+     * User all = executor.gett(User.class,
+     *     (Collection<String>) null, "user123");       // returns User with all properties, or null when no row matches
+     *
+     * executor.gett(User.class, Arrays.asList("name"));           // throws IllegalArgumentException (ids is empty)
+     * executor.gett(User.class, Arrays.asList("name"), "a", "b"); // throws IllegalArgumentException (id count mismatch)
+     * }</pre> // throws DuplicateResultException if more than one row matches
+     *
      * @param <T> the entity type
      * @param targetClass the entity class
      * @param selectPropNames the property names to select (null for all properties)
@@ -644,7 +684,16 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * 
      * <p>This method performs a SELECT query using the provided condition
      * and returns the entity directly or {@code null} instead of {@link Optional}.</p>
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * User user = executor.gett(User.class,
+     *     Filters.eq("email", "user@example.com")); // returns the mapped User, or null when no row matches
+     *
+     * User none = executor.gett(User.class,
+     *     Filters.eq("email", "missing@example.com")); // returns null when no row matches
+     * }</pre> // throws DuplicateResultException if more than one row matches
+     *
      * @param <T> the entity type
      * @param targetClass the entity class
      * @param whereClause the WHERE condition
@@ -659,8 +708,19 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * Retrieves specific properties of an entity based on a custom WHERE condition through the nullable {@code gett} variant.
      * 
      * <p>This abstract method must be implemented by concrete subclasses to perform
-     * the actual database query and entity mapping.</p>
-     * 
+     * the actual database query and entity mapping. It is the terminal {@code gett} overload all
+     * other {@code gett}/{@code get} façades delegate to.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * User user = executor.gett(User.class,
+     *     Arrays.asList("name", "email"),
+     *     Filters.eq("user_id", "user123")); // returns User with name/email populated, or null when no row matches
+     *
+     * User all = executor.gett(User.class, null,
+     *     Filters.eq("user_id", "user123"));  // returns User with all properties, or null when no row matches
+     * }</pre> // throws DuplicateResultException if more than one row matches
+     *
      * @param <T> the entity type
      * @param targetClass the entity class
      * @param selectPropNames the property names to select (null for all properties)
@@ -685,7 +745,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * user.setName("John Doe");
      * user.setEmail("john@example.com");
      *
-     * ResultSet result = executor.insert(user);
+     * ResultSet result = executor.insert(user); // returns the driver ResultSet for the INSERT
+     *
+     * executor.insert((Object) null);           // throws NullPointerException (entity.getClass() on null)
      * }</pre>
      *
      * @param entity the entity to insert
@@ -712,7 +774,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * props.put("name", "John Doe");
      * props.put("email", "john@example.com");
      *
-     * ResultSet result = executor.insert(User.class, props);
+     * ResultSet result = executor.insert(User.class, props); // returns the driver ResultSet for the INSERT
+     *
+     * executor.insert(User.class, new HashMap<>());          // throws IllegalArgumentException (props is empty)
      * }</pre>
      *
      * @param targetClass the entity class
@@ -731,18 +795,22 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p>This method creates a batch INSERT statement for all provided entities
      * and executes them together for better performance. All entities must be
-     * of the same type.</p>
+     * of the same type. The base does <i>not</i> validate {@code entities} itself; it delegates
+     * straight to the subclass's batch-statement builder, so an empty collection simply yields an
+     * empty batch and a {@code null} collection surfaces as the driver builder's own error.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<User> users = Arrays.asList(user1, user2, user3);
-     * ResultSet result = executor.batchInsert(users, BatchType.LOGGED);
+     * ResultSet result = executor.batchInsert(users, BatchType.LOGGED); // returns the driver ResultSet for the batch
+     *
+     * // No base-level empty-check: an empty list produces an empty batch (subclass-dependent).
+     * ResultSet empty = executor.batchInsert(new ArrayList<>(), BatchType.LOGGED); // returns the (empty) batch ResultSet
      * }</pre>
      *
      * @param entities the collection of entities to insert
      * @param type the batch type
      * @return the result set from the batch INSERT operation
-     * @throws IllegalArgumentException if entities is null or empty
      */
     public RS batchInsert(final Collection<?> entities, final BT type) {
         final ST stmt = prepareBatchInsertStatement(entities, type);
@@ -754,7 +822,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * Performs a batch insert of multiple records using property maps.
      *
      * <p>This method creates a batch INSERT statement for all provided property maps
-     * and executes them together for better performance.</p>
+     * and executes them together for better performance. As with {@link #batchInsert(Collection, Object)},
+     * the base performs no validation of {@code propsList}; it delegates directly to the subclass's
+     * batch-statement builder.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -762,14 +832,16 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * propsList.add(Map.of("userId", "user1", "name", "Alice"));
      * propsList.add(Map.of("userId", "user2", "name", "Bob"));
      *
-     * ResultSet result = executor.batchInsert(User.class, propsList, BatchType.LOGGED);
+     * ResultSet result = executor.batchInsert(User.class, propsList, BatchType.LOGGED); // returns the driver ResultSet for the batch
+     *
+     * // No base-level empty-check: an empty list produces an empty batch (subclass-dependent).
+     * ResultSet empty = executor.batchInsert(User.class, new ArrayList<>(), BatchType.LOGGED); // returns the (empty) batch ResultSet
      * }</pre>
      *
      * @param targetClass the entity class
      * @param propsList the collection of property maps to insert
      * @param type the batch type
      * @return the result set from the batch INSERT operation
-     * @throws IllegalArgumentException if targetClass is null or propsList is null or empty
      */
     public RS batchInsert(final Class<?> targetClass, final Collection<? extends Map<String, Object>> propsList, final BT type) {
         final ST stmt = prepareBatchInsertStatement(targetClass, propsList, type);
@@ -790,7 +862,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * user.setEmail("newemail@example.com");
      * user.setLastModified(new Date());
      *
-     * ResultSet result = executor.update(user);
+     * ResultSet result = executor.update(user); // returns the driver ResultSet for the UPDATE (all non-key props)
+     *
+     * executor.update((Object) null);           // throws NullPointerException (entity.getClass() on null)
      * }</pre>
      *
      * @param entity the entity to update
@@ -818,11 +892,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * user.setUserId("user123");
      * user.setEmail("newemail@example.com");
      * user.setLastModified(new Date());
-     * 
-     * ResultSet result = executor.update(user, 
-     *     Arrays.asList("email", "lastModified"));
+     *
+     * ResultSet result = executor.update(user,
+     *     Arrays.asList("email", "lastModified")); // returns the driver ResultSet (only email/lastModified updated)
+     *
+     * executor.update(user, new ArrayList<>());    // throws IllegalArgumentException (propNamesToUpdate is empty)
      * }</pre>
-     * 
+     *
      * @param entity the entity containing the values to update
      * @param propNamesToUpdate the property names to update
      * @return the result set from the UPDATE operation
@@ -850,7 +926,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * props.put("lastModified", new Date());
      *
      * Condition where = Filters.lt("lastLogin", thirtyDaysAgo);
-     * ResultSet result = executor.update(User.class, props, where);
+     * ResultSet result = executor.update(User.class, props, where); // returns the driver ResultSet for the UPDATE
+     *
+     * executor.update(User.class, new HashMap<>(), where);          // throws IllegalArgumentException (props is empty)
      * }</pre>
      *
      * @param targetClass the entity class
@@ -876,9 +954,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * String query = "UPDATE users SET status = ? WHERE last_login < ?";
-     * ResultSet result = executor.update(query, "inactive", thirtyDaysAgo);
+     * ResultSet result = executor.update(query, "inactive", thirtyDaysAgo); // returns the driver ResultSet for the UPDATE
      * }</pre>
-     * 
+     *
      * @param query the UPDATE query to execute
      * @param parameters the query parameters
      * @return the result set from the UPDATE operation
@@ -897,9 +975,11 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<User> users = Arrays.asList(user1, user2, user3);
-     * ResultSet result = executor.batchUpdate(users, BatchType.LOGGED);
+     * ResultSet result = executor.batchUpdate(users, BatchType.LOGGED); // returns the driver ResultSet for the batch
+     *
+     * executor.batchUpdate(new ArrayList<>(), BatchType.LOGGED);        // throws IllegalArgumentException (entities is empty)
      * }</pre>
-     * 
+     *
      * @param entities the collection of entities to update
      * @param type the batch type
      * @return the result set from the batch UPDATE operation
@@ -926,10 +1006,14 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<User> users = Arrays.asList(user1, user2, user3);
-     * ResultSet result = executor.batchUpdate(users, 
-     *     Arrays.asList("status", "lastModified"), BatchType.LOGGED);
+     * ResultSet result = executor.batchUpdate(users,
+     *     Arrays.asList("status", "lastModified"), BatchType.LOGGED); // returns the driver ResultSet for the batch
+     *
+     * executor.batchUpdate(new ArrayList<>(),
+     *     Arrays.asList("status"), BatchType.LOGGED);                   // throws IllegalArgumentException (entities is empty)
+     * executor.batchUpdate(users, new ArrayList<>(), BatchType.LOGGED); // throws IllegalArgumentException (propNamesToUpdate is empty)
      * }</pre>
-     * 
+     *
      * @param entities the collection of entities to update
      * @param propNamesToUpdate the property names to update
      * @param type the batch type
@@ -950,7 +1034,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p>This method creates a batch UPDATE statement for all provided property maps
      * and executes them together for better performance. Each map must contain the
-     * key fields to identify the record and the fields to update.</p>
+     * key fields to identify the record and the fields to update. Like the other
+     * {@code (Class, propsList, BT)} batch overloads, the base performs no validation of
+     * {@code propsList}; it delegates directly to the subclass's batch-statement builder.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -958,14 +1044,16 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * propsList.add(Map.of("userId", "user1", "status", "active"));
      * propsList.add(Map.of("userId", "user2", "status", "inactive"));
      *
-     * ResultSet result = executor.batchUpdate(User.class, propsList, BatchType.LOGGED);
+     * ResultSet result = executor.batchUpdate(User.class, propsList, BatchType.LOGGED); // returns the driver ResultSet for the batch
+     *
+     * // No base-level empty-check: an empty list produces an empty batch (subclass-dependent).
+     * ResultSet empty = executor.batchUpdate(User.class, new ArrayList<>(), BatchType.LOGGED); // returns the (empty) batch ResultSet
      * }</pre>
      *
      * @param targetClass the entity class
      * @param propsList the collection of property maps to update
      * @param type the batch type
      * @return the result set from the batch UPDATE operation
-     * @throws IllegalArgumentException if targetClass is null or propsList is null or empty
      */
     public RS batchUpdate(final Class<?> targetClass, final Collection<? extends Map<String, Object>> propsList, final BT type) {
         final ST stmt = prepareBatchUpdateStatement(targetClass, propsList, type);
@@ -977,7 +1065,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * Performs a batch update with a custom query and multiple parameter sets.
      *
      * <p>This method executes the same UPDATE query multiple times with different
-     * parameter sets in a single batch for better performance.</p>
+     * parameter sets in a single batch for better performance. The base performs no validation of
+     * {@code query} / {@code parametersList}; it delegates directly to the subclass's
+     * batch-statement builder.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -987,14 +1077,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *     new Object[] {"inactive", "user2"}
      * );
      *
-     * ResultSet result = executor.batchUpdate(query, params, BatchType.LOGGED);
+     * ResultSet result = executor.batchUpdate(query, params, BatchType.LOGGED); // returns the driver ResultSet for the batch
      * }</pre>
      *
      * @param query the UPDATE query to execute
      * @param parametersList the collection of parameter arrays
      * @param type the batch type
      * @return the result set from the batch UPDATE operation
-     * @throws IllegalArgumentException if query is null or parametersList is null or empty
      */
     public RS batchUpdate(final String query, final Collection<?> parametersList, final BT type) {
         final ST stmt = prepareBatchUpdateStatement(query, parametersList, type);
@@ -1013,7 +1102,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * User user = new User();
      * user.setUserId("user123");
      *
-     * ResultSet result = executor.delete(user);
+     * ResultSet result = executor.delete(user); // returns the driver ResultSet for the DELETE (entire row)
+     *
+     * executor.delete((Object) null);           // throws NullPointerException (entity.getClass() on null)
      * }</pre>
      *
      * @param entity the entity to delete (must have primary key values set)
@@ -1037,7 +1128,12 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * user.setUserId("user123");
      *
      * // Delete only specific columns
-     * ResultSet result = executor.delete(user, Arrays.asList("email", "phone"));
+     * ResultSet result = executor.delete(user, Arrays.asList("email", "phone")); // returns the driver ResultSet (clears email/phone)
+     *
+     * // Delete the entire row (null prop names)
+     * ResultSet whole = executor.delete(user, (Collection<String>) null);        // returns the driver ResultSet (entire row removed)
+     *
+     * executor.delete(user, new ArrayList<>()); // throws IllegalArgumentException (propNamesToDelete is empty, not null)
      * }</pre>
      *
      * @param entity the entity identifying the row to delete from
@@ -1060,7 +1156,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * ResultSet result = executor.delete(User.class, "user123");
+     * ResultSet result = executor.delete(User.class, "user123"); // returns the driver ResultSet for the DELETE
+     *
+     * executor.delete(User.class);            // throws IllegalArgumentException (ids is empty)
+     * executor.delete(User.class, "a", "b");  // throws IllegalArgumentException (id count != single key column)
      * }</pre>
      *
      * @param targetClass the entity class
@@ -1083,10 +1182,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <pre>{@code
      * // Delete specific columns
      * ResultSet result = executor.delete(User.class,
-     *     Arrays.asList("email", "phone"), "user123");
+     *     Arrays.asList("email", "phone"), "user123"); // returns the driver ResultSet (clears email/phone)
      *
      * // Delete entire row
-     * ResultSet result = executor.delete(User.class, null, "user123");
+     * ResultSet whole = executor.delete(User.class, null, "user123"); // returns the driver ResultSet (entire row removed)
+     *
+     * executor.delete(User.class, new ArrayList<>(), "user123"); // throws IllegalArgumentException (propNamesToDelete empty, not null)
+     * executor.delete(User.class, Arrays.asList("email"));       // throws IllegalArgumentException (ids is empty)
      * }</pre>
      *
      * @param targetClass the entity class
@@ -1113,7 +1215,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Condition where = Filters.eq("status", "deleted");
-     * ResultSet result = executor.delete(User.class, where);
+     * ResultSet result = executor.delete(User.class, where); // returns the driver ResultSet for the DELETE
      * }</pre>
      *
      * @param targetClass the entity class
@@ -1137,7 +1239,12 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * // Delete specific columns in matching rows
      * ResultSet result = executor.delete(User.class,
-     *     Arrays.asList("lastLogin", "sessionToken"), where);
+     *     Arrays.asList("lastLogin", "sessionToken"), where);     // returns the driver ResultSet (clears those columns)
+     *
+     * // Delete the entire matching rows (null prop names)
+     * ResultSet whole = executor.delete(User.class, null, where); // returns the driver ResultSet (entire rows removed)
+     *
+     * executor.delete(User.class, new ArrayList<>(), where); // throws IllegalArgumentException (propNamesToDelete empty, not null)
      * }</pre>
      *
      * @param targetClass the entity class
@@ -1163,9 +1270,11 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<User> usersToDelete = Arrays.asList(user1, user2, user3);
-     * ResultSet result = executor.batchDelete(usersToDelete);
+     * ResultSet result = executor.batchDelete(usersToDelete); // returns the driver ResultSet for the batch DELETE
+     *
+     * executor.batchDelete(new ArrayList<>());                // throws IllegalArgumentException (entities is empty)
      * }</pre>
-     * 
+     *
      * @param entities the collection of entities to delete
      * @return the result set from the batch DELETE operation
      * @throws IllegalArgumentException if entities is null or empty
@@ -1190,9 +1299,15 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<User> users = Arrays.asList(user1, user2, user3);
-     * ResultSet result = executor.batchDelete(users, Arrays.asList("email", "phone"));
+     * ResultSet result = executor.batchDelete(users, Arrays.asList("email", "phone")); // returns the driver ResultSet (clears email/phone)
+     *
+     * // null prop names -> entire rows removed
+     * ResultSet whole = executor.batchDelete(users, (Collection<String>) null);        // returns the driver ResultSet (entire rows removed)
+     *
+     * executor.batchDelete(new ArrayList<>(), Arrays.asList("email")); // throws IllegalArgumentException (entities is empty)
+     * executor.batchDelete(users, new ArrayList<>());                  // throws IllegalArgumentException (propNamesToDelete empty, not null)
      * }</pre>
-     * 
+     *
      * @param entities the collection of entities to delete from
      * @param propNamesToDelete the property names to delete (null for entire rows)
      * @return the result set from the batch DELETE operation
@@ -1218,10 +1333,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * boolean exists = executor.exists(User.class, "user123");
+     * boolean exists = executor.exists(User.class, "user123"); // returns true if a row with that key exists, else false
      * if (exists) {
      *     System.out.println("User exists");
      * }
+     *
+     * executor.exists(User.class);            // throws IllegalArgumentException (ids is empty)
+     * executor.exists(User.class, "a", "b");  // throws IllegalArgumentException (id count != single key column)
      * }</pre>
      *
      * @param targetClass the entity class
@@ -1243,7 +1361,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Condition where = Filters.eq("email", "user@example.com");
-     * boolean exists = executor.exists(User.class, where);
+     * boolean exists = executor.exists(User.class, where);     // returns true if at least one row matches, else false
+     *
+     * boolean any = executor.exists(User.class, (Condition) null); // returns true if the table has at least one row
      * }</pre>
      *
      * @param targetClass the entity class whose table is queried
@@ -1268,8 +1388,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Condition where = Filters.eq("status", "active");
-     * long activeUsers = executor.count(User.class, where);
+     * long activeUsers = executor.count(User.class, where);     // returns the matching row count (0 when none match)
      * System.out.println("Active users: " + activeUsers);
+     *
+     * long total = executor.count(User.class, (Condition) null); // returns the total row count of the table
      * }</pre>
      *
      * @param targetClass the entity class whose table is queried
@@ -1299,7 +1421,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Optional<User> user = executor.findFirst(User.class,
-     *     CF.eq("email", "user@example.com"));
+     *     CF.eq("email", "user@example.com")); // returns present Optional<User> for the first match
+     *
+     * Optional<User> none = executor.findFirst(User.class,
+     *     CF.eq("email", "missing@example.com")); // returns Optional.empty() when no row matches
      * }</pre>
      *
      * @param <T> the entity type to map the result row to
@@ -1330,7 +1455,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <pre>{@code
      * Optional<User> user = executor.findFirst(User.class,
      *     Arrays.asList("userId", "name"),
-     *     CF.eq("status", "active"));
+     *     CF.eq("status", "active")); // returns present Optional<User> (only userId/name set) for the first match
+     *
+     * Optional<User> all = executor.findFirst(User.class, null,
+     *     CF.eq("status", "active")); // returns present Optional with all properties, or empty when no row matches
      * }</pre>
      *
      * @param <T> the entity type to map the result row to
@@ -1357,7 +1485,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Condition where = Filters.eq("status", "active");
-     * List<User> activeUsers = executor.list(User.class, where);
+     * List<User> activeUsers = executor.list(User.class, where); // returns a (possibly empty) mutable List of matches
+     *
+     * List<User> all = executor.list(User.class, (Condition) null); // returns every row in the table as a List
      * }</pre>
      *
      * @param <T> the entity type
@@ -1379,7 +1509,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <pre>{@code
      * Condition where = Filters.gte("age", 18);
      * List<User> adults = executor.list(User.class,
-     *     Arrays.asList("userId", "name", "age"), where);
+     *     Arrays.asList("userId", "name", "age"), where); // returns a (possibly empty) List with only those 3 props set
+     *
+     * List<User> allProps = executor.list(User.class, null, where); // returns matches with all properties populated
      * }</pre>
      *
      * @param <T> the entity type
@@ -1403,8 +1535,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Condition where = Filters.between("age", 25, 35);
-     * Dataset dataset = executor.query(User.class, where);
+     * Dataset dataset = executor.query(User.class, where); // returns a (possibly empty) Dataset of matching rows
      * dataset.groupBy("department").aggregate("salary", Collectors.averagingDouble());
+     *
+     * Dataset all = executor.query(User.class, (Condition) null); // returns a Dataset of every row in the table
      * }</pre>
      *
      * @param <T> the entity type
@@ -1425,7 +1559,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Dataset dataset = executor.query(User.class, Arrays.asList("id", "name", "email"),
-     *                                  Filters.eq("status", "active"));
+     *                                  Filters.eq("status", "active")); // returns a Dataset with only those 3 columns
+     *
+     * Dataset all = executor.query(User.class, null,
+     *                              Filters.eq("status", "active"));     // returns a Dataset with all columns
      * }</pre>
      *
      * @param <T> the entity type
@@ -1456,7 +1593,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalBoolean isActive = executor.queryForBoolean(User.class, "is_active",
-     *     CF.eq("id", userId));
+     *     CF.eq("id", userId)); // returns present OptionalBoolean (false when the column is NULL); empty when no row matches
      * }</pre>
      *
      * @param <T> the entity type
@@ -1491,7 +1628,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalChar grade = executor.queryForChar(Student.class, "grade",
-     *     CF.eq("student_id", studentId));
+     *     CF.eq("student_id", studentId)); // returns present OptionalChar ((char) 0 when NULL); empty when no row matches
      * }</pre>
      *
      * @param <T> the entity type
@@ -1525,7 +1662,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalByte statusCode = executor.queryForByte(Request.class, "status_code",
-     *     CF.eq("request_id", requestId));
+     *     CF.eq("request_id", requestId)); // returns present OptionalByte (0 when NULL); empty when no row matches
      * }</pre>
      *
      * @param <T> the entity type
@@ -1560,7 +1697,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalShort port = executor.queryForShort(Server.class, "port",
-     *     CF.eq("server_name", "web-01"));
+     *     CF.eq("server_name", "web-01")); // returns present OptionalShort (0 when NULL); empty when no row matches
      * }</pre>
      *
      * @param <T> the entity type
@@ -1595,7 +1732,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalInt count = executor.queryForInt(Product.class, "quantity",
-     *     CF.eq("product_id", productId));
+     *     CF.eq("product_id", productId)); // returns present OptionalInt (0 when NULL); empty when no row matches
      * }</pre>
      *
      * @param <T> the entity type
@@ -1630,7 +1767,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalLong timestamp = executor.queryForLong(Event.class, "timestamp",
-     *     CF.eq("event_id", eventId));
+     *     CF.eq("event_id", eventId)); // returns present OptionalLong (0L when NULL); empty when no row matches
      * }</pre>
      *
      * @param <T> the entity type
@@ -1665,7 +1802,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalFloat rating = executor.queryForFloat(Product.class, "rating",
-     *     CF.eq("product_id", productId));
+     *     CF.eq("product_id", productId)); // returns present OptionalFloat (0.0f when NULL); empty when no row matches
      * }</pre>
      *
      * @param <T> the entity type
@@ -1700,7 +1837,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalDouble price = executor.queryForDouble(Product.class, "price",
-     *     CF.eq("product_id", productId));
+     *     CF.eq("product_id", productId)); // returns present OptionalDouble (0.0d when NULL); empty when no row matches
      * }</pre>
      *
      * @param <T> the entity type
@@ -1734,7 +1871,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Nullable<String> email = executor.queryForString(User.class, "email",
-     *     CF.eq("username", "john"));
+     *     CF.eq("username", "john")); // returns present Nullable (may hold null when the column is NULL); empty when no row matches
      * }</pre>
      *
      * @param <T> the entity type
@@ -1768,7 +1905,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Nullable<Date> created = executor.queryForDate(User.class, "created_at",
-     *     CF.eq("user_id", userId));
+     *     CF.eq("user_id", userId)); // returns present Nullable (may hold null when the column is NULL); empty when no row matches
      * }</pre>
      *
      * @param <T> the entity type
@@ -1803,7 +1940,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <pre>{@code
      * Nullable<java.sql.Timestamp> lastLogin = executor.queryForDate(
      *     User.class, java.sql.Timestamp.class, "last_login",
-     *     CF.eq("user_id", userId));
+     *     CF.eq("user_id", userId)); // returns present Nullable (may hold null when the column is NULL); empty when no row matches
      * }</pre>
      *
      * @param <T> the entity type
@@ -1843,7 +1980,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <pre>{@code
      * Nullable<BigDecimal> price = executor.queryForSingleValue(
      *     Product.class, BigDecimal.class, "price",
-     *     CF.eq("id", productId));
+     *     CF.eq("id", productId)); // returns present Nullable (may hold null when the column is NULL); empty when no row matches
      * }</pre>
      *
      * @param <T> the entity type
@@ -1885,7 +2022,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <pre>{@code
      * Optional<String> email = executor.queryForSingleNonNull(
      *     User.class, String.class, "email",
-     *     CF.eq("username", "john"));
+     *     CF.eq("username", "john")); // returns present Optional with the value; empty when no row matches; throws NullPointerException if the matched value is NULL
      * }</pre>
      *
      * @param <T> the entity type
@@ -1917,9 +2054,11 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * long count = executor.stream(User.class, Filters.gt("age", 18))
+     * long count = executor.stream(User.class, Filters.gt("age", 18)) // returns a lazy Stream<User> of matches
      *                      .filter(u -> u.isActive())
-     *                      .count();
+     *                      .count(); // count is the number of active users older than 18
+     *
+     * Stream<User> all = executor.stream(User.class, (Condition) null); // returns a Stream over every row in the table
      * }</pre>
      *
      * @param <T> the entity type
@@ -1938,7 +2077,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <pre>{@code
      * Stream<User> userStream = executor.stream(User.class,
      *                                           Arrays.asList("id", "name", "email"),
-     *                                           Filters.eq("status", "active"));
+     *                                           Filters.eq("status", "active")); // returns a lazy Stream<User> with only those 3 props set
+     *
+     * Stream<User> allProps = executor.stream(User.class, null,
+     *                                         Filters.eq("status", "active"));   // returns a Stream with all properties populated
      * }</pre>
      *
      * @param <T> the entity type
@@ -1966,7 +2108,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <pre>{@code
      * boolean exists = executor.exists(
      *     "SELECT 1 FROM users WHERE email = ? LIMIT 1",
-     *     "user@example.com");
+     *     "user@example.com"); // returns true if the query yields at least one row, else false
      * }</pre>
      *
      * @param query the CQL query string with {@code ?} placeholders for parameters
@@ -1986,6 +2128,12 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p>Parameters are bound positionally to {@code ?} placeholders. If the query produces no rows
      * (or the aggregate returns {@code NULL}) this method returns {@code 0L}.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * long active = executor.count(
+     *     "SELECT count(*) FROM users WHERE status = ?", "active"); // returns the COUNT(*) value, or 0L if no row/NULL
+     * }</pre>
      *
      * @param query the CQL query to execute (typically a {@code COUNT(*)} aggregate)
      * @param parameters the values to bind, in declaration order
@@ -2016,7 +2164,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalBoolean isActive = executor.queryForBoolean(
-     *     "SELECT is_active FROM users WHERE id = ?", userId);
+     *     "SELECT is_active FROM users WHERE id = ?", userId); // returns present OptionalBoolean (false when NULL); empty when no row matches
      * }</pre>
      *
      * @param query the CQL query string with {@code ?} placeholders for parameters
@@ -2047,7 +2195,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalChar grade = executor.queryForChar(
-     *     "SELECT grade FROM students WHERE id = ?", studentId);
+     *     "SELECT grade FROM students WHERE id = ?", studentId); // returns present OptionalChar ((char) 0 when NULL); empty when no row matches
      * }</pre>
      *
      * @param query the CQL query string with {@code ?} placeholders for parameters
@@ -2077,7 +2225,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalByte status = executor.queryForByte(
-     *     "SELECT status_code FROM records WHERE id = ?", recordId);
+     *     "SELECT status_code FROM records WHERE id = ?", recordId); // returns present OptionalByte (0 when NULL); empty when no row matches
      * }</pre>
      *
      * @param query the CQL query string with {@code ?} placeholders for parameters
@@ -2108,7 +2256,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalShort year = executor.queryForShort(
-     *     "SELECT release_year FROM movies WHERE id = ?", movieId);
+     *     "SELECT release_year FROM movies WHERE id = ?", movieId); // returns present OptionalShort (0 when NULL); empty when no row matches
      * }</pre>
      *
      * @param query the CQL query string with {@code ?} placeholders for parameters
@@ -2140,7 +2288,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalInt count = executor.queryForInt(
-     *     "SELECT count(*) FROM users WHERE status = ?", "active");
+     *     "SELECT count(*) FROM users WHERE status = ?", "active"); // returns present OptionalInt with the count (0 when NULL); empty when no row matches
      * }</pre>
      *
      * @param query the CQL query string with {@code ?} placeholders for parameters
@@ -2171,7 +2319,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalLong total = executor.queryForLong(
-     *     "SELECT sum(amount) FROM sales WHERE year = ?", year);
+     *     "SELECT sum(amount) FROM sales WHERE year = ?", year); // returns present OptionalLong (0L when NULL); empty when no row matches
      * }</pre>
      *
      * @param query the CQL query string with {@code ?} placeholders for parameters
@@ -2202,7 +2350,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalFloat rating = executor.queryForFloat(
-     *     "SELECT avg_rating FROM products WHERE id = ?", productId);
+     *     "SELECT avg_rating FROM products WHERE id = ?", productId); // returns present OptionalFloat (0.0f when NULL); empty when no row matches
      * }</pre>
      *
      * @param query the CQL query string with {@code ?} placeholders for parameters
@@ -2233,7 +2381,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalDouble avgSalary = executor.queryForDouble(
-     *     "SELECT avg(salary) FROM employees WHERE dept = ?", "Engineering");
+     *     "SELECT avg(salary) FROM employees WHERE dept = ?", "Engineering"); // returns present OptionalDouble (0.0d when NULL); empty when no row matches
      * }</pre>
      *
      * @param query the CQL query string with {@code ?} placeholders for parameters
@@ -2263,7 +2411,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Nullable<String> name = executor.queryForString(
-     *     "SELECT name FROM users WHERE id = ?", userId);
+     *     "SELECT name FROM users WHERE id = ?", userId); // returns present Nullable (may hold null when the column is NULL); empty when no row matches
      * }</pre>
      *
      * @param query the CQL query string with {@code ?} placeholders for parameters
@@ -2296,13 +2444,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Nullable<Long> userCount = executor.queryForSingleValue(
-     *     Long.class, "SELECT count(*) FROM users");
+     *     Long.class, "SELECT count(*) FROM users"); // returns present Nullable holding the count; empty only if there are zero result rows
      *
      * Nullable<String> userName = executor.queryForSingleValue(
-     *     String.class, "SELECT name FROM users WHERE id = ?", userId);
+     *     String.class, "SELECT name FROM users WHERE id = ?", userId); // returns present Nullable (may hold null when the column is NULL); empty when no row matches
      *
      * Nullable<Instant> maxTimestamp = executor.queryForSingleValue(
-     *     Instant.class, "SELECT max(created_at) FROM events WHERE date = ?", today);
+     *     Instant.class, "SELECT max(created_at) FROM events WHERE date = ?", today); // returns present Nullable (may hold null when no events); empty when no row matches
      * }</pre>
      *
      * @param <E> the type of the single result value to be returned
@@ -2335,10 +2483,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Optional<Long> activeUsers = executor.queryForSingleNonNull(
-     *     Long.class, "SELECT count(*) FROM users WHERE status = 'active'");
+     *     Long.class, "SELECT count(*) FROM users WHERE status = 'active'"); // returns present Optional with the count; empty only if zero result rows
      *
      * Optional<String> email = executor.queryForSingleNonNull(
-     *     String.class, "SELECT email FROM users WHERE id = ?", userId);
+     *     String.class, "SELECT email FROM users WHERE id = ?", userId); // returns present Optional with the email; empty when no row matches; throws NullPointerException if the matched value is NULL
      * }</pre>
      *
      * @param <E> the type of the single result value to be returned
@@ -2369,7 +2517,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Optional<Map<String, Object>> user = executor.findFirst(
-     *     "SELECT * FROM users WHERE status = ? LIMIT 1", "active");
+     *     "SELECT * FROM users WHERE status = ? LIMIT 1", "active"); // returns present Optional holding the first row as a Map; empty when no row matches
      * }</pre>
      *
      * @param query the CQL query string with {@code ?} placeholders for parameters
@@ -2404,13 +2552,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Optional<User> user = executor.findFirst(User.class,
-     *     "SELECT * FROM users WHERE email = ? LIMIT 1", email);
+     *     "SELECT * FROM users WHERE email = ? LIMIT 1", email); // returns present Optional<User>; empty when no row matches
      *
      * Optional<Map<String, Object>> userData = executor.findFirst(Map.class,
-     *     "SELECT name, email FROM users WHERE id = ?", userId);
+     *     "SELECT name, email FROM users WHERE id = ?", userId); // returns present Optional holding a Map; empty when no row matches
      *
      * Optional<Object[]> row = executor.findFirst(Object[].class,
-     *     "SELECT count(*), max(created_at) FROM events");
+     *     "SELECT count(*), max(created_at) FROM events"); // returns present Optional holding an Object[] of the two aggregates
      * }</pre>
      *
      * @param <T> the type to map the result row to
@@ -2433,6 +2581,12 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p>Parameters are bound positionally to {@code ?} placeholders. The returned list is mutable
      * and never {@code null}; an empty list signals "no rows".</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * List<Map<String, Object>> rows = executor.list(
+     *     "SELECT name, email FROM users WHERE status = ?", "active"); // returns a (possibly empty) mutable List of row maps
+     * }</pre>
+     *
      * @param query the CQL query string with {@code ?} placeholders for parameters
      * @param parameters the values to bind, in declaration order
      * @return a list of result rows, each as a {@code Map<String, Object>} keyed by column name
@@ -2451,7 +2605,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<User> activeUsers = executor.list(User.class,
-     *     "SELECT * FROM users WHERE status = ?", "active");
+     *     "SELECT * FROM users WHERE status = ?", "active"); // returns a (possibly empty) mutable List<User>
      * }</pre>
      *
      * @param <T> the target type
@@ -2472,6 +2626,12 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * positionally to {@code ?} placeholders. The returned Dataset is never {@code null};
      * an empty Dataset signals "no rows".</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Dataset ds = executor.query(
+     *     "SELECT * FROM users WHERE status = ?", "active"); // returns a non-null Dataset (empty when no rows)
+     * }</pre>
+     *
      * @param query the CQL query string with {@code ?} placeholders for parameters
      * @param parameters the values to bind, in declaration order
      * @return a Dataset containing all result rows
@@ -2491,7 +2651,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Dataset userDataset = executor.query(User.class,
-     *     "SELECT * FROM users WHERE age > ?", 18);
+     *     "SELECT * FROM users WHERE age > ?", 18); // returns a non-null Dataset shaped by User (empty when no rows)
      * }</pre>
      *
      * @param targetClass an entity class with getter/setter methods matching column names,
@@ -2509,6 +2669,12 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p>Each emitted array has one element per selected column, ordered by the column index in the
      * result set. Parameters are bound positionally to {@code ?} placeholders.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Stream<Object[]> rows = executor.stream(
+     *     "SELECT id, name FROM users WHERE status = ?", "active"); // returns a lazy Stream where each element is {id, name}
+     * }</pre>
      *
      * @param query the CQL query string with {@code ?} placeholders for parameters
      * @param parameters the values to bind, in declaration order
@@ -2528,7 +2694,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * executor.stream(User.class, "SELECT * FROM users")
+     * executor.stream(User.class, "SELECT * FROM users") // returns a lazy Stream<User>
      *         .filter(u -> u.getAge() > 21)
      *         .forEach(System.out::println);
      * }</pre>
@@ -2551,6 +2717,12 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p>Rows are mapped on demand by the row mapper returned from
      * {@link #createRowMapper(Class)}. The statement is run via {@link #execute(Object)}.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * // 'boundStatement' is a driver statement (e.g. a BoundStatement) of type ST
+     * Stream<User> users = executor.stream(User.class, boundStatement); // returns a lazy Stream<User> over the statement's rows
+     * }</pre>
+     *
      * @param <T> the target type
      * @param targetClass an entity class with getter/setter methods matching column names,
      *        or {@code Map.class}
@@ -2571,10 +2743,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Create table
-     * executor.execute("CREATE TABLE IF NOT EXISTS users (id UUID PRIMARY KEY, name TEXT)");
+     * executor.execute("CREATE TABLE IF NOT EXISTS users (id UUID PRIMARY KEY, name TEXT)"); // returns the driver ResultSet (empty for DDL)
      *
      * // Simple query
-     * ResultSet results = executor.execute("SELECT * FROM users LIMIT 10");
+     * ResultSet results = executor.execute("SELECT * FROM users LIMIT 10"); // returns the driver ResultSet of matching rows
      *
      * // Process results manually
      * for (Row row : results) {
@@ -2611,14 +2783,14 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * // Positional parameters
      * ResultSet users = executor.execute(
      *     "SELECT * FROM users WHERE status = ? AND created_at > ?",
-     *     "active", yesterday);
+     *     "active", yesterday); // returns the driver ResultSet of matching rows
      *
      * // Named parameters with map
      * Map<String, Object> params = new HashMap<>();
      * params.put("email", "john@example.com");
      * params.put("status", "active");
      * ResultSet result = executor.execute(
-     *     "SELECT * FROM users WHERE email = :email AND status = :status", params);
+     *     "SELECT * FROM users WHERE email = :email AND status = :status", params); // returns the driver ResultSet of matching rows
      *
      * // Entity parameters
      * User searchCriteria = new User();
@@ -2626,7 +2798,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * searchCriteria.setDepartment("engineering");
      * ResultSet engineeringUsers = executor.execute(
      *     "SELECT * FROM users WHERE status = :status AND department = :department",
-     *     searchCriteria);
+     *     searchCriteria); // returns the driver ResultSet of matching rows (bean property binding)
      * }</pre>
      *
      * @param query the parameterized CQL statement

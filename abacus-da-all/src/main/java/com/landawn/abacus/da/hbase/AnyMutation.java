@@ -108,9 +108,6 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      */
     protected AnyMutation(final Mutation mutation) {
         super(mutation);
-        if (mutation == null) {
-            throw new IllegalArgumentException("Mutation must not be null");
-        }
         this.mutation = mutation;
     }
 
@@ -237,12 +234,13 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
     }
 
     /**
-     * Sets the timestamp that will be applied to every cell already added to (and added
-     * subsequently to) this mutation. The timestamp drives versioning, time-based queries, and
-     * TTL / compaction decisions on the server.
+     * Sets this mutation's default timestamp, used as the version for cells added subsequently
+     * without their own explicit timestamp. Cells already added are not re-stamped. The timestamp
+     * drives versioning, time-based queries, and TTL / compaction decisions on the server.
      *
      * @param timestamp the timestamp to assign, in milliseconds since the epoch
      * @return this mutation instance, to allow fluent method chaining
+     * @throws IllegalArgumentException if {@code timestamp} is negative
      * @see #getTimestamp()
      * @see System#currentTimeMillis()
      */

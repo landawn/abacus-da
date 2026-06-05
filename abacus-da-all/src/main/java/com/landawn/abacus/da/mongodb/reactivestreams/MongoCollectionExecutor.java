@@ -187,7 +187,26 @@ public final class MongoCollectionExecutor {
      * same instance passed to this executor at construction time and is pre-configured with the
      * framework's codec registry.</p>
      *
-     * @return the reactive MongoDB collection instance backing this executor
+     * <p>Unlike most methods on this executor, {@code coll()} is a plain synchronous accessor — it
+     * does not return a {@code Publisher} and performs no database I/O; it simply hands back the
+     * wrapped collection reference.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * MongoCollection<Document> raw = executor.coll();          // returns the wrapped collection (never null)
+     *
+     * // Same instance is returned on every call (no copy, no I/O):
+     * boolean same = (executor.coll() == executor.coll());      // true
+     *
+     * // Reach driver features not surfaced by this executor, e.g. namespace / index management:
+     * MongoNamespace ns = executor.coll().getNamespace();                                      // e.g. "mydb.users"
+     * Publisher<String> indexCreate = executor.coll().createIndex(Indexes.ascending("email")); // cold; runs on subscription
+     *
+     * // Build your own reactive pipeline directly off the driver publisher:
+     * Flux<Document> docs = Flux.from(executor.coll().find(Filters.eq("status", "active"))); // cold Flux
+     * }</pre>
+     *
+     * @return the reactive MongoDB collection instance backing this executor (never {@code null})
      * @see com.mongodb.reactivestreams.client.MongoCollection
      */
     public MongoCollection<Document> coll() {
@@ -203,12 +222,20 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionExecutor executor = reactiveMongoDB.collectionExecutor("users");
-     * 
-     * Mono<Boolean> existsMono = executor.exists("507f1f77bcf86cd799439011");
-     * existsMono.subscribe(
-     *     exists -> System.out.println(exists ? "User found" : "User not found"),
-     *     error -> System.err.println("Error checking existence: " + error)
-     * );
+     *
+     * // Typical: document present -> emits true.
+     * Mono<Boolean> existsMono = executor.exists("507f1f77bcf86cd799439011");          // cold Mono
+     * existsMono.subscribe(exists -> System.out.println(exists ? "found" : "absent")); // e.g. "found"
+     *
+     * // Typical: no such document -> emits false (never empty for this method).
+     * boolean present = executor.exists("507f1f77bcf86cd799439099").block();          // false when absent
+     *
+     * // Edge/Negative: a null id throws IllegalArgumentException synchronously (at call time,
+     * // before any Mono is returned), because the id is parsed eagerly.
+     * executor.exists((String) null);                            // throws IllegalArgumentException
+     *
+     * // Edge/Negative: a non-hex / wrong-length id also throws IllegalArgumentException at call time.
+     * executor.exists("not-a-valid-objectid");                   // throws IllegalArgumentException
      * }</pre>
      *
      * @param objectId the ObjectId as a string to check for existence
@@ -229,11 +256,17 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ObjectId userId = new ObjectId("507f1f77bcf86cd799439011");
-     * Mono<Boolean> existsMono = executor.exists(userId);
-     * 
-     * existsMono.subscribe(
-     *     exists -> System.out.println("Document exists: " + exists)
-     * );
+     *
+     * // Typical: emits true when present, false when not (never empty).
+     * Mono<Boolean> existsMono = executor.exists(userId);                      // cold Mono
+     * existsMono.subscribe(exists -> System.out.println("exists: " + exists)); // e.g. "exists: true"
+     *
+     * // Typical: block for the boolean directly.
+     * boolean present = executor.exists(new ObjectId()).block(); // false for a freshly minted id
+     *
+     * // Edge/Negative: a null ObjectId throws IllegalArgumentException synchronously (at call time),
+     * // because the id-to-filter conversion runs eagerly before any Mono is returned.
+     * executor.exists((ObjectId) null);                          // throws IllegalArgumentException
      * }</pre>
      *
      * @param objectId the ObjectId to check for existence
@@ -285,12 +318,18 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Mono<Long> countMono = executor.count();
+     * // Typical: emits the exact total document count.
+     * Mono<Long> countMono = executor.count();                             // cold Mono
+     * countMono.subscribe(count -> System.out.println("Total: " + count)); // e.g. "Total: 100"
      *
-     * countMono.subscribe(
-     *     count -> System.out.println("Total documents: " + count),
-     *     error -> System.err.println("Error counting documents: " + error)
-     * );
+     * // Typical: block for the value.
+     * long total = executor.count().block();                     // e.g. 100L
+     *
+     * // Edge: an empty collection -> emits 0L (the Mono never completes empty).
+     * Long zero = executor.count().block();                      // 0L when the collection has no documents
+     *
+     * // Edge: cold — calling count() issues no query until something subscribes.
+     * Mono<Long> notRunYet = executor.count();                   // no countDocuments() call yet
      * }</pre>
      *
      * @return a {@code Mono} that, on subscription, emits exactly one {@code Long} with the total
@@ -312,11 +351,19 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson activeFilter = Filters.eq("status", "active");
-     * Mono<Long> countMono = executor.count(activeFilter);
-     * 
-     * countMono.subscribe(
-     *     count -> System.out.println("Active documents: " + count)
-     * );
+     *
+     * // Typical: emits the number of documents matching the filter.
+     * Mono<Long> countMono = executor.count(activeFilter);                  // cold Mono
+     * countMono.subscribe(count -> System.out.println("Active: " + count)); // e.g. "Active: 50"
+     *
+     * // Typical: block for the value.
+     * long active = executor.count(activeFilter).block();        // e.g. 50L
+     *
+     * // Edge: a filter that matches nothing -> emits 0L (never completes empty).
+     * Long none = executor.count(Filters.eq("status", "no-such")).block(); // 0L
+     *
+     * // Edge: cold — no countDocuments() call is issued until subscription.
+     * Mono<Long> notRunYet = executor.count(activeFilter);       // nothing sent to the server yet
      * }</pre>
      *
      * @param filter the query filter to match documents against; must not be null
@@ -340,11 +387,19 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * CountOptions options = new CountOptions().limit(1000).maxTime(30, TimeUnit.SECONDS);
-     * Mono<Long> countMono = executor.count(Filters.gte("age", 18), options);
-     * 
-     * countMono.subscribe(
-     *     count -> System.out.println("Adult count (max 1000): " + count)
-     * );
+     *
+     * // Typical: count is capped by the options' limit (here at most 1000).
+     * Mono<Long> countMono = executor.count(Filters.gte("age", 18), options);        // cold Mono
+     * countMono.subscribe(count -> System.out.println("Adults (<=1000): " + count)); // e.g. 1000
+     *
+     * // Edge: a null options argument is allowed and falls back to the no-options overload.
+     * long exact = executor.count(Filters.gte("age", 18), (CountOptions) null).block(); // unconstrained count
+     *
+     * // Edge: a skip option subtracts from the count.
+     * long afterSkip = executor.count(Filters.gte("age", 18), new CountOptions().skip(10)).block();
+     *
+     * // Edge: no match -> emits 0L (never empty).
+     * long none = executor.count(Filters.eq("age", -1), options).block();    // 0L
      * }</pre>
      *
      * @param filter the query filter to match documents against; must not be null
@@ -373,11 +428,18 @@ public final class MongoCollectionExecutor {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Mono<Long> estimatedCountMono = executor.estimatedDocumentCount();
-     * 
-     * estimatedCountMono.subscribe(
-     *     count -> System.out.println("Estimated documents: " + count)
-     * );
+     * // Typical: fast, metadata-based estimate (may differ slightly from count()).
+     * Mono<Long> estimatedCountMono = executor.estimatedDocumentCount();                // cold Mono
+     * estimatedCountMono.subscribe(count -> System.out.println("Estimated: " + count)); // e.g. 1000
+     *
+     * // Typical: block for the value.
+     * long approx = executor.estimatedDocumentCount().block();   // e.g. 1000L
+     *
+     * // Edge: an empty collection -> emits 0L (never completes empty).
+     * Long zero = executor.estimatedDocumentCount().block();     // 0L for an empty collection
+     *
+     * // Edge: cold — no estimate is requested from the server until subscription.
+     * Mono<Long> notRunYet = executor.estimatedDocumentCount();  // nothing sent yet
      * }</pre>
      *
      * @return a Mono that emits the estimated count of documents in the collection
@@ -397,12 +459,19 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * EstimatedDocumentCountOptions options = new EstimatedDocumentCountOptions()
      *     .maxTime(10, TimeUnit.SECONDS);
-     * 
-     * Mono<Long> estimatedCountMono = executor.estimatedDocumentCount(options);
-     * 
-     * estimatedCountMono.subscribe(
-     *     count -> System.out.println("Estimated count: " + count)
-     * );
+     *
+     * // Typical: estimate with a server-side time budget.
+     * Mono<Long> estimatedCountMono = executor.estimatedDocumentCount(options);         // cold Mono
+     * estimatedCountMono.subscribe(count -> System.out.println("Estimated: " + count)); // e.g. 2000
+     *
+     * // Typical: block for the value.
+     * long approx = executor.estimatedDocumentCount(options).block(); // e.g. 2000L
+     *
+     * // Edge: empty collection -> emits 0L (never completes empty).
+     * Long zero = executor.estimatedDocumentCount(options).block(); // 0L for an empty collection
+     *
+     * // Edge/Negative: exceeding the maxTime budget surfaces a MongoExecutionTimeoutException
+     * // as a Mono error (onError), not a thrown exception at call time.
      * }</pre>
      *
      * @param options the estimation options to apply; must not be null
@@ -429,13 +498,21 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Mono<Document> docMono = executor.get("507f1f77bcf86cd799439011");
-     *
+     * // Typical: subscribe with all three handlers; the completion handler fires when not found.
+     * Mono<Document> docMono = executor.get("507f1f77bcf86cd799439011"); // cold Mono
      * docMono.subscribe(
      *     doc -> System.out.println("Found: " + doc.toJson()),
      *     error -> System.err.println("Error: " + error),
-     *     () -> System.out.println("Document not found")
-     * );
+     *     () -> System.out.println("Document not found"));       // fires only when empty
+     *
+     * // Typical: block for the document (null if absent).
+     * Document doc = executor.get("507f1f77bcf86cd799439011").block(); // null when no match
+     *
+     * // Edge: no document with that id -> Mono completes EMPTY (the onComplete handler runs, no onNext).
+     *
+     * // Edge/Negative: an invalid hex string throws IllegalArgumentException synchronously (at call
+     * // time) — the id is parsed eagerly by the ObjectId constructor before any Mono is built.
+     * executor.get("invalid");                                   // throws IllegalArgumentException
      * }</pre>
      *
      * @param objectId the ObjectId as a string to search for
@@ -610,12 +687,20 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson filter = Filters.eq("status", "active");
-     * Mono<Document> docMono = executor.findFirst(filter);
-     * 
-     * docMono.subscribe(
-     *     doc -> System.out.println("First active user: " + doc.toJson()),
-     *     error -> System.err.println("Error: " + error)
-     * );
+     *
+     * // Typical: emits the first matching document, then completes.
+     * Mono<Document> docMono = executor.findFirst(filter);                    // cold Mono
+     * docMono.subscribe(doc -> System.out.println("First: " + doc.toJson())); // prints once if a doc matched
+     *
+     * // Typical: block (null if no match).
+     * Document first = executor.findFirst(filter).block();       // null when nothing matches
+     *
+     * // Edge: no document matches -> Mono completes EMPTY (no onNext).
+     * executor.findFirst(Filters.eq("status", "no-such"))
+     *         .subscribe(d -> {}, e -> {}, () -> System.out.println("none")); // prints "none"
+     *
+     * // Edge: a null filter matches ALL documents (still returns just the first one).
+     * Document any = executor.findFirst((Bson) null).block();    // any one document, or null if empty
      * }</pre>
      *
      * @param filter the query filter to match documents against (null matches all)
@@ -759,7 +844,20 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson filter = Filters.eq("status", "active");
-     * Flux<Document> activeDocuments = executor.list(filter);
+     *
+     * // Typical: stream every matching document.
+     * Flux<Document> activeDocuments = executor.list(filter);             // cold Flux
+     * activeDocuments.subscribe(doc -> System.out.println(doc.toJson())); // one call per document
+     *
+     * // Typical: collect into a list.
+     * List<Document> all = executor.list(filter).collectList().block();
+     *
+     * // Edge: no document matches -> Flux completes EMPTY.
+     * executor.list(Filters.eq("status", "no-such"))
+     *         .subscribe(d -> {}, e -> {}, () -> System.out.println("empty")); // prints "empty"
+     *
+     * // Edge: a null filter lists the ENTIRE collection.
+     * Flux<Document> everything = executor.list((Bson) null);    // all documents (cold)
      * }</pre>
      *
      * @param filter the query filter to match documents against (null matches all)
@@ -991,8 +1089,27 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Mono<Boolean> isActive = executor.queryForBoolean("isActive", Filters.eq("userId", "123"));
-     * isActive.subscribe(active -> System.out.println("Active: " + active));
+     * // Typical: field present -> emits its Boolean value.
+     * Mono<Boolean> isActive = executor.queryForBoolean("isActive", Filters.eq("userId", "123")); // cold Mono
+     * isActive.subscribe(active -> System.out.println("Active: " + active));                      // prints e.g. "Active: true"
+     *
+     * // Typical: combine with a default to turn "absent" into a concrete value.
+     * Boolean active = executor.queryForBoolean("isActive", Filters.eq("userId", "123"))
+     *                          .defaultIfEmpty(false)
+     *                          .block();                          // false when no doc / no field
+     *
+     * // Edge: no document matches the filter -> Mono completes EMPTY (onComplete, no onNext).
+     * executor.queryForBoolean("isActive", Filters.eq("userId", "missing")).subscribe(
+     *     v -> handleValue(v),                     // never called: no value emitted
+     *     err -> handleError(err),                 // never called: no error
+     *     () -> System.out.println("no value"));   // prints "no value"
+     *
+     * // Edge: matching document but the "isActive" field is absent/null -> also completes EMPTY
+     * // (the Boolean.class wrapper means there is NO bogus 'false' default).
+     *
+     * // Negative: blank propName -> the Mono errors with IllegalArgumentException on subscription.
+     * executor.queryForBoolean("", Filters.eq("userId", "123"))
+     *         .subscribe(v -> {}, err -> System.out.println(err.getClass())); // IllegalArgumentException
      * }</pre>
      *
      * @param propName the name of the property to retrieve
@@ -1024,8 +1141,21 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Mono<Character> grade = executor.queryForChar("grade", Filters.eq("studentId", "456"));
-     * grade.subscribe(g -> System.out.println("Grade: " + g));
+     * // Typical: field present -> emits the Character value.
+     * Mono<Character> grade = executor.queryForChar("grade", Filters.eq("studentId", "456")); // cold Mono
+     * grade.subscribe(g -> System.out.println("Grade: " + g));                                // prints e.g. "Grade: A"
+     *
+     * // Typical: supply a fallback for the absent case.
+     * char g = executor.queryForChar("grade", Filters.eq("studentId", "456"))
+     *                  .defaultIfEmpty('?').block();             // '?' when no doc / no field
+     *
+     * // Edge: no match or missing/null field -> Mono completes EMPTY (no onNext).
+     * executor.queryForChar("grade", Filters.eq("studentId", "nope"))
+     *         .subscribe(g2 -> {}, e -> {}, () -> System.out.println("absent")); // prints "absent"
+     *
+     * // Negative: null propName -> Mono errors with IllegalArgumentException on subscription.
+     * executor.queryForChar(null, Filters.eq("studentId", "456"))
+     *         .subscribe(v -> {}, err -> System.out.println(err.getClass())); // IllegalArgumentException
      * }</pre>
      *
      * @param propName the name of the property to retrieve
@@ -1057,8 +1187,21 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Mono<Byte> statusCode = executor.queryForByte("statusCode", Filters.eq("recordId", id));
-     * statusCode.subscribe(code -> process(code));
+     * // Typical: field present -> emits the Byte value.
+     * Mono<Byte> statusCode = executor.queryForByte("statusCode", Filters.eq("recordId", id)); // cold Mono
+     * statusCode.subscribe(code -> process(code));                                             // process receives e.g. (byte) 5
+     *
+     * // Typical: default for the absent case (note: no bogus 0 from the wrapper type).
+     * byte code = executor.queryForByte("statusCode", Filters.eq("recordId", id))
+     *                     .defaultIfEmpty((byte) -1).block();    // -1 when no doc / no field
+     *
+     * // Edge: no match or missing/null field -> Mono completes EMPTY.
+     * executor.queryForByte("statusCode", Filters.eq("recordId", "x"))
+     *         .subscribe(b -> {}, e -> {}, () -> System.out.println("absent")); // prints "absent"
+     *
+     * // Negative: empty propName -> Mono errors with IllegalArgumentException on subscription.
+     * executor.queryForByte("", Filters.eq("recordId", id))
+     *         .subscribe(v -> {}, err -> System.out.println(err.getClass())); // IllegalArgumentException
      * }</pre>
      *
      * @param propName the name of the property to retrieve
@@ -1090,8 +1233,21 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Mono<Short> quantity = executor.queryForShort("quantity", Filters.eq("productId", id));
-     * quantity.subscribe(q -> System.out.println("Qty: " + q));
+     * // Typical: field present -> emits the Short value.
+     * Mono<Short> quantity = executor.queryForShort("quantity", Filters.eq("productId", id)); // cold Mono
+     * quantity.subscribe(q -> System.out.println("Qty: " + q));                               // prints e.g. "Qty: 100"
+     *
+     * // Typical: default for the absent case.
+     * short q = executor.queryForShort("quantity", Filters.eq("productId", id))
+     *                   .defaultIfEmpty((short) 0).block();      // 0 only because YOU chose it
+     *
+     * // Edge: no match or missing/null field -> Mono completes EMPTY.
+     * executor.queryForShort("quantity", Filters.eq("productId", "x"))
+     *         .subscribe(v -> {}, e -> {}, () -> System.out.println("absent")); // prints "absent"
+     *
+     * // Negative: null propName -> Mono errors with IllegalArgumentException on subscription.
+     * executor.queryForShort(null, Filters.eq("productId", id))
+     *         .subscribe(v -> {}, err -> System.out.println(err.getClass())); // IllegalArgumentException
      * }</pre>
      *
      * @param propName the name of the property to retrieve
@@ -1123,8 +1279,21 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Mono<Integer> age = executor.queryForInt("age", Filters.eq("userId", "user123"));
-     * age.subscribe(a -> System.out.println("Age: " + a));
+     * // Typical: field present -> emits the Integer value.
+     * Mono<Integer> age = executor.queryForInt("age", Filters.eq("userId", "user123")); // cold Mono
+     * age.subscribe(a -> System.out.println("Age: " + a));                              // prints e.g. "Age: 25"
+     *
+     * // Typical: default for the absent case.
+     * int age2 = executor.queryForInt("age", Filters.eq("userId", "user123"))
+     *                    .defaultIfEmpty(-1).block();            // -1 when no doc / no field
+     *
+     * // Edge: no match or missing/null field -> Mono completes EMPTY (no fabricated 0).
+     * executor.queryForInt("age", Filters.eq("userId", "missing"))
+     *         .subscribe(v -> {}, e -> {}, () -> System.out.println("absent")); // prints "absent"
+     *
+     * // Negative: blank propName -> Mono errors with IllegalArgumentException on subscription.
+     * executor.queryForInt("", Filters.eq("userId", "user123"))
+     *         .subscribe(v -> {}, err -> System.out.println(err.getClass())); // IllegalArgumentException
      * }</pre>
      *
      * @param propName the name of the property to retrieve
@@ -1156,8 +1325,21 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Mono<Long> timestamp = executor.queryForLong("timestamp", Filters.eq("eventId", "evt123"));
-     * timestamp.subscribe(t -> System.out.println("Timestamp: " + t));
+     * // Typical: field present -> emits the Long value.
+     * Mono<Long> timestamp = executor.queryForLong("timestamp", Filters.eq("eventId", "evt123")); // cold Mono
+     * timestamp.subscribe(t -> System.out.println("Timestamp: " + t));                            // prints e.g. "Timestamp: 1234567890"
+     *
+     * // Typical: default for the absent case.
+     * long ts = executor.queryForLong("timestamp", Filters.eq("eventId", "evt123"))
+     *                   .defaultIfEmpty(0L).block();             // 0L only because YOU chose it
+     *
+     * // Edge: no match or missing/null field -> Mono completes EMPTY (no fabricated 0L).
+     * executor.queryForLong("timestamp", Filters.eq("eventId", "nope"))
+     *         .subscribe(v -> {}, e -> {}, () -> System.out.println("absent")); // prints "absent"
+     *
+     * // Negative: null propName -> Mono errors with IllegalArgumentException on subscription.
+     * executor.queryForLong(null, Filters.eq("eventId", "evt123"))
+     *         .subscribe(v -> {}, err -> System.out.println(err.getClass())); // IllegalArgumentException
      * }</pre>
      *
      * @param propName the name of the property to retrieve
@@ -1189,8 +1371,21 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Mono<Float> rating = executor.queryForFloat("rating", Filters.eq("productId", id));
-     * rating.subscribe(r -> System.out.println("Rating: " + r));
+     * // Typical: field present -> emits the Float value.
+     * Mono<Float> rating = executor.queryForFloat("rating", Filters.eq("productId", id)); // cold Mono
+     * rating.subscribe(r -> System.out.println("Rating: " + r));                          // prints e.g. "Rating: 98.5"
+     *
+     * // Typical: default for the absent case.
+     * float r = executor.queryForFloat("rating", Filters.eq("productId", id))
+     *                   .defaultIfEmpty(0.0f).block();           // 0.0f only because YOU chose it
+     *
+     * // Edge: no match or missing/null field -> Mono completes EMPTY (no fabricated 0.0f).
+     * executor.queryForFloat("rating", Filters.eq("productId", "x"))
+     *         .subscribe(v -> {}, e -> {}, () -> System.out.println("absent")); // prints "absent"
+     *
+     * // Negative: empty propName -> Mono errors with IllegalArgumentException on subscription.
+     * executor.queryForFloat("", Filters.eq("productId", id))
+     *         .subscribe(v -> {}, err -> System.out.println(err.getClass())); // IllegalArgumentException
      * }</pre>
      *
      * @param propName the name of the property to retrieve
@@ -1223,8 +1418,21 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Mono<Double> price = executor.queryForDouble("price", Filters.eq("itemId", id));
-     * price.subscribe(p -> System.out.println("Price: $" + p));
+     * // Typical: field present -> emits the Double value.
+     * Mono<Double> price = executor.queryForDouble("price", Filters.eq("itemId", id)); // cold Mono
+     * price.subscribe(p -> System.out.println("Price: $" + p));                        // prints e.g. "Price: $19.99"
+     *
+     * // Typical: default for the absent case.
+     * double p = executor.queryForDouble("price", Filters.eq("itemId", id))
+     *                    .defaultIfEmpty(0.0d).block();          // 0.0d only because YOU chose it
+     *
+     * // Edge: no match or missing/null field -> Mono completes EMPTY (no fabricated 0.0d).
+     * executor.queryForDouble("price", Filters.eq("itemId", "x"))
+     *         .subscribe(v -> {}, e -> {}, () -> System.out.println("absent")); // prints "absent"
+     *
+     * // Negative: null propName -> Mono errors with IllegalArgumentException on subscription.
+     * executor.queryForDouble(null, Filters.eq("itemId", id))
+     *         .subscribe(v -> {}, err -> System.out.println(err.getClass())); // IllegalArgumentException
      * }</pre>
      *
      * @param propName the name of the property to retrieve
@@ -1257,8 +1465,21 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Mono<String> username = executor.queryForString("username", Filters.eq("userId", "u123"));
-     * username.subscribe(n -> System.out.println("Username: " + n));
+     * // Typical: field present -> emits the String value.
+     * Mono<String> username = executor.queryForString("username", Filters.eq("userId", "u123")); // cold Mono
+     * username.subscribe(n -> System.out.println("Username: " + n));                             // prints e.g. "Username: John Doe"
+     *
+     * // Typical: default for the absent case.
+     * String name = executor.queryForString("username", Filters.eq("userId", "u123"))
+     *                       .defaultIfEmpty("(unknown)").block(); // "(unknown)" when no doc / no field
+     *
+     * // Edge: no match or missing/null field -> Mono completes EMPTY (no onNext).
+     * executor.queryForString("username", Filters.eq("userId", "missing"))
+     *         .subscribe(v -> {}, e -> {}, () -> System.out.println("absent")); // prints "absent"
+     *
+     * // Negative: blank propName -> Mono errors with IllegalArgumentException on subscription.
+     * executor.queryForString("", Filters.eq("userId", "u123"))
+     *         .subscribe(v -> {}, err -> System.out.println(err.getClass())); // IllegalArgumentException
      * }</pre>
      *
      * @param propName the name of the property to retrieve
@@ -1289,8 +1510,21 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Mono<Date> createdAt = executor.queryForDate("createdAt", Filters.eq("recordId", id));
-     * createdAt.subscribe(d -> System.out.println("Created: " + d));
+     * // Typical: field present -> emits the Date value.
+     * Mono<Date> createdAt = executor.queryForDate("createdAt", Filters.eq("recordId", id)); // cold Mono
+     * createdAt.subscribe(d -> System.out.println("Created: " + d));                         // prints the stored java.util.Date
+     *
+     * // Typical: default for the absent case.
+     * Date d = executor.queryForDate("createdAt", Filters.eq("recordId", id))
+     *                  .defaultIfEmpty(new Date(0L)).block();    // epoch when no doc / no field
+     *
+     * // Edge: no match or missing/null field -> Mono completes EMPTY (no onNext).
+     * executor.queryForDate("createdAt", Filters.eq("recordId", "x"))
+     *         .subscribe(v -> {}, e -> {}, () -> System.out.println("absent")); // prints "absent"
+     *
+     * // Negative: null propName -> Mono errors with IllegalArgumentException on subscription.
+     * executor.queryForDate(null, Filters.eq("recordId", id))
+     *         .subscribe(v -> {}, err -> System.out.println(err.getClass())); // IllegalArgumentException
      * }</pre>
      *
      * @param propName the name of the property to retrieve
@@ -1321,9 +1555,22 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: field present -> emits the value as the requested Date subclass.
      * Mono<Timestamp> lastModified = executor.queryForDate(
-     *     "lastModified", Filters.eq("docId", id), Timestamp.class);
-     * lastModified.subscribe(ts -> log(ts));
+     *     "lastModified", Filters.eq("docId", id), Timestamp.class); // cold Mono
+     * lastModified.subscribe(ts -> log(ts));                         // log receives a java.sql.Timestamp
+     *
+     * // Typical: default for the absent case.
+     * Timestamp ts = executor.queryForDate("lastModified", Filters.eq("docId", id), Timestamp.class)
+     *                        .defaultIfEmpty(new Timestamp(0L)).block(); // epoch when absent
+     *
+     * // Edge: no match or missing/null field -> Mono completes EMPTY (no onNext).
+     * executor.queryForDate("lastModified", Filters.eq("docId", "x"), Timestamp.class)
+     *         .subscribe(v -> {}, e -> {}, () -> System.out.println("absent")); // prints "absent"
+     *
+     * // Negative: null rowType -> Mono errors with IllegalArgumentException on subscription.
+     * executor.queryForDate("lastModified", Filters.eq("docId", id), (Class<Timestamp>) null)
+     *         .subscribe(v -> {}, err -> System.out.println(err.getClass())); // IllegalArgumentException
      * }</pre>
      *
      * @param <T> the specific Date subtype to return
@@ -1360,9 +1607,23 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: field present -> emits the value converted to the requested type.
      * Mono<BigDecimal> balance = executor.queryForSingleValue(
-     *     "balance", Filters.eq("accountId", id), BigDecimal.class);
-     * balance.subscribe(b -> processBalance(b));
+     *     "balance", Filters.eq("accountId", id), BigDecimal.class); // cold Mono
+     * balance.subscribe(b -> processBalance(b));                     // processBalance receives a BigDecimal
+     *
+     * // Typical: a primitive-wrapper type behaves exactly like the queryForInt convenience overload.
+     * Integer v = executor.queryForSingleValue("value", Filters.eq("id", 1), Integer.class)
+     *                     .block();                              // e.g. 42, or null if absent
+     *
+     * // Edge: no match, or matched document whose "balance" field is absent/null
+     * // -> Mono completes EMPTY (no onNext); there is no separate "matched but null" signal.
+     * executor.queryForSingleValue("balance", Filters.eq("accountId", "x"), BigDecimal.class)
+     *         .subscribe(b -> {}, e -> {}, () -> System.out.println("absent")); // prints "absent"
+     *
+     * // Negative: blank propName -> Mono errors with IllegalArgumentException on subscription.
+     * executor.queryForSingleValue("", Filters.eq("accountId", id), BigDecimal.class)
+     *         .subscribe(b -> {}, err -> System.out.println(err.getClass())); // IllegalArgumentException
      * }</pre>
      *
      * @param <V> the type of value to retrieve
@@ -1398,7 +1659,18 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Mono<Dataset> dataset = executor.query(Filters.eq("status", "active"));
+     * // Typical: materialise all matches into a tabular Dataset.
+     * Mono<Dataset> dataset = executor.query(Filters.eq("status", "active")); // cold Mono
+     * dataset.subscribe(ds -> System.out.println("rows: " + ds.size()));      // e.g. "rows: 50"
+     *
+     * // Typical: block and inspect.
+     * Dataset ds = executor.query(Filters.eq("status", "active")).block();
+     *
+     * // Edge: no match -> emits an EMPTY Dataset (size 0); the Mono does NOT complete empty.
+     * int rows = executor.query(Filters.eq("status", "no-such")).block().size(); // 0
+     *
+     * // Edge: a null filter loads the entire collection into the Dataset.
+     * Dataset everything = executor.query((Bson) null).block();  // all documents
      * }</pre>
      *
      * @param filter the query filter to match documents against (null matches all)
@@ -1667,8 +1939,16 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * ChangeStreamPublisher<Document> changeStream = executor.watch();
-     * Flux.from(changeStream).subscribe(change -> processChange(change));
+     * // Typical: subscribe and process change events as they arrive (hot, never completes on its own).
+     * ChangeStreamPublisher<Document> changeStream = executor.watch(); // returned synchronously; never null
+     * Disposable sub = Flux.from(changeStream)
+     *                      .subscribe(change -> processChange(change)); // runs until cancelled / invalidated
+     *
+     * // Edge: nothing happens until subscribed — merely calling watch() opens no cursor.
+     * ChangeStreamPublisher<Document> cold = executor.watch();        // no server-side cursor yet
+     *
+     * // Edge: cancel the subscription to close the server-side cursor (it will not complete by itself).
+     * sub.dispose();                                                  // cursor closed
      * }</pre>
      *
      * @return a {@link ChangeStreamPublisher} that emits each change event as it occurs
@@ -1688,8 +1968,16 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * ChangeStreamPublisher<UserChangeEvent> userChanges = executor.watch(UserChangeEvent.class);
-     * Flux.from(userChanges).subscribe(event -> handleUserChange(event));
+     * // Typical: each event's fullDocument is decoded as the given type.
+     * ChangeStreamPublisher<UserChangeEvent> userChanges = executor.watch(UserChangeEvent.class); // never null
+     * Disposable sub = Flux.from(userChanges)
+     *                      .subscribe(event -> handleUserChange(event)); // hot; runs until cancelled
+     *
+     * // Edge: nothing is opened until subscription — the call itself performs no I/O.
+     * ChangeStreamPublisher<UserChangeEvent> cold = executor.watch(UserChangeEvent.class); // cold until subscribed
+     *
+     * // Edge: dispose to close the cursor (the stream does not complete on its own).
+     * sub.dispose();                                                  // cursor closed
      * }</pre>
      *
      * @param <T> the type to decode each change event's full document into
@@ -1758,14 +2046,28 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: insert an entity; the result carries the generated _id.
      * User newUser = new User("John", "john@example.com");
-     * Mono<InsertOneResult> result = executor.insertOne(newUser);
+     * Mono<InsertOneResult> result = executor.insertOne(newUser);   // cold; insert runs on subscription
+     * result.subscribe(r -> System.out.println(r.getInsertedId())); // e.g. a BsonObjectId value
+     *
+     * // Typical: a raw Document is inserted as-is (no conversion).
+     * executor.insertOne(new Document("name", "Jane")).block();   // emits one InsertOneResult
+     *
+     * // Edge: cold publisher — re-subscribing re-issues the insert (a second document is written).
+     * Mono<InsertOneResult> twice = executor.insertOne(new Document("name", "Dup"));
+     * twice.block();                                              // insert #1
+     * twice.block();                                              // insert #2 (separate write)
+     *
+     * // Edge/Negative: a duplicate unique key surfaces as a MongoWriteException via onError,
+     * // not as a thrown exception at call time.
      * }</pre>
      *
      * @param obj the object to insert (Document/Map/entity class); must not be null
      * @return a {@code Mono} that, on subscription, emits exactly one {@link InsertOneResult}
      *         describing the operation, then completes
-     * @throws IllegalArgumentException if obj is null
+     * @throws NullPointerException if obj is null (thrown synchronously at call time, since the
+     *         object is converted to a document eagerly before the {@code Mono} is built)
      * @throws com.mongodb.MongoWriteException if the insert violates a unique constraint or
      *         document validation (signalled via {@code Mono})
      * @see #insertOne(Object, InsertOneOptions)
@@ -1813,8 +2115,19 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: batch-insert a list of entities.
      * List<User> users = Arrays.asList(new User("Alice"), new User("Bob"));
-     * Mono<InsertManyResult> result = executor.insertMany(users);
+     * Mono<InsertManyResult> result = executor.insertMany(users);           // cold; runs on subscription
+     * result.subscribe(r -> System.out.println(r.getInsertedIds().size())); // e.g. 2
+     *
+     * // Typical: a mix of Documents/Maps/entities is accepted (non-Documents are converted).
+     * executor.insertMany(Arrays.asList(new Document("k", 1), Map.of("k", 2))).block(); // one InsertManyResult
+     *
+     * // Edge/Negative: a null collection is rejected synchronously (at call time).
+     * executor.insertMany(null);                                  // throws IllegalArgumentException
+     *
+     * // Edge/Negative: an empty collection is also rejected synchronously.
+     * executor.insertMany(Collections.emptyList());              // throws IllegalArgumentException
      * }</pre>
      *
      * @param objList the collection of objects to insert (Document/Map/entity classes);
@@ -1904,9 +2217,21 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: a plain object is auto-wrapped in {$set: ...}.
      * String objectId = "507f1f77bcf86cd799439011";
      * User updates = new User(); updates.setStatus("active");
-     * Mono<UpdateResult> result = executor.updateOne(objectId, updates);
+     * Mono<UpdateResult> result = executor.updateOne(objectId, updates); // cold; runs on subscription
+     * result.subscribe(r -> System.out.println(r.getModifiedCount()));   // e.g. 1 (0 if no doc matched)
+     *
+     * // Typical: a Document that already starts with an operator is passed through unchanged.
+     * executor.updateOne(objectId, new Document("$inc", new Document("loginCount", 1))).block(); // returns an UpdateResult
+     *
+     * // Edge: no document has that id -> emits an UpdateResult with matchedCount/modifiedCount == 0
+     * // (not an error, not empty).
+     *
+     * // Edge/Negative: an invalid ObjectId hex string throws IllegalArgumentException synchronously
+     * // (at call time), because the id is parsed eagerly.
+     * executor.updateOne("not-a-valid-id", updates);            // throws IllegalArgumentException
      * }</pre>
      *
      * @param objectId the string representation of the document's ObjectId
@@ -1947,8 +2272,19 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson filter = Filters.eq("email", "user@example.com");
+     *
+     * // Typical: a non-operator Document is auto-wrapped in {$set: {lastLogin: ...}}.
      * Document update = new Document("lastLogin", new Date());
-     * Mono<UpdateResult> result = executor.updateOne(filter, update);
+     * Mono<UpdateResult> result = executor.updateOne(filter, update);  // cold; runs on subscription
+     * result.subscribe(r -> System.out.println(r.getModifiedCount())); // e.g. 1
+     *
+     * // Typical: a driver-built update (Updates.xxx) is used as-is (NOT re-wrapped in $set).
+     * executor.updateOne(filter, Updates.set("verified", true)).block(); // emits one UpdateResult
+     *
+     * // Edge: only the FIRST matching document is updated, even if several match.
+     *
+     * // Edge: no match -> emits an UpdateResult with matchedCount == 0 (not empty, not an error).
+     * long matched = executor.updateOne(Filters.eq("email", "nobody"), update).block().getMatchedCount(); // 0
      * }</pre>
      *
      * @param filter the query filter to identify the document to update
@@ -1994,10 +2330,20 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: a pipeline-style update (MongoDB 4.2+).
      * List<Bson> pipeline = Arrays.asList(
      *     Updates.set("total", new Document("$sum", Arrays.asList("$price", "$tax")))
      * );
-     * Mono<UpdateResult> result = executor.updateOne(filter, pipeline);
+     * Mono<UpdateResult> result = executor.updateOne(filter, pipeline); // cold; runs on subscription
+     * result.subscribe(r -> System.out.println(r.getModifiedCount()));  // e.g. 1
+     *
+     * // Edge: no match -> emits an UpdateResult with matchedCount == 0 (not empty, not an error).
+     *
+     * // Edge/Negative: an empty pipeline is rejected synchronously (at call time).
+     * executor.updateOne(filter, Collections.emptyList());      // throws IllegalArgumentException
+     *
+     * // Edge/Negative: a null pipeline is likewise rejected synchronously.
+     * executor.updateOne(filter, (Collection<?>) null);         // throws IllegalArgumentException
      * }</pre>
      *
      * @param filter the query filter to identify the document to update; must not be null
@@ -2112,8 +2458,19 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson filter = Filters.eq("status", "pending");
+     *
+     * // Typical: updates EVERY matching document.
      * Document update = new Document("$set", new Document("status", "processed"));
-     * Mono<UpdateResult> result = executor.updateMany(filter, update);
+     * Mono<UpdateResult> result = executor.updateMany(filter, update); // cold; runs on subscription
+     * result.subscribe(r -> System.out.println(r.getModifiedCount())); // e.g. 42
+     *
+     * // Typical: a non-operator object is auto-wrapped in {$set: ...}.
+     * executor.updateMany(filter, new Document("processedAt", new Date())).block(); // one UpdateResult
+     *
+     * // Edge: no match -> emits an UpdateResult with matchedCount/modifiedCount == 0 (not empty).
+     * long matched = executor.updateMany(Filters.eq("status", "no-such"), update).block().getMatchedCount(); // 0
+     *
+     * // Edge: cold publisher — re-subscribing re-issues the bulk update.
      * }</pre>
      *
      * @param filter the query filter to identify documents to update; must not be null
@@ -2233,9 +2590,20 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: completely overwrite the document (the _id is preserved).
      * String id = "507f1f77bcf86cd799439011";
      * Document newDoc = new Document("name", "John").append("age", 30);
-     * Mono<UpdateResult> result = executor.replaceOne(id, newDoc);
+     * Mono<UpdateResult> result = executor.replaceOne(id, newDoc);     // cold; runs on subscription
+     * result.subscribe(r -> System.out.println(r.getModifiedCount())); // 1 if replaced, else 0
+     *
+     * // Typical: a non-Document replacement (Map/entity) is converted before replacing.
+     * executor.replaceOne(id, Map.of("name", "Jane", "age", 31)).block(); // emits one UpdateResult
+     *
+     * // Edge: no document has that id -> emits an UpdateResult with matchedCount == 0.
+     *
+     * // Edge/Negative: an invalid ObjectId hex string throws IllegalArgumentException synchronously
+     * // (at call time), because the id is parsed eagerly.
+     * executor.replaceOne("xyz", newDoc);                       // throws IllegalArgumentException
      * }</pre>
      *
      * @param objectId string representation of the ObjectId; must be a valid 24-character hex string
@@ -2386,7 +2754,18 @@ public final class MongoCollectionExecutor {
      *     Filters.eq("status", "expired"),
      *     Filters.lt("created", oldDate)
      * );
-     * Mono<DeleteResult> result = executor.deleteOne(filter);
+     *
+     * // Typical: deletes at most ONE document (the first match).
+     * Mono<DeleteResult> result = executor.deleteOne(filter);         // cold; runs on subscription
+     * result.subscribe(r -> System.out.println(r.getDeletedCount())); // 1 if a doc matched, else 0
+     *
+     * // Edge: no document matches -> emits a DeleteResult with deletedCount == 0 (not empty, not an error).
+     * long deleted = executor.deleteOne(Filters.eq("status", "no-such")).block().getDeletedCount(); // 0
+     *
+     * // Edge: even if several documents match, only one is removed.
+     *
+     * // Edge: cold publisher — re-subscribing re-issues the delete.
+     * Mono<DeleteResult> again = executor.deleteOne(filter);  // nothing deleted until subscribed
      * }</pre>
      *
      * @param filter the query filter to identify the document to delete; must not be null
@@ -2433,7 +2812,18 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson filter = Filters.eq("status", "archived");
-     * Mono<DeleteResult> result = executor.deleteMany(filter);
+     *
+     * // Typical: removes ALL matching documents.
+     * Mono<DeleteResult> result = executor.deleteMany(filter);        // cold; runs on subscription
+     * result.subscribe(r -> System.out.println(r.getDeletedCount())); // e.g. 42
+     *
+     * // Edge: no match -> emits a DeleteResult with deletedCount == 0 (not empty, not an error).
+     * long deleted = executor.deleteMany(Filters.eq("status", "no-such")).block().getDeletedCount(); // 0
+     *
+     * // Edge/Caution: an empty filter deletes the ENTIRE collection.
+     * // executor.deleteMany(new Document()).block();          // deletes every document
+     *
+     * // Edge: cold publisher — re-subscribing re-issues the bulk delete.
      * }</pre>
      *
      * @param filter the query filter to identify documents to delete; must not be null
@@ -2485,11 +2875,22 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: emits just the inserted-document count.
      * List<Document> documents = Arrays.asList(
      *     new Document("name", "Alice").append("age", 25),
      *     new Document("name", "Bob").append("age", 30)
      * );
-     * Mono<Integer> insertedCount = executor.bulkInsert(documents);
+     * Mono<Integer> insertedCount = executor.bulkInsert(documents);      // cold; runs on subscription
+     * insertedCount.subscribe(n -> System.out.println("inserted " + n)); // "inserted 2"
+     *
+     * // Typical: block for the count directly.
+     * int n = executor.bulkInsert(documents).block();            // 2
+     *
+     * // Edge/Negative: a null collection is rejected synchronously (at call time).
+     * executor.bulkInsert(null);                                 // throws IllegalArgumentException
+     *
+     * // Edge/Negative: an empty collection is also rejected synchronously.
+     * executor.bulkInsert(Collections.emptyList());             // throws IllegalArgumentException
      * }</pre>
      *
      * @param entities collection of documents or entities to insert; must not be null or empty
@@ -2556,12 +2957,23 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: mix insert/update/delete in one round-trip.
      * List<WriteModel<Document>> operations = Arrays.asList(
      *     new InsertOneModel<>(new Document("type", "insert")),
      *     new UpdateOneModel<>(filter, update),
      *     new DeleteOneModel<>(deleteFilter)
      * );
-     * Mono<BulkWriteResult> result = executor.bulkWrite(operations);
+     * Mono<BulkWriteResult> result = executor.bulkWrite(operations);                               // cold; runs on subscription
+     * result.subscribe(r -> System.out.println(r.getInsertedCount() + "/" + r.getDeletedCount())); // e.g. "1/1"
+     *
+     * // Typical: block for the aggregate result.
+     * BulkWriteResult r = executor.bulkWrite(operations).block();
+     *
+     * // Edge/Negative: a null list is rejected synchronously (at call time).
+     * executor.bulkWrite(null);                                  // throws IllegalArgumentException
+     *
+     * // Edge/Negative: an empty list is also rejected synchronously.
+     * executor.bulkWrite(Collections.emptyList());              // throws IllegalArgumentException
      * }</pre>
      *
      * @param requests list of write models representing the operations to perform; must not be null or empty
@@ -2621,7 +3033,19 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * Bson filter = Filters.eq("_id", documentId);
      * Document update = new Document("$inc", new Document("counter", 1));
-     * Mono<Document> result = executor.findOneAndUpdate(filter, update);
+     *
+     * // Typical: emits the document AS IT WAS BEFORE the update (this overload's default).
+     * Mono<Document> result = executor.findOneAndUpdate(filter, update);            // cold; runs on subscription
+     * result.subscribe(before -> System.out.println(before.getInteger("counter"))); // pre-increment value
+     *
+     * // Typical: a non-operator object is auto-wrapped in {$set: ...}.
+     * executor.findOneAndUpdate(filter, new Document("status", "seen")).block(); // emits the prior doc
+     *
+     * // Edge: no document matches (and no upsert) -> Mono completes EMPTY (no onNext).
+     * executor.findOneAndUpdate(Filters.eq("_id", "missing"), update)
+     *         .subscribe(d -> {}, e -> {}, () -> System.out.println("no match")); // prints "no match"
+     *
+     * // Edge: only the FIRST matching document is updated and returned.
      * }</pre>
      *
      * @param filter the query filter to find the document; must not be null
@@ -2732,11 +3156,23 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: apply a pipeline-style atomic update; emits the prior document by default.
      * List<Bson> updates = Arrays.asList(
      *     Updates.set("status", "processing"),
      *     Updates.currentDate("lastModified")
      * );
-     * Mono<Document> result = executor.findOneAndUpdate(filter, updates);
+     * Mono<Document> result = executor.findOneAndUpdate(filter, updates);         // cold; runs on subscription
+     * result.subscribe(before -> System.out.println(before.getString("status"))); // pre-update status
+     *
+     * // Edge: no match (and no upsert) -> Mono completes EMPTY (no onNext).
+     * executor.findOneAndUpdate(Filters.eq("_id", "missing"), updates)
+     *         .subscribe(d -> {}, e -> {}, () -> System.out.println("no match")); // prints "no match"
+     *
+     * // Edge/Negative: an empty pipeline is rejected synchronously (at call time).
+     * executor.findOneAndUpdate(filter, Collections.emptyList()); // throws IllegalArgumentException
+     *
+     * // Edge/Negative: a null pipeline is likewise rejected synchronously.
+     * executor.findOneAndUpdate(filter, (Collection<?>) null);    // throws IllegalArgumentException
      * }</pre>
      *
      * @param filter the query filter to find the document; must not be null
@@ -2854,7 +3290,16 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * Bson filter = Filters.eq("_id", documentId);
      * Document replacement = new Document("name", "New Name").append("version", 2);
-     * Mono<Document> result = executor.findOneAndReplace(filter, replacement);
+     *
+     * // Typical: emits the document AS IT WAS BEFORE replacement (this overload's default).
+     * Mono<Document> result = executor.findOneAndReplace(filter, replacement);  // cold; runs on subscription
+     * result.subscribe(before -> System.out.println(before.getString("name"))); // old name
+     *
+     * // Edge: no document matches (and no upsert) -> Mono completes EMPTY (no onNext).
+     * executor.findOneAndReplace(Filters.eq("_id", "missing"), replacement)
+     *         .subscribe(d -> {}, e -> {}, () -> System.out.println("no match")); // prints "no match"
+     *
+     * // Edge: the _id of the original document is preserved across the replacement.
      * }</pre>
      *
      * @param filter the query filter to find the document; must not be null
@@ -2968,7 +3413,16 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson filter = Filters.eq("status", "expired");
-     * Mono<Document> deletedDoc = executor.findOneAndDelete(filter);
+     *
+     * // Typical: emits the just-deleted document, then completes.
+     * Mono<Document> deletedDoc = executor.findOneAndDelete(filter);                // cold; runs on subscription
+     * deletedDoc.subscribe(doc -> System.out.println("removed " + doc.get("_id"))); // prints once if a doc was deleted
+     *
+     * // Edge: no document matches -> nothing is deleted and the Mono completes EMPTY (no onNext).
+     * executor.findOneAndDelete(Filters.eq("status", "no-such"))
+     *         .subscribe(d -> {}, e -> {}, () -> System.out.println("no match")); // prints "no match"
+     *
+     * // Edge: only ONE document is removed even if several match.
      * }</pre>
      *
      * @param filter the query filter to find the document to delete; must not be null
@@ -3070,7 +3524,17 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Flux<String> categories = executor.distinct("category", String.class);
+     * // Typical: emit each unique value of the field, deduplicated server-side.
+     * Flux<String> categories = executor.distinct("category", String.class); // cold Flux
+     * categories.subscribe(System.out::println);                             // e.g. "books", "electronics", ...
+     *
+     * // Typical: collect into a list.
+     * List<String> all = executor.distinct("category", String.class).collectList().block();
+     *
+     * // Edge: an empty collection (or a field present on no document) -> Flux completes EMPTY.
+     *
+     * // Edge: cold — no query is issued until subscription; re-subscribing re-runs it.
+     * Flux<String> notRunYet = executor.distinct("category", String.class); // nothing sent yet
      * }</pre>
      *
      * @param <T> the type of the distinct values
@@ -3118,11 +3582,22 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: group-and-sum; each output stage document is emitted.
      * List<Bson> pipeline = Arrays.asList(
      *     Aggregates.match(Filters.eq("status", "completed")),
      *     Aggregates.group("$category", Accumulators.sum("total", "$amount"))
      * );
-     * Flux<Document> results = executor.aggregate(pipeline);
+     * Flux<Document> results = executor.aggregate(pipeline);      // cold Flux
+     * results.subscribe(doc -> System.out.println(doc.toJson())); // one doc per group
+     *
+     * // Typical: collect the output.
+     * List<Document> grouped = executor.aggregate(pipeline).collectList().block();
+     *
+     * // Edge: a pipeline that matches nothing -> Flux completes EMPTY.
+     * executor.aggregate(Arrays.asList(Aggregates.match(Filters.eq("status", "no-such"))))
+     *         .subscribe(d -> {}, e -> {}, () -> System.out.println("empty")); // prints "empty"
+     *
+     * // Edge: cold — no aggregation runs until subscription; re-subscribing re-runs the pipeline.
      * }</pre>
      *
      * @param pipeline the aggregation pipeline stages; must not be null
@@ -3176,7 +3651,17 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Flux<Document> groupedByCategory = executor.groupBy("category");
+     * // Typical: one output document per distinct value, with {_id: <value>}.
+     * Flux<Document> groupedByCategory = executor.groupBy("category");        // cold Flux
+     * groupedByCategory.subscribe(doc -> System.out.println(doc.get("_id"))); // e.g. "books", "toys"
+     *
+     * // Typical: collect the group keys.
+     * List<Document> groups = executor.groupBy("category").collectList().block();
+     *
+     * // Edge: an empty collection -> Flux completes EMPTY (no groups).
+     *
+     * // Edge: cold — no aggregation runs until subscription; re-subscribing re-runs it.
+     * Flux<Document> notRunYet = executor.groupBy("category"); // nothing sent yet
      * }</pre>
      *
      * @param fieldName the field name to group by; must not be null
@@ -3273,7 +3758,17 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Flux<Document> categoryCounts = executor.groupByAndCount("category");
+     * // Typical: each output doc is {_id: <value>, count: <frequency>}.
+     * Flux<Document> categoryCounts = executor.groupByAndCount("category"); // cold Flux
+     * categoryCounts.subscribe(doc ->
+     *     System.out.println(doc.get("_id") + " = " + doc.getInteger("count"))); // e.g. "books = 10"
+     *
+     * // Typical: collect the frequency distribution.
+     * List<Document> counts = executor.groupByAndCount("category").collectList().block();
+     *
+     * // Edge: an empty collection -> Flux completes EMPTY (no counts emitted).
+     *
+     * // Edge: cold — re-subscribing re-runs the aggregation.
      * }</pre>
      *
      * @param fieldName the field name to group by; must not be null
@@ -3370,9 +3865,19 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * // Typical: server-side map-reduce; each output doc is {_id: <key>, value: <reduced>}.
      * String mapFunction = "function() { emit(this.category, this.amount); }";
      * String reduceFunction = "function(key, values) { return Array.sum(values); }";
-     * Flux<Document> results = executor.mapReduce(mapFunction, reduceFunction);
+     * Flux<Document> results = executor.mapReduce(mapFunction, reduceFunction);               // cold Flux
+     * results.subscribe(doc -> System.out.println(doc.get("_id") + ": " + doc.get("value"))); // one line per key
+     *
+     * // Typical: collect the results.
+     * List<Document> totals = executor.mapReduce(mapFunction, reduceFunction).collectList().block();
+     *
+     * // Edge: an empty collection -> Flux completes EMPTY.
+     *
+     * // Edge: cold — no map-reduce runs until subscription; re-subscribing re-runs it.
+     * // Note: prefer the aggregate pipeline — server-side map-reduce is deprecated in MongoDB 5.0+.
      * }</pre>
      *
      * @param mapFunction the JavaScript map function; must not be null

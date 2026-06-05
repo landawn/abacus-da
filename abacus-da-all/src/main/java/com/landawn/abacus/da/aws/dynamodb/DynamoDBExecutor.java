@@ -264,8 +264,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AsyncExecutor customAsyncExecutor = new AsyncExecutor(
-     *     16,  // core threads
-     *     32,  // max threads
+     *     16,                     // core threads
+     *     32,                     // max threads
      *     300L, TimeUnit.SECONDS  // keep alive time
      * );
      *
@@ -1190,7 +1190,24 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * Converts an object array of key-value pairs to a map.
      *
      * <p>The input array is interpreted as alternating key-value pairs:
-     * {@code [key1, value1, key2, value2, ...]}.</p>
+     * {@code [key1, value1, key2, value2, ...]}. Keys are coerced to {@code String} via
+     * {@link String#valueOf(Object)}, so non-String keys are accepted (unlike {@link #asItem(Object...)}).
+     * The result preserves insertion order.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Map<String, Object> map = toMap(new Object[] {"name", "John", "age", 30});
+     * // returns a LinkedHashMap: {"name"=John, "age"=30}
+     *
+     * Map<String, Object> empty = toMap(new Object[0]);
+     * // returns an empty map
+     *
+     * Map<String, Object> none = toMap((Object[]) null);
+     * // returns null
+     *
+     * toMap(new Object[] {"name", "John", "age"});
+     * // throws IllegalArgumentException (odd array length)
+     * }</pre>
      *
      * @param propNameAndValues the alternating property name and value pairs
      * @return a map containing the key-value pairs, or {@code null} if input is {@code null}
@@ -2007,7 +2024,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *     asKey("userId", "user1"),
      *     asKey("userId", "user2")
      * );
-     * requestItems.put("Users", KeysAndAttributes.builder().keys(userKeys).build());
+     * requestItems.put("Users", new KeysAndAttributes().withKeys(userKeys));
      *
      * Map<String, List<Map<String, Object>>> results = executor.batchGetItem(requestItems);
      * List<Map<String, Object>> users = results.get("Users");
@@ -2078,8 +2095,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *     asKey("userId", "user1"),
      *     asKey("userId", "user2")
      * );
-     * requestItems.put("Users", KeysAndAttributes.builder().keys(keys).build());
-     * 
+     * requestItems.put("Users", new KeysAndAttributes().withKeys(keys));
+     *
      * Map<String, List<User>> results = executor.batchGetItem(requestItems, User.class);
      * List<User> users = results.get("Users");
      * }</pre>
@@ -2976,6 +2993,14 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * <li><strong>Functional Operations:</strong> Full support for filter, map, reduce, etc.</li>
      * </ul>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * // Project only "userId" and "name"; the stream lazily fetches each page from DynamoDB.
+     * try (Stream<Map<String, Object>> rows = executor.scan("Users", N.asList("userId", "name"))) {
+     *     rows.forEach(row -> System.out.println(row.get("userId") + " -> " + row.get("name")));
+     * }   // each row is a Map<String, Object> keyed by attribute name
+     * }</pre>
+     *
      * @param tableName the name of the DynamoDB table. Must not be {@code null} or empty.
      * @param attributesToGet the list of attributes to retrieve. Must not be {@code null}.
      * @return a {@link Stream} of maps representing scan results with automatic pagination
@@ -3000,6 +3025,15 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * <li><strong>Functional Operations:</strong> Full support for filter, map, reduce, etc.</li>
      * </ul>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * // Server-side filter: only items whose "status" attribute equals "active".
+     * Map<String, Condition> filter = Filters.eq("status", "active");
+     * try (Stream<Map<String, Object>> rows = executor.scan("Users", filter)) {
+     *     long active = rows.count();
+     * }   // 'active' = number of matching items across all pages
+     * }</pre>
+     *
      * @param tableName the name of the DynamoDB table. Must not be {@code null} or empty.
      * @param scanFilter the filter conditions for the scan. Must not be {@code null}.
      * @return a {@link Stream} of maps representing scan results with automatic pagination
@@ -3023,6 +3057,15 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * <li><strong>Lazy Evaluation:</strong> Processing only occurs during terminal operations</li>
      * <li><strong>Functional Operations:</strong> Full support for filter, map, reduce, etc.</li>
      * </ul>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * // Project "userId"/"email" and filter on "status" == "active" in one scan.
+     * Map<String, Condition> filter = Filters.eq("status", "active");
+     * try (Stream<Map<String, Object>> rows = executor.scan("Users", N.asList("userId", "email"), filter)) {
+     *     List<Object> emails = rows.map(row -> row.get("email")).toList();
+     * }   // 'emails' holds the "email" attribute of each matching item
+     * }</pre>
      *
      * @param tableName the name of the DynamoDB table. Must not be {@code null} or empty.
      * @param attributesToGet the list of attributes to retrieve. Must not be {@code null}.
@@ -3049,6 +3092,15 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * <li><strong>Lazy Evaluation:</strong> Processing only occurs during terminal operations</li>
      * <li><strong>Functional Operations:</strong> Full support for filter, map, reduce, etc.</li>
      * </ul>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * ScanRequest request = new ScanRequest("Users")
+     *     .withScanFilter(Filters.notNull("email"));
+     * try (Stream<Map<String, Object>> rows = executor.scan(request)) {
+     *     rows.limit(10).forEach(System.out::println);
+     * }   // prints up to 10 item maps; pages are fetched lazily as the stream is consumed
+     * }</pre>
      *
      * @param scanRequest the scan parameters. Must not be {@code null}.
      * @return a {@link Stream} of maps representing scan results with automatic pagination
@@ -3273,6 +3325,23 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *
      * <p><b>Note:</b> The {@link AsyncExecutor} passed to the constructor is not shut down here
      * because it may be shared with other components.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * // Explicit close
+     * DynamoDBExecutor executor = new DynamoDBExecutor(dynamoDBClient);
+     * try {
+     *     executor.putItem("Users", DynamoDBExecutor.asItem("id", "1"));
+     * } finally {
+     *     executor.close();   // shuts down the underlying AmazonDynamoDBClient
+     * }
+     *
+     * // Or via try-with-resources, since DynamoDBExecutor is AutoCloseable
+     * try (DynamoDBExecutor ex = new DynamoDBExecutor(dynamoDBClient)) {
+     *     ex.getItem("Users", DynamoDBExecutor.asKey("id", "1"));
+     * }   // close() is invoked automatically on block exit
+     * }</pre>
+     *
      */
     @Override
     public void close() {
@@ -4609,6 +4678,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *     .le("price", 100)
      *     .build();
      * }</pre>
+     *
      */
     public static final class ConditionBuilder {
         private Map<String, Condition> condMap;
@@ -4637,6 +4707,15 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * Adds an equality condition for the specified attribute.
          * Matches items where the attribute value equals the provided value.
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * Map<String, Condition> filter = Filters.builder().eq("status", "active").build();
+         * // filter.get("status") -> Condition with EQ operator and one value "active"
+         *
+         * // Chains with other conditions; returns the same builder for fluent use.
+         * ConditionBuilder b = Filters.builder().eq("status", "active").gt("age", 18);
+         * }</pre>
+         *
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return this builder for method chaining
@@ -4650,6 +4729,16 @@ public final class DynamoDBExecutor implements AutoCloseable {
         /**
          * Adds a not-equal condition for the specified attribute.
          * Matches items where the attribute value does not equal the provided value.
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * Map<String, Condition> filter = Filters.builder().ne("status", "deleted").build();
+         * // filter.get("status") -> Condition with NE operator and one value "deleted"
+         *
+         * // Re-adding the same attribute overwrites the prior condition for that attribute.
+         * Map<String, Condition> f = Filters.builder().eq("x", 1).ne("x", 2).build();
+         * // f has a single entry "x" -> NE 2 (the eq was replaced)
+         * }</pre>
          *
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
@@ -4665,6 +4754,12 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * Adds a greater-than condition for the specified attribute.
          * Matches items where the attribute value is greater than the provided value.
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * Map<String, Condition> filter = Filters.builder().gt("age", 18).build();
+         * // filter.get("age") -> Condition with GT operator and value "18" (numbers stored as N strings)
+         * }</pre>
+         *
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return this builder for method chaining
@@ -4678,6 +4773,12 @@ public final class DynamoDBExecutor implements AutoCloseable {
         /**
          * Adds a greater-than-or-equal condition for the specified attribute.
          * Matches items where the attribute value is greater than or equal to the provided value.
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * Map<String, Condition> filter = Filters.builder().ge("score", 60).build();
+         * // filter.get("score") -> Condition with GE operator and value "60"
+         * }</pre>
          *
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
@@ -4693,6 +4794,12 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * Adds a less-than condition for the specified attribute.
          * Matches items where the attribute value is less than the provided value.
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * Map<String, Condition> filter = Filters.builder().lt("price", 100).build();
+         * // filter.get("price") -> Condition with LT operator and value "100"
+         * }</pre>
+         *
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return this builder for method chaining
@@ -4707,6 +4814,12 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * Adds a less-than-or-equal condition for the specified attribute.
          * Matches items where the attribute value is less than or equal to the provided value.
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * Map<String, Condition> filter = Filters.builder().le("quantity", 10).build();
+         * // filter.get("quantity") -> Condition with LE operator and value "10"
+         * }</pre>
+         *
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return this builder for method chaining
@@ -4720,6 +4833,12 @@ public final class DynamoDBExecutor implements AutoCloseable {
         /**
          * Adds a between condition for the specified attribute.
          * Matches items where the attribute value is between the two provided values (inclusive).
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * Map<String, Condition> filter = Filters.builder().bt("age", 18, 65).build();
+         * // filter.get("age") -> Condition with BETWEEN operator and two values ["18", "65"]
+         * }</pre>
          *
          * @param attrName the name of the attribute to compare
          * @param minAttrValue the minimum value (inclusive)
@@ -4737,6 +4856,12 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * Adds a {@link ComparisonOperator#NULL} condition for the specified attribute.
          * Matches items where the attribute does not exist on the item.
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * Map<String, Condition> filter = Filters.builder().isNull("deletedAt").build();
+         * // filter.get("deletedAt") -> Condition with NULL operator and no attributeValueList
+         * }</pre>
+         *
          * @param attrName the name of the attribute to check
          * @return this builder for method chaining
          */
@@ -4749,6 +4874,12 @@ public final class DynamoDBExecutor implements AutoCloseable {
         /**
          * Adds a {@link ComparisonOperator#NOT_NULL} condition for the specified attribute.
          * Matches items where the attribute exists on the item.
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * Map<String, Condition> filter = Filters.builder().notNull("email").build();
+         * // filter.get("email") -> Condition with NOT_NULL operator and no attributeValueList
+         * }</pre>
          *
          * @param attrName the name of the attribute to check
          * @return this builder for method chaining
@@ -4763,6 +4894,12 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * Adds a contains condition for the specified attribute.
          * For strings, matches items where the attribute value contains the specified substring.
          * For sets, matches items where the set contains the specified value.
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * Map<String, Condition> filter = Filters.builder().contains("tags", "important").build();
+         * // filter.get("tags") -> Condition with CONTAINS operator and value "important"
+         * }</pre>
          *
          * @param attrName the name of the attribute to check
          * @param attrValue the value or substring to search for
@@ -4779,6 +4916,12 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * For strings, matches items where the attribute value does not contain the specified substring.
          * For sets, matches items where the set does not contain the specified value.
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * Map<String, Condition> filter = Filters.builder().notContains("description", "deprecated").build();
+         * // filter.get("description") -> Condition with NOT_CONTAINS operator and value "deprecated"
+         * }</pre>
+         *
          * @param attrName the name of the attribute to check
          * @param attrValue the value or substring to search for
          * @return this builder for method chaining
@@ -4794,6 +4937,12 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * Matches items where the string attribute value begins with the specified prefix.
          * Only applicable to String attributes.
          *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * Map<String, Condition> filter = Filters.builder().beginsWith("email", "admin@").build();
+         * // filter.get("email") -> Condition with BEGINS_WITH operator and value "admin@"
+         * }</pre>
+         *
          * @param attrName the name of the attribute to check
          * @param attrValue the prefix to match
          * @return this builder for method chaining
@@ -4807,6 +4956,16 @@ public final class DynamoDBExecutor implements AutoCloseable {
         /**
          * Adds an IN condition for the specified attribute using varargs.
          * Matches items where the attribute value equals any of the provided values.
+         *
+         * <p><b>Usage Examples:</b></p>
+         * <pre>{@code
+         * Map<String, Condition> filter = Filters.builder().in("status", "active", "pending").build();
+         * // filter.get("status") -> Condition with IN operator and two values ["active", "pending"]
+         *
+         * // Passing no values yields an IN condition with an empty value list.
+         * Map<String, Condition> empty = Filters.builder().in("status").build();
+         * // empty.get("status").getAttributeValueList() is an empty list
+         * }</pre>
          *
          * @param attrName the name of the attribute to check
          * @param attrValues variable number of values to match against

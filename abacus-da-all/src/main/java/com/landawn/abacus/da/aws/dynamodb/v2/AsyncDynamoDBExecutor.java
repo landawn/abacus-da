@@ -191,6 +191,24 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <li>Connection-pool size appropriate for your concurrency profile</li>
      * </ul>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * DynamoDbAsyncClient client = DynamoDbAsyncClient.builder()
+     *     .region(Region.US_EAST_1)
+     *     .build();
+     *
+     * AsyncDynamoDBExecutor executor = new AsyncDynamoDBExecutor(client); // wraps the client
+     * executor.dynamoDBAsyncClient();                                     // returns the same client instance
+     *
+     * // Edge: a null client is rejected eagerly
+     * new AsyncDynamoDBExecutor(null);                                    // throws IllegalArgumentException
+     *
+     * // Typical: prefer try-with-resources so close() shuts the client down
+     * try (AsyncDynamoDBExecutor e = new AsyncDynamoDBExecutor(client)) {
+     *     // ... async operations ...
+     * }                                                                   // e.close() -> client.close()
+     * }</pre>
+     *
      * @param dynamoDBClient the DynamoDB async client to use for operations. Must not be null.
      * @throws IllegalArgumentException if {@code dynamoDBClient} is null
      */
@@ -210,7 +228,21 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * 
      * <p>The returned client is the same instance used internally and should not be closed
      * separately from this executor.</p>
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AsyncDynamoDBExecutor executor = new AsyncDynamoDBExecutor(client);
+     *
+     * DynamoDbAsyncClient sameClient = executor.dynamoDBAsyncClient(); // returns the wrapped client (same instance)
+     *
+     * // Typical: drop down to the raw SDK for an operation not wrapped here
+     * CompletableFuture<DescribeTableResponse> meta =
+     *     executor.dynamoDBAsyncClient().describeTable(r -> r.tableName("Users")); // raw async SDK call
+     *
+     * // Edge: do NOT close the returned client directly; let the executor own its lifecycle
+     * executor.dynamoDBAsyncClient().close(); // closes the shared client out from under the executor (avoid)
+     * }</pre>
+     *
      * @return the DynamoDbAsyncClient instance used by this executor, never null
      */
     public DynamoDbAsyncClient dynamoDBAsyncClient() {
@@ -248,10 +280,20 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     // getters and setters...
      * }
      * 
+     * // Typical: table name is derived from @Table("Users")
      * AsyncDynamoDBExecutor.Mapper<User> userMapper = executor.mapper(User.class);
      * CompletableFuture<User> userFuture = userMapper.getItem(user);
+     *
+     * // Mappers are cached per class -> the same instance is returned
+     * AsyncDynamoDBExecutor.Mapper<User> again = executor.mapper(User.class);   // returns same instance as userMapper
+     *
+     * // Edge: a class without @Table cannot be auto-mapped
+     * executor.mapper(NoTableEntity.class);   // throws IllegalArgumentException (use mapper(Class, tableName, policy))
+     *
+     * // Edge: a null class is rejected
+     * executor.mapper((Class<User>) null);    // throws (NullPointerException)
      * }</pre>
-     * 
+     *
      * @param <T> the entity type
      * @param targetEntityClass the entity class to create a mapper for. Must be annotated with one of
      *                          the supported {@code @Table} annotations. Must not be null.
@@ -304,12 +346,22 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     // getters and setters...
      * }
      * 
-     * AsyncDynamoDBExecutor.Mapper<Product> mapper = 
-     *     executor.mapper(Product.class, "ProductTable", NamingPolicy.SNAKE_CASE);
-     * 
+     * // Typical: explicit table + naming policy, no @Table required
+     * AsyncDynamoDBExecutor.Mapper<Product> mapper =
+     *     executor.mapper(Product.class, "ProductTable", NamingPolicy.SNAKE_CASE);   // new instance (not cached)
      * CompletableFuture<Product> future = mapper.getItem(product);
+     *
+     * // Each call builds a fresh mapper -> instances are distinct
+     * AsyncDynamoDBExecutor.Mapper<Product> other =
+     *     executor.mapper(Product.class, "ProductTable", NamingPolicy.SNAKE_CASE);   // != mapper
+     *
+     * // Edge: null namingPolicy is accepted and defaults to CAMEL_CASE
+     * executor.mapper(Product.class, "ProductTable", null);   // ok, uses CAMEL_CASE
+     *
+     * // Edge: an empty (or null) table name is rejected
+     * executor.mapper(Product.class, "", NamingPolicy.CAMEL_CASE);   // throws IllegalArgumentException
      * }</pre>
-     * 
+     *
      * @param <T> the entity type
      * @param targetEntityClass the entity class to create mapper for. Must be a valid bean class. Must not be null.
      * @param tableName the DynamoDB table name to use for operations. Must not be null or empty.
@@ -340,24 +392,30 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <pre>{@code
      * Map<String, AttributeValue> key = Map.of("userId", AttributeValue.builder().s("user123").build());
      *
+     * // Typical: item present -> a Map keyed by attribute name
      * CompletableFuture<Map<String, Object>> itemFuture = executor.getItem("Users", key);
+     * Map<String, Object> item = itemFuture.get();    // e.g. {userId=user123, name=John}; blocks until complete
      *
-     * itemFuture.thenAccept(item -> {
-     *     if (item != null) {
-     *         System.out.println("User name: " + item.get("name"));
+     * // Edge: item absent -> the future completes with null (NOT an empty map)
+     * Map<String, AttributeValue> missing = Map.of("userId", AttributeValue.builder().s("nope").build());
+     * Map<String, Object> none = executor.getItem("Users", missing).get();   // returns null
+     *
+     * itemFuture.thenAccept(it -> {
+     *     if (it != null) {
+     *         System.out.println("User name: " + it.get("name"));
      *     } else {
      *         System.out.println("User not found");
      *     }
-     * }).exceptionally(ex -> {
+     * }).exceptionally(ex -> {       // ex is a CompletionException wrapping the SDK exception
      *     logger.error("Failed to get user", ex);
      *     return null;
      * });
      * }</pre>
-     * 
+     *
      * @param tableName the name of the DynamoDB table to retrieve the item from. Must not be null or empty.
      * @param key the primary key of the item to retrieve. Must include all key attributes. Must not be null.
      * @return a {@code CompletableFuture} that completes with the item as a {@code Map<String, Object>}
-     *         (or {@code null}/empty map when the item does not exist), or completes exceptionally with
+     *         (or {@code null} when the item does not exist), or completes exceptionally with
      *         a {@link java.util.concurrent.CompletionException} wrapping the underlying
      *         {@link software.amazon.awssdk.services.dynamodb.model.DynamoDbException}
      * @see #getItem(String, Map, Boolean)
@@ -406,7 +464,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * @param key the primary key of the item to retrieve. Must include all key attributes. Must not be null.
      * @param consistentRead whether to perform a consistent read (true) or eventually consistent read (false/null)
      * @return a {@code CompletableFuture} that completes with the item as a {@code Map<String, Object>}
-     *         (or {@code null}/empty map when the item does not exist), or completes exceptionally with
+     *         (or {@code null} when the item does not exist), or completes exceptionally with
      *         a {@link java.util.concurrent.CompletionException} wrapping the underlying
      *         {@link software.amazon.awssdk.services.dynamodb.model.DynamoDbException}
      */
@@ -438,8 +496,14 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     .consistentRead(true)
      *     .returnConsumedCapacity(ReturnConsumedCapacity.TOTAL)
      *     .build();
-     * 
+     *
+     * // Typical: present item -> Map of attribute name -> value
      * CompletableFuture<Map<String, Object>> productFuture = executor.getItem(request);
+     * Map<String, Object> product = productFuture.get();   // e.g. {productName=Widget, price=9.99}; blocks
+     *
+     * // Edge: when the key matches no item the future completes with null
+     * GetItemRequest missing = request.copy(b -> b.key(Map.of("productId", AttributeValue.fromS("none"))));
+     * Map<String, Object> absent = executor.getItem(missing).get();   // returns null
      *
      * productFuture.thenAccept(item -> {
      *     if (item != null) {
@@ -448,7 +512,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     }
      * });
      * }</pre>
-     * 
+     *
      * @param getItemRequest the complete GetItemRequest with all parameters configured. Must not be null.
      * @return a CompletableFuture containing the item as a Map of attribute names to values,
      *         or null if not found
@@ -475,19 +539,24 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * Map<String, AttributeValue> key = Map.of("id", AttributeValue.builder().s("u1").build());
+     *
+     * // Typical: present item -> a populated entity
      * CompletableFuture<User> userFuture = executor.getItem("Users", key, User.class);
-     * 
-     * userFuture.thenApply(user -> {
-     *     // Transform the user
-     *     return user.getName().toUpperCase();
-     * }).thenAccept(name -> {
-     *     System.out.println("User name: " + name);
-     * }).exceptionally(ex -> {
-     *     logger.error("Failed to get user", ex);
-     *     return null;
-     * });
+     * User user = userFuture.get();    // e.g. User{id=u1, name=Alice}; blocks until complete
+     *
+     * // Edge: absent item -> the entity variant completes with null
+     * Map<String, AttributeValue> missing = Map.of("id", AttributeValue.builder().s("none").build());
+     * User absent = executor.getItem("Users", missing, User.class).get();   // returns null
+     *
+     * userFuture.thenApply(u -> u.getName().toUpperCase())   // NPE inside the stage if u is null
+     *           .thenAccept(name -> System.out.println("User name: " + name))
+     *           .exceptionally(ex -> {     // ex is a CompletionException wrapping the cause
+     *               logger.error("Failed to get user", ex);
+     *               return null;
+     *           });
      * }</pre>
-     * 
+     *
      * @param <T> the target type for conversion
      * @param tableName the name of the DynamoDB table. Must not be null or empty.
      * @param key the primary key of the item to retrieve. Must not be null or empty.
@@ -602,8 +671,10 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * @param targetClass the class to convert the item to (entity beans need a public no-arg constructor;
      *                    {@code Map.class} and primitive-wrapper types are also supported). Must not be null.
      * @return a {@code CompletableFuture} that completes with the item converted to {@code T}
-     *         (or {@code null}/empty bean when the item does not exist), or completes exceptionally
-     *         with the underlying SDK exception wrapped in {@link java.util.concurrent.CompletionException}
+     *         (or {@code null} for reference types when the item does not exist; a primitive
+     *         {@code targetClass} yields its default value such as {@code 0} or {@code false}),
+     *         or completes exceptionally with the underlying SDK exception wrapped in
+     *         {@link java.util.concurrent.CompletionException}
      */
     public <T> CompletableFuture<T> getItem(final GetItemRequest getItemRequest, final Class<T> targetClass) {
         return dynamoDBClient.getItem(getItemRequest).thenApply(getItemResponse -> readRow(getItemResponse, targetClass));
@@ -924,8 +995,10 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * item.put("name", AttributeValue.fromS("John Doe"));
      * item.put("email", AttributeValue.fromS("john@example.com"));
      * item.put("createdAt", AttributeValue.fromN(String.valueOf(Instant.now().toEpochMilli())));
-     * 
+     *
+     * // Typical: completes with the SDK PutItemResponse (default returnValues=NONE, so attributes() is empty)
      * CompletableFuture<PutItemResponse> future = executor.putItem("Users", item);
+     * PutItemResponse resp = future.get();   // the response forwarded straight from the async client; blocks
      *
      * future.thenAccept(response -> {
      *         System.out.println("Item saved successfully");
@@ -1535,15 +1608,21 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *         ":customerId", AttributeValue.fromS("CUSTOMER123")
      *     ))
      *     .build();
-     * 
+     *
+     * // Typical: every matching item as a Map (all pages concatenated)
      * CompletableFuture<List<Map<String, Object>>> future = executor.list(queryRequest);
-     * future.thenAccept(orders -> {
-     *     System.out.println("Found " + orders.size() + " orders");
-     *     orders.forEach(order -> 
+     * List<Map<String, Object>> orders = future.get();   // e.g. [{orderId=ORD-1}, ...]; blocks
+     *
+     * // Edge: no matches -> an empty list (never null)
+     * // orders.isEmpty() == true when the partition key has no items
+     *
+     * future.thenAccept(items -> {
+     *     System.out.println("Found " + items.size() + " orders");
+     *     items.forEach(order ->
      *         System.out.println("Order: " + order.get("orderId")));
      * });
      * }</pre>
-     * 
+     *
      * @param queryRequest the QueryRequest with all parameters configured. Must not be null.
      * @return a CompletableFuture containing a list of all matching items as Maps
      * @throws IllegalArgumentException if queryRequest is null
@@ -1647,19 +1726,22 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *         ":storeId", AttributeValue.fromS("STORE001")
      *     ))
      *     .build();
-     * 
-     * executor.query(queryRequest)
-     *     .thenAccept(dataset -> {
+     *
+     * // Typical: rows materialized into a Dataset (here as raw attribute-name -> value maps)
+     * CompletableFuture<Dataset> future = executor.query(queryRequest);
+     * Dataset ds = future.get();   // ds.size() == number of matching rows; empty Dataset when none match
+     *
+     * future.thenAccept(dataset -> {
      *         // Group sales by product and sum amounts
      *         Dataset grouped = dataset.groupBy("productId")
      *             .aggregate("amount", Collectors.summingDouble(Double::doubleValue));
-     *         
+     *
      *         System.out.println("Sales by product:");
-     *         grouped.forEach(row -> 
+     *         grouped.forEach(row ->
      *             System.out.println(row.get("productId") + ": $" + row.get("amount")));
      *     });
      * }</pre>
-     * 
+     *
      * @param queryRequest the QueryRequest with query parameters. Must not be null.
      * @return a CompletableFuture containing a Dataset with all query results
      * @throws IllegalArgumentException if queryRequest is null
@@ -1771,7 +1853,10 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     ))
      *     .build();
      * 
+     * // Typical: a lazy Stream; terminal ops drive page fetches and block the consuming thread
      * CompletableFuture<Stream<Map<String, Object>>> future = executor.stream(queryRequest);
+     * List<Map<String, Object>> all = future.get().toList();   // materialize every matching item (abacus Stream)
+     *
      * future.thenAccept(eventStream -> {
      *     long recentEvents = eventStream
      *         .filter(event -> "ERROR".equals(event.get("level")))
@@ -1781,7 +1866,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     System.out.println("Processed " + recentEvents + " error events");
      * });
      * }</pre>
-     * 
+     *
      * @param queryRequest the QueryRequest with all parameters configured. Must not be null.
      * @return a CompletableFuture containing a Stream of matching items as Maps
      * @throws IllegalArgumentException if queryRequest is null
@@ -1909,16 +1994,19 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<String> attributes = Arrays.asList("userId", "email", "status");
-     * 
-     * executor.scan("Users", attributes)
-     *     .thenAccept(stream -> {
+     *
+     * // Typical: lazy Stream of projected items; terminal ops fetch pages and block the consuming thread
+     * CompletableFuture<Stream<Map<String, Object>>> future = executor.scan("Users", attributes);
+     * List<Map<String, Object>> rows = future.get().toList();   // every scanned item, projected to the given attributes
+     *
+     * future.thenAccept(stream -> {
      *         long activeUsers = stream
      *             .filter(user -> "ACTIVE".equals(user.get("status")))
      *             .count();
      *         System.out.println("Active users: " + activeUsers);
      *     });
      * }</pre>
-     * 
+     *
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
      * @param attributesToGet list of attribute names to retrieve, null for all attributes
      * @return a CompletableFuture containing a Stream of items as Maps
@@ -2276,14 +2364,14 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     // Use executor for operations
      *     CompletableFuture<User> future = executor.getItem(tableName, key, User.class);
      *     User user = future.get();
-     * } // Automatically closed
+     * } // close() called automatically -> underlying client.close()
      *
      * // Manual cleanup
      * AsyncDynamoDBExecutor executor = new AsyncDynamoDBExecutor(client);
      * try {
      *     // Use executor
      * } finally {
-     *     executor.close();
+     *     executor.close();   // closes the wrapped client; further operations on it will fail
      * }
      * }</pre>
      *
@@ -2492,12 +2580,17 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * GetItemRequest request = GetItemRequest.builder()
-         *     .key(createKey("user123"))
+         *     .key(createKey("user123"))   // table name omitted -> mapper's table is substituted
          *     .projectionExpression("userId, email, lastLogin")
          *     .build();
          *
          * userMapper.getItem(request)
-         *     .thenAccept(user -> System.out.println("User email: " + user.getEmail()));
+         *     .thenAccept(user -> System.out.println("User email: " + user.getEmail()));   // user is null if absent
+         *
+         * // Edge: a request naming a different table is rejected before any call
+         * GetItemRequest wrong = GetItemRequest.builder()
+         *     .tableName("OtherTable").key(createKey("user123")).build();
+         * userMapper.getItem(wrong);   // throws IllegalArgumentException (table name mismatch)
          * }</pre>
          *
          * @param getItemRequest the complete GetItemRequest. Must not be null.

@@ -244,13 +244,23 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * AnyDelete delete = AnyDelete.of("user123");
-     * executor.delete("users_table", delete);
+     * AnyDelete delete = AnyDelete.of("user123");   // returns an AnyDelete wrapping a Delete for row "user123"
+     * byte[] row = delete.getRow();                 // row equals Bytes.toBytes("user123")
+     *
+     * // A byte[] row key is used as-is (no string conversion)
+     * AnyDelete byKey = AnyDelete.of(new byte[] {1, 2, 3});   // returns AnyDelete for the 3-byte row
+     *
+     * // Edge: a null row key throws NullPointerException (the single-arg Delete ctor)
+     * AnyDelete.of((Object) null);                  // throws NullPointerException
+     *
+     * // Edge: an empty byte[] row key throws IllegalArgumentException ("Row length is 0")
+     * AnyDelete.of(new byte[0]);                     // throws IllegalArgumentException
      * }</pre>
      *
      * @param rowKey the row key object to delete, automatically converted to bytes
      * @return a new AnyDelete instance configured for the specified row
-     * @throws IllegalArgumentException if {@code rowKey} resolves to a null/empty byte array
+     * @throws NullPointerException if {@code rowKey} resolves to a {@code null} byte array
+     * @throws IllegalArgumentException if {@code rowKey} resolves to an empty (zero-length) byte array
      * @see #of(Object, long)
      * @see #addColumn(String, String)
      * @see #addFamily(String)
@@ -270,7 +280,16 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * <pre>{@code
      * // Delete all data older than 24 hours
      * long oneDayAgo = System.currentTimeMillis() - (24 * 60 * 60 * 1000);
-     * AnyDelete oldDataDelete = AnyDelete.of("user123", oneDayAgo);
+     * AnyDelete oldDataDelete = AnyDelete.of("user123", oneDayAgo);   // returns AnyDelete; getTimestamp() == oneDayAgo
+     *
+     * AnyDelete d = AnyDelete.of("user123", 1_700_000_000_000L);
+     * long ts = d.getTimestamp();                                     // ts == 1_700_000_000_000L
+     *
+     * // Edge: a negative timestamp throws IllegalArgumentException ("Timestamp cannot be negative")
+     * AnyDelete.of("user123", -1L);                                   // throws IllegalArgumentException
+     *
+     * // Edge: a null row key throws NullPointerException
+     * AnyDelete.of((Object) null, oneDayAgo);                         // throws NullPointerException
      * }</pre>
      *
      * @param rowKey the row key object to delete, automatically converted to bytes
@@ -278,7 +297,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *                  default timestamp for any subsequent {@code addColumn}/{@code addColumns}/
      *                  {@code addFamily} calls that omit a timestamp
      * @return a new AnyDelete instance configured for timestamp-based deletion
-     * @throws IllegalArgumentException if {@code rowKey} resolves to a null/empty byte array
+     * @throws NullPointerException if {@code rowKey} resolves to a {@code null} byte array
+     * @throws IllegalArgumentException if {@code rowKey} resolves to an empty byte array, or if
+     *         {@code timestamp} is negative
      * @see #of(Object)
      * @see #addFamily(String, long)
      * @see #addColumn(String, String, long)
@@ -301,15 +322,23 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * String compositeKey = "user123_session456_data789";
      * AnyDelete prefixDelete = AnyDelete.of(compositeKey, 0, 7) // "user123"
      *                                   .addFamily("sessions");
+     * byte[] row = prefixDelete.getRow();                 // row equals Bytes.toBytes("user123")
+     *
+     * // Edge: a length that exceeds the available bytes throws ArrayIndexOutOfBoundsException
+     * AnyDelete.of("abc", 0, 10);                          // throws ArrayIndexOutOfBoundsException
+     *
+     * // Edge: a null row key throws IllegalArgumentException ("Row buffer is null") -- NOT NPE,
+     * // because this 3-arg Delete ctor validates the row via Mutation.checkRow
+     * AnyDelete.of((Object) null, 0, 1);                   // throws IllegalArgumentException
      * }</pre>
      *
      * @param rowKey the row key object whose byte representation will be sliced
      * @param rowOffset the starting position (0-based) within the row key bytes
      * @param rowLength the number of bytes to use from the row key, starting at offset
      * @return a new AnyDelete instance configured with the partial row key
-     * @throws IllegalArgumentException if {@code rowKey} resolves to a null/empty byte array, or if
-     *         {@code rowOffset}/{@code rowLength} do not describe a valid sub-range of the row key
-     *         bytes
+     * @throws IllegalArgumentException if {@code rowKey} resolves to a {@code null} or empty byte array
+     * @throws ArrayIndexOutOfBoundsException if {@code rowOffset}/{@code rowLength} do not describe a
+     *         valid sub-range of the row key bytes
      * @see #of(Object)
      * @see #of(Object, int, int, long)
      */
@@ -332,6 +361,14 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * long cutoffTime = System.currentTimeMillis() - (7 * 24 * 60 * 60 * 1000);
      * AnyDelete sessionCleanup = AnyDelete.of(sessionKey, 0, 7, cutoffTime)
      *                                     .addFamily("session_data");
+     * byte[] row = sessionCleanup.getRow();              // row equals Bytes.toBytes("user123")
+     * long ts = sessionCleanup.getTimestamp();           // ts == cutoffTime
+     *
+     * // Edge: a negative timestamp throws IllegalArgumentException
+     * AnyDelete.of("abcdefgh", 0, 3, -1L);               // throws IllegalArgumentException
+     *
+     * // Edge: a length that exceeds the available bytes throws ArrayIndexOutOfBoundsException
+     * AnyDelete.of("abc", 0, 10, cutoffTime);            // throws ArrayIndexOutOfBoundsException
      * }</pre>
      *
      * @param rowKey the row key object whose byte representation will be sliced
@@ -339,10 +376,10 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param rowLength the number of bytes to use from the row key, starting at offset
      * @param timestamp the maximum timestamp for versions to delete (inclusive)
      * @return a new AnyDelete instance configured with partial row key and timestamp control
-     * @throws IllegalArgumentException if {@code rowKey} resolves to a null/empty byte array, if
-     *         {@code rowOffset}/{@code rowLength} do not describe a valid sub-range of the row key
-     *         bytes, or if {@code timestamp} is negative (validated by the underlying
-     *         {@link Delete} constructor)
+     * @throws IllegalArgumentException if {@code rowKey} resolves to a {@code null} or empty byte array,
+     *         or if {@code timestamp} is negative (validated by the underlying {@link Delete} constructor)
+     * @throws ArrayIndexOutOfBoundsException if {@code rowOffset}/{@code rowLength} do not describe a
+     *         valid sub-range of the row key bytes
      * @see #of(Object, int, int)
      * @see #of(Object, long)
      */
@@ -360,9 +397,17 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * NavigableMap&lt;byte[], List&lt;Cell&gt;&gt; familyMap = buildFamilyMapFromQuery();
+     * NavigableMap<byte[], List<Cell>> familyMap = new TreeMap<>(Bytes.BYTES_COMPARATOR);
      * long operationTimestamp = System.currentTimeMillis();
      * AnyDelete complexDelete = AnyDelete.of("complex_row", operationTimestamp, familyMap);
+     * byte[] row = complexDelete.getRow();            // row equals Bytes.toBytes("complex_row")
+     * long ts = complexDelete.getTimestamp();         // ts == operationTimestamp
+     *
+     * // Edge: a null familyMap throws NullPointerException
+     * AnyDelete.of("complex_row", operationTimestamp, null);   // throws NullPointerException
+     *
+     * // Edge: a null row key throws NullPointerException
+     * AnyDelete.of((Object) null, operationTimestamp, familyMap);   // throws NullPointerException
      * }</pre>
      *
      * @param rowKey the row key object for the delete operation, automatically converted to bytes
@@ -392,10 +437,17 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Delete existingDelete = buildStandardDelete();
+     * Delete existingDelete = new Delete(Bytes.toBytes("user123"));
+     * existingDelete.addFamily(Bytes.toBytes("info"));
      * AnyDelete extendedDelete = AnyDelete.of(existingDelete)
      *                                     .addFamily("additional_family")
      *                                     .addColumn("extra", "column");
+     * // The copy is backed by a fresh Delete; mutating it does not affect the source
+     * boolean different = extendedDelete.val() != existingDelete;   // different == true
+     * int srcFamilies = existingDelete.getFamilyCellMap().size();   // srcFamilies == 1 (unchanged)
+     *
+     * // Edge: a null source Delete throws NullPointerException
+     * AnyDelete.of((Delete) null);                                  // throws NullPointerException
      * }</pre>
      *
      * @param deleteToCopy the HBase Delete object to copy; must not be null
@@ -418,8 +470,12 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyDelete anyDelete = AnyDelete.of("user123").addFamily("info");
-     * Delete hbaseDelete = anyDelete.val();
-     * table.delete(hbaseDelete);   // Use with native HBase API
+     * Delete hbaseDelete = anyDelete.val();   // returns the wrapped Delete (never null)
+     * byte[] row = hbaseDelete.getRow();      // row equals Bytes.toBytes("user123")
+     * table.delete(hbaseDelete);              // Use with native HBase API
+     *
+     * // Repeated calls return the same backing instance
+     * boolean same = anyDelete.val() == anyDelete.val();   // same == true
      * }</pre>
      *
      * @return the underlying HBase Delete object
@@ -441,9 +497,16 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Cell deleteMarker = createDeleteMarker();
+     * byte[] row = Bytes.toBytes("user123");
+     * Cell deleteMarker = new KeyValue(row, Bytes.toBytes("info"), null,
+     *         HConstants.LATEST_TIMESTAMP, KeyValue.Type.DeleteFamily);
      * AnyDelete delete = AnyDelete.of("user123")
-     *                            .add(deleteMarker);
+     *                            .add(deleteMarker);   // returns same builder; numFamilies() == 1
+     *
+     * // Edge: a cell whose row differs from this delete's row throws IOException (WrongRowIOException)
+     * Cell wrongRow = new KeyValue(Bytes.toBytes("other"), Bytes.toBytes("info"), null,
+     *         HConstants.LATEST_TIMESTAMP, KeyValue.Type.DeleteFamily);
+     * AnyDelete.of("user123").add(wrongRow);           // throws IOException
      * }</pre>
      *
      * @param kv an existing Cell to attach to this delete; should be a delete-type cell
@@ -476,8 +539,13 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyDelete delete = AnyDelete.of("user123")
-     *                            .addFamily("preferences")
-     *                            .addFamily("activity_log");
+     *                            .addFamily("preferences")     // returns same builder
+     *                            .addFamily("activity_log");   // returns same builder; numFamilies() == 2
+     *
+     * // A later addFamily on a family already targeted by addColumns overrides that column entry
+     * AnyDelete d = AnyDelete.of("user123")
+     *                       .addColumns("info", "email")
+     *                       .addFamily("info");                // numFamilies() == 1 (family-level tombstone wins)
      * }</pre>
      *
      * @param family the name of the column family to delete; encoded via
@@ -504,7 +572,10 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * <pre>{@code
      * long retentionCutoff = System.currentTimeMillis() - (30L * 24 * 60 * 60 * 1000);
      * AnyDelete delete = AnyDelete.of("user123")
-     *                            .addFamily("activity_log", retentionCutoff);
+     *                            .addFamily("activity_log", retentionCutoff);   // returns same builder; numFamilies() == 1
+     *
+     * // Edge: a negative timestamp throws IllegalArgumentException
+     * AnyDelete.of("user123").addFamily("activity_log", -1L);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param family the name of the column family to delete; encoded via
@@ -531,7 +602,12 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * <pre>{@code
      * byte[] familyBytes = Bytes.toBytes("preferences");
      * AnyDelete delete = AnyDelete.of("user123")
-     *                            .addFamily(familyBytes);
+     *                            .addFamily(familyBytes);   // returns same builder; numFamilies() == 1
+     *
+     * // Chaining keeps adding distinct families
+     * AnyDelete d = AnyDelete.of("user123")
+     *                       .addFamily(Bytes.toBytes("cf1"))
+     *                       .addFamily(Bytes.toBytes("cf2"));   // numFamilies() == 2
      * }</pre>
      *
      * @param family the column family name as a byte array
@@ -555,7 +631,10 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * byte[] familyBytes = Bytes.toBytes("activity_log");
      * long cutoffTime = System.currentTimeMillis() - (7L * 24 * 60 * 60 * 1000);
      * AnyDelete delete = AnyDelete.of("user123")
-     *                            .addFamily(familyBytes, cutoffTime);
+     *                            .addFamily(familyBytes, cutoffTime);   // returns same builder; numFamilies() == 1
+     *
+     * // Edge: a negative timestamp throws IllegalArgumentException
+     * AnyDelete.of("user123").addFamily(familyBytes, -1L);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param family the column family name as a byte array
@@ -583,7 +662,10 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * <pre>{@code
      * long specificVersion = 1609459200000L;  // Specific timestamp
      * AnyDelete delete = AnyDelete.of("user123")
-     *                            .addFamilyVersion("snapshots", specificVersion);
+     *                            .addFamilyVersion("snapshots", specificVersion);   // returns same builder; numFamilies() == 1
+     *
+     * // Edge: a negative timestamp throws IllegalArgumentException
+     * AnyDelete.of("user123").addFamilyVersion("snapshots", -1L);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param family the name of the column family
@@ -610,7 +692,10 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * byte[] familyBytes = Bytes.toBytes("snapshots");
      * long specificVersion = 1609459200000L;
      * AnyDelete delete = AnyDelete.of("user123")
-     *                            .addFamilyVersion(familyBytes, specificVersion);
+     *                            .addFamilyVersion(familyBytes, specificVersion);   // returns same builder; numFamilies() == 1
+     *
+     * // Edge: a negative timestamp throws IllegalArgumentException
+     * AnyDelete.of("user123").addFamilyVersion(familyBytes, -1L);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param family the column family name as a byte array
@@ -639,8 +724,11 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyDelete delete = AnyDelete.of("user123")
-     *                            .addColumn("info", "email")
-     *                            .addColumn("info", "phone");
+     *                            .addColumn("info", "email")    // returns same builder
+     *                            .addColumn("info", "phone");   // returns same builder; numFamilies() == 1 (both in "info")
+     *
+     * // Deletes only ONE (the latest) version of the column; prefer addColumns to remove all versions
+     * AnyDelete single = AnyDelete.of("user123").addColumn("info", "name");   // single-version tombstone
      * }</pre>
      *
      * @param family the column family name; encoded via
@@ -667,7 +755,10 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * <pre>{@code
      * long versionToDelete = 1609459200000L;
      * AnyDelete delete = AnyDelete.of("user123")
-     *                            .addColumn("info", "email", versionToDelete);
+     *                            .addColumn("info", "email", versionToDelete);   // returns same builder; numFamilies() == 1
+     *
+     * // Edge: a negative timestamp throws IllegalArgumentException
+     * AnyDelete.of("user123").addColumn("info", "email", -1L);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param family the column family name; encoded via
@@ -699,7 +790,10 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * byte[] familyBytes = Bytes.toBytes("info");
      * byte[] qualifierBytes = Bytes.toBytes("email");
      * AnyDelete delete = AnyDelete.of("user123")
-     *                            .addColumn(familyBytes, qualifierBytes);
+     *                            .addColumn(familyBytes, qualifierBytes);   // returns same builder; numFamilies() == 1
+     *
+     * // Removes only the latest version; use addColumns(byte[], byte[]) to remove every version
+     * AnyDelete single = AnyDelete.of("user123").addColumn(familyBytes, qualifierBytes);   // single-version tombstone
      * }</pre>
      *
      * @param family the column family name as a byte array
@@ -725,7 +819,10 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * byte[] qualifierBytes = Bytes.toBytes("email");
      * long versionTimestamp = 1609459200000L;
      * AnyDelete delete = AnyDelete.of("user123")
-     *                            .addColumn(familyBytes, qualifierBytes, versionTimestamp);
+     *                            .addColumn(familyBytes, qualifierBytes, versionTimestamp);   // returns same builder; numFamilies() == 1
+     *
+     * // Edge: a negative timestamp throws IllegalArgumentException
+     * AnyDelete.of("user123").addColumn(familyBytes, qualifierBytes, -1L);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param family the column family name as a byte array
@@ -754,8 +851,11 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyDelete delete = AnyDelete.of("user123")
-     *                            .addColumns("info", "email")
-     *                            .addColumns("info", "phone");
+     *                            .addColumns("info", "email")    // returns same builder; deletes ALL versions
+     *                            .addColumns("info", "phone");   // returns same builder; numFamilies() == 1
+     *
+     * // Unlike addColumn (single version), this removes every version of the column
+     * AnyDelete allVersions = AnyDelete.of("user123").addColumns("info", "name");   // all-versions tombstone
      * }</pre>
      *
      * @param family the column family name; encoded via
@@ -782,7 +882,10 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * <pre>{@code
      * long retentionCutoff = System.currentTimeMillis() - (90L * 24 * 60 * 60 * 1000);
      * AnyDelete delete = AnyDelete.of("user123")
-     *                            .addColumns("activity", "login_history", retentionCutoff);
+     *                            .addColumns("activity", "login_history", retentionCutoff);   // returns same builder; numFamilies() == 1
+     *
+     * // Edge: a negative timestamp throws IllegalArgumentException
+     * AnyDelete.of("user123").addColumns("activity", "login_history", -1L);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param family the column family name; encoded via
@@ -813,7 +916,10 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * byte[] familyBytes = Bytes.toBytes("info");
      * byte[] qualifierBytes = Bytes.toBytes("email");
      * AnyDelete delete = AnyDelete.of("user123")
-     *                            .addColumns(familyBytes, qualifierBytes);
+     *                            .addColumns(familyBytes, qualifierBytes);   // returns same builder; numFamilies() == 1
+     *
+     * // Removes every version (no server-side get needed), unlike addColumn(byte[], byte[])
+     * AnyDelete allVersions = AnyDelete.of("user123").addColumns(familyBytes, qualifierBytes);   // all-versions tombstone
      * }</pre>
      *
      * @param family the column family name as a byte array
@@ -839,7 +945,10 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * byte[] qualifierBytes = Bytes.toBytes("login_history");
      * long cutoffTime = System.currentTimeMillis() - (30L * 24 * 60 * 60 * 1000);
      * AnyDelete delete = AnyDelete.of("user123")
-     *                            .addColumns(familyBytes, qualifierBytes, cutoffTime);
+     *                            .addColumns(familyBytes, qualifierBytes, cutoffTime);   // returns same builder; numFamilies() == 1
+     *
+     * // Edge: a negative timestamp throws IllegalArgumentException
+     * AnyDelete.of("user123").addColumns(familyBytes, qualifierBytes, -1L);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param family the column family name as a byte array
@@ -859,8 +968,18 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * Returns the hash code value for this AnyDelete instance.
      *
      * <p>The hash code is based on the underlying HBase Delete object and is consistent
-     * with the {@link #equals(Object)} method. Two AnyDelete instances with equivalent
-     * Delete operations will have the same hash code.</p>
+     * with the {@link #equals(Object)} method (both are identity-based on the wrapped Delete).</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyDelete a = AnyDelete.of("rowKey");
+     * a.hashCode() == a.hashCode();   // returns true (stable; delegates to the wrapped HBase Delete)
+     *
+     * // Identity-based: two distinct instances on the same row are not equal and need not
+     * // share a hash code:
+     * AnyDelete b = AnyDelete.of("rowKey");
+     * a.equals(b);                    // returns false
+     * }</pre>
      *
      * @return the hash code value for this AnyDelete
      * @see #equals(Object)
@@ -873,12 +992,27 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
     /**
      * Compares this AnyDelete instance with another object for equality.
      *
-     * <p>Two AnyDelete instances are considered equal if they wrap equivalent HBase Delete
-     * operations. This comparison is based on the underlying Delete object's equality,
-     * which considers row key, column specifications, and timestamps.</p>
+     * <p>The comparison is delegated to the underlying HBase {@link Delete#equals(Object)}, which is
+     * identity-based: two separately constructed AnyDelete instances are not equal even when they
+     * carry the same row key, columns, and timestamps. In practice {@code equals} returns
+     * {@code true} only for the same instance (or instances backed by the same {@link Delete}).</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyDelete a = AnyDelete.of("rowKey");
+     * a.equals(a);                    // returns true (same instance)
+     *
+     * // Two separately built deletes are NOT equal, even on the same row:
+     * AnyDelete b = AnyDelete.of("rowKey");
+     * a.equals(b);                    // returns false
+     *
+     * a.equals(null);                 // returns false
+     * a.equals("not an AnyDelete");   // returns false
+     * }</pre>
      *
      * @param obj the object to compare with
-     * @return {@code true} if the specified object represents an equivalent delete operation, {@code false} otherwise
+     * @return {@code true} if the specified object is an {@code AnyDelete} whose underlying {@link Delete}
+     *         is equal to this one's, {@code false} otherwise
      * @see #hashCode()
      */
     @SuppressFBWarnings
@@ -902,6 +1036,13 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * and includes information about the row key, column families, qualifiers, and
      * timestamps configured for deletion.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyDelete a = AnyDelete.of("rowKey");
+     * String s = a.toString();        // delegates to Delete.toString(); never null
+     * s.contains("rowKey");           // returns true (the row key appears in the description)
+     * }</pre>
+     *
      * @return a string representation of the delete operation
      */
     @Override
@@ -919,13 +1060,22 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * List&lt;AnyDelete&gt; anyDeletes = Arrays.asList(
+     * List<AnyDelete> anyDeletes = Arrays.asList(
      *     AnyDelete.of("user1").addFamily("info"),
      *     AnyDelete.of("user2").addColumn("prefs", "theme"),
      *     AnyDelete.of("user3").addColumns("activity", "logs")
      * );
-     * List&lt;Delete&gt; deletes = AnyDelete.toDelete(anyDeletes);
-     * table.delete(deletes);   // Batch delete with native HBase API
+     * List<Delete> deletes = AnyDelete.toDelete(anyDeletes);   // returns a list of 3, in iteration order
+     * table.delete(deletes);                                   // Batch delete with native HBase API
+     *
+     * // An empty collection yields an empty list
+     * List<Delete> none = AnyDelete.toDelete(Collections.emptyList());   // none.size() == 0
+     *
+     * // Edge: a null collection throws IllegalArgumentException
+     * AnyDelete.toDelete(null);   // throws IllegalArgumentException
+     *
+     * // Edge: a null element in the collection throws IllegalArgumentException
+     * AnyDelete.toDelete(Arrays.asList(AnyDelete.of("user1"), null));   // throws IllegalArgumentException
      * }</pre>
      *
      * @param anyDeletes the collection of AnyDelete instances to convert; must not be null and must not contain null elements

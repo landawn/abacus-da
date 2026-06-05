@@ -166,14 +166,20 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Preferred approach:
-     * public class User {
-     *     @Id
-     *     private String userId;  // Will be mapped to _id
-     * }
+     * // Map a String "userId" property to MongoDB's _id field:
+     * MongoDB.registerIdProperty(User.class, "userId");      // userId now (de)serializes as _id
      *
-     * // Instead of:
-     * MongoDB.registerIdProperty(User.class, "userId");
+     * // An ObjectId-typed property is also accepted:
+     * MongoDB.registerIdProperty(Account.class, "objectId");
+     *
+     * // The property type must be String or ObjectId:
+     * MongoDB.registerIdProperty(User.class, "age");         // throws IllegalArgumentException (int is neither String nor ObjectId)
+     *
+     * // The property must have a getter and a setter:
+     * MongoDB.registerIdProperty(User.class, "unknownProp"); // throws IllegalArgumentException (no getter/setter)
+     *
+     * // Preferred alternative -- annotate the property instead:
+     * // public class User { @Id private String userId; }
      * }</pre>
      *
      * @param documentClass the entity class to configure ID property mapping for
@@ -212,9 +218,14 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * String id = "507f1f77bcf86cd799439011";
-     * Bson filter = MongoDB.objectId2Filter(id);
+     * // Build an _id filter from a 24-char hex string:
+     * Bson filter = MongoDB.objectId2Filter("507f1f77bcf86cd799439011");
+     * // filter is a Document: {"_id": {"$oid": "507f1f77bcf86cd799439011"}}
      * Document doc = collection.find(filter).first();
+     *
+     * MongoDB.objectId2Filter((String) null);            // throws IllegalArgumentException
+     * MongoDB.objectId2Filter("");                       // throws IllegalArgumentException
+     * MongoDB.objectId2Filter("not-a-valid-objectid");   // throws IllegalArgumentException
      * }</pre>
      *
      * @param objectId the string representation of the ObjectId (24 hex characters)
@@ -238,9 +249,12 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * ObjectId oid = new ObjectId();
+     * ObjectId oid = new ObjectId("507f1f77bcf86cd799439011");
      * Bson filter = MongoDB.objectId2Filter(oid);
+     * // filter is a Document: {"_id": {"$oid": "507f1f77bcf86cd799439011"}}
      * collection.deleteOne(filter);
+     *
+     * MongoDB.objectId2Filter((ObjectId) null);          // throws IllegalArgumentException
      * }</pre>
      *
      * @param objectId the ObjectId to create a filter for
@@ -264,16 +278,25 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Create Document from JSON:
-     * String userJson = "{\"name\": \"John\", \"age\": 30, \"active\": true}";
-     * Document userDoc = MongoDB.fromJson(userJson, Document.class);
+     * // Parse JSON into a Document (numbers/booleans become Integer/Double/Boolean):
+     * Document doc = MongoDB.fromJson("{\"name\": \"John\", \"age\": 30, \"active\": true}", Document.class);
+     * doc.getString("name");                              // returns "John"
+     * doc.get("age");                                     // returns Integer 30
+     * doc.get("active");                                  // returns Boolean true
      *
-     * // Create BasicBSONObject from JSON:
-     * BasicBSONObject bsonObj = MongoDB.fromJson(userJson, BasicBSONObject.class);
+     * // A decimal becomes a Double:
+     * MongoDB.fromJson("{\"score\": 4.5}", Document.class).get("score"); // returns Double 4.5
      *
-     * // Nested JSON:
-     * String nestedJson = "{\"name\": \"John\", \"address\": {\"city\": \"NYC\"}}";
-     * Document doc = MongoDB.fromJson(nestedJson, Document.class);
+     * // The same JSON parsed into the legacy BSON types:
+     * BasicBSONObject bson = MongoDB.fromJson("{\"name\": \"John\"}", BasicBSONObject.class);
+     * BasicDBObject dbObj  = MongoDB.fromJson("{\"name\": \"John\"}", BasicDBObject.class);
+     *
+     * // Nested objects become nested maps:
+     * Document nested = MongoDB.fromJson("{\"name\": \"John\", \"address\": {\"city\": \"NYC\"}}", Document.class);
+     * ((Map<String, Object>) nested.get("address")).get("city"); // returns "NYC"
+     *
+     * // An unsupported target type is rejected:
+     * MongoDB.fromJson("{}", String.class);              // throws IllegalArgumentException
      * }</pre>
      *
      * @param <T> the target BSON type
@@ -314,14 +337,16 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Convert Document to JSON:
+     * // A Document is a Map, so it is serialized directly:
      * Document doc = new Document("name", "John").append("age", 30);
-     * String json = MongoDB.toJson(doc);
-     * // Result: {"name": "John", "age": 30}
+     * String json = MongoDB.toJson(doc);                 // returns {"name": "John", "age": 30}
      *
-     * // Convert filter to JSON:
-     * Bson filter = Filters.and(Filters.eq("status", "active"), Filters.gte("age", 18));
-     * String filterJson = MongoDB.toJson(filter);
+     * // Nested documents are serialized recursively:
+     * Document withNested = new Document("user", new Document("name", "John"));
+     * MongoDB.toJson(withNested);                         // returns {"user": {"name": "John"}}
+     *
+     * // An empty document:
+     * MongoDB.toJson(new Document());                     // returns {}
      * }</pre>
      *
      * @param bson the BSON object to convert to JSON
@@ -346,9 +371,10 @@ public abstract class MongoDBBase {
      * bsonObj.put("name", "Alice");
      * bsonObj.put("age", 25);
      * bsonObj.put("active", true);
+     * String json = MongoDB.toJson(bsonObj);             // returns {"name": "Alice", "age": 25, "active": true}
      *
-     * String json = MongoDB.toJson(bsonObj);
-     * // Result: {"name": "Alice", "age": 25, "active": true}
+     * // An empty BSONObject:
+     * MongoDB.toJson(new BasicBSONObject());             // returns {}
      * }</pre>
      *
      * @param bsonObject the BSONObject to convert to JSON
@@ -372,10 +398,12 @@ public abstract class MongoDBBase {
      * BasicDBObject dbObj = new BasicDBObject();
      * dbObj.put("name", "Charlie");
      * dbObj.put("age", 28);
-     * dbObj.put("_id", new ObjectId());
+     * String json = MongoDB.toJson(dbObj);               // returns {"name": "Charlie", "age": 28}
      *
-     * String json = MongoDB.toJson(dbObj);
-     * // Result: {"name": "Charlie", "age": 28, "_id": ObjectId("...")}
+     * // An ObjectId value is rendered as its 24-char hex string (not as ObjectId("...")):
+     * dbObj.put("_id", new ObjectId("507f1f77bcf86cd799439011"));
+     * MongoDB.toJson(dbObj);
+     * // returns {"name": "Charlie", "age": 28, "_id": "507f1f77bcf86cd799439011"}
      * }</pre>
      *
      * @param bsonObject the BasicDBObject to convert to JSON
@@ -396,16 +424,16 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Convert entity to BSON:
+     * // Convert a Map to BSON:
+     * Bson mapBson = MongoDB.toBson(Map.of("name", "Alice", "age", 25));
+     * // returns a Document: {"name": "Alice", "age": 25}
+     *
+     * // Convert an entity (its readable properties become fields):
      * User user = new User("John", "john@example.com", 30);
      * Bson userBson = MongoDB.toBson(user);
      *
-     * // Convert Map to BSON:
-     * Map<String, Object> userMap = Map.of("name", "Alice", "age", 25);
-     * Bson mapBson = MongoDB.toBson(userMap);
-     *
-     * // Convert property pairs to BSON:
-     * Bson pairsBson = MongoDB.toBson("name", "Bob", "age", 35, "active", true);
+     * // A null argument is rejected:
+     * MongoDB.toBson((Object) null);                      // throws NullPointerException
      * }</pre>
      *
      * @param obj the object to convert - can be an entity with getter/setter methods, {@code Map<String, Object>}, or array of property name-value pairs
@@ -430,15 +458,15 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Create BSON from property pairs:
+     * // Build BSON from alternating name/value pairs:
      * Bson userBson = MongoDB.toBson("name", "John", "age", 30, "active", true);
+     * // returns a Document: {"name": "John", "age": 30, "active": true}
      *
-     * // Create BSON from single entity:
-     * User user = new User("Alice", "alice@example.com", 25);
-     * Bson entityBson = MongoDB.toBson(user);
+     * // No arguments yields an empty document:
+     * Bson empty = MongoDB.toBson();                      // returns an empty Document {}
      *
-     * // Create empty BSON:
-     * Bson emptyBson = MongoDB.toBson();
+     * // An odd number of name/value elements is rejected:
+     * MongoDB.toBson("name", "John", "age");              // throws IllegalArgumentException
      * }</pre>
      *
      * @param a variable arguments representing property name-value pairs, or a single object to convert.
@@ -464,16 +492,17 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Convert entity to Document:
+     * // Convert a Map to a Document:
+     * Document mapDoc = MongoDB.toDocument(Map.of("name", "Alice", "age", 25));
+     * // returns {"name": "Alice", "age": 25}
+     *
+     * // Convert an entity, then insert it:
      * User user = new User("John", "john@example.com", 30);
      * Document userDoc = MongoDB.toDocument(user);
-     *
-     * // Convert Map to Document:
-     * Map<String, Object> userMap = Map.of("name", "Alice", "age", 25);
-     * Document mapDoc = MongoDB.toDocument(userMap);
-     *
-     * // The resulting Document can be used in MongoDB operations:
      * collection.insertOne(userDoc);
+     *
+     * // A null argument is rejected:
+     * MongoDB.toDocument((Object) null);                  // throws NullPointerException
      * }</pre>
      *
      * @param obj the object to convert - can be an entity with getter/setter methods, {@code Map<String, Object>}, or array of property name-value pairs
@@ -498,15 +527,15 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Create Document from property pairs:
+     * // Build a Document from alternating name/value pairs:
      * Document userDoc = MongoDB.toDocument("name", "John", "age", 30, "active", true);
+     * // returns {"name": "John", "age": 30, "active": true}
      *
-     * // Create Document from single entity:
-     * User user = new User("Alice", 25);
-     * Document entityDoc = MongoDB.toDocument(user);
+     * // No arguments yields an empty Document:
+     * Document empty = MongoDB.toDocument();              // returns an empty Document {}
      *
-     * // Create empty Document:
-     * Document emptyDoc = MongoDB.toDocument();
+     * // An odd number of name/value elements is rejected:
+     * MongoDB.toDocument("name", "John", "age");          // throws IllegalArgumentException
      * }</pre>
      *
      * @param a variable arguments representing:
@@ -596,13 +625,17 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Convert entity to BasicBSONObject:
+     * // Convert a Map to a BasicBSONObject:
+     * BasicBSONObject mapBson = MongoDB.toBSONObject(Map.of("name", "Alice", "age", 25));
+     * // returns a BasicBSONObject: {"name": "Alice", "age": 25}
+     *
+     * // Convert an entity:
      * User user = new User("John", "john@example.com", 30);
      * BasicBSONObject userBson = MongoDB.toBSONObject(user);
      *
-     * // Convert Map to BasicBSONObject:
-     * Map<String, Object> userMap = Map.of("name", "Alice", "age", 25);
-     * BasicBSONObject mapBson = MongoDB.toBSONObject(userMap);
+     * // null is rejected; an unsupported type is rejected:
+     * MongoDB.toBSONObject((Object) null);                // throws NullPointerException
+     * MongoDB.toBSONObject(new Object());                 // throws IllegalArgumentException
      * }</pre>
      *
      * @param obj the object to convert - can be an entity with getter/setter methods, {@code Map<String, Object>}, or array of property name-value pairs
@@ -647,15 +680,15 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Empty BasicBSONObject:
-     * BasicBSONObject empty = MongoDB.toBSONObject();
+     * // No arguments yields an empty BasicBSONObject:
+     * BasicBSONObject empty = MongoDB.toBSONObject();     // empty.isEmpty() == true
      *
-     * // Single object conversion:
-     * User user = new User("Alice", 25);
-     * BasicBSONObject userBson = MongoDB.toBSONObject(user);
+     * // Build from alternating name/value pairs:
+     * BasicBSONObject pairs = MongoDB.toBSONObject("name", "Bob", "age", 30);
+     * // returns {"name": "Bob", "age": 30}  (size 2)
      *
-     * // Property pairs:
-     * BasicBSONObject pairsBson = MongoDB.toBSONObject("name", "Bob", "age", 30);
+     * // An odd number of elements is rejected:
+     * MongoDB.toBSONObject("name", "Bob", "age");         // throws IllegalArgumentException
      * }</pre>
      *
      * @param a variable arguments that can be:
@@ -690,17 +723,17 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Convert entity to BasicDBObject:
+     * // Convert a Map to a BasicDBObject:
+     * BasicDBObject mapDb = MongoDB.toDBObject(Map.of("name", "Alice", "age", 25));
+     * // returns a BasicDBObject: {"name": "Alice", "age": 25}
+     *
+     * // Convert an entity:
      * User user = new User("John", "john@example.com", 30);
      * BasicDBObject userDb = MongoDB.toDBObject(user);
      *
-     * // Convert Map to BasicDBObject:
-     * Map<String, Object> userMap = Map.of("name", "Alice", "age", 25);
-     * BasicDBObject mapDb = MongoDB.toDBObject(userMap);
-     *
-     * // Convert array to BasicDBObject:
-     * Object[] userData = {"name", "Bob", "age", 35, "active", true};
-     * BasicDBObject arrayDb = MongoDB.toDBObject(userData);
+     * // null is rejected; an unsupported type is rejected:
+     * MongoDB.toDBObject((Object) null);                  // throws NullPointerException
+     * MongoDB.toDBObject(new Object());                   // throws IllegalArgumentException
      * }</pre>
      *
      * @param obj the object to convert - can be an entity with getter/setter methods, {@code Map<String, Object>}, or array of property name-value pairs
@@ -748,15 +781,15 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Empty BasicDBObject:
-     * BasicDBObject empty = MongoDB.toDBObject();
+     * // No arguments yields an empty BasicDBObject:
+     * BasicDBObject empty = MongoDB.toDBObject();         // empty.isEmpty() == true
      *
-     * // Single object conversion:
-     * User user = new User("Alice", 25);
-     * BasicDBObject userDb = MongoDB.toDBObject(user);
+     * // Build from alternating name/value pairs:
+     * BasicDBObject query = MongoDB.toDBObject("status", "active", "age", 30);
+     * // returns {"status": "active", "age": 30}  (size 2)
      *
-     * // Property pairs for query building:
-     * BasicDBObject query = MongoDB.toDBObject("status", "active", "age", Map.of("$gte", 18));
+     * // An odd number of elements is rejected:
+     * MongoDB.toDBObject("status", "active", "age");      // throws IllegalArgumentException
      * }</pre>
      *
      * @param a variable arguments that can be:
@@ -790,12 +823,16 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Convert Document to Map:
-     * Document userDoc = new Document("name", "John")
-     *                       .append("age", 30)
-     *                       .append("address", new Document("city", "NYC"));
-     * Map<String, Object> userMap = MongoDB.toMap(userDoc);
-     * // Result: {"name": "John", "age": 30, "address": {"city": "NYC"}}
+     * Document doc = new Document("name", "John")
+     *         .append("age", 30)
+     *         .append("address", new Document("city", "NYC"));
+     *
+     * Map<String, Object> map = MongoDB.toMap(doc);       // returns a HashMap
+     * map.get("name");                                    // returns "John"
+     * map.get("age");                                     // returns Integer 30
+     *
+     * // The copy is shallow: a nested Document stays a Document (which is itself a Map):
+     * map.get("address") instanceof Document;             // returns true
      * }</pre>
      *
      * @param doc the MongoDB Document to convert; must not be null
@@ -821,15 +858,15 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Using LinkedHashMap to preserve insertion order:
      * Document doc = new Document("name", "John").append("age", 30);
-     * Map<String, Object> orderedMap = MongoDB.toMap(doc, LinkedHashMap::new);
      *
-     * // Using TreeMap for sorted keys:
-     * Map<String, Object> sortedMap = MongoDB.toMap(doc, size -> new TreeMap<>());
+     * // Preserve insertion order with a LinkedHashMap:
+     * Map<String, Object> ordered = MongoDB.toMap(doc, IntFunctions.ofMap(LinkedHashMap.class));
+     * ordered instanceof LinkedHashMap;                   // returns true
      *
-     * // Pre-sized HashMap for performance:
-     * Map<String, Object> preSizedMap = MongoDB.toMap(doc, HashMap::new);
+     * // Sort keys with a TreeMap (this supplier ignores the size hint):
+     * Map<String, Object> sorted = MongoDB.toMap(doc, size -> new TreeMap<>());
+     * sorted.keySet();                                    // returns [age, name] in sorted order
      * }</pre>
      *
      * @param doc the MongoDB Document to convert; must not be null
@@ -858,18 +895,16 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Convert Document to User entity:
-     * Document userDoc = new Document("_id", new ObjectId())
-     *     .append("name", "John")
-     *     .append("email", "john@example.com");
+     * // _id is an ObjectId. If the entity's id property is String-typed, it receives the hex string:
+     * Document doc = new Document("_id", new ObjectId("507f1f77bcf86cd799439011")).append("name", "John");
+     * User user = MongoDB.toEntity(doc, User.class);      // assuming class User { String id; String name; }
+     * user.getId();                                       // returns "507f1f77bcf86cd799439011"
+     * user.getName();                                     // returns "John"
      *
-     * User user = MongoDB.toEntity(userDoc, User.class);
-     * // The user.getId() will contain the ObjectId from _id field
+     * // If the id property is ObjectId-typed, the ObjectId is assigned as-is (no string conversion).
      *
-     * // Works with String IDs too:
-     * Document docWithStringId = new Document("_id", "user123")
-     *     .append("name", "Alice");
-     * User alice = MongoDB.toEntity(docWithStringId, User.class);
+     * // A null document yields null:
+     * MongoDB.toEntity(null, User.class);                 // returns null
      * }</pre>
      *
      * @param <T> the target entity type
@@ -922,16 +957,20 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Convert query results to User entities:
+     * // Convert query results to entities:
      * FindIterable<Document> userDocs = collection.find(Filters.eq("status", "active"));
      * List<User> users = MongoDB.toList(userDocs, User.class);
      *
-     * // Convert to Maps:
+     * // Documents requested as Map are returned unchanged (a Document is a Map):
      * List<Map<String, Object>> userMaps = MongoDB.toList(userDocs, Map.class);
      *
-     * // Convert aggregation results to specific type:
-     * AggregateIterable<Document> aggregated = collection.aggregate(pipeline);
-     * List<UserStats> stats = MongoDB.toList(aggregated, UserStats.class);
+     * // A single-field projection can be read straight into scalars:
+     * // documents [{"name": "alice"}, {"name": "bob"}]  ->  ["alice", "bob"]
+     * List<String> names = MongoDB.toList(collection.find().projection(Projections.include("name")), String.class);
+     *
+     * // No matching documents yields an empty list.
+     * // A document with more than two fields cannot be read into a scalar:
+     * //     MongoDB.toList(threeFieldDocs, Integer.class)  ->  throws IllegalArgumentException
      * }</pre>
      *
      * @param <T> the target type for list elements
@@ -1063,15 +1102,13 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Extract user data into Dataset:
+     * // Each document becomes a Map-based row:
      * FindIterable<Document> userDocs = collection.find(Filters.eq("department", "Engineering"));
      * Dataset userData = MongoDB.extractData(userDocs);
+     * userData.size();                                    // number of matched documents
+     * userData.getColumn("name");                         // the "name" column, one value per row
      *
-     * // Access data in tabular format:
-     * userData.println();   // Print all data in table format
-     * List<String> names = userData.getColumn("name");
-     *
-     * // Export to CSV or other formats:
+     * userData.println();        // prints the data as a table
      * userData.toCsv("users.csv");
      * }</pre>
      *
@@ -1095,16 +1132,14 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Extract user data into Dataset with User objects:
+     * // Extract into a Dataset whose rows map to User objects:
      * FindIterable<Document> userDocs = collection.find(Filters.eq("active", true));
      * Dataset userData = MongoDB.extractData(userDocs, User.class);
-     *
-     * // Access typed data:
      * List<User> users = userData.toList(User.class);
      * User firstUser = userData.getRow(0, User.class);
      *
-     * // Extract as String representations:
-     * Dataset stringData = MongoDB.extractData(userDocs, String.class);
+     * // rowType must be a bean class or assignable to Map -- a scalar type is rejected:
+     * MongoDB.extractData(userDocs, String.class);        // throws IllegalArgumentException
      * }</pre>
      *
      * @param findIterable the MongoDB query result to extract data from
@@ -1130,16 +1165,15 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Extract only specific fields:
-     * Collection<String> fields = Arrays.asList("name", "email", "department");
+     * Collection<String> fields = Arrays.asList("name", "department");
      * FindIterable<Document> userDocs = collection.find();
-     * Dataset limitedData = MongoDB.extractData(fields, userDocs, Map.class);
      *
-     * // Create focused User objects with only selected properties:
-     * Dataset userSummary = MongoDB.extractData(fields, userDocs, User.class);
+     * // Keep only the selected columns:
+     * Dataset limited = MongoDB.extractData(fields, userDocs, Map.class);
+     * limited.columnNames();                              // returns [name, department]
      *
-     * // Extract all properties when selectPropNames is null:
-     * Dataset allData = MongoDB.extractData(null, userDocs, User.class);
+     * // null selectPropNames keeps all columns; rowType must be a bean class or a Map:
+     * Dataset all = MongoDB.extractData(null, userDocs, User.class);
      * }</pre>
      *
      * @param selectPropNames collection of property names to include in the Dataset; null to include all
@@ -1168,16 +1202,16 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Convert list of documents to Dataset:
      * List<Document> documents = Arrays.asList(
-     *     new Document("name", "John").append("age", 30),
-     *     new Document("name", "Alice").append("age", 25)
-     * );
-     * Dataset dataset = MongoDB.extractData(documents);
+     *         new Document("name", "John").append("age", 30),
+     *         new Document("name", "Alice").append("age", 25));
      *
-     * // Access tabular data:
-     * dataset.println();   // Print in table format
-     * List<String> names = dataset.getColumn("name");
+     * Dataset dataset = MongoDB.extractData(documents);
+     * dataset.size();                                     // returns 2
+     * dataset.getColumn("name");                          // returns [John, Alice]
+     *
+     * // An empty list yields an empty Dataset:
+     * MongoDB.extractData(Collections.emptyList()).size(); // returns 0
      * }</pre>
      *
      * @param rowList the list of objects to convert to Dataset rows; may be empty (returns an empty Dataset) but must not be null
@@ -1200,16 +1234,17 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Convert list of documents to typed Dataset:
-     * List<Document> userDocs = loadUserDocuments();
-     * Dataset userData = MongoDB.extractData(userDocs, User.class);
+     * List<Document> docs = Arrays.asList(
+     *         new Document("value", "a"),
+     *         new Document("value", "b"));
      *
-     * // Access typed rows:
-     * List<User> users = userData.toList(User.class);
-     * User firstUser = userData.getRow(0, User.class);
+     * // Convert each row to the given type (here a bean with a "value" property):
+     * Dataset data = MongoDB.extractData(docs, Account.class);
+     * data.size();                                        // returns 2
+     * List<Account> rows = data.toList(Account.class);
      *
-     * // Convert to String representations:
-     * Dataset stringData = MongoDB.extractData(userDocs, String.class);
+     * // An empty list yields an empty Dataset:
+     * MongoDB.extractData(Collections.emptyList(), Account.class).size(); // returns 0
      * }</pre>
      *
      * @param rowList the list of objects to convert to Dataset rows; may be empty (returns an empty Dataset) but must not be null
@@ -1241,22 +1276,18 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Extract specific fields from Documents as Maps:
      * List<Document> docs = Arrays.asList(
-     *     new Document("name", "John").append("age", 30).append("city", "NYC"),
-     *     new Document("name", "Alice").append("age", 25).append("city", "LA")
-     * );
-     * Collection<String> fields = Arrays.asList("name", "city");
-     * Dataset dataset = MongoDB.extractData(fields, docs, Map.class);
+     *         new Document("name", "John").append("age", 30).append("city", "NYC"),
+     *         new Document("name", "Alice").append("age", 25).append("city", "LA"));
      *
-     * // Extract all fields as String representations:
-     * Dataset stringDataset = MongoDB.extractData(null, docs, String.class);
+     * // Keep only the "name" and "city" columns:
+     * Dataset ds = MongoDB.extractData(Arrays.asList("name", "city"), docs, Map.class);
+     * ds.size();                                          // returns 2
+     * ds.columnNames();                                   // returns [name, city]
      *
-     * // Create focused data view for reporting:
-     * List<User> users = loadUsersFromDatabase();
-     * Collection<String> reportFields = Arrays.asList("name", "email", "department");
-     * Dataset reportData = MongoDB.extractData(reportFields, users, Map.class);
-     * reportData.toCsv("user_report.csv");
+     * // null selectPropNames keeps every column:
+     * Dataset all = MongoDB.extractData(null, docs, Map.class);
+     * all.size();                                         // returns 2
      * }</pre>
      *
      * @param selectPropNames collection of property names to include in the Dataset (null to include all)
@@ -1336,20 +1367,16 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Create stream from find results:
+     * // Create a stream over the matched documents:
      * FindIterable<Document> findResult = collection.find(Filters.eq("status", "active"));
-     * Stream<Document> docStream = MongoDB.stream(findResult);
+     * List<String> names = MongoDB.stream(findResult)
+     *         .map(doc -> doc.getString("name"))
+     *         .filter(name -> name.startsWith("A"))
+     *         .toList();
      *
-     * // Use functional operations:
-     * List<String> names = docStream
-     *     .map(doc -> doc.getString("name"))
-     *     .filter(name -> name.startsWith("A"))
-     *     .collect(Collectors.toList());
-     *
-     * // Process aggregation results:
-     * AggregateIterable<Document> aggResult = collection.aggregate(pipeline);
-     * MongoDB.stream(aggResult)
-     *    .forEach(doc -> processDocument(doc));
+     * // The stream is backed by the iterable's cursor, which is closed on a terminal operation.
+     * // An empty iterable produces an empty stream:
+     * //     MongoDB.stream(emptyIterable).count()  ->  0
      * }</pre>
      *
      * @param iter the MongoIterable to convert to a Stream
@@ -1373,19 +1400,19 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Create typed stream from find results:
+     * // Each Document is converted to the target type as it is consumed:
      * FindIterable<Document> userDocs = collection.find();
-     * Stream<User> userStream = MongoDB.stream(userDocs, User.class);
-     *
-     * // Use with typed operations:
-     * List<String> emails = userStream
-     *     .filter(user -> user.isActive())
-     *     .map(User::getEmail)
-     *     .collect(Collectors.toList());
+     * List<String> emails = MongoDB.stream(userDocs, User.class)
+     *         .filter(User::isActive)
+     *         .map(User::getEmail)
+     *         .toList();
      *
      * // Convert to Maps for flexible processing:
-     * Stream<Map> mapStream = MongoDB.stream(userDocs, Map.class);
-     * mapStream.forEach(map -> processUserMap(map));
+     * MongoDB.stream(userDocs, Map.class)
+     *         .forEach(map -> processUserMap(map));
+     *
+     * // An empty iterable produces an empty stream:
+     * //     MongoDB.stream(emptyIterable, User.class).count()  ->  0
      * }</pre>
      *
      * @param <T> the target type for stream elements
@@ -1412,22 +1439,20 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Create stream from cursor:
+     * // The stream closes the cursor automatically on a terminal operation:
      * MongoCursor<Document> cursor = collection.find().iterator();
-     * Stream<Document> docStream = MongoDB.stream(cursor);
+     * MongoDB.stream(cursor)
+     *         .filter(doc -> doc.getInteger("age") > 18)
+     *         .limit(100)
+     *         .forEach(doc -> processAdult(doc));
      *
-     * // Process documents lazily:
-     * docStream
-     *     .filter(doc -> doc.getInteger("age") > 18)
-     *     .limit(100)
-     *     .forEach(doc -> processAdult(doc));
-     * // Cursor is automatically closed after stream operations
-     *
-     * // Use with try-with-resources for explicit management:
-     * try (Stream<Document> stream = MongoDB.stream(cursor)) {
-     *     return stream.map(doc -> doc.getString("name"))
-     *                  .collect(Collectors.toList());
+     * // Or manage it explicitly with try-with-resources:
+     * try (Stream<Document> stream = MongoDB.stream(collection.find().iterator())) {
+     *     List<String> names = stream.map(doc -> doc.getString("name")).toList();
      * }
+     *
+     * // An empty cursor produces an empty stream:
+     * //     MongoDB.stream(emptyCursor).count()  ->  0
      * }</pre>
      *
      * @param cursor the MongoCursor to convert to a Stream
@@ -1450,23 +1475,21 @@ public abstract class MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Create typed stream from cursor:
+     * // Each Document is converted to the target type lazily; the cursor closes on a terminal op:
      * MongoCursor<Document> cursor = collection.find().iterator();
-     * Stream<User> userStream = MongoDB.stream(cursor, User.class);
+     * Optional<User> firstAdmin = MongoDB.stream(cursor, User.class)
+     *         .filter(User::isActive)
+     *         .filter(user -> "admin".equals(user.getRole()))
+     *         .first();
+     * firstAdmin.isPresent();   // true if a matching user was found
      *
-     * // Process with type safety:
-     * Optional<User> activeAdmin = userStream
-     *     .filter(User::isActive)
-     *     .filter(user -> "admin".equals(user.getRole()))
-     *     .findFirst();
-     * // Cursor is automatically closed
-     *
-     * // Convert to different types for processing:
-     * MongoCursor<Document> anotherCursor = collection.find().iterator();
-     * try (Stream<Map> mapStream = MongoDB.stream(anotherCursor, Map.class)) {
-     *     return mapStream.filter(map -> "premium".equals(map.get("tier")))
-     *                     .count();
+     * // Convert rows to Maps:
+     * try (Stream<Map<String, Object>> mapStream = MongoDB.stream(collection.find().iterator(), Map.class)) {
+     *     long premium = mapStream.filter(map -> "premium".equals(map.get("tier"))).count();
      * }
+     *
+     * // An empty cursor produces an empty stream:
+     * //     MongoDB.stream(emptyCursor, User.class).count()  ->  0
      * }</pre>
      *
      * @param <T> the target type for stream elements

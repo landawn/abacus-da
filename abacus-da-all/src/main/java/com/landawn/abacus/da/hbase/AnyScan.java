@@ -203,6 +203,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <pre>{@code
      * // Create a basic scan
      * AnyScan scan = AnyScan.create();
+     * boolean families = scan.hasFamilies();   // returns false (scans all families)
      *
      * // Create and configure a scan with method chaining
      * AnyScan configuredScan = AnyScan.create()
@@ -211,6 +212,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *                                 .addFamily("data")
      *                                 .setLimit(100)
      *                                 .setCaching(10);
+     * int limit = configuredScan.getLimit();   // returns 100
      * }</pre>
      *
      * @return a new AnyScan instance with default configuration
@@ -249,6 +251,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *     AnyScan resumedScan = AnyScan.createScanFromCursor(lastCursor);
      *     // Continue scanning from where we left off
      * }
+     *
+     * // A null cursor is rejected.
+     * AnyScan.createScanFromCursor((Cursor) null);   // throws NullPointerException
      * }</pre>
      *
      * @param cursor the cursor position from which to resume scanning; must not be null
@@ -266,6 +271,20 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <p>If the specified row does not exist, the Scanner will start from the
      * next closest row after the specified row.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.of("user_001");
+     * byte[] start = scan.getStartRow();   // returns the bytes of "user_001"
+     *
+     * // A null start row is tolerated: the resulting scan has a null start row.
+     * AnyScan nullStart = AnyScan.of((Object) null);   // no exception
+     * byte[] sr = nullStart.getStartRow();             // returns null
+     *
+     * // An empty byte[] start row is also tolerated.
+     * AnyScan emptyStart = AnyScan.of(new byte[0]);    // no exception
+     * int len = emptyStart.getStartRow().length;       // returns 0
+     * }</pre>
+     *
      * @param startRow row to start scanner at or after
      * @return a new AnyScan instance configured with the specified start row
      * @deprecated Use {@code AnyScan.create().withStartRow(startRow)} instead.
@@ -277,6 +296,17 @@ public final class AnyScan extends AnyQuery<AnyScan> {
 
     /**
      * Creates a Scan operation for the range of rows specified.
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.of("a", "z");
+     * byte[] start = scan.getStartRow();   // returns the bytes of "a"
+     * byte[] stop = scan.getStopRow();     // returns the bytes of "z" (exclusive)
+     *
+     * // A null start row is tolerated; the resulting start row is null.
+     * AnyScan nullStart = AnyScan.of((Object) null, "z");   // no exception
+     * byte[] sr = nullStart.getStartRow();                  // returns null
+     * }</pre>
      *
      * @param startRow row to start scanner at or after (inclusive)
      * @param stopRow row to stop scanner before (exclusive)
@@ -290,6 +320,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
 
     /**
      * Creates a Scan operation starting at the specified row with a filter.
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Filter filter = new PrefixFilter(Bytes.toBytes("user_"));
+     * AnyScan scan = AnyScan.of("user_001", filter);
+     * byte[] start = scan.getStartRow();   // returns the bytes of "user_001"
+     * boolean has = scan.hasFilter();      // returns true
+     * Filter f = scan.getFilter();         // returns the same filter instance
+     * }</pre>
      *
      * @param startRow row to start scanner at or after
      * @param filter the filter to apply to the scan
@@ -310,6 +349,18 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * If isolation is required, copy the Scan before calling this method (for example via
      * {@code new Scan(originalScan)}).</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Scan raw = new Scan();
+     * raw.setCaching(99);
+     * AnyScan scan = AnyScan.of(raw);
+     * Scan backing = scan.val();        // returns the same Scan instance (raw == backing)
+     * int caching = scan.getCaching();  // returns 99
+     *
+     * // A null Scan is rejected.
+     * AnyScan.of((Scan) null);          // throws IllegalArgumentException
+     * }</pre>
+     *
      * @param scan the HBase Scan object to wrap; must not be null
      * @return a new AnyScan instance that wraps the provided Scan by reference
      * @throws IllegalArgumentException if {@code scan} is null
@@ -324,6 +375,17 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * This factory method converts a Get operation into a Scan operation,
      * preserving all the settings from the original Get.
      * </p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Get get = new Get(Bytes.toBytes("row1"));
+     * AnyScan scan = AnyScan.of(get);
+     * byte[] start = scan.getStartRow();   // returns the bytes of "row1"
+     * boolean getScan = scan.isGetScan();  // returns true (single-row scan)
+     *
+     * // A null Get is rejected by the underlying Scan constructor.
+     * AnyScan.of((Get) null);              // throws NullPointerException
+     * }</pre>
      *
      * @param get the Get operation to convert to a Scan; must not be null
      * @return a new AnyScan instance created from the Get operation
@@ -340,6 +402,14 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * when you need to interact directly with HBase APIs that expect the native type. Mutations
      * performed on the returned object are visible to this {@link AnyScan} and vice versa.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create().setCaching(50);
+     * Scan native_ = scan.val();                  // returns the backing Scan; never null
+     * int caching = native_.getCaching();         // returns 50 (mutations are shared)
+     * boolean same = (scan.val() == scan.val());  // returns true (same instance)
+     * }</pre>
+     *
      * @return the underlying {@link Scan} object; never {@code null}
      */
     public Scan val() {
@@ -352,6 +422,16 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * Returns true if this scan has been configured to retrieve a single row,
      * making it equivalent to a Get operation in terms of behavior.
      * </p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * boolean get = scan.isGetScan();   // returns false (open-ended scan)
+     *
+     * // A scan derived from a Get behaves like a Get.
+     * AnyScan fromGet = AnyScan.of(new Get(Bytes.toBytes("row1")));
+     * boolean isGet = fromGet.isGetScan();   // returns true
+     * }</pre>
      *
      * @return {@code true} if this scan behaves like a Get operation; {@code false} otherwise
      */
@@ -366,6 +446,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * If no families are specified, the scan will include all families in the table.
      * </p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * boolean before = scan.hasFamilies();   // returns false (scans all families)
+     *
+     * scan.addFamily("cf");
+     * boolean after = scan.hasFamilies();    // returns true
+     * }</pre>
+     *
      * @return {@code true} if column families have been specified; {@code false} otherwise
      */
     public boolean hasFamilies() {
@@ -379,6 +468,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * {@link #addFamily(String)} or {@link #addColumn(String, String)} methods.
      * If no families are specified, this returns 0 and the scan will include all families.
      * </p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * int empty = scan.numFamilies();   // returns 0
+     *
+     * scan.addFamily("cf1").addFamily("cf2");
+     * int count = scan.numFamilies();   // returns 2
+     * }</pre>
      *
      * @return the number of column families specified for this scan
      * @see #hasFamilies()
@@ -395,6 +493,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * The returned array contains byte arrays representing the family names. Returns {@code null}
      * if no families have been added (in which case the scan covers every family in the table).</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * byte[][] none = scan.getFamilies();   // returns null (no families added)
+     *
+     * scan.addFamily("cf1").addFamily("cf2");
+     * byte[][] families = scan.getFamilies();   // returns a length-2 array
+     * }</pre>
+     *
      * @return an array of column family names as byte arrays; {@code null} if no families specified
      * @see #addFamily(String)
      * @see #numFamilies()
@@ -410,17 +517,18 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * family will be retrieved. This is useful for getting all data associated with
      * a particular column family in HBase.
      * </p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyScan scan = AnyScan.create()
-     *                      .addFamily("userdata")
-     *                      .addFamily("preferences");
+     *                      .addFamily("userdata")     // returns this scan
+     *                      .addFamily("preferences"); // returns this scan
+     * int count = scan.numFamilies();                 // returns 2
      * }</pre>
      *
-     * @param family the column family name to retrieve; must not be null or empty
+     * @param family the column family name to retrieve; the value is converted to bytes and forwarded
+     *               to the underlying {@link Scan} (an empty or {@code null} family is tolerated)
      * @return this AnyScan instance for method chaining
-     * @throws IllegalArgumentException if family is null or empty
      * @see #addColumn(String, String)
      * @see #addFamily(byte[])
      */
@@ -441,12 +549,13 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * byte[] familyBytes = Bytes.toBytes("userdata");
-     * AnyScan scan = AnyScan.create().addFamily(familyBytes);
+     * AnyScan scan = AnyScan.create().addFamily(familyBytes);   // returns this scan
+     * int count = scan.numFamilies();                           // returns 1
      * }</pre>
      *
-     * @param family the column family name as byte array; must not be null
+     * @param family the column family name as byte array; forwarded to the underlying {@link Scan}
+     *               (an empty or {@code null} array is tolerated)
      * @return this AnyScan instance for method chaining
-     * @throws IllegalArgumentException if family is null
      * @see #addFamily(String)
      */
     public AnyScan addFamily(final byte[] family) {
@@ -464,6 +573,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * within each family. If a family has no specific qualifiers, it means
      * all qualifiers in that family will be scanned.
      * </p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * Map<byte[], NavigableSet<byte[]>> empty = scan.getFamilyMap();   // returns an empty (non-null) map
+     *
+     * scan.addColumn("cf", "q");
+     * Map<byte[], NavigableSet<byte[]>> map = scan.getFamilyMap();     // returns a map of size 1
+     * }</pre>
      *
      * @return a Map of column families to their qualifier sets; never null
      * @see #addFamily(String)
@@ -495,7 +613,11 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * // Add all qualifiers for "data" family (empty set)
      * familyMap.put(Bytes.toBytes("data"), new TreeSet<>(Bytes.BYTES_COMPARATOR));
      *
-     * AnyScan scan = AnyScan.create().setFamilyMap(familyMap);
+     * AnyScan scan = AnyScan.create().setFamilyMap(familyMap);   // returns this scan
+     * int count = scan.numFamilies();                            // returns 2 ("info" and "data")
+     *
+     * // A null map is accepted here (stored by reference); a later traversal would fail.
+     * AnyScan nullMap = AnyScan.create().setFamilyMap((Map<byte[], NavigableSet<byte[]>>) null);   // no exception
      * }</pre>
      *
      * <p>This method delegates directly to {@link Scan#setFamilyMap(Map)}; the underlying HBase
@@ -530,14 +652,22 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * AnyScan scan = AnyScan.create()
      *                      .addFamily("recent_data")
      *                      .addFamily("historical_data")
-     *                      .setColumnFamilyTimeRange("recent_data", yesterday, now)
-     *                      .setColumnFamilyTimeRange("historical_data", 0, yesterday);
+     *                      .setColumnFamilyTimeRange("recent_data", yesterday, now)        // returns this scan
+     *                      .setColumnFamilyTimeRange("historical_data", 0, yesterday);     // returns this scan
+     *
+     * // An inverted range (max < min) is rejected.
+     * AnyScan.create().setColumnFamilyTimeRange("cf", 200L, 100L);   // throws IllegalArgumentException
+     *
+     * // A negative timestamp is also rejected.
+     * AnyScan.create().setColumnFamilyTimeRange("cf", -1L, 100L);    // throws IllegalArgumentException
      * }</pre>
      *
      * @param family the column family name
      * @param minTimestamp the minimum timestamp (inclusive)
      * @param maxTimestamp the maximum timestamp (exclusive)
      * @return this AnyScan instance for method chaining
+     * @throws IllegalArgumentException if {@code minTimestamp} or {@code maxTimestamp} is negative,
+     *         or if {@code maxTimestamp} is smaller than {@code minTimestamp}
      * @see #setTimeRange(long, long)
      */
     @Override
@@ -554,10 +684,24 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * but accepts a pre-converted byte array for the family name.
      * </p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * byte[] family = Bytes.toBytes("data");
+     * AnyScan scan = AnyScan.create().setColumnFamilyTimeRange(family, 0L, 1000L);   // returns this scan
+     *
+     * // An inverted range (max < min) is rejected.
+     * AnyScan.create().setColumnFamilyTimeRange(family, 200L, 100L);   // throws IllegalArgumentException
+     *
+     * // A negative timestamp is also rejected.
+     * AnyScan.create().setColumnFamilyTimeRange(family, -1L, 100L);    // throws IllegalArgumentException
+     * }</pre>
+     *
      * @param family the column family name as byte array
      * @param minTimestamp the minimum timestamp (inclusive)
      * @param maxTimestamp the maximum timestamp (exclusive)
      * @return this AnyScan instance for method chaining
+     * @throws IllegalArgumentException if {@code minTimestamp} or {@code maxTimestamp} is negative,
+     *         or if {@code maxTimestamp} is smaller than {@code minTimestamp}
      * @see #setColumnFamilyTimeRange(String, long, long)
      */
     @Override
@@ -579,15 +723,17 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyScan scan = AnyScan.create()
-     *                      .addColumn("userinfo", "name")
-     *                      .addColumn("userinfo", "email")
-     *                      .addColumn("preferences", "theme");
+     *                      .addColumn("userinfo", "name")      // returns this scan
+     *                      .addColumn("userinfo", "email")     // returns this scan
+     *                      .addColumn("preferences", "theme"); // returns this scan
+     * int count = scan.numFamilies();                          // returns 2 ("userinfo" and "preferences")
      * }</pre>
      *
-     * @param family the column family name; must not be null or empty
-     * @param qualifier the column qualifier name; must not be null or empty
+     * @param family the column family name; converted to bytes and forwarded to the underlying
+     *               {@link Scan} (an empty or {@code null} family is tolerated)
+     * @param qualifier the column qualifier name; converted to bytes (an empty or {@code null}
+     *               qualifier is tolerated)
      * @return this AnyScan instance for method chaining
-     * @throws IllegalArgumentException if family or qualifier is null or empty
      * @see #addFamily(String)
      * @see #addColumn(byte[], byte[])
      */
@@ -609,13 +755,14 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <pre>{@code
      * byte[] family = Bytes.toBytes("userinfo");
      * byte[] qualifier = Bytes.toBytes("email");
-     * AnyScan scan = AnyScan.create().addColumn(family, qualifier);
+     * AnyScan scan = AnyScan.create().addColumn(family, qualifier);   // returns this scan
+     * int count = scan.numFamilies();                                 // returns 1
      * }</pre>
      *
-     * @param family the column family name as byte array; must not be null
-     * @param qualifier the column qualifier name as byte array; must not be null
+     * @param family the column family name as byte array; forwarded to the underlying {@link Scan}
+     *               (an empty or {@code null} array is tolerated)
+     * @param qualifier the column qualifier name as byte array (an empty or {@code null} array is tolerated)
      * @return this AnyScan instance for method chaining
-     * @throws IllegalArgumentException if family or qualifier is null
      * @see #addColumn(String, String)
      */
     public AnyScan addColumn(final byte[] family, final byte[] qualifier) {
@@ -630,6 +777,17 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * The time range specifies which versions of cells to include based on their timestamps.
      * By default, all versions within the configured time range will be considered.
      * </p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * TimeRange def = scan.getTimeRange();   // returns the full default range
+     * long min = def.getMin();               // returns 0
+     * long max = def.getMax();               // returns Long.MAX_VALUE
+     *
+     * scan.setTimeRange(100L, 200L);
+     * TimeRange tr = scan.getTimeRange();    // min == 100, max == 200
+     * }</pre>
      *
      * @return the TimeRange object specifying the minimum and maximum timestamps for this scan
      * @see #setTimeRange(long, long)
@@ -651,13 +809,21 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <pre>{@code
      * long yesterday = System.currentTimeMillis() - 86400000;
      * long now = System.currentTimeMillis();
-     * AnyScan scan = AnyScan.create().setTimeRange(yesterday, now);
+     * AnyScan scan = AnyScan.create().setTimeRange(yesterday, now);   // returns this scan
+     * long min = scan.getTimeRange().getMin();                        // returns yesterday
+     *
+     * // An inverted range (max < min) is rejected.
+     * AnyScan.create().setTimeRange(200L, 100L);   // throws IllegalArgumentException
+     *
+     * // A negative timestamp is also rejected.
+     * AnyScan.create().setTimeRange(-1L, 100L);    // throws IllegalArgumentException
      * }</pre>
      *
      * @param minStamp the minimum timestamp (inclusive)
      * @param maxStamp the maximum timestamp (exclusive)
      * @return this AnyScan instance for method chaining
-     * @throws IllegalArgumentException if the time range is invalid (wrapped as such from IOException)
+     * @throws IllegalArgumentException if either stamp is negative or {@code maxStamp} is smaller
+     *         than {@code minStamp} (the underlying {@link IOException} is wrapped as such)
      * @see #getTimeRange()
      * @see #setTimestamp(long)
      */
@@ -681,11 +847,17 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * AnyScan scan = AnyScan.create().setTimestamp(1234567890L).readVersions(5);
+     * AnyScan scan = AnyScan.create().setTimestamp(1234567890L).readVersions(5);   // returns this scan
+     * long min = scan.getTimeRange().getMin();                                     // returns 1234567890
+     * long max = scan.getTimeRange().getMax();                                     // returns 1234567891 (timestamp + 1)
+     *
+     * // A negative timestamp is rejected.
+     * AnyScan.create().setTimestamp(-1L);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param timestamp the exact timestamp to filter cells by
      * @return this AnyScan instance for method chaining
+     * @throws IllegalArgumentException if {@code timestamp} is negative
      * @see #setTimeRange(long, long)
      * @see #readVersions(int)
      */
@@ -725,6 +897,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * returns the current inclusion setting for the start row.
      * </p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * boolean def = scan.includeStartRow();   // returns true (inclusive by default)
+     *
+     * scan.withStartRow("a", false);
+     * boolean excl = scan.includeStartRow();  // returns false
+     * }</pre>
+     *
      * @return {@code true} if the start row is included in the scan, {@code false} otherwise
      * @see #withStartRow(Object, boolean)
      * @see #getStartRow()
@@ -740,6 +921,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * lexicographically greater than or equal to (if inclusive) or greater than
      * (if exclusive) this row key will be considered for scanning.
      * </p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * byte[] def = scan.getStartRow();   // returns an empty (length 0) array
+     *
+     * scan.withStartRow("a");
+     * byte[] sr = scan.getStartRow();    // returns the bytes of "a"
+     * }</pre>
      *
      * @return the start row key as byte array, or empty array if scanning from table beginning
      * @see #withStartRow(Object)
@@ -778,7 +968,13 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * AnyScan scan = AnyScan.create().withStartRow("user_100");
+     * AnyScan scan = AnyScan.create().withStartRow("user_100");   // returns this scan
+     * byte[] sr = scan.getStartRow();                             // returns the bytes of "user_100"
+     * boolean incl = scan.includeStartRow();                      // returns true (inclusive)
+     *
+     * // An empty byte[] start row is tolerated (resets to an open lower bound).
+     * AnyScan empty = AnyScan.create().withStartRow(new byte[0]);   // no exception
+     * int len = empty.getStartRow().length;                         // returns 0
      * }</pre>
      *
      * @param startRow the row key to start scanning from (inclusive by default)
@@ -803,7 +999,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Exclude the start row itself
-     * AnyScan scan = AnyScan.create().withStartRow("user_100", false);
+     * AnyScan scan = AnyScan.create().withStartRow("user_100", false);   // returns this scan
+     * byte[] sr = scan.getStartRow();                                    // returns the bytes of "user_100"
+     * boolean incl = scan.includeStartRow();                             // returns false (exclusive)
      * }</pre>
      *
      * @param startRow the row key to start scanning from
@@ -826,6 +1024,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * returns the current inclusion setting for the stop row.
      * </p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * boolean def = scan.includeStopRow();   // returns false (exclusive by default)
+     *
+     * scan.withStopRow("z", true);
+     * boolean incl = scan.includeStopRow();  // returns true
+     * }</pre>
+     *
      * @return {@code true} if the stop row is included in the scan, {@code false} otherwise
      * @see #withStopRow(Object, boolean)
      * @see #getStopRow()
@@ -841,6 +1048,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * lexicographically less than (if exclusive) or less than or equal to
      * (if inclusive) this row key will be considered for scanning.
      * </p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * byte[] def = scan.getStopRow();   // returns an empty (length 0) array
+     *
+     * scan.withStopRow("z");
+     * byte[] sr = scan.getStopRow();    // returns the bytes of "z"
+     * }</pre>
      *
      * @return the stop row key as byte array, or empty array if scanning to table end
      * @see #withStopRow(Object)
@@ -881,7 +1097,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * AnyScan scan = AnyScan.create().withStopRow("user_999");
+     * AnyScan scan = AnyScan.create().withStopRow("user_999");   // returns this scan
+     * byte[] sr = scan.getStopRow();                             // returns the bytes of "user_999"
+     * boolean incl = scan.includeStopRow();                      // returns false (exclusive)
      * }</pre>
      *
      * @param stopRow the row key to stop scanning before (exclusive by default)
@@ -906,7 +1124,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Include the stop row itself
-     * AnyScan scan = AnyScan.create().withStopRow("user_999", true);
+     * AnyScan scan = AnyScan.create().withStopRow("user_999", true);   // returns this scan
+     * byte[] sr = scan.getStopRow();                                   // returns the bytes of "user_999"
+     * boolean incl = scan.includeStopRow();                            // returns true (inclusive)
      * }</pre>
      *
      * @param stopRow the row key to stop scanning at
@@ -928,6 +1148,16 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <p>Despite the name, no server-side {@link Filter} is registered: this method delegates to
      * {@link Scan#setRowPrefixFilter(byte[])}, which configures startRow and stopRow to bracket
      * all keys beginning with the given prefix.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create().setRowPrefixFilter("user_");   // returns this scan
+     * byte[] sr = scan.getStartRow();                                // returns the bytes of "user_"
+     *
+     * // A null prefix is tolerated and clears the range.
+     * AnyScan cleared = AnyScan.create().setRowPrefixFilter((Object) null);   // no exception
+     * int len = cleared.getStartRow().length;                                 // returns 0
+     * }</pre>
      *
      * @param rowPrefix the row prefix; converted to bytes via {@link HBaseExecutor#toRowKeyBytes(Object)}
      * @return this {@link AnyScan} instance for method chaining
@@ -951,7 +1181,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * byte[] prefix = Bytes.toBytes("user_");
-     * AnyScan scan = AnyScan.create().setStartStopRowForPrefixScan(prefix);
+     * AnyScan scan = AnyScan.create().setStartStopRowForPrefixScan(prefix);   // returns this scan
+     * byte[] sr = scan.getStartRow();                                         // returns the bytes of "user_" (inclusive lower bound)
      * }</pre>
      *
      * @param rowPrefix the row key prefix; passed through {@link HBaseExecutor#toRowKeyBytes(Object)} (a {@code byte[]} input is returned as-is)
@@ -972,6 +1203,18 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * latest version). A value of Integer.MAX_VALUE indicates that all available
      * versions should be retrieved.
      * </p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * int def = scan.getMaxVersions();   // returns 1 (latest version only)
+     *
+     * scan.readVersions(5);
+     * int five = scan.getMaxVersions();  // returns 5
+     *
+     * scan.readAllVersions();
+     * int all = scan.getMaxVersions();   // returns Integer.MAX_VALUE
+     * }</pre>
      *
      * @return the maximum number of versions to retrieve per column
      * @see #readVersions(int)
@@ -1019,7 +1262,12 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * AnyScan scan = AnyScan.create().readVersions(5);   // Get last 5 versions
+     * AnyScan scan = AnyScan.create().readVersions(5);   // returns this scan (last 5 versions)
+     * int max = scan.getMaxVersions();                   // returns 5
+     *
+     * // Zero or negative values are stored as-is by this HBase version (no validation here).
+     * AnyScan zero = AnyScan.create().readVersions(0);
+     * int v = zero.getMaxVersions();     // returns 0
      * }</pre>
      *
      * @param maxVersions the maximum number of versions to retrieve per column
@@ -1040,6 +1288,12 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * Use with caution as this may return a large amount of data if many versions exist.
      * </p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create().readAllVersions();   // returns this scan
+     * int max = scan.getMaxVersions();                     // returns Integer.MAX_VALUE
+     * }</pre>
+     *
      * @return this AnyScan instance for method chaining
      * @see #readVersions(int)
      */
@@ -1055,6 +1309,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * The batch size controls how many columns are retrieved per RPC call.
      * This is different from caching, which controls how many rows are retrieved.
      * </p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * int def = scan.getBatch();   // returns -1 (no batch limit by default)
+     *
+     * scan.setBatch(100);
+     * int batch = scan.getBatch(); // returns 100
+     * }</pre>
      *
      * @return the current batch size
      * @see #setBatch(int)
@@ -1074,7 +1337,12 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * AnyScan scan = AnyScan.create().setBatch(100);   // Max 100 columns per RPC
+     * AnyScan scan = AnyScan.create().setBatch(100);   // returns this scan (max 100 columns per RPC)
+     * int batch = scan.getBatch();                     // returns 100
+     *
+     * // -1 means unlimited (the default).
+     * AnyScan unlimited = AnyScan.create().setBatch(-1);
+     * int b = unlimited.getBatch();  // returns -1
      * }</pre>
      *
      * @param batch the batch size (number of columns per RPC)
@@ -1095,6 +1363,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * which can be useful for controlling result set size.
      * </p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * int def = scan.getMaxResultsPerColumnFamily();   // returns -1 (no limit)
+     *
+     * scan.setMaxResultsPerColumnFamily(10);
+     * int limit = scan.getMaxResultsPerColumnFamily(); // returns 10
+     * }</pre>
+     *
      * @return the maximum number of results per column family, or -1 if no limit is set
      * @see #setMaxResultsPerColumnFamily(int)
      */
@@ -1114,8 +1391,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <pre>{@code
      * // Limit to 10 most recent columns per family
      * AnyScan scan = AnyScan.create()
-     *                      .setMaxResultsPerColumnFamily(10)
+     *                      .setMaxResultsPerColumnFamily(10)   // returns this scan
      *                      .readVersions(1);
+     * int limit = scan.getMaxResultsPerColumnFamily();   // returns 10
      *
      * // Pagination: Get columns 10-20 from each family
      * AnyScan paginatedScan = AnyScan.create()
@@ -1141,6 +1419,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * column family before returning results.
      * </p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * int def = scan.getRowOffsetPerColumnFamily();   // returns 0 (no offset)
+     *
+     * scan.setRowOffsetPerColumnFamily(20);
+     * int offset = scan.getRowOffsetPerColumnFamily(); // returns 20
+     * }</pre>
+     *
      * @return the current row offset per column family, or 0 if no offset is set
      * @see #setRowOffsetPerColumnFamily(int)
      */
@@ -1160,8 +1447,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <pre>{@code
      * // Skip first 20 columns and get next 10 from each family
      * AnyScan scan = AnyScan.create()
-     *                      .setRowOffsetPerColumnFamily(20)
+     *                      .setRowOffsetPerColumnFamily(20)   // returns this scan
      *                      .setMaxResultsPerColumnFamily(10);
+     * int offset = scan.getRowOffsetPerColumnFamily();   // returns 20
      *
      * // Pagination logic
      * int pageSize = 10;
@@ -1171,7 +1459,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *                            .setMaxResultsPerColumnFamily(pageSize);
      * }</pre>
      *
-     * @param offset the number of cells to skip per column family
+     * @param offset the number of cells to skip per column family (a negative value is stored as-is
+     *               by this HBase version, with no validation)
      * @return this AnyScan instance for method chaining
      * @see #getRowOffsetPerColumnFamily()
      * @see #setMaxResultsPerColumnFamily(int)
@@ -1188,6 +1477,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * Caching determines how many rows are fetched from the server at once.
      * Higher values improve throughput but use more memory.
      * </p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * int def = scan.getCaching();   // returns -1 (server/connection default is used)
+     *
+     * scan.setCaching(1000);
+     * int caching = scan.getCaching(); // returns 1000
+     * }</pre>
      *
      * @return the current caching size (number of rows)
      * @see #setCaching(int)
@@ -1207,7 +1505,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * AnyScan scan = AnyScan.create().setCaching(1000);   // Fetch 1000 rows at a time
+     * AnyScan scan = AnyScan.create().setCaching(1000);   // returns this scan (fetch 1000 rows at a time)
+     * int caching = scan.getCaching();                    // returns 1000
      * }</pre>
      *
      * @param caching the number of rows to cache per RPC call
@@ -1229,6 +1528,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * avoid evicting frequently-used blocks from the cache.
      * </p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * boolean def = scan.getCacheBlocks();   // returns true (enabled by default)
+     *
+     * scan.setCacheBlocks(false);
+     * boolean off = scan.getCacheBlocks();   // returns false
+     * }</pre>
+     *
      * @return {@code true} if block caching is enabled, {@code false} otherwise
      * @see #setCacheBlocks(boolean)
      */
@@ -1247,7 +1555,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Disable caching for a full table scan
-     * AnyScan scan = AnyScan.create().setCacheBlocks(false);
+     * AnyScan scan = AnyScan.create().setCacheBlocks(false);   // returns this scan
+     * boolean enabled = scan.getCacheBlocks();                 // returns false
      * }</pre>
      *
      * @param cacheBlocks {@code true} to enable block caching, {@code false} to disable
@@ -1266,6 +1575,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * This setting limits the total amount of data that can be returned by a single
      * RPC call, helping to prevent out-of-memory errors for large scans.
      * </p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * long def = scan.getMaxResultSize();   // returns -1 (no explicit limit)
+     *
+     * scan.setMaxResultSize(1048576L);
+     * long size = scan.getMaxResultSize();  // returns 1048576
+     * }</pre>
      *
      * @return the maximum result size in bytes
      * @see #setMaxResultSize(long)
@@ -1287,7 +1605,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <pre>{@code
      * // Limit result size to 10MB per RPC call
      * AnyScan scan = AnyScan.create()
-     *                      .setMaxResultSize(10 * 1024 * 1024);
+     *                      .setMaxResultSize(10 * 1024 * 1024);   // returns this scan
+     * long size = scan.getMaxResultSize();                        // returns 10485760
      *
      * // For tables with large rows, use smaller result size
      * AnyScan safeScan = AnyScan.create()
@@ -1312,6 +1631,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * regardless of how many rows match the scan criteria.
      * </p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * int def = scan.getLimit();   // returns -1 (no limit)
+     *
+     * scan.setLimit(100);
+     * int limit = scan.getLimit(); // returns 100
+     * }</pre>
+     *
      * @return the maximum number of rows to return
      * @see #setLimit(int)
      * @see #setOneRowLimit()
@@ -1330,7 +1658,12 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * AnyScan scan = AnyScan.create().setLimit(100);   // Return at most 100 rows
+     * AnyScan scan = AnyScan.create().setLimit(100);   // returns this scan (at most 100 rows)
+     * int limit = scan.getLimit();                     // returns 100
+     *
+     * // A limit of 0 is stored as-is (an immediately-exhausted scan).
+     * AnyScan none = AnyScan.create().setLimit(0);
+     * int zero = none.getLimit();    // returns 0
      * }</pre>
      *
      * @param limit the maximum number of rows to return
@@ -1352,6 +1685,12 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * optimize the scan accordingly.
      * </p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create().setOneRowLimit();   // returns this scan
+     * int limit = scan.getLimit();                        // returns 1
+     * }</pre>
+     *
      * @return this AnyScan instance for method chaining
      * @see #setLimit(int)
      */
@@ -1368,6 +1707,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * transferred to the client. The filter itself is configured via the inherited
      * {@link AnyQuery#setFilter(Filter)} method.</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * boolean none = scan.hasFilter();   // returns false
+     *
+     * scan.setFilter(new PrefixFilter(Bytes.toBytes("user_")));
+     * boolean has = scan.hasFilter();    // returns true
+     * }</pre>
+     *
      * @return {@code true} if a filter has been set, {@code false} otherwise
      * @see AnyQuery#setFilter(Filter)
      */
@@ -1381,6 +1729,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <p>In a reversed scan the start row is interpreted as the higher bound and the stop row as
      * the lower bound; the scanner walks rows from high keys to low keys. This can be useful for
      * retrieving the most recent data first in time-series applications keyed by ascending time.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * boolean def = scan.isReversed();   // returns false (forward scan)
+     *
+     * scan.setReversed(true);
+     * boolean rev = scan.isReversed();   // returns true
+     * }</pre>
      *
      * @return {@code true} if the scan is reversed, {@code false} otherwise
      * @see #setReversed(boolean)
@@ -1404,7 +1761,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * AnyScan scan = AnyScan.create()
      *                      .withStartRow("2024-12-31")
      *                      .withStopRow("2024-01-01")
-     *                      .setReversed(true);
+     *                      .setReversed(true);   // returns this scan
+     * boolean rev = scan.isReversed();           // returns true
      * }</pre>
      *
      * @param reversed {@code true} to scan in reverse order, {@code false} for normal order
@@ -1423,6 +1781,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * When enabled, the server may return partial results (rows split across multiple
      * responses) to better manage memory and prevent timeouts for rows with many columns.
      * </p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * boolean def = scan.getAllowPartialResults();   // returns false (disabled by default)
+     *
+     * scan.setAllowPartialResults(true);
+     * boolean allowed = scan.getAllowPartialResults(); // returns true
+     * }</pre>
      *
      * @return {@code true} if partial results are allowed, {@code false} otherwise
      * @see #setAllowPartialResults(boolean)
@@ -1445,7 +1812,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * // Enable partial results for tables with very wide rows
      * AnyScan scan = AnyScan.create()
      *                      .addFamily("wideFamily")
-     *                      .setAllowPartialResults(true);
+     *                      .setAllowPartialResults(true);   // returns this scan
+     * boolean allowed = scan.getAllowPartialResults();      // returns true
      *
      * // Process partial results
      * ResultScanner scanner = table.getScanner(scan.val());
@@ -1472,6 +1840,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * This is primarily useful for debugging or implementing custom compaction logic.
      * </p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * boolean def = scan.isRaw();   // returns false (normal scan)
+     *
+     * scan.setRaw(true);
+     * boolean raw = scan.isRaw();    // returns true
+     * }</pre>
+     *
      * @return {@code true} if this is a raw scan, {@code false} otherwise
      * @see #setRaw(boolean)
      */
@@ -1492,8 +1869,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * // Raw scan to see deleted cells (for debugging)
      * AnyScan rawScan = AnyScan.create()
      *                          .addFamily("data")
-     *                          .setRaw(true)
+     *                          .setRaw(true)            // returns this scan
      *                          .readAllVersions();
+     * boolean raw = rawScan.isRaw();   // returns true
      *
      * ResultScanner scanner = table.getScanner(rawScan.val());
      * for (Result result : scanner) {
@@ -1558,6 +1936,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * operation, which can be useful for monitoring and performance tuning.
      * </p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * boolean def = scan.isScanMetricsEnabled();   // returns false (disabled by default)
+     *
+     * scan.setScanMetricsEnabled(true);
+     * boolean on = scan.isScanMetricsEnabled();     // returns true
+     * }</pre>
+     *
      * @return {@code true} if scan metrics are enabled, {@code false} otherwise
      * @see #setScanMetricsEnabled(boolean)
      */
@@ -1575,7 +1962,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * AnyScan scan = AnyScan.create().setScanMetricsEnabled(true);
+     * AnyScan scan = AnyScan.create().setScanMetricsEnabled(true);   // returns this scan
+     * boolean on = scan.isScanMetricsEnabled();                      // returns true
      * // After scanning, retrieve metrics from ResultScanner
      * }</pre>
      *
@@ -1610,6 +1998,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * while processing the current batch, which can improve throughput for large scans.
      * </p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * Boolean def = scan.isAsyncPrefetch();   // returns null (not explicitly set)
+     *
+     * scan.setAsyncPrefetch(true);
+     * Boolean on = scan.isAsyncPrefetch();    // returns Boolean.TRUE
+     * }</pre>
+     *
      * @return {@code true} if async prefetch is enabled, {@code false} if disabled, or {@code null} if not set
      * @see #setAsyncPrefetch(boolean)
      */
@@ -1630,7 +2027,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * // Enable async prefetch for large table scans
      * AnyScan scan = AnyScan.create()
      *                      .setCaching(1000)
-     *                      .setAsyncPrefetch(true);
+     *                      .setAsyncPrefetch(true);   // returns this scan
+     * Boolean on = scan.isAsyncPrefetch();            // returns Boolean.TRUE
      *
      * // Optimal for processing-heavy scans where I/O can overlap computation
      * AnyScan optimizedScan = AnyScan.create()
@@ -1657,6 +2055,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * (for random reads).
      * </p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * ReadType def = scan.getReadType();   // returns ReadType.DEFAULT
+     *
+     * scan.setReadType(ReadType.STREAM);
+     * ReadType rt = scan.getReadType();    // returns ReadType.STREAM
+     * }</pre>
+     *
      * @return the ReadType for this scan
      * @see #setReadType(ReadType)
      */
@@ -1679,7 +2086,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // For large sequential table scans
-     * AnyScan fullScan = AnyScan.create().setReadType(ReadType.STREAM);
+     * AnyScan fullScan = AnyScan.create().setReadType(ReadType.STREAM);   // returns this scan
+     * ReadType rt = fullScan.getReadType();                               // returns ReadType.STREAM
      *
      * // For small, targeted scans
      * AnyScan smallScan = AnyScan.create()
@@ -1707,6 +2115,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * interrupted scans.
      * </p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * boolean def = scan.isNeedCursorResult();   // returns false (disabled by default)
+     *
+     * scan.setNeedCursorResult(true);
+     * boolean on = scan.isNeedCursorResult();    // returns true
+     * }</pre>
+     *
      * @return {@code true} if cursor results are needed, {@code false} otherwise
      * @see #setNeedCursorResult(boolean)
      * @see #createScanFromCursor(Cursor)
@@ -1726,7 +2143,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * AnyScan scan = AnyScan.create().setNeedCursorResult(true);
+     * AnyScan scan = AnyScan.create().setNeedCursorResult(true);   // returns this scan
+     * boolean on = scan.isNeedCursorResult();                      // returns true
      * // Later, use the cursor to resume scanning
      * }</pre>
      *
@@ -1749,6 +2167,12 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * {@link #equals(Object)} will have the same hash code.
      * </p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * int hash = scan.hashCode();   // returns scan.val().hashCode()
+     * }</pre>
+     *
      * @return a hash code value for this object
      */
     @Override
@@ -1759,10 +2183,23 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     /**
      * Indicates whether some other object is "equal to" this AnyScan.
      * <p>
-     * Two AnyScan objects are considered equal if their underlying Scan objects
-     * are equal, which means they have the same configuration including row ranges,
-     * families, filters, and all other scan parameters.
+     * Equality is delegated to the underlying {@link Scan}, which does not override
+     * {@link Object#equals(Object)} — so comparison is by reference identity, not by scan
+     * configuration. Two distinct AnyScan instances are therefore equal only when they wrap the
+     * very same {@link Scan} object; two separately built scans with identical settings are not
+     * equal.
      * </p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create();
+     * boolean self = scan.equals(scan);            // returns true (same instance)
+     * boolean nullCmp = scan.equals(null);         // returns false
+     * boolean other = scan.equals("not a scan");   // returns false (not an AnyScan)
+     *
+     * // Edge: two independently built scans with identical settings are NOT equal.
+     * boolean same = AnyScan.create().equals(AnyScan.create());   // returns false
+     * }</pre>
      *
      * @param obj the reference object with which to compare
      * @return {@code true} if this object is the same as the obj argument;
@@ -1790,6 +2227,12 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * time ranges, and other configuration settings. This is useful for
      * debugging and logging purposes.
      * </p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyScan scan = AnyScan.create().addFamily("cf");
+     * String text = scan.toString();   // returns a non-null description of the scan
+     * }</pre>
      *
      * @return a string representation of this AnyScan; never null
      */

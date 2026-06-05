@@ -205,6 +205,16 @@ public class BigQueryExecutor {
      * the default {@link NamingPolicy#SNAKE_CASE} translation policy (e.g.
      * {@code firstName} &rarr; {@code first_name}).
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * BigQuery bigQuery = BigQueryOptions.getDefaultInstance().getService();
+     * BigQueryExecutor executor = new BigQueryExecutor(bigQuery);
+     * executor.bigQuery();                       // returns the same bigQuery instance
+     *
+     * // Edge: a null client is rejected eagerly
+     * new BigQueryExecutor(null);                // throws IllegalArgumentException
+     * }</pre>
+     *
      * @param bigQuery the Google Cloud BigQuery client this executor will delegate to
      * @throws IllegalArgumentException if {@code bigQuery} is {@code null}
      * @see #BigQueryExecutor(BigQuery, NamingPolicy)
@@ -222,6 +232,22 @@ public class BigQueryExecutor {
      * {@link NamingPolicy#CAMEL_CASE} are honoured by the DML helpers; passing any other naming
      * policy will cause the first INSERT/UPDATE/DELETE call to fail with
      * {@link IllegalStateException}.
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * BigQuery bigQuery = BigQueryOptions.getDefaultInstance().getService();
+     * BigQueryExecutor executor =
+     *     new BigQueryExecutor(bigQuery, NamingPolicy.SCREAMING_SNAKE_CASE);  // firstName -> FIRST_NAME
+     * executor.bigQuery();                                                    // returns the same bigQuery instance
+     *
+     * // Edge: both arguments are validated eagerly
+     * new BigQueryExecutor(null, NamingPolicy.SNAKE_CASE);                    // throws IllegalArgumentException
+     * new BigQueryExecutor(bigQuery, null);                                   // throws IllegalArgumentException
+     *
+     * // Note: an unsupported policy is accepted here but fails on the first DML call
+     * BigQueryExecutor bad = new BigQueryExecutor(bigQuery, NamingPolicy.NO_CHANGE);
+     * bad.insert(someEntity);                                                 // throws IllegalStateException
+     * }</pre>
      *
      * @param bigQuery the Google Cloud BigQuery client this executor will delegate to
      * @param namingPolicy the convention used when translating Java property names to BigQuery
@@ -248,6 +274,15 @@ public class BigQueryExecutor {
      * custom {@link QueryJobConfiguration} with {@code setDryRun(true)}, or dataset/table
      * administration.
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * BigQuery bigQuery = BigQueryOptions.getDefaultInstance().getService();
+     * BigQueryExecutor executor = new BigQueryExecutor(bigQuery);
+     *
+     * BigQuery client = executor.bigQuery();   // returns the exact same instance passed to the constructor
+     * client.listDatasets();                   // reach an admin API not surfaced by this executor
+     * }</pre>
+     *
      * @return the underlying BigQuery client; never {@code null}
      * @see com.google.cloud.bigquery.BigQuery
      */
@@ -262,6 +297,26 @@ public class BigQueryExecutor {
      * <p>
      * Convenience overload that immediately extracts {@code schema.getFields()} and delegates to
      * {@link #toEntity(FieldList, FieldValueList, Class)}.
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * FieldList fields = FieldList.of(Field.of("id", StandardSQLTypeName.INT64),
+     *                                 Field.of("name", StandardSQLTypeName.STRING));
+     * Schema schema = Schema.of(fields);
+     * FieldValueList row = FieldValueList.of(Arrays.asList(
+     *         FieldValue.of(FieldValue.Attribute.PRIMITIVE, "123"),
+     *         FieldValue.of(FieldValue.Attribute.PRIMITIVE, "John")), fields);
+     *
+     * Customer c = BigQueryExecutor.toEntity(schema, row, Customer.class);
+     * c.getId();                                                  // returns 123
+     * c.getName();                                                // returns "John"
+     *
+     * // Edge: a null schema is rejected
+     * BigQueryExecutor.toEntity((Schema) null, row, Customer.class);  // throws IllegalArgumentException
+     *
+     * // Edge: a non-bean target class is rejected
+     * BigQueryExecutor.toEntity(schema, row, String.class);          // throws IllegalArgumentException
+     * }</pre>
      *
      * @param <T> the entity type
      * @param schema the schema describing {@code fieldValueList}; must not be {@code null}
@@ -290,6 +345,25 @@ public class BigQueryExecutor {
      * {@code BeanInfo#setPropValue(..., true)} so dotted paths can populate nested beans even when
      * no top-level property matches. Nested {@link FieldValueList} values are converted recursively
      * into the property's declared type.
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * FieldList fields = FieldList.of(Field.of("id", StandardSQLTypeName.INT64),
+     *                                 Field.of("name", StandardSQLTypeName.STRING));
+     * FieldValueList row = FieldValueList.of(Arrays.asList(
+     *         FieldValue.of(FieldValue.Attribute.PRIMITIVE, "456"),
+     *         FieldValue.of(FieldValue.Attribute.PRIMITIVE, "Jane")), fields);
+     *
+     * Customer c = BigQueryExecutor.toEntity(fields, row, Customer.class);
+     * c.getId();                                                  // returns 456
+     * c.getName();                                                // returns "Jane"
+     *
+     * // Edge: a non-bean target class is rejected
+     * BigQueryExecutor.toEntity(fields, row, String.class);      // throws IllegalArgumentException
+     *
+     * // Edge: a null field list is rejected
+     * BigQueryExecutor.toEntity((FieldList) null, row, Customer.class);  // throws IllegalArgumentException
+     * }</pre>
      *
      * @param <T> the entity type
      * @param fields the field list describing {@code fieldValueList}; must not be {@code null}
@@ -358,6 +432,22 @@ public class BigQueryExecutor {
      * {@code schema} field; in long-running processes prefer the
      * {@link #toEntity(FieldList, FieldValueList, Class)} overload.
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * FieldList fields = FieldList.of(Field.of("id", StandardSQLTypeName.INT64),
+     *                                 Field.of("name", StandardSQLTypeName.STRING));
+     * FieldValueList row = FieldValueList.of(Arrays.asList(
+     *         FieldValue.of(FieldValue.Attribute.PRIMITIVE, "789"),
+     *         FieldValue.of(FieldValue.Attribute.PRIMITIVE, "Bob")), fields);
+     *
+     * Customer c = BigQueryExecutor.toEntity(row, Customer.class);   // schema read reflectively from the row
+     * c.getId();                                                     // returns 789
+     * c.getName();                                                   // returns "Bob"
+     *
+     * // Edge: a non-bean target class is rejected
+     * BigQueryExecutor.toEntity(row, String.class);                 // throws IllegalArgumentException
+     * }</pre>
+     *
      * @param <T> the entity type
      * @param fieldValueList the row to convert
      * @param entityClass the bean class to instantiate; must declare standard getter/setter methods
@@ -377,6 +467,23 @@ public class BigQueryExecutor {
      * Returns a {@link HashMap}. Nested {@link FieldValueList} values (BigQuery {@code STRUCT}s)
      * are recursively converted to nested {@link Map}s.
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * FieldList fields = FieldList.of(Field.of("id", StandardSQLTypeName.INT64),
+     *                                 Field.of("name", StandardSQLTypeName.STRING));
+     * Schema schema = Schema.of(fields);
+     * FieldValueList row = FieldValueList.of(Arrays.asList(
+     *         FieldValue.of(FieldValue.Attribute.PRIMITIVE, "123"),
+     *         FieldValue.of(FieldValue.Attribute.PRIMITIVE, "John")), fields);
+     *
+     * Map<String, Object> map = BigQueryExecutor.toMap(schema, row);  // a HashMap
+     * map.get("id");                                                  // returns "123"
+     * map.get("name");                                                // returns "John"
+     *
+     * // Edge: a null schema is rejected
+     * BigQueryExecutor.toMap((Schema) null, row);                    // throws IllegalArgumentException
+     * }</pre>
+     *
      * @param schema the schema describing {@code fieldValueList}; must not be {@code null}
      * @param fieldValueList the row to convert
      * @return a new {@code HashMap} with one entry per field in {@code schema}
@@ -395,7 +502,23 @@ public class BigQueryExecutor {
      * This method creates a HashMap where keys are column names from the field list and values
      * are the corresponding data from the FieldValueList. This is equivalent to calling
      * {@code toMap(fields, fieldValueList, IntFunctions.ofMap())}.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * FieldList fields = FieldList.of(Field.of("id", StandardSQLTypeName.INT64),
+     *                                 Field.of("name", StandardSQLTypeName.STRING));
+     * FieldValueList row = FieldValueList.of(Arrays.asList(
+     *         FieldValue.of(FieldValue.Attribute.PRIMITIVE, "456"),
+     *         FieldValue.of(FieldValue.Attribute.PRIMITIVE, "Jane")), fields);
+     *
+     * Map<String, Object> map = BigQueryExecutor.toMap(fields, row);  // a HashMap
+     * map.get("id");                                                  // returns "456"
+     * map.get("name");                                                // returns "Jane"
+     *
+     * // Edge: a null field list is rejected
+     * BigQueryExecutor.toMap((FieldList) null, row);                 // throws IllegalArgumentException
+     * }</pre>
+     *
      * @param fields the BigQuery field list defining field structure and names
      * @param fieldValueList the row data from BigQuery containing the values
      * @return a HashMap containing column names as keys and corresponding values
@@ -415,6 +538,22 @@ public class BigQueryExecutor {
      * {@link IntFunctions#ofLinkedHashMap()}). Nested {@link FieldValueList} values are recursively
      * converted into nested maps, with each recursion also using {@code supplier} (the inner
      * schemas are extracted via {@link #getSchema(FieldValueList)}).
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * FieldList fields = FieldList.of(Field.of("id", StandardSQLTypeName.INT64),
+     *                                 Field.of("name", StandardSQLTypeName.STRING));
+     * FieldValueList row = FieldValueList.of(Arrays.asList(
+     *         FieldValue.of(FieldValue.Attribute.PRIMITIVE, "9"),
+     *         FieldValue.of(FieldValue.Attribute.PRIMITIVE, "Z")), fields);
+     *
+     * Map<String, Object> map = BigQueryExecutor.toMap(fields, row, IntFunctions.ofLinkedHashMap());
+     * (map instanceof LinkedHashMap);                                // true
+     * map.get("id");                                                 // returns "9"
+     *
+     * // Edge: a null supplier is rejected
+     * BigQueryExecutor.toMap(fields, row, null);                     // throws IllegalArgumentException
+     * }</pre>
      *
      * @param fields the field list describing {@code fieldValueList}; must not be {@code null}
      * @param fieldValueList the row to convert; must not be {@code null}
@@ -452,7 +591,20 @@ public class BigQueryExecutor {
      * <p>
      * This is a convenience method that automatically extracts the schema information from the
      * FieldValueList and creates a HashMap containing the column-value mappings.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * FieldList fields = FieldList.of(Field.of("id", StandardSQLTypeName.INT64),
+     *                                 Field.of("name", StandardSQLTypeName.STRING));
+     * FieldValueList row = FieldValueList.of(Arrays.asList(
+     *         FieldValue.of(FieldValue.Attribute.PRIMITIVE, "111"),
+     *         FieldValue.of(FieldValue.Attribute.PRIMITIVE, "Amy")), fields);
+     *
+     * Map<String, Object> map = BigQueryExecutor.toMap(row);  // schema read reflectively from the row
+     * map.get("id");                                          // returns "111"
+     * map.get("name");                                        // returns "Amy"
+     * }</pre>
+     *
      * @param fieldValueList the row data from BigQuery containing both schema and values
      * @return a HashMap containing column names as keys and corresponding values
      * @throws IllegalArgumentException if fieldValueList is null
@@ -467,7 +619,21 @@ public class BigQueryExecutor {
      * <p>
      * This is a convenience method that automatically extracts the schema information from the
      * FieldValueList and creates a Map of the specified type containing the column-value mappings.
-     * 
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * FieldList fields = FieldList.of(Field.of("id", StandardSQLTypeName.INT64),
+     *                                 Field.of("name", StandardSQLTypeName.STRING));
+     * FieldValueList row = FieldValueList.of(Arrays.asList(
+     *         FieldValue.of(FieldValue.Attribute.PRIMITIVE, "222"),
+     *         FieldValue.of(FieldValue.Attribute.PRIMITIVE, "Sam")), fields);
+     *
+     * Map<String, Object> map = BigQueryExecutor.toMap(row, IntFunctions.ofLinkedHashMap());
+     * (map instanceof LinkedHashMap);                        // true
+     * map.get("id");                                         // returns "222"
+     * map.get("name");                                       // returns "Sam"
+     * }</pre>
+     *
      * @param fieldValueList the row data from BigQuery containing both schema and values
      * @param supplier a function that creates Map instances given the expected size
      * @return a Map of the supplier's type containing column names as keys and corresponding values
@@ -686,6 +852,23 @@ public class BigQueryExecutor {
      *       raise {@link IllegalArgumentException} during iteration.</li>
      * </ul>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * // tableResult holds two rows: (1,"Name1") and (2,"Name2")
+     * List<Customer> customers = BigQueryExecutor.toList(tableResult, Customer.class);
+     * customers.size();                                  // returns 2
+     * customers.get(0).getId();                          // returns 1
+     *
+     * // Map rows: each row becomes a column-to-value map
+     * List<Map<String, Object>> maps = BigQueryExecutor.toList(tableResult, Map.class);
+     *
+     * // Edge: an empty result (getTotalRows() == 0) yields an empty list
+     * BigQueryExecutor.toList(emptyResult, Customer.class).isEmpty();        // returns true
+     *
+     * // Edge: a DML TableResult (null schema, getTotalRows() > 0) also yields an empty list
+     * BigQueryExecutor.toList(dmlResult, Customer.class).isEmpty();          // returns true
+     * }</pre>
+     *
      * @param <T> the element type of the returned list
      * @param tableResult the BigQuery query result to materialise
      * @param targetClass selects the per-row mapping strategy as described above; may be
@@ -740,6 +923,23 @@ public class BigQueryExecutor {
      *       {@code STRUCT} values are converted to {@code Object[]} and primitive values are left
      *       as-is.</li>
      * </ul>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * // tableResult holds one row: (1,"Name1") with columns id, name
+     * Dataset ds = BigQueryExecutor.extractData(tableResult, Customer.class);
+     * ds.columnCount();                                  // returns 2
+     * ds.size();                                         // returns 1 (row count)
+     * ds.columnNames().contains("name");                 // returns true
+     *
+     * // Map hint keeps nested STRUCTs as Maps
+     * Dataset asMaps = BigQueryExecutor.extractData(tableResult, Map.class);
+     *
+     * // Edge: a DML TableResult (null schema) yields an empty Dataset
+     * Dataset empty = BigQueryExecutor.extractData(dmlResult, Customer.class);
+     * empty.size();                                      // returns 0
+     * empty.columnCount();                               // returns 0
+     * }</pre>
      *
      * @param tableResult the BigQuery query result to materialise
      * @param targetClass type hint used to choose per-column conversion as described above; may be
@@ -834,8 +1034,10 @@ public class BigQueryExecutor {
      * customer.setName("John Doe");
      * customer.setEmail("john@example.com");
      *
-     * TableResult result = executor.insert(customer);
-     * System.out.println("Rows inserted: " + result.getTotalRows());
+     * TableResult result = executor.insert(customer);   // returns a TableResult; result.getTotalRows() is the affected-row count
+     *
+     * // Edge: a null entity is rejected before any query is built
+     * executor.insert((Object) null);                   // throws IllegalArgumentException
      * }</pre>
      *
      * @param entity the entity instance to insert; the table name is resolved from its class via the configured naming policy
@@ -885,8 +1087,7 @@ public class BigQueryExecutor {
      * customerData.put("email", "jane@example.com");
      * customerData.put("createdDate", LocalDate.now());
      *
-     * TableResult result = executor.insert(Customer.class, customerData);
-     * System.out.println("Inserted: " + result.getTotalRows() + " rows");
+     * TableResult result = executor.insert(Customer.class, customerData);   // returns a TableResult; getTotalRows() is the affected-row count
      * }</pre>
      *
      * @param targetClass the class representing the target table (used for table name resolution)
@@ -940,8 +1141,10 @@ public class BigQueryExecutor {
      *     "SELECT * FROM customers WHERE customer_id = ?", "CUST123").get(0);
      * customer.setEmail("newemail@example.com");
      *
-     * TableResult result = executor.update(customer);
-     * System.out.println("Updated rows: " + result.getTotalRows());
+     * TableResult result = executor.update(customer);   // returns a TableResult; getTotalRows() is the affected-row count
+     *
+     * // Edge: a null entity fails fast (entity.getClass() is dereferenced)
+     * executor.update((Object) null);                   // throws NullPointerException
      * }</pre>
      *
      * @param entity the entity instance containing updated values and primary key values
@@ -980,7 +1183,10 @@ public class BigQueryExecutor {
      * item.setPrice(new BigDecimal("99.99"));
      *
      * Set<String> keyFields = N.asSet("orderId", "itemId");
-     * TableResult result = executor.update(item, keyFields);
+     * TableResult result = executor.update(item, keyFields);   // returns a TableResult; getTotalRows() is the affected-row count
+     *
+     * // Edge: an empty (or null) key set is rejected
+     * executor.update(item, N.<String> asSet());               // throws IllegalArgumentException
      * }</pre>
      *
      * @param entity the entity instance containing updated values and primary key values
@@ -1041,16 +1247,22 @@ public class BigQueryExecutor {
      *     Filters.lt("lastAccessDate", LocalDate.now().minusYears(1))
      * );
      *
-     * TableResult result = executor.update(Customer.class, updates, condition);
-     * System.out.println("Updated " + result.getTotalRows() + " records");
+     * TableResult result = executor.update(Customer.class, updates, condition);   // returns a TableResult; getTotalRows() is the affected-row count
+     *
+     * // Edge: empty (or null) props are rejected
+     * executor.update(Customer.class, new HashMap<>(), condition);                // throws IllegalArgumentException
+     *
+     * // Edge: a null whereClause is rejected by the SQL builder (it does NOT update all rows)
+     * executor.update(Customer.class, updates, (Condition) null);                 // throws IllegalArgumentException
      * }</pre>
      *
      * @param targetClass the class representing the target table (used for table name resolution)
      * @param props a Map containing column names as keys and new values to set
-     * @param whereClause the condition specifying which records to update; if {@code null}, no WHERE
-     *                    clause is generated and all rows are updated
+     * @param whereClause the condition specifying which records to update; must not be {@code null}
+     *                    (a {@code null} condition is rejected by the SQL builder with
+     *                    {@link IllegalArgumentException})
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if props is null or empty
+     * @throws IllegalArgumentException if props is null or empty, or if whereClause is {@code null}
      * @see com.landawn.abacus.query.Filters
      */
     public TableResult update(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause) {
@@ -1089,13 +1301,19 @@ public class BigQueryExecutor {
      * Customer customer = new Customer();
      * customer.setCustomerId("CUST123");
      *
-     * TableResult result = executor.delete(customer);
-     * System.out.println("Deleted rows: " + result.getTotalRows());
+     * TableResult result = executor.delete(customer);   // returns a TableResult; getTotalRows() is the affected-row count
      *
      * // Or delete by loading first
      * Customer existing = executor.list(Customer.class,
      *     "SELECT * FROM customers WHERE customer_id = ?", "CUST456").get(0);
-     * executor.delete(existing);
+     * executor.delete(existing);                         // returns a TableResult
+     *
+     * // Edge: a null entity fails fast (entity.getClass() is dereferenced)
+     * executor.delete((Object) null);                    // throws NullPointerException
+     *
+     * // Edge: an entity whose only key is blank/null has no usable WHERE value
+     * Customer blank = new Customer();                   // customerId left null
+     * executor.delete(blank);                            // throws IllegalArgumentException
      * }</pre>
      *
      * @param entity the entity instance containing primary key values for deletion
@@ -1119,17 +1337,19 @@ public class BigQueryExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Delete by single primary key
-     * TableResult result = executor.delete(Customer.class, "CUST123");
-     * System.out.println("Deleted: " + result.getTotalRows() + " rows");
+     * TableResult result = executor.delete(Customer.class, "CUST123");   // returns a TableResult; getTotalRows() is the affected-row count
      *
-     * // Delete by composite key
-     * TableResult result2 = executor.delete(OrderItem.class, "ORD123", "ITEM456");
+     * // Delete by composite key (values in key-field order)
+     * TableResult result2 = executor.delete(OrderItem.class, "ORD123", "ITEM456");   // returns a TableResult
      *
      * // Delete multiple records one by one
      * List<String> customerIds = Arrays.asList("CUST001", "CUST002", "CUST003");
      * for (String id : customerIds) {
      *     executor.delete(Customer.class, id);
      * }
+     *
+     * // Edge: an empty id array is rejected
+     * executor.delete(Customer.class, new Object[0]);                    // throws IllegalArgumentException
      * }</pre>
      *
      * @param targetClass the class representing the target table (used for table name and key resolution)
@@ -1154,7 +1374,7 @@ public class BigQueryExecutor {
      * <pre>{@code
      * // Delete with simple condition
      * Condition condition = Filters.eq("status", "inactive");
-     * TableResult result = executor.delete(Customer.class, condition);
+     * TableResult result = executor.delete(Customer.class, condition);   // returns a TableResult; getTotalRows() is the affected-row count
      *
      * // Delete with complex condition
      * Condition complexCondition = Filters.and(
@@ -1162,15 +1382,18 @@ public class BigQueryExecutor {
      *     Filters.lt("createdDate", LocalDate.now().minusDays(30)),
      *     Filters.isNull("processedDate")
      * );
-     * TableResult result2 = executor.delete(Order.class, complexCondition);
-     * System.out.println("Deleted " + result2.getTotalRows() + " expired orders");
+     * TableResult result2 = executor.delete(Order.class, complexCondition);   // returns a TableResult
+     *
+     * // Edge: a null whereClause is rejected by the SQL builder (it does NOT delete all rows)
+     * executor.delete(Customer.class, (Condition) null);                 // throws IllegalArgumentException
      * }</pre>
      *
      * @param targetClass the target class representing the table (used for table name resolution)
-     * @param whereClause the condition specifying which records to delete; if {@code null}, no WHERE
-     *                    clause is generated and all rows are deleted
+     * @param whereClause the condition specifying which records to delete; must not be {@code null}
+     *                    (a {@code null} condition is rejected by the SQL builder with
+     *                    {@link IllegalArgumentException})
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if targetClass is null
+     * @throws IllegalArgumentException if targetClass is null, or if whereClause is {@code null}
      * @see com.landawn.abacus.query.Filters
      */
     public TableResult delete(final Class<?> targetClass, final Condition whereClause) {
@@ -1205,13 +1428,10 @@ public class BigQueryExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Check existence by single primary key
-     * boolean exists = executor.exists(Customer.class, "CUST123");
-     * if (exists) {
-     *     System.out.println("Customer exists");
-     * }
+     * boolean exists = executor.exists(Customer.class, "CUST123");   // returns true if a matching row exists
      *
-     * // Check existence by composite key
-     * boolean itemExists = executor.exists(OrderItem.class, "ORD123", "ITEM456");
+     * // Check existence by composite key (values in key-field order)
+     * boolean itemExists = executor.exists(OrderItem.class, "ORD123", "ITEM456");   // returns true if a matching row exists
      *
      * // Conditional logic based on existence
      * if (!executor.exists(Customer.class, customerId)) {
@@ -1219,6 +1439,9 @@ public class BigQueryExecutor {
      * } else {
      *     executor.update(existingCustomer);
      * }
+     *
+     * // Edge: an empty id array is rejected
+     * executor.exists(Customer.class, new Object[0]);                // throws IllegalArgumentException
      * }</pre>
      *
      * @param targetClass the class representing the target table (used for table name and key resolution)
@@ -1378,7 +1601,7 @@ public class BigQueryExecutor {
      * <pre>{@code
      * // Check if any active customers exist
      * Condition condition = Filters.eq("status", "active");
-     * boolean hasActiveCustomers = executor.exists(Customer.class, condition);
+     * boolean hasActiveCustomers = executor.exists(Customer.class, condition);   // returns true if at least one row matches
      *
      * // Check for records matching complex criteria
      * Condition complexCond = Filters.and(
@@ -1386,11 +1609,10 @@ public class BigQueryExecutor {
      *     Filters.eq("paymentStatus", "pending"),
      *     Filters.between("orderDate", startDate, endDate)
      * );
-     * boolean hasPendingLargeOrders = executor.exists(Order.class, complexCond);
+     * boolean hasPendingLargeOrders = executor.exists(Order.class, complexCond);   // returns true if at least one row matches
      *
-     * if (hasPendingLargeOrders) {
-     *     // Process pending large orders
-     * }
+     * // A null whereClause checks whether the table has any rows at all
+     * boolean tableHasRows = executor.exists(Customer.class, (Condition) null);    // returns true if the table is non-empty
      * }</pre>
      *
      * @param targetClass the class representing the target table (used for table name resolution)
@@ -1424,9 +1646,15 @@ public class BigQueryExecutor {
      * <pre>{@code
      * Condition condition = Filters.eq("customerId", "CUST123");
      * Nullable<String> email = executor.queryForSingleValue(
-     *         Customer.class, String.class, "email", condition);
+     *         Customer.class, String.class, "email", condition);   // present with the email when a row matches
      *
-     * email.ifPresent(e -> System.out.println("Customer email: " + e));
+     * email.isPresent();          // returns true when at least one row matched
+     * email.orElse("n/a");        // returns the column value, or "n/a" when no row matched
+     *
+     * // Edge: no matching row -> Nullable.empty()
+     * Nullable<String> none = executor.queryForSingleValue(
+     *         Customer.class, String.class, "email", Filters.eq("customerId", "MISSING"));
+     * none.isPresent();           // returns false
      * }</pre>
      *
      * @param <T> the target table entity type
@@ -1470,10 +1698,16 @@ public class BigQueryExecutor {
      * <pre>{@code
      * Nullable<Long> count = executor.queryForSingleValue(Long.class,
      *         "SELECT COUNT(*) FROM customers WHERE status = ?", "active");
-     * System.out.println("Active customers: " + count.orElse(0L));
+     * count.orElse(0L);           // returns the COUNT(*) value (e.g. 5L), or 0L if the query returned no rows
      *
      * Nullable<String> name = executor.queryForSingleValue(String.class,
      *         "SELECT name FROM customers WHERE customer_id = ?", "CUST123");
+     * name.isPresent();           // returns true when a row matched (even if the column value is null)
+     *
+     * // Edge: a query with no rows yields Nullable.empty()
+     * Nullable<String> none = executor.queryForSingleValue(String.class,
+     *         "SELECT name FROM customers WHERE customer_id = ?", "MISSING");
+     * none.isPresent();           // returns false
      * }</pre>
      *
      * @param <V> the expected value type
@@ -1518,16 +1752,15 @@ public class BigQueryExecutor {
      * <pre>{@code
      * // Query for dataset with condition
      * Condition condition = Filters.eq("status", "active");
-     * Dataset dataset = executor.query(Customer.class, condition);
+     * Dataset dataset = executor.query(Customer.class, condition);   // returns a columnar Dataset of matching rows
+     * dataset.size();                                                // returns the number of matching rows
      *
-     * // Access columns
-     * List<String> names = dataset.getColumn("name");
-     * List<String> emails = dataset.getColumn("email");
+     * // Access columns by name
+     * ImmutableList<String> names = dataset.getColumn("name");
+     * ImmutableList<String> emails = dataset.getColumn("email");
      *
-     * // Iterate through rows
-     * dataset.forEach(row -> {
-     *     System.out.println("Customer: " + row.get("name"));
-     * });
+     * // A null condition selects all rows (the read path omits the WHERE clause)
+     * Dataset all = executor.query(Customer.class, (Condition) null);   // returns every row in the table
      * }</pre>
      *
      * @param <T> the target table entity type
@@ -1554,13 +1787,16 @@ public class BigQueryExecutor {
      * // Query specific columns
      * Collection<String> columns = Arrays.asList("customerId", "name", "email");
      * Condition condition = Filters.eq("status", "active");
-     * Dataset dataset = executor.query(Customer.class, columns, condition);
+     * Dataset dataset = executor.query(Customer.class, columns, condition);   // returns a Dataset with exactly those 3 columns
+     * dataset.columnCount();                                                  // returns 3
+     * dataset.size();                                                         // returns the number of matching rows
      *
-     * // Access specific columns
-     * List<String> customerIds = dataset.getColumn("customerId");
-     * List<String> names = dataset.getColumn("name");
+     * // Access specific columns by name
+     * ImmutableList<String> customerIds = dataset.getColumn("customerId");
+     * ImmutableList<String> names = dataset.getColumn("name");
      *
-     * System.out.println("Found " + dataset.rowCount() + " active customers");
+     * // null selectPropNames selects all columns (equivalent to query(Class, Condition))
+     * Dataset full = executor.query(Customer.class, (Collection<String>) null, condition);
      * }</pre>
      *
      * @param <T> the target table entity type
@@ -1590,16 +1826,16 @@ public class BigQueryExecutor {
      * String sql = "SELECT customer_id, name, email FROM customers " +
      *              "WHERE status = ? AND created_date > ?";
      * Dataset dataset = executor.query(Customer.class, sql,
-     *     "active", LocalDate.now().minusMonths(6));
+     *     "active", LocalDate.now().minusMonths(6));   // returns a columnar Dataset of the selected columns
      *
      * // Process results
-     * System.out.println("Total rows: " + dataset.rowCount());
+     * dataset.size();                                  // returns the number of rows
      * dataset.getColumn("name").forEach(System.out::println);
      *
      * // Complex query with aggregation
      * String aggQuery = "SELECT status, COUNT(*) as count, AVG(order_amount) as avg_amount " +
      *                   "FROM orders WHERE order_date >= ? GROUP BY status";
-     * Dataset aggDataset = executor.query(Map.class, aggQuery, LocalDate.now().minusMonths(1));
+     * Dataset aggDataset = executor.query(Map.class, aggQuery, LocalDate.now().minusMonths(1));   // returns a Dataset
      * }</pre>
      *
      * @param targetClass the target class for result conversion (entity class with getter/setter methods or Map.class)
@@ -1626,7 +1862,7 @@ public class BigQueryExecutor {
      * <pre>{@code
      * // List all active customers
      * Condition condition = Filters.eq("status", "active");
-     * List<Customer> customers = executor.list(Customer.class, condition);
+     * List<Customer> customers = executor.list(Customer.class, condition);   // returns a List of matching entities (empty if none)
      *
      * customers.forEach(customer -> {
      *     System.out.println(customer.getName() + ": " + customer.getEmail());
@@ -1638,7 +1874,10 @@ public class BigQueryExecutor {
      *     Filters.gt("orderCount", 10),
      *     Filters.between("lastOrderDate", startDate, endDate)
      * );
-     * List<Customer> vipCustomers = executor.list(Customer.class, complexCond);
+     * List<Customer> vipCustomers = executor.list(Customer.class, complexCond);   // returns a List of matching entities
+     *
+     * // A null condition selects all rows
+     * List<Customer> everyone = executor.list(Customer.class, (Condition) null);  // returns every row in the table
      * }</pre>
      *
      * @param <T> the target type for list elements
@@ -1666,17 +1905,17 @@ public class BigQueryExecutor {
      * // Select specific columns
      * Collection<String> columns = Arrays.asList("customerId", "name", "email");
      * Condition condition = Filters.eq("status", "active");
-     * List<Customer> customers = executor.list(Customer.class, columns, condition);
+     * List<Customer> customers = executor.list(Customer.class, columns, condition);   // returns a List of entities populated from the 3 columns
      *
      * // Select to Map for flexibility
-     * List<Map<String, Object>> results = executor.list(Map.class, columns, condition);
+     * List<Map<String, Object>> results = executor.list(Map.class, columns, condition);   // returns one Map per row
      * results.forEach(row -> {
      *     System.out.println(row.get("customerId") + ": " + row.get("name"));
      * });
      *
-     * // Select single column to extract values
+     * // Select a single column into scalar values
      * Collection<String> idColumn = Arrays.asList("customerId");
-     * List<String> customerIds = executor.list(String.class, idColumn, condition);
+     * List<String> customerIds = executor.list(String.class, idColumn, condition);   // returns one String per row
      * }</pre>
      *
      * @param <T> the target type for list elements
@@ -1707,17 +1946,17 @@ public class BigQueryExecutor {
      * // Execute SQL query with parameters
      * String sql = "SELECT * FROM customers WHERE status = ? AND created_date > ?";
      * List<Customer> customers = executor.list(Customer.class, sql,
-     *     "active", LocalDate.now().minusMonths(6));
+     *     "active", LocalDate.now().minusMonths(6));   // returns a List of entities (empty if no rows match)
      *
      * // Complex JOIN query
      * String joinSql = "SELECT c.customer_id, c.name, COUNT(o.order_id) as order_count " +
      *                  "FROM customers c LEFT JOIN orders o ON c.customer_id = o.customer_id " +
      *                  "WHERE c.status = ? GROUP BY c.customer_id, c.name";
-     * List<Map<String, Object>> results = executor.list(Map.class, joinSql, "active");
+     * List<Map<String, Object>> results = executor.list(Map.class, joinSql, "active");   // returns one Map per row
      *
-     * // Query returning single values
+     * // Query returning single values (single-column result -> scalar conversion)
      * String idQuery = "SELECT customer_id FROM customers WHERE status = ?";
-     * List<String> activeIds = executor.list(String.class, idQuery, "active");
+     * List<String> activeIds = executor.list(String.class, idQuery, "active");   // returns one String per row
      * }</pre>
      *
      * @param <T> the target type for list elements
@@ -1745,21 +1984,21 @@ public class BigQueryExecutor {
      * <pre>{@code
      * // Stream and process records
      * Condition condition = Filters.eq("status", "active");
-     * Stream<Customer> customerStream = executor.stream(Customer.class, condition);
+     * Stream<Customer> customerStream = executor.stream(Customer.class, condition);   // returns a lazy Stream of matching entities
      *
      * customerStream
      *     .filter(c -> c.getOrderCount() > 10)
      *     .map(Customer::getEmail)
      *     .forEach(email -> sendEmail(email));
      *
-     * // Stream with aggregation
+     * // Stream with aggregation (abacus Stream)
      * BigDecimal totalAmount = executor.stream(Order.class, Filters.eq("status", "completed"))
      *     .map(Order::getAmount)
-     *     .reduce(BigDecimal.ZERO, BigDecimal::add);
+     *     .reduce(BigDecimal.ZERO, BigDecimal::add);   // returns the summed amount
      *
      * // Stream for large datasets (memory efficient)
      * long count = executor.stream(Customer.class, Filters.between("createdDate", start, end))
-     *     .count();
+     *     .count();                                    // returns the number of matching rows
      * }</pre>
      *
      * @param <T> the target type for stream elements
@@ -1791,12 +2030,12 @@ public class BigQueryExecutor {
      * List<String> emails = executor.stream(Customer.class, columns, condition)
      *     .map(Customer::getEmail)
      *     .filter(email -> email.endsWith("@example.com"))
-     *     .collect(Collectors.toList());
+     *     .toList();                                   // returns the matching emails as a List
      *
-     * // Stream and group by
+     * // Stream and group by (abacus Stream collector)
      * Map<String, List<Customer>> byStatus = executor.stream(Customer.class,
      *         Arrays.asList("customerId", "status"), Filters.isNotNull("status"))
-     *     .collect(Collectors.groupingBy(Customer::getStatus));
+     *     .groupTo(Customer::getStatus);              // returns a Map keyed by status
      * }</pre>
      *
      * @param <T> the target type for stream elements
@@ -1827,13 +2066,13 @@ public class BigQueryExecutor {
      * // Stream query results
      * String sql = "SELECT * FROM customers WHERE status = ? AND created_date > ?";
      * Stream<Customer> stream = executor.stream(Customer.class, sql,
-     *     "active", LocalDate.now().minusMonths(6));
+     *     "active", LocalDate.now().minusMonths(6));   // returns a lazy Stream of matching entities
      *
-     * // Process stream with filtering and mapping
+     * // Process stream with filtering and mapping (abacus Stream)
      * List<String> premiumEmails = stream
      *     .filter(c -> c.getOrderCount() > 100)
      *     .map(Customer::getEmail)
-     *     .collect(Collectors.toList());
+     *     .toList();                                   // returns the matching emails as a List
      *
      * // Stream for analytics
      * String analyticsSql = "SELECT order_date, SUM(amount) as total FROM orders " +
@@ -1876,8 +2115,8 @@ public class BigQueryExecutor {
      *     .setLabels(Map.of("environment", "production"))
      *     .build();
      *
-     * Stream<Customer> stream = executor.stream(Customer.class, config);
-     * long count = stream.count();
+     * Stream<Customer> stream = executor.stream(Customer.class, config);   // returns a lazy Stream of entities
+     * long count = stream.count();                                         // returns the number of rows produced by the job
      *
      * // Query with caching disabled
      * QueryJobConfiguration noCacheConfig = QueryJobConfiguration.newBuilder(
@@ -1929,7 +2168,7 @@ public class BigQueryExecutor {
      *     "SELECT * FROM customers")
      *     .build();
      *
-     * Stream<FieldValueList> rawStream = executor.stream(config);
+     * Stream<FieldValueList> rawStream = executor.stream(config);   // returns a lazy Stream of raw rows (no entity conversion)
      *
      * rawStream.forEach(row -> {
      *     // Access fields by index or name
@@ -1992,15 +2231,15 @@ public class BigQueryExecutor {
      * // SELECT
      * TableResult result = executor.execute(
      *     "SELECT * FROM customers WHERE status = ? AND created_date > ?",
-     *     "active", LocalDate.now().minusMonths(6));
+     *     "active", LocalDate.now().minusMonths(6));   // returns a TableResult holding the selected rows
      *
      * // DML (returned TableResult exposes the affected-row count via getTotalRows())
      * TableResult updated = executor.execute(
      *     "UPDATE customers SET status = ? WHERE last_order_date < ?",
-     *     "inactive", LocalDate.now().minusYears(1));
+     *     "inactive", LocalDate.now().minusYears(1));   // returns a TableResult; getTotalRows() is the affected-row count
      *
-     * // DDL
-     * executor.execute("CREATE TABLE IF NOT EXISTS test_table (id STRING, name STRING)");
+     * // DDL (no parameters; returned TableResult has no schema)
+     * executor.execute("CREATE TABLE IF NOT EXISTS test_table (id STRING, name STRING)");   // returns a TableResult
      * }</pre>
      *
      * @param query the SQL statement with {@code ?} positional placeholders; must not be {@code null}

@@ -74,7 +74,11 @@ public final class MongoDB extends MongoDBBase {
      * <pre>{@code
      * MongoClient client = MongoClients.create("mongodb://localhost:27017");
      * MongoDatabase database = client.getDatabase("myapp");
-     * MongoDB mongoDB = new MongoDB(database);
+     * MongoDB mongoDB = new MongoDB(database);                 // wraps "myapp", uses DEFAULT_ASYNC_EXECUTOR
+     * MongoDatabase wrapped = mongoDB.db();                    // codec-configured database (not necessarily the same instance passed in)
+     *
+     * // Edge case: a null database is rejected eagerly.
+     * MongoDB bad = new MongoDB((MongoDatabase) null);         // throws IllegalArgumentException
      * }</pre>
      *
      * @param mongoDB the MongoDB database instance to wrap
@@ -97,7 +101,11 @@ public final class MongoDB extends MongoDBBase {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AsyncExecutor customExecutor = new AsyncExecutor(10, 50, 300L, TimeUnit.SECONDS);
-     * MongoDB mongoDB = new MongoDB(database, customExecutor);
+     * MongoDB mongoDB = new MongoDB(database, customExecutor); // both args wired in; collection executors use customExecutor for async wrappers
+     *
+     * // Edge cases: both arguments must be non-null.
+     * new MongoDB((MongoDatabase) null, customExecutor);       // throws IllegalArgumentException
+     * new MongoDB(database, (AsyncExecutor) null);             // throws IllegalArgumentException
      * }</pre>
      *
      * @param mongoDB the MongoDB database instance to wrap
@@ -124,8 +132,11 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoDatabase database = mongoDB.db();
-     * database.createCollection("newCollection");
+     * MongoDatabase database = mongoDB.db();                  // never null; the codec-configured database backing this executor
+     * database.createCollection("newCollection");             // direct driver call, bypassing this wrapper
+     *
+     * // Successive calls return the same configured instance.
+     * boolean same = (mongoDB.db() == mongoDB.db());           // true
      * }</pre>
      *
      * @return the MongoDB database instance
@@ -144,8 +155,12 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollection<Document> users = mongoDB.collection("users");
+     * MongoCollection<Document> users = mongoDB.collection("users");  // never null; a handle even if the collection does not yet exist
      * users.insertOne(new Document("name", "John").append("age", 30));
+     *
+     * // Note: this method performs no argument validation; the name is
+     * // passed straight to the driver, which throws on a null name.
+     * mongoDB.collection(null);                               // throws IllegalArgumentException (from the MongoDB driver, not this wrapper)
      * }</pre>
      *
      * @param collectionName the name of the MongoDB collection to retrieve
@@ -166,8 +181,15 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollection<User> userColl = mongoDB.collection("users", User.class);
+     * MongoCollection<User> userColl = mongoDB.collection("users", User.class); // never null; typed handle, POJO codec applied
      * userColl.insertOne(new User("Alice", "alice@example.com"));
+     *
+     * // Document is just the special case where rowType is Document.class.
+     * MongoCollection<Document> raw = mongoDB.collection("users", Document.class); // equivalent to collection("users")
+     *
+     * // Like collection(String), this method does not validate its arguments itself;
+     * // a null name reaches the driver, which rejects it.
+     * mongoDB.collection(null, User.class);                  // throws IllegalArgumentException (from the MongoDB driver)
      * }</pre>
      *
      * @param <T> the Java type for documents in this collection
@@ -189,8 +211,11 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionExecutor executor = mongoDB.collectionExecutor("users");
+     * MongoCollectionExecutor executor = mongoDB.collectionExecutor("users"); // never null; a fresh executor each call (not pooled)
      * long count = executor.count(Filters.eq("status", "active"));
+     *
+     * // Unlike collection(String), this overload validates its argument up front.
+     * mongoDB.collectionExecutor((String) null);             // throws IllegalArgumentException ("collectionName")
      * }</pre>
      *
      * @param collectionName the name of the MongoDB collection
@@ -223,7 +248,10 @@ public final class MongoDB extends MongoDBBase {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollection<Document> coll = database.getCollection("users").withWriteConcern(WriteConcern.MAJORITY);
-     * MongoCollectionExecutor executor = mongoDB.collectionExecutor(coll);
+     * MongoCollectionExecutor executor = mongoDB.collectionExecutor(coll); // never null; wraps the supplied collection as-is
+     *
+     * // Edge case: a null collection is rejected.
+     * mongoDB.collectionExecutor((MongoCollection<Document>) null); // throws IllegalArgumentException ("collection")
      * }</pre>
      *
      * @param collection the MongoDB collection instance to wrap
@@ -256,8 +284,14 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
-     * Optional<User> user = mapper.findFirst(Filters.eq("email", "john@example.com"));
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);       // collection name = simple class name "User"
+     * Optional<User> user = mapper.findFirst(Filters.eq("email", "john@example.com")); // abacus u.Optional; empty when no match
+     *
+     * // Equivalent explicit-name form:
+     * mongoDB.collectionMapper(User.class);                  // same as mongoDB.collectionMapper("User", User.class)
+     *
+     * // Edge case: a null type cannot be named.
+     * mongoDB.collectionMapper((Class<User>) null);          // throws (null rowType while computing the collection name)
      * }</pre>
      *
      * @param <T> the entity type for mapping
@@ -278,11 +312,15 @@ public final class MongoDB extends MongoDBBase {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollectionMapper<User> userMapper = mongoDB.collectionMapper("users", User.class);
+     * MongoCollectionMapper<User> userMapper = mongoDB.collectionMapper("users", User.class); // never null
      *
      * // Use mapper for type-safe operations:
-     * Optional<User> user = userMapper.findFirst(Filters.eq("active", true));
-     * List<User> users = userMapper.stream(Filters.gte("age", 18)).toList();
+     * Optional<User> user = userMapper.findFirst(Filters.eq("active", true)); // abacus u.Optional; empty when no match
+     * List<User> users = userMapper.stream(Filters.gte("age", 18)).toList();  // abacus Stream -> List (empty list, not null, when none)
+     *
+     * // Edge cases: both arguments are validated.
+     * mongoDB.collectionMapper((String) null, User.class);   // throws IllegalArgumentException ("collectionName")
+     * mongoDB.collectionMapper("users", (Class<User>) null); // throws IllegalArgumentException ("rowType")
      * }</pre>
      *
      * @param <T> the entity type for object-document mapping
@@ -325,7 +363,11 @@ public final class MongoDB extends MongoDBBase {
      *     .withReadPreference(ReadPreference.secondaryPreferred())
      *     .withWriteConcern(WriteConcern.MAJORITY);
      *
-     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(customCollection, User.class);
+     * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(customCollection, User.class); // never null; honors the collection's read/write settings
+     *
+     * // Edge cases: both arguments are validated.
+     * mongoDB.collectionMapper((MongoCollection<Document>) null, User.class); // throws IllegalArgumentException ("collection")
+     * mongoDB.collectionMapper(customCollection, (Class<User>) null);         // throws IllegalArgumentException ("rowType")
      * }</pre>
      *
      * @param <T> the entity type for object-document mapping

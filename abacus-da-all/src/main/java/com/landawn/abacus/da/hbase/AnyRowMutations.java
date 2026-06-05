@@ -112,6 +112,20 @@ public final class AnyRowMutations implements Row {
      * Factory: creates a new {@code AnyRowMutations} for the given row key. The row key is
      * converted to bytes via {@link HBaseExecutor#toRowBytes(Object)}.
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyRowMutations mutations = AnyRowMutations.of("user123");
+     * mutations.getRow();                  // returns Bytes.toBytes("user123")
+     * mutations.val().getMutations();      // returns an empty list (no mutations yet)
+     *
+     * // A non-String key is stringified, then converted to UTF-8 bytes
+     * AnyRowMutations numeric = AnyRowMutations.of(42);
+     * numeric.getRow();                    // returns Bytes.toBytes("42")
+     *
+     * // Edge: a null row key is rejected by the underlying RowMutations
+     * AnyRowMutations.of((Object) null);   // throws IllegalArgumentException
+     * }</pre>
+     *
      * @param rowKey the row key shared by all mutations in this batch
      * @return a new {@code AnyRowMutations} targeting {@code rowKey}
      */
@@ -123,6 +137,20 @@ public final class AnyRowMutations implements Row {
      * Factory: creates a new {@code AnyRowMutations} for the given row key with the supplied
      * initial capacity for the internal mutation list. Useful when the number of mutations is
      * known in advance to avoid list resizing.
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyRowMutations mutations = AnyRowMutations.of("user123", 10);
+     * mutations.getRow();                  // returns Bytes.toBytes("user123")
+     * mutations.val().getMutations();      // returns an empty list (capacity is only a hint)
+     *
+     * // Edge: capacity is purely a sizing hint, so even a negative value is accepted
+     * AnyRowMutations neg = AnyRowMutations.of("user123", -1);
+     * neg.val().getMutations();            // returns an empty list
+     *
+     * // Edge: a null row key is rejected by the underlying RowMutations
+     * AnyRowMutations.of((Object) null, 10); // throws IllegalArgumentException
+     * }</pre>
      *
      * @param rowKey the row key shared by all mutations in this batch
      * @param initialCapacity the initial capacity for the internal mutation list
@@ -136,6 +164,17 @@ public final class AnyRowMutations implements Row {
      * Factory: creates a new {@code AnyRowMutations} for the given byte-array row key. Use this
      * overload when the row key is already in byte form to avoid conversion overhead.
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * byte[] rowKey = Bytes.toBytes("user123");
+     * AnyRowMutations mutations = AnyRowMutations.of(rowKey);
+     * mutations.getRow();                  // returns the same bytes as rowKey
+     * mutations.val().getMutations();      // returns an empty list (no mutations yet)
+     *
+     * // Edge: a null byte[] row key is rejected by the underlying RowMutations
+     * AnyRowMutations.of((byte[]) null);   // throws IllegalArgumentException
+     * }</pre>
+     *
      * @param rowKey the row key shared by all mutations in this batch, as a byte array
      * @return a new {@code AnyRowMutations} targeting {@code rowKey}
      */
@@ -146,6 +185,21 @@ public final class AnyRowMutations implements Row {
     /**
      * Factory: creates a new {@code AnyRowMutations} for the given byte-array row key with the
      * supplied initial capacity for the internal mutation list.
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * byte[] rowKey = Bytes.toBytes("user123");
+     * AnyRowMutations mutations = AnyRowMutations.of(rowKey, 5);
+     * mutations.getRow();                  // returns the same bytes as rowKey
+     * mutations.val().getMutations();      // returns an empty list (capacity is only a hint)
+     *
+     * // Edge: capacity is purely a sizing hint, so even a negative value is accepted
+     * AnyRowMutations neg = AnyRowMutations.of(rowKey, -1);
+     * neg.val().getMutations();            // returns an empty list
+     *
+     * // Edge: a null byte[] row key is rejected by the underlying RowMutations
+     * AnyRowMutations.of((byte[]) null, 5); // throws IllegalArgumentException
+     * }</pre>
      *
      * @param rowKey the row key shared by all mutations in this batch, as a byte array
      * @param initialCapacity the initial capacity for the internal mutation list
@@ -158,6 +212,19 @@ public final class AnyRowMutations implements Row {
     /**
      * Returns the underlying HBase {@link RowMutations}. Pass it directly to HBase APIs (such as
      * {@code Table.mutateRow(RowMutations)}) that expect the native type.
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyRowMutations mutations = AnyRowMutations.of("user123");
+     * RowMutations rm = mutations.val();
+     * rm.getRow();                         // returns Bytes.toBytes("user123")
+     *
+     * // The same live instance is returned on every call (no defensive copy)
+     * mutations.val() == mutations.val();  // returns true
+     *
+     * // Pass the native type to an HBase API
+     * // table.mutateRow(mutations.val()); // submits the batch atomically
+     * }</pre>
      *
      * @return the wrapped {@link RowMutations}; never {@code null}
      */
@@ -174,17 +241,24 @@ public final class AnyRowMutations implements Row {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * byte[] family = Bytes.toBytes("cf");
+     * byte[] qualifier = Bytes.toBytes("q");
+     * byte[] value = Bytes.toBytes("v");
      * AnyRowMutations mutations = AnyRowMutations.of("user123");
      *
-     * // Add a Put mutation
-     * Put put = new Put(Bytes.toBytes("user123"))
-     *     .addColumn(family, qualifier, value);
-     * mutations.add(put);
+     * // Add a Put mutation; returns this for chaining
+     * Put put = new Put(Bytes.toBytes("user123")).addColumn(family, qualifier, value);
+     * mutations.add(put);                       // returns the same mutations instance
+     * mutations.val().getMutations().size();    // returns 1
      *
      * // Add a Delete mutation
-     * Delete delete = new Delete(Bytes.toBytes("user123"))
-     *     .addColumn(family, oldQualifier);
-     * mutations.add(delete);
+     * Delete delete = new Delete(Bytes.toBytes("user123")).addColumn(family, qualifier);
+     * mutations.add(delete);                    // returns the same mutations instance
+     * mutations.val().getMutations().size();    // returns 2
+     *
+     * // Edge: a mutation with a different row key is rejected
+     * Put other = new Put(Bytes.toBytes("user999")).addColumn(family, qualifier, value);
+     * mutations.add(other);                     // throws IOException
      * }</pre>
      *
      * @param mutation the {@link Put} or {@link Delete} to add
@@ -208,17 +282,30 @@ public final class AnyRowMutations implements Row {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * byte[] family = Bytes.toBytes("cf");
      * AnyRowMutations rowMutations = AnyRowMutations.of("user123");
      *
      * List<Mutation> mutations = new ArrayList<>();
      * mutations.add(new Put(Bytes.toBytes("user123"))
-     *     .addColumn(family, "name", Bytes.toBytes("John")));
+     *     .addColumn(family, Bytes.toBytes("name"), Bytes.toBytes("John")));
      * mutations.add(new Put(Bytes.toBytes("user123"))
-     *     .addColumn(family, "age", Bytes.toBytes(30)));
+     *     .addColumn(family, Bytes.toBytes("age"), Bytes.toBytes(30)));
      * mutations.add(new Delete(Bytes.toBytes("user123"))
-     *     .addColumn(family, "oldColumn"));
+     *     .addColumn(family, Bytes.toBytes("oldColumn")));
      *
-     * rowMutations.add(mutations);
+     * rowMutations.add(mutations);                 // returns the same rowMutations instance
+     * rowMutations.val().getMutations().size();    // returns 3
+     *
+     * // Edge: an empty list is a no-op; the batch is unchanged
+     * AnyRowMutations empty = AnyRowMutations.of("user123");
+     * empty.add(new ArrayList<Mutation>());        // returns the same empty instance
+     * empty.val().getMutations().size();           // returns 0
+     *
+     * // Edge: a list containing a mismatched row key is rejected
+     * AnyRowMutations m = AnyRowMutations.of("user123");
+     * List<Mutation> bad = new ArrayList<>();
+     * bad.add(new Put(Bytes.toBytes("user999")).addColumn(family, Bytes.toBytes("q"), Bytes.toBytes("v")));
+     * m.add(bad);                                  // throws IOException
      * }</pre>
      *
      * @param mutations the list of {@link Put} / {@link Delete} mutations to add
@@ -238,6 +325,16 @@ public final class AnyRowMutations implements Row {
      * Returns the row key shared by every mutation in this batch. Implementation of
      * {@link Row#getRow()}.
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyRowMutations mutations = AnyRowMutations.of("the-row-key");
+     * mutations.getRow();                  // returns Bytes.toBytes("the-row-key")
+     *
+     * // The key is set once at construction and is independent of any added mutations
+     * AnyRowMutations fromBytes = AnyRowMutations.of(Bytes.toBytes("row-1"));
+     * fromBytes.getRow();                  // returns Bytes.toBytes("row-1")
+     * }</pre>
+     *
      * @return the row key as a byte array; never {@code null}
      */
     @Override
@@ -249,6 +346,19 @@ public final class AnyRowMutations implements Row {
      * Compares this batch with another {@link Row} by row key, using HBase's standard
      * lexicographic byte-array comparison. Implementation of {@link Row#compareTo(Row)}; the
      * underlying HBase method is itself deprecated in favour of {@link Row#COMPARATOR}.
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyRowMutations a = AnyRowMutations.of("a");
+     * AnyRowMutations b = AnyRowMutations.of("b");
+     *
+     * a.compareTo(b);                      // returns a negative int ("a" < "b")
+     * b.compareTo(a);                      // returns a positive int ("b" > "a")
+     *
+     * // Edge: equal row keys compare as zero (mutation contents are not considered)
+     * AnyRowMutations a2 = AnyRowMutations.of("a");
+     * a.compareTo(a2);                     // returns 0
+     * }</pre>
      *
      * @param row the {@link Row} to compare with
      * @return a negative integer, zero, or a positive integer as this row key is less than,
@@ -267,6 +377,15 @@ public final class AnyRowMutations implements Row {
      * ensuring consistency with the equals method.
      * </p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyRowMutations mutations = AnyRowMutations.of("user123");
+     * mutations.hashCode();                        // returns mutations.val().hashCode()
+     *
+     * // Delegates to the wrapped RowMutations, so the values match exactly
+     * mutations.hashCode() == mutations.val().hashCode(); // returns true
+     * }</pre>
+     *
      * @return a hash code value for this object
      */
     @Override
@@ -279,9 +398,23 @@ public final class AnyRowMutations implements Row {
      * Indicates whether some other object is "equal to" this AnyRowMutations.
      * <p>
      * Two AnyRowMutations objects are considered equal if their underlying
-     * RowMutations objects are equal, which means they have the same row key
-     * and the same set of mutations.
+     * {@link RowMutations} objects are equal. HBase's {@link RowMutations#equals(Object)} compares
+     * the row key only — the contained mutations are <em>not</em> considered — so two batches on
+     * the same row are equal even when they hold different mutations.
      * </p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyRowMutations a = AnyRowMutations.of("user123");
+     * AnyRowMutations b = AnyRowMutations.of("user123");
+     *
+     * a.equals(a);                         // returns true (same instance)
+     * a.equals(b);                         // returns a.val().equals(b.val())
+     *
+     * // Edge: non-AnyRowMutations objects (including null) are never equal
+     * a.equals("user123");                 // returns false
+     * a.equals(null);                      // returns false
+     * }</pre>
      *
      * @param obj the reference object with which to compare
      * @return {@code true} if this object is the same as the obj argument;
@@ -309,6 +442,15 @@ public final class AnyRowMutations implements Row {
      * and all mutations in this batch, which is useful for debugging
      * and logging purposes.
      * </p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyRowMutations mutations = AnyRowMutations.of("user123");
+     * mutations.toString();                        // returns a non-null debug string
+     *
+     * // Delegates to the wrapped RowMutations, so the strings match exactly
+     * mutations.toString().equals(mutations.val().toString()); // returns true
+     * }</pre>
      *
      * @return a string representation of this AnyRowMutations; never null
      */

@@ -30,6 +30,37 @@ public final class AnyUtil {
      * more than once, the later value overwrites the earlier one (but the original
      * insertion position is retained).</p>
      *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * // Typical: alternating name/value pairs, iteration order preserved.
+     * Map<String, Object> p = AnyUtil.array2Props(new Object[] { "name", "Alice", "age", 30 });
+     * // returns {name=Alice, age=30} (a LinkedHashMap)
+     *
+     * // Typical: non-String names are coerced via N.stringOf.
+     * Map<String, Object> q = AnyUtil.array2Props(new Object[] { 100, "hundred", true, "yes" });
+     * // returns {100=hundred, true=yes}
+     *
+     * // Duplicate name: later value overwrites, original position retained.
+     * Map<String, Object> r = AnyUtil.array2Props(new Object[] { "z", 1, "a", 2, "z", 3 });
+     * // returns {z=3, a=2}
+     *
+     * // Edge: null array yields an empty map (not null).
+     * Map<String, Object> s = AnyUtil.array2Props(null);
+     * // returns {} (an empty LinkedHashMap)
+     *
+     * // Edge: empty array yields an empty map.
+     * Map<String, Object> t = AnyUtil.array2Props(new Object[0]);
+     * // returns {}
+     *
+     * // Edge: a null value is allowed and preserved.
+     * Map<String, Object> u = AnyUtil.array2Props(new Object[] { "key", null });
+     * // returns {key=null}
+     *
+     * // Negative: odd-length array is rejected.
+     * AnyUtil.array2Props(new Object[] { "name", "Alice", "age" });
+     * // throws IllegalArgumentException
+     * }</pre>
+     *
      * @param propNameAndValues an even-length array of alternating property names
      *                          and values; may be {@code null}
      * @return a new {@link LinkedHashMap} containing the supplied pairs in order;

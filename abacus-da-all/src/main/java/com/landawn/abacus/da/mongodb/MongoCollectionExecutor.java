@@ -200,8 +200,8 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollection<Document> collection = executor.mongoCollection();
-     * collection.withWriteConcern(WriteConcern.MAJORITY).insertOne(document);
+     * MongoCollection<Document> collection = executor.mongoCollection();      // never null; same instance every call
+     * collection.withWriteConcern(WriteConcern.MAJORITY).insertOne(document); // document inserted with majority write concern
      * }</pre>
      *
      * @return the underlying MongoCollection instance
@@ -220,7 +220,7 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * AsyncMongoCollectionExecutor asyncExecutor = executor.async();
+     * AsyncMongoCollectionExecutor asyncExecutor = executor.async(); // never null; shared async view of this executor
      * ContinuableFuture<List<Document>> future = asyncExecutor.list(Filters.eq("status", "active"));
      * }</pre>
      *
@@ -242,9 +242,12 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * if (executor.exists("507f1f77bcf86cd799439011")) {
-     *     executor.updateOne("507f1f77bcf86cd799439011", "{$set: {lastSeen: new Date()}}");
+     * if (executor.exists("507f1f77bcf86cd799439011")) {                                    // returns true only when a document with that _id exists
+     *     executor.updateOne("507f1f77bcf86cd799439011", "{$set: {lastSeen: new Date()}}"); // returns an UpdateResult
      * }
+     *
+     * executor.exists("");   // throws IllegalArgumentException (empty objectId)
+     * executor.exists((String) null); // throws IllegalArgumentException (null objectId)
      * }</pre>
      *
      * @param objectId the string representation of the ObjectId to check for existence
@@ -268,7 +271,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ObjectId oid = new ObjectId();
-     * boolean exists = executor.exists(oid);
+     * boolean exists = executor.exists(oid); // true if a document with _id == oid exists, false otherwise
      * }</pre>
      *
      * @param objectId the ObjectId to check for existence
@@ -291,8 +294,9 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * boolean hasActiveUsers = executor.exists(Filters.eq("status", "active"));
-     * boolean hasRecentUsers = executor.exists("{createdAt: {$gte: ISODate('2023-01-01')}}");
+     * boolean hasActiveUsers = executor.exists(Filters.eq("status", "active"));               // true if at least one match
+     * boolean hasRecentUsers = executor.exists("{createdAt: {$gte: ISODate('2023-01-01')}}"); // true if any match
+     * executor.exists((Bson) null);                                                           // throws NullPointerException (filter must not be null)
      * }</pre>
      *
      * @param filter the query filter to match documents against (must not be {@code null} — the
@@ -317,7 +321,7 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * long totalUsers = executor.count();
+     * long totalUsers = executor.count(); // total document count, e.g. 100 (0 for an empty collection)
      * System.out.println("Total users: " + totalUsers);
      * }</pre>
      *
@@ -339,8 +343,9 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * long activeUsers = executor.count(Filters.eq("status", "active"));
-     * long adultUsers = executor.count("{age: {$gte: 18}}");
+     * long activeUsers = executor.count(Filters.eq("status", "active")); // number of matching documents (0 if none)
+     * long adultUsers = executor.count("{age: {$gte: 18}}");             // number of matching documents
+     * executor.count((Bson) null);                                       // throws NullPointerException (use count() for an unfiltered count)
      * }</pre>
      *
      * @param filter the query filter to count matching documents (must not be {@code null} — the
@@ -365,7 +370,8 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * CountOptions options = new CountOptions().limit(1000);
-     * long limitedCount = executor.count(Filters.exists("email"), options);
+     * long limitedCount = executor.count(Filters.exists("email"), options); // at most 1000 (capped by the limit)
+     * long plainCount = executor.count(Filters.exists("email"), null);      // null options -> behaves like count(filter)
      * }</pre>
      *
      * @param filter the query filter to count matching documents (must not be {@code null} — the
@@ -395,7 +401,7 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * long approxUserCount = executor.estimatedDocumentCount();
+     * long approxUserCount = executor.estimatedDocumentCount(); // fast metadata-based estimate, e.g. ~1000
      * System.out.println("Approximately " + approxUserCount + " users");
      * }</pre>
      *
@@ -418,7 +424,7 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * EstimatedDocumentCountOptions options = new EstimatedDocumentCountOptions()
      *     .maxTime(5, TimeUnit.SECONDS);
-     * long estimate = executor.estimatedDocumentCount(options);
+     * long estimate = executor.estimatedDocumentCount(options); // estimated count, computed within the 5s limit
      * }</pre>
      *
      * @param options configuration options for the estimation operation
@@ -439,8 +445,9 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Optional<Document> user = executor.get("507f1f77bcf86cd799439011");
+     * Optional<Document> user = executor.get("507f1f77bcf86cd799439011"); // present if found, Optional.empty() if not
      * user.ifPresent(doc -> System.out.println("Found user: " + doc.getString("name")));
+     * executor.get(""); // throws IllegalArgumentException (empty objectId)
      * }</pre>
      *
      * @param objectId the string representation of the ObjectId to search for
@@ -463,7 +470,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ObjectId id = new ObjectId();
-     * Optional<Document> result = executor.get(id);
+     * Optional<Document> result = executor.get(id); // present if a document with _id == id exists, else Optional.empty()
      * }</pre>
      *
      * @param objectId the ObjectId to search for
@@ -485,7 +492,7 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Optional<User> user = executor.get("507f1f77bcf86cd799439011", User.class);
+     * Optional<User> user = executor.get("507f1f77bcf86cd799439011", User.class); // present (converted) if found, else empty
      * user.ifPresent(u -> System.out.println("User name: " + u.getName()));
      * }</pre>
      *
@@ -510,7 +517,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ObjectId id = new ObjectId();
-     * Optional<User> user = executor.get(id, User.class);
+     * Optional<User> user = executor.get(id, User.class); // present (converted to User) if found, else Optional.empty()
      * }</pre>
      *
      * @param <T> the target type for the retrieved document
@@ -535,7 +542,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Collection<String> fields = Arrays.asList("name", "email", "createdAt");
-     * Optional<User> partialUser = executor.get("507f1f77bcf86cd799439011", fields, User.class);
+     * Optional<User> partialUser = executor.get("507f1f77bcf86cd799439011", fields, User.class); // only the 3 fields populated; empty if not found
      * }</pre>
      *
      * @param <T> the target type for the retrieved document
@@ -561,7 +568,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Collection<String> fields = Set.of("name", "email");
-     * Optional<User> user = executor.get(id, fields, User.class);
+     * Optional<User> user = executor.get(id, fields, User.class); // present with only name/email populated, else Optional.empty()
      * }</pre>
      *
      * @param <T> the target type for the retrieved document
@@ -587,10 +594,11 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Document user = executor.gett("507f1f77bcf86cd799439011");
+     * Document user = executor.gett("507f1f77bcf86cd799439011"); // the matching Document, or null if not found
      * if (user != null) {
      *     String name = user.getString("name");
      * }
+     * executor.gett(""); // throws IllegalArgumentException (empty objectId)
      * }</pre>
      *
      * @param objectId the string representation of the ObjectId (24 hex characters)
@@ -614,7 +622,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ObjectId id = new ObjectId();
-     * Document doc = executor.gett(id);
+     * Document doc = executor.gett(id); // the matching Document, or null if no document has _id == id
      * if (doc != null) {
      *     processDocument(doc);
      * }
@@ -640,7 +648,7 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * User user = executor.gett("507f1f77bcf86cd799439011", User.class);
+     * User user = executor.gett("507f1f77bcf86cd799439011", User.class); // the document converted to User, or null if not found
      * if (user != null) {
      *     sendWelcomeEmail(user.getEmail());
      * }
@@ -669,7 +677,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ObjectId id = new ObjectId();
-     * User user = executor.gett(id, User.class);
+     * User user = executor.gett(id, User.class); // the document converted to User, or null if no document has _id == id
      * if (user != null) {
      *     System.out.println("Found: " + user.getName());
      * }
@@ -698,7 +706,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Collection<String> fields = Arrays.asList("name", "email", "department");
-     * User partialUser = executor.gett("507f1f77bcf86cd799439011", fields, User.class);
+     * User partialUser = executor.gett("507f1f77bcf86cd799439011", fields, User.class); // only the 3 fields populated, or null if not found
      * if (partialUser != null) {
      *     System.out.println("User department: " + partialUser.getDepartment());
      * }
@@ -730,7 +738,7 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * ObjectId id = new ObjectId();
      * Collection<String> fields = Set.of("name", "email");
-     * User user = executor.gett(id, fields, User.class);
+     * User user = executor.gett(id, fields, User.class); // only name/email populated, or null if no document has _id == id
      * if (user != null) {
      *     sendEmail(user.getEmail());
      * }
@@ -759,7 +767,7 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Optional<Document> user = executor.findFirst(Filters.eq("status", "active"));
+     * Optional<Document> user = executor.findFirst(Filters.eq("status", "active")); // first match, or Optional.empty() if none
      * user.ifPresent(doc -> processUser(doc));
      * }</pre>
      *
@@ -783,7 +791,7 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Optional<User> user = executor.findFirst(Filters.eq("status", "active"), User.class);
+     * Optional<User> user = executor.findFirst(Filters.eq("status", "active"), User.class); // first match as User, or empty if none
      * user.ifPresent(u -> System.out.println("Found: " + u.getName()));
      * }</pre>
      *
@@ -809,8 +817,8 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Collection<String> fields = Arrays.asList("name", "email", "status");
-     * Optional<User> partialUser = executor.findFirst(fields, 
-     *     Filters.eq("department", "Engineering"), User.class);
+     * Optional<User> partialUser = executor.findFirst(fields,
+     *     Filters.eq("department", "Engineering"), User.class); // first Engineering user (only the 3 fields), or empty if none
      * }</pre>
      *
      * @param <T> the target type for the retrieved document
@@ -839,7 +847,7 @@ public final class MongoCollectionExecutor {
      * Optional<Student> topStudent = executor.findFirst(fields,
      *     Filters.eq("active", true),
      *     Sorts.descending("score"),
-     *     Student.class);
+     *     Student.class); // highest-scoring active student (sort decides "first"), or empty if none
      * }</pre>
      *
      * @param <T> the target type for the retrieved document
@@ -877,7 +885,7 @@ public final class MongoCollectionExecutor {
      * Optional<Student> topStudent = executor.findFirst(projection,
      *     Filters.eq("active", true),
      *     Sorts.descending("score"),
-     *     Student.class);
+     *     Student.class); // highest-scoring active student with _id excluded, or empty if none
      * }</pre>
      *
      * @param <T> the target type for the retrieved document
@@ -908,7 +916,7 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * List<Document> activeUsers = executor.list(Filters.eq("status", "active"));
+     * List<Document> activeUsers = executor.list(Filters.eq("status", "active")); // all matching docs; empty list (never null) if none
      * activeUsers.forEach(user -> processUser(user));
      * }</pre>
      *
@@ -932,7 +940,7 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * List<User> activeUsers = executor.list(Filters.eq("status", "active"), User.class);
+     * List<User> activeUsers = executor.list(Filters.eq("status", "active"), User.class); // matching docs as User; empty list if none
      * activeUsers.forEach(user -> processUser(user));
      * }</pre>
      *
@@ -959,7 +967,8 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * // Get second page of 20 active users:
      * List<User> page2Users = executor.list(
-     *     Filters.eq("status", "active"), 20, 20, User.class);
+     *     Filters.eq("status", "active"), 20, 20, User.class); // up to 20 users after skipping the first 20
+     * // executor.list(filter, -1, 20, User.class) -> throws IllegalArgumentException (negative offset)
      * }</pre>
      *
      * @param <T> the target type for the retrieved documents
@@ -986,7 +995,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Collection<String> fields = Arrays.asList("name", "email");
-     * List<User> users = executor.list(fields, Filters.eq("status", "active"), User.class);
+     * List<User> users = executor.list(fields, Filters.eq("status", "active"), User.class); // matching users with only name/email; empty list if none
      * }</pre>
      *
      * @param <T> the target type for each document in the result list
@@ -1013,7 +1022,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Collection<String> fields = Arrays.asList("name", "email", "createdAt");
-     * List<User> page2Users = executor.list(fields, Filters.eq("status", "active"), 20, 20, User.class);
+     * List<User> page2Users = executor.list(fields, Filters.eq("status", "active"), 20, 20, User.class); // up to 20 users (skipping 20), only the 3 fields
      * }</pre>
      *
      * @param <T> the target type for each document in the result list
@@ -1043,7 +1052,7 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * Collection<String> fields = Arrays.asList("title", "author", "publishedAt");
      * Bson sort = Sorts.descending("publishedAt");
-     * List<Article> articles = executor.list(fields, Filters.eq("status", "published"), sort, Article.class);
+     * List<Article> articles = executor.list(fields, Filters.eq("status", "published"), sort, Article.class); // all published articles, newest first; empty list if none
      * }</pre>
      *
      * @param <T> the target type for each document in the result list
@@ -1073,7 +1082,7 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * Collection<String> fields = Arrays.asList("name", "email");
      * Bson sort = Sorts.ascending("name");
-     * List<User> users = executor.list(fields, Filters.eq("status", "active"), sort, 0, 10, User.class);
+     * List<User> users = executor.list(fields, Filters.eq("status", "active"), sort, 0, 10, User.class); // first 10 active users by name; empty list if none
      * }</pre>
      *
      * @param <T> the target type for each document in the result list
@@ -1109,7 +1118,7 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * Bson projection = Projections.include("name", "email");
      * Bson sort = Sorts.ascending("name");
-     * List<User> allActiveUsers = executor.list(projection, Filters.eq("status", "active"), sort, User.class);
+     * List<User> allActiveUsers = executor.list(projection, Filters.eq("status", "active"), sort, User.class); // all active users by name, only name/email; empty list if none
      * }</pre>
      *
      * @param <T> the target type for each document in the result list
@@ -1144,7 +1153,7 @@ public final class MongoCollectionExecutor {
      *     Filters.eq("status", "active"),
      *     Filters.gte("lastLogin", thirtyDaysAgo)
      * );
-     * List<User> recentUsers = executor.list(projection, filter, Sorts.descending("lastLogin"), 0, 50, User.class);
+     * List<User> recentUsers = executor.list(projection, filter, Sorts.descending("lastLogin"), 0, 50, User.class); // up to 50 most-recent active users; empty list if none
      * }</pre>
      *
      * @param <T> the target type for each document in the result list
@@ -1183,7 +1192,7 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * OptionalBoolean isActive = executor.queryForBoolean("active", Filters.eq("userId", "u1"));
+     * OptionalBoolean isActive = executor.queryForBoolean("active", Filters.eq("userId", "u1")); // present (false for a missing/null field) if a doc matched; empty if none matched
      * if (isActive.orElse(false)) {
      *     // user is active
      * }
@@ -1219,7 +1228,7 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * OptionalChar grade = executor.queryForChar("grade", Filters.eq("studentId", "S12345"));
+     * OptionalChar grade = executor.queryForChar("grade", Filters.eq("studentId", "S12345")); // present ((char) 0 for a missing/null field) if a doc matched; empty if none
      * char letter = grade.orElse(' ');
      * }</pre>
      *
@@ -1253,7 +1262,7 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * OptionalByte priority = executor.queryForByte("priority", Filters.eq("taskId", "TASK001"));
+     * OptionalByte priority = executor.queryForByte("priority", Filters.eq("taskId", "TASK001")); // present ((byte) 0 for a missing/null field) if a doc matched; empty if none
      * byte level = priority.orElse((byte) 0);
      * }</pre>
      *
@@ -1287,7 +1296,7 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * OptionalShort stock = executor.queryForShort("stockCount", Filters.eq("productId", "P12345"));
+     * OptionalShort stock = executor.queryForShort("stockCount", Filters.eq("productId", "P12345")); // present ((short) 0 for a missing/null field) if a doc matched; empty if none
      * if (stock.orElse((short) 0) > 0) {
      *     // product is in stock
      * }
@@ -1323,7 +1332,7 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * OptionalInt count = executor.queryForInt("postCount", Filters.eq("userId", "u1"));
+     * OptionalInt count = executor.queryForInt("postCount", Filters.eq("userId", "u1")); // present (0 for a missing/null field) if a doc matched; empty if none
      * int totalPosts = count.orElse(0);
      * }</pre>
      *
@@ -1357,7 +1366,7 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * OptionalLong fileSize = executor.queryForLong("sizeBytes", Filters.eq("fileId", "FILE001"));
+     * OptionalLong fileSize = executor.queryForLong("sizeBytes", Filters.eq("fileId", "FILE001")); // present (0L for a missing/null field) if a doc matched; empty if none
      * long size = fileSize.orElse(0L);
      * }</pre>
      *
@@ -1391,7 +1400,7 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * OptionalFloat rating = executor.queryForFloat("rating", Filters.eq("productId", "P12345"));
+     * OptionalFloat rating = executor.queryForFloat("rating", Filters.eq("productId", "P12345")); // present (0.0f for a missing/null field) if a doc matched; empty if none
      * float productRating = rating.orElse(0.0f);
      * }</pre>
      *
@@ -1425,7 +1434,7 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * OptionalDouble balance = executor.queryForDouble("balance", Filters.eq("accountId", "ACC123"));
+     * OptionalDouble balance = executor.queryForDouble("balance", Filters.eq("accountId", "ACC123")); // present (0.0d for a missing/null field) if a doc matched; empty if none
      * double accountBalance = balance.orElse(0.0d);
      * }</pre>
      *
@@ -1459,7 +1468,7 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Nullable<String> email = executor.queryForString("email", Filters.eq("userId", "u1"));
+     * Nullable<String> email = executor.queryForString("email", Filters.eq("userId", "u1")); // present (value may be null) if a doc matched; Nullable.empty() if none
      * String userEmail = email.orElse("");
      * }</pre>
      *
@@ -1491,7 +1500,7 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Nullable<Date> lastLogin = executor.queryForDate("lastLoginDate", Filters.eq("userId", "u1"));
+     * Nullable<Date> lastLogin = executor.queryForDate("lastLoginDate", Filters.eq("userId", "u1")); // present (value may be null) if a doc matched; Nullable.empty() if none
      * Date loginDate = lastLogin.orElse(null);
      * }</pre>
      *
@@ -1526,9 +1535,9 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Nullable<Timestamp> updated = executor.queryForDate("updatedAt",
-     *         Filters.eq("recordId", "R001"), Timestamp.class);
+     *         Filters.eq("recordId", "R001"), Timestamp.class); // present (value may be null) if a doc matched; Nullable.empty() if none
      * Nullable<java.sql.Date> birthDate = executor.queryForDate("birthDate",
-     *         Filters.eq("userId", "u1"), java.sql.Date.class);
+     *         Filters.eq("userId", "u1"), java.sql.Date.class); // converted to java.sql.Date; Nullable.empty() if no doc matched
      * }</pre>
      *
      * @param <T> the specific Date subtype to retrieve
@@ -1567,9 +1576,9 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Nullable<String> email = executor.queryForSingleValue(
-     *         "email", Filters.eq("userId", "u1"), String.class);
+     *         "email", Filters.eq("userId", "u1"), String.class); // present (value may be null) if a doc matched; Nullable.empty() if none
      * Nullable<BigDecimal> price = executor.queryForSingleValue(
-     *         "price", Filters.eq("productId", "P001"), BigDecimal.class);
+     *         "price", Filters.eq("productId", "P001"), BigDecimal.class); // converted to BigDecimal; Nullable.empty() if no doc matched
      * }</pre>
      *
      * @param <V> the target type for the field value
@@ -1609,8 +1618,11 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Optional<Integer> activeCount = executor.queryForSingleNonNull(
-     *         "activeUsers", Filters.eq("type", "summary"), Integer.class);
+     *         "activeUsers", Filters.eq("type", "summary"), Integer.class); // present non-null value if matched; Optional.empty() if no doc matched
      * activeCount.filter(c -> c > 100).ifPresent(c -> sendHighActivityAlert());
+     *
+     * // If a doc matches but "activeUsers" is absent/null, Optional.of(null) rejects it:
+     * executor.queryForSingleNonNull("activeUsers", Filters.eq("type", "summary"), Integer.class); // throws NullPointerException
      * }</pre>
      *
      * @param <V> the target type for the field value
@@ -1651,8 +1663,8 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Get all active users as a Dataset:
-     * Dataset activeUsers = executor.query(Filters.eq("status", "active"));
-     * 
+     * Dataset activeUsers = executor.query(Filters.eq("status", "active")); // non-null Dataset; 0 rows if no document matches
+     *
      * // Export to CSV:
      * activeUsers.toCsv("active_users.csv");
      * 
@@ -1685,15 +1697,15 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Get active users as a Dataset of User objects:
-     * Dataset userDataset = executor.query(Filters.eq("status", "active"), User.class);
-     * 
+     * Dataset userDataset = executor.query(Filters.eq("status", "active"), User.class); // non-null Dataset of User rows; 0 rows if none match
+     *
      * // Access typed data:
      * List<User> users = userDataset.toList(User.class);
      * User firstUser = userDataset.getRow(0, User.class);
      * 
      * // Get data as Maps for flexible processing:
-     * Dataset mapDataset = executor.query(Filters.eq("category", "electronics"), Map.class);
-     * 
+     * Dataset mapDataset = executor.query(Filters.eq("category", "electronics"), Map.class); // non-null Dataset of Map rows; 0 rows if none match
+     *
      * // Export with type safety:
      * userDataset.toCsv("typed_users.csv");
      * }</pre>
@@ -1722,13 +1734,13 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Get page 2 of products (20 per page) as a Dataset:
-     * Dataset productPage = executor.query(Filters.eq("category", "electronics"), 20, 20, Map.class);
-     * 
+     * Dataset productPage = executor.query(Filters.eq("category", "electronics"), 20, 20, Map.class); // up to 20 rows after skipping 20; 0 rows if none match
+     *
      * // Export paginated results:
      * productPage.toCsv("products_page2.csv");
      * 
      * // Process paginated User objects:
-     * Dataset userPage = executor.query(null, 0, 50, User.class);
+     * Dataset userPage = executor.query(null, 0, 50, User.class); // null filter -> first 50 documents in the collection
      * List<User> firstUsers = userPage.toList(User.class);
      * }</pre>
      *
@@ -1758,8 +1770,8 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * // Get active users with selected fields as a Dataset:
      * Collection<String> fields = Arrays.asList("name", "email", "department");
-     * Dataset userData = executor.query(fields, Filters.eq("status", "active"), User.class);
-     * 
+     * Dataset userData = executor.query(fields, Filters.eq("status", "active"), User.class); // Dataset with only the 3 projected columns; 0 rows if none match
+     *
      * // Export projected data:
      * userData.toCsv("user_contact_info.csv");
      * 
@@ -1792,11 +1804,11 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * // Get page 1 of orders with selected fields:
      * Collection<String> orderFields = Arrays.asList("orderId", "customerId", "total", "status");
-     * Dataset orderPage = executor.query(orderFields, 
-     *                                    Filters.eq("status", "pending"), 
-     *                                    0, 25, 
-     *                                    Order.class);
-     * 
+     * Dataset orderPage = executor.query(orderFields,
+     *                                    Filters.eq("status", "pending"),
+     *                                    0, 25,
+     *                                    Order.class); // up to 25 pending orders with only the projected columns; 0 rows if none match
+     *
      * // Export paginated projected data:
      * orderPage.toCsv("pending_orders_page1.csv");
      * 
@@ -1835,8 +1847,8 @@ public final class MongoCollectionExecutor {
      * Collection<String> fields = Arrays.asList("name", "price", "category", "rating");
      * Bson filter = Filters.gte("rating", 4.0);
      * Bson sort = Sorts.ascending("price");
-     * Dataset productData = executor.query(fields, filter, sort, Product.class);
-     * 
+     * Dataset productData = executor.query(fields, filter, sort, Product.class); // all high-rated products sorted by price ascending; 0 rows if none match
+     *
      * // Export sorted projected data:
      * productData.toCsv("high_rated_products_by_price.csv");
      * 
@@ -1874,8 +1886,8 @@ public final class MongoCollectionExecutor {
      * Collection<String> fields = Arrays.asList("userId", "name", "lastLogin");
      * Bson filter = Filters.eq("status", "active");
      * Bson sort = Sorts.descending("lastLogin");
-     * Dataset userPage = executor.query(fields, filter, sort, 0, 50, User.class);
-     * 
+     * Dataset userPage = executor.query(fields, filter, sort, 0, 50, User.class); // up to 50 active users, most recent login first; 0 rows if none match
+     *
      * // Export paginated sorted projected data:
      * userPage.toCsv("active_users_page1_sorted.csv");
      * 
@@ -1918,7 +1930,7 @@ public final class MongoCollectionExecutor {
      * Bson projection = Projections.fields(Projections.include("userId", "name", "email"));
      * Bson filter = Filters.eq("status", "active");
      * Bson sort = Sorts.ascending("name");
-     * Dataset users = executor.query(projection, filter, sort, User.class);
+     * Dataset users = executor.query(projection, filter, sort, User.class); // all active users by name, only the projected fields; 0 rows if none match
      *
      * // Export sorted projected data:
      * users.toCsv("active_users.csv");
@@ -1951,8 +1963,8 @@ public final class MongoCollectionExecutor {
      * Bson projection = Projections.fields(Projections.include("userId", "name", "email"));
      * Bson filter = Filters.eq("status", "active");
      * Bson sort = Sorts.ascending("name");
-     * Dataset userPage = executor.query(projection, filter, sort, 0, 50, User.class);
-     * 
+     * Dataset userPage = executor.query(projection, filter, sort, 0, 50, User.class); // up to 50 active users by name, only the projected fields; 0 rows if none match
+     *
      * // Export paginated sorted projected data:
      * userPage.toCsv("active_users_page1.csv");
      * 
@@ -1985,7 +1997,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Process all documents in the collection:
-     * executor.stream()
+     * executor.stream() // returns a lazy Stream over every document; close it (or a terminal op) releases the cursor
      *         .filter(doc -> doc.getInteger("age", 0) > 18)
      *         .limit(100)
      *         .forEach(doc -> processAdultDocument(doc));
@@ -2022,11 +2034,13 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Process all users with type safety:
-     * executor.stream(User.class)
+     * executor.stream(User.class) // returns a lazy Stream of every document converted to User
      *         .filter(User::isActive)
      *         .map(User::getEmail)
      *         .filter(Objects::nonNull)
      *         .forEach(email -> sendNotification(email));
+     *
+     * executor.stream((Class<User>) null); // throws IllegalArgumentException (rowType must not be null; no cursor opened)
      * 
      * // Collect typed results:
      * List<User> activeAdults = executor.stream(User.class)
@@ -2072,7 +2086,7 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * // Process active users:
      * Bson activeFilter = Filters.eq("status", "active");
-     * executor.stream(activeFilter)
+     * executor.stream(activeFilter) // returns a lazy Stream of the matching documents
      *         .filter(doc -> doc.getDate("lastLogin").after(thirtyDaysAgo))
      *         .forEach(doc -> updateActivityScore(doc));
      * 
@@ -2495,7 +2509,7 @@ public final class MongoCollectionExecutor {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * executor.watch()
+     * executor.watch() // returns a ChangeStreamIterable that blocks and yields change events as they occur
      *     .forEach(change -> System.out.println("Change: " + change));
      * }</pre>
      * 
@@ -2515,7 +2529,7 @@ public final class MongoCollectionExecutor {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * executor.watch(UserChange.class)
+     * executor.watch(UserChange.class) // returns a ChangeStreamIterable whose fullDocument is decoded as UserChange
      *     .forEach(change -> processUserChange(change));
      * }</pre>
      * 
@@ -2540,7 +2554,7 @@ public final class MongoCollectionExecutor {
      * List<Bson> pipeline = Arrays.asList(
      *     Aggregates.match(Filters.in("operationType", "insert", "update"))
      * );
-     * executor.watch(pipeline)
+     * executor.watch(pipeline) // returns a ChangeStreamIterable emitting only insert/update change events
      *     .forEach(change -> processChange(change));
      * }</pre>
      * 
@@ -2564,7 +2578,7 @@ public final class MongoCollectionExecutor {
      * List<Bson> pipeline = Arrays.asList(
      *     Aggregates.match(Filters.eq("fullDocument.status", "critical"))
      * );
-     * executor.watch(pipeline, Alert.class)
+     * executor.watch(pipeline, Alert.class) // returns a ChangeStreamIterable of critical-status changes decoded as Alert
      *     .forEach(alert -> sendNotification(alert));
      * }</pre>
      * 
@@ -2597,11 +2611,11 @@ public final class MongoCollectionExecutor {
      * Document userDoc = new Document("name", "John")
      *                      .append("email", "john@example.com")
      *                      .append("age", 30);
-     * executor.insertOne(userDoc);
+     * executor.insertOne(userDoc); // returns void; userDoc is inserted (an _id is generated if absent)
      *
      * // Insert an entity:
      * User user = new User("Jane", "jane@example.com", 25);
-     * executor.insertOne(user);
+     * executor.insertOne(user); // returns void; entity is converted to a Document and inserted (null properties dropped)
      * }</pre>
      *
      * @param obj the object to insert - can be Document, {@code Map<String, Object>}, or entity class with getter/setter methods
@@ -2630,7 +2644,7 @@ public final class MongoCollectionExecutor {
      * 
      * // Insert with custom options:
      * InsertOneOptions options = new InsertOneOptions().bypassDocumentValidation(true);
-     * executor.insertOne(user, options);
+     * executor.insertOne(user, options); // returns void; document inserted bypassing schema validation
      * }</pre>
      *
      * @param obj the object to insert - can be Document, {@code Map<String, Object>}, or entity class with getter/setter methods
@@ -2667,7 +2681,8 @@ public final class MongoCollectionExecutor {
      *     new User("Jane", "jane@example.com", 25),
      *     new User("Bob", "bob@example.com", 35)
      * );
-     * executor.insertMany(users);
+     * executor.insertMany(users);     // returns void; all 3 users inserted in one batch
+     * executor.insertMany(List.of()); // throws IllegalArgumentException (objList must not be empty)
      * }</pre>
      *
      * @param objList collection of objects to insert - each can be Document, {@code Map<String, Object>}, or entity class with getter/setter methods
@@ -2698,7 +2713,7 @@ public final class MongoCollectionExecutor {
      * 
      * // Insert with unordered execution (faster for large batches):
      * InsertManyOptions options = new InsertManyOptions().ordered(false);
-     * executor.insertMany(users, options);
+     * executor.insertMany(users, options); // returns void; users inserted unordered (continues past individual failures)
      * }</pre>
      *
      * @param objList collection of objects to insert - each can be Document, {@code Map<String, Object>}, or entity class with getter/setter methods
@@ -2803,12 +2818,12 @@ public final class MongoCollectionExecutor {
      *
      * // Update with MongoDB update operators:
      * UpdateResult result1 = executor.updateOne(userId,
-     *     Updates.combine(Updates.set("status", "active"), Updates.inc("loginCount", 1)));
+     *     Updates.combine(Updates.set("status", "active"), Updates.inc("loginCount", 1))); // returns UpdateResult; matchedCount 0..1
      *
      * // Update with entity (automatically wrapped in $set):
      * User updatedUser = new User();
      * updatedUser.setStatus("inactive");
-     * UpdateResult result2 = executor.updateOne(userId, updatedUser);
+     * UpdateResult result2 = executor.updateOne(userId, updatedUser); // returns UpdateResult; matchedCount 0..1, modifiedCount 0..1
      * }</pre>
      *
      * @param objectId the string representation of the ObjectId identifying the document to update
@@ -2838,7 +2853,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ObjectId id = new ObjectId("507f1f77bcf86cd799439011");
-     * executor.updateOne(id, Updates.set("lastModified", new Date()));
+     * executor.updateOne(id, Updates.set("lastModified", new Date())); // returns UpdateResult; matchedCount 1 if the document exists, else 0
      * }</pre>
      *
      * @param objectId the ObjectId of the document to update
@@ -2863,7 +2878,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson filter = Filters.eq("email", "john@example.com");
-     * executor.updateOne(filter, Updates.set("verified", true));
+     * executor.updateOne(filter, Updates.set("verified", true)); // returns UpdateResult; updates the first matching document only
      * }</pre>
      *
      * @param filter BSON filter to identify the document
@@ -2886,7 +2901,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * UpdateOptions options = new UpdateOptions().upsert(true);
-     * executor.updateOne(filter, update, options);
+     * executor.updateOne(filter, update, options); // returns UpdateResult; with upsert, getUpsertedId() is non-null when a new doc is created
      * }</pre>
      *
      * @param filter BSON filter to identify the document
@@ -2916,7 +2931,7 @@ public final class MongoCollectionExecutor {
      *     Updates.set("status", "processed"),
      *     Updates.inc("processCount", 1)
      * );
-     * executor.updateOne(filter, updates);
+     * executor.updateOne(filter, updates); // returns UpdateResult; applies the aggregation-pipeline updates to the first match
      * }</pre>
      * 
      * @param filter BSON filter to identify the document
@@ -2938,7 +2953,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * UpdateOptions options = new UpdateOptions().upsert(true);
-     * executor.updateOne(filter, updatesList, options);
+     * executor.updateOne(filter, updatesList, options); // returns UpdateResult; upsert creates a doc when no match exists
      * }</pre>
      * 
      * @param filter BSON filter to identify the document
@@ -3070,7 +3085,7 @@ public final class MongoCollectionExecutor {
      * // Update all inactive users:
      * Bson filter = Filters.eq("status", "inactive");
      * Bson update = Updates.set("status", "archived");
-     * UpdateResult result = executor.updateMany(filter, update);
+     * UpdateResult result = executor.updateMany(filter, update); // returns UpdateResult; matchedCount/modifiedCount cover ALL matches (0 if none)
      * System.out.println("Updated " + result.getModifiedCount() + " users");
      * }</pre>
      *
@@ -3105,8 +3120,8 @@ public final class MongoCollectionExecutor {
      * UpdateOptions options = new UpdateOptions()
      *     .upsert(false)
      *     .arrayFilters(Arrays.asList(Filters.gte("item.quantity", 1)));
-     * 
-     * UpdateResult result = executor.updateMany(filter, update, options);
+     *
+     * UpdateResult result = executor.updateMany(filter, update, options); // returns UpdateResult; applies to every matching document
      * }</pre>
      *
      * @param filter the query filter to identify documents to update
@@ -3143,7 +3158,7 @@ public final class MongoCollectionExecutor {
      *     Updates.set("processedAt", new Date()),
      *     Updates.inc("processCount", 1)
      * );
-     * UpdateResult result = executor.updateMany(filter, updates);
+     * UpdateResult result = executor.updateMany(filter, updates); // returns UpdateResult; pipeline updates applied to every match
      * }</pre>
      *
      * @param filter the query filter to identify documents to update
@@ -3175,7 +3190,7 @@ public final class MongoCollectionExecutor {
      *     Updates.push("statusHistory", new Document("status", "delivered"))
      * );
      * UpdateOptions options = new UpdateOptions().bypassDocumentValidation(true);
-     * UpdateResult result = executor.updateMany(filter, updates, options);
+     * UpdateResult result = executor.updateMany(filter, updates, options); // returns UpdateResult; updates every match, bypassing validation
      * }</pre>
      *
      * @param filter the query filter to identify documents to update
@@ -3214,7 +3229,7 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * String id = "507f1f77bcf86cd799439011";
      * User newUser = new User("John", "john@example.com");
-     * executor.replaceOne(id, newUser);
+     * executor.replaceOne(id, newUser); // returns UpdateResult; matchedCount 1 if the document exists (its _id is retained), else 0
      * }</pre>
      *
      * @param objectId string representation of the ObjectId
@@ -3238,7 +3253,7 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * ObjectId id = new ObjectId("507f1f77bcf86cd799439011");
      * Document newDoc = new Document("name", "Jane").append("status", "active");
-     * executor.replaceOne(id, newDoc);
+     * executor.replaceOne(id, newDoc); // returns UpdateResult; whole document body is swapped, _id preserved
      * }</pre>
      *
      * @param objectId the ObjectId of the document to replace
@@ -3262,7 +3277,7 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * Bson filter = Filters.eq("email", "old@example.com");
      * User newUser = new User("John", "new@example.com");
-     * executor.replaceOne(filter, newUser);
+     * executor.replaceOne(filter, newUser); // returns UpdateResult; replaces the first matching document only
      * }</pre>
      *
      * @param filter BSON filter to identify the document
@@ -3284,7 +3299,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ReplaceOptions options = new ReplaceOptions().upsert(true);
-     * executor.replaceOne(filter, replacement, options);
+     * executor.replaceOne(filter, replacement, options); // returns UpdateResult; upsert inserts the replacement when no match exists
      * }</pre>
      *
      * @param filter BSON filter to identify the document
@@ -3310,7 +3325,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * String id = "507f1f77bcf86cd799439011";
-     * DeleteResult result = executor.deleteOne(id);
+     * DeleteResult result = executor.deleteOne(id); // returns DeleteResult; getDeletedCount() is 1 if the document existed, else 0
      * System.out.println("Deleted: " + result.getDeletedCount());
      * }</pre>
      *
@@ -3330,7 +3345,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ObjectId id = new ObjectId("507f1f77bcf86cd799439011");
-     * DeleteResult result = executor.deleteOne(id);
+     * DeleteResult result = executor.deleteOne(id); // returns DeleteResult; getDeletedCount() 1 if a document with _id == id existed, else 0
      * }</pre>
      * 
      * @param objectId the ObjectId of the document to delete
@@ -3348,7 +3363,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson filter = Filters.eq("status", "expired");
-     * DeleteResult result = executor.deleteOne(filter);
+     * DeleteResult result = executor.deleteOne(filter); // returns DeleteResult; deletes the FIRST matching document only (getDeletedCount() 0 or 1)
      * }</pre>
      * 
      * @param filter BSON filter to identify the document
@@ -3366,7 +3381,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * DeleteOptions options = new DeleteOptions().collation(collation);
-     * executor.deleteOne(filter, options);
+     * executor.deleteOne(filter, options); // returns DeleteResult; deletes the first match using the supplied collation
      * }</pre>
      * 
      * @param filter BSON filter to identify the document
@@ -3387,7 +3402,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson filter = Filters.lt("expiryDate", new Date());
-     * DeleteResult result = executor.deleteMany(filter);
+     * DeleteResult result = executor.deleteMany(filter); // returns DeleteResult; getDeletedCount() is the number of ALL matches removed (0 if none)
      * System.out.println("Deleted " + result.getDeletedCount() + " documents");
      * }</pre>
      * 
@@ -3406,7 +3421,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * DeleteOptions options = new DeleteOptions().collation(collation);
-     * DeleteResult result = executor.deleteMany(filter, options);
+     * DeleteResult result = executor.deleteMany(filter, options); // returns DeleteResult; deletes every match using the supplied collation
      * }</pre>
      * 
      * @param filter BSON filter to identify documents to delete
@@ -3434,8 +3449,9 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<User> users = generateUsers(1000);
-     * int inserted = executor.bulkInsert(users);
+     * int inserted = executor.bulkInsert(users); // returns the inserted count, e.g. 1000
      * System.out.println("Inserted " + inserted + " users");
+     * executor.bulkInsert(List.of()); // throws IllegalArgumentException (entities must not be empty)
      * }</pre>
      *
      * @param entities collection of entities to insert
@@ -3456,7 +3472,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * BulkWriteOptions options = new BulkWriteOptions().ordered(false);
-     * int inserted = executor.bulkInsert(entities, options);
+     * int inserted = executor.bulkInsert(entities, options); // returns the inserted count; unordered keeps going past individual failures
      * }</pre>
      * 
      * @param entities collection of entities to insert
@@ -3501,7 +3517,8 @@ public final class MongoCollectionExecutor {
      *     new UpdateOneModel<>(filter, update),
      *     new DeleteOneModel<>(deleteFilter)
      * );
-     * BulkWriteResult result = executor.bulkWrite(operations);
+     * BulkWriteResult result = executor.bulkWrite(operations); // returns BulkWriteResult (insert/match/modify/delete counts) for all 3 ops
+     * executor.bulkWrite(List.of());                           // throws IllegalArgumentException (requests must not be empty)
      * }</pre>
      *
      * @param requests list of write operations to execute
@@ -3526,7 +3543,7 @@ public final class MongoCollectionExecutor {
      * BulkWriteOptions options = new BulkWriteOptions()
      *     .ordered(false)
      *     .bypassDocumentValidation(true);
-     * BulkWriteResult result = executor.bulkWrite(operations, options);
+     * BulkWriteResult result = executor.bulkWrite(operations, options); // returns BulkWriteResult; unordered execution continues past failures
      * }</pre>
      *
      * @param requests list of write operations to execute
@@ -3561,7 +3578,7 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * Bson filter = Filters.eq("_id", id);
      * Bson update = Updates.inc("counter", 1);
-     * Document original = executor.findOneAndUpdate(filter, update);
+     * Document original = executor.findOneAndUpdate(filter, update); // returns the PRE-update document (default BEFORE), or null if no match
      * }</pre>
      *
      * @param filter BSON filter to identify the document
@@ -3582,7 +3599,7 @@ public final class MongoCollectionExecutor {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * User original = executor.findOneAndUpdate(filter, update, User.class);
+     * User original = executor.findOneAndUpdate(filter, update, User.class); // PRE-update doc converted to User (default BEFORE), or null if no match
      * }</pre>
      * 
      * @param <T> the target type for the result
@@ -3608,7 +3625,7 @@ public final class MongoCollectionExecutor {
      * FindOneAndUpdateOptions options = new FindOneAndUpdateOptions()
      *     .returnDocument(ReturnDocument.AFTER)
      *     .upsert(true);
-     * Document updated = executor.findOneAndUpdate(filter, update, options);
+     * Document updated = executor.findOneAndUpdate(filter, update, options); // returns the POST-update document (AFTER); upsert creates one if no match
      * }</pre>
      * 
      * @param filter BSON filter to identify the document
@@ -3635,7 +3652,7 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * FindOneAndUpdateOptions options = new FindOneAndUpdateOptions()
      *     .returnDocument(ReturnDocument.AFTER);
-     * User updated = executor.findOneAndUpdate(filter, update, options, User.class);
+     * User updated = executor.findOneAndUpdate(filter, update, options, User.class); // POST-update doc converted to User (AFTER), or null if no match
      * }</pre>
      * 
      * @param <T> the target type for the result
@@ -3666,7 +3683,7 @@ public final class MongoCollectionExecutor {
      *     Updates.set("status", "processed"),
      *     Updates.currentDate("lastModified")
      * );
-     * Document result = executor.findOneAndUpdate(filter, updates);
+     * Document result = executor.findOneAndUpdate(filter, updates); // returns the PRE-update document (default BEFORE), or null if no match
      * }</pre>
      * 
      * @param filter BSON filter to identify the document
@@ -3686,7 +3703,7 @@ public final class MongoCollectionExecutor {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Order original = executor.findOneAndUpdate(filter, updatesList, Order.class);
+     * Order original = executor.findOneAndUpdate(filter, updatesList, Order.class); // PRE-update doc converted to Order (default BEFORE), or null if no match
      * }</pre>
      * 
      * @param <T> the target type for the result
@@ -3710,7 +3727,7 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * FindOneAndUpdateOptions options = new FindOneAndUpdateOptions()
      *     .returnDocument(ReturnDocument.AFTER);
-     * Document updated = executor.findOneAndUpdate(filter, updatesList, options);
+     * Document updated = executor.findOneAndUpdate(filter, updatesList, options); // returns the POST-update document (AFTER), or null if no match
      * }</pre>
      * 
      * @param filter BSON filter to identify the document
@@ -3741,7 +3758,7 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * FindOneAndUpdateOptions options = new FindOneAndUpdateOptions()
      *     .projection(Projections.include("name", "status"));
-     * User result = executor.findOneAndUpdate(filter, updatesList, options, User.class);
+     * User result = executor.findOneAndUpdate(filter, updatesList, options, User.class); // matched doc (projected) as User, or null if no match
      * }</pre>
      * 
      * @param <T> the target type for the result
@@ -3778,7 +3795,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * User newUser = new User("John", "john@example.com");
-     * Document original = executor.findOneAndReplace(filter, newUser);
+     * Document original = executor.findOneAndReplace(filter, newUser); // returns the PRE-replacement document (default BEFORE), or null if no match
      * }</pre>
      *
      * @param filter BSON filter to identify the document
@@ -3798,7 +3815,7 @@ public final class MongoCollectionExecutor {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * User original = executor.findOneAndReplace(filter, newUser, User.class);
+     * User original = executor.findOneAndReplace(filter, newUser, User.class); // PRE-replacement doc converted to User (default BEFORE), or null if no match
      * }</pre>
      * 
      * @param <T> the target type for the result
@@ -3824,7 +3841,7 @@ public final class MongoCollectionExecutor {
      * FindOneAndReplaceOptions options = new FindOneAndReplaceOptions()
      *     .returnDocument(ReturnDocument.AFTER)
      *     .upsert(true);
-     * Document newDoc = executor.findOneAndReplace(filter, replacement, options);
+     * Document newDoc = executor.findOneAndReplace(filter, replacement, options); // returns the POST-replacement document (AFTER); upsert inserts if no match
      * }</pre>
      * 
      * @param filter BSON filter to identify the document
@@ -3851,7 +3868,7 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * FindOneAndReplaceOptions options = new FindOneAndReplaceOptions()
      *     .projection(Projections.exclude("_id"));
-     * User result = executor.findOneAndReplace(filter, newUser, options, User.class);
+     * User result = executor.findOneAndReplace(filter, newUser, options, User.class); // matched doc (projected) as User, or null if no match
      * }</pre>
      * 
      * @param <T> the target type for the result
@@ -3879,7 +3896,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson filter = Filters.eq("status", "expired");
-     * Document deleted = executor.findOneAndDelete(filter);
+     * Document deleted = executor.findOneAndDelete(filter); // returns the deleted document, or null if no document matched
      * }</pre>
      * 
      * @param filter BSON filter to identify the document
@@ -3898,7 +3915,7 @@ public final class MongoCollectionExecutor {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * User deleted = executor.findOneAndDelete(filter, User.class);
+     * User deleted = executor.findOneAndDelete(filter, User.class); // deleted document converted to User, or null if none matched
      * }</pre>
      * 
      * @param <T> the target type for the result
@@ -3922,7 +3939,7 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * FindOneAndDeleteOptions options = new FindOneAndDeleteOptions()
      *     .sort(Sorts.ascending("priority"));
-     * Document deleted = executor.findOneAndDelete(filter, options);
+     * Document deleted = executor.findOneAndDelete(filter, options); // deletes (and returns) the lowest-priority match, or null if none
      * }</pre>
      * 
      * @param filter BSON filter to identify the document
@@ -3948,7 +3965,7 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * FindOneAndDeleteOptions options = new FindOneAndDeleteOptions()
      *     .projection(Projections.include("name", "email"));
-     * User deleted = executor.findOneAndDelete(filter, options, User.class);
+     * User deleted = executor.findOneAndDelete(filter, options, User.class); // deleted doc (only name/email) as User, or null if none matched
      * }</pre>
      * 
      * @param <T> the target type for the result
@@ -3974,7 +3991,7 @@ public final class MongoCollectionExecutor {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * executor.distinct("category", String.class)
+     * executor.distinct("category", String.class) // returns a lazy Stream of the unique non-null "category" values
      *     .forEach(category -> System.out.println("Category: " + category));
      * }</pre>
      * 
@@ -3999,7 +4016,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson filter = Filters.gte("price", 100);
-     * executor.distinct("brand", filter, String.class)
+     * executor.distinct("brand", filter, String.class) // returns a lazy Stream of unique "brand" values among matching docs
      *     .forEach(brand -> System.out.println("Premium brand: " + brand));
      * }</pre>
      * 
@@ -4028,7 +4045,7 @@ public final class MongoCollectionExecutor {
      *     Aggregates.match(Filters.eq("status", "active")),
      *     Aggregates.group("$category", Accumulators.sum("total", 1))
      * );
-     * executor.aggregate(pipeline)
+     * executor.aggregate(pipeline) // returns a lazy Stream of the pipeline's output documents
      *     .forEach(doc -> System.out.println(doc));
      * }</pre>
      * 
@@ -4052,7 +4069,7 @@ public final class MongoCollectionExecutor {
      *     Aggregates.match(Filters.gte("score", 80)),
      *     Aggregates.project(Projections.include("name", "score"))
      * );
-     * executor.aggregate(pipeline, StudentScore.class)
+     * executor.aggregate(pipeline, StudentScore.class) // returns a lazy Stream of pipeline outputs converted to StudentScore
      *     .forEach(score -> processScore(score));
      * }</pre>
      * 
@@ -4077,7 +4094,7 @@ public final class MongoCollectionExecutor {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * executor.groupBy("category")
+     * executor.groupBy("category") // returns a lazy Stream of {_id: <category value>} group documents
      *     .forEach(group -> System.out.println(group));
      * }</pre>
      * 
@@ -4098,7 +4115,7 @@ public final class MongoCollectionExecutor {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * executor.groupBy("department", DepartmentGroup.class)
+     * executor.groupBy("department", DepartmentGroup.class) // returns a lazy Stream of group documents converted to DepartmentGroup
      *     .forEach(group -> processDepartment(group));
      * }</pre>
      * 
@@ -4122,7 +4139,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<String> fields = Arrays.asList("category", "status");
-     * executor.groupBy(fields)
+     * executor.groupBy(fields) // returns a lazy Stream of {_id: {category, status}} group documents
      *     .forEach(group -> System.out.println(group));
      * }</pre>
      * 
@@ -4144,7 +4161,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<String> fields = Arrays.asList("year", "month");
-     * executor.groupBy(fields, MonthlyGroup.class)
+     * executor.groupBy(fields, MonthlyGroup.class) // returns a lazy Stream of year/month group documents converted to MonthlyGroup
      *     .forEach(group -> processMonthly(group));
      * }</pre>
      * 
@@ -4176,7 +4193,7 @@ public final class MongoCollectionExecutor {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * executor.groupByAndCount("status")
+     * executor.groupByAndCount("status") // returns a lazy Stream of {_id: <status>, count: <n>} documents
      *     .forEach(group -> System.out.println(
      *         "Status: " + group.get("_id") + ", Count: " + group.get("count")));
      * }</pre>
@@ -4198,7 +4215,7 @@ public final class MongoCollectionExecutor {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * executor.groupByAndCount("category", CategoryCount.class)
+     * executor.groupByAndCount("category", CategoryCount.class) // returns a lazy Stream of per-category count documents converted to CategoryCount
      *     .forEach(count -> processCount(count));
      * }</pre>
      * 
@@ -4222,7 +4239,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<String> fields = Arrays.asList("category", "status");
-     * executor.groupByAndCount(fields)
+     * executor.groupByAndCount(fields) // returns a lazy Stream of {_id: {category, status}, count: <n>} documents
      *     .forEach(group -> processGroupCount(group));
      * }</pre>
      * 
@@ -4244,7 +4261,7 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<String> fields = Arrays.asList("year", "quarter");
-     * executor.groupByAndCount(fields, QuarterlyCount.class)
+     * executor.groupByAndCount(fields, QuarterlyCount.class) // returns a lazy Stream of year/quarter count documents converted to QuarterlyCount
      *     .forEach(count -> processQuarterly(count));
      * }</pre>
      * 
@@ -4279,7 +4296,7 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * String mapFunction = "function() { emit(this.category, 1); }";
      * String reduceFunction = "function(key, values) { return Array.sum(values); }";
-     * executor.mapReduce(mapFunction, reduceFunction)
+     * executor.mapReduce(mapFunction, reduceFunction) // returns a lazy Stream of the map-reduce output documents
      *     .forEach(result -> System.out.println(result));
      * }</pre>
      * 
@@ -4303,7 +4320,7 @@ public final class MongoCollectionExecutor {
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * executor.mapReduce(mapFunction, reduceFunction, CategoryTotal.class)
+     * executor.mapReduce(mapFunction, reduceFunction, CategoryTotal.class) // returns a lazy Stream of map-reduce outputs converted to CategoryTotal
      *     .forEach(total -> processTotal(total));
      * }</pre>
      * 
