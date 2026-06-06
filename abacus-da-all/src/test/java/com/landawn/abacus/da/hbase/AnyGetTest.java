@@ -390,11 +390,10 @@ public class AnyGetTest extends TestBase {
     }
 
     @Test
-    public void testToGet_collectionWithNull_skipsNull() {
-        // Per source: null entries are skipped (not thrown).
+    public void testToGet_collectionWithNull_throws() {
+        // Null elements are rejected with IllegalArgumentException (consistent with AnyDelete.toDelete / AnyPut.toPut).
         AnyGet g1 = AnyGet.of("r1");
-        List<Get> gets = AnyGet.toGet(Arrays.asList(g1, null));
-        assertEquals(1, gets.size());
+        assertThrows(IllegalArgumentException.class, () -> AnyGet.toGet(Arrays.asList(g1, null)));
     }
 
     @Test

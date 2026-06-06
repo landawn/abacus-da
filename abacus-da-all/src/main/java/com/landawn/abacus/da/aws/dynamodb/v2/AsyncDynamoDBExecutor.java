@@ -291,19 +291,20 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * executor.mapper(NoTableEntity.class);   // throws IllegalArgumentException (use mapper(Class, tableName, policy))
      *
      * // Edge: a null class is rejected
-     * executor.mapper((Class<User>) null);    // throws (NullPointerException)
+     * executor.mapper((Class<User>) null);    // throws IllegalArgumentException
      * }</pre>
      *
      * @param <T> the entity type
      * @param targetEntityClass the entity class to create a mapper for. Must be annotated with one of
      *                          the supported {@code @Table} annotations. Must not be null.
      * @return a cached async {@link Mapper} instance for the specified entity class, never null
-     * @throws NullPointerException if {@code targetEntityClass} is null
-     * @throws IllegalArgumentException if {@code targetEntityClass} is not a bean class, is missing
+     * @throws IllegalArgumentException if {@code targetEntityClass} is null, is not a bean class, is missing
      *                                  the {@code @Table} annotation, or does not have exactly one
      *                                  {@code @Id} field
      */
     public <T> Mapper<T> mapper(final Class<T> targetEntityClass) {
+        N.checkArgNotNull(targetEntityClass, "targetEntityClass");
+
         @SuppressWarnings("rawtypes")
         Mapper result = mapperPool.get(targetEntityClass);
 

@@ -320,11 +320,12 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param <T> the entity type
      * @param targetEntityClass the entity class to create mapper for. Must be annotated with @Table. Must not be null.
      * @return a cached Mapper instance for the specified entity class, never null
-     * @throws NullPointerException if {@code targetEntityClass} is null
-     * @throws IllegalArgumentException if {@code targetEntityClass} is missing a {@code @Table} annotation, or fails the underlying Mapper validation (not a bean class, zero or multiple {@code @Id} fields, etc.)
+     * @throws IllegalArgumentException if {@code targetEntityClass} is null, is missing a {@code @Table} annotation, or fails the underlying Mapper validation (not a bean class, zero or multiple {@code @Id} fields, etc.)
      * @see #mapper(Class, String, NamingPolicy)
      */
     public <T> Mapper<T> mapper(final Class<T> targetEntityClass) {
+        N.checkArgNotNull(targetEntityClass, "targetEntityClass");
+
         @SuppressWarnings("unchecked")
         Mapper<T> result = mapperPool.computeIfAbsent(targetEntityClass, cls -> {
             final BeanInfo entityInfo = ParserUtil.getBeanInfo(cls);
@@ -1760,9 +1761,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
      */
     static <T> List<T> toList(final List<Map<String, AttributeValue>> items, final int offset, int count, final Class<T> targetClass) {
-        if (offset < 0 || count < 0) {
-            throw new IllegalArgumentException("Offset and count cannot be negative");
-        }
+        N.checkArgument(offset >= 0 && count >= 0, "'offset' and 'count' can't be negative: %s, %s", offset, count);
 
         final List<T> resultList = new ArrayList<>();
         final Function<Map<String, AttributeValue>, T> mapper = createRowMapper(targetClass);

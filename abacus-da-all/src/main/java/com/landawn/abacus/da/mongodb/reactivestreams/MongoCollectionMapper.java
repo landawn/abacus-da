@@ -1075,16 +1075,16 @@ public final class MongoCollectionMapper<T> {
      * // Edge: cold publisher — building it issues no query until subscribed.
      * Mono<Boolean> notRunYet = userMapper.queryForBoolean("isActive", Filters.eq("username", "admin"));
      *
-     * // Negative: null/empty propName -> error signal (IllegalArgumentException) on subscription.
-     * userMapper.queryForBoolean("", Filters.empty())
-     *     .subscribe(a -> {}, err -> System.err.println("Bad propName: " + err));   // onError(IllegalArgumentException)
+     * // Negative: a null/empty propName throws IllegalArgumentException synchronously (at the call
+     * // site, before any Mono is returned), because propName is validated eagerly.
+     * userMapper.queryForBoolean("", Filters.empty());   // throws IllegalArgumentException
      * }</pre>
      *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against
      * @return a {@code Mono} that emits the {@code Boolean} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code propName} is null or empty (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForBoolean(String, Bson)
@@ -1119,16 +1119,16 @@ public final class MongoCollectionMapper<T> {
      * // Edge: cold publisher — building it issues no query until subscribed.
      * Mono<Character> notRunYet = userMapper.queryForChar("grade", Filters.empty());
      *
-     * // Negative: null/empty propName -> error signal (IllegalArgumentException) on subscription.
-     * userMapper.queryForChar("", Filters.empty())
-     *     .subscribe(g -> {}, err -> System.err.println("Bad propName: " + err));   // onError(IllegalArgumentException)
+     * // Negative: a null/empty propName throws IllegalArgumentException synchronously (at the call
+     * // site, before any Mono is returned), because propName is validated eagerly.
+     * userMapper.queryForChar("", Filters.empty());   // throws IllegalArgumentException
      * }</pre>
      *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against
      * @return a {@code Mono} that emits the {@code Character} field value on subscription, or
      *         completes empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code propName} is null or empty (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForChar(String, Bson)
@@ -1165,16 +1165,16 @@ public final class MongoCollectionMapper<T> {
      * // Edge: cold publisher — building it issues no query until subscribed.
      * Mono<Byte> notRunYet = userMapper.queryForByte("statusCode", Filters.empty());
      *
-     * // Negative: null/empty propName -> error signal (IllegalArgumentException) on subscription.
-     * userMapper.queryForByte("", Filters.empty())
-     *     .subscribe(c -> {}, err -> System.err.println("Bad propName: " + err));   // onError(IllegalArgumentException)
+     * // Negative: a null/empty propName throws IllegalArgumentException synchronously (at the call
+     * // site, before any Mono is returned), because propName is validated eagerly.
+     * userMapper.queryForByte("", Filters.empty());   // throws IllegalArgumentException
      * }</pre>
      *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against
      * @return a {@code Mono} that emits the {@code Byte} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code propName} is null or empty (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForByte(String, Bson)
@@ -1211,16 +1211,16 @@ public final class MongoCollectionMapper<T> {
      * // Edge: cold publisher — building it issues no query until subscribed.
      * Mono<Short> notRunYet = userMapper.queryForShort("quantity", Filters.empty());
      *
-     * // Negative: null/empty propName -> error signal (IllegalArgumentException) on subscription.
-     * userMapper.queryForShort("", Filters.empty())
-     *     .subscribe(q -> {}, err -> System.err.println("Bad propName: " + err));   // onError(IllegalArgumentException)
+     * // Negative: a null/empty propName throws IllegalArgumentException synchronously (at the call
+     * // site, before any Mono is returned), because propName is validated eagerly.
+     * userMapper.queryForShort("", Filters.empty());   // throws IllegalArgumentException
      * }</pre>
      *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against
      * @return a {@code Mono} that emits the {@code Short} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code propName} is null or empty (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForShort(String, Bson)
@@ -1257,16 +1257,16 @@ public final class MongoCollectionMapper<T> {
      * // Edge: cold publisher — building it issues no query until subscribed.
      * Mono<Integer> notRunYet = userMapper.queryForInt("age", Filters.empty());
      *
-     * // Negative: null/empty propName -> error signal (IllegalArgumentException) on subscription.
-     * userMapper.queryForInt("", Filters.empty())
-     *     .subscribe(a -> {}, err -> System.err.println("Bad propName: " + err));   // onError(IllegalArgumentException)
+     * // Negative: a null/empty propName throws IllegalArgumentException synchronously (at the call
+     * // site, before any Mono is returned), because propName is validated eagerly.
+     * userMapper.queryForInt("", Filters.empty());   // throws IllegalArgumentException
      * }</pre>
      *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against
      * @return a {@code Mono} that emits the {@code Integer} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code propName} is null or empty (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForInt(String, Bson)
@@ -1303,16 +1303,16 @@ public final class MongoCollectionMapper<T> {
      * // Edge: cold publisher — building it issues no query until subscribed.
      * Mono<Long> notRunYet = userMapper.queryForLong("lastAccessTime", Filters.empty());
      *
-     * // Negative: null/empty propName -> error signal (IllegalArgumentException) on subscription.
-     * userMapper.queryForLong("", Filters.empty())
-     *     .subscribe(t -> {}, err -> System.err.println("Bad propName: " + err));   // onError(IllegalArgumentException)
+     * // Negative: a null/empty propName throws IllegalArgumentException synchronously (at the call
+     * // site, before any Mono is returned), because propName is validated eagerly.
+     * userMapper.queryForLong("", Filters.empty());   // throws IllegalArgumentException
      * }</pre>
      *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against
      * @return a {@code Mono} that emits the {@code Long} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code propName} is null or empty (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForLong(String, Bson)
@@ -1349,16 +1349,16 @@ public final class MongoCollectionMapper<T> {
      * // Edge: cold publisher — building it issues no query until subscribed.
      * Mono<Float> notRunYet = userMapper.queryForFloat("price", Filters.empty());
      *
-     * // Negative: null/empty propName -> error signal (IllegalArgumentException) on subscription.
-     * userMapper.queryForFloat("", Filters.empty())
-     *     .subscribe(p -> {}, err -> System.err.println("Bad propName: " + err));   // onError(IllegalArgumentException)
+     * // Negative: a null/empty propName throws IllegalArgumentException synchronously (at the call
+     * // site, before any Mono is returned), because propName is validated eagerly.
+     * userMapper.queryForFloat("", Filters.empty());   // throws IllegalArgumentException
      * }</pre>
      *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against
      * @return a {@code Mono} that emits the {@code Float} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code propName} is null or empty (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForDouble(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1396,16 +1396,16 @@ public final class MongoCollectionMapper<T> {
      * // Edge: cold publisher — building it issues no query until subscribed.
      * Mono<Double> notRunYet = userMapper.queryForDouble("balance", Filters.empty());
      *
-     * // Negative: null/empty propName -> error signal (IllegalArgumentException) on subscription.
-     * userMapper.queryForDouble("", Filters.empty())
-     *     .subscribe(b -> {}, err -> System.err.println("Bad propName: " + err));   // onError(IllegalArgumentException)
+     * // Negative: a null/empty propName throws IllegalArgumentException synchronously (at the call
+     * // site, before any Mono is returned), because propName is validated eagerly.
+     * userMapper.queryForDouble("", Filters.empty());   // throws IllegalArgumentException
      * }</pre>
      *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against
      * @return a {@code Mono} that emits the {@code Double} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code propName} is null or empty (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForFloat(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1446,16 +1446,16 @@ public final class MongoCollectionMapper<T> {
      * // Edge: cold publisher — building it issues no query until subscribed.
      * Mono<String> notRunYet = userMapper.queryForString("username", Filters.empty());
      *
-     * // Negative: null/empty propName -> error signal (IllegalArgumentException) on subscription.
-     * userMapper.queryForString("", Filters.empty())
-     *     .subscribe(n -> {}, err -> System.err.println("Bad propName: " + err));   // onError(IllegalArgumentException)
+     * // Negative: a null/empty propName throws IllegalArgumentException synchronously (at the call
+     * // site, before any Mono is returned), because propName is validated eagerly.
+     * userMapper.queryForString("", Filters.empty());   // throws IllegalArgumentException
      * }</pre>
      *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against
      * @return a {@code Mono} that emits the {@code String} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code propName} is null or empty (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForString(String, Bson)
@@ -1492,16 +1492,16 @@ public final class MongoCollectionMapper<T> {
      * // Edge: cold publisher — building it issues no query until subscribed.
      * Mono<Date> notRunYet = userMapper.queryForDate("createdAt", Filters.empty());
      *
-     * // Negative: null/empty propName -> error signal (IllegalArgumentException) on subscription.
-     * userMapper.queryForDate("", Filters.empty())
-     *     .subscribe(d -> {}, err -> System.err.println("Bad propName: " + err));   // onError(IllegalArgumentException)
+     * // Negative: a null/empty propName throws IllegalArgumentException synchronously (at the call
+     * // site, before any Mono is returned), because propName is validated eagerly.
+     * userMapper.queryForDate("", Filters.empty());   // throws IllegalArgumentException
      * }</pre>
      *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against
      * @return a {@code Mono} that emits the {@code Date} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code propName} is null or empty (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForDate(String, Bson, Class)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1550,7 +1550,7 @@ public final class MongoCollectionMapper<T> {
      * @param valueType the class of the Date subclass to convert to
      * @return a {@code Mono} that emits the typed {@code Date} value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} or {@code valueType} is null (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code propName} is null or empty (thrown synchronously at the call site), or if {@code valueType} is null
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForDate(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1601,7 +1601,7 @@ public final class MongoCollectionMapper<T> {
      * @param valueType the class of the value type to convert to
      * @return a {@code Mono} that emits the converted field value on subscription, or completes empty
      *         when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} or {@code valueType} is null (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code propName} is null or empty (thrown synchronously at the call site), or if {@code valueType} is null
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see MongoCollectionExecutor#queryForSingleValue(String, Bson, Class)
      */
@@ -2238,9 +2238,9 @@ public final class MongoCollectionMapper<T> {
      * // Edge: cold publisher — building it writes nothing until subscribed.
      * Mono<UpdateResult> pending = userMapper.updateMany(filter, updates);   // nothing written yet
      *
-     * // Negative: null filter -> error signal (IllegalArgumentException) on subscription.
-     * userMapper.updateMany((Bson) null, updates)
-     *     .subscribe(r -> {}, err -> System.err.println("Null filter: " + err));   // onError(IllegalArgumentException)
+     * // Negative: a null filter throws IllegalArgumentException synchronously (at the call site,
+     * // before any Mono is returned), because filter is validated eagerly.
+     * userMapper.updateMany((Bson) null, updates);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param filter the query filter to match documents against
@@ -2497,9 +2497,9 @@ public final class MongoCollectionMapper<T> {
      * // Edge: cold publisher — building it deletes nothing until subscribed.
      * Mono<DeleteResult> pending = userMapper.deleteOne(filter);   // nothing deleted yet
      *
-     * // Negative: null filter -> error signal (IllegalArgumentException) on subscription.
-     * userMapper.deleteOne((Bson) null)
-     *     .subscribe(r -> {}, err -> System.err.println("Null filter: " + err));   // onError(IllegalArgumentException)
+     * // Negative: a null filter throws IllegalArgumentException synchronously (at the call site,
+     * // before any Mono is returned), because filter is validated eagerly.
+     * userMapper.deleteOne((Bson) null);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param filter the query filter to match documents against
@@ -2555,9 +2555,9 @@ public final class MongoCollectionMapper<T> {
      * // Edge: an empty filter deletes EVERY document in the collection — use with care.
      * userMapper.deleteMany(Filters.empty()).subscribe(r -> System.out.println("wiped: " + r.getDeletedCount()));
      *
-     * // Negative: null filter -> error signal (IllegalArgumentException) on subscription.
-     * userMapper.deleteMany((Bson) null)
-     *     .subscribe(r -> {}, err -> System.err.println("Null filter: " + err));   // onError(IllegalArgumentException)
+     * // Negative: a null filter throws IllegalArgumentException synchronously (at the call site,
+     * // before any Mono is returned), because filter is validated eagerly.
+     * userMapper.deleteMany((Bson) null);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param filter the query filter to match documents against
@@ -2744,9 +2744,9 @@ public final class MongoCollectionMapper<T> {
      * // Edge: cold publisher — building it performs no update until subscribed.
      * Mono<User> pending = userMapper.findOneAndUpdate(Filters.eq("_id", userId), updatedUser);   // nothing written yet
      *
-     * // Negative: null filter -> error signal (IllegalArgumentException) on subscription.
-     * userMapper.findOneAndUpdate((Bson) null, updatedUser)
-     *     .subscribe(u -> {}, err -> System.err.println("Null filter: " + err));   // onError(IllegalArgumentException)
+     * // Negative: a null filter throws IllegalArgumentException synchronously (at the call site,
+     * // before any Mono is returned), because filter is validated eagerly.
+     * userMapper.findOneAndUpdate((Bson) null, updatedUser);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param filter the query filter to identify the document to update
@@ -2861,9 +2861,9 @@ public final class MongoCollectionMapper<T> {
      * // Edge: cold publisher — building it performs no replace until subscribed.
      * Mono<User> pending = userMapper.findOneAndReplace(Filters.eq("_id", userId), newUser);   // nothing written yet
      *
-     * // Negative: null filter -> error signal (IllegalArgumentException) on subscription.
-     * userMapper.findOneAndReplace((Bson) null, newUser)
-     *     .subscribe(u -> {}, err -> System.err.println("Null filter: " + err));   // onError(IllegalArgumentException)
+     * // Negative: a null filter throws IllegalArgumentException synchronously (at the call site,
+     * // before any Mono is returned), because filter is validated eagerly.
+     * userMapper.findOneAndReplace((Bson) null, newUser);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param filter the query filter to identify the document to replace
@@ -3002,7 +3002,7 @@ public final class MongoCollectionMapper<T> {
      * @param fieldName the name of the field to get distinct values for
      * @return a {@code Flux} that, on subscription, emits each distinct value of the field decoded
      *         as {@code T}, then completes; completes empty if no documents are present
-     * @throws IllegalArgumentException if fieldName is null or empty (signalled via {@code Flux})
+     * @throws IllegalArgumentException if fieldName is null or empty (thrown synchronously at the call site)
      * @throws org.bson.codecs.configuration.CodecConfigurationException if the BSON value cannot be
      *         decoded as {@code T} (signalled via {@code Flux} error)
      * @see MongoCollectionExecutor#distinct(String, Class)
@@ -3038,7 +3038,7 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to apply before extracting distinct values
      * @return a {@code Flux} that, on subscription, emits each distinct value of the field decoded
      *         as {@code T}, then completes; completes empty if no documents match the filter
-     * @throws IllegalArgumentException if fieldName is null/empty or filter is null (signalled via {@code Flux})
+     * @throws IllegalArgumentException if fieldName is null or empty (thrown synchronously at the call site), or if filter is null
      * @throws org.bson.codecs.configuration.CodecConfigurationException if the BSON value cannot be
      *         decoded as {@code T} (signalled via {@code Flux} error)
      * @see MongoCollectionExecutor#distinct(String, Bson, Class)

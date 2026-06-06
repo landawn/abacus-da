@@ -349,7 +349,7 @@ public final class CqlMapper {
      * mapper.get("findUserById");                      // returns p2 (the new mapping)
      * }</pre>
      *
-     * @param id the unique identifier for this CQL statement
+     * @param id the unique identifier for this CQL statement; used as the map key as-is; not validated
      * @param parsedCql the pre-parsed CQL statement object
      * @return the previous ParsedCql associated with the ID, or null if none existed
      * @see ParsedCql
@@ -383,7 +383,7 @@ public final class CqlMapper {
      * mapper.add("bad", (String) null, null);          // throws IllegalArgumentException
      * }</pre>
      *
-     * @param id the unique identifier for this CQL statement
+     * @param id the unique identifier for this CQL statement; used as the map key as-is; not validated
      * @param cql the CQL statement string to be parsed and stored
      * @param attrs optional attributes map for statement metadata (can be null)
      * @throws IllegalArgumentException if the ID already exists, if {@code cql} is null,

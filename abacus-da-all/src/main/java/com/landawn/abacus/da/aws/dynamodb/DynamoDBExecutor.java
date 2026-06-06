@@ -423,6 +423,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @throws IllegalArgumentException if targetEntityClass is null, not a bean class, or missing @Table annotation
      */
     public <T> Mapper<T> mapper(final Class<T> targetEntityClass) {
+        N.checkArgNotNull(targetEntityClass, "targetEntityClass");
+
         @SuppressWarnings("unchecked")
         Mapper<T> result = mapperPool.computeIfAbsent(targetEntityClass, cls -> {
             final BeanInfo entityInfo = ParserUtil.getBeanInfo(cls);
@@ -1643,9 +1645,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @return list of converted entities within the specified range
      */
     static <T> List<T> toList(final List<Map<String, AttributeValue>> items, final int offset, int count, final Class<T> targetClass) {
-        if (offset < 0 || count < 0) {
-            throw new IllegalArgumentException("Offset and count cannot be negative");
-        }
+        N.checkArgument(offset >= 0 && count >= 0, "'offset' and 'count' can't be negative: %s, %s", offset, count);
 
         final List<T> resultList = new ArrayList<>();
         final Function<Map<String, AttributeValue>, T> mapper = createRowMapper(targetClass);

@@ -359,10 +359,13 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      *
      * @param timestamp the timestamp as a Date object
      * @return this CqlBuilder instance for method chaining
+     * @throws IllegalArgumentException if timestamp is null
      * @see #usingTimestamp(long)
      * @see #usingTimestamp(String)
      */
     public CqlBuilder usingTimestamp(final Date timestamp) {
+        N.checkArgNotNull(timestamp, "timestamp");
+
         return usingTimestamp(timestamp.getTime());
     }
 
@@ -760,11 +763,11 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
     @Override
     protected void appendOperationBeforeFrom(final String tableName) {
         if (_op != OperationType.QUERY && _op != OperationType.DELETE) {
-            throw new RuntimeException("Invalid operation: " + _op);
+            throw new IllegalStateException("Invalid operation: " + _op);
         }
 
         if (_op == OperationType.QUERY && N.isEmpty(_propOrColumnNames) && N.isEmpty(_propOrColumnNameAliases) && N.isEmpty(_multiSelects)) {
-            throw new RuntimeException("No columns selected. Call select() to specify columns before building query");
+            throw new IllegalStateException("No columns selected. Call select() to specify columns before building query");
         }
 
         final int idx = tableName.indexOf(' ');

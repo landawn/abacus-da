@@ -130,7 +130,8 @@ abstract class AnyOperationWithAttributes<AOWA extends AnyOperationWithAttribute
      * <li>Operation metadata and annotations</li>
      * </ul>
      *
-     * @param name the attribute name; must not be {@code null}
+     * @param name the attribute name; null/blank handling is delegated to the underlying
+     *             {@link OperationWithAttributes}, which is not validated here
      * @param value the attribute value, converted to bytes via {@link HBaseExecutor#toValueBytes(Object)}.
      *              A {@code null} value is forwarded as a {@code null} byte array, which per the
      *              {@link OperationWithAttributes#setAttribute(String, byte[])} contract removes

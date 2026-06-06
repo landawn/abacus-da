@@ -664,6 +664,8 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * AnyGet.of("user123").readVersions(0);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>Unlike {@link AnyScan#readVersions(int)}, this rejects values &lt; 1 (mirrors the HBase Get client).</p>
+     *
      * @param versions the maximum number of versions to retrieve for each column (must be positive)
      * @return this AnyGet instance for method chaining
      * @throws IllegalArgumentException if versions is less than 1
@@ -1100,19 +1102,18 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * // Edge: an empty collection yields an empty list (not null).
      * List&lt;Get&gt; empty = AnyGet.toGet(java.util.Collections.emptyList());   // size 0
      *
-     * // Edge: null elements are silently skipped.
-     * List&lt;Get&gt; skipped = AnyGet.toGet(Arrays.asList(AnyGet.of("user1"), null));   // size 1
+     * // Edge: a null element is rejected.
+     * AnyGet.toGet(Arrays.asList(AnyGet.of("user1"), null));   // throws IllegalArgumentException
      *
      * // Edge: a null collection is rejected.
      * AnyGet.toGet(null);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param anyGets the collection of AnyGet instances to convert; must not be null
-     *                (may contain null elements, which are silently skipped)
-     * @return a list of native HBase Get objects, in iteration order of {@code anyGets};
-     *         {@code null} elements in {@code anyGets} are skipped (so the returned list may
-     *         be shorter than {@code anyGets}). Returns an empty list when {@code anyGets} is empty.
-     * @throws IllegalArgumentException if {@code anyGets} is null
+     *                and must not contain null elements
+     * @return a list of native HBase Get objects, in iteration order of {@code anyGets}.
+     *         Returns an empty list when {@code anyGets} is empty.
+     * @throws IllegalArgumentException if {@code anyGets} is null, or any element of {@code anyGets} is null
      * @see Get
      * @see HBaseExecutor#get(String, Collection)
      */
@@ -1126,9 +1127,8 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
         final List<Get> gets = new ArrayList<>(anyGets.size());
 
         for (final AnyGet anyGet : anyGets) {
-            if (anyGet != null) {
-                gets.add(anyGet.val());
-            }
+            N.checkArgNotNull(anyGet, "anyGet");
+            gets.add(anyGet.val());
         }
 
         return gets;

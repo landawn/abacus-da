@@ -608,9 +608,7 @@ public final class HBaseExecutor implements AutoCloseable {
      * @throws UncheckedIOException if reading from {@code resultScanner} fails with an {@link IOException}
      */
     public static <T> List<T> toList(final ResultScanner resultScanner, int offset, int count, final Class<T> targetClass) {
-        if (offset < 0 || count < 0) {
-            throw new IllegalArgumentException("Offset and count can't be negative");
-        }
+        N.checkArgument(offset >= 0 && count >= 0, "Offset and count can't be negative");
 
         final Type<T> targetType = N.typeOf(targetClass);
 

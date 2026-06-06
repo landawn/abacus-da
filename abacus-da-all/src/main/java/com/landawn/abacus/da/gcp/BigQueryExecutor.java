@@ -460,6 +460,8 @@ public class BigQueryExecutor {
      * @see #toEntity(FieldList, FieldValueList, Class)
      */
     public static <T> T toEntity(final FieldValueList fieldValueList, final Class<T> entityClass) {
+        N.checkArgNotNull(fieldValueList, "fieldValueList");
+
         return toEntity(getSchema(fieldValueList), fieldValueList, entityClass);
     }
 
@@ -574,7 +576,6 @@ public class BigQueryExecutor {
         N.checkArgNotNull(supplier, "supplier");
 
         final Map<String, Object> map = supplier.apply(fieldValueList.size());
-        Object propValue = null;
 
         for (int i = 0, size = fieldValueList.size(); i < size; i++) {
             map.put(fields.get(i).getName(), toMapValue(fields.get(i), fieldValueList.get(i), supplier));
@@ -634,6 +635,8 @@ public class BigQueryExecutor {
      * @see #toMap(Schema, FieldValueList)
      */
     public static Map<String, Object> toMap(final FieldValueList fieldValueList) {
+        N.checkArgNotNull(fieldValueList, "fieldValueList");
+
         return toMap(getSchema(fieldValueList), fieldValueList);
     }
 
@@ -664,6 +667,8 @@ public class BigQueryExecutor {
      * @see #toMap(FieldList, FieldValueList, IntFunction)
      */
     public static Map<String, Object> toMap(final FieldValueList fieldValueList, final IntFunction<? extends Map<String, Object>> supplier) {
+        N.checkArgNotNull(fieldValueList, "fieldValueList");
+
         return toMap(getSchema(fieldValueList), fieldValueList, supplier);
     }
 
@@ -1116,10 +1121,12 @@ public class BigQueryExecutor {
      * @param targetClass the class representing the target table (used for table name resolution)
      * @param props a Map containing column names as keys and values to insert
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if targetClass or props is null
+     * @throws IllegalArgumentException if targetClass is null or props is null or empty
      * @see #insert(Object)
      */
     public TableResult insert(final Class<?> targetClass, final Map<String, Object> props) {
+        N.checkArgument(N.notEmpty(props), "props cannot be null or empty");
+
         final SP sp = prepareInsert(targetClass, props);
 
         return execute(sp);

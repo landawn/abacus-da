@@ -1270,6 +1270,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * int v = zero.getMaxVersions();     // returns 0
      * }</pre>
      *
+     * <p>Unlike {@link AnyGet#readVersions(int)}, this does not reject values &lt; 1 (mirrors the HBase Scan client).</p>
+     *
      * @param maxVersions the maximum number of versions to retrieve per column
      * @return this AnyScan instance for method chaining
      * @see #readAllVersions()

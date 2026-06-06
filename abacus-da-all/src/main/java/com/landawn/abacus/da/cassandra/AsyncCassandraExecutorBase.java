@@ -632,6 +632,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is the driver result set produced by the UPDATE
      */
     public ContinuableFuture<RS> update(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause) {
+        N.checkArgument(N.notEmpty(props), "'props' can't be null or empty.");
+
         return execute(cassandraExecutor.prepareUpdate(targetClass, props, whereClause));
     }
 

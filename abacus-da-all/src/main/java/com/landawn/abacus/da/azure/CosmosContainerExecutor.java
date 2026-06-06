@@ -1588,7 +1588,7 @@ public class CosmosContainerExecutor {
      * @param classType the class type for deserializing the results (must not be null)
      * @return a Stream of items matching the condition
      * @throws CosmosException if the query fails
-     * @throws IllegalArgumentException if classType is null
+     * @throws NullPointerException if classType is null
      *
      * @see Condition for condition construction
      * @see com.landawn.abacus.query.Filters for available filter operations
@@ -1632,7 +1632,7 @@ public class CosmosContainerExecutor {
      * @param classType the class type for deserializing the results (must not be null)
      * @return a Stream of items matching the condition
      * @throws CosmosException if the query fails
-     * @throws IllegalArgumentException if classType is null
+     * @throws NullPointerException if classType is null
      */
     public final <T> Stream<T> streamItems(final Condition whereClause, final CosmosQueryRequestOptions options, final Class<T> classType) {
         return streamItems(null, whereClause, options, classType);
@@ -1678,7 +1678,7 @@ public class CosmosContainerExecutor {
      * @param classType the class type for deserializing the results (must not be null)
      * @return a Stream of items with only selected properties populated
      * @throws CosmosException if the query fails
-     * @throws IllegalArgumentException if classType is null
+     * @throws NullPointerException if classType is null
      */
     public final <T> Stream<T> streamItems(final Collection<String> selectPropNames, final Condition whereClause, final Class<T> classType) {
         return streamItems(selectPropNames, whereClause, null, classType);
@@ -1738,7 +1738,7 @@ public class CosmosContainerExecutor {
      * @param classType the class type for deserializing the results (must not be null)
      * @return a Stream of items with only selected properties populated
      * @throws CosmosException if the query fails
-     * @throws IllegalArgumentException if classType is null
+     * @throws NullPointerException if classType is null
      *
      * @see NamingPolicy for field name mapping behavior
      * @see com.landawn.abacus.query.Filters for available filter operations

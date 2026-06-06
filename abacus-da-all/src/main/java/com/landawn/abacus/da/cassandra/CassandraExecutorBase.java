@@ -29,8 +29,6 @@ import com.landawn.abacus.da.cassandra.CqlBuilder.NAC;
 import com.landawn.abacus.da.cassandra.CqlBuilder.NLC;
 import com.landawn.abacus.da.cassandra.CqlBuilder.NSC;
 import com.landawn.abacus.exception.DuplicateResultException;
-import com.landawn.abacus.parser.ParserUtil;
-import com.landawn.abacus.parser.ParserUtil.BeanInfo;
 import com.landawn.abacus.query.AbstractQueryBuilder.SP;
 import com.landawn.abacus.query.Filters;
 import com.landawn.abacus.query.QueryUtil;
@@ -2002,6 +2000,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, String, Object...)
      */
     public <T, V> Nullable<V> queryForSingleValue(final Class<T> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause) {
+        N.checkArgNotEmpty(propName, "propName");
+
         final SP cp = prepareQuery(targetClass, List.of(propName), whereClause, 1);
 
         return queryForSingleValue(valueClass, cp.query(), cp.parameters().toArray());
@@ -2762,7 +2762,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param query the CQL statement to execute
      * @return the result set from the query execution
-     * @throws IllegalArgumentException if query is null or empty
+     * @throws NullPointerException if query is null
      */
     public abstract RS execute(final String query);
 

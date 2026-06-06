@@ -23,6 +23,7 @@ import com.datastax.oss.driver.api.core.cql.ResultSet;
 import com.datastax.oss.driver.api.core.cql.Row;
 import com.datastax.oss.driver.api.core.cql.Statement;
 import com.landawn.abacus.util.ContinuableFuture;
+import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.stream.Stream;
@@ -144,6 +145,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @return a future that completes with a Stream of mapped objects
      */
     public <T> ContinuableFuture<Stream<T>> stream(final String query, final BiFunction<ColumnDefinitions, Row, T> rowMapper, final Object... parameters) {
+        N.checkArgNotNull(rowMapper, "rowMapper");
+
         return execute(query, parameters).map(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(rowMapper)));
     }
 
@@ -182,6 +185,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @return a future that completes with a Stream of mapped objects
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Statement<?> statement, final BiFunction<ColumnDefinitions, Row, T> rowMapper) {
+        N.checkArgNotNull(rowMapper, "rowMapper");
+
         return execute(statement).map(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(rowMapper)));
     }
 
