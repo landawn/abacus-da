@@ -4,6 +4,7 @@
 
 package com.landawn.abacus.da.hbase;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
@@ -59,6 +60,16 @@ public class HBaseExecutorToValueTest {
         private String value;
     }
 
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @ColumnFamily
+    public static class EntityWithDefaultColumnFamilyAnnotation {
+        @Id
+        private String id;
+        private String value;
+    }
+
     /**
      * A bean-mapped Result that contains exactly ONE cell must still be converted to a
      * populated entity (row key derived from the cell's row, the single column mapped).
@@ -96,6 +107,20 @@ public class HBaseExecutorToValueTest {
         assertEquals("world", entity.getValue());
     }
 
+    @Test
+    public void test_toEntity_emptyColumnFamilyAnnotationUsesDefaultMapping() {
+        final byte[] row = Bytes.toBytes("row-default-cf");
+        final Cell cell = new KeyValue(row, Bytes.toBytes("value"), Bytes.toBytes(HBaseExecutor.EMPTY_QUALIFIER), Bytes.toBytes("hello"));
+
+        final Result result = Result.create(List.<Cell> of(cell));
+
+        final EntityWithDefaultColumnFamilyAnnotation entity = HBaseExecutor.toEntity(result, EntityWithDefaultColumnFamilyAnnotation.class);
+
+        assertNotNull(entity);
+        assertEquals("row-default-cf", entity.getId());
+        assertEquals("hello", entity.getValue());
+    }
+
     /**
      * Sanity check: an empty Result still yields {@code null} (default value) for a bean type.
      */
@@ -125,6 +150,28 @@ public class HBaseExecutorToValueTest {
         final String value = HBaseExecutor.toEntity(result, String.class);
 
         assertEquals("scalar-value", value);
+    }
+
+    @Test
+    public void test_toEntity_multiVersionScalarUsesNewestCell() {
+        final byte[] row = Bytes.toBytes("row-versions");
+        final Cell newest = new KeyValue(row, Bytes.toBytes("cf"), Bytes.toBytes("v"), 200L, Bytes.toBytes("new"));
+        final Cell oldest = new KeyValue(row, Bytes.toBytes("cf"), Bytes.toBytes("v"), 100L, Bytes.toBytes("old"));
+
+        final SingleColumnEntity entity = HBaseExecutor.toEntity(Result.create(N.asList(newest, oldest)), SingleColumnEntity.class);
+
+        assertNotNull(entity);
+        assertEquals("new", entity.getValue());
+    }
+
+    @Test
+    public void test_toEntity_rawByteArrayScalarDoesNotDecodeAsString() {
+        final byte[] raw = new byte[] { 0, (byte) 0xff, 7 };
+        final Cell cell = new KeyValue(Bytes.toBytes("row-bytes"), Bytes.toBytes("cf"), Bytes.toBytes("v"), raw);
+
+        final byte[] actual = HBaseExecutor.toEntity(Result.create(List.<Cell> of(cell)), byte[].class);
+
+        assertArrayEquals(raw, actual);
     }
 
     /**

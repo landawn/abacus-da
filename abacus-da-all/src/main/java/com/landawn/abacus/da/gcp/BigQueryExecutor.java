@@ -23,11 +23,14 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
 import java.util.function.IntFunction;
 
 import com.google.cloud.bigquery.BigQuery;
+import com.google.cloud.bigquery.Field;
 import com.google.cloud.bigquery.FieldList;
+import com.google.cloud.bigquery.FieldValue;
 import com.google.cloud.bigquery.FieldValueList;
 import com.google.cloud.bigquery.JobException;
 import com.google.cloud.bigquery.QueryJobConfiguration;
@@ -574,16 +577,36 @@ public class BigQueryExecutor {
         Object propValue = null;
 
         for (int i = 0, size = fieldValueList.size(); i < size; i++) {
-            propValue = fieldValueList.get(i).getValue();
-
-            if (propValue instanceof FieldValueList) {
-                propValue = toMap((FieldValueList) propValue, supplier);
-            }
-
-            map.put(fields.get(i).getName(), propValue);
+            map.put(fields.get(i).getName(), toMapValue(fields.get(i), fieldValueList.get(i), supplier));
         }
 
         return map;
+    }
+
+    private static Object toMapValue(final Field field, final FieldValue fieldValue, final IntFunction<? extends Map<String, Object>> supplier) {
+        final Object value = fieldValue.getValue();
+
+        if (value instanceof FieldValueList) {
+            return toMap((FieldValueList) value, supplier);
+        }
+
+        if (value instanceof final List<?> values) {
+            final List<Object> list = new ArrayList<>(values.size());
+            final FieldList subFields = field.getSubFields();
+
+            for (final Object element : values) {
+                if (element instanceof final FieldValue repeatedFieldValue) {
+                    final Object repeatedValue = repeatedFieldValue.getValue();
+                    list.add(repeatedValue instanceof FieldValueList ? toMap(subFields, (FieldValueList) repeatedValue, supplier) : repeatedValue);
+                } else {
+                    list.add(element);
+                }
+            }
+
+            return list;
+        }
+
+        return value;
     }
 
     /**
@@ -2346,17 +2369,21 @@ public class BigQueryExecutor {
         queryParameterMap.put(Double.class, value -> QueryParameterValue.float64(Numbers.toDouble(value)));
         queryParameterMap.put(BigDecimal.class, value -> QueryParameterValue.bigNumeric((BigDecimal) value));
 
-        queryParameterMap.put(java.util.Date.class, value -> QueryParameterValue.timestamp(((java.util.Date) value).getTime()));
+        queryParameterMap.put(java.util.Date.class, value -> QueryParameterValue.timestamp(TimeUnit.MILLISECONDS.toMicros(((java.util.Date) value).getTime())));
 
-        queryParameterMap.put(java.sql.Date.class, value -> QueryParameterValue.timestamp(((java.sql.Date) value).getTime()));
-        queryParameterMap.put(java.sql.Time.class, value -> QueryParameterValue.timestamp(((java.sql.Time) value).getTime()));
-        queryParameterMap.put(java.sql.Timestamp.class, value -> QueryParameterValue.timestamp(((java.sql.Timestamp) value).getTime()));
+        queryParameterMap.put(java.sql.Date.class, value -> QueryParameterValue.date(value.toString()));
+        queryParameterMap.put(java.sql.Time.class, value -> QueryParameterValue.time(value.toString() + ".000000"));
+        queryParameterMap.put(java.sql.Timestamp.class, value -> QueryParameterValue.timestamp(toMicros((java.sql.Timestamp) value)));
 
         queryParameterMap.put(com.google.cloud.Date.class, value -> QueryParameterValue.date(value.toString()));
         queryParameterMap.put(com.google.cloud.Timestamp.class,
-                value -> QueryParameterValue.timestamp(((com.google.cloud.Timestamp) value).toDate().getTime()));
+                value -> QueryParameterValue.timestamp(TimeUnit.MILLISECONDS.toMicros(((com.google.cloud.Timestamp) value).toDate().getTime())));
 
         queryParameterMap.put(byte[].class, value -> QueryParameterValue.bytes((byte[]) value));
+    }
+
+    private static long toMicros(final java.sql.Timestamp timestamp) {
+        return TimeUnit.MILLISECONDS.toMicros(timestamp.getTime()) + (timestamp.getNanos() % 1_000_000) / 1000;
     }
 
     /**

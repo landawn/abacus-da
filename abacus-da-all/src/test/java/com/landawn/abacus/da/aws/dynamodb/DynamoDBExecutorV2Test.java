@@ -20,6 +20,7 @@ import java.util.Map;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -136,6 +137,11 @@ public class DynamoDBExecutorV2Test extends TestBase {
         AttributeValueUpdate result = DynamoDBExecutor.attrValueUpdateOf("test", AttributeAction.DELETE);
         assertNotNull(result);
         assertEquals("test", result.value().s());
+        assertEquals(AttributeAction.DELETE, result.action());
+
+        result = DynamoDBExecutor.attrValueUpdateOf(null, AttributeAction.DELETE);
+        assertNotNull(result);
+        assertNull(result.value());
         assertEquals(AttributeAction.DELETE, result.action());
     }
 
@@ -1034,6 +1040,14 @@ public class DynamoDBExecutorV2Test extends TestBase {
         UpdateItemResponse result = mapper.updateItem(entity);
 
         assertNotNull(result);
+
+        ArgumentCaptor<UpdateItemRequest> requestCaptor = ArgumentCaptor.forClass(UpdateItemRequest.class);
+        verify(mockDynamoDbClient).updateItem(requestCaptor.capture());
+
+        UpdateItemRequest request = requestCaptor.getValue();
+        assertTrue(request.key().containsKey("id"));
+        assertTrue(!request.attributeUpdates().containsKey("id"));
+        assertTrue(request.attributeUpdates().containsKey("name"));
     }
 
     @Test
@@ -1042,6 +1056,7 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
         TestEntity entity = new TestEntity();
         entity.setId("123");
+        entity.setName("Updated");
 
         UpdateItemResponse response = UpdateItemResponse.builder().build();
 
@@ -1050,6 +1065,14 @@ public class DynamoDBExecutorV2Test extends TestBase {
         UpdateItemResponse result = mapper.updateItem(entity, "ALL_NEW");
 
         assertNotNull(result);
+
+        ArgumentCaptor<UpdateItemRequest> requestCaptor = ArgumentCaptor.forClass(UpdateItemRequest.class);
+        verify(mockDynamoDbClient).updateItem(requestCaptor.capture());
+
+        UpdateItemRequest request = requestCaptor.getValue();
+        assertTrue(request.key().containsKey("id"));
+        assertTrue(!request.attributeUpdates().containsKey("id"));
+        assertTrue(request.attributeUpdates().containsKey("name"));
     }
 
     @Test
@@ -1962,14 +1985,17 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testToValue_MapViaToMap() {
-        // TODO: hasM() branch cannot be exercised end-to-end because AWS SDK v2 wraps nested
-        // maps in an immutable view (java.util.Collections.UnmodifiableMap), and toValue's
-        // N.newMap(attrMap.getClass(), ...) can't instantiate that class. We exercise just the
-        // outer toMap() path here to keep coverage for the simple-value branch.
         Map<String, AttributeValue> item = new HashMap<>();
         item.put("s", AttributeValue.builder().s("hello").build());
+        final Map<String, AttributeValue> child = new HashMap<>();
+        child.put("child", AttributeValue.builder().s("value").build());
+        item.put("m", AttributeValue.builder().m(child).build());
         Map<String, Object> result = DynamoDBExecutor.toMap(item);
         assertEquals("hello", result.get("s"));
+
+        @SuppressWarnings("unchecked")
+        final Map<String, Object> nested = (Map<String, Object>) result.get("m");
+        assertEquals("value", nested.get("child"));
     }
 
     @Test

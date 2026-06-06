@@ -492,12 +492,16 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
                     .peek(it -> N.checkArgNotNull(it, "Entity in collection can't be null."))
                     .map(it -> Beans.getPropValue(it, keyName))
                     .toList();
+
+            for (final Object key : keys) {
+                if (key == null || (key instanceof CharSequence && Strings.isEmpty((CharSequence) key))) {
+                    throw new IllegalArgumentException("No property value specified in entity for key name: " + keyName);
+                }
+            }
+
             cond = Filters.in(keyName, keys);
         } else {
-            cond = Filters.or(entities.stream()
-                    .peek(it -> N.checkArgNotNull(it, "Entity in collection can't be null."))
-                    .map(it -> Filters.and(keyNameSet.stream().map(keyName -> Filters.eq(keyName, Beans.getPropValue(it, keyName))).toList()))
-                    .toList());
+            throw new IllegalArgumentException("Batch operations with composite primary keys are not supported by a single Cassandra WHERE clause");
         }
 
         return cond;
@@ -2987,27 +2991,21 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return the prepared statement with parameters
      */
     protected SP prepareUpdate(final Object entity, final Collection<String> propNamesToUpdate) {
+        N.checkArgNotNull(entity, "entity");
         N.checkArgument(N.notEmpty(propNamesToUpdate), "'propNamesToUpdate' can't be null or empty.");
 
         final Class<?> targetClass = entity.getClass();
-        final BeanInfo entityInfo = ParserUtil.getBeanInfo(targetClass);
-
-        final Set<String> primaryKeyNames = getKeyNameSet(entity.getClass());
-        final List<Condition> conds = new ArrayList<>(primaryKeyNames.size());
-
-        for (final String keyName : primaryKeyNames) {
-            conds.add(Filters.eq(keyName, entityInfo.getPropValue(entity, keyName)));
-        }
+        final Condition cond = entityToCondition(entity);
 
         switch (namingPolicy) {
             case SNAKE_CASE:
-                return NSC.update(targetClass).set(Beans.beanToMap(entity, propNamesToUpdate)).where(Filters.and(conds)).build();
+                return NSC.update(targetClass).set(Beans.beanToMap(entity, propNamesToUpdate)).where(cond).build();
 
             case SCREAMING_SNAKE_CASE:
-                return NAC.update(targetClass).set(Beans.beanToMap(entity, propNamesToUpdate)).where(Filters.and(conds)).build();
+                return NAC.update(targetClass).set(Beans.beanToMap(entity, propNamesToUpdate)).where(cond).build();
 
             case CAMEL_CASE:
-                return NLC.update(targetClass).set(Beans.beanToMap(entity, propNamesToUpdate)).where(Filters.and(conds)).build();
+                return NLC.update(targetClass).set(Beans.beanToMap(entity, propNamesToUpdate)).where(cond).build();
 
             default:
                 throw new RuntimeException("Unsupported naming policy: " + namingPolicy);
@@ -3023,17 +3021,17 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return the prepared statement with parameters
      */
     protected SP prepareUpdate(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause) {
-        final boolean isNonNullCond = whereClause != null;
+        N.checkArgNotNull(whereClause, "whereClause");
 
         switch (namingPolicy) {
             case SNAKE_CASE:
-                return NSC.update(targetClass).set(props).appendIf(isNonNullCond, whereClause).build();
+                return NSC.update(targetClass).set(props).where(whereClause).build();
 
             case SCREAMING_SNAKE_CASE:
-                return NAC.update(targetClass).set(props).appendIf(isNonNullCond, whereClause).build();
+                return NAC.update(targetClass).set(props).where(whereClause).build();
 
             case CAMEL_CASE:
-                return NLC.update(targetClass).set(props).appendIf(isNonNullCond, whereClause).build();
+                return NLC.update(targetClass).set(props).where(whereClause).build();
 
             default:
                 throw new RuntimeException("Unsupported naming policy: " + namingPolicy);
@@ -3079,28 +3077,28 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return the prepared statement with parameters
      */
     protected SP prepareDelete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Condition whereClause) {
-        final boolean isNonNullCond = whereClause != null;
+        N.checkArgNotNull(whereClause, "whereClause");
 
         switch (namingPolicy) {
             case SNAKE_CASE:
                 if (N.isEmpty(propNamesToDelete)) {
-                    return NSC.deleteFrom(targetClass).appendIf(isNonNullCond, whereClause).build();
+                    return NSC.deleteFrom(targetClass).where(whereClause).build();
                 } else {
-                    return NSC.delete(propNamesToDelete).from(targetClass).appendIf(isNonNullCond, whereClause).build();
+                    return NSC.delete(propNamesToDelete).from(targetClass).where(whereClause).build();
                 }
 
             case SCREAMING_SNAKE_CASE:
                 if (N.isEmpty(propNamesToDelete)) {
-                    return NAC.deleteFrom(targetClass).appendIf(isNonNullCond, whereClause).build();
+                    return NAC.deleteFrom(targetClass).where(whereClause).build();
                 } else {
-                    return NAC.delete(propNamesToDelete).from(targetClass).appendIf(isNonNullCond, whereClause).build();
+                    return NAC.delete(propNamesToDelete).from(targetClass).where(whereClause).build();
                 }
 
             case CAMEL_CASE:
                 if (N.isEmpty(propNamesToDelete)) {
-                    return NLC.deleteFrom(targetClass).appendIf(isNonNullCond, whereClause).build();
+                    return NLC.deleteFrom(targetClass).where(whereClause).build();
                 } else {
-                    return NLC.delete(propNamesToDelete).from(targetClass).appendIf(isNonNullCond, whereClause).build();
+                    return NLC.delete(propNamesToDelete).from(targetClass).where(whereClause).build();
                 }
 
             default:
@@ -3321,4 +3319,6 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return a function that maps result rows to the target type
      */
     protected abstract <T> Function<RW, T> createRowMapper(Class<T> targetClass);
+
+    protected abstract <T> T readFirstColumn(RW row, Class<T> targetClass);
 }

@@ -553,7 +553,13 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @see #attrValueUpdateOf(Object)
      */
     public static AttributeValueUpdate attrValueUpdateOf(final Object value, final AttributeAction action) {
-        return AttributeValueUpdate.builder().value(attrValueOf(value)).action(action).build();
+        final AttributeValueUpdate.Builder builder = AttributeValueUpdate.builder().action(action);
+
+        if (value != null || AttributeAction.DELETE.equals(action) == false) {
+            builder.value(attrValueOf(value));
+        }
+
+        return builder.build();
     }
 
     /**
@@ -1521,7 +1527,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
             ret = val;
         } else if (x.hasM()) {
             final Map<String, AttributeValue> attrMap = x.m();
-            final Map<String, Object> val = N.newMap(attrMap.getClass(), attrMap.size());
+            final Map<String, Object> val = new LinkedHashMap<>(attrMap.size());
 
             for (final Map.Entry<String, AttributeValue> entry : attrMap.entrySet()) {
                 val.put(entry.getKey(), toValue(entry.getValue()));
@@ -3908,7 +3914,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @throws NullPointerException if {@code entity} is null
          */
         public UpdateItemResponse updateItem(final T entity) {
-            return dynamoDBExecutor.updateItem(tableName, createKey(entity), DynamoDBExecutor.toUpdateItem(entity, namingPolicy));
+            return dynamoDBExecutor.updateItem(tableName, createKey(entity), createUpdateItem(entity));
         }
 
         /**
@@ -3932,7 +3938,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @throws NullPointerException if {@code entity} is null
          */
         public UpdateItemResponse updateItem(final T entity, final String returnValues) {
-            return dynamoDBExecutor.updateItem(tableName, createKey(entity), DynamoDBExecutor.toUpdateItem(entity, namingPolicy), returnValues);
+            return dynamoDBExecutor.updateItem(tableName, createKey(entity), createUpdateItem(entity), returnValues);
         }
 
         /**
@@ -4271,6 +4277,16 @@ public final class DynamoDBExecutor implements AutoCloseable {
             }
 
             return key;
+        }
+
+        private Map<String, AttributeValueUpdate> createUpdateItem(final T entity) {
+            final Map<String, AttributeValueUpdate> attributeUpdates = DynamoDBExecutor.toUpdateItem(entity, namingPolicy);
+
+            for (final String keyPropName : keyPropNames) {
+                attributeUpdates.remove(keyPropName);
+            }
+
+            return attributeUpdates;
         }
 
         private Map<String, KeysAndAttributes> createKeys(final Collection<? extends T> entities) {

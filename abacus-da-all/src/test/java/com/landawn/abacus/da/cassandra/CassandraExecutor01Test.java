@@ -160,6 +160,18 @@ public class CassandraExecutor01Test extends TestBase {
     }
 
     @Test
+    public void testToListObjectClassReturnsRawRows() {
+        // Object.class is assignable from Row, so toList returns the raw driver Row objects
+        // (passthrough) without mapping or first-column extraction.
+        when(mockResultSet.all()).thenReturn(Arrays.asList(mockRow));
+
+        final List<Object> result = CassandraExecutor.toList(mockResultSet, Object.class);
+
+        assertEquals(1, result.size());
+        org.junit.jupiter.api.Assertions.assertSame(mockRow, result.get(0));
+    }
+
+    @Test
     public void testToEntity() {
         // Setup mock data
         when(mockRow.getColumnDefinitions()).thenReturn(mockColumnDefinitions);

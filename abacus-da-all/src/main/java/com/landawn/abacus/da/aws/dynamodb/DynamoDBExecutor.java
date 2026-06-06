@@ -616,7 +616,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @see #toAttributeValue(Object)
      */
     public static AttributeValueUpdate toAttributeValueUpdate(final Object value, final AttributeAction action) {
-        return new AttributeValueUpdate(toAttributeValue(value), action);
+        return new AttributeValueUpdate(value == null && AttributeAction.DELETE.equals(action) ? null : toAttributeValue(value), action);
     }
 
     /**
@@ -3712,7 +3712,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @throws IllegalArgumentException if entity is {@code null}
          */
         public UpdateItemResult updateItem(final T entity) {
-            return dynamoDBExecutor.updateItem(tableName, createKey(entity), DynamoDBExecutor.toUpdateItem(entity, namingPolicy));
+            return dynamoDBExecutor.updateItem(tableName, createKey(entity), createUpdateItem(entity));
         }
 
         /**
@@ -3733,7 +3733,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @throws IllegalArgumentException if entity is {@code null}
          */
         public UpdateItemResult updateItem(final T entity, final String returnValues) {
-            return dynamoDBExecutor.updateItem(tableName, createKey(entity), DynamoDBExecutor.toUpdateItem(entity, namingPolicy), returnValues);
+            return dynamoDBExecutor.updateItem(tableName, createKey(entity), createUpdateItem(entity), returnValues);
         }
 
         /**
@@ -4208,6 +4208,16 @@ public final class DynamoDBExecutor implements AutoCloseable {
             }
 
             return key;
+        }
+
+        private Map<String, AttributeValueUpdate> createUpdateItem(final T entity) {
+            final Map<String, AttributeValueUpdate> attributeUpdates = DynamoDBExecutor.toUpdateItem(entity, namingPolicy);
+
+            for (final String keyPropName : keyPropNames) {
+                attributeUpdates.remove(keyPropName);
+            }
+
+            return attributeUpdates;
         }
 
         private Map<String, KeysAndAttributes> createKeys(final Collection<? extends T> entities) {

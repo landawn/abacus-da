@@ -25,6 +25,7 @@ import org.bson.types.ObjectId;
 
 import com.landawn.abacus.annotation.Beta;
 import com.landawn.abacus.da.mongodb.MongoDBBase;
+import com.landawn.abacus.type.Type;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.function.Function;
@@ -1882,7 +1883,22 @@ public final class MongoCollectionExecutor {
     }
 
     private static <T> Function<Document, T> toEntity(final Class<T> rowType) {
-        return doc -> N.isEmpty(doc) ? null : MongoDB.readRow(doc, rowType);
+        return doc -> shouldReturnNullForEmptyDocument(doc, rowType) ? null : MongoDB.readRow(doc, rowType);
+    }
+
+    private static boolean shouldReturnNullForEmptyDocument(final Document doc, final Class<?> rowType) {
+        if (doc == null) {
+            return true;
+        }
+
+        if (doc.isEmpty() == false) {
+            return false;
+        }
+
+        final Type<?> targetType = rowType == null ? null : N.typeOf(rowType);
+
+        return targetType != null && targetType.isObjectArray() == false && targetType.isCollection() == false && targetType.isMap() == false
+                && targetType.isBean() == false;
     }
 
     private Flux<Document> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count) {
@@ -2391,6 +2407,8 @@ public final class MongoCollectionExecutor {
     }
 
     private static Bson toBson(final Object update) {
+        N.checkArgNotNull(update, "update");
+
         // Note: the second argument (isForUpdate) on MongoDBBase.toDocument is a dead flag, AND
         // MongoCollectionExecutor cannot see the protected (Object, boolean) overload from this
         // package — passing it silently resolved to the public Object... varargs and treated
@@ -2692,6 +2710,8 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if filter or replacement is null
      */
     public Mono<UpdateResult> replaceOne(final Bson filter, final Object replacement, final ReplaceOptions options) {
+        N.checkArgNotNull(replacement, "replacement");
+
         if (options == null) {
             return Mono.from(coll.replaceOne(filter, toDocument(replacement)));
         } else {
@@ -2799,7 +2819,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if filter or options is null
      */
     public Mono<DeleteResult> deleteOne(final Bson filter, final DeleteOptions options) {
-        return Mono.from(coll.deleteOne(filter, options));
+        return Mono.from(options == null ? coll.deleteOne(filter) : coll.deleteOne(filter, options));
     }
 
     /**
@@ -2860,7 +2880,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if filter or options is null
      */
     public Mono<DeleteResult> deleteMany(final Bson filter, final DeleteOptions options) {
-        return Mono.from(coll.deleteMany(filter, options));
+        return Mono.from(options == null ? coll.deleteMany(filter) : coll.deleteMany(filter, options));
     }
 
     /**
@@ -3364,6 +3384,8 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if filter or replacement is null
      */
     public Mono<Document> findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options) {
+        N.checkArgNotNull(replacement, "replacement");
+
         if (options == null) {
             return Mono.from(coll.findOneAndReplace(filter, toDocument(replacement)));
         } else {
@@ -3694,7 +3716,7 @@ public final class MongoCollectionExecutor {
      */
     @Beta
     public <T> Flux<T> groupBy(final String fieldName, final Class<T> rowType) {
-        return aggregate(N.asList(new Document(_$GROUP, new Document(MongoDBBase._ID, _$ + fieldName))), rowType);
+        return aggregate(groupByPipeline(fieldName, false, rowType), rowType);
     }
 
     /**
@@ -3747,7 +3769,7 @@ public final class MongoCollectionExecutor {
             groupFields.put(fieldName, _$ + fieldName);
         }
 
-        return aggregate(N.asList(new Document(_$GROUP, new Document(MongoDBBase._ID, groupFields))), rowType);
+        return aggregate(groupByPipeline(fieldNames, false, rowType), rowType);
     }
 
     /**
@@ -3800,7 +3822,7 @@ public final class MongoCollectionExecutor {
      */
     @Beta
     public <T> Flux<T> groupByAndCount(final String fieldName, final Class<T> rowType) {
-        return aggregate(N.asList(new Document(_$GROUP, new Document(MongoDBBase._ID, _$ + fieldName).append(_COUNT, new Document(_$SUM, 1)))), rowType);
+        return aggregate(groupByPipeline(fieldName, true, rowType), rowType);
     }
 
     /**
@@ -3853,7 +3875,59 @@ public final class MongoCollectionExecutor {
             groupFields.put(fieldName, _$ + fieldName);
         }
 
-        return aggregate(N.asList(new Document(_$GROUP, new Document(MongoDBBase._ID, groupFields).append(_COUNT, new Document(_$SUM, 1)))), rowType);
+        return aggregate(groupByPipeline(fieldNames, true, rowType), rowType);
+    }
+
+    private static List<Document> groupByPipeline(final String fieldName, final boolean count, final Class<?> rowType) {
+        final Document group = new Document(MongoDBBase._ID, _$ + fieldName);
+
+        if (count) {
+            group.append(_COUNT, new Document(_$SUM, 1));
+        }
+
+        if (Document.class.equals(rowType)) {
+            return N.asList(new Document(_$GROUP, group));
+        }
+
+        final Document project = new Document(MongoDBBase._ID, 0).append(fieldName, "$" + MongoDBBase._ID);
+
+        if (count) {
+            project.append(_COUNT, 1);
+        }
+
+        return N.asList(new Document(_$GROUP, group), new Document("$project", project));
+    }
+
+    private static List<Document> groupByPipeline(final Collection<String> fieldNames, final boolean count, final Class<?> rowType) {
+        N.checkArgNotEmpty(fieldNames, "fieldNames");
+
+        final Document groupFields = new Document();
+
+        for (final String fieldName : fieldNames) {
+            groupFields.put(fieldName, _$ + fieldName);
+        }
+
+        final Document group = new Document(MongoDBBase._ID, groupFields);
+
+        if (count) {
+            group.append(_COUNT, new Document(_$SUM, 1));
+        }
+
+        if (Document.class.equals(rowType)) {
+            return N.asList(new Document(_$GROUP, group));
+        }
+
+        final Document project = new Document(MongoDBBase._ID, 0);
+
+        for (final String fieldName : fieldNames) {
+            project.append(fieldName, "$" + MongoDBBase._ID + "." + fieldName);
+        }
+
+        if (count) {
+            project.append(_COUNT, 1);
+        }
+
+        return N.asList(new Document(_$GROUP, group), new Document("$project", project));
     }
 
     /**

@@ -66,6 +66,16 @@ public class AnyPutTest extends TestBase {
         private String name;
     }
 
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @ColumnFamily
+    public static class UserWithDefaultColumnFamilyAnnotation {
+        @Id
+        private String id;
+        private String name;
+    }
+
     // ---------------------------------------------------------------------
     // Factory methods: of(Object) and variants
     // ---------------------------------------------------------------------
@@ -636,6 +646,17 @@ public class AnyPutTest extends TestBase {
         assertNotNull(put);
         assertArrayEquals(Bytes.toBytes("u1"), put.getRow());
         assertTrue(put.has("profile", "user_name"));
+    }
+
+    @Test
+    public void testCreate_emptyColumnFamilyAnnotationUsesDefaultMapping() {
+        UserWithDefaultColumnFamilyAnnotation user = new UserWithDefaultColumnFamilyAnnotation("u1", "Alice");
+        AnyPut put = AnyPut.create(user);
+
+        assertNotNull(put);
+        assertArrayEquals(Bytes.toBytes("u1"), put.getRow());
+        assertTrue(put.has("name", HBaseExecutor.EMPTY_QUALIFIER));
+        assertFalse(put.has("name", "name"));
     }
 
     @Test

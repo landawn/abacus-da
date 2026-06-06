@@ -165,6 +165,11 @@ public class DynamoDBExecutor01Test extends TestBase {
         assertNotNull(result);
         assertEquals("test", result.getValue().getS());
         assertEquals(AttributeAction.DELETE.toString(), result.getAction());
+
+        result = DynamoDBExecutor.toAttributeValueUpdate(null, AttributeAction.DELETE);
+        assertNotNull(result);
+        assertNull(result.getValue());
+        assertEquals(AttributeAction.DELETE.toString(), result.getAction());
     }
 
     @Test
@@ -940,6 +945,16 @@ public class DynamoDBExecutor01Test extends TestBase {
 
         UpdateItemResult result = mapper.updateItem(entity);
         assertNotNull(result);
+
+        ArgumentCaptor<Map> keyCaptor = ArgumentCaptor.forClass(Map.class);
+        ArgumentCaptor<Map> updatesCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(mockDynamoDBClient).updateItem(eq("TestTable"), keyCaptor.capture(), updatesCaptor.capture());
+
+        Map<String, AttributeValue> key = keyCaptor.getValue();
+        Map<String, AttributeValueUpdate> updates = updatesCaptor.getValue();
+        assertTrue(key.containsKey("id"));
+        assertTrue(!updates.containsKey("id"));
+        assertTrue(updates.containsKey("name"));
     }
 
     @Test
@@ -1913,6 +1928,16 @@ public class DynamoDBExecutor01Test extends TestBase {
 
         UpdateItemResult result = mapper.updateItem(entity, "ALL_NEW");
         assertNotNull(result);
+
+        ArgumentCaptor<Map> keyCaptor = ArgumentCaptor.forClass(Map.class);
+        ArgumentCaptor<Map> updatesCaptor = ArgumentCaptor.forClass(Map.class);
+        verify(mockDynamoDBClient).updateItem(eq("TestTable"), keyCaptor.capture(), updatesCaptor.capture(), eq("ALL_NEW"));
+
+        Map<String, AttributeValue> key = keyCaptor.getValue();
+        Map<String, AttributeValueUpdate> updates = updatesCaptor.getValue();
+        assertTrue(key.containsKey("id"));
+        assertTrue(!updates.containsKey("id"));
+        assertTrue(updates.containsKey("name"));
     }
 
     // Mapper.updateItem(UpdateItemRequest) with no tableName set

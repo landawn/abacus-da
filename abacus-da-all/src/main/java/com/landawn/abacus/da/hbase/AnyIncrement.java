@@ -336,7 +336,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * AnyIncrement increment = AnyIncrement.of("row1");
      * Cell cell = CellUtil.createCell(Bytes.toBytes("row1"), Bytes.toBytes("cf"),
      *         Bytes.toBytes("q"), 0L, KeyValue.Type.Put.getCode(), Bytes.toBytes(1L));
-     * AnyIncrement same = increment.add(cell); // throws IOException
+     * AnyIncrement same = increment.add(cell); // succeeds: cell row matches this increment's row
      * same == increment;                       // true (returns this for chaining)
      * increment.hasFamilies();                 // returns true
      *

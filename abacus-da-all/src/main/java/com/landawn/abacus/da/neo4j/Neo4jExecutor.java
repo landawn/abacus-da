@@ -14,6 +14,7 @@
 
 package com.landawn.abacus.da.neo4j;
 
+import java.io.Serializable;
 import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -317,7 +318,7 @@ public final class Neo4jExecutor {
      * @see #load(Class, Long, int)
      * @see #loadAll(Class, Collection)
      */
-    public <T> T load(final Class<T> targetClass, final Long id) {
+    public <T, ID extends Serializable> T load(final Class<T> targetClass, final ID id) {
         final Session session = getSession();
 
         try {
@@ -351,7 +352,7 @@ public final class Neo4jExecutor {
      * @see #load(Class, Long)
      * @see #loadAll(Class, Collection, int)
      */
-    public <T> T load(final Class<T> targetClass, final Long id, final int depth) {
+    public <T, ID extends Serializable> T load(final Class<T> targetClass, final ID id, final int depth) {
         final Session session = getSession();
 
         try {
@@ -392,7 +393,7 @@ public final class Neo4jExecutor {
      * @see #loadAll(Class, Collection, int)
      * @see #load(Class, Long)
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<Long> ids) {
+    public <T, ID extends Serializable> Collection<T> loadAll(final Class<T> targetClass, final Collection<ID> ids) {
         final Session session = getSession();
 
         try {
@@ -430,7 +431,7 @@ public final class Neo4jExecutor {
      * @see #loadAll(Class, Collection)
      * @see #load(Class, Long, int)
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<Long> ids, final int depth) {
+    public <T, ID extends Serializable> Collection<T> loadAll(final Class<T> targetClass, final Collection<ID> ids, final int depth) {
         final Session session = getSession();
 
         try {
@@ -471,7 +472,7 @@ public final class Neo4jExecutor {
      * @see #loadAll(Class, Collection, SortOrder, int)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<Long> ids, final SortOrder sortOrder) {
+    public <T, ID extends Serializable> Collection<T> loadAll(final Class<T> targetClass, final Collection<ID> ids, final SortOrder sortOrder) {
         final Session session = getSession();
 
         try {
@@ -510,7 +511,8 @@ public final class Neo4jExecutor {
      * @see #loadAll(Class, Collection, SortOrder)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<Long> ids, final SortOrder sortOrder, final int depth) {
+    public <T, ID extends Serializable> Collection<T> loadAll(final Class<T> targetClass, final Collection<ID> ids, final SortOrder sortOrder,
+            final int depth) {
         final Session session = getSession();
 
         try {
@@ -549,7 +551,7 @@ public final class Neo4jExecutor {
      * @see #loadAll(Class, Collection, Pagination, int)
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<Long> ids, final Pagination pagination) {
+    public <T, ID extends Serializable> Collection<T> loadAll(final Class<T> targetClass, final Collection<ID> ids, final Pagination pagination) {
         final Session session = getSession();
 
         try {
@@ -588,7 +590,8 @@ public final class Neo4jExecutor {
      * @see #loadAll(Class, Collection, Pagination)
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<Long> ids, final Pagination pagination, final int depth) {
+    public <T, ID extends Serializable> Collection<T> loadAll(final Class<T> targetClass, final Collection<ID> ids, final Pagination pagination,
+            final int depth) {
         final Session session = getSession();
 
         try {
@@ -629,7 +632,8 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<Long> ids, final SortOrder sortOrder, final Pagination pagination) {
+    public <T, ID extends Serializable> Collection<T> loadAll(final Class<T> targetClass, final Collection<ID> ids, final SortOrder sortOrder,
+            final Pagination pagination) {
         final Session session = getSession();
 
         try {
@@ -673,8 +677,8 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<Long> ids, final SortOrder sortOrder, final Pagination pagination,
-            final int depth) {
+    public <T, ID extends Serializable> Collection<T> loadAll(final Class<T> targetClass, final Collection<ID> ids, final SortOrder sortOrder,
+            final Pagination pagination, final int depth) {
         final Session session = getSession();
 
         try {

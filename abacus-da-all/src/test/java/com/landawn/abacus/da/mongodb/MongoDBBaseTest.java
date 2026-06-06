@@ -96,6 +96,18 @@ public class MongoDBBaseTest extends TestBase {
     }
 
     @Test
+    public void testToEntityPreservesNullObjectIdFieldInSourceDocument() {
+        Document doc = new Document("_id", null).append("name", "test");
+
+        TestEntity result = MongoDBBase.toEntity(doc, TestEntity.class);
+
+        assertNotNull(result);
+        assertEquals("test", result.getName());
+        assertTrue(doc.containsKey("_id"));
+        assertNull(doc.get("_id"));
+    }
+
+    @Test
     public void testToEntityWithObjectIdField() {
         // Entity with ObjectId field type must assign ObjectId directly
         ObjectId oid = new ObjectId();

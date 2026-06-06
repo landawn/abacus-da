@@ -68,6 +68,18 @@ public class Neo4jExecutorTest extends TestBase {
         }
     }
 
+    public static class StringIdEntity {
+        private String id;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(String id) {
+            this.id = id;
+        }
+    }
+
     @BeforeEach
     public void setUp() {
         mockSessionFactory = mock(SessionFactory.class);
@@ -161,12 +173,33 @@ public class Neo4jExecutorTest extends TestBase {
     }
 
     @Test
+    public void testLoad_ByStringId() {
+        StringIdEntity entity = new StringIdEntity();
+        when(mockSession.load(StringIdEntity.class, "sku-1")).thenReturn(entity);
+
+        assertSame(entity, executor.load(StringIdEntity.class, "sku-1"));
+        verify(mockSession).load(StringIdEntity.class, "sku-1");
+    }
+
+    @Test
     public void testLoadAll_ByIds() {
         Collection<Long> ids = Arrays.asList(1L, 2L);
         Collection<Person> expected = Arrays.asList(new Person(), new Person());
         when(mockSession.loadAll(Person.class, ids)).thenReturn(expected);
         Collection<Person> actual = executor.loadAll(Person.class, ids);
         assertEquals(2, actual.size());
+    }
+
+    @Test
+    public void testLoadAll_ByStringIds() {
+        Collection<String> ids = Arrays.asList("sku-1", "sku-2");
+        Collection<StringIdEntity> expected = Arrays.asList(new StringIdEntity(), new StringIdEntity());
+        when(mockSession.loadAll(StringIdEntity.class, ids)).thenReturn(expected);
+
+        Collection<StringIdEntity> actual = executor.loadAll(StringIdEntity.class, ids);
+
+        assertEquals(2, actual.size());
+        verify(mockSession).loadAll(StringIdEntity.class, ids);
     }
 
     @Test

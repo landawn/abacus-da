@@ -19,6 +19,7 @@ import java.util.concurrent.ExecutionException;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -522,6 +523,14 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
         UpdateItemResponse result = future.get();
 
         assertNotNull(result);
+
+        ArgumentCaptor<UpdateItemRequest> requestCaptor = ArgumentCaptor.forClass(UpdateItemRequest.class);
+        verify(mockDynamoDbAsyncClient).updateItem(requestCaptor.capture());
+
+        UpdateItemRequest request = requestCaptor.getValue();
+        assertTrue(request.key().containsKey("id"));
+        assertTrue(!request.attributeUpdates().containsKey("id"));
+        assertTrue(request.attributeUpdates().containsKey("name"));
     }
 
     @Test

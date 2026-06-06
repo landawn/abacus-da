@@ -369,11 +369,10 @@ public class MongoCollectionExecutorTest extends TestBase {
         StepVerifier.create(result).expectNext(doc).verifyComplete();
     }
 
-    // Regression: an empty document (e.g. from an all-excluding projection) must complete empty,
-    // not error. toEntity(...) returns null for an empty doc, and Reactor's map() rejects a null
-    // mapper result with NullPointerException; mapNotNull(...) completes empty instead.
+    // Regression: an empty document (e.g. from an all-excluding projection) is still a matching
+    // MongoDB document for Document.class and must not be treated as "no document".
     @Test
-    public void testFindFirstWithEmptyDocumentCompletesEmptyNotError() {
+    public void testFindFirstWithEmptyDocumentReturnsDocument() {
         Collection<String> selectPropNames = Arrays.asList("name");
         Bson filter = new Document("active", true);
         Document emptyDoc = new Document();
@@ -385,14 +384,12 @@ public class MongoCollectionExecutorTest extends TestBase {
 
         Mono<Document> result = executor.findFirst(selectPropNames, filter, Document.class);
 
-        StepVerifier.create(result).verifyComplete();
+        StepVerifier.create(result).expectNext(emptyDoc).verifyComplete();
     }
 
-    // Regression: a field-less document in a multi-result stream must be skipped, not error the
-    // whole Flux. Before the fix, map() turned the null toEntity result into an NPE that aborted
-    // the stream after the first element; mapNotNull(...) skips it.
+    // Regression: a field-less document in a multi-result stream is still a Document.class result.
     @Test
-    public void testListSkipsEmptyDocumentInsteadOfErroring() {
+    public void testListIncludesEmptyDocumentForDocumentRowType() {
         Bson filter = new Document("active", true);
         int offset = 10;
         int count = 5;
@@ -406,7 +403,7 @@ public class MongoCollectionExecutorTest extends TestBase {
 
         Flux<Document> result = executor.list(filter, offset, count, Document.class);
 
-        StepVerifier.create(result).expectNext(populated).verifyComplete();
+        StepVerifier.create(result).expectNext(populated).expectNext(emptyDoc).verifyComplete();
     }
 
     @Test
@@ -1065,6 +1062,19 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
+    public void testDeleteOneWithNullOptionsUsesDefaultOverload() {
+        Bson filter = new Document("name", "test");
+        DeleteResult deleteResult = mock(DeleteResult.class);
+        Publisher<DeleteResult> publisher = Mono.just(deleteResult);
+        when(mockCollection.deleteOne(filter)).thenReturn(publisher);
+
+        Mono<DeleteResult> result = executor.deleteOne(filter, null);
+
+        StepVerifier.create(result).expectNext(deleteResult).verifyComplete();
+        verify(mockCollection).deleteOne(filter);
+    }
+
+    @Test
     public void testDeleteMany() {
         Bson filter = new Document("status", "deleted");
         DeleteResult deleteResult = mock(DeleteResult.class);
@@ -1087,6 +1097,19 @@ public class MongoCollectionExecutorTest extends TestBase {
         Mono<DeleteResult> result = executor.deleteMany(filter, options);
 
         StepVerifier.create(result).expectNext(deleteResult).verifyComplete();
+    }
+
+    @Test
+    public void testDeleteManyWithNullOptionsUsesDefaultOverload() {
+        Bson filter = new Document("status", "deleted");
+        DeleteResult deleteResult = mock(DeleteResult.class);
+        Publisher<DeleteResult> publisher = Mono.just(deleteResult);
+        when(mockCollection.deleteMany(filter)).thenReturn(publisher);
+
+        Mono<DeleteResult> result = executor.deleteMany(filter, null);
+
+        StepVerifier.create(result).expectNext(deleteResult).verifyComplete();
+        verify(mockCollection).deleteMany(filter);
     }
 
     @Test
@@ -1503,6 +1526,22 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
+    public void testGroupByAndCountTypedMapsSingleGroupKey() {
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenAnswer(invocation -> {
+            final List<?> pipeline = invocation.getArgument(0);
+            final Document row = pipeline.size() > 1 ? new Document("department", "sales").append("count", 2)
+                    : new Document("_id", "sales").append("count", 2);
+
+            stubEmits(mockAggregatePublisher, row);
+            return mockAggregatePublisher;
+        });
+
+        StepVerifier.create(executor.groupByAndCount("department", GroupRow.class))
+                .expectNextMatches(row -> "sales".equals(row.getDepartment()) && row.getCount() == 2)
+                .verifyComplete();
+    }
+
+    @Test
     public void testGroupByAndCountWithFieldNames() {
         Collection<String> fieldNames = Arrays.asList("category", "brand");
         List<Document> groupResults = Arrays
@@ -1795,11 +1834,9 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     /**
-     * Regression test for the missing {@code N.isEmpty(doc)} guard in the private
-     * {@code toEntity(Class)} mapper. The non-reactive executor maps an empty Document
-     * to {@code null}; the reactive version was mapping it directly via
-     * {@code MongoDB.readRow(doc, rowType)}, which for a wrapper type like Integer
-     * produced a bogus default value (0) instead of treating "no data" as null.
+     * Regression test for empty scalar projections in the private {@code toEntity(Class)}
+     * mapper. Document.class keeps an empty document as a real result, but scalar row types
+     * must still treat a field-less document as no projected value.
      *
      * <p>{@code toEntity(Class)} maps an empty Document to {@code null}. The reactive
      * pipeline uses {@code mapNotNull(...)} (not {@code map(...)}), so a {@code null}
@@ -2199,5 +2236,58 @@ public class MongoCollectionExecutorTest extends TestBase {
             Flux.fromArray(items).subscribe((Subscriber<? super T>) invocation.getArgument(0));
             return null;
         }).when(publisher).subscribe(any());
+    }
+
+    // ========= Regression: null update/replacement must throw IllegalArgumentException eagerly, not NPE =========
+
+    @Test
+    public void testUpdateOneWithNullUpdateThrowsIAE() {
+        Document filter = new Document("id", 1);
+        assertThrows(IllegalArgumentException.class, () -> executor.updateOne(filter, (Object) null));
+    }
+
+    @Test
+    public void testUpdateManyWithNullUpdateThrowsIAE() {
+        Document filter = new Document("id", 1);
+        assertThrows(IllegalArgumentException.class, () -> executor.updateMany(filter, (Object) null));
+    }
+
+    @Test
+    public void testReplaceOneWithNullReplacementThrowsIAE() {
+        Document filter = new Document("id", 1);
+        assertThrows(IllegalArgumentException.class, () -> executor.replaceOne(filter, (Object) null));
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithNullUpdateThrowsIAE() {
+        Document filter = new Document("id", 1);
+        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndUpdate(filter, (Object) null));
+    }
+
+    @Test
+    public void testFindOneAndReplaceWithNullReplacementThrowsIAE() {
+        Document filter = new Document("id", 1);
+        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndReplace(filter, (Object) null));
+    }
+
+    public static class GroupRow {
+        private String department;
+        private int count;
+
+        public String getDepartment() {
+            return department;
+        }
+
+        public void setDepartment(String department) {
+            this.department = department;
+        }
+
+        public int getCount() {
+            return count;
+        }
+
+        public void setCount(int count) {
+            this.count = count;
+        }
     }
 }

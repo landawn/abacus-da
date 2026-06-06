@@ -20,9 +20,11 @@ import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
 import java.util.function.BiFunction;
@@ -435,15 +437,17 @@ public final class HBaseExecutor implements AutoCloseable {
 
             final BeanInfo entityInfo = ParserUtil.getBeanInfo(entityClass);
             final ColumnFamily defaultColumnFamilyAnno = entityInfo.getAnnotation(ColumnFamily.class);
-            final String defaultColumnFamilyName = defaultColumnFamilyAnno == null ? null : getAnnotatedColumnFamily(defaultColumnFamilyAnno);
+            final String defaultColumnFamilyName = hasColumnFamilyValue(defaultColumnFamilyAnno) ? getAnnotatedColumnFamily(defaultColumnFamilyAnno) : null;
 
             for (final PropInfo propInfo : entityInfo.propInfoList) {
                 String columnFamilyName = null;
                 String columnName = null;
                 boolean hasColumnAnnotation = false;
 
-                if (propInfo.isAnnotationPresent(ColumnFamily.class)) {
-                    columnFamilyName = getAnnotatedColumnFamily(propInfo.getAnnotation(ColumnFamily.class));
+                final ColumnFamily propColumnFamilyAnno = propInfo.getAnnotation(ColumnFamily.class);
+
+                if (hasColumnFamilyValue(propColumnFamilyAnno)) {
+                    columnFamilyName = getAnnotatedColumnFamily(propColumnFamilyAnno);
                 } else if (Strings.isNotEmpty(defaultColumnFamilyName)) {
                     columnFamilyName = defaultColumnFamilyName;
                 } else {
@@ -471,7 +475,7 @@ public final class HBaseExecutor implements AutoCloseable {
         if (familyColumnFieldNameMapTP == null) {
             final BeanInfo entityInfo = ParserUtil.getBeanInfo(entityClass);
             final ColumnFamily defaultColumnFamily = entityInfo.getAnnotation(ColumnFamily.class);
-            final String defaultColumnFamilyName = defaultColumnFamily == null ? null : getAnnotatedColumnFamily(defaultColumnFamily);
+            final String defaultColumnFamilyName = hasColumnFamilyValue(defaultColumnFamily) ? getAnnotatedColumnFamily(defaultColumnFamily) : null;
 
             familyColumnFieldNameMapTP = Tuple.of(new HashMap<>(), new HashMap<>(entityInfo.propInfoList.size()));
 
@@ -482,8 +486,10 @@ public final class HBaseExecutor implements AutoCloseable {
                 List<String> columnNames = null;
                 boolean hasColumnAnnotation = false;
 
-                if (propInfo.isAnnotationPresent(ColumnFamily.class)) {
-                    columnFamilyNames = N.asList(getAnnotatedColumnFamily(propInfo.getAnnotation(ColumnFamily.class)));
+                final ColumnFamily propColumnFamilyAnno = propInfo.getAnnotation(ColumnFamily.class);
+
+                if (hasColumnFamilyValue(propColumnFamilyAnno)) {
+                    columnFamilyNames = N.asList(getAnnotatedColumnFamily(propColumnFamilyAnno));
                 } else if (Strings.isNotEmpty(defaultColumnFamilyName)) {
                     columnFamilyNames = N.asList(defaultColumnFamilyName);
                 } else {
@@ -500,10 +506,9 @@ public final class HBaseExecutor implements AutoCloseable {
                     columnNames = Stream.of(NamingPolicy.values())
                             .map(it -> formatName(propInfo.name, it))
                             .filter(it -> !finalFamilyColumnFieldNameMapTP._2.containsKey(it))
-                            .transform(s -> propInfo.type.isBean()
-                                    || (Strings.isEmpty(defaultColumnFamilyName) && !propInfo.isAnnotationPresent(ColumnFamily.class))
-                                            ? s.append(EMPTY_QUALIFIER)
-                                            : s)
+                            .transform(s -> propInfo.type.isBean() || (Strings.isEmpty(defaultColumnFamilyName) && !hasColumnFamilyValue(propColumnFamilyAnno))
+                                    ? s.append(EMPTY_QUALIFIER)
+                                    : s)
                             .toList();
                 }
 
@@ -529,6 +534,10 @@ public final class HBaseExecutor implements AutoCloseable {
         }
 
         return familyColumnFieldNameMapTP;
+    }
+
+    static boolean hasColumnFamilyValue(final ColumnFamily columnFamily) {
+        return columnFamily != null && Strings.isNotEmpty(columnFamily.value());
     }
 
     private static String getAnnotatedColumnFamily(final ColumnFamily defaultColumnFamilyAnno) {
@@ -784,7 +793,7 @@ public final class HBaseExecutor implements AutoCloseable {
 
             final Cell cell = cellScanner.current();
 
-            final T value = type.valueOf(getValueString(cell));
+            final T value = (T) getCellValue(cell, type);
 
             if (cellScanner.advance()) {
                 throw new IllegalArgumentException("Cannot convert result with columns: " + getFamilyString(cell) + ":" + getQualifierString(cell)
@@ -827,6 +836,7 @@ public final class HBaseExecutor implements AutoCloseable {
             Type<?> columnValueType = null;
             Map<String, Tuple2<String, Boolean>> familyTPMap = null;
             Tuple2<String, Boolean> familyTP = null;
+            Set<String> assignedSingleVersionColumns = null;
 
             Map<String, Type<?>> columnValueTypeMap = null;
             Collection<HBaseColumn<?>> columnColl = null;
@@ -839,7 +849,7 @@ public final class HBaseExecutor implements AutoCloseable {
                 final Cell cell = cellScanner.current();
 
                 if (rowKeyType != null && rowKey == null) {
-                    rowKey = rowKeyType.valueOf(getRowKeyString(cell));
+                    rowKey = getRowKeyValue(cell, rowKeyType);
                     Beans.setPropValue(entity, rowKeySetMethod, rowKey);
                 }
 
@@ -856,7 +866,7 @@ public final class HBaseExecutor implements AutoCloseable {
                         final Map<String, Type<?>> familyTypeMap = familyColumnValueTypeMap.get(family);
                         if (familyTypeMap != null) {
                             columnValueType = familyTypeMap.get(qualifier);
-                            column = HBaseColumn.valueOf(columnValueType.valueOf(getValueString(cell)), cell.getTimestamp()); //NOSONAR
+                            column = HBaseColumn.valueOf(getCellValue(cell, columnValueType), cell.getTimestamp()); //NOSONAR
                             columnMap.put(column.version(), column);
 
                             continue;
@@ -874,7 +884,7 @@ public final class HBaseExecutor implements AutoCloseable {
                         final Map<String, Type<?>> familyTypeMap = familyColumnValueTypeMap.get(family);
                         if (familyTypeMap != null) {
                             columnValueType = familyTypeMap.get(qualifier);
-                            column = HBaseColumn.valueOf(columnValueType.valueOf(getValueString(cell)), cell.getTimestamp());
+                            column = HBaseColumn.valueOf(getCellValue(cell, columnValueType), cell.getTimestamp());
                             columnColl.add(column);
 
                             continue;
@@ -957,7 +967,7 @@ public final class HBaseExecutor implements AutoCloseable {
 
                         columnMapMap.put(qualifier, columnMap);
 
-                        column = HBaseColumn.valueOf(columnValueType.valueOf(getValueString(cell)), cell.getTimestamp());
+                        column = HBaseColumn.valueOf(getCellValue(cell, columnValueType), cell.getTimestamp());
                         columnMap.put(column.version(), column);
                     } else if (columnPropInfo.jsonXmlType.isCollection()
                             && columnPropInfo.jsonXmlType.parameterTypes().get(0).javaType().equals(HBaseColumn.class)) {
@@ -989,7 +999,7 @@ public final class HBaseExecutor implements AutoCloseable {
 
                         columnCollectionMap.put(qualifier, columnColl);
 
-                        column = HBaseColumn.valueOf(columnValueType.valueOf(getValueString(cell)), cell.getTimestamp());
+                        column = HBaseColumn.valueOf(getCellValue(cell, columnValueType), cell.getTimestamp());
                         columnColl.add(column);
                     } else if (columnPropInfo.jsonXmlType.javaType().equals(HBaseColumn.class)) {
                         if (familyColumnValueTypeMap == null) {
@@ -1010,11 +1020,27 @@ public final class HBaseExecutor implements AutoCloseable {
                             columnValueTypeMap.put(qualifier, columnValueType);
                         }
 
-                        column = HBaseColumn.valueOf(columnValueType.valueOf(getValueString(cell)), cell.getTimestamp());
+                        if (assignedSingleVersionColumns == null) {
+                            assignedSingleVersionColumns = new HashSet<>();
+                        }
+
+                        if (assignedSingleVersionColumns.add(family + '\0' + qualifier) == false) {
+                            continue;
+                        }
+
+                        column = HBaseColumn.valueOf(getCellValue(cell, columnValueType), cell.getTimestamp());
 
                         columnPropInfo.setPropValue(propEntity, column);
                     } else {
-                        columnPropInfo.setPropValue(propEntity, columnPropInfo.jsonXmlType.valueOf(getValueString(cell)));
+                        if (assignedSingleVersionColumns == null) {
+                            assignedSingleVersionColumns = new HashSet<>();
+                        }
+
+                        if (assignedSingleVersionColumns.add(family + '\0' + qualifier) == false) {
+                            continue;
+                        }
+
+                        columnPropInfo.setPropValue(propEntity, getCellValue(cell, columnPropInfo.jsonXmlType));
                     }
 
                 } else if (familyPropInfo.jsonXmlType.isMap() && familyPropInfo.jsonXmlType.parameterTypes().get(1).javaType().equals(HBaseColumn.class)) {
@@ -1046,7 +1072,7 @@ public final class HBaseExecutor implements AutoCloseable {
 
                     columnMapMap.put(qualifier, columnMap);
 
-                    column = HBaseColumn.valueOf(columnValueType.valueOf(getValueString(cell)), cell.getTimestamp());
+                    column = HBaseColumn.valueOf(getCellValue(cell, columnValueType), cell.getTimestamp());
                     columnMap.put(column.version(), column);
                 } else if (familyPropInfo.jsonXmlType.isCollection()
                         && familyPropInfo.jsonXmlType.parameterTypes().get(0).javaType().equals(HBaseColumn.class)) {
@@ -1078,7 +1104,7 @@ public final class HBaseExecutor implements AutoCloseable {
 
                     columnCollectionMap.put(qualifier, columnColl);
 
-                    column = HBaseColumn.valueOf(columnValueType.valueOf(getValueString(cell)), cell.getTimestamp());
+                    column = HBaseColumn.valueOf(getCellValue(cell, columnValueType), cell.getTimestamp());
                     columnColl.add(column);
                 } else if (familyPropInfo.jsonXmlType.javaType().equals(HBaseColumn.class)) {
                     if (familyColumnValueTypeMap == null) {
@@ -1099,11 +1125,27 @@ public final class HBaseExecutor implements AutoCloseable {
                         columnValueTypeMap.put(qualifier, columnValueType);
                     }
 
-                    column = HBaseColumn.valueOf(columnValueType.valueOf(getValueString(cell)), cell.getTimestamp());
+                    if (assignedSingleVersionColumns == null) {
+                        assignedSingleVersionColumns = new HashSet<>();
+                    }
+
+                    if (assignedSingleVersionColumns.add(family + '\0' + qualifier) == false) {
+                        continue;
+                    }
+
+                    column = HBaseColumn.valueOf(getCellValue(cell, columnValueType), cell.getTimestamp());
 
                     familyPropInfo.setPropValue(entity, column);
                 } else {
-                    familyPropInfo.setPropValue(entity, familyPropInfo.jsonXmlType.valueOf(getValueString(cell)));
+                    if (assignedSingleVersionColumns == null) {
+                        assignedSingleVersionColumns = new HashSet<>();
+                    }
+
+                    if (assignedSingleVersionColumns.add(family + '\0' + qualifier) == false) {
+                        continue;
+                    }
+
+                    familyPropInfo.setPropValue(entity, getCellValue(cell, familyPropInfo.jsonXmlType));
                 }
             }
 
@@ -1117,7 +1159,7 @@ public final class HBaseExecutor implements AutoCloseable {
 
             final Cell cell = cellScanner.current();
 
-            final T value = type.valueOf(getValueString(cell));
+            final T value = (T) getCellValue(cell, type);
 
             if (cellScanner.advance()) {
                 throw new IllegalArgumentException("Cannot convert result with columns: " + getFamilyString(cell) + ":" + getQualifierString(cell)
@@ -1130,6 +1172,22 @@ public final class HBaseExecutor implements AutoCloseable {
 
     private static <T> Function<Result, T> createRowMapper(final Class<T> targetType) {
         return t -> toValue(t, targetType);
+    }
+
+    private static Object getRowKeyValue(final Cell cell, final Type<?> targetType) {
+        return byte[].class.equals(targetType.javaType()) ? copyOf(cell.getRowArray(), cell.getRowOffset(), cell.getRowLength())
+                : targetType.valueOf(getRowKeyString(cell));
+    }
+
+    private static Object getCellValue(final Cell cell, final Type<?> targetType) {
+        return byte[].class.equals(targetType.javaType()) ? copyOf(cell.getValueArray(), cell.getValueOffset(), cell.getValueLength())
+                : targetType.valueOf(getValueString(cell));
+    }
+
+    private static byte[] copyOf(final byte[] bytes, final int offset, final int len) {
+        final byte[] result = new byte[len];
+        System.arraycopy(bytes, offset, result, 0, len);
+        return result;
     }
 
     static <T> void checkEntityClass(final Class<T> targetType) {

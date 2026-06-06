@@ -86,14 +86,13 @@ public class AsyncCassandraExecutorTest extends TestBase {
 
     @Test
     public void testExecute_StringOnly_DelegatesToSession() {
-        when(mockExecutor.prepareStatement(anyString())).thenReturn(mockStatement);
-        when(mockSession.executeAsync(any(Statement.class))).thenReturn(completed(mockAsyncRS));
+        when(mockExecutor.prepareStatement("SELECT * FROM t")).thenReturn(mockStatement);
+        when(mockSession.executeAsync(mockStatement)).thenReturn(completed(mockAsyncRS));
 
         ContinuableFuture<ResultSet> future = async.execute("SELECT * FROM t");
 
         assertNotNull(future);
-        verify(mockExecutor).prepareStatement("SELECT * FROM t");
-        verify(mockSession).executeAsync((Statement<?>) mockStatement);
+        verify(mockSession).executeAsync(mockStatement);
     }
 
     @Test
@@ -133,8 +132,8 @@ public class AsyncCassandraExecutorTest extends TestBase {
 
     @Test
     public void testExecute_String_FutureGetReturnsResultSet() throws Exception {
-        when(mockExecutor.prepareStatement(anyString())).thenReturn(mockStatement);
-        when(mockSession.executeAsync(any(Statement.class))).thenReturn(completed(mockAsyncRS));
+        when(mockExecutor.prepareStatement("SELECT * FROM t")).thenReturn(mockStatement);
+        when(mockSession.executeAsync(mockStatement)).thenReturn(completed(mockAsyncRS));
 
         ResultSet result = async.execute("SELECT * FROM t").get();
         assertNotNull(result);
@@ -236,9 +235,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(mockAsyncRS.currentPage()).thenReturn(Arrays.asList(row));
         when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(completed(mockAsyncRS));
-        @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, Integer> mapper = (Function) (Function<Row, Integer>) r -> 42;
-        when(mockExecutor.createRowMapper(eq(Integer.class))).thenReturn(mapper);
+        when(mockExecutor.readFirstColumn(row, Integer.class)).thenReturn(42);
 
         Nullable<Integer> result = async.queryForSingleValue(Integer.class, "SELECT v FROM t WHERE id = ?", 1).get();
         assertTrue(result.isPresent());
@@ -263,9 +260,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(mockAsyncRS.currentPage()).thenReturn(Arrays.asList(row));
         when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(completed(mockAsyncRS));
-        @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, Integer> mapper = (Function) (Function<Row, Integer>) r -> 99;
-        when(mockExecutor.createRowMapper(eq(Integer.class))).thenReturn(mapper);
+        when(mockExecutor.readFirstColumn(row, Integer.class)).thenReturn(99);
 
         Optional<Integer> result = async.queryForSingleNonNull(Integer.class, "SELECT v FROM t WHERE id = ?", 1).get();
         assertTrue(result.isPresent());

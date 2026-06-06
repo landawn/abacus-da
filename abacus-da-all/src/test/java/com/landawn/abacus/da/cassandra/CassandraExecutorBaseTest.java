@@ -225,7 +225,11 @@ public class CassandraExecutorBaseTest extends TestBase {
     @Test
     public void testBatchDelete() {
         // Test batch delete entities
-        List<TestEntity> entities = Arrays.asList(new TestEntity(), new TestEntity());
+        TestEntity e1 = new TestEntity();
+        e1.setId(1L);
+        TestEntity e2 = new TestEntity();
+        e2.setId(2L);
+        List<TestEntity> entities = Arrays.asList(e1, e2);
         TestResultSet result1 = executor.batchDelete(entities);
         assertNotNull(result1);
 
@@ -487,7 +491,11 @@ public class CassandraExecutorBaseTest extends TestBase {
         assertNotNull(asyncInsert2);
 
         // Test async batch insert
-        List<TestEntity> entities = Arrays.asList(new TestEntity(), new TestEntity());
+        TestEntity e1 = new TestEntity();
+        e1.setId(1L);
+        TestEntity e2 = new TestEntity();
+        e2.setId(2L);
+        List<TestEntity> entities = Arrays.asList(e1, e2);
         ContinuableFuture<TestResultSet> asyncBatchInsert1 = executor.async().batchInsert(entities, TestBatchType.LOGGED);
         assertNotNull(asyncBatchInsert1);
 
@@ -860,10 +868,8 @@ public class CassandraExecutorBaseTest extends TestBase {
         CompositeKeyEntity b = new CompositeKeyEntity();
         b.setUserId("u2");
         b.setSessionId("s2");
-        Condition cond = TestCassandraExecutor.exposedEntityToConditionCollection(CompositeKeyEntity.class, Arrays.asList(a, b));
-        assertNotNull(cond);
-        // Composite-key collection -> OR over per-entity AND clauses
-        assertTrue(cond.toString().toLowerCase().contains("or"));
+
+        assertThrows(IllegalArgumentException.class, () -> TestCassandraExecutor.exposedEntityToConditionCollection(CompositeKeyEntity.class, Arrays.asList(a, b)));
     }
 
     @Test
@@ -903,6 +909,14 @@ public class CassandraExecutorBaseTest extends TestBase {
     }
 
     @Test
+    public void testPrepareUpdate_entityMissingKey_throwsIAE() {
+        TestEntity e = new TestEntity();
+        e.setName("u1");
+
+        assertThrows(IllegalArgumentException.class, () -> executor.exposedPrepareUpdate(e, Arrays.asList("name")));
+    }
+
+    @Test
     public void testPrepareUpdate_classMapCondition() {
         Map<String, Object> props = new HashMap<>();
         props.put("name", "x");
@@ -915,9 +929,8 @@ public class CassandraExecutorBaseTest extends TestBase {
     public void testPrepareUpdate_classMapNullCondition() {
         Map<String, Object> props = new HashMap<>();
         props.put("name", "x");
-        SP sp = executor.exposedPrepareUpdate(TestEntity.class, props, null);
-        assertNotNull(sp);
-        assertTrue(sp.query().toUpperCase().contains("UPDATE"));
+
+        assertThrows(IllegalArgumentException.class, () -> executor.exposedPrepareUpdate(TestEntity.class, props, null));
     }
 
     @Test
@@ -936,9 +949,7 @@ public class CassandraExecutorBaseTest extends TestBase {
 
     @Test
     public void testPrepareDelete_nullCondition() {
-        SP sp = executor.exposedPrepareDelete(TestEntity.class, null, null);
-        assertNotNull(sp);
-        assertTrue(sp.query().toUpperCase().contains("DELETE"));
+        assertThrows(IllegalArgumentException.class, () -> executor.exposedPrepareDelete(TestEntity.class, null, null));
     }
 
     @Test
@@ -1438,6 +1449,11 @@ public class CassandraExecutorBaseTest extends TestBase {
                     throw new RuntimeException(e);
                 }
             };
+        }
+
+        @Override
+        protected <T> T readFirstColumn(TestRow row, Class<T> targetClass) {
+            return null;
         }
     }
 

@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -37,11 +38,13 @@ import com.landawn.abacus.util.u.OptionalLong;
 import com.landawn.abacus.util.u.OptionalShort;
 import com.landawn.abacus.util.stream.Stream;
 import com.mongodb.bulk.BulkWriteResult;
+import com.mongodb.client.AggregateIterable;
 import com.mongodb.client.ChangeStreamIterable;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCollection;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.model.CountOptions;
+import com.mongodb.client.model.DeleteOptions;
 import com.mongodb.client.model.EstimatedDocumentCountOptions;
 import com.mongodb.client.model.InsertManyOptions;
 import com.mongodb.client.model.InsertOneOptions;
@@ -231,6 +234,28 @@ public class MongoCollectionExecutorTest extends TestBase {
 
         Optional<Document> result = executor.findFirst(filter, Document.class);
         Assertions.assertTrue(result.isPresent());
+    }
+
+    @Test
+    public void testFindFirstWithEmptyDocumentRowTypeReturnsDocument() {
+        Document filter = new Document("active", true);
+        Document doc = new Document();
+        when(mockFindIterable.first()).thenReturn(doc);
+
+        Optional<Document> result = executor.findFirst(filter, Document.class);
+
+        Assertions.assertTrue(result.isPresent());
+        Assertions.assertTrue(result.get().isEmpty());
+    }
+
+    @Test
+    public void testFindFirstWithScalarRowTypeSkipsEmptyDocument() {
+        Document filter = new Document("active", true);
+        when(mockFindIterable.first()).thenReturn(new Document());
+
+        Optional<Integer> result = executor.findFirst(filter, Integer.class);
+
+        Assertions.assertFalse(result.isPresent());
     }
 
     @Test
@@ -692,6 +717,30 @@ public class MongoCollectionExecutorTest extends TestBase {
 
         Stream<Document> result = executor.groupByAndCount(fieldName);
         Assertions.assertNotNull(result);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testGroupByAndCountTypedMapsSingleGroupKey() {
+        final AggregateIterable<Document> aggregateIterable = mock(AggregateIterable.class);
+        final MongoCursor<Document> cursor = mock(MongoCursor.class);
+
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenAnswer(invocation -> {
+            final List<?> pipeline = invocation.getArgument(0);
+            final Document row = pipeline.size() > 1 ? new Document("department", "sales").append("count", 2)
+                    : new Document("_id", "sales").append("count", 2);
+
+            when(aggregateIterable.iterator()).thenReturn(cursor);
+            when(cursor.hasNext()).thenReturn(true, false);
+            when(cursor.next()).thenReturn(row);
+            return aggregateIterable;
+        });
+
+        final List<GroupRow> rows = executor.groupByAndCount("department", GroupRow.class).toList();
+
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals("sales", rows.get(0).getDepartment());
+        Assertions.assertEquals(2, rows.get(0).getCount());
     }
 
     @Test
@@ -1172,6 +1221,19 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
+    public void testDeleteOneWithNullOptionsUsesDefaultOverload() {
+        Document filter = new Document("status", "x");
+        DeleteResult deleteResult = mock(DeleteResult.class);
+        when(mockCollection.deleteOne(filter)).thenReturn(deleteResult);
+
+        DeleteResult result = executor.deleteOne(filter, (DeleteOptions) null);
+
+        Assertions.assertSame(deleteResult, result);
+        verify(mockCollection).deleteOne(filter);
+        verify(mockCollection, times(0)).deleteOne(any(Bson.class), any(DeleteOptions.class));
+    }
+
+    @Test
     public void testDeleteManyWithFilterAndOptions() {
         Document filter = new Document("status", "x");
         com.mongodb.client.model.DeleteOptions options = new com.mongodb.client.model.DeleteOptions();
@@ -1180,6 +1242,19 @@ public class MongoCollectionExecutorTest extends TestBase {
 
         DeleteResult result = executor.deleteMany(filter, options);
         Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testDeleteManyWithNullOptionsUsesDefaultOverload() {
+        Document filter = new Document("status", "x");
+        DeleteResult deleteResult = mock(DeleteResult.class);
+        when(mockCollection.deleteMany(filter)).thenReturn(deleteResult);
+
+        DeleteResult result = executor.deleteMany(filter, (DeleteOptions) null);
+
+        Assertions.assertSame(deleteResult, result);
+        verify(mockCollection).deleteMany(filter);
+        verify(mockCollection, times(0)).deleteMany(any(Bson.class), any(DeleteOptions.class));
     }
 
     @Test
@@ -1620,6 +1695,59 @@ public class MongoCollectionExecutorTest extends TestBase {
 
         public void setName(String name) {
             this.name = name;
+        }
+    }
+
+    // ========= Regression: null update/replacement must throw IllegalArgumentException (documented), not NPE =========
+
+    @Test
+    public void testUpdateOneWithNullUpdateThrowsIAE() {
+        Document filter = new Document("id", 1);
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.updateOne(filter, (Object) null));
+    }
+
+    @Test
+    public void testUpdateManyWithNullUpdateThrowsIAE() {
+        Document filter = new Document("id", 1);
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.updateMany(filter, (Object) null));
+    }
+
+    @Test
+    public void testReplaceOneWithNullReplacementThrowsIAE() {
+        Document filter = new Document("id", 1);
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.replaceOne(filter, (Object) null));
+    }
+
+    @Test
+    public void testFindOneAndUpdateWithNullUpdateThrowsIAE() {
+        Document filter = new Document("id", 1);
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndUpdate(filter, (Object) null));
+    }
+
+    @Test
+    public void testFindOneAndReplaceWithNullReplacementThrowsIAE() {
+        Document filter = new Document("id", 1);
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndReplace(filter, (Object) null));
+    }
+
+    public static class GroupRow {
+        private String department;
+        private int count;
+
+        public String getDepartment() {
+            return department;
+        }
+
+        public void setDepartment(String department) {
+            this.department = department;
+        }
+
+        public int getCount() {
+            return count;
+        }
+
+        public void setCount(int count) {
+            this.count = count;
         }
     }
 }

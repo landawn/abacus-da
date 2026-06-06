@@ -907,7 +907,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
         }
 
         final AnyPut anyPut = new AnyPut(Beans.<Object> getPropValue(entity, rowKeyGetMethod));
-        final boolean annotatedByDefaultColumnFamily = entityInfo.isAnnotationPresent(ColumnFamily.class);
+        final boolean annotatedByDefaultColumnFamily = HBaseExecutor.hasColumnFamilyValue(entityInfo.getAnnotation(ColumnFamily.class));
 
         PropInfo columnPropInfo = null;
         Collection<HBaseColumn<?>> columnColl = null;
@@ -929,7 +929,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
             }
 
             tp = classFamilyColumnNameMap.get(propInfo.name);
-            columnName = tp._3 || annotatedByDefaultColumnFamily || propInfo.isAnnotationPresent(ColumnFamily.class) ? tp._2 : HBaseExecutor.EMPTY_QUALIFIER; //NOSONAR
+            columnName = tp._3 || annotatedByDefaultColumnFamily || HBaseExecutor.hasColumnFamilyValue(propInfo.getAnnotation(ColumnFamily.class)) ? tp._2
+                    : HBaseExecutor.EMPTY_QUALIFIER; //NOSONAR
 
             if (propInfo.jsonXmlType.isBean() && !tp._3) { //NOSONAR
                 final Map<String, Tuple3<String, String, Boolean>> propEntityFamilyColumnNameMap = HBaseExecutor.getClassFamilyColumnNameMap(propInfo.clazz,

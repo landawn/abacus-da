@@ -182,6 +182,11 @@ public class CosmosContainerExecutor {
 
     // private static final BiConsumer<StringBuilder, String> handlerForNamedParameter = (sb, propName) -> sb.append("@").append(propName);
 
+    // Cosmos DB SQL requires every property reference to be bound to the FROM source/alias; bare
+    // identifiers (e.g. "category") are a syntax error. Building with this alias makes SqlBuilder
+    // emit a Cosmos-valid form, e.g. SELECT c.id FROM entity c WHERE c.category = 'x'.
+    private static final String COSMOS_ALIAS = "c";
+
     private final CosmosContainer cosmosContainer;
     private final NamingPolicy namingPolicy;
 
@@ -1814,27 +1819,27 @@ public class CosmosContainerExecutor {
         switch (namingPolicy) {
             case SNAKE_CASE:
                 if (N.isEmpty(selectPropNames)) {
-                    sqlBuilder = SCSB.selectFrom(targetClass);
+                    sqlBuilder = SCSB.selectFrom(targetClass, COSMOS_ALIAS);
                 } else {
-                    sqlBuilder = SCSB.select(selectPropNames).from(targetClass);
+                    sqlBuilder = SCSB.select(selectPropNames).from(targetClass, COSMOS_ALIAS);
                 }
 
                 break;
 
             case SCREAMING_SNAKE_CASE:
                 if (N.isEmpty(selectPropNames)) {
-                    sqlBuilder = ACSB.selectFrom(targetClass);
+                    sqlBuilder = ACSB.selectFrom(targetClass, COSMOS_ALIAS);
                 } else {
-                    sqlBuilder = ACSB.select(selectPropNames).from(targetClass);
+                    sqlBuilder = ACSB.select(selectPropNames).from(targetClass, COSMOS_ALIAS);
                 }
 
                 break;
 
             case CAMEL_CASE:
                 if (N.isEmpty(selectPropNames)) {
-                    sqlBuilder = LCSB.selectFrom(targetClass);
+                    sqlBuilder = LCSB.selectFrom(targetClass, COSMOS_ALIAS);
                 } else {
-                    sqlBuilder = LCSB.select(selectPropNames).from(targetClass);
+                    sqlBuilder = LCSB.select(selectPropNames).from(targetClass, COSMOS_ALIAS);
                 }
 
                 break;

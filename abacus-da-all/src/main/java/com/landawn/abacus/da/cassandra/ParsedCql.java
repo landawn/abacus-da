@@ -233,7 +233,11 @@ public final class ParsedCql {
             final StringBuilder sb = Objectory.createStringBuilder();
 
             try {
+                int curlyDepth = 0;
+
                 for (String word : words) {
+                    curlyDepth = updateCurlyDepth(curlyDepth, word);
+
                     if (word.equals(SK.QUESTION_MARK)) {
                         countOfParameter++;
 
@@ -247,12 +251,18 @@ public final class ParsedCql {
                         word = SK.QUESTION_MARK;
 
                         type |= 4;
-                    } else if (word.length() >= 2 && word.charAt(0) == _PREFIX_OF_NAMED_PARAMETER) {
-                        namedParameters.put(countOfParameter++, word.substring(1));
+                    } else if (word.length() >= 1 && word.charAt(0) == _PREFIX_OF_NAMED_PARAMETER) {
+                        if (word.length() == 1) {
+                            if (curlyDepth == 0) {
+                                throw new IllegalArgumentException("Invalid named parameter: " + word + ". Parameter name cannot be empty.");
+                            }
+                        } else {
+                            namedParameters.put(countOfParameter++, word.substring(1));
 
-                        word = SK.QUESTION_MARK;
+                            word = SK.QUESTION_MARK;
 
-                        type |= 2;
+                            type |= 2;
+                        }
                     }
 
                     if (Integer.bitCount(type) > 1) {
@@ -273,6 +283,22 @@ public final class ParsedCql {
             parameterizedCql = tmpCql.endsWith(";") ? tmpCql.substring(0, tmpCql.length() - 1) : tmpCql;
             parameterCount = 0;
         }
+    }
+
+    private static int updateCurlyDepth(final int currentDepth, final String word) {
+        int result = currentDepth;
+
+        for (int i = 0, len = word.length(); i < len; i++) {
+            final char ch = word.charAt(i);
+
+            if (ch == '{') {
+                result++;
+            } else if (ch == '}' && result > 0) {
+                result--;
+            }
+        }
+
+        return result;
     }
 
     /**

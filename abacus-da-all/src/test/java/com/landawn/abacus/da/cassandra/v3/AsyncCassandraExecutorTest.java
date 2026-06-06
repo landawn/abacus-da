@@ -19,6 +19,7 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.List;
 import java.util.Map;
 import java.util.function.BiFunction;
 
@@ -90,13 +91,12 @@ public class AsyncCassandraExecutorTest extends TestBase {
 
     @Test
     public void testExecute_StringOnly_DelegatesToSession() {
-        when(mockExecutor.prepareStatement(anyString())).thenReturn(mockStatement);
-        when(mockSession.executeAsync(any(Statement.class))).thenReturn(mockFuture);
+        when(mockExecutor.prepareStatement("SELECT * FROM t")).thenReturn(mockStatement);
+        when(mockSession.executeAsync(mockStatement)).thenReturn(mockFuture);
 
         ContinuableFuture<ResultSet> future = async.execute("SELECT * FROM t");
 
         assertNotNull(future);
-        verify(mockExecutor).prepareStatement("SELECT * FROM t");
         verify(mockSession).executeAsync(mockStatement);
     }
 
@@ -251,9 +251,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
         final ResultSetFuture _f = immediateFuture(mockResultSet);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(_f);
-        @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, Integer> mapper = (Function) (Function<Row, Integer>) r -> 42;
-        when(mockExecutor.createRowMapper(eq(Integer.class))).thenReturn(mapper);
+        when(mockExecutor.readFirstColumn(row, Integer.class)).thenReturn(42);
 
         Nullable<Integer> result = async.queryForSingleValue(Integer.class, "SELECT v FROM t WHERE id = ?", 1).get();
 
@@ -282,9 +280,7 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
         final ResultSetFuture _f = immediateFuture(mockResultSet);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(_f);
-        @SuppressWarnings({ "unchecked", "rawtypes" })
-        final Function<Row, Integer> mapper = (Function) (Function<Row, Integer>) r -> 99;
-        when(mockExecutor.createRowMapper(eq(Integer.class))).thenReturn(mapper);
+        when(mockExecutor.readFirstColumn(row, Integer.class)).thenReturn(99);
 
         Optional<Integer> result = async.queryForSingleNonNull(Integer.class, "SELECT v FROM t WHERE id = ?", 1).get();
 
@@ -294,13 +290,27 @@ public class AsyncCassandraExecutorTest extends TestBase {
 
     @Test
     public void testExecute_String_FutureGetReturnsResultSet() throws Exception {
-        when(mockExecutor.prepareStatement(anyString())).thenReturn(mockStatement);
         final ResultSetFuture _f = immediateFuture(mockResultSet);
-        when(mockSession.executeAsync(any(Statement.class))).thenReturn(_f);
+        when(mockExecutor.prepareStatement("SELECT * FROM t")).thenReturn(mockStatement);
+        when(mockSession.executeAsync(mockStatement)).thenReturn(_f);
 
         ResultSet result = async.execute("SELECT * FROM t").get();
 
         assertSame(mockResultSet, result);
+    }
+
+    @Test
+    public void testToListObjectClassReturnsRawRows() {
+        // Object.class is assignable from Row, so toList returns the raw driver Row objects
+        // (passthrough) without mapping or first-column extraction.
+        final ResultSet resultSet = mock(ResultSet.class);
+        final Row row = mock(Row.class);
+        when(resultSet.all()).thenReturn(Arrays.asList(row));
+
+        final List<Object> result = CassandraExecutor.toList(resultSet, Object.class);
+
+        assertEquals(1, result.size());
+        assertSame(row, result.get(0));
     }
 
     @Test

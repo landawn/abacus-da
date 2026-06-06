@@ -1744,7 +1744,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             javaClass = protocolCodeDataType.get(colType.getProtocolCode());
 
             if (values[i] == null) {
-                values[i] = N.defaultValueOf(javaClass);
+                // Keep explicit nulls as null. The driver will bind or reject them according to the column type.
             } else if (javaClass.isAssignableFrom(values[i].getClass()) || codecRegistry.codecFor(colType).accepts(values[i])) {
                 // continue;
             } else {
@@ -1848,6 +1848,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 return rowMapper.apply(cds, row);
             }
         };
+    }
+
+    @Override
+    protected <T> T readFirstColumn(final Row row, final Class<T> targetClass) {
+        return N.convert(row.getObject(0), targetClass);
     }
 
     @Override

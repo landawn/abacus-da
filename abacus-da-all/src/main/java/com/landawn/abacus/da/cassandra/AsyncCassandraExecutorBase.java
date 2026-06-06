@@ -2718,7 +2718,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
         return execute(query, parameters).map(resultSet -> {
             final java.util.Iterator<RW> iter = resultSet.iterator();
 
-            return iter.hasNext() ? Nullable.of(cassandraExecutor.createRowMapper(valueClass).apply(iter.next())) : Nullable.empty();
+            return iter.hasNext() ? Nullable.of(cassandraExecutor.readFirstColumn(iter.next(), valueClass)) : Nullable.empty();
         });
     }
 
@@ -2762,7 +2762,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
         return execute(query, parameters).map(resultSet -> {
             final java.util.Iterator<RW> iter = resultSet.iterator();
 
-            return iter.hasNext() ? Optional.of(cassandraExecutor.createRowMapper(valueClass).apply(iter.next())) : Optional.empty();
+            return iter.hasNext() ? Optional.of(cassandraExecutor.readFirstColumn(iter.next(), valueClass)) : Optional.empty();
         });
     }
 

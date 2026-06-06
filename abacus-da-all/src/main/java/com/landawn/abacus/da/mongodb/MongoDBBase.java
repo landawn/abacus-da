@@ -923,6 +923,7 @@ public abstract class MongoDBBase {
 
         final Method idSetMethod = getObjectIdSetMethod(rowType);
         final Class<?> parameterType = idSetMethod == null ? null : idSetMethod.getParameterTypes()[0];
+        final boolean hasObjectId = doc.containsKey(_ID);
         final Object objectId = doc.get(_ID);
         T entity = null;
 
@@ -939,7 +940,7 @@ public abstract class MongoDBBase {
                 }
             }
         } finally {
-            if (objectId != null) {
+            if (hasObjectId) {
                 doc.put(_ID, objectId);
             }
         }

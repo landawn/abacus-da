@@ -55,7 +55,7 @@ public class CqlBuilderTest extends TestBase {
         N.println("iF cond PSC: " + PSC.update("account").set("firstName").where(Filters.eq("id", 1)).iF(Filters.eq("status", "x")).build().query());
         N.println("DELETE cols: " + PSC.delete("firstName", "lastName").from("account").where(Filters.eq("id", 1)).build().query());
         N.println("AND junction: " + PSC.select("id").from("account").where(Filters.and(Filters.eq("a", 1), Filters.eq("b", 2))).build().query());
-        N.println("OR junction: " + PSC.select("id").from("account").where(Filters.or(Filters.eq("a", 1), Filters.eq("b", 2))).build().query());
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from("account").where(Filters.or(Filters.eq("a", 1), Filters.eq("b", 2))).build());
         N.println("TTL+IF order: " + PSC.update("account").set("firstName").where(Filters.eq("id", 1)).usingTTL(60).iF(Filters.eq("s", "x")).build().query());
         N.println("INSERT TTL: " + PSC.insert("id", "name").into("account").usingTTL(60).build().query());
         N.println("batchInsert: " + SCCB.batchInsert(N.asList(N.asMap("firstName", "a"), N.asMap("firstName", "b"))).into("account").build().query());
@@ -64,8 +64,8 @@ public class CqlBuilderTest extends TestBase {
         N.println("NotInSubQuery: " + NSC.select("id").from("account").where(Filters.notIn("id", SubQueryGen())).build().query());
         N.println("parse cond NSC: " + NSC.parse(Filters.and(Filters.eq("status", "A"), Filters.gt("balance", 1000)), Account.class).build().query());
         N.println("parse cond SCCB: " + SCCB.parse(Filters.and(Filters.eq("status", "A"), Filters.gt("balance", 1000)), Account.class).build().query());
-        N.println("nested AND/OR: "
-                + PSC.select("id").from("account").where(Filters.and(Filters.eq("a", 1), Filters.or(Filters.eq("b", 2), Filters.eq("c", 3)))).build().query());
+        assertThrows(IllegalArgumentException.class,
+                () -> PSC.select("id").from("account").where(Filters.and(Filters.eq("a", 1), Filters.or(Filters.eq("b", 2), Filters.eq("c", 3)))).build());
         N.println("update entity: " + SCCB.update(Account.class).set("firstName", "lastName").where(Filters.eq("id", 1)).build().query());
         N.println("multi-col InSubQuery: " + PSC.select("id")
                 .from("account")
@@ -474,17 +474,20 @@ public class CqlBuilderTest extends TestBase {
         // USING TTL: seconds, NOT multiplied (must be exactly the supplied value).
         final String ttlCql = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).usingTTL(3600).build().query();
         N.println(ttlCql);
-        assertTrue(ttlCql.endsWith(" USING TTL 3600"), ttlCql);
+        assertTrue(ttlCql.contains("UPDATE account USING TTL 3600 SET"), ttlCql);
+        assertTrue(ttlCql.contains(" WHERE id = ?"), ttlCql);
 
         // USING TIMESTAMP(long): milliseconds -> microseconds (x1000).
         final String tsLongCql = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).usingTimestamp(1234567890123L).build().query();
         N.println(tsLongCql);
-        assertTrue(tsLongCql.endsWith(" USING TIMESTAMP 1234567890123000"), tsLongCql);
+        assertTrue(tsLongCql.contains("UPDATE account USING TIMESTAMP 1234567890123000 SET"), tsLongCql);
+        assertTrue(tsLongCql.contains(" WHERE id = ?"), tsLongCql);
 
         // USING TIMESTAMP(Date): Date.getTime() (ms) -> microseconds (x1000), same as the long overload.
         final String tsDateCql = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).usingTimestamp(new Date(1234567890123L)).build().query();
         N.println(tsDateCql);
-        assertTrue(tsDateCql.endsWith(" USING TIMESTAMP 1234567890123000"), tsDateCql);
+        assertTrue(tsDateCql.contains("UPDATE account USING TIMESTAMP 1234567890123000 SET"), tsDateCql);
+        assertTrue(tsDateCql.contains(" WHERE id = ?"), tsDateCql);
 
         // IF EXISTS vs IF NOT EXISTS (not swapped) + leading space (must not yield "?IF EXISTS").
         final String ifExistsCql = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).ifExists().build().query();
@@ -557,8 +560,8 @@ public class CqlBuilderTest extends TestBase {
     }
 
     /**
-     * Regression guard for the AND vs OR junction keyword in {@code appendCondition} (Junction branch)
-     * and the documented Cassandra parenthesization (per-element parens, no outer wrapping parens).
+     * Regression guard for supported AND junction rendering and rejected OR junctions in Cassandra
+     * WHERE clauses.
      */
     @Test
     public void test_and_or_junction_keyword_rendering() {
@@ -566,9 +569,7 @@ public class CqlBuilderTest extends TestBase {
         N.println(and);
         assertEquals("SELECT id FROM account WHERE (a = ?) AND (b = ?)", and);
 
-        final String or = PSC.select("id").from("account").where(Filters.or(Filters.eq("a", 1), Filters.eq("b", 2))).build().query();
-        N.println(or);
-        assertEquals("SELECT id FROM account WHERE (a = ?) OR (b = ?)", or);
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from("account").where(Filters.or(Filters.eq("a", 1), Filters.eq("b", 2))).build());
     }
 
     /**
@@ -601,21 +602,33 @@ public class CqlBuilderTest extends TestBase {
     public void test_ttl_vs_timestamp_unit_conversion() {
         final String ttl = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).usingTTL(3600).build().query();
         N.println(ttl);
-        assertTrue(ttl.endsWith(" USING TTL 3600"), ttl);
+        assertTrue(ttl.contains("UPDATE account USING TTL 3600 SET"), ttl);
+        assertTrue(ttl.contains(" WHERE id = ?"), ttl);
         assertTrue(!ttl.contains("TIMESTAMP"), ttl);
 
         final String tsLong = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).usingTimestamp(1000L).build().query();
         N.println(tsLong);
-        assertTrue(tsLong.endsWith(" USING TIMESTAMP 1000000"), tsLong);
+        assertTrue(tsLong.contains("UPDATE account USING TIMESTAMP 1000000 SET"), tsLong);
+        assertTrue(tsLong.contains(" WHERE id = ?"), tsLong);
 
         final String tsDate = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).usingTimestamp(new Date(2L)).build().query();
         N.println(tsDate);
-        assertTrue(tsDate.endsWith(" USING TIMESTAMP 2000"), tsDate);
+        assertTrue(tsDate.contains("UPDATE account USING TIMESTAMP 2000 SET"), tsDate);
+        assertTrue(tsDate.contains(" WHERE id = ?"), tsDate);
 
         final String tsStr = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).usingTimestamp("42").build().query();
         N.println(tsStr);
         // String overload is verbatim (no x1000) per its contract.
-        assertTrue(tsStr.endsWith(" USING TIMESTAMP 42"), tsStr);
+        assertTrue(tsStr.contains("UPDATE account USING TIMESTAMP 42 SET"), tsStr);
+        assertTrue(tsStr.contains(" WHERE id = ?"), tsStr);
+    }
+
+    @Test
+    public void test_updateUsingClausesAreInsertedBeforeSetAndCombined() {
+        final String cql = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).usingTTL(60).usingTimestamp("42").build().query();
+
+        assertTrue(cql.contains("UPDATE account USING TTL 60 AND TIMESTAMP 42 SET"), cql);
+        assertTrue(cql.contains(" WHERE id = ?"), cql);
     }
 
     /**

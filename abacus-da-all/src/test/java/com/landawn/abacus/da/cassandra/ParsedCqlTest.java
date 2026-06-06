@@ -46,6 +46,19 @@ public class ParsedCqlTest extends TestBase {
     }
 
     @Test
+    public void testParse_BareNamedParameterMarkerThrows() {
+        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("SELECT * FROM users WHERE id = :", null));
+    }
+
+    @Test
+    public void testParse_MapLiteralColonIsNotNamedParameter() {
+        final ParsedCql parsed = ParsedCql.parse("UPDATE t SET m = {'a': 'b'} WHERE id = ?", null);
+
+        assertEquals(1, parsed.parameterCount());
+        assertEquals("UPDATE t SET m = {'a': 'b'} WHERE id = ?", parsed.getParameterizedCql());
+    }
+
+    @Test
     public void testParse_IbatisStyleParameters() {
         final ParsedCql parsed = ParsedCql.parse("SELECT * FROM users WHERE id = #{userId} AND status = #{status}", null);
         assertEquals(2, parsed.parameterCount());

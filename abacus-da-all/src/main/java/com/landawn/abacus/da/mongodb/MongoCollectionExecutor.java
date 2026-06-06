@@ -26,6 +26,7 @@ import org.bson.types.ObjectId;
 import com.landawn.abacus.annotation.Beta;
 import com.landawn.abacus.logging.Logger;
 import com.landawn.abacus.logging.LoggerFactory;
+import com.landawn.abacus.type.Type;
 import com.landawn.abacus.util.AsyncExecutor;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.Fn;
@@ -2395,7 +2396,7 @@ public final class MongoCollectionExecutor {
 
         final Document doc = findIterable.first();
 
-        return N.isEmpty(doc) ? null : MongoDBBase.readRow(doc, rowType);
+        return toEntity(doc, rowType);
     }
 
     /**
@@ -2410,7 +2411,7 @@ public final class MongoCollectionExecutor {
      * @return the converted entity or null if document is empty
      */
     private static <T> T toEntity(final Document doc, final Class<T> rowType) {
-        return N.isEmpty(doc) ? null : MongoDBBase.readRow(doc, rowType);
+        return shouldReturnNullForEmptyDocument(doc, rowType) ? null : MongoDBBase.readRow(doc, rowType);
     }
 
     /**
@@ -2424,7 +2425,22 @@ public final class MongoCollectionExecutor {
      * @return a Function that converts Documents to entities
      */
     private static <T> Function<Document, T> toEntity(final Class<T> rowType) {
-        return doc -> N.isEmpty(doc) ? null : MongoDBBase.readRow(doc, rowType);
+        return doc -> shouldReturnNullForEmptyDocument(doc, rowType) ? null : MongoDBBase.readRow(doc, rowType);
+    }
+
+    private static boolean shouldReturnNullForEmptyDocument(final Document doc, final Class<?> rowType) {
+        if (doc == null) {
+            return true;
+        }
+
+        if (doc.isEmpty() == false) {
+            return false;
+        }
+
+        final Type<?> targetType = rowType == null ? null : N.typeOf(rowType);
+
+        return targetType != null && targetType.isObjectArray() == false && targetType.isCollection() == false && targetType.isMap() == false
+                && targetType.isBean() == false;
     }
 
     /**
@@ -3000,6 +3016,8 @@ public final class MongoCollectionExecutor {
      * @return BSON representation of the update
      */
     private static Bson toBson(final Object update) {
+        N.checkArgNotNull(update, "update");
+
         // Note: the second argument (isForUpdate) on MongoDBBase.toDocument is a dead flag, AND
         // MongoCollectionExecutor cannot see the protected (Object, boolean) overload from this
         // package — passing it silently resolved to the public Object... varargs and treated
@@ -3310,6 +3328,8 @@ public final class MongoCollectionExecutor {
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public UpdateResult replaceOne(final Bson filter, final Object replacement, final ReplaceOptions options) {
+        N.checkArgNotNull(replacement, "replacement");
+
         if (options == null) {
             return coll.replaceOne(filter, toDocument(replacement));
         } else {
@@ -3391,7 +3411,7 @@ public final class MongoCollectionExecutor {
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public DeleteResult deleteOne(final Bson filter, final DeleteOptions options) {
-        return coll.deleteOne(filter, options);
+        return options == null ? coll.deleteOne(filter) : coll.deleteOne(filter, options);
     }
 
     /**
@@ -3431,7 +3451,7 @@ public final class MongoCollectionExecutor {
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public DeleteResult deleteMany(final Bson filter, final DeleteOptions options) {
-        return coll.deleteMany(filter, options);
+        return options == null ? coll.deleteMany(filter) : coll.deleteMany(filter, options);
     }
 
     /**
@@ -3852,6 +3872,8 @@ public final class MongoCollectionExecutor {
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public Document findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options) {
+        N.checkArgNotNull(replacement, "replacement");
+
         if (options == null) {
             return coll.findOneAndReplace(filter, toDocument(replacement));
         } else {
@@ -3881,6 +3903,8 @@ public final class MongoCollectionExecutor {
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> T findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options, final Class<T> rowType) {
+        N.checkArgNotNull(replacement, "replacement");
+
         if (options == null) {
             return toEntity(coll.findOneAndReplace(filter, toDocument(replacement)), rowType);
         } else {
@@ -4128,7 +4152,7 @@ public final class MongoCollectionExecutor {
      */
     @Beta
     public <T> Stream<T> groupBy(final String fieldName, final Class<T> rowType) {
-        return aggregate(N.asList(new Document(_$GROUP, new Document(MongoDBBase._ID, _$ + fieldName))), rowType);
+        return aggregate(groupByPipeline(fieldName, false, rowType), rowType);
     }
 
     /**
@@ -4183,7 +4207,7 @@ public final class MongoCollectionExecutor {
             groupFields.put(fieldName, _$ + fieldName);
         }
 
-        return aggregate(N.asList(new Document(_$GROUP, new Document(MongoDBBase._ID, groupFields))), rowType);
+        return aggregate(groupByPipeline(fieldNames, false, rowType), rowType);
     }
 
     /**
@@ -4228,7 +4252,7 @@ public final class MongoCollectionExecutor {
      */
     @Beta
     public <T> Stream<T> groupByAndCount(final String fieldName, final Class<T> rowType) {
-        return aggregate(N.asList(new Document(_$GROUP, new Document(MongoDBBase._ID, _$ + fieldName).append(_COUNT, new Document(_$SUM, 1)))), rowType);
+        return aggregate(groupByPipeline(fieldName, true, rowType), rowType);
     }
 
     /**
@@ -4283,7 +4307,59 @@ public final class MongoCollectionExecutor {
             groupFields.put(fieldName, _$ + fieldName);
         }
 
-        return aggregate(N.asList(new Document(_$GROUP, new Document(MongoDBBase._ID, groupFields).append(_COUNT, new Document(_$SUM, 1)))), rowType);
+        return aggregate(groupByPipeline(fieldNames, true, rowType), rowType);
+    }
+
+    private static List<Document> groupByPipeline(final String fieldName, final boolean count, final Class<?> rowType) {
+        final Document group = new Document(MongoDBBase._ID, _$ + fieldName);
+
+        if (count) {
+            group.append(_COUNT, new Document(_$SUM, 1));
+        }
+
+        if (Document.class.equals(rowType)) {
+            return N.asList(new Document(_$GROUP, group));
+        }
+
+        final Document project = new Document(MongoDBBase._ID, 0).append(fieldName, "$" + MongoDBBase._ID);
+
+        if (count) {
+            project.append(_COUNT, 1);
+        }
+
+        return N.asList(new Document(_$GROUP, group), new Document("$project", project));
+    }
+
+    private static List<Document> groupByPipeline(final Collection<String> fieldNames, final boolean count, final Class<?> rowType) {
+        N.checkArgNotEmpty(fieldNames, "fieldNames");
+
+        final Document groupFields = new Document();
+
+        for (final String fieldName : fieldNames) {
+            groupFields.put(fieldName, _$ + fieldName);
+        }
+
+        final Document group = new Document(MongoDBBase._ID, groupFields);
+
+        if (count) {
+            group.append(_COUNT, new Document(_$SUM, 1));
+        }
+
+        if (Document.class.equals(rowType)) {
+            return N.asList(new Document(_$GROUP, group));
+        }
+
+        final Document project = new Document(MongoDBBase._ID, 0);
+
+        for (final String fieldName : fieldNames) {
+            project.append(fieldName, "$" + MongoDBBase._ID + "." + fieldName);
+        }
+
+        if (count) {
+            project.append(_COUNT, 1);
+        }
+
+        return N.asList(new Document(_$GROUP, group), new Document("$project", project));
     }
 
     /**

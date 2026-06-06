@@ -171,6 +171,18 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
     static final char[] _SPACE_USING_TTL_SPACE = " USING TTL ".toCharArray();
 
+    private static final String SPACE_USING = " USING ";
+
+    private static final String SPACE_SET = " SET ";
+
+    private static final String SPACE_WHERE = " WHERE ";
+
+    private static final String SPACE_IF = " IF ";
+
+    private static final String TTL = "TTL";
+
+    private static final String TIMESTAMP = "TIMESTAMP";
+
     static final char[] _SPACE_IF_SPACE = " IF ".toCharArray();
 
     static final char[] _SPACE_IF_EXISTS = " IF EXISTS".toCharArray();
@@ -320,10 +332,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
      * @see #usingTTL(long)
      */
     public CqlBuilder usingTTL(final String ttl) {
-        init(false);
-
-        _sb.append(_SPACE_USING_TTL_SPACE);
-        _sb.append(ttl);
+        appendUsingOption(TTL, ttl);
 
         return this;
     }
@@ -416,10 +425,50 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
     public CqlBuilder usingTimestamp(final String timestamp) {
         init(false);
 
-        _sb.append(_SPACE_USING_TIMESTAMP_SPACE);
-        _sb.append(timestamp);
+        appendUsingOption(TIMESTAMP, timestamp);
 
         return this;
+    }
+
+    private void appendUsingOption(final String optionName, final String optionValue) {
+        init(false);
+
+        final String cql = _sb.toString();
+        final int insertionIndex = findUsingInsertionIndex(cql);
+        final int usingIndex = cql.indexOf(SPACE_USING);
+        final String option = optionName + _SPACE + optionValue;
+
+        if (usingIndex >= 0 && usingIndex < insertionIndex) {
+            _sb.insert(insertionIndex, _SPACE_AND_SPACE);
+            _sb.insert(insertionIndex + _SPACE_AND_SPACE.length, option);
+        } else {
+            _sb.insert(insertionIndex, SPACE_USING + option);
+        }
+    }
+
+    private int findUsingInsertionIndex(final String cql) {
+        if (_op == OperationType.UPDATE) {
+            final int setIndex = cql.indexOf(SPACE_SET);
+
+            if (setIndex >= 0) {
+                return setIndex;
+            }
+        }
+
+        int insertionIndex = cql.length();
+        int clauseIndex = cql.indexOf(SPACE_WHERE);
+
+        if (clauseIndex >= 0) {
+            insertionIndex = Math.min(insertionIndex, clauseIndex);
+        }
+
+        clauseIndex = cql.indexOf(SPACE_IF);
+
+        if (clauseIndex >= 0) {
+            insertionIndex = Math.min(insertionIndex, clauseIndex);
+        }
+
+        return insertionIndex;
     }
 
     /**
@@ -951,6 +1000,10 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
 
             if (N.isEmpty(conditionList)) {
                 throw new IllegalArgumentException("The junction condition(" + junction.operator().toString() + ") doesn't include any element.");
+            }
+
+            if (SK.OR.equalsIgnoreCase(junction.operator().toString())) {
+                throw new IllegalArgumentException("OR conditions are not supported by Cassandra CQL WHERE clauses");
             }
 
             if (conditionList.size() == 1) {

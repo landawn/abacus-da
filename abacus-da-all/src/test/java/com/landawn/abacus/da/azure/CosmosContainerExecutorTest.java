@@ -438,6 +438,27 @@ public class CosmosContainerExecutorTest extends TestBase {
     }
 
     @Test
+    public void testStreamItemsWithConditionGeneratesAliasQualifiedCosmosSql() {
+        // Regression: Cosmos DB SQL requires every property reference to be bound to the FROM
+        // source/alias. prepareQuery used to emit bare identifiers (e.g. "FROM test_item WHERE
+        // id = '1'"), which Cosmos rejects at query enumeration. It must now qualify them via "c".
+        List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"));
+        when(mockPagedIterable.stream()).thenReturn(items.stream());
+        final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
+        when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
+
+        // default executor uses NamingPolicy.SNAKE_CASE -> table name "test_item"
+        executor.streamItems(Filters.eq("id", "1").and(Filters.eq("name", "a")), TestItem.class).toList();
+
+        final String sql = specCaptor.getValue().getQueryText();
+        assertTrue(sql.contains("FROM test_item c"), "FROM clause must declare the alias 'c': " + sql);
+        assertTrue(sql.contains("c.id"), "id must be alias-qualified: " + sql);
+        assertTrue(sql.contains("c.name"), "name must be alias-qualified: " + sql);
+        // Old broken form had the table immediately followed by WHERE with unqualified columns.
+        assertTrue(!sql.contains("FROM test_item WHERE"), "WHERE columns must be alias-qualified: " + sql);
+    }
+
+    @Test
     public void testStreamItemsWithConditionAndOptions() {
         List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"), new TestItem("2", "Item2"));
         when(mockPagedIterable.stream()).thenReturn(items.stream());

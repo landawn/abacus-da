@@ -1312,11 +1312,27 @@ public class BigQueryExecutorTest extends TestBase {
     @Test
     public void testBuildQueryParameterValueWithSqlTypes() {
         // Drives the java.sql.Date / Time / Timestamp branches and com.google.cloud.Timestamp.
-        Object[] params = new Object[] { new java.sql.Date(0L), new java.sql.Time(0L), new java.sql.Timestamp(0L),
-                com.google.cloud.Timestamp.ofTimeSecondsAndNanos(0L, 0) };
+        Object[] params = new Object[] { java.sql.Date.valueOf("2024-01-01"), java.sql.Time.valueOf("12:34:56"), new java.sql.Timestamp(1000L),
+                com.google.cloud.Timestamp.ofTimeSecondsAndNanos(1L, 0) };
 
         List<QueryParameterValue> values = BigQueryExecutor.buildQueryParameterValue(params);
         assertEquals(4, values.size());
+        assertEquals(StandardSQLTypeName.DATE, values.get(0).getType());
+        assertEquals("2024-01-01", values.get(0).getValue());
+        assertEquals(StandardSQLTypeName.TIME, values.get(1).getType());
+        assertEquals("12:34:56.000000", values.get(1).getValue());
+        assertEquals(StandardSQLTypeName.TIMESTAMP, values.get(2).getType());
+        assertEquals(QueryParameterValue.timestamp(1_000_000L).getValue(), values.get(2).getValue());
+        assertEquals(QueryParameterValue.timestamp(1_000_000L).getValue(), values.get(3).getValue());
+    }
+
+    @Test
+    public void testBuildQueryParameterValueWithUtilDateUsesTimestampMicros() {
+        final List<QueryParameterValue> values = BigQueryExecutor.buildQueryParameterValue(new java.util.Date(1000L));
+
+        assertEquals(1, values.size());
+        assertEquals(StandardSQLTypeName.TIMESTAMP, values.get(0).getType());
+        assertEquals(QueryParameterValue.timestamp(1_000_000L).getValue(), values.get(0).getValue());
     }
 
     @Test
@@ -1350,6 +1366,18 @@ public class BigQueryExecutorTest extends TestBase {
         assertTrue(map instanceof LinkedHashMap);
         assertEquals("9", map.get("id"));
         assertEquals("Z", map.get("name"));
+    }
+
+    @Test
+    public void testToMap_UnwrapsRepeatedFieldValues() {
+        final Field repeated = Field.newBuilder("tags", StandardSQLTypeName.STRING).setMode(Field.Mode.REPEATED).build();
+        final FieldList fields = FieldList.of(repeated);
+        final FieldValueList row = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.REPEATED,
+                Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "a"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "b")))), fields);
+
+        final Map<String, Object> map = BigQueryExecutor.toMap(fields, row, com.landawn.abacus.util.IntFunctions.ofLinkedHashMap());
+
+        assertEquals(Arrays.asList("a", "b"), map.get("tags"));
     }
 
     // ---------- toList for non-bean basic types (single-column) ----------

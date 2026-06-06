@@ -2883,7 +2883,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          * @throws NullPointerException if {@code entity} is null
          */
         public CompletableFuture<UpdateItemResponse> updateItem(final T entity) {
-            return dynamoDBExecutor.updateItem(tableName, createKey(entity), toUpdateItem(entity, namingPolicy));
+            return dynamoDBExecutor.updateItem(tableName, createKey(entity), createUpdateItem(entity));
         }
 
         /**
@@ -2913,7 +2913,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          * @throws NullPointerException if {@code entity} is null
          */
         public CompletableFuture<UpdateItemResponse> updateItem(final T entity, final String returnValues) {
-            return dynamoDBExecutor.updateItem(tableName, createKey(entity), toUpdateItem(entity, namingPolicy), returnValues);
+            return dynamoDBExecutor.updateItem(tableName, createKey(entity), createUpdateItem(entity), returnValues);
         }
 
         /**
@@ -3360,6 +3360,16 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
             }
 
             return key;
+        }
+
+        private Map<String, AttributeValueUpdate> createUpdateItem(final T entity) {
+            final Map<String, AttributeValueUpdate> attributeUpdates = toUpdateItem(entity, namingPolicy);
+
+            for (final String keyPropName : keyPropNames) {
+                attributeUpdates.remove(keyPropName);
+            }
+
+            return attributeUpdates;
         }
 
         private Map<String, KeysAndAttributes> createKeys(final Collection<? extends T> entities) {
