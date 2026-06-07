@@ -25,6 +25,7 @@ import java.util.Set;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
@@ -399,6 +400,86 @@ public class BigQueryExecutorTest extends TestBase {
 
         assertEquals(mockTableResult, result);
         verify(mockBigQuery).query(any(QueryJobConfiguration.class));
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Regression: DML must generate POSITIONAL ('?') SQL, not named (':name') SQL. execute(...) binds
+    // parameters positionally via setPositionalParameters, so a ':name' placeholder cannot be bound and
+    // BigQuery rejects the statement. (Bug: insert/update/delete used the named-SQL builders NSC/NAC/NLC
+    // instead of the positional PSC/PAC/PLC used by the SELECT path.) The existing DML tests above only
+    // verify delegation, which is why this stayed latent.
+    // ---------------------------------------------------------------------------------------------
+
+    private String captureGeneratedSql() throws Exception {
+        final ArgumentCaptor<QueryJobConfiguration> captor = ArgumentCaptor.forClass(QueryJobConfiguration.class);
+        verify(mockBigQuery).query(captor.capture());
+        return captor.getValue().getQuery();
+    }
+
+    @Test
+    public void testInsertEntityGeneratesPositionalSql() throws Exception {
+        TestEntity entity = new TestEntity();
+        entity.setId(1);
+        entity.setName("Test");
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        executor.insert(entity);
+
+        final String sql = captureGeneratedSql();
+        assertTrue(sql.contains("?"), sql);
+        assertFalse(sql.contains(":"), sql);
+    }
+
+    @Test
+    public void testInsertClassPropsGeneratesPositionalSql() throws Exception {
+        Map<String, Object> props = new LinkedHashMap<>();
+        props.put("id", 1);
+        props.put("name", "Test");
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        executor.insert(TestEntity.class, props);
+
+        final String sql = captureGeneratedSql();
+        assertTrue(sql.contains("?"), sql);
+        assertFalse(sql.contains(":"), sql);
+    }
+
+    @Test
+    public void testUpdateEntityWithKeysGeneratesPositionalSql() throws Exception {
+        TestEntity entity = new TestEntity();
+        entity.setId(1);
+        entity.setName("UpdatedTest");
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        executor.update(entity, N.asSet("id"));
+
+        final String sql = captureGeneratedSql();
+        assertTrue(sql.contains("?"), sql);
+        assertFalse(sql.contains(":"), sql);
+    }
+
+    @Test
+    public void testUpdateClassPropsConditionGeneratesPositionalSql() throws Exception {
+        Map<String, Object> props = new LinkedHashMap<>();
+        props.put("name", "UpdatedTest");
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        executor.update(TestEntity.class, props, Filters.eq("id", 1));
+
+        final String sql = captureGeneratedSql();
+        assertTrue(sql.contains("?"), sql);
+        assertFalse(sql.contains(":"), sql);
+    }
+
+    @Test
+    public void testDeleteClassConditionGeneratesPositionalSql() throws Exception {
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        executor.delete(TestEntity.class, Filters.eq("id", 1));
+
+        final String sql = captureGeneratedSql();
+        assertTrue(sql.contains("?"), sql);
+        assertFalse(sql.contains(":"), sql);
     }
 
     @Test

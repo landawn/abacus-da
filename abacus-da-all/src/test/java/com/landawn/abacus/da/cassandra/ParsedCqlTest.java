@@ -59,6 +59,40 @@ public class ParsedCqlTest extends TestBase {
     }
 
     @Test
+    public void testParse_UnspacedMapLiteralColonIsNotNamedParameter_withPositionalParam() {
+        // Regression: an unspaced map literal like {'a':1,'b':2} must NOT have its ':' treated as named parameters.
+        // Before the fix this threw "Cannot mix parameter styles" because :1 / :2} were registered as named params
+        // alongside the real '?'.
+        final ParsedCql parsed = ParsedCql.parse("UPDATE t SET m = {'a':1,'b':2} WHERE id = ?", null);
+
+        assertEquals(1, parsed.parameterCount());
+        assertTrue(parsed.namedParameters().isEmpty(), parsed.namedParameters().toString());
+        assertEquals("UPDATE t SET m = {'a':1,'b':2} WHERE id = ?", parsed.getParameterizedCql());
+    }
+
+    @Test
+    public void testParse_UnspacedMapLiteralColonIsNotNamedParameter_noParam() {
+        // Regression: with no real parameter, an unspaced map literal must round-trip unchanged (was corrupted to
+        // "{'a'?,'b'? WHERE id = 5" with parameterCount==2 before the fix).
+        final ParsedCql parsed = ParsedCql.parse("UPDATE t SET m = {'a':1,'b':2} WHERE id = 5", null);
+
+        assertEquals(0, parsed.parameterCount());
+        assertTrue(parsed.namedParameters().isEmpty(), parsed.namedParameters().toString());
+        assertEquals("UPDATE t SET m = {'a':1,'b':2} WHERE id = 5", parsed.getParameterizedCql());
+    }
+
+    @Test
+    public void testParse_NamedParameterAfterMapLiteralStillWorks() {
+        // The ':param' AFTER a closed map literal must still be recognized as a named parameter.
+        final ParsedCql parsed = ParsedCql.parse("UPDATE t SET m = {'a':1} WHERE id = :userId", null);
+
+        assertEquals(1, parsed.parameterCount());
+        assertEquals("userId", parsed.namedParameters().get(0));
+        assertTrue(parsed.getParameterizedCql().contains("{'a':1}"), parsed.getParameterizedCql());
+        assertTrue(parsed.getParameterizedCql().endsWith("WHERE id = ?"), parsed.getParameterizedCql());
+    }
+
+    @Test
     public void testParse_IbatisStyleParameters() {
         final ParsedCql parsed = ParsedCql.parse("SELECT * FROM users WHERE id = #{userId} AND status = #{status}", null);
         assertEquals(2, parsed.parameterCount());

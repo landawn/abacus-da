@@ -46,9 +46,6 @@ import com.landawn.abacus.query.AbstractQueryBuilder.SP;
 import com.landawn.abacus.query.Filters;
 import com.landawn.abacus.query.QueryUtil;
 import com.landawn.abacus.query.SqlBuilder;
-import com.landawn.abacus.query.SqlBuilder.NAC;
-import com.landawn.abacus.query.SqlBuilder.NLC;
-import com.landawn.abacus.query.SqlBuilder.NSC;
 import com.landawn.abacus.query.SqlBuilder.PAC;
 import com.landawn.abacus.query.SqlBuilder.PLC;
 import com.landawn.abacus.query.SqlBuilder.PSC;
@@ -1086,13 +1083,13 @@ public class BigQueryExecutor {
 
         switch (namingPolicy) {
             case SNAKE_CASE:
-                return NSC.insert(entity).into(targetClass).build();
+                return PSC.insert(entity).into(targetClass).build();
 
             case SCREAMING_SNAKE_CASE:
-                return NAC.insert(entity).into(targetClass).build();
+                return PAC.insert(entity).into(targetClass).build();
 
             case CAMEL_CASE:
-                return NLC.insert(entity).into(targetClass).build();
+                return PLC.insert(entity).into(targetClass).build();
 
             default:
                 throw new IllegalStateException("Unsupported naming policy: " + namingPolicy);
@@ -1135,13 +1132,13 @@ public class BigQueryExecutor {
     private SP prepareInsert(final Class<?> targetClass, final Map<String, Object> props) {
         switch (namingPolicy) {
             case SNAKE_CASE:
-                return NSC.insert(props).into(targetClass).build();
+                return PSC.insert(props).into(targetClass).build();
 
             case SCREAMING_SNAKE_CASE:
-                return NAC.insert(props).into(targetClass).build();
+                return PAC.insert(props).into(targetClass).build();
 
             case CAMEL_CASE:
-                return NLC.insert(props).into(targetClass).build();
+                return PLC.insert(props).into(targetClass).build();
 
             default:
                 throw new IllegalStateException("Unsupported naming policy: " + namingPolicy);
@@ -1245,13 +1242,13 @@ public class BigQueryExecutor {
 
         switch (namingPolicy) {
             case SNAKE_CASE:
-                return NSC.update(targetClass).set(entity, primaryKeyNames).where(Filters.and(conds)).build();
+                return PSC.update(targetClass).set(entity, primaryKeyNames).where(Filters.and(conds)).build();
 
             case SCREAMING_SNAKE_CASE:
-                return NAC.update(targetClass).set(entity, primaryKeyNames).where(Filters.and(conds)).build();
+                return PAC.update(targetClass).set(entity, primaryKeyNames).where(Filters.and(conds)).build();
 
             case CAMEL_CASE:
-                return NLC.update(targetClass).set(entity, primaryKeyNames).where(Filters.and(conds)).build();
+                return PLC.update(targetClass).set(entity, primaryKeyNames).where(Filters.and(conds)).build();
 
             default:
                 throw new IllegalStateException("Unsupported naming policy: " + namingPolicy);
@@ -1306,13 +1303,13 @@ public class BigQueryExecutor {
     private SP prepareUpdate(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause) {
         switch (namingPolicy) {
             case SNAKE_CASE:
-                return NSC.update(targetClass).set(props).where(whereClause).build();
+                return PSC.update(targetClass).set(props).where(whereClause).build();
 
             case SCREAMING_SNAKE_CASE:
-                return NAC.update(targetClass).set(props).where(whereClause).build();
+                return PAC.update(targetClass).set(props).where(whereClause).build();
 
             case CAMEL_CASE:
-                return NLC.update(targetClass).set(props).where(whereClause).build();
+                return PLC.update(targetClass).set(props).where(whereClause).build();
 
             default:
                 throw new IllegalStateException("Unsupported naming policy: " + namingPolicy);
@@ -1435,13 +1432,13 @@ public class BigQueryExecutor {
     private SP prepareDelete(final Class<?> targetClass, final Condition whereClause) {
         switch (namingPolicy) {
             case SNAKE_CASE:
-                return NSC.deleteFrom(targetClass).where(whereClause).build();
+                return PSC.deleteFrom(targetClass).where(whereClause).build();
 
             case SCREAMING_SNAKE_CASE:
-                return NAC.deleteFrom(targetClass).where(whereClause).build();
+                return PAC.deleteFrom(targetClass).where(whereClause).build();
 
             case CAMEL_CASE:
-                return NLC.deleteFrom(targetClass).where(whereClause).build();
+                return PLC.deleteFrom(targetClass).where(whereClause).build();
 
             default:
                 throw new IllegalStateException("Unsupported naming policy: " + namingPolicy);

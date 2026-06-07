@@ -236,6 +236,7 @@ public final class ParsedCql {
                 int curlyDepth = 0;
 
                 for (String word : words) {
+                    final int prevCurlyDepth = curlyDepth;
                     curlyDepth = updateCurlyDepth(curlyDepth, word);
 
                     if (word.equals(SK.QUESTION_MARK)) {
@@ -252,16 +253,20 @@ public final class ParsedCql {
 
                         type |= 4;
                     } else if (word.length() >= 1 && word.charAt(0) == _PREFIX_OF_NAMED_PARAMETER) {
-                        if (word.length() == 1) {
-                            if (curlyDepth == 0) {
+                        // A token starting with ':' is a named parameter ONLY when it is not inside a '{...}' map/UDT
+                        // literal, where ':' is the key/value separator (e.g. {'a':1}). Use prevCurlyDepth (the brace
+                        // depth before this token's own braces are applied) so a token like ":2}" that closes the map
+                        // is still recognized as being inside the literal.
+                        if (prevCurlyDepth == 0) {
+                            if (word.length() == 1) {
                                 throw new IllegalArgumentException("Invalid named parameter: " + word + ". Parameter name cannot be empty.");
+                            } else {
+                                namedParameters.put(countOfParameter++, word.substring(1));
+
+                                word = SK.QUESTION_MARK;
+
+                                type |= 2;
                             }
-                        } else {
-                            namedParameters.put(countOfParameter++, word.substring(1));
-
-                            word = SK.QUESTION_MARK;
-
-                            type |= 2;
                         }
                     }
 
