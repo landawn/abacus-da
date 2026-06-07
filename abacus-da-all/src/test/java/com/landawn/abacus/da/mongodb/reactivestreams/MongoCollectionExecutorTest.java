@@ -2270,6 +2270,19 @@ public class MongoCollectionExecutorTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> executor.findOneAndReplace(filter, (Object) null));
     }
 
+    @Test
+    public void testFindOneAndDeleteWithNullFilterThrowsIAE() {
+        // Regression: a null filter must be rejected eagerly with IllegalArgumentException at the call site (before a
+        // Mono is built), matching every sibling deleteOne/findOneAndUpdate/findOneAndReplace. Before the fix the null
+        // filter reached the driver, which silently deletes an arbitrary document.
+        final com.mongodb.client.model.FindOneAndDeleteOptions options = new com.mongodb.client.model.FindOneAndDeleteOptions();
+
+        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null, Integer.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null, options));
+        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null, options, Document.class));
+    }
+
     public static class GroupRow {
         private String department;
         private int count;

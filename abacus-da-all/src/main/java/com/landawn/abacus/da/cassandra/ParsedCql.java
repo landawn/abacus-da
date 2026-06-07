@@ -292,11 +292,27 @@ public final class ParsedCql {
 
     private static int updateCurlyDepth(final int currentDepth, final String word) {
         int result = currentDepth;
+        char quoteChar = 0; // 0 = outside any string/identifier literal; otherwise the opening quote character
 
         for (int i = 0, len = word.length(); i < len; i++) {
             final char ch = word.charAt(i);
 
-            if (ch == '{') {
+            if (quoteChar != 0) {
+                // Inside a quoted string/identifier literal: '{' and '}' are data, not map/UDT-literal delimiters.
+                // SqlParser keeps a quoted literal as a single token (with its quotes), recognizing both doubled-quote
+                // ('', "") and backslash escaping, so we mirror that here to find the real closing quote.
+                if (ch == '\\') {
+                    i++; // skip the backslash-escaped character
+                } else if (ch == quoteChar) {
+                    if (i + 1 < len && word.charAt(i + 1) == quoteChar) {
+                        i++; // a doubled quote ('' or "") is an escaped quote; stay inside the literal
+                    } else {
+                        quoteChar = 0; // closing quote
+                    }
+                }
+            } else if (ch == '\'' || ch == '"') {
+                quoteChar = ch;
+            } else if (ch == '{') {
                 result++;
             } else if (ch == '}' && result > 0) {
                 result--;

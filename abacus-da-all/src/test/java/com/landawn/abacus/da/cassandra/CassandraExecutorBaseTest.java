@@ -421,6 +421,22 @@ public class CassandraExecutorBaseTest extends TestBase {
     }
 
     @Test
+    public void testqueryForSingleValueAndNonNull_nullOrEmptyPropName_throwsIAE() {
+        // Regression: both queryForSingleValue and queryForSingleNonNull document
+        // "@throws IllegalArgumentException if propName is null or empty". The sibling queryForSingleValue
+        // already guarded propName; queryForSingleNonNull was missing the guard and threw NPE (from List.of(null))
+        // for a null propName and silently built a malformed projection for an empty one.
+        assertThrows(IllegalArgumentException.class,
+                () -> executor.queryForSingleValue(TestEntity.class, String.class, null, Filters.eq("id", 1L)));
+        assertThrows(IllegalArgumentException.class,
+                () -> executor.queryForSingleValue(TestEntity.class, String.class, "", Filters.eq("id", 1L)));
+        assertThrows(IllegalArgumentException.class,
+                () -> executor.queryForSingleNonNull(TestEntity.class, String.class, null, Filters.eq("id", 1L)));
+        assertThrows(IllegalArgumentException.class,
+                () -> executor.queryForSingleNonNull(TestEntity.class, String.class, "", Filters.eq("id", 1L)));
+    }
+
+    @Test
     public void testStream() {
         // Test stream with condition
         Stream<TestEntity> stream1 = executor.stream(TestEntity.class, Filters.eq("status", "active"));

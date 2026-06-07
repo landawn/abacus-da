@@ -93,6 +93,43 @@ public class ParsedCqlTest extends TestBase {
     }
 
     @Test
+    public void testParse_OpenBraceInStringLiteral_doesNotSwallowNamedParam() {
+        // Regression: a '{' that appears INSIDE a string literal must not raise the map/UDT-literal brace depth.
+        // Before the fix, updateCurlyDepth counted the '{' inside 'a{b', so the depth stayed > 0 and the following
+        // ':id' was silently treated as "inside a map literal" and never converted to '?'.
+        final ParsedCql parsed = ParsedCql.parse("UPDATE t SET note = 'a{b' WHERE id = :id", null);
+
+        assertEquals(1, parsed.parameterCount());
+        assertEquals("id", parsed.namedParameters().get(0));
+        assertTrue(parsed.getParameterizedCql().contains("'a{b'"), parsed.getParameterizedCql());
+        assertTrue(parsed.getParameterizedCql().endsWith("WHERE id = ?"), parsed.getParameterizedCql());
+    }
+
+    @Test
+    public void testParse_CloseBraceInMapStringValue_doesNotMisparse() {
+        // Regression: a '}' inside a string VALUE of a map literal must not prematurely drop the brace depth.
+        // Before the fix the '}' in 'a}b' dropped depth to 0, so the following ':' map separator was seen at
+        // depth 0 and registered as a spurious named parameter, throwing "Cannot mix parameter styles".
+        final ParsedCql parsed = ParsedCql.parse("UPDATE t SET m = {'k':'a}b','n':5} WHERE id = ?", null);
+
+        assertEquals(1, parsed.parameterCount());
+        assertTrue(parsed.namedParameters().isEmpty(), parsed.namedParameters().toString());
+        assertTrue(parsed.getParameterizedCql().contains("{'k':'a}b','n':5}"), parsed.getParameterizedCql());
+        assertTrue(parsed.getParameterizedCql().endsWith("WHERE id = ?"), parsed.getParameterizedCql());
+    }
+
+    @Test
+    public void testParse_JsonStringValueWithBraces_namedParamStillRecognized() {
+        // Realistic case: storing a JSON fragment (balanced or not) in a string column, followed by a named param.
+        final ParsedCql parsed = ParsedCql.parse("UPDATE t SET data = '{\"k\":1' WHERE id = :id", null);
+
+        assertEquals(1, parsed.parameterCount());
+        assertEquals("id", parsed.namedParameters().get(0));
+        assertTrue(parsed.getParameterizedCql().contains("'{\"k\":1'"), parsed.getParameterizedCql());
+        assertTrue(parsed.getParameterizedCql().endsWith("WHERE id = ?"), parsed.getParameterizedCql());
+    }
+
+    @Test
     public void testParse_IbatisStyleParameters() {
         final ParsedCql parsed = ParsedCql.parse("SELECT * FROM users WHERE id = #{userId} AND status = #{status}", null);
         assertEquals(2, parsed.parameterCount());

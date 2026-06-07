@@ -4016,6 +4016,8 @@ public final class MongoCollectionExecutor {
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public Document findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options) {
+        N.checkArgNotNull(filter, "filter");
+
         if (options == null) {
             return coll.findOneAndDelete(filter);
         } else {
@@ -4044,6 +4046,8 @@ public final class MongoCollectionExecutor {
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> T findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options, final Class<T> rowType) {
+        N.checkArgNotNull(filter, "filter");
+
         if (options == null) {
             return toEntity(coll.findOneAndDelete(filter), rowType);
         } else {

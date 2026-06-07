@@ -1943,7 +1943,7 @@ public final class HBaseExecutor implements AutoCloseable {
                             }
 
                             @Override
-                            public void close() {
+                            public void closeResource() {
                                 try {
                                     IOUtil.closeQuietly(resultScanner);
                                 } finally {
@@ -1964,7 +1964,7 @@ public final class HBaseExecutor implements AutoCloseable {
             }
         });
 
-        return Stream.of(lazyIter).onClose(lazyIter::close);
+        return Stream.of(lazyIter).onClose(lazyIter::closeResource);
     }
 
     /**

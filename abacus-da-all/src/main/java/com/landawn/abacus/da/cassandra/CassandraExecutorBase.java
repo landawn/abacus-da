@@ -2046,6 +2046,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleNonNull(Class, String, Object...)
      */
     public <T, V> Optional<V> queryForSingleNonNull(final Class<T> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause) {
+        N.checkArgNotEmpty(propName, "propName");
+
         final SP cp = prepareQuery(targetClass, List.of(propName), whereClause, 1);
 
         return queryForSingleNonNull(valueClass, cp.query(), cp.parameters().toArray());

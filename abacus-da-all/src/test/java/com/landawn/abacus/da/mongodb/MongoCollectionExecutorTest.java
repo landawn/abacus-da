@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -1127,6 +1128,23 @@ public class MongoCollectionExecutorTest extends TestBase {
 
         Document result = executor.findOneAndDelete(filter, options, Document.class);
         Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testFindOneAndDeleteNullFilterThrows() {
+        // Regression: a null filter must be rejected with IllegalArgumentException (as documented and as every
+        // sibling deleteOne/deleteMany/findOneAndUpdate/findOneAndReplace does). Before the fix the null filter
+        // was passed straight to the driver, which omits the query from the findAndModify command and silently
+        // deletes an arbitrary document. The driver must NOT be invoked.
+        final com.mongodb.client.model.FindOneAndDeleteOptions options = new com.mongodb.client.model.FindOneAndDeleteOptions();
+
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null, Document.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null, options));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null, options, Document.class));
+
+        verify(mockCollection, never()).findOneAndDelete(any(Bson.class));
+        verify(mockCollection, never()).findOneAndDelete(any(Bson.class), any(com.mongodb.client.model.FindOneAndDeleteOptions.class));
     }
 
     // ---- distinct/update/delete/get with collection projection ----

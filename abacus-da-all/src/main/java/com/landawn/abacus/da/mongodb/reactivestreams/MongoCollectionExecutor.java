@@ -3524,6 +3524,8 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if filter is null
      */
     public Mono<Document> findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options) {
+        N.checkArgNotNull(filter, "filter");
+
         if (options == null) {
             return Mono.from(coll.findOneAndDelete(filter));
         } else {
