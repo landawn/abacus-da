@@ -2315,8 +2315,16 @@ public class MongoCollectionExecutorTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> executor.query(selectPropNames, (Bson) null, sort, 0, 10, Document.class));
         assertThrows(IllegalArgumentException.class, () -> executor.query(projection, (Bson) null, sort, 0, 10, Document.class));
 
+        // count / exists / queryForSingleValue / distinct take a Bson filter too and must reject null consistently.
+        assertThrows(IllegalArgumentException.class, () -> executor.count((Bson) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.count((Bson) null, new CountOptions()));
+        assertThrows(IllegalArgumentException.class, () -> executor.exists((Bson) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleValue("name", (Bson) null, String.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.distinct("name", (Bson) null, String.class));
+
         // The eager guard short-circuits before the driver is touched.
         verify(mockCollection, org.mockito.Mockito.never()).find(any(Bson.class));
+        verify(mockCollection, org.mockito.Mockito.never()).countDocuments(any(Bson.class));
     }
 
     public static class GroupRow {

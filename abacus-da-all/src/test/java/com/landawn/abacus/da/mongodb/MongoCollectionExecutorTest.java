@@ -1780,12 +1780,22 @@ public class MongoCollectionExecutorTest extends TestBase {
         Assertions.assertThrows(IllegalArgumentException.class, () -> executor.query(selectPropNames, (Bson) null, sort, 0, 10, Document.class));
         Assertions.assertThrows(IllegalArgumentException.class, () -> executor.query(projection, (Bson) null, sort, 0, 10, Document.class));
 
-        // The guard short-circuits before the driver is touched.
+        // stream / queryFor* / count / exists / distinct take a Bson filter too and must reject null consistently.
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.stream((Bson) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.stream((Bson) null, Document.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.stream(selectPropNames, (Bson) null, sort, 0, 10, Document.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleValue("name", (Bson) null, String.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleNonNull("name", (Bson) null, String.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.count((Bson) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.count((Bson) null, new CountOptions()));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.exists((Bson) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.distinct("name", (Bson) null, String.class));
+
+        // The guard short-circuits before the driver is touched (no find / countDocuments / distinct).
         verify(mockCollection, never()).find();
         verify(mockCollection, never()).find(any(Bson.class));
-
-        // Boundary: count(Bson) intentionally still allows a null filter (match-all) and must NOT throw IAE.
-        Assertions.assertDoesNotThrow(() -> executor.count((Bson) null));
+        verify(mockCollection, never()).countDocuments(any(Bson.class));
+        verify(mockCollection, never()).countDocuments(any(Bson.class), any(CountOptions.class));
     }
 
     public static class GroupRow {

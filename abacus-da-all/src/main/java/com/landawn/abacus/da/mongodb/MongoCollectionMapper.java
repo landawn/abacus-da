@@ -1003,11 +1003,11 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param propName the name of the boolean property to retrieve
-     * @param filter the query filter to match documents against (null matches all)
+     * @param filter the query filter to match documents against (must not be null)
      * @return a <i>present</i> {@code OptionalBoolean} holding the field value (or {@code false} for a
      *         missing/{@code null} field) when at least one document is matched;
      *         {@code OptionalBoolean.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty
+     * @throws IllegalArgumentException if propName is null or empty, or filter is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @see OptionalBoolean
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1041,11 +1041,11 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param propName the name of the character property to retrieve
-     * @param filter the query filter to match documents against (null matches all)
+     * @param filter the query filter to match documents against (must not be null)
      * @return a <i>present</i> {@code OptionalChar} holding the field value (or the default {@code char}
      *         for a missing/{@code null} field) when at least one document is matched;
      *         {@code OptionalChar.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty
+     * @throws IllegalArgumentException if propName is null or empty, or filter is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @see OptionalChar
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1078,11 +1078,11 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param propName the name of the byte property to retrieve
-     * @param filter the query filter to match documents against (null matches all)
+     * @param filter the query filter to match documents against (must not be null)
      * @return a <i>present</i> {@code OptionalByte} holding the field value (or {@code 0} for a
      *         missing/{@code null} field) when at least one document is matched;
      *         {@code OptionalByte.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty
+     * @throws IllegalArgumentException if propName is null or empty, or filter is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @see OptionalByte
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1116,11 +1116,11 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param propName the name of the short property to retrieve
-     * @param filter the query filter to match documents against (null matches all)
+     * @param filter the query filter to match documents against (must not be null)
      * @return a <i>present</i> {@code OptionalShort} holding the field value (or {@code 0} for a
      *         missing/{@code null} field) when at least one document is matched;
      *         {@code OptionalShort.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty
+     * @throws IllegalArgumentException if propName is null or empty, or filter is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @see OptionalShort
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1154,11 +1154,11 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param propName the name of the integer property to retrieve
-     * @param filter the query filter to match documents against (null matches all)
+     * @param filter the query filter to match documents against (must not be null)
      * @return a <i>present</i> {@code OptionalInt} holding the field value (or {@code 0} for a
      *         missing/{@code null} field) when at least one document is matched;
      *         {@code OptionalInt.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty
+     * @throws IllegalArgumentException if propName is null or empty, or filter is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @see OptionalInt
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1192,11 +1192,11 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param propName the name of the long property to retrieve
-     * @param filter the query filter to match documents against (null matches all)
+     * @param filter the query filter to match documents against (must not be null)
      * @return a <i>present</i> {@code OptionalLong} holding the field value (or {@code 0L} for a
      *         missing/{@code null} field) when at least one document is matched;
      *         {@code OptionalLong.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty
+     * @throws IllegalArgumentException if propName is null or empty, or filter is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @see OptionalLong
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1230,11 +1230,11 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param propName the name of the float property to retrieve
-     * @param filter the query filter to match documents against (null matches all)
+     * @param filter the query filter to match documents against (must not be null)
      * @return a <i>present</i> {@code OptionalFloat} holding the field value (or {@code 0.0f} for a
      *         missing/{@code null} field) when at least one document is matched;
      *         {@code OptionalFloat.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty
+     * @throws IllegalArgumentException if propName is null or empty, or filter is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @see OptionalFloat
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1268,11 +1268,11 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param propName the name of the double property to retrieve
-     * @param filter the query filter to match documents against (null matches all)
+     * @param filter the query filter to match documents against (must not be null)
      * @return a <i>present</i> {@code OptionalDouble} holding the field value (or {@code 0.0d} for a
      *         missing/{@code null} field) when at least one document is matched;
      *         {@code OptionalDouble.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty
+     * @throws IllegalArgumentException if propName is null or empty, or filter is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @see OptionalDouble
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1306,11 +1306,11 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param propName the name of the string property to retrieve
-     * @param filter the query filter to match documents against (null matches all)
+     * @param filter the query filter to match documents against (must not be null)
      * @return a <i>present</i> {@code Nullable<String>} holding the field value (possibly {@code null}
      *         for a missing/{@code null} field) when at least one document is matched;
      *         {@code Nullable.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty
+     * @throws IllegalArgumentException if propName is null or empty, or filter is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Nullable
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1342,11 +1342,11 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param propName the name of the date property to retrieve
-     * @param filter the query filter to match documents against (null matches all)
+     * @param filter the query filter to match documents against (must not be null)
      * @return a <i>present</i> {@code Nullable<Date>} holding the field value (possibly {@code null}
      *         for a missing/{@code null} field) when at least one document is matched;
      *         {@code Nullable.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty
+     * @throws IllegalArgumentException if propName is null or empty, or filter is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Nullable
      * @see Date
@@ -1384,12 +1384,12 @@ public final class MongoCollectionMapper<T> {
      *
      * @param <P> the specific Date subtype to return
      * @param propName the name of the date property to retrieve
-     * @param filter the query filter to match documents against (null matches all)
+     * @param filter the query filter to match documents against (must not be null)
      * @param valueType the class of the Date subtype to convert to
      * @return a <i>present</i> {@code Nullable<P>} holding the field value (possibly {@code null} for
      *         a BSON {@code null} field) when at least one document is matched;
      *         {@code Nullable.empty()} when no document matches
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or {@code valueType} is null
+     * @throws IllegalArgumentException if {@code propName} is null or empty, {@code filter} is null, or {@code valueType} is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Nullable
      * @see Date
@@ -1428,12 +1428,12 @@ public final class MongoCollectionMapper<T> {
      *
      * @param <V> the type to convert the property value to
      * @param propName the name of the property to retrieve
-     * @param filter the query filter to match documents against (null matches all)
+     * @param filter the query filter to match documents against (must not be null)
      * @param valueType the class of the type to convert to
      * @return a <i>present</i> {@code Nullable<V>} holding the field value (possibly {@code null} for
      *         a missing or BSON {@code null} field) when at least one document is matched;
      *         {@code Nullable.empty()} when no document matches
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or {@code valueType} is null
+     * @throws IllegalArgumentException if {@code propName} is null or empty, {@code filter} is null, or {@code valueType} is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Nullable
      */

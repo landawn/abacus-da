@@ -297,13 +297,12 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * boolean hasActiveUsers = executor.exists(Filters.eq("status", "active"));               // true if at least one match
      * boolean hasRecentUsers = executor.exists("{createdAt: {$gte: ISODate('2023-01-01')}}"); // true if any match
-     * executor.exists((Bson) null);                                                           // throws NullPointerException (filter must not be null)
+     * executor.exists((Bson) null);                                                           // throws IllegalArgumentException (filter must not be null)
      * }</pre>
      *
-     * @param filter the query filter to match documents against (must not be {@code null} — the
-     *               underlying driver will throw {@link NullPointerException})
+     * @param filter the query filter to match documents against (must not be null)
      * @return {@code true} if any documents match the filter, {@code false} otherwise
-     * @throws NullPointerException if filter is {@code null}
+     * @throws IllegalArgumentException if filter is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @see com.mongodb.client.model.Filters
      */
@@ -346,19 +345,20 @@ public final class MongoCollectionExecutor {
      * <pre>{@code
      * long activeUsers = executor.count(Filters.eq("status", "active")); // number of matching documents (0 if none)
      * long adultUsers = executor.count("{age: {$gte: 18}}");             // number of matching documents
-     * executor.count((Bson) null);                                       // throws NullPointerException (use count() for an unfiltered count)
+     * executor.count((Bson) null);                                       // throws IllegalArgumentException (use count() for an unfiltered count)
      * }</pre>
      *
-     * @param filter the query filter to count matching documents (must not be {@code null} — the
-     *               underlying driver will throw {@link NullPointerException}; use {@link #count()} for
-     *               an unfiltered count)
+     * @param filter the query filter to count matching documents (must not be null; use {@link #count()}
+     *               for an unfiltered count)
      * @return the number of documents matching the filter
-     * @throws NullPointerException if filter is {@code null}
+     * @throws IllegalArgumentException if filter is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @see com.mongodb.client.model.Filters
      * @see #count(Bson, CountOptions)
      */
     public long count(final Bson filter) {
+        N.checkArgNotNull(filter, "filter");
+
         return coll.countDocuments(filter);
     }
 
@@ -375,17 +375,18 @@ public final class MongoCollectionExecutor {
      * long plainCount = executor.count(Filters.exists("email"), null);      // null options -> behaves like count(filter)
      * }</pre>
      *
-     * @param filter the query filter to count matching documents (must not be {@code null} — the
-     *               underlying driver will throw {@link NullPointerException}; use {@link #count()} for
-     *               an unfiltered count)
+     * @param filter the query filter to count matching documents (must not be null; use {@link #count()}
+     *               for an unfiltered count)
      * @param options additional options for the count operation (null uses defaults)
      * @return the number of documents matching the filter within the specified constraints
-     * @throws NullPointerException if filter is {@code null}
+     * @throws IllegalArgumentException if filter is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @see CountOptions
      * @see com.mongodb.client.model.Filters
      */
     public long count(final Bson filter, final CountOptions options) {
+        N.checkArgNotNull(filter, "filter");
+
         if (options == null) {
             return coll.countDocuments(filter);
         } else {
@@ -864,8 +865,6 @@ public final class MongoCollectionExecutor {
      * @see com.mongodb.client.model.Sorts
      */
     public <T> Optional<T> findFirst(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
-        N.checkArgNotNull(filter, "filter");
-
         final FindIterable<Document> findIterable = query(selectPropNames, filter, sort, 0, 1);
 
         final T result = toEntity(findIterable, rowType);
@@ -904,8 +903,6 @@ public final class MongoCollectionExecutor {
      * @see com.mongodb.client.model.Sorts
      */
     public <T> Optional<T> findFirst(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
-        N.checkArgNotNull(filter, "filter");
-
         final FindIterable<Document> findIterable = executeQuery(projection, filter, sort, 0, 1);
 
         final T result = toEntity(findIterable, rowType);
@@ -1108,8 +1105,6 @@ public final class MongoCollectionExecutor {
      */
     public <T> List<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
-        N.checkArgNotNull(filter, "filter");
-
         final FindIterable<Document> findIterable = query(selectPropNames, filter, sort, offset, count);
 
         return MongoDBBase.toList(findIterable, rowType);
@@ -1180,8 +1175,6 @@ public final class MongoCollectionExecutor {
      * @see com.mongodb.client.model.Sorts
      */
     public <T> List<T> list(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType) {
-        N.checkArgNotNull(filter, "filter");
-
         final FindIterable<Document> findIterable = executeQuery(projection, filter, sort, offset, count);
 
         return MongoDBBase.toList(findIterable, rowType);
@@ -1210,11 +1203,11 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the field to retrieve the boolean value from
-     * @param filter BSON filter criteria to match documents (null matches all)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @return a <i>present</i> {@code OptionalBoolean} holding the converted field value (or {@code false}
      *         for a missing/null field) when a document is matched; {@code OptionalBoolean.empty()} when no
      *         document matches the filter
-     * @throws IllegalArgumentException if propName is null or empty
+     * @throws IllegalArgumentException if filter is null, or if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
      */
@@ -1244,11 +1237,11 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the field to retrieve the character value from
-     * @param filter BSON filter criteria to match documents (null matches all)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @return a <i>present</i> {@code OptionalChar} holding the converted field value (or {@code (char) 0}
      *         for a missing/null field) when a document is matched; {@code OptionalChar.empty()} when no
      *         document matches the filter
-     * @throws IllegalArgumentException if propName is null or empty
+     * @throws IllegalArgumentException if filter is null, or if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
      */
@@ -1278,11 +1271,11 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the field to retrieve the byte value from
-     * @param filter BSON filter criteria to match documents (null matches all)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @return a <i>present</i> {@code OptionalByte} holding the converted field value (or {@code (byte) 0}
      *         for a missing/null field) when a document is matched; {@code OptionalByte.empty()} when no
      *         document matches the filter
-     * @throws IllegalArgumentException if propName is null or empty
+     * @throws IllegalArgumentException if filter is null, or if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
      */
@@ -1314,11 +1307,11 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the field to retrieve the short value from
-     * @param filter BSON filter criteria to match documents (null matches all)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @return a <i>present</i> {@code OptionalShort} holding the converted field value (or
      *         {@code (short) 0} for a missing/null field) when a document is matched;
      *         {@code OptionalShort.empty()} when no document matches the filter
-     * @throws IllegalArgumentException if propName is null or empty
+     * @throws IllegalArgumentException if filter is null, or if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
      */
@@ -1348,11 +1341,11 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the field to retrieve the integer value from
-     * @param filter BSON filter criteria to match documents (null matches all)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @return a <i>present</i> {@code OptionalInt} holding the converted field value (or {@code 0} for a
      *         missing/null field) when a document is matched; {@code OptionalInt.empty()} when no document
      *         matches the filter
-     * @throws IllegalArgumentException if propName is null or empty
+     * @throws IllegalArgumentException if filter is null, or if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
      */
@@ -1382,11 +1375,11 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the field to retrieve the long value from
-     * @param filter BSON filter criteria to match documents (null matches all)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @return a <i>present</i> {@code OptionalLong} holding the converted field value (or {@code 0L} for a
      *         missing/null field) when a document is matched; {@code OptionalLong.empty()} when no document
      *         matches the filter
-     * @throws IllegalArgumentException if propName is null or empty
+     * @throws IllegalArgumentException if filter is null, or if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
      */
@@ -1416,11 +1409,11 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the field to retrieve the float value from
-     * @param filter BSON filter criteria to match documents (null matches all)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @return a <i>present</i> {@code OptionalFloat} holding the converted field value (or {@code 0.0f}
      *         for a missing/null field) when a document is matched; {@code OptionalFloat.empty()} when no
      *         document matches the filter
-     * @throws IllegalArgumentException if propName is null or empty
+     * @throws IllegalArgumentException if filter is null, or if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
      */
@@ -1450,11 +1443,11 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the field to retrieve the double value from
-     * @param filter BSON filter criteria to match documents (null matches all)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @return a <i>present</i> {@code OptionalDouble} holding the converted field value (or {@code 0.0d}
      *         for a missing/null field) when a document is matched; {@code OptionalDouble.empty()} when no
      *         document matches the filter
-     * @throws IllegalArgumentException if propName is null or empty
+     * @throws IllegalArgumentException if filter is null, or if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
      */
@@ -1484,11 +1477,11 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the field to retrieve the string value from
-     * @param filter BSON filter criteria to match documents (null matches all)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @return a <i>present</i> {@code Nullable<String>} holding the field value (possibly {@code null}
      *         for a missing/null field) when a document is matched; {@code Nullable.empty()} when no
      *         document matches the filter
-     * @throws IllegalArgumentException if propName is null or empty
+     * @throws IllegalArgumentException if filter is null, or if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
      */
@@ -1516,11 +1509,11 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the field to retrieve the Date value from
-     * @param filter BSON filter criteria to match documents (null matches all)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @return a <i>present</i> {@code Nullable<Date>} holding the field value (possibly {@code null} for
      *         a missing/null field) when a document is matched; {@code Nullable.empty()} when no document
      *         matches the filter
-     * @throws IllegalArgumentException if propName is null or empty
+     * @throws IllegalArgumentException if filter is null, or if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForDate(String, Bson, Class)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1553,12 +1546,12 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the specific Date subtype to retrieve
      * @param propName the name of the field to retrieve the Date value from
-     * @param filter BSON filter criteria to match documents (null matches all)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param rowType the specific Date class to convert the value to
      * @return a <i>present</i> {@code Nullable<T>} holding the converted field value (possibly
      *         {@code null} for a missing/null field) when a document is matched; {@code Nullable.empty()}
      *         when no document matches the filter
-     * @throws IllegalArgumentException if propName or rowType is null or empty
+     * @throws IllegalArgumentException if filter is null, or if propName or rowType is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForDate(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1594,12 +1587,12 @@ public final class MongoCollectionExecutor {
      *
      * @param <V> the target type for the field value
      * @param propName the name of the field to retrieve the value from
-     * @param filter BSON filter criteria to match documents (null matches all)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param valueType the target type for conversion of the field value
      * @return a <i>present</i> {@code Nullable<V>} holding the converted field value (possibly
      *         {@code null} for a missing/null field) when a document is matched; {@code Nullable.empty()}
      *         when no document matches the filter
-     * @throws IllegalArgumentException if propName or valueType is null or empty
+     * @throws IllegalArgumentException if filter is null, or if propName or valueType is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForSingleNonNull(String, Bson, Class)
      * @see com.landawn.abacus.util.u.Nullable
@@ -1640,12 +1633,12 @@ public final class MongoCollectionExecutor {
      *
      * @param <V> the target type for the field value
      * @param propName the name of the field to retrieve the value from
-     * @param filter BSON filter criteria to match documents (null matches all)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param valueType the target type for conversion of the field value
      * @return a <i>present</i> {@code Optional<V>} holding the converted non-null value when a
      *         document is matched and the field carries a non-null value; {@code Optional.empty()}
      *         when no document matches the filter
-     * @throws IllegalArgumentException if propName or valueType is null or empty
+     * @throws IllegalArgumentException if filter is null, or if propName or valueType is null or empty
      * @throws NullPointerException if a document is matched but the field is absent, the raw value is
      *         {@code null}, or the conversion to {@code valueType} yields {@code null}, because
      *         {@link Optional#of(Object)} rejects a null payload
@@ -1924,8 +1917,6 @@ public final class MongoCollectionExecutor {
      */
     public <T> Dataset query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
-        N.checkArgNotNull(filter, "filter");
-
         final FindIterable<Document> findIterable = query(selectPropNames, filter, sort, offset, count);
 
         if (N.isEmpty(selectPropNames)) {
@@ -2002,8 +1993,6 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if filter is null
      */
     public <T> Dataset query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType) {
-        N.checkArgNotNull(filter, "filter");
-
         final FindIterable<Document> findIterable = executeQuery(projection, filter, sort, offset, count);
 
         return MongoDBBase.extractData(findIterable, rowType);
@@ -2125,8 +2114,9 @@ public final class MongoCollectionExecutor {
      *                        .orElse(0.0);
      * }</pre>
      *
-     * @param filter BSON filter criteria to match documents (null for all documents)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @return a Stream of Document objects matching the filter criteria
+     * @throws IllegalArgumentException if filter is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Stream
      * @see #stream(Bson, Class)
@@ -2166,10 +2156,10 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the target type for each document in the stream
-     * @param filter BSON filter criteria to match documents (null for all documents)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param rowType the target type for conversion of each document
      * @return a Stream of typed objects matching the filter criteria
-     * @throws IllegalArgumentException if rowType is null or unsupported
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Stream
      * @see #stream(Bson)
@@ -2194,12 +2184,12 @@ public final class MongoCollectionExecutor {
      * }</pre>
      * 
      * @param <T> the target type for each document
-     * @param filter BSON filter criteria to match documents
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param offset number of documents to skip (must be >= 0)
      * @param count maximum number of documents to return (must be >= 0)
      * @param rowType the target type for conversion
      * @return a Stream of typed objects with pagination applied
-     * @throws IllegalArgumentException if offset or count is negative, or rowType is null
+     * @throws IllegalArgumentException if filter is null, or if offset or count is negative, or rowType is null
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> Stream<T> stream(final Bson filter, final int offset, final int count, final Class<T> rowType) {
@@ -2223,10 +2213,10 @@ public final class MongoCollectionExecutor {
      * 
      * @param <T> the target type for each document
      * @param selectPropNames collection of property names to include in results (null for all fields)
-     * @param filter BSON filter criteria to match documents
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param rowType the target type for conversion
      * @return a Stream of typed objects with specified fields
-     * @throws IllegalArgumentException if rowType is null
+     * @throws IllegalArgumentException if filter is null, or if rowType is null
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> Stream<T> stream(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) {
@@ -2249,12 +2239,12 @@ public final class MongoCollectionExecutor {
      * 
      * @param <T> the target type for each document
      * @param selectPropNames collection of property names to include
-     * @param filter BSON filter criteria
+     * @param filter BSON filter criteria (must not be null)
      * @param offset number of documents to skip
      * @param count maximum number of documents to return
      * @param rowType the target type for conversion
      * @return a Stream of typed objects
-     * @throws IllegalArgumentException if parameters are invalid
+     * @throws IllegalArgumentException if filter is null, or if parameters are invalid
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> Stream<T> stream(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count, final Class<T> rowType) {
@@ -2278,11 +2268,11 @@ public final class MongoCollectionExecutor {
      * 
      * @param <T> the target type for each document
      * @param selectPropNames collection of property names to include
-     * @param filter BSON filter criteria
+     * @param filter BSON filter criteria (must not be null)
      * @param sort BSON sort criteria (null for no sorting)
      * @param rowType the target type for conversion
      * @return a sorted Stream of typed objects
-     * @throws IllegalArgumentException if rowType is null
+     * @throws IllegalArgumentException if filter is null, or if rowType is null
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> Stream<T> stream(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
@@ -2307,13 +2297,13 @@ public final class MongoCollectionExecutor {
      * 
      * @param <T> the target type for each document
      * @param selectPropNames collection of property names to include
-     * @param filter BSON filter criteria
+     * @param filter BSON filter criteria (must not be null)
      * @param sort BSON sort criteria
      * @param offset number of documents to skip
      * @param count maximum number of documents to return
      * @param rowType the target type for conversion
      * @return a fully-featured Stream of typed objects
-     * @throws IllegalArgumentException if parameters are invalid
+     * @throws IllegalArgumentException if filter is null, or if parameters are invalid
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> Stream<T> stream(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
@@ -2348,11 +2338,11 @@ public final class MongoCollectionExecutor {
      * 
      * @param <T> the target type for each document
      * @param projection BSON projection document (null for all fields)
-     * @param filter BSON filter criteria
+     * @param filter BSON filter criteria (must not be null)
      * @param sort BSON sort criteria
      * @param rowType the target type for conversion
      * @return a Stream with complex projection
-     * @throws IllegalArgumentException if rowType is null
+     * @throws IllegalArgumentException if filter is null, or if rowType is null
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> Stream<T> stream(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
@@ -2378,13 +2368,13 @@ public final class MongoCollectionExecutor {
      * 
      * @param <T> the target type for each document
      * @param projection BSON projection document
-     * @param filter BSON filter criteria
+     * @param filter BSON filter criteria (must not be null)
      * @param sort BSON sort criteria
      * @param offset number of documents to skip
      * @param count maximum number of documents to return
      * @param rowType the target type for conversion
      * @return a fully-featured Stream with BSON projection
-     * @throws IllegalArgumentException if parameters are invalid
+     * @throws IllegalArgumentException if filter is null, or if parameters are invalid
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> Stream<T> stream(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType) {
@@ -2502,6 +2492,8 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if offset or count is negative
      */
     private FindIterable<Document> executeQuery(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count) {
+        N.checkArgNotNull(filter, "filter");
+
         if (logger.isDebugEnabled()) {
             logger.debug("Querying collection {} with filter: {}", coll.getNamespace().getFullName(), filter);
         }
@@ -4112,14 +4104,15 @@ public final class MongoCollectionExecutor {
      * 
      * @param <T> the type of the distinct values
      * @param fieldName the field to get distinct values for
-     * @param filter BSON filter to apply before getting distinct values
+     * @param filter BSON filter to apply before getting distinct values (must not be null)
      * @param rowType the class of the field values
      * @return a Stream of distinct values from filtered documents
-     * @throws IllegalArgumentException if parameters are null
+     * @throws IllegalArgumentException if filter is null, or if any other parameter is null
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> Stream<T> distinct(final String fieldName, final Bson filter, final Class<T> rowType) {
         N.checkArgNotEmpty(fieldName, "fieldName");
+        N.checkArgNotNull(filter, "filter");
 
         final MongoCursor<T> cursor = coll.distinct(fieldName, filter, rowType).iterator();
 

@@ -224,9 +224,9 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(hasActive -> System.out.println("Has active users: " + hasActive));
      * }</pre>
      *
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @return a ContinuableFuture that completes with {@code true} if matching documents exist, {@code false} otherwise
-     * @throws NullPointerException if filter is null (propagated through future, thrown by the underlying MongoDB driver)
+     * @throws IllegalArgumentException if filter is null (propagated through future)
      * @see com.mongodb.client.model.Filters
      * @see ContinuableFuture
      */
@@ -267,9 +267,9 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(activeCount -> System.out.println("Active users: " + activeCount));
      * }</pre>
      *
-     * @param filter the query filter to count matching documents
+     * @param filter the query filter to count matching documents (must not be null)
      * @return a ContinuableFuture that completes with the count of matching documents
-     * @throws NullPointerException if filter is null (propagated through future, thrown by the underlying MongoDB driver)
+     * @throws IllegalArgumentException if filter is null (propagated through future)
      * @see com.mongodb.client.model.Filters
      * @see ContinuableFuture
      */
@@ -290,10 +290,10 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(count -> System.out.println("Users with email: " + count));
      * }</pre>
      *
-     * @param filter the query filter to count matching documents
+     * @param filter the query filter to count matching documents (must not be null)
      * @param options additional options for the count operation (null uses defaults)
      * @return a ContinuableFuture that completes with the count within the specified constraints
-     * @throws NullPointerException if filter is null (propagated through future, thrown by the underlying MongoDB driver)
+     * @throws IllegalArgumentException if filter is null (propagated through future)
      * @see CountOptions
      * @see ContinuableFuture
      */
@@ -1065,11 +1065,11 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the boolean property to retrieve
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalBoolean}
      *         holding the field value (or {@code false} for missing/null) when at least one document
      *         matches; {@code OptionalBoolean.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see OptionalBoolean
      * @see MongoCollectionExecutor#queryForBoolean(String, Bson)
@@ -1101,11 +1101,11 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the character property to retrieve
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalChar}
      *         holding the field value (or the default {@code char} for missing/null) when at least one
      *         document matches; {@code OptionalChar.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see OptionalChar
      * @see MongoCollectionExecutor#queryForChar(String, Bson)
@@ -1137,11 +1137,11 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the byte property to retrieve
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalByte}
      *         holding the field value (or {@code 0} for missing/null) when at least one document
      *         matches; {@code OptionalByte.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see OptionalByte
      * @see MongoCollectionExecutor#queryForByte(String, Bson)
@@ -1173,11 +1173,11 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the short property to retrieve
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalShort}
      *         holding the field value (or {@code 0} for missing/null) when at least one document
      *         matches; {@code OptionalShort.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see OptionalShort
      * @see MongoCollectionExecutor#queryForShort(String, Bson)
@@ -1212,11 +1212,11 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the integer property to retrieve
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalInt}
      *         holding the field value (or {@code 0} for missing/null) when at least one document
      *         matches; {@code OptionalInt.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see OptionalInt
      * @see MongoCollectionExecutor#queryForInt(String, Bson)
@@ -1248,11 +1248,11 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the long property to retrieve
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalLong}
      *         holding the field value (or {@code 0L} for missing/null) when at least one document
      *         matches; {@code OptionalLong.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see OptionalLong
      * @see MongoCollectionExecutor#queryForLong(String, Bson)
@@ -1284,11 +1284,11 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the float property to retrieve
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalFloat}
      *         holding the field value (or {@code 0.0f} for missing/null) when at least one document
      *         matches; {@code OptionalFloat.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see OptionalFloat
      * @see #queryForDouble(String, Bson)
@@ -1321,11 +1321,11 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the double property to retrieve
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalDouble}
      *         holding the field value (or {@code 0.0d} for missing/null) when at least one document
      *         matches; {@code OptionalDouble.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see OptionalDouble
      * @see #queryForFloat(String, Bson)
@@ -1358,11 +1358,11 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the string property to retrieve
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code Nullable<String>}
      *         holding the field value (possibly {@code null} for missing/null fields) when at least
      *         one document matches; {@code Nullable.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Nullable
      * @see MongoCollectionExecutor#queryForString(String, Bson)
@@ -1394,11 +1394,11 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the Date property to retrieve
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code Nullable<Date>}
      *         holding the field value (possibly {@code null} for missing/null fields) when at least
      *         one document matches; {@code Nullable.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if propName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Nullable
      * @see Date
@@ -1434,12 +1434,12 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the specific Date subclass type
      * @param propName the name of the Date property to retrieve
-     * @param filter the query filter to match documents (null matches all)
+     * @param filter the query filter to match documents (must not be null)
      * @param valueType the Class object representing the Date subclass type
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code Nullable<T>}
      *         holding the typed Date value (possibly {@code null} for missing/null fields) when at
      *         least one document matches; {@code Nullable.empty()} when no document matches
-     * @throws IllegalArgumentException if propName or valueType is null or empty (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if propName or valueType is null or empty (propagated through future)
      * @throws ClassCastException if the value cannot be cast to the specified type (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #queryForDate(String, Bson)
@@ -1476,12 +1476,12 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <V> the type of the value to retrieve
      * @param propName the name of the property to retrieve
-     * @param filter the query filter to match documents (null matches all)
+     * @param filter the query filter to match documents (must not be null)
      * @param valueType the Class object representing the value type
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code Nullable<V>}
      *         holding the converted value (possibly {@code null} for missing/null fields) when at
      *         least one document matches; {@code Nullable.empty()} when no document matches
-     * @throws IllegalArgumentException if propName or valueType is null or empty (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if propName or valueType is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Nullable
      * @see #queryForSingleNonNull(String, Bson, Class)
@@ -1516,12 +1516,12 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <V> the type of the value to retrieve
      * @param propName the name of the property to retrieve
-     * @param filter the query filter to match documents (null matches all)
+     * @param filter the query filter to match documents (must not be null)
      * @param valueType the Class object representing the value type
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code Optional<V>}
      *         holding the (non-null) converted value when a document is matched and the field carries
      *         a non-null value; {@code Optional.empty()} when no document matches the filter
-     * @throws IllegalArgumentException if propName or valueType is null or empty (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if propName or valueType is null or empty (propagated through future)
      * @throws NullPointerException if a document is matched but the field is absent, the raw value is
      *         {@code null}, or the conversion to {@code valueType} yields {@code null}, because
      *         {@link Optional#of(Object)} rejects a null payload (propagated through future)
@@ -1797,8 +1797,9 @@ public final class AsyncMongoCollectionExecutor {
      *                               .forEach(doc -> processLog(doc)));
      * }</pre>
      *
-     * @param filter the query filter to match documents (null matches all documents)
+     * @param filter the query filter to match documents (must not be null)
      * @return a ContinuableFuture that completes with a Stream of Document objects
+     * @throws IllegalArgumentException if filter is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through the future)
      * @see Stream
      * @see Document
@@ -1822,10 +1823,10 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to map each document to
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Stream
-     * @throws IllegalArgumentException if {@code rowType} is null (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Stream
      */
@@ -1846,12 +1847,12 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to map each document to
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @param offset the number of documents to skip
      * @param count the maximum number of documents to stream
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a paginated typed Stream
-     * @throws IllegalArgumentException if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Stream
      */
@@ -1873,10 +1874,10 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the type to map each document to
      * @param selectPropNames the collection of property names to include in the projection
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a projected typed Stream
-     * @throws IllegalArgumentException if {@code rowType} is null (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Stream
      */
@@ -1899,12 +1900,12 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the type to map each document to
      * @param selectPropNames the collection of property names to include in the projection
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @param offset the number of documents to skip
      * @param count the maximum number of documents to stream
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a paginated projected typed Stream
-     * @throws IllegalArgumentException if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Stream
      */
@@ -1928,11 +1929,11 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the type to map each document to
      * @param selectPropNames the collection of property names to include in the projection
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a sorted projected typed Stream
-     * @throws IllegalArgumentException if {@code rowType} is null (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Stream
      * @see com.mongodb.client.model.Sorts
@@ -1956,13 +1957,13 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the type to map each document to
      * @param selectPropNames the collection of property names to include in the projection
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification
      * @param offset the number of documents to skip
      * @param count the maximum number of documents to stream
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a fully configured typed Stream
-     * @throws IllegalArgumentException if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Stream
      */
@@ -1987,11 +1988,11 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the type to map each document to
      * @param projection the BSON projection specification
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a projected and sorted typed Stream
-     * @throws IllegalArgumentException if {@code rowType} is null (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Stream
      * @see com.mongodb.client.model.Projections
@@ -2019,13 +2020,13 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the type to map each document to
      * @param projection the BSON projection specification
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification
      * @param offset the number of documents to skip
      * @param count the maximum number of documents to stream
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a fully configured typed Stream
-     * @throws IllegalArgumentException if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Stream
      * @see com.mongodb.client.model.Projections
@@ -3468,10 +3469,10 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the type of the distinct values
      * @param fieldName the field name to get distinct values for
-     * @param filter the query filter to apply before getting distinct values
+     * @param filter the query filter to apply before getting distinct values (must not be null)
      * @param rowType the class to deserialize the distinct values into
      * @return a ContinuableFuture that completes with a Stream of distinct values
-     * @throws IllegalArgumentException if any parameter is null (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if any other parameter is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #distinct(String, Class)
      */

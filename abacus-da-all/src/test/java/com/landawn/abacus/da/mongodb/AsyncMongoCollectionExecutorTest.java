@@ -2307,8 +2307,16 @@ public class AsyncMongoCollectionExecutorTest extends TestBase {
         Assertions.assertThrows(IllegalArgumentException.class, () -> async.query((Bson) null));
         Assertions.assertThrows(IllegalArgumentException.class, () -> async.query((Bson) null, Document.class));
 
+        // stream / queryForSingleValue / count / exists / distinct take a Bson filter too and must reject null.
+        Assertions.assertThrows(IllegalArgumentException.class, () -> async.stream((Bson) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> async.queryForSingleValue("name", (Bson) null, String.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> async.count((Bson) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> async.exists((Bson) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> async.distinct("name", (Bson) null, String.class));
+
         verify(mockColl, org.mockito.Mockito.never()).find();
         verify(mockColl, org.mockito.Mockito.never()).find(any(Bson.class));
+        verify(mockColl, org.mockito.Mockito.never()).countDocuments(any(Bson.class));
     }
 
     // Test entity class for testing

@@ -300,7 +300,7 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to match documents against; must not be null
      * @return a {@code Mono} that, on subscription, emits a single {@code Boolean} ({@code true} when
      *         at least one document matches the filter, {@code false} otherwise), then completes
-     * @throws IllegalArgumentException if {@code filter} is null (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code filter} is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see Bson
      * @see com.mongodb.client.model.Filters
@@ -370,12 +370,14 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to match documents against; must not be null
      * @return a {@code Mono} that, on subscription, emits a single {@code Long} count of documents
      *         matching the filter, then completes
-     * @throws IllegalArgumentException if {@code filter} is null (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code filter} is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see Bson
      * @see com.mongodb.client.model.Filters
      */
     public Mono<Long> count(final Bson filter) {
+        N.checkArgNotNull(filter, "filter");
+
         return Mono.from(coll.countDocuments(filter));
     }
 
@@ -407,13 +409,15 @@ public final class MongoCollectionExecutor {
      * @param options the count options to apply (may be null to use driver defaults)
      * @return a {@code Mono} that, on subscription, emits a single {@code Long} count of documents
      *         matching the filter with the applied options, then completes
-     * @throws IllegalArgumentException if {@code filter} is null (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code filter} is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see Bson
      * @see CountOptions
      * @see com.mongodb.client.model.Filters
      */
     public Mono<Long> count(final Bson filter, final CountOptions options) {
+        N.checkArgNotNull(filter, "filter");
+
         if (options == null) {
             return Mono.from(coll.countDocuments(filter));
         } else {
@@ -700,8 +704,9 @@ public final class MongoCollectionExecutor {
      * executor.findFirst(Filters.eq("status", "no-such"))
      *         .subscribe(d -> {}, e -> {}, () -> System.out.println("none")); // prints "none"
      *
-     * // Edge: a null filter matches ALL documents (still returns just the first one).
-     * Document any = executor.findFirst((Bson) null).block();    // any one document, or null if empty
+     * // Negative: a null filter is rejected with IllegalArgumentException, thrown synchronously
+     * // at the call site (before any Mono is returned).
+     * executor.findFirst((Bson) null);                           // throws IllegalArgumentException
      * }</pre>
      *
      * @param filter the query filter to match documents against (must not be null)
@@ -810,8 +815,6 @@ public final class MongoCollectionExecutor {
      * @see com.mongodb.client.model.Sorts
      */
     public <T> Mono<T> findFirst(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
-        N.checkArgNotNull(filter, "filter");
-
         return query(selectPropNames, filter, sort, 0, 1).next().mapNotNull(toEntity(rowType));
     }
 
@@ -838,8 +841,6 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
      */
     public <T> Mono<T> findFirst(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
-        N.checkArgNotNull(filter, "filter");
-
         return executeQuery(projection, filter, sort, 0, 1).next().mapNotNull(toEntity(rowType));
     }
 
@@ -866,8 +867,9 @@ public final class MongoCollectionExecutor {
      * executor.list(Filters.eq("status", "no-such"))
      *         .subscribe(d -> {}, e -> {}, () -> System.out.println("empty")); // prints "empty"
      *
-     * // Edge: a null filter lists the ENTIRE collection.
-     * Flux<Document> everything = executor.list((Bson) null);    // all documents (cold)
+     * // Negative: a null filter is rejected with IllegalArgumentException, thrown synchronously
+     * // at the call site (before any Flux is returned).
+     * executor.list((Bson) null);                                // throws IllegalArgumentException
      * }</pre>
      *
      * @param filter the query filter to match documents against (must not be null)
@@ -1033,8 +1035,6 @@ public final class MongoCollectionExecutor {
      */
     public <T> Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
-        N.checkArgNotNull(filter, "filter");
-
         return query(selectPropNames, filter, sort, offset, count).mapNotNull(toEntity(rowType));
     }
 
@@ -1087,8 +1087,6 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site), or if offset or count is negative
      */
     public <T> Flux<T> list(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType) {
-        N.checkArgNotNull(filter, "filter");
-
         return executeQuery(projection, filter, sort, offset, count).mapNotNull(toEntity(rowType));
     }
 
@@ -1132,10 +1130,10 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the property to retrieve
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the {@code Boolean} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForSingleValue(String, Bson, Class)
      * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#queryForBoolean(String, Bson)
@@ -1178,10 +1176,10 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the property to retrieve
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the {@code Character} field value on subscription, or
      *         completes empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForSingleValue(String, Bson, Class)
      * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#queryForChar(String, Bson)
@@ -1224,10 +1222,10 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the property to retrieve
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the {@code Byte} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForSingleValue(String, Bson, Class)
      * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#queryForByte(String, Bson)
@@ -1270,10 +1268,10 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the property to retrieve
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the {@code Short} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForSingleValue(String, Bson, Class)
      * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#queryForShort(String, Bson)
@@ -1316,10 +1314,10 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the property to retrieve
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the {@code Integer} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForSingleValue(String, Bson, Class)
      * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#queryForInt(String, Bson)
@@ -1362,10 +1360,10 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the property to retrieve
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the {@code Long} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForSingleValue(String, Bson, Class)
      * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#queryForLong(String, Bson)
@@ -1408,10 +1406,10 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the property to retrieve
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the {@code Float} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForDouble(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1455,10 +1453,10 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the property to retrieve
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the {@code Double} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForFloat(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1502,10 +1500,10 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the property to retrieve
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the {@code String} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForSingleValue(String, Bson, Class)
      * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#queryForString(String, Bson)
@@ -1547,10 +1545,10 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param propName the name of the property to retrieve
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the {@code Date} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForDate(String, Bson, Class)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1594,11 +1592,11 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the specific Date subtype to return
      * @param propName the name of the property to retrieve
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @param rowType the specific Date subclass to convert to
      * @return a {@code Mono} that emits the typed {@code Date} value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty (thrown synchronously at the call site), or if {@code rowType} is null
+     * @throws IllegalArgumentException if {@code propName} is null or empty, if {@code filter} is null, or if {@code rowType} is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForDate(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1647,11 +1645,11 @@ public final class MongoCollectionExecutor {
      *
      * @param <V> the type of value to retrieve
      * @param propName the name of the property to retrieve
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @param valueType the Class representing the target type for conversion
      * @return a {@code Mono} that emits the converted field value on subscription, or completes empty
      *         when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty (thrown synchronously at the call site), or if {@code valueType} is null
+     * @throws IllegalArgumentException if {@code propName} is null or empty, if {@code filter} is null, or if {@code valueType} is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#queryForSingleValue(String, Bson, Class)
      */
@@ -1690,8 +1688,9 @@ public final class MongoCollectionExecutor {
      * // Edge: no match -> emits an EMPTY Dataset (size 0); the Mono does NOT complete empty.
      * int rows = executor.query(Filters.eq("status", "no-such")).block().size(); // 0
      *
-     * // Edge: a null filter loads the entire collection into the Dataset.
-     * Dataset everything = executor.query((Bson) null).block();  // all documents
+     * // Negative: a null filter is rejected with IllegalArgumentException, thrown synchronously
+     * // at the call site (before any Mono is returned).
+     * executor.query((Bson) null);                               // throws IllegalArgumentException
      * }</pre>
      *
      * @param filter the query filter to match documents against (must not be null)
@@ -1850,8 +1849,6 @@ public final class MongoCollectionExecutor {
      */
     public <T> Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
-        N.checkArgNotNull(filter, "filter");
-
         if (N.isEmpty(selectPropNames)) {
             return query(selectPropNames, filter, sort, offset, count).collectList().map(rowList -> MongoDB.extractData(rowList, rowType));
         } else {
@@ -1906,8 +1903,6 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site), or if offset or count is negative
      */
     public <T> Mono<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType) {
-        N.checkArgNotNull(filter, "filter");
-
         return executeQuery(projection, filter, sort, offset, count).collectList().map(rowList -> MongoDB.extractData(rowList, rowType));
     }
 
@@ -1941,6 +1936,8 @@ public final class MongoCollectionExecutor {
     }
 
     private Flux<Document> executeQuery(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count) {
+        N.checkArgNotNull(filter, "filter");
+
         N.checkArgNotNegative(offset, "offset");
         N.checkArgNotNegative(count, "count");
 
@@ -3640,10 +3637,12 @@ public final class MongoCollectionExecutor {
      * @param rowType the class type of the distinct values; must not be null
      * @return a cold {@code Flux} that, on subscription, emits each distinct value found among the
      *         filtered documents, then completes
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
      */
     public <T> Flux<T> distinct(final String fieldName, final Bson filter, final Class<T> rowType) {
         N.checkArgNotEmpty(fieldName, "fieldName");
+        N.checkArgNotNull(filter, "filter");
 
         return Flux.from(coll.distinct(fieldName, filter, rowType));
     }
