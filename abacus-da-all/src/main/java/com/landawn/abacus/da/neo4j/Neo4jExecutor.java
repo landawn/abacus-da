@@ -301,7 +301,7 @@ public final class Neo4jExecutor {
      * <p>
      * Delegates to {@link Session#load(Class, java.io.Serializable)}. The session's default load
      * depth is&nbsp;1, so immediate relationships are typically also loaded; use
-     * {@link #load(Class, Long, int)} to control the depth explicitly.
+     * {@link #load(Class, Serializable, int)} to control the depth explicitly.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -315,7 +315,8 @@ public final class Neo4jExecutor {
      * @param targetClass the OGM-mapped class to load
      * @param id the native Neo4j node ID
      * @return the loaded entity, or {@code null} if no node with that ID exists
-     * @see #load(Class, Long, int)
+     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @see #load(Class, Serializable, int)
      * @see #loadAll(Class, Collection)
      */
     public <T, ID extends Serializable> T load(final Class<T> targetClass, final ID id) {
@@ -349,7 +350,8 @@ public final class Neo4jExecutor {
      * @param depth the depth of relationships to traverse: {@code 0} for the node only, a positive
      *              integer for that many hops, or {@code -1} for unlimited
      * @return the loaded entity, or {@code null} if no node with that ID exists
-     * @see #load(Class, Long)
+     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @see #load(Class, Serializable)
      * @see #loadAll(Class, Collection, int)
      */
     public <T, ID extends Serializable> T load(final Class<T> targetClass, final ID id, final int depth) {
@@ -391,7 +393,7 @@ public final class Neo4jExecutor {
      * @return collection of loaded node entities, empty collection if no nodes found
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Collection, int)
-     * @see #load(Class, Long)
+     * @see #load(Class, Serializable)
      */
     public <T, ID extends Serializable> Collection<T> loadAll(final Class<T> targetClass, final Collection<ID> ids) {
         final Session session = getSession();
@@ -429,7 +431,7 @@ public final class Neo4jExecutor {
      * @return collection of loaded node entities with relationships, may be empty if no nodes found
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Collection)
-     * @see #load(Class, Long, int)
+     * @see #load(Class, Serializable, int)
      */
     public <T, ID extends Serializable> Collection<T> loadAll(final Class<T> targetClass, final Collection<ID> ids, final int depth) {
         final Session session = getSession();
@@ -2427,7 +2429,7 @@ public final class Neo4jExecutor {
      * @param possibleEntity an object that may or may not be an OGM-mapped entity
      * @return the native Neo4j graph ID for the entity, or {@code null} if {@code possibleEntity}
      *         is not a mapped/managed entity with an assigned ID
-     * @see #load(Class, Long)
+     * @see #load(Class, Serializable)
      */
     public Long resolveGraphIdFor(final Object possibleEntity) {
         final Session session = getSession();

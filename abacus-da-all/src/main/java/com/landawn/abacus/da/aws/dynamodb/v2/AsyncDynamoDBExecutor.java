@@ -90,7 +90,7 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
  * <h3>Key Features:</h3>
  * <ul>
  * <li><b>Non-blocking Operations</b> — every public method returns a {@link CompletableFuture}
- *     or {@link Stream}-of-future for asynchronous execution</li>
+ *     for asynchronous execution (streaming results are returned as a {@code CompletableFuture<Stream<T>>})</li>
  * <li><b>Complete CRUD Support</b> — async get/put/update/delete (including {@code returnValues})</li>
  * <li><b>Batch Operations</b> — efficient async batch get/write; unprocessed items must be retried
  *     by the caller (not automatic)</li>

@@ -3877,7 +3877,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * String cql = LCCB.insertInto(User.class)
          *                  .values("John", "Doe", "john@example.com")
          *                  .build().query();
-         * // Output: INSERT INTO users (firstName, lastName, email) VALUES ('John', 'Doe', 'john@example.com')
+         * // Output: INSERT INTO user (firstName, lastName, email) VALUES ('John', 'Doe', 'john@example.com')
          * }</pre>
          * 
          * @param entityClass the entity class
@@ -4300,7 +4300,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * String cql = LCCB.deleteFrom(User.class)
          *                  .where(Filters.eq("id", 1))
          *                  .build().query();
-         * // Output: DELETE FROM users WHERE id = 1
+         * // Output: DELETE FROM user WHERE id = 1
          * }</pre>
          * 
          * @param entityClass the entity class
@@ -4555,7 +4555,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * String cql = LCCB.selectFrom(User.class)
          *                  .where(Filters.eq("active", true))
          *                  .build().query();
-         * // Output: SELECT id, firstName, lastName, email FROM users WHERE active = true
+         * // Output: SELECT id, firstName, lastName, email FROM user WHERE active = true
          * }</pre>
          * 
          * @param entityClass the entity class
@@ -4580,7 +4580,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * String cql = LCCB.selectFrom(User.class, "u")
          *                  .where(Filters.eq("u.active", true))
          *                  .build().query();
-         * // Output: SELECT u.id, u.firstName, u.lastName FROM users u WHERE u.active = true
+         * // Output: SELECT u.id, u.firstName, u.lastName FROM user u WHERE u.active = true
          * }</pre>
          * 
          * @param entityClass the entity class
@@ -4783,7 +4783,7 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * String cql = LCCB.count(User.class)
          *                  .where(Filters.between("age", 18, 65))
          *                  .build().query();
-         * // Output: SELECT count(*) FROM users WHERE age BETWEEN 18 AND 65
+         * // Output: SELECT count(*) FROM user WHERE age BETWEEN 18 AND 65
          * }</pre>
          * 
          * @param entityClass the entity class
@@ -9962,7 +9962,8 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * }</pre>
          * 
          * @param tableName the name of the table to count rows from
-         * @return a new CqlBuilder instance for method chaining
+         * @return a new CqlBuilder instance configured for COUNT operation
+         * @throws IllegalArgumentException if tableName is null or empty
          */
         public static CqlBuilder count(final String tableName) {
             N.checkArgNotEmpty(tableName, SELECTION_PART_MSG);
@@ -9984,7 +9985,8 @@ public abstract class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // N
          * }</pre>
          *
          * @param entityClass the entity class
-         * @return a new CqlBuilder instance for method chaining
+         * @return a new CqlBuilder instance configured for COUNT operation
+         * @throws IllegalArgumentException if entityClass is null
          */
         public static CqlBuilder count(final Class<?> entityClass) {
             N.checkArgNotNull(entityClass, SELECTION_PART_MSG);

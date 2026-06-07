@@ -2162,7 +2162,7 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param obj the object to insert - can be Document, {@code Map<String, Object>}, or entity class with getter/setter methods
      * @return a ContinuableFuture that completes when the insert operation finishes
-     * @throws NullPointerException if obj is null (propagated through future)
+     * @throws IllegalArgumentException if obj is null (propagated through future)
      * @throws com.mongodb.MongoWriteException if the insert operation fails (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #insertOne(Object, InsertOneOptions)
@@ -2194,7 +2194,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param obj the object to insert, which will be converted to a Document
      * @param options the options to apply to the insert operation
      * @return a ContinuableFuture that completes when the insertion finishes
-     * @throws NullPointerException if obj is null (propagated through future)
+     * @throws IllegalArgumentException if obj is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see InsertOneOptions
      * @see #insertOne(Object)
@@ -2287,7 +2287,7 @@ public final class AsyncMongoCollectionExecutor {
      * async.updateOne(userId, update)
      *      .thenRunAsync(result -> {
      *          System.out.println("Modified count: " + result.getModifiedCount());
-     *          if (result.getModifiedCount() == 0) {
+     *          if (result.getMatchedCount() == 0) {
      *              System.out.println("User not found");
      *          }
      *      });

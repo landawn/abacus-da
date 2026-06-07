@@ -567,7 +567,7 @@ public final class HBaseExecutor implements AutoCloseable {
      * @param resultScanner the HBase result scanner to drain
      * @param targetClass the target class — a JavaBean class or a single-value type
      *                    (e.g. {@code String}, {@code Integer}, {@code Date})
-     * @return a list of converted objects (skipping no rows)
+     * @return a list of converted objects (no rows are skipped)
      * @throws UncheckedIOException if reading from {@code resultScanner} fails with an {@link IOException}
      * @see #toList(ResultScanner, int, int, Class)
      */
@@ -1594,7 +1594,7 @@ public final class HBaseExecutor implements AutoCloseable {
      *
      * @param tableName the name of the HBase table
      * @param anyGet the AnyGet operation specifying what data to retrieve
-     * @return the HBase Result containing the retrieved data
+     * @return the HBase Result containing the retrieved data, or a present-but-{@linkplain Result#isEmpty() empty} Result if the row does not exist
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see AnyGet
      * @see #get(String, Get)
@@ -1621,7 +1621,8 @@ public final class HBaseExecutor implements AutoCloseable {
      *
      * @param tableName the name of the HBase table
      * @param anyGets the collection of AnyGet operations to execute
-     * @return a list of Results corresponding to each AnyGet operation
+     * @return a list of Results positionally aligned with {@code anyGets}; entries for rows that
+     *         do not exist are present in the list but are {@linkplain Result#isEmpty() empty}
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see AnyGet
      * @see #get(String, List)

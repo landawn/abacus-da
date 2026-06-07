@@ -149,7 +149,7 @@ import lombok.experimental.Accessors;
  * {@link com.landawn.abacus.da.cassandra.CassandraExecutor} for:</p>
  * <ul>
  * <li>Better performance and reduced memory usage</li>
- * <li>Improved async programming model with CompletableFuture</li>
+ * <li>Improved async programming model with ContinuableFuture</li>
  * <li>Enhanced query builder integration</li>
  * <li>Active development and bug fixes</li>
  * <li>Support for newer Cassandra features</li>

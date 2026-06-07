@@ -143,6 +143,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param rowMapper a function that maps column definitions and rows to result objects
      * @param parameters the query parameters
      * @return a future that completes with a Stream of mapped objects
+     * @throws IllegalArgumentException if rowMapper is null
      */
     public <T> ContinuableFuture<Stream<T>> stream(final String query, final BiFunction<ColumnDefinitions, Row, T> rowMapper, final Object... parameters) {
         N.checkArgNotNull(rowMapper, "rowMapper");
@@ -183,6 +184,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param statement the configured CQL statement to execute
      * @param rowMapper a function that maps column definitions and rows to result objects
      * @return a future that completes with a Stream of mapped objects
+     * @throws IllegalArgumentException if rowMapper is null
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Statement<?> statement, final BiFunction<ColumnDefinitions, Row, T> rowMapper) {
         N.checkArgNotNull(rowMapper, "rowMapper");

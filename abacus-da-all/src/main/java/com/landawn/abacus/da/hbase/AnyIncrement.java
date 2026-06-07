@@ -706,15 +706,16 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
     /**
      * Returns the hash code value for this AnyIncrement instance.
      *
-     * <p>The hash code is based on the underlying HBase Increment object and is consistent
-     * with the {@link #equals(Object)} method.</p>
+     * <p>The hash code is derived from the underlying HBase Increment object &mdash; which HBase
+     * computes from the <b>row key only</b> &mdash; and is therefore consistent with the
+     * {@link #equals(Object)} method.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyIncrement increment = AnyIncrement.of("row");
      * increment.hashCode() == increment.val().hashCode(); // true (delegates to the wrapped Increment)
      *
-     * // Equal increments share the same hash code
+     * // Increments with the same row key share the same hash code (columns are not considered)
      * AnyIncrement a = AnyIncrement.of("row").addColumn("cf", "q", 1L);
      * AnyIncrement b = AnyIncrement.of("row").addColumn("cf", "q", 1L);
      * a.equals(b);                         // true
@@ -733,8 +734,11 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
     /**
      * Compares this AnyIncrement instance with another object for equality.
      *
-     * <p>Two AnyIncrement instances are considered equal if they wrap equivalent HBase Increment
-     * operations. This comparison is based on the underlying Increment object's equality.</p>
+     * <p>Two AnyIncrement instances are considered equal if their underlying {@link Increment}
+     * objects are equal. HBase's {@code Increment.equals(Object)} compares the <b>row key only</b>
+     * &mdash; the queued column families, qualifiers, and increment amounts are <em>not</em>
+     * considered &mdash; so two increments on the same row are equal even when they hold different
+     * column increments, and two on different rows are unequal even when their columns are identical.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -743,7 +747,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *
      * AnyIncrement a = AnyIncrement.of("row").addColumn("cf", "q", 1L);
      * AnyIncrement b = AnyIncrement.of("row").addColumn("cf", "q", 1L);
-     * a.equals(b);                                 // returns true (equivalent increments)
+     * a.equals(b);                                 // returns true (same row key; columns are ignored)
      *
      * // Edge: a non-AnyIncrement object and null are never equal
      * increment.equals("not an AnyIncrement");     // returns false
@@ -751,7 +755,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * }</pre>
      *
      * @param obj the object to compare with
-     * @return {@code true} if the specified object represents an equivalent increment operation, {@code false} otherwise
+     * @return {@code true} if the specified object is an {@code AnyIncrement} whose underlying {@code Increment} is equal (same row key), {@code false} otherwise
      * @see #hashCode()
      */
     @SuppressFBWarnings

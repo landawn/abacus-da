@@ -3683,8 +3683,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * BatchWriteItemResult result = mapper.batchPutItem(users);
          * }</pre>
          *
-         * @param entities collection of entities to save to DynamoDB
+         * @param entities collection of entities to save to DynamoDB, must not be {@code null}
          * @return the BatchWriteItemResult containing operation metadata
+         * @throws IllegalArgumentException if entities is {@code null}
          * @throws com.amazonaws.AmazonServiceException if the request exceeds the 25-item batch limit
          */
         public BatchWriteItemResult batchPutItem(final Collection<? extends T> entities) {

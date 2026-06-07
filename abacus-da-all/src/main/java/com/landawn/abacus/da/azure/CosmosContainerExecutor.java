@@ -632,7 +632,7 @@ public class CosmosContainerExecutor {
      * @param itemType the class type for deserializing the response (must not be null)
      * @return a CosmosItemResponse containing the patched item and metadata
      * @throws CosmosException if the operation fails or the item doesn't exist
-     * @throws NullPointerException if itemId, partitionKey, or cosmosPatchOperations is null
+     * @throws NullPointerException if itemId, partitionKey, cosmosPatchOperations, or itemType is null
      *
      * @see CosmosPatchOperations for available patch operations
      */
@@ -688,7 +688,7 @@ public class CosmosContainerExecutor {
      * @param itemType the class type for deserializing the response (must not be null)
      * @return a CosmosItemResponse containing the patched item and metadata
      * @throws CosmosException if the operation fails or the item doesn't exist
-     * @throws NullPointerException if itemId, partitionKey, or cosmosPatchOperations is null
+     * @throws NullPointerException if itemId, partitionKey, cosmosPatchOperations, or itemType is null
      *
      * @see CosmosPatchOperations for available patch operations
      * @see CosmosPatchItemRequestOptions for available options
@@ -1289,9 +1289,9 @@ public class CosmosContainerExecutor {
      * 
      * <p>Runs a parameterized query using SqlQuerySpec which supports parameter binding
      * for safe and efficient query execution. This prevents SQL injection and allows
-     * for query plan reuse. Parameters are bound using named or positional parameter
-     * markers in the SQL text.</p>
-     * 
+     * for query plan reuse. Parameters are bound using named parameter markers
+     * (e.g. {@code @category}) in the SQL text.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Create parameterized query
@@ -1304,9 +1304,9 @@ public class CosmosContainerExecutor {
      *         new SqlParameter("@maxPrice", 1000.0)
      *     )
      * );
-     * 
+     *
      * CosmosPagedIterable<Product> results = executor.queryItems(querySpec, Product.class);
-     * 
+     *
      * for (Product product : results) {
      *     System.out.println("Found: " + product.getName());
      * }
@@ -1317,7 +1317,7 @@ public class CosmosContainerExecutor {
      * @param classType the class type for deserializing the query results (must not be null)
      * @return a CosmosPagedIterable for iterating through query results
      * @throws CosmosException if the query fails or contains syntax errors
-     * @throws NullPointerException if the underlying Cosmos client rejects querySpec or classType (e.g. when null)
+     * @throws NullPointerException if querySpec or classType is null
      *
      * @see SqlQuerySpec for parameterized query construction
      * @see com.azure.cosmos.models.SqlParameter for parameter specification
@@ -1363,7 +1363,7 @@ public class CosmosContainerExecutor {
      * @param classType the class type for deserializing the query results (must not be null)
      * @return a CosmosPagedIterable for iterating through query results
      * @throws CosmosException if the query fails or contains syntax errors
-     * @throws NullPointerException if the underlying Cosmos client rejects querySpec or classType (e.g. when null)
+     * @throws NullPointerException if querySpec or classType is null
      * @see SqlQuerySpec
      * @see CosmosQueryRequestOptions
      */

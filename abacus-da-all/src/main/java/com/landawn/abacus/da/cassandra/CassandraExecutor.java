@@ -1456,7 +1456,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * @param statement the configured CQL Statement to execute
      * @return the raw ResultSet from Cassandra
-     * @throws IllegalArgumentException if statement is null
+     * @throws NullPointerException if statement is null
      * @throws com.datastax.oss.driver.api.core.AllNodesFailedException if all contact points are unreachable
      */
     @Override

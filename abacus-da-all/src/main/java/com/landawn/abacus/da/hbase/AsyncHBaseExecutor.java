@@ -178,7 +178,7 @@ public final class AsyncHBaseExecutor {
      *
      * // Negative: any exception raised by the underlying synchronous call is re-thrown,
      * // wrapped in an ExecutionException, when the future is resolved via get().
-     * async.exists("badTable", new Get(Bytes.toBytes("k"))).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.exists("badTable", new Get(Bytes.toBytes("k"))).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table to check
@@ -215,7 +215,7 @@ public final class AsyncHBaseExecutor {
      * List<Boolean> none = async.exists("users", Collections.<Get>emptyList()).get(); // returns an empty list
      *
      * // Negative: any exception from the underlying call surfaces wrapped in ExecutionException
-     * async.exists("badTable", gets).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.exists("badTable", gets).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table to check
@@ -270,7 +270,7 @@ public final class AsyncHBaseExecutor {
      * Boolean missing = async.exists("users", AnyGet.of("nope")).get(); // returns Boolean.FALSE
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.exists("badTable", AnyGet.of("k")).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.exists("badTable", AnyGet.of("k")).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table to check
@@ -307,7 +307,7 @@ public final class AsyncHBaseExecutor {
      * List<Boolean> none = async.exists("users", Collections.<AnyGet>emptyList()).get(); // returns an empty list
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.exists("badTable", gets).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.exists("badTable", gets).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table to check
@@ -353,7 +353,7 @@ public final class AsyncHBaseExecutor {
      * Result missing = async.get("users", new Get(Bytes.toBytes("nope"))).get(); // returns a Result where isEmpty() == true
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.get("badTable", new Get(Bytes.toBytes("k"))).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.get("badTable", new Get(Bytes.toBytes("k"))).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table to retrieve from
@@ -390,7 +390,7 @@ public final class AsyncHBaseExecutor {
      * List<Result> none = async.get("users", Collections.<Get>emptyList()).get(); // returns an empty list
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.get("badTable", gets).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.get("badTable", gets).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table to retrieve from
@@ -426,7 +426,7 @@ public final class AsyncHBaseExecutor {
      * Result missing = async.get("users", AnyGet.of("nope")).get(); // returns a Result where isEmpty() == true
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.get("badTable", AnyGet.of("k")).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.get("badTable", AnyGet.of("k")).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table to retrieve from
@@ -461,7 +461,7 @@ public final class AsyncHBaseExecutor {
      * List<Result> none = async.get("users", Collections.<AnyGet>emptyList()).get(); // returns an empty list
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.get("badTable", gets).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.get("badTable", gets).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table to retrieve from
@@ -497,7 +497,7 @@ public final class AsyncHBaseExecutor {
      * User missing = async.get("users", new Get(Bytes.toBytes("nope")), User.class).get(); // returns null
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.get("badTable", new Get(Bytes.toBytes("k")), User.class).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.get("badTable", new Get(Bytes.toBytes("k")), User.class).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param <T> the target type for conversion
@@ -535,7 +535,7 @@ public final class AsyncHBaseExecutor {
      * List<User> none = async.get("users", Collections.<Get>emptyList(), User.class).get(); // returns an empty list
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.get("badTable", gets, User.class).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.get("badTable", gets, User.class).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param <T> the target type for conversion
@@ -571,7 +571,7 @@ public final class AsyncHBaseExecutor {
      * User missing = async.get("users", AnyGet.of("nope"), User.class).get(); // returns null
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.get("badTable", AnyGet.of("k"), User.class).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.get("badTable", AnyGet.of("k"), User.class).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param <T> the target type for conversion
@@ -609,7 +609,7 @@ public final class AsyncHBaseExecutor {
      * List<User> none = async.get("users", Collections.<AnyGet>emptyList(), User.class).get(); // returns an empty list
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.get("badTable", gets, User.class).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.get("badTable", gets, User.class).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param <T> the target type for conversion
@@ -1168,7 +1168,7 @@ public final class AsyncHBaseExecutor {
      * async.put("users", put).thenRunAsync(() -> System.out.println("Put complete")); // returns ContinuableFuture<Void>
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.put("badTable", put).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.put("badTable", put).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table to put data into
@@ -1209,7 +1209,7 @@ public final class AsyncHBaseExecutor {
      * Object none = async.put("users", Collections.<Put>emptyList()).get(); // returns null
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.put("badTable", puts).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.put("badTable", puts).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table to put data into
@@ -1246,7 +1246,7 @@ public final class AsyncHBaseExecutor {
      *      .thenRunAsync(() -> System.out.println("User saved")); // returns ContinuableFuture<Void>
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.put("badTable", AnyPut.of("user123").addColumn("info", "name", "John")).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.put("badTable", AnyPut.of("user123").addColumn("info", "name", "John")).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table to put data into
@@ -1287,7 +1287,7 @@ public final class AsyncHBaseExecutor {
      * Object none = async.put("users", Collections.<AnyPut>emptyList()).get(); // returns null
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.put("badTable", puts).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.put("badTable", puts).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table to put data into
@@ -1328,7 +1328,7 @@ public final class AsyncHBaseExecutor {
      * Object missing = async.delete("users", new Delete(Bytes.toBytes("nope"))).get(); // returns null
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.delete("badTable", delete).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.delete("badTable", delete).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table to delete from
@@ -1368,7 +1368,7 @@ public final class AsyncHBaseExecutor {
      * Object none = async.delete("users", Collections.<Delete>emptyList()).get(); // returns null
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.delete("badTable", deletes).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.delete("badTable", deletes).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table to delete from
@@ -1406,7 +1406,7 @@ public final class AsyncHBaseExecutor {
      *      .thenRunAsync(() -> System.out.println("User deleted")); // returns ContinuableFuture<Void>
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.delete("badTable", AnyDelete.of("user123")).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.delete("badTable", AnyDelete.of("user123")).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table to delete from
@@ -1446,7 +1446,7 @@ public final class AsyncHBaseExecutor {
      * Object none = async.delete("users", Collections.<AnyDelete>emptyList()).get(); // returns null
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.delete("badTable", deletes).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.delete("badTable", deletes).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table to delete from
@@ -1488,7 +1488,7 @@ public final class AsyncHBaseExecutor {
      * async.mutateRow("users", rm).thenRunAsync(() -> System.out.println("Row mutated")); // returns ContinuableFuture<Void>
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.mutateRow("badTable", rm).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.mutateRow("badTable", rm).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table
@@ -1531,7 +1531,7 @@ public final class AsyncHBaseExecutor {
      * async.mutateRow("users", rm).thenRunAsync(() -> System.out.println("Row mutated")); // returns ContinuableFuture<Void>
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.mutateRow("badTable", rm).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.mutateRow("badTable", rm).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table
@@ -1572,7 +1572,7 @@ public final class AsyncHBaseExecutor {
      *      .thenRunAsync(result -> System.out.println("New value: " + result)); // returns ContinuableFuture<Void>
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.append("badTable", AnyAppend.of("user123").addColumn("info", "log", "x")).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.append("badTable", AnyAppend.of("user123").addColumn("info", "log", "x")).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table
@@ -1608,7 +1608,7 @@ public final class AsyncHBaseExecutor {
      * async.append("users", append).thenRunAsync(result -> System.out.println(result)); // returns ContinuableFuture<Void>
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.append("badTable", append).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.append("badTable", append).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table
@@ -1645,7 +1645,7 @@ public final class AsyncHBaseExecutor {
      *      .thenRunAsync(result -> System.out.println("New value: " + result)); // returns ContinuableFuture<Void>
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.increment("badTable", AnyIncrement.of("user123").addColumn("stats", "loginCount", 1)).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.increment("badTable", AnyIncrement.of("user123").addColumn("stats", "loginCount", 1)).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table
@@ -1681,7 +1681,7 @@ public final class AsyncHBaseExecutor {
      * async.increment("users", increment).thenRunAsync(result -> System.out.println(result)); // returns ContinuableFuture<Void>
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.increment("badTable", increment).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.increment("badTable", increment).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table
@@ -1719,7 +1719,7 @@ public final class AsyncHBaseExecutor {
      * Long afterDecrement = async.incrementColumnValue("users", "user123", "stats", "loginCount", -1).get(); // returns the decremented value
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.incrementColumnValue("badTable", "user123", "stats", "loginCount", 1).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.incrementColumnValue("badTable", "user123", "stats", "loginCount", 1).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table
@@ -1755,7 +1755,7 @@ public final class AsyncHBaseExecutor {
      * Long fast = async.incrementColumnValue("users", "user123", "stats", "loginCount", 1, Durability.SKIP_WAL).get(); // returns the post-increment value
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.incrementColumnValue("badTable", "user123", "stats", "loginCount", 1, Durability.SYNC_WAL).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.incrementColumnValue("badTable", "user123", "stats", "loginCount", 1, Durability.SYNC_WAL).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table
@@ -1795,7 +1795,7 @@ public final class AsyncHBaseExecutor {
      * Long afterDecrement = async.incrementColumnValue("users", "user123", family, qualifier, -1).get(); // returns the decremented value
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.incrementColumnValue("badTable", "user123", family, qualifier, 1).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.incrementColumnValue("badTable", "user123", family, qualifier, 1).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table
@@ -1833,7 +1833,7 @@ public final class AsyncHBaseExecutor {
      * Long fast = async.incrementColumnValue("users", "user123", family, qualifier, 1, Durability.SKIP_WAL).get(); // returns the post-increment value
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.incrementColumnValue("badTable", "user123", family, qualifier, 1, Durability.SYNC_WAL).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.incrementColumnValue("badTable", "user123", family, qualifier, 1, Durability.SYNC_WAL).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table
@@ -1874,7 +1874,7 @@ public final class AsyncHBaseExecutor {
      *      .thenRunAsync(ch -> invokeEndpoint(ch)); // returns ContinuableFuture<Void>
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.coprocessorService("badTable", "user123").get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.coprocessorService("badTable", "user123").get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table
@@ -1913,7 +1913,7 @@ public final class AsyncHBaseExecutor {
      *      .thenCallAsync(map -> map.values().stream().mapToLong(Long::longValue).sum()); // returns ContinuableFuture<Long>
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.coprocessorService("badTable", MyService.class, "user1", "user9", call).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.coprocessorService("badTable", MyService.class, "user1", "user9", call).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param <T> the coprocessor service type
@@ -1959,7 +1959,7 @@ public final class AsyncHBaseExecutor {
      *      .thenRunAsync(() -> System.out.println("Total = " + total.get())); // returns ContinuableFuture<Void>
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.coprocessorService("badTable", MyService.class, "user1", "user9", call, callback).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.coprocessorService("badTable", MyService.class, "user1", "user9", call, callback).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param <T> the coprocessor service type
@@ -2008,7 +2008,7 @@ public final class AsyncHBaseExecutor {
      * Map<byte[], CountResponse> perRegion = future.get();                                                                                                           // returns one response message per region in the range
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.batchCoprocessorService("badTable", methodDescriptor, request, "user1", "user9", responsePrototype).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.batchCoprocessorService("badTable", methodDescriptor, request, "user1", "user9", responsePrototype).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param <R> the response message type
@@ -2056,7 +2056,7 @@ public final class AsyncHBaseExecutor {
      *      .thenRunAsync(() -> System.out.println("done")); // returns ContinuableFuture<Void>
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.batchCoprocessorService("badTable", methodDescriptor, request, "user1", "user9", responsePrototype, callback).get(); // throws ExecutionException // throws InterruptedException, ExecutionException
+     * async.batchCoprocessorService("badTable", methodDescriptor, request, "user1", "user9", responsePrototype, callback).get(); // throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param <R> the response message type

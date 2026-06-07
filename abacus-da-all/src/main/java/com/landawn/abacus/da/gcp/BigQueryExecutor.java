@@ -1118,7 +1118,7 @@ public class BigQueryExecutor {
      * @param targetClass the class representing the target table (used for table name resolution)
      * @param props a Map containing column names as keys and values to insert
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if targetClass is null or props is null or empty
+     * @throws IllegalArgumentException if props is null or empty
      * @see #insert(Object)
      */
     public TableResult insert(final Class<?> targetClass, final Map<String, Object> props) {
@@ -2275,6 +2275,7 @@ public class BigQueryExecutor {
      * @return the {@link TableResult} returned by BigQuery; for SELECT statements this contains the
      *         rows, for DML the affected-row count via {@link TableResult#getTotalRows()}, for DDL
      *         a result with no schema
+     * @throws NullPointerException if {@code query} is null
      * @throws RuntimeException if the underlying BigQuery call throws {@link JobException} or the
      *                          calling thread is interrupted while waiting for the job
      * @see #stream(Class, String, Object...)

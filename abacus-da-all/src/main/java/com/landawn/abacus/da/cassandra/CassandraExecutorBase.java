@@ -522,7 +522,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * executor.get(User.class);              // throws IllegalArgumentException (ids is empty)
      * executor.get(User.class, "a", "b");    // throws IllegalArgumentException (id count != single key column)
-     * }</pre> // throws DuplicateResultException if more than one row matches
+     * }</pre>
      *
      * @param <T> the entity type
      * @param targetClass the entity class
@@ -552,7 +552,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * executor.get(User.class, Arrays.asList("name"));            // throws IllegalArgumentException (ids is empty)
      * executor.get(User.class, Arrays.asList("name"), "a", "b");  // throws IllegalArgumentException (id count mismatch)
-     * }</pre> // throws DuplicateResultException if more than one row matches
+     * }</pre>
      *
      * @param <T> the entity type
      * @param targetClass the entity class
@@ -580,7 +580,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * Optional<User> none = executor.get(User.class,
      *     Filters.eq("email", "missing@example.com"));                 // returns Optional.empty() when no row matches
-     * }</pre> // throws DuplicateResultException if more than one row matches
+     * }</pre>
      *
      * @param <T> the entity type
      * @param targetClass the entity class
@@ -607,7 +607,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * Optional<User> none = executor.get(User.class,
      *     Arrays.asList("name", "email"), Filters.eq("status", "x"));  // returns Optional.empty() when no row matches
-     * }</pre> // throws DuplicateResultException if more than one row matches
+     * }</pre>
      *
      * @param <T> the entity type
      * @param targetClass the entity class
@@ -637,7 +637,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * executor.gett(User.class);            // throws IllegalArgumentException (ids is empty)
      * executor.gett(User.class, "a", "b");  // throws IllegalArgumentException (id count != single key column)
-     * }</pre> // throws DuplicateResultException if more than one row matches
+     * }</pre>
      *
      * @param <T> the entity type
      * @param targetClass the entity class
@@ -667,7 +667,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * executor.gett(User.class, Arrays.asList("name"));           // throws IllegalArgumentException (ids is empty)
      * executor.gett(User.class, Arrays.asList("name"), "a", "b"); // throws IllegalArgumentException (id count mismatch)
-     * }</pre> // throws DuplicateResultException if more than one row matches
+     * }</pre>
      *
      * @param <T> the entity type
      * @param targetClass the entity class
@@ -694,7 +694,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * User none = executor.gett(User.class,
      *     Filters.eq("email", "missing@example.com")); // returns null when no row matches
-     * }</pre> // throws DuplicateResultException if more than one row matches
+     * }</pre>
      *
      * @param <T> the entity type
      * @param targetClass the entity class
@@ -721,7 +721,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * User all = executor.gett(User.class, null,
      *     Filters.eq("user_id", "user123"));  // returns User with all properties, or null when no row matches
-     * }</pre> // throws DuplicateResultException if more than one row matches
+     * }</pre>
      *
      * @param <T> the entity type
      * @param targetClass the entity class
@@ -2892,7 +2892,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param statement the configured CQL Statement to execute
      * @return the result set from the statement execution
-     * @throws IllegalArgumentException if statement is null
+     * @throws NullPointerException if statement is null
      */
     public abstract RS execute(final ST statement);
 

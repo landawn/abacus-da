@@ -240,9 +240,9 @@ public final class MongoCollectionMapper<T> {
      * // Edge: the Mono is cold — building it runs no query until subscribed.
      * Mono<Boolean> notRunYet = userMapper.exists("507f1f77bcf86cd799439011");   // nothing executed yet
      *
-     * // Negative: a non-hex / wrong-length id -> error signal (IllegalArgumentException) on subscription.
-     * userMapper.exists("not-a-valid-hex")
-     *     .subscribe(e -> {}, err -> System.err.println("Invalid id: " + err));   // onError(IllegalArgumentException)
+     * // Negative: a non-hex / wrong-length id is parsed eagerly, so it throws
+     * // IllegalArgumentException synchronously at the call site (before any Mono is built).
+     * userMapper.exists("not-a-valid-hex");   // throws IllegalArgumentException
      * }</pre>
      *
      * @param objectId the string representation of the ObjectId to check for existence
@@ -445,9 +445,9 @@ public final class MongoCollectionMapper<T> {
      * // Edge: cold publisher — building it runs no query until subscribed.
      * Mono<User> notRunYet = userMapper.get("507f1f77bcf86cd799439011");   // nothing executed yet
      *
-     * // Negative: malformed hex id -> error signal (IllegalArgumentException) on subscription.
-     * userMapper.get("xyz")
-     *     .subscribe(u -> {}, err -> System.err.println("Invalid id: " + err));   // onError(IllegalArgumentException)
+     * // Negative: a malformed hex id is parsed eagerly, so it throws
+     * // IllegalArgumentException synchronously at the call site (before any Mono is built).
+     * userMapper.get("xyz");   // throws IllegalArgumentException
      * }</pre>
      *
      * @param objectId the string representation of the ObjectId to search for
@@ -516,9 +516,9 @@ public final class MongoCollectionMapper<T> {
      * // Edge: a null or empty projection list selects ALL fields (no projection is applied).
      * Mono<User> fullUser = userMapper.get("507f1f77bcf86cd799439011", Collections.emptyList());
      *
-     * // Negative: malformed id -> error signal (IllegalArgumentException) on subscription.
-     * userMapper.get("nope", fields)
-     *     .subscribe(u -> {}, err -> System.err.println("Invalid id: " + err));   // onError(IllegalArgumentException)
+     * // Negative: a malformed id is parsed eagerly, so it throws
+     * // IllegalArgumentException synchronously at the call site (before any Mono is built).
+     * userMapper.get("nope", fields);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param objectId the string representation of the ObjectId to search for

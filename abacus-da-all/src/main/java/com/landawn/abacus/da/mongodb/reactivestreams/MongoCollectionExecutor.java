@@ -638,7 +638,7 @@ public final class MongoCollectionExecutor {
      *                        (null/empty selects all fields)
      * @param rowType the Class representing the target type for conversion
      * @return a Mono that emits the converted projected object, or empty if no document matches the ObjectId
-     * @throws IllegalArgumentException if objectId is null/empty, selectPropNames is null, rowType is null, or objectId is not a valid ObjectId hex string
+     * @throws IllegalArgumentException if objectId is null, empty, or not a valid ObjectId hex string
      * @see ObjectId
      * @see com.mongodb.client.model.Projections
      */
@@ -670,7 +670,7 @@ public final class MongoCollectionExecutor {
      *                        (null/empty selects all fields)
      * @param rowType the Class representing the target type for conversion
      * @return a Mono that emits the converted projected object, or empty if no document matches the ObjectId
-     * @throws IllegalArgumentException if objectId, selectPropNames, or rowType is null
+     * @throws IllegalArgumentException if objectId is null
      * @see ObjectId
      * @see com.mongodb.client.model.Projections
      */
