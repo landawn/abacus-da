@@ -772,8 +772,9 @@ public final class MongoCollectionExecutor {
      * user.ifPresent(doc -> processUser(doc));
      * }</pre>
      *
-     * @param filter the query filter to match documents against (null for all documents)
+     * @param filter the query filter to match documents against (must not be null)
      * @return an Optional containing the first matching document, or empty if none found
+     * @throws IllegalArgumentException if filter is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Optional
      * @see Document
@@ -797,10 +798,10 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the target type for the retrieved document
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @param rowType the Class representing the target type for conversion
      * @return an Optional containing the first matching converted object, or empty if none found
-     * @throws IllegalArgumentException if rowType is null or unsupported
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #findFirst(Collection, Bson, Class)
      */
@@ -824,10 +825,10 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the target type for the retrieved document
      * @param selectPropNames collection of field names to include in the projection (null for all fields)
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @param rowType the Class representing the target type for conversion
      * @return an Optional containing the first matching converted object with projected fields, or empty if none found
-     * @throws IllegalArgumentException if rowType is null or unsupported
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
      * @throws com.mongodb.MongoException if the database operation fails
      * @see com.mongodb.client.model.Projections
      */
@@ -853,16 +854,18 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the target type for the retrieved document
      * @param selectPropNames collection of field names to include in the projection (null for all fields)
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @param sort the sort criteria for ordering results (null for no sorting)
      * @param rowType the Class representing the target type for conversion
      * @return an Optional containing the first matching sorted converted object with projected fields, or empty if none found
-     * @throws IllegalArgumentException if rowType is null or unsupported
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
      * @throws com.mongodb.MongoException if the database operation fails
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Sorts
      */
     public <T> Optional<T> findFirst(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
+        N.checkArgNotNull(filter, "filter");
+
         final FindIterable<Document> findIterable = query(selectPropNames, filter, sort, 0, 1);
 
         final T result = toEntity(findIterable, rowType);
@@ -891,16 +894,18 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the target type for the retrieved document
      * @param projection BSON projection specification for field selection (null for all fields)
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @param sort the sort criteria for ordering results (null for no sorting)
      * @param rowType the Class representing the target type for conversion
      * @return an Optional containing the first matching sorted converted object with projected fields, or empty if none found
-     * @throws IllegalArgumentException if rowType is null or unsupported
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
      * @throws com.mongodb.MongoException if the database operation fails
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Sorts
      */
     public <T> Optional<T> findFirst(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
+        N.checkArgNotNull(filter, "filter");
+
         final FindIterable<Document> findIterable = executeQuery(projection, filter, sort, 0, 1);
 
         final T result = toEntity(findIterable, rowType);
@@ -921,8 +926,9 @@ public final class MongoCollectionExecutor {
      * activeUsers.forEach(user -> processUser(user));
      * }</pre>
      *
-     * @param filter the query filter to match documents against (null for all documents)
+     * @param filter the query filter to match documents against (must not be null)
      * @return a List containing all matching documents (empty list if none found)
+     * @throws IllegalArgumentException if filter is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Document
      * @see #stream(Bson)
@@ -946,10 +952,10 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the target type for the retrieved documents
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @param rowType the Class representing the target type for conversion
      * @return a List containing all matching converted objects (empty list if none found)
-     * @throws IllegalArgumentException if rowType is null or unsupported
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #list(Bson, int, int, Class)
      */
@@ -973,12 +979,12 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the target type for the retrieved documents
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @param offset the number of documents to skip (0-based)
      * @param count the maximum number of documents to return
      * @param rowType the Class representing the target type for conversion
      * @return a List containing the specified range of matching converted objects
-     * @throws IllegalArgumentException if rowType is null or unsupported, or if offset or count is negative
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported, or if offset or count is negative
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #list(Collection, Bson, int, int, Class)
      */
@@ -1001,10 +1007,10 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the target type for each document in the result list
      * @param selectPropNames collection of field names to include in projection (null for all fields)
-     * @param filter BSON filter criteria to match documents (null for no filtering)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param rowType the target type for conversion of each document
      * @return a list of all matching documents converted to the specified type
-     * @throws IllegalArgumentException if rowType is null or unsupported
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #list(Collection, Bson, int, int, Class)
      * @see #list(Collection, Bson, Bson, Class)
@@ -1028,12 +1034,12 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the target type for each document in the result list
      * @param selectPropNames collection of field names to include in projection (null for all fields)
-     * @param filter BSON filter criteria to match documents (null for no filtering)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param offset number of documents to skip from the beginning (0 for first page)
      * @param count maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a paginated list of matching documents converted to the specified type
-     * @throws IllegalArgumentException if rowType is null or unsupported, or if offset or count is negative
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported, or if offset or count is negative
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #list(Collection, Bson, Class)
      * @see #list(Collection, Bson, Bson, int, int, Class)
@@ -1058,11 +1064,11 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the target type for each document in the result list
      * @param selectPropNames collection of field names to include in projection (null for all fields)
-     * @param filter BSON filter criteria to match documents (null for no filtering)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort specification for result ordering (null for natural order)
      * @param rowType the target type for conversion of each document
      * @return a sorted list of all matching documents converted to the specified type
-     * @throws IllegalArgumentException if rowType is null or unsupported
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #list(Collection, Bson, Class)
      * @see #list(Collection, Bson, Bson, int, int, Class)
@@ -1088,13 +1094,13 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the target type for each document in the result list
      * @param selectPropNames collection of field names to include in projection (null for all fields)
-     * @param filter BSON filter criteria to match documents (null for no filtering)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort specification for result ordering (null for natural order)
      * @param offset number of documents to skip from the beginning of results (0 for no offset)
      * @param count maximum number of documents to return (Integer.MAX_VALUE for all matching)
      * @param rowType an entity class with getter/setter method, <code>Map.class</code> or basic single value type (Primitive/String/Date...)
      * @return a list of documents converted to the specified type, may be empty but never null
-     * @throws IllegalArgumentException if rowType is null or unsupported
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #list(Bson, Bson, Bson, int, int, Class)
      * @see com.mongodb.client.model.Filters
@@ -1102,6 +1108,8 @@ public final class MongoCollectionExecutor {
      */
     public <T> List<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
+        N.checkArgNotNull(filter, "filter");
+
         final FindIterable<Document> findIterable = query(selectPropNames, filter, sort, offset, count);
 
         return MongoDBBase.toList(findIterable, rowType);
@@ -1124,11 +1132,11 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the target type for each document in the result list
      * @param projection BSON projection specification for field selection (null for all fields)
-     * @param filter BSON filter criteria to match documents (null for no filtering)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort specification for result ordering (null for natural order)
      * @param rowType an entity class with getter/setter method, <code>Map.class</code> or basic single value type (Primitive/String/Date...)
      * @return a list of all matching documents converted to the specified type, may be empty but never null
-     * @throws IllegalArgumentException if rowType is null or unsupported
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #list(Bson, Bson, Bson, int, int, Class)
      * @see com.mongodb.client.model.Projections
@@ -1159,19 +1167,21 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the target type for each document in the result list
      * @param projection BSON projection specification for advanced field selection (null for all fields)
-     * @param filter BSON filter criteria to match documents (null for no filtering)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort specification for result ordering (null for natural order)
      * @param offset number of documents to skip from the beginning of results (0 for no offset)
      * @param count maximum number of documents to return (Integer.MAX_VALUE for all matching)
      * @param rowType an entity class with getter/setter method, <code>Map.class</code> or basic single value type (Primitive/String/Date...)
      * @return a list of documents converted to the specified type, may be empty but never null
-     * @throws IllegalArgumentException if rowType is null or unsupported
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
      * @throws com.mongodb.MongoException if the database operation fails
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Filters
      * @see com.mongodb.client.model.Sorts
      */
     public <T> List<T> list(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType) {
+        N.checkArgNotNull(filter, "filter");
+
         final FindIterable<Document> findIterable = executeQuery(projection, filter, sort, offset, count);
 
         return MongoDBBase.toList(findIterable, rowType);
@@ -1680,8 +1690,9 @@ public final class MongoCollectionExecutor {
      * List<String> userNames = activeUsers.getColumn("name");
      * }</pre>
      *
-     * @param filter BSON filter criteria to match documents (null for all documents)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @return a Dataset containing the query results with Document-based rows
+     * @throws IllegalArgumentException if filter is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Dataset
      * @see #query(Bson, Class)
@@ -1716,10 +1727,10 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the target type for each row in the Dataset
-     * @param filter BSON filter criteria to match documents (null for all documents)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the query results with typed rows
-     * @throws IllegalArgumentException if rowType is null or unsupported
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Dataset
      * @see #query(Bson)
@@ -1750,12 +1761,12 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the target type for each row in the Dataset
-     * @param filter BSON filter criteria to match documents (null for all documents)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param offset number of documents to skip from the beginning (0 for first page)
      * @param count maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the paginated query results with typed rows
-     * @throws IllegalArgumentException if rowType is null or unsupported, or if offset or count is negative
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported, or if offset or count is negative
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Dataset
      * @see #query(Bson, Class)
@@ -1786,10 +1797,10 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the target type for each row in the Dataset
      * @param selectPropNames collection of field names to include in projection (null for all fields)
-     * @param filter BSON filter criteria to match documents (null for all documents)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the query results with projected fields and typed rows
-     * @throws IllegalArgumentException if rowType is null or unsupported
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Dataset
      * @see #query(Collection, Bson, int, int, Class)
@@ -1825,12 +1836,12 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the target type for each row in the Dataset
      * @param selectPropNames collection of field names to include in projection (null for all fields)
-     * @param filter BSON filter criteria to match documents (null for all documents)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param offset number of documents to skip from the beginning (0 for first page)
      * @param count maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the paginated query results with projected fields and typed rows
-     * @throws IllegalArgumentException if rowType is null or unsupported, or if offset or count is negative
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported, or if offset or count is negative
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Dataset
      * @see #query(Collection, Bson, Class)
@@ -1864,11 +1875,11 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the target type for each row in the Dataset
      * @param selectPropNames collection of field names to include in projection (null for all fields)
-     * @param filter BSON filter criteria to match documents (null for all documents)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort specification for result ordering (null for natural order)
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the sorted query results with projected fields and typed rows
-     * @throws IllegalArgumentException if rowType is null or unsupported
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Dataset
      * @see #query(Collection, Bson, Bson, int, int, Class)
@@ -1902,17 +1913,19 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the target type for each row in the Dataset
      * @param selectPropNames collection of field names to include in projection (null for all fields)
-     * @param filter BSON filter criteria to match documents (null for all documents)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort specification for result ordering (null for natural order)
      * @param offset number of documents to skip from the beginning (0 for first page)
      * @param count maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the sorted and paginated query results with projected fields and typed rows
-     * @throws IllegalArgumentException if rowType is null or unsupported, or if offset or count is negative
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported, or if offset or count is negative
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> Dataset query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
+        N.checkArgNotNull(filter, "filter");
+
         final FindIterable<Document> findIterable = query(selectPropNames, filter, sort, offset, count);
 
         if (N.isEmpty(selectPropNames)) {
@@ -1946,10 +1959,11 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the target type for each row in the Dataset
      * @param projection BSON projection specification for field selection (null for all fields)
-     * @param filter BSON filter criteria to match documents (null for all documents)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort specification for result ordering (null for natural order)
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing all matching query results with projected fields and typed rows
+     * @throws IllegalArgumentException if filter is null
      */
     public <T> Dataset query(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
         return query(projection, filter, sort, 0, Integer.MAX_VALUE, rowType);
@@ -1979,14 +1993,17 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the target type for each row in the Dataset
      * @param projection BSON projection specification for field selection (null for all fields)
-     * @param filter BSON filter criteria to match documents (null for all documents)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort specification for result ordering (null for natural order)
      * @param offset number of documents to skip from the beginning (0 for first page)
      * @param count maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the paginated query results with projected fields and typed rows
+     * @throws IllegalArgumentException if filter is null
      */
     public <T> Dataset query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType) {
+        N.checkArgNotNull(filter, "filter");
+
         final FindIterable<Document> findIterable = executeQuery(projection, filter, sort, offset, count);
 
         return MongoDBBase.extractData(findIterable, rowType);

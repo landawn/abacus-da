@@ -704,9 +704,10 @@ public final class MongoCollectionExecutor {
      * Document any = executor.findFirst((Bson) null).block();    // any one document, or null if empty
      * }</pre>
      *
-     * @param filter the query filter to match documents against (null matches all)
+     * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the first matching document on subscription, or completes
      *         empty when no documents match the filter
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see Document
      * @see Bson
@@ -737,10 +738,11 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to convert the document to
-     * @param filter the query filter to match documents against (null matches all)
+     * @param filter the query filter to match documents against (must not be null)
      * @param rowType the Class representing the target type for conversion; must not be null
      * @return a {@code Mono} that emits the first matching document converted to {@code T} on
      *         subscription, or completes empty when no documents match
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see Bson
      * @see com.mongodb.client.model.Filters
@@ -770,10 +772,11 @@ public final class MongoCollectionExecutor {
      * @param <T> the type to convert the projected document to
      * @param selectPropNames the collection of field names to include in the projection
      *                        (null/empty selects all fields)
-     * @param filter the query filter to match documents against (null matches all)
+     * @param filter the query filter to match documents against (must not be null)
      * @param rowType the Class representing the target type for conversion; must not be null
      * @return a {@code Mono} that emits the first matching projected document converted to {@code T}
      *         on subscription, or completes empty when no documents match
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see Bson
      * @see com.mongodb.client.model.Filters
@@ -799,13 +802,16 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the type to convert the document to
      * @param selectPropNames the collection of field names to include in the projection
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @param sort the sort criteria to determine document order
      * @param rowType the Class representing the target type for conversion
      * @return a Mono that emits the first matching document converted to type T, or empty if no match
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
      * @see com.mongodb.client.model.Sorts
      */
     public <T> Mono<T> findFirst(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
+        N.checkArgNotNull(filter, "filter");
+
         return query(selectPropNames, filter, sort, 0, 1).next().mapNotNull(toEntity(rowType));
     }
 
@@ -825,12 +831,15 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the type to convert the document to
      * @param projection the Bson projection specification for fields to include/exclude
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @param sort the sort criteria to determine document order
      * @param rowType the Class representing the target type for conversion
      * @return a Mono that emits the first matching document converted to type T, or empty if no match
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
      */
     public <T> Mono<T> findFirst(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
+        N.checkArgNotNull(filter, "filter");
+
         return executeQuery(projection, filter, sort, 0, 1).next().mapNotNull(toEntity(rowType));
     }
 
@@ -861,9 +870,10 @@ public final class MongoCollectionExecutor {
      * Flux<Document> everything = executor.list((Bson) null);    // all documents (cold)
      * }</pre>
      *
-     * @param filter the query filter to match documents against (null matches all)
+     * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Flux} that, on subscription, emits each matching document, then completes;
      *         completes empty when no documents match
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
      * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#list(Bson)
      */
@@ -885,10 +895,11 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to convert documents to
-     * @param filter the query filter to match documents against (null matches all)
+     * @param filter the query filter to match documents against (must not be null)
      * @param rowType the Class representing the target type for conversion; must not be null
      * @return a cold {@code Flux} that, on subscription, emits each matching document converted to
      *         {@code T}, then completes; completes empty when no documents match
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
      */
     public <T> Flux<T> list(final Bson filter, final Class<T> rowType) {
@@ -910,12 +921,12 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to convert documents to
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @param offset the number of documents to skip before returning results
      * @param count the maximum number of documents to return
      * @param rowType the Class representing the target type for conversion
      * @return a Flux that emits matching documents within the specified range, converted to type T
-     * @throws IllegalArgumentException if offset or count is negative
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site), or if offset or count is negative
      */
     public <T> Flux<T> list(final Bson filter, final int offset, final int count, final Class<T> rowType) {
         return list(null, filter, offset, count, rowType);
@@ -936,9 +947,10 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the type to convert documents to
      * @param selectPropNames the collection of field names to include in the projection
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @param rowType the Class representing the target type for conversion
      * @return a Flux that emits all matching documents with projected fields, converted to type T
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
      */
     public <T> Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) {
         return list(selectPropNames, filter, 0, Integer.MAX_VALUE, rowType);
@@ -959,12 +971,12 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the type to convert documents to
      * @param selectPropNames the collection of field names to include in the projection
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @param offset the number of documents to skip before returning results
      * @param count the maximum number of documents to return
      * @param rowType the Class representing the target type for conversion
      * @return a Flux that emits matching documents within range with projected fields, converted to type T
-     * @throws IllegalArgumentException if offset or count is negative
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site), or if offset or count is negative
      */
     public <T> Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count, final Class<T> rowType) {
         return list(selectPropNames, filter, null, offset, count, rowType);
@@ -985,10 +997,11 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the type to convert documents to
      * @param selectPropNames the collection of field names to include in the projection
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @param sort the sort criteria to determine document order
      * @param rowType the Class representing the target type for conversion
      * @return a Flux that emits sorted matching documents with projected fields, converted to type T
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
      */
     public <T> Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
         return list(selectPropNames, filter, sort, 0, Integer.MAX_VALUE, rowType);
@@ -1010,16 +1023,18 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the type to convert documents to
      * @param selectPropNames the collection of field names to include in the projection
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @param sort the sort criteria to determine document order
      * @param offset the number of documents to skip before returning results
      * @param count the maximum number of documents to return
      * @param rowType an entity class with getter/setter methods, Map.class, or basic single value type
      * @return a Flux that emits matching documents with all specified constraints, converted to type T
-     * @throws IllegalArgumentException if offset or count is negative
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site), or if offset or count is negative
      */
     public <T> Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
+        N.checkArgNotNull(filter, "filter");
+
         return query(selectPropNames, filter, sort, offset, count).mapNotNull(toEntity(rowType));
     }
 
@@ -1037,10 +1052,11 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the type to convert documents to
      * @param projection the Bson projection specification for fields to include/exclude
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @param sort the sort criteria to determine document order
      * @param rowType the Class representing the target type for conversion
      * @return a Flux that emits all matching sorted documents with projection, converted to type T
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
      */
     public <T> Flux<T> list(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
         return list(projection, filter, sort, 0, Integer.MAX_VALUE, rowType);
@@ -1062,15 +1078,17 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the type to convert documents to
      * @param projection the Bson projection specification for fields to include/exclude
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @param sort the sort criteria to determine document order
      * @param offset the number of documents to skip before returning results
      * @param count the maximum number of documents to return
      * @param rowType an entity class with getter/setter methods, Map.class, or basic single value type
      * @return a Flux that emits matching documents with all specified constraints, converted to type T
-     * @throws IllegalArgumentException if offset or count is negative
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site), or if offset or count is negative
      */
     public <T> Flux<T> list(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType) {
+        N.checkArgNotNull(filter, "filter");
+
         return executeQuery(projection, filter, sort, offset, count).mapNotNull(toEntity(rowType));
     }
 
@@ -1676,9 +1694,10 @@ public final class MongoCollectionExecutor {
      * Dataset everything = executor.query((Bson) null).block();  // all documents
      * }</pre>
      *
-     * @param filter the query filter to match documents against (null matches all)
+     * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that, on subscription, emits exactly one {@code Dataset} containing
      *         all matching documents (possibly empty), then completes
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#query(Bson)
      */
@@ -1699,10 +1718,11 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to convert documents to
-     * @param filter the query filter to match documents against (null matches all)
+     * @param filter the query filter to match documents against (must not be null)
      * @param rowType the Class representing the row type for the Dataset; must not be null
      * @return a {@code Mono} that, on subscription, emits exactly one {@code Dataset} (possibly
      *         empty) and then completes
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      */
     public <T> Mono<Dataset> query(final Bson filter, final Class<T> rowType) {
@@ -1721,12 +1741,12 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to convert documents to
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @param offset the number of documents to skip before returning results
      * @param count the maximum number of documents to return
      * @param rowType the Class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with typed rows within the specified range
-     * @throws IllegalArgumentException if offset or count is negative
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site), or if offset or count is negative
      */
     public <T> Mono<Dataset> query(final Bson filter, final int offset, final int count, final Class<T> rowType) {
         return query(null, filter, offset, count, rowType);
@@ -1746,9 +1766,10 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the type to convert documents to
      * @param selectPropNames the collection of field names to include in the projection
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @param rowType the Class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with projected fields and typed rows
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
      */
     public <T> Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) {
         return query(selectPropNames, filter, 0, Integer.MAX_VALUE, rowType);
@@ -1768,12 +1789,12 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the type to convert documents to
      * @param selectPropNames the collection of field names to include in the projection
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @param offset the number of documents to skip before returning results
      * @param count the maximum number of documents to return
      * @param rowType the Class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with projected fields and typed rows within range
-     * @throws IllegalArgumentException if offset or count is negative
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site), or if offset or count is negative
      */
     public <T> Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count, final Class<T> rowType) {
         return query(selectPropNames, filter, null, offset, count, rowType);
@@ -1794,10 +1815,11 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the type to convert documents to
      * @param selectPropNames the collection of field names to include in the projection
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @param sort the sort criteria to determine document order
      * @param rowType the Class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with projected fields and sorted typed rows
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
      */
     public <T> Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
         return query(selectPropNames, filter, sort, 0, Integer.MAX_VALUE, rowType);
@@ -1818,16 +1840,18 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the type to convert documents to
      * @param selectPropNames the collection of field names to include in the projection
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @param sort the sort criteria to determine document order
      * @param offset the number of documents to skip before returning results
      * @param count the maximum number of documents to return
      * @param rowType the Class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with all specified constraints applied
-     * @throws IllegalArgumentException if offset or count is negative
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site), or if offset or count is negative
      */
     public <T> Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
+        N.checkArgNotNull(filter, "filter");
+
         if (N.isEmpty(selectPropNames)) {
             return query(selectPropNames, filter, sort, offset, count).collectList().map(rowList -> MongoDB.extractData(rowList, rowType));
         } else {
@@ -1849,10 +1873,11 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the type to convert documents to
      * @param projection the Bson projection specification for fields to include/exclude
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @param sort the sort criteria to determine document order
      * @param rowType the Class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with projected and sorted typed rows
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
      */
     public <T> Mono<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
         return query(projection, filter, sort, 0, Integer.MAX_VALUE, rowType);
@@ -1872,15 +1897,17 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the type to convert documents to
      * @param projection the Bson projection specification for fields to include/exclude
-     * @param filter the query filter to match documents against
+     * @param filter the query filter to match documents against (must not be null)
      * @param sort the sort criteria to determine document order
      * @param offset the number of documents to skip before returning results
      * @param count the maximum number of documents to return
      * @param rowType the Class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with all specified constraints applied
-     * @throws IllegalArgumentException if offset or count is negative
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site), or if offset or count is negative
      */
     public <T> Mono<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType) {
+        N.checkArgNotNull(filter, "filter");
+
         return executeQuery(projection, filter, sort, offset, count).collectList().map(rowList -> MongoDB.extractData(rowList, rowType));
     }
 

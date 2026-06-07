@@ -1341,11 +1341,11 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
-    public void testListWithNullFilterCallsFindWithoutArgs() {
-        when(mockCollection.find()).thenReturn(mockFindIterable);
-        when(mockFindIterable.into(any())).thenReturn(Arrays.asList());
-        executor.list(null, 0, 10, Document.class);
-        verify(mockCollection).find();
+    public void testListWithNullFilterThrowsIAE() {
+        // A null filter is now rejected with IllegalArgumentException (it is no longer silently treated
+        // as match-all), and the driver must not be touched.
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.list(null, 0, 10, Document.class));
+        verify(mockCollection, org.mockito.Mockito.never()).find();
     }
 
     @Test
@@ -1746,6 +1746,46 @@ public class MongoCollectionExecutorTest extends TestBase {
     public void testFindOneAndReplaceWithNullReplacementThrowsIAE() {
         Document filter = new Document("id", 1);
         Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndReplace(filter, (Object) null));
+    }
+
+    @Test
+    public void testReadMethodsRejectNullFilterWithIAE() {
+        // Regression: findFirst/list/query taking a Bson filter must reject a null filter with
+        // IllegalArgumentException (the documented contract). Previously a null filter was silently
+        // treated as "match all" (coll.find() with no filter). The driver must NOT be invoked.
+        final Collection<String> selectPropNames = Arrays.asList("name");
+        final Bson sort = new Document("name", 1);
+        final Bson projection = new Document("name", 1);
+
+        // findFirst family
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findFirst((Bson) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findFirst((Bson) null, Document.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findFirst(selectPropNames, (Bson) null, Document.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findFirst(selectPropNames, (Bson) null, sort, Document.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findFirst(projection, (Bson) null, sort, Document.class));
+
+        // list family
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.list((Bson) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.list((Bson) null, Document.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.list((Bson) null, 0, 10, Document.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.list(selectPropNames, (Bson) null, Document.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.list(selectPropNames, (Bson) null, sort, 0, 10, Document.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.list(projection, (Bson) null, sort, 0, 10, Document.class));
+
+        // query family
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.query((Bson) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.query((Bson) null, Document.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.query((Bson) null, 0, 10, Document.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.query(selectPropNames, (Bson) null, Document.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.query(selectPropNames, (Bson) null, sort, 0, 10, Document.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.query(projection, (Bson) null, sort, 0, 10, Document.class));
+
+        // The guard short-circuits before the driver is touched.
+        verify(mockCollection, never()).find();
+        verify(mockCollection, never()).find(any(Bson.class));
+
+        // Boundary: count(Bson) intentionally still allows a null filter (match-all) and must NOT throw IAE.
+        Assertions.assertDoesNotThrow(() -> executor.count((Bson) null));
     }
 
     public static class GroupRow {

@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.concurrent.Callable;
 
 import org.bson.Document;
+import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,6 +39,7 @@ import com.landawn.abacus.util.u.OptionalShort;
 import com.landawn.abacus.util.stream.Stream;
 import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.ChangeStreamIterable;
+import com.mongodb.client.MongoCollection;
 import com.mongodb.client.model.BulkWriteOptions;
 import com.mongodb.client.model.CountOptions;
 import com.mongodb.client.model.DeleteOptions;
@@ -2285,6 +2287,28 @@ public class AsyncMongoCollectionExecutorTest extends TestBase {
         stubRunCallable();
         when(mockCollExecutor.mapReduce("m", "r", TestEntity.class)).thenReturn(Stream.empty());
         Assertions.assertNotNull(asyncExecutor.mapReduce("m", "r", TestEntity.class).get());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    public void testReadMethodsRejectNullFilter() {
+        // Async delegates findFirst/list/query to the (real) sync executor inside the async task, so the
+        // inherited null-filter guard surfaces as IllegalArgumentException when the task runs (run inline
+        // here via stubRunCallable; in production it propagates through the returned future).
+        stubRunCallable();
+        final MongoCollection<Document> mockColl = mock(MongoCollection.class);
+        final MongoCollectionExecutor syncExec = new MongoCollectionExecutor(mockColl, mockAsyncExecutor);
+        final AsyncMongoCollectionExecutor async = new AsyncMongoCollectionExecutor(syncExec, mockAsyncExecutor);
+
+        Assertions.assertThrows(IllegalArgumentException.class, () -> async.findFirst((Bson) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> async.findFirst((Bson) null, Document.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> async.list((Bson) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> async.list((Bson) null, Document.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> async.query((Bson) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> async.query((Bson) null, Document.class));
+
+        verify(mockColl, org.mockito.Mockito.never()).find();
+        verify(mockColl, org.mockito.Mockito.never()).find(any(Bson.class));
     }
 
     // Test entity class for testing

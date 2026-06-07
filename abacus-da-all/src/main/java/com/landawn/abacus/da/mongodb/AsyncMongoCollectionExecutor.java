@@ -657,8 +657,9 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(userOpt -> userOpt.ifPresent(user -> System.out.println(user.getString("name"))));
      * }</pre>
      *
-     * @param filter the query filter to match documents against (null for all documents)
+     * @param filter the query filter to match documents against (must not be null)
      * @return a ContinuableFuture that completes with an Optional containing the first matching document, or empty if none found
+     * @throws IllegalArgumentException if filter is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through the future)
      * @see Optional
      * @see Document
@@ -682,10 +683,10 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the target type for the document conversion
-     * @param filter BSON filter criteria to match documents (null for all documents)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param rowType the target type for conversion of the document
      * @return a ContinuableFuture that completes with an Optional containing the converted entity, or empty if none found
-     * @throws IllegalArgumentException if rowType is null (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if rowType is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #findFirst(Bson)
      * @see #findFirst(Collection, Bson, Class)
@@ -710,10 +711,10 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the target type for the document conversion
      * @param selectPropNames collection of field names to include in projection (null for all fields)
-     * @param filter BSON filter criteria to match documents (null for all documents)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param rowType the target type for conversion of the document
      * @return a ContinuableFuture that completes with an Optional containing the converted entity with projected fields, or empty if none found
-     * @throws IllegalArgumentException if rowType is null (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if rowType is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #findFirst(Bson, Class)
      * @see #findFirst(Collection, Bson, Bson, Class)
@@ -738,11 +739,11 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the target type for the document conversion
      * @param selectPropNames collection of field names to include in projection (null for all fields)
-     * @param filter BSON filter criteria to match documents (null for all documents)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort criteria to determine document order (null for natural order)
      * @param rowType the target type for conversion of the document
      * @return a ContinuableFuture that completes with an Optional containing the converted entity with projected fields, or empty if none found
-     * @throws IllegalArgumentException if rowType is null (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if rowType is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see com.mongodb.client.model.Sorts
      * @see #findFirst(Collection, Bson, Class)
@@ -767,11 +768,11 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the target type for the document conversion
      * @param projection BSON projection document for field inclusion/exclusion (null for all fields)
-     * @param filter BSON filter criteria to match documents (null for all documents)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort criteria to determine document order (null for natural order)
      * @param rowType the target type for conversion of the document
      * @return a ContinuableFuture that completes with an Optional containing the converted entity with projected fields, or empty if none found
-     * @throws IllegalArgumentException if rowType is null (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if rowType is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Sorts
@@ -794,8 +795,9 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(activeUsers -> activeUsers.forEach(user -> processUser(user)));
      * }</pre>
      *
-     * @param filter the query filter to match documents against (null for all documents)
+     * @param filter the query filter to match documents against (must not be null)
      * @return a ContinuableFuture that completes with a List containing all matching documents (empty list if none found)
+     * @throws IllegalArgumentException if filter is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through the future)
      * @see Document
      * @see #stream(Bson)
@@ -819,10 +821,10 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the target type for document conversion
-     * @param filter BSON filter criteria to match documents (null for all documents)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a List of converted entities
-     * @throws IllegalArgumentException if rowType is null (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if rowType is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #list(Bson, int, int, Class)
      * @see #list(Collection, Bson, Class)
@@ -845,12 +847,12 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the target type for document conversion
-     * @param filter BSON filter criteria to match documents (null for all documents)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param offset the number of documents to skip before starting to return results
      * @param count the maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a List of converted entities within the specified range
-     * @throws IllegalArgumentException if rowType is null or offset/count are negative (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or offset/count are negative (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #list(Bson, Class)
      */
@@ -874,10 +876,10 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the target type for document conversion
      * @param selectPropNames collection of field names to include in projection (null for all fields)
-     * @param filter BSON filter criteria to match documents (null for all documents)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a List of converted entities with only the projected fields
-     * @throws IllegalArgumentException if rowType is null (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if rowType is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #list(Bson, Class)
      */
@@ -901,12 +903,12 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the target type for document conversion
      * @param selectPropNames collection of field names to include in projection (null for all fields)
-     * @param filter BSON filter criteria to match documents (null for all documents)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param offset the number of documents to skip before starting to return results
      * @param count the maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a List of converted entities with projected fields within the range
-     * @throws IllegalArgumentException if rowType is null or offset/count are negative (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or offset/count are negative (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #list(Collection, Bson, Class)
      */
@@ -931,11 +933,11 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the target type for document conversion
      * @param selectPropNames collection of field names to include in projection (null for all fields)
-     * @param filter BSON filter criteria to match documents (null for all documents)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort criteria to determine document order (null for natural order)
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a sorted List of converted entities with projected fields
-     * @throws IllegalArgumentException if rowType is null (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if rowType is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see com.mongodb.client.model.Sorts
      */
@@ -958,13 +960,13 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the target type for document conversion
      * @param selectPropNames collection of field names to include in projection (null for all fields)
-     * @param filter BSON filter criteria to match documents (null for all documents)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort criteria to determine document order (null for natural order)
      * @param offset the number of documents to skip before starting to return results
      * @param count the maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a sorted List of converted entities with projected fields within the range
-     * @throws IllegalArgumentException if rowType is null or offset/count are negative (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or offset/count are negative (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see com.mongodb.client.model.Sorts
      */
@@ -989,11 +991,11 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the target type for document conversion
      * @param projection BSON projection document for field inclusion/exclusion (null for all fields)
-     * @param filter BSON filter criteria to match documents (null for all documents)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort criteria to determine document order (null for natural order)
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a sorted List of converted entities with projected fields
-     * @throws IllegalArgumentException if rowType is null (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if rowType is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Sorts
@@ -1017,13 +1019,13 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the target type for document conversion
      * @param projection BSON projection document for field inclusion/exclusion (null for all fields)
-     * @param filter BSON filter criteria to match documents (null for all documents)
+     * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort criteria to determine document order (null for natural order)
      * @param offset the number of documents to skip before starting to return results
      * @param count the maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a sorted List of converted entities with projected fields within the range
-     * @throws IllegalArgumentException if rowType is null or offset/count are negative (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or offset/count are negative (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Sorts
@@ -1544,8 +1546,9 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(dataset -> dataset.forEach(row -> System.out.println(row)));
      * }</pre>
      *
-     * @param filter the query filter to match documents (null matches all documents)
+     * @param filter the query filter to match documents (must not be null)
      * @return a ContinuableFuture that completes with a Dataset containing the query results
+     * @throws IllegalArgumentException if filter is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through the future)
      * @see Dataset
      * @see #query(Bson, Class)
@@ -1567,10 +1570,10 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to map each document row to
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing the query results
-     * @throws IllegalArgumentException if {@code rowType} is null (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Dataset
      * @see #query(Bson)
@@ -1592,12 +1595,12 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to map each document row to
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @param offset the number of documents to skip
      * @param count the maximum number of documents to return
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing the paginated results
-     * @throws IllegalArgumentException if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Dataset
      * @see #query(Bson, Class)
@@ -1620,10 +1623,10 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the type to map each document row to
      * @param selectPropNames the collection of property names to include in the projection
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing projected results
-     * @throws IllegalArgumentException if {@code rowType} is null (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Dataset
      * @see com.mongodb.client.model.Projections
@@ -1646,12 +1649,12 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the type to map each document row to
      * @param selectPropNames the collection of property names to include in the projection
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @param offset the number of documents to skip
      * @param count the maximum number of documents to return
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing paginated projected results
-     * @throws IllegalArgumentException if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Dataset
      */
@@ -1675,11 +1678,11 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the type to map each document row to
      * @param selectPropNames the collection of property names to include in the projection
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing sorted projected results
-     * @throws IllegalArgumentException if {@code rowType} is null (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Dataset
      * @see com.mongodb.client.model.Sorts
@@ -1703,13 +1706,13 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the type to map each document row to
      * @param selectPropNames the collection of property names to include in the projection
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification
      * @param offset the number of documents to skip
      * @param count the maximum number of documents to return
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing the complete query results
-     * @throws IllegalArgumentException if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Dataset
      */
@@ -1736,11 +1739,11 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the type to map each document row to
      * @param projection the BSON projection specification
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing projected and sorted results
-     * @throws IllegalArgumentException if {@code rowType} is null (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Dataset
      * @see com.mongodb.client.model.Projections
@@ -1765,13 +1768,13 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param <T> the type to map each document row to
      * @param projection the BSON projection specification
-     * @param filter the query filter to match documents
+     * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification
      * @param offset the number of documents to skip
      * @param count the maximum number of documents to return
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing the complete query results
-     * @throws IllegalArgumentException if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Dataset
      * @see com.mongodb.client.model.Projections

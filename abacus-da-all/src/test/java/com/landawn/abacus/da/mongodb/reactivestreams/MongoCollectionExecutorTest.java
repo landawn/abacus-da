@@ -2283,6 +2283,42 @@ public class MongoCollectionExecutorTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete((Bson) null, options, Document.class));
     }
 
+    @Test
+    public void testReadMethodsRejectNullFilterWithIAE() {
+        // Regression: findFirst/list/query taking a Bson filter must reject a null filter eagerly with
+        // IllegalArgumentException at the call site (before a Mono/Flux is built). Previously a null filter
+        // was silently treated as "match all". The driver must NOT be invoked.
+        final Collection<String> selectPropNames = Arrays.asList("name");
+        final Bson sort = new Document("name", 1);
+        final Bson projection = new Document("name", 1);
+
+        // findFirst family
+        assertThrows(IllegalArgumentException.class, () -> executor.findFirst((Bson) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.findFirst((Bson) null, Document.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.findFirst(selectPropNames, (Bson) null, Document.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.findFirst(selectPropNames, (Bson) null, sort, Document.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.findFirst(projection, (Bson) null, sort, Document.class));
+
+        // list family
+        assertThrows(IllegalArgumentException.class, () -> executor.list((Bson) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.list((Bson) null, Document.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.list((Bson) null, 0, 10, Document.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.list(selectPropNames, (Bson) null, Document.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.list(selectPropNames, (Bson) null, sort, 0, 10, Document.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.list(projection, (Bson) null, sort, 0, 10, Document.class));
+
+        // query family
+        assertThrows(IllegalArgumentException.class, () -> executor.query((Bson) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.query((Bson) null, Document.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.query((Bson) null, 0, 10, Document.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.query(selectPropNames, (Bson) null, Document.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.query(selectPropNames, (Bson) null, sort, 0, 10, Document.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.query(projection, (Bson) null, sort, 0, 10, Document.class));
+
+        // The eager guard short-circuits before the driver is touched.
+        verify(mockCollection, org.mockito.Mockito.never()).find(any(Bson.class));
+    }
+
     public static class GroupRow {
         private String department;
         private int count;

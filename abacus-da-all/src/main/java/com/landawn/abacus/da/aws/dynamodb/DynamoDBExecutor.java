@@ -507,121 +507,6 @@ public final class DynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * Converts a Java object to a DynamoDB v1 {@link AttributeValue} with automatic scalar-type
-     * detection.
-     *
-     * <p>The resulting AttributeValue has exactly one slot populated, chosen from the object's
-     * runtime type:</p>
-     *
-     * <ul>
-     * <li><b>{@code null}</b> &rarr; {@code NULL = true}</li>
-     * <li><b>Number types</b> (Integer, Long, Double, BigDecimal, etc.) &rarr; {@code N} (DynamoDB's
-     *     number type — stored as the value's stringified form)</li>
-     * <li><b>Boolean</b> &rarr; {@code BOOL}</li>
-     * <li><b>{@link ByteBuffer}</b> &rarr; {@code B} (binary; the buffer is stored as-is, not copied)</li>
-     * <li><b>Everything else</b> &rarr; {@code S} (string), produced by the registered
-     *     {@link Type} for the object's class (so e.g. {@code java.util.Date},
-     *     {@code java.time.LocalDateTime}, and {@code UUID} are written as their canonical strings)</li>
-     * </ul>
-     *
-     * <p><b>Scope:</b> this helper produces only scalar AttributeValues. It does not build {@code SS},
-     * {@code NS}, {@code BS}, {@code L}, or {@code M} (set / list / map) AttributeValues — instead
-     * collections and maps are serialised to their string form via {@code S}. If you need typed
-     * list/map AttributeValues, build them manually using {@code new AttributeValue().withL(...)} or
-     * {@code .withM(...)}.</p>
-     *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * AttributeValue stringAttr = toAttributeValue("Hello World");   // S: "Hello World"
-     * AttributeValue numberAttr = toAttributeValue(42);              // N: "42"
-     * AttributeValue boolAttr   = toAttributeValue(true);            // BOOL: true
-     * AttributeValue nullAttr   = toAttributeValue(null);            // NULL: true
-     * }</pre>
-     *
-     * @param value the Java object to convert; may be {@code null}
-     * @return a new {@link AttributeValue} representing {@code value}; never {@code null}
-     */
-    public static AttributeValue toAttributeValue(final Object value) {
-        final AttributeValue attrVal = new AttributeValue();
-
-        if (value == null) {
-            attrVal.withNULL(Boolean.TRUE);
-        } else {
-            final Type<Object> type = N.typeOf(value.getClass());
-
-            if (type.isNumber()) {
-                attrVal.setN(type.stringOf(value));
-            } else if (type.isBoolean()) {
-                attrVal.setBOOL((Boolean) value);
-            } else if (type.isByteBuffer()) {
-                attrVal.setB((ByteBuffer) value);
-            } else {
-                attrVal.setS(type.stringOf(value));
-            }
-        }
-
-        return attrVal;
-    }
-
-    /**
-     * Creates an AttributeValueUpdate with PUT action for the specified value.
-     * 
-     * <p>This convenience method creates an AttributeValueUpdate using the default PUT action,
-     * which replaces the existing attribute value with the new value. The input value is automatically
-     * converted to an AttributeValue using the same rules as {@link #toAttributeValue(Object)}.</p>
-     * 
-     * <p>This is equivalent to calling {@code toAttributeValueUpdate(value, AttributeAction.PUT)}.</p>
-     * 
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * Map<String, AttributeValueUpdate> updates = new HashMap<>();
-     * updates.put("name", toAttributeValueUpdate("John Doe"));   // PUT action
-     * updates.put("age", toAttributeValueUpdate(30));            // PUT action
-     * }</pre>
-     * 
-     * @param value the value to create AttributeValueUpdate for, can be null
-     * @return an AttributeValueUpdate with PUT action containing the converted value, never null
-     * @see #toAttributeValueUpdate(Object, AttributeAction)
-     * @see #toAttributeValue(Object)
-     */
-    public static AttributeValueUpdate toAttributeValueUpdate(final Object value) {
-        return toAttributeValueUpdate(value, AttributeAction.PUT);
-    }
-
-    /**
-     * Creates an AttributeValueUpdate with the specified action and value.
-     * 
-     * <p>This method provides full control over AttributeValueUpdate creation by allowing specification
-     * of both the value and the update action. Common actions include:</p>
-     * 
-     * <ul>
-     * <li><b>PUT</b> - Replace the attribute value (default behavior)</li>
-     * <li><b>ADD</b> - Add to numeric values or add elements to sets</li>
-     * <li><b>DELETE</b> - Remove the attribute or remove elements from sets</li>
-     * </ul>
-     * 
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * // Replace value
-     * AttributeValueUpdate put = toAttributeValueUpdate("new value", AttributeAction.PUT);
-     * 
-     * // Add to numeric value
-     * AttributeValueUpdate add = toAttributeValueUpdate(5, AttributeAction.ADD);
-     * 
-     * // Delete attribute
-     * AttributeValueUpdate delete = toAttributeValueUpdate(null, AttributeAction.DELETE);
-     * }</pre>
-     * 
-     * @param value the value for the update operation, can be null for DELETE actions
-     * @param action the update action to perform
-     * @return an AttributeValueUpdate with the specified action and converted value, never null
-     * @see #toAttributeValue(Object)
-     */
-    public static AttributeValueUpdate toAttributeValueUpdate(final Object value, final AttributeAction action) {
-        return new AttributeValueUpdate(value == null && AttributeAction.DELETE.equals(action) ? null : toAttributeValue(value), action);
-    }
-
-    /**
      * Creates a single-attribute key map for DynamoDB operations.
      * 
      * <p>This convenience method creates a key map with a single partition key, commonly used
@@ -981,6 +866,121 @@ public final class DynamoDBExecutor implements AutoCloseable {
         }
 
         return item;
+    }
+
+    /**
+     * Converts a Java object to a DynamoDB v1 {@link AttributeValue} with automatic scalar-type
+     * detection.
+     *
+     * <p>The resulting AttributeValue has exactly one slot populated, chosen from the object's
+     * runtime type:</p>
+     *
+     * <ul>
+     * <li><b>{@code null}</b> &rarr; {@code NULL = true}</li>
+     * <li><b>Number types</b> (Integer, Long, Double, BigDecimal, etc.) &rarr; {@code N} (DynamoDB's
+     *     number type — stored as the value's stringified form)</li>
+     * <li><b>Boolean</b> &rarr; {@code BOOL}</li>
+     * <li><b>{@link ByteBuffer}</b> &rarr; {@code B} (binary; the buffer is stored as-is, not copied)</li>
+     * <li><b>Everything else</b> &rarr; {@code S} (string), produced by the registered
+     *     {@link Type} for the object's class (so e.g. {@code java.util.Date},
+     *     {@code java.time.LocalDateTime}, and {@code UUID} are written as their canonical strings)</li>
+     * </ul>
+     *
+     * <p><b>Scope:</b> this helper produces only scalar AttributeValues. It does not build {@code SS},
+     * {@code NS}, {@code BS}, {@code L}, or {@code M} (set / list / map) AttributeValues — instead
+     * collections and maps are serialised to their string form via {@code S}. If you need typed
+     * list/map AttributeValues, build them manually using {@code new AttributeValue().withL(...)} or
+     * {@code .withM(...)}.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AttributeValue stringAttr = toAttributeValue("Hello World");   // S: "Hello World"
+     * AttributeValue numberAttr = toAttributeValue(42);              // N: "42"
+     * AttributeValue boolAttr   = toAttributeValue(true);            // BOOL: true
+     * AttributeValue nullAttr   = toAttributeValue(null);            // NULL: true
+     * }</pre>
+     *
+     * @param value the Java object to convert; may be {@code null}
+     * @return a new {@link AttributeValue} representing {@code value}; never {@code null}
+     */
+    public static AttributeValue toAttributeValue(final Object value) {
+        final AttributeValue attrVal = new AttributeValue();
+
+        if (value == null) {
+            attrVal.withNULL(Boolean.TRUE);
+        } else {
+            final Type<Object> type = N.typeOf(value.getClass());
+
+            if (type.isNumber()) {
+                attrVal.setN(type.stringOf(value));
+            } else if (type.isBoolean()) {
+                attrVal.setBOOL((Boolean) value);
+            } else if (type.isByteBuffer()) {
+                attrVal.setB((ByteBuffer) value);
+            } else {
+                attrVal.setS(type.stringOf(value));
+            }
+        }
+
+        return attrVal;
+    }
+
+    /**
+     * Creates an AttributeValueUpdate with PUT action for the specified value.
+     * 
+     * <p>This convenience method creates an AttributeValueUpdate using the default PUT action,
+     * which replaces the existing attribute value with the new value. The input value is automatically
+     * converted to an AttributeValue using the same rules as {@link #toAttributeValue(Object)}.</p>
+     * 
+     * <p>This is equivalent to calling {@code toAttributeValueUpdate(value, AttributeAction.PUT)}.</p>
+     * 
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Map<String, AttributeValueUpdate> updates = new HashMap<>();
+     * updates.put("name", toAttributeValueUpdate("John Doe"));   // PUT action
+     * updates.put("age", toAttributeValueUpdate(30));            // PUT action
+     * }</pre>
+     * 
+     * @param value the value to create AttributeValueUpdate for, can be null
+     * @return an AttributeValueUpdate with PUT action containing the converted value, never null
+     * @see #toAttributeValueUpdate(Object, AttributeAction)
+     * @see #toAttributeValue(Object)
+     */
+    public static AttributeValueUpdate toAttributeValueUpdate(final Object value) {
+        return toAttributeValueUpdate(value, AttributeAction.PUT);
+    }
+
+    /**
+     * Creates an AttributeValueUpdate with the specified action and value.
+     * 
+     * <p>This method provides full control over AttributeValueUpdate creation by allowing specification
+     * of both the value and the update action. Common actions include:</p>
+     * 
+     * <ul>
+     * <li><b>PUT</b> - Replace the attribute value (default behavior)</li>
+     * <li><b>ADD</b> - Add to numeric values or add elements to sets</li>
+     * <li><b>DELETE</b> - Remove the attribute or remove elements from sets</li>
+     * </ul>
+     * 
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * // Replace value
+     * AttributeValueUpdate put = toAttributeValueUpdate("new value", AttributeAction.PUT);
+     * 
+     * // Add to numeric value
+     * AttributeValueUpdate add = toAttributeValueUpdate(5, AttributeAction.ADD);
+     * 
+     * // Delete attribute
+     * AttributeValueUpdate delete = toAttributeValueUpdate(null, AttributeAction.DELETE);
+     * }</pre>
+     * 
+     * @param value the value for the update operation, can be null for DELETE actions
+     * @param action the update action to perform
+     * @return an AttributeValueUpdate with the specified action and converted value, never null
+     * @see #toAttributeValue(Object)
+     */
+    public static AttributeValueUpdate toAttributeValueUpdate(final Object value, final AttributeAction action) {
+        return new AttributeValueUpdate(value == null && AttributeAction.DELETE.equals(action) ? null : toAttributeValue(value), action);
     }
 
     /**
