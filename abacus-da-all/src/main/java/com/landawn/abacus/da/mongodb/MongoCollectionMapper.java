@@ -463,6 +463,7 @@ public final class MongoCollectionMapper<T> {
      * @return an Optional containing the entity with only the specified fields populated, or empty if not found
      * @throws IllegalArgumentException if objectId is null
      * @throws com.mongodb.MongoException if the database operation fails
+     * @see #get(String, Collection)
      * @see com.mongodb.client.model.Projections
      */
     public Optional<T> get(final ObjectId objectId, final Collection<String> selectPropNames) {
@@ -980,7 +981,7 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Executes this query and returns the value of {@code propName} on the first matching document as a boolean value.
+     * Returns the value of {@code propName} from the first document matching {@code filter}, as a boolean value.
      *
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
      *
@@ -1018,7 +1019,7 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Executes this query and returns the value of {@code propName} on the first matching document as a char value.
+     * Returns the value of {@code propName} from the first document matching {@code filter}, as a char value.
      *
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
      *
@@ -1056,7 +1057,7 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Executes this query and returns the value of {@code propName} on the first matching document as a byte value.
+     * Returns the value of {@code propName} from the first document matching {@code filter}, as a byte value.
      *
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
      *
@@ -1093,7 +1094,7 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Executes this query and returns the value of {@code propName} on the first matching document as a short value.
+     * Returns the value of {@code propName} from the first document matching {@code filter}, as a short value.
      *
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
      *
@@ -1131,7 +1132,7 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Executes this query and returns the value of {@code propName} on the first matching document as an int value.
+     * Returns the value of {@code propName} from the first document matching {@code filter}, as an int value.
      *
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
      *
@@ -1169,7 +1170,7 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Executes this query and returns the value of {@code propName} on the first matching document as a long value.
+     * Returns the value of {@code propName} from the first document matching {@code filter}, as a long value.
      *
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
      *
@@ -1207,7 +1208,7 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Executes this query and returns the value of {@code propName} on the first matching document as a float value.
+     * Returns the value of {@code propName} from the first document matching {@code filter}, as a float value.
      *
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
      *
@@ -1245,7 +1246,7 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Executes this query and returns the value of {@code propName} on the first matching document as a double value.
+     * Returns the value of {@code propName} from the first document matching {@code filter}, as a double value.
      *
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
      *
@@ -1283,7 +1284,7 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Executes this query and returns the value of {@code propName} on the first matching document as a string value.
+     * Returns the value of {@code propName} from the first document matching {@code filter}, as a String value.
      *
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
      *
@@ -1321,15 +1322,15 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Executes this query and returns the value of {@code propName} on the first matching document as a Date value.
+     * Returns the value of {@code propName} from the first document matching {@code filter}, as a Date value.
      *
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
      *
      * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned <i>only</i> when no
-     * document matches the filter (or when the matched document carries no readable field for
-     * {@code propName}). If a document is found and the field exists but is BSON {@code null}, the
-     * returned {@code Nullable} is <i>present-but-null</i> ({@code Nullable.of(null)}), preserving the
-     * distinction between "no document matched" and "document matched but value is null".</p>
+     * document matches the filter. If a document is matched, but the field is absent on the matched
+     * document or the stored value is BSON {@code null}, the returned {@code Nullable} is
+     * <i>present-but-null</i> ({@code Nullable.of(null)}), preserving the distinction between
+     * "no document matched" and "document matched but value is null".</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1358,17 +1359,17 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Executes this query and returns the value of {@code propName} on the first matching document as the specified Date subtype.
+     * Returns the value of {@code propName} from the first document matching {@code filter}, as the specified Date subtype.
      *
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining
      * documents or fields are ignored. The retrieved value is converted to the supplied
      * {@code valueType} (e.g. {@link java.sql.Timestamp}, {@link java.sql.Date}).</p>
      *
      * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned <i>only</i> when no
-     * document matches the filter (or when the matched document carries no readable field for
-     * {@code propName}). If a document is found and the field exists but is BSON {@code null}, the
-     * returned {@code Nullable} is <i>present-but-null</i> ({@code Nullable.of(null)}), preserving the
-     * distinction between "no document matched" and "document matched but value is null".</p>
+     * document matches the filter. If a document is matched, but the field is absent on the matched
+     * document or the stored value is BSON {@code null}, the returned {@code Nullable} is
+     * <i>present-but-null</i> ({@code Nullable.of(null)}), preserving the distinction between
+     * "no document matched" and "document matched but value is null".</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1387,7 +1388,7 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match documents against (must not be null)
      * @param valueType the class of the Date subtype to convert to
      * @return a <i>present</i> {@code Nullable<P>} holding the field value (possibly {@code null} for
-     *         a BSON {@code null} field) when at least one document is matched;
+     *         a missing or BSON {@code null} field) when at least one document is matched;
      *         {@code Nullable.empty()} when no document matches
      * @throws IllegalArgumentException if {@code propName} is null or empty, {@code filter} is null, or {@code valueType} is null
      * @throws com.mongodb.MongoException if the database operation fails
@@ -1400,7 +1401,7 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Executes this query and returns the value of {@code propName} on the first matching document as the specified type.
+     * Returns the value of {@code propName} from the first document matching {@code filter}, as the specified type.
      *
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
      *
@@ -2144,7 +2145,8 @@ public final class MongoCollectionMapper<T> {
      * Updates a single entity identified by ObjectId with the specified update operations.
      * 
      * <p>This method updates a single entity matching the provided ObjectId. The update entity
-     * contains the fields to modify, with automatic handling of dirty tracking if supported.
+     * contains the fields to modify; the entity is converted to a {@code $set} update (null-valued
+     * properties are dropped); see {@link #updateOne(String, Object)}.
      * This is the most direct way to update a known entity by its database identifier.</p>
      * 
      * <p><b>Usage Examples:</b></p>
@@ -2157,7 +2159,7 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param objectId the ObjectId identifying the entity to update
-     * @param update the entity containing update data
+     * @param update the entity, or a driver-built {@link Bson} update expression, containing the update data
      * @return UpdateResult containing information about the update operation
      * @throws IllegalArgumentException if objectId or update is null
      * @throws com.mongodb.MongoWriteException if the update operation fails
@@ -2186,7 +2188,7 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param filter the query filter to match the entity to update
-     * @param update the entity containing update data
+     * @param update the entity, or a driver-built {@link Bson} update expression, containing the update data
      * @return UpdateResult containing information about the update operation
      * @throws IllegalArgumentException if filter or update is null
      * @throws com.mongodb.MongoWriteException if the update operation fails
@@ -2236,8 +2238,9 @@ public final class MongoCollectionMapper<T> {
      * Updates a single entity using multiple update entities as a pipeline.
      * 
      * <p>This method applies multiple update entities in sequence as an aggregation pipeline
-     * update. This enables complex, multi-stage updates that can reference existing field values,
-     * perform calculations, and conditionally modify documents.</p>
+     * update. Each supplied item becomes a pipeline stage; plain entities contribute literal field
+     * assignments, while driver-built {@link Bson} stages may reference existing values, compute, or
+     * conditionally modify documents.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2359,8 +2362,9 @@ public final class MongoCollectionMapper<T> {
      * Updates all entities matching the filter using multiple update entities as a pipeline.
      * 
      * <p>This method applies a pipeline of update operations to all matching documents.
-     * Pipeline updates enable complex transformations that can reference existing field values,
-     * perform calculations, and apply conditional logic across multiple documents.</p>
+     * Each supplied item becomes a pipeline stage; plain entities contribute literal field
+     * assignments, while driver-built {@link Bson} stages may reference existing values, compute, or
+     * conditionally modify documents.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2713,10 +2717,9 @@ public final class MongoCollectionMapper<T> {
      * Inserts the supplied entities as a single MongoDB bulk-write of {@code InsertOneModel} entries
      * and returns the inserted count reported by the server.
      *
-     * <p>Unlike {@link #insertMany(Collection)} (which returns {@code void} but performs the same
-     * bulk-write under the hood), this overload returns the inserted count and reuses the
-     * bulk-write pathway. Per-document atomicity applies; the bulk as a whole is not atomic across
-     * documents.</p>
+     * <p>Unlike {@link #insertMany(Collection)} (which returns {@code void}), this overload returns
+     * the inserted count and reuses the bulk-write pathway. Per-document atomicity applies; the bulk
+     * as a whole is not atomic across documents.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2756,7 +2759,7 @@ public final class MongoCollectionMapper<T> {
      *
      * @param entities collection of entities to insert in bulk
      * @param options additional options for the bulk write operation (null uses defaults)
-     * @return the number of entities successfully inserted
+     * @return the number of entities reported as inserted by the server
      * @throws IllegalArgumentException if entities is null or empty
      * @throws com.mongodb.MongoBulkWriteException if one or more operations fail
      * @throws com.mongodb.MongoException if the database operation fails
@@ -2876,7 +2879,7 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param filter the query filter to match the entity to update
-     * @param update the entity containing update data
+     * @param update the entity, or a driver-built {@link Bson} update expression, containing the update data
      * @param options additional options for the find and update operation (null uses defaults)
      * @return the entity before or after the update (based on options), or null if not found
      * @throws IllegalArgumentException if filter or update is null
@@ -2893,8 +2896,9 @@ public final class MongoCollectionMapper<T> {
      * Finds and updates a single entity atomically using a pipeline of update operations.
      *
      * <p>This method performs atomic find-and-update using an aggregation pipeline for complex
-     * transformations. Pipeline updates enable field calculations, conditional logic, and
-     * multi-stage transformations that reference existing document values.</p>
+     * transformations. Each supplied item becomes a pipeline stage; plain entities contribute literal
+     * field assignments, while driver-built {@link Bson} stages may reference existing values, compute,
+     * or conditionally modify documents.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3074,10 +3078,11 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Returns a stream of distinct values for the specified field across all entities.
+     * Returns a stream of entities, each carrying one distinct value of the specified field across all entities.
      *
      * <p>This method streams all unique values for the specified field name across the entire
-     * collection. The values are automatically converted to the entity type, useful for getting
+     * collection. Each distinct value is surfaced under {@code fieldName} on an entity of the mapped
+     * type, and is only readable if the entity declares a matching property. This is useful for getting
      * distinct field values for analysis or dropdown populations.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -3102,11 +3107,12 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Returns a stream of distinct values for the specified field matching the filter.
+     * Returns a stream of entities, each carrying one distinct value of the specified field from matching entities.
      *
      * <p>This method streams unique values for the specified field from entities that match
-     * the filter criteria. This is useful for getting distinct values from a subset of the
-     * collection based on specific conditions.</p>
+     * the filter criteria. Each distinct value is surfaced under {@code fieldName} on an entity of the
+     * mapped type, and is only readable if the entity declares a matching property. This is useful for
+     * getting distinct values from a subset of the collection based on specific conditions.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3163,7 +3169,7 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Groups entities by the specified field and returns a stream of grouped results.
+     * Returns a stream of entities, one per group, grouped by the specified field.
      *
      * <p><strong>Beta Feature:</strong> This method is experimental and may change in future versions.</p>
      *
@@ -3192,7 +3198,7 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Groups entities by multiple fields and returns a stream of grouped results.
+     * Returns a stream of entities, one per group, grouped by multiple fields.
      *
      * <p><strong>Beta Feature:</strong> This method is experimental and may change in future versions.</p>
      *
@@ -3222,12 +3228,14 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Groups entities by the specified field and includes count information.
+     * Returns a stream of entities, one per group, grouped by the specified field, each carrying its count.
      *
      * <p><strong>Beta Feature:</strong> This method is experimental and may change in future versions.</p>
      *
      * <p>This method groups entities by a field value and includes the count of entities in each group.
-     * This is useful for generating summary statistics and understanding data distribution.</p>
+     * The count surfaces under a {@code count} field on the entity and is only readable if the entity
+     * declares a matching property. This is useful for generating summary statistics and understanding
+     * data distribution.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3251,13 +3259,14 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Groups entities by multiple fields and includes count information.
+     * Returns a stream of entities, one per group, grouped by multiple fields, each carrying its count.
      *
      * <p><strong>Beta Feature:</strong> This method is experimental and may change in future versions.</p>
      *
      * <p>This method groups entities by multiple field values and includes the count of entities
-     * in each group. This enables multi-dimensional analysis with count statistics for
-     * complex data aggregation scenarios.</p>
+     * in each group. The count surfaces under a {@code count} field on the entity and is only readable
+     * if the entity declares a matching property. This enables multi-dimensional analysis with count
+     * statistics for complex data aggregation scenarios.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3283,7 +3292,7 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Executes a MapReduce operation and returns a stream of results.
+     * Executes a MapReduce operation and returns a stream of entities representing the results.
      *
      * <p><strong>Deprecated:</strong> MapReduce is deprecated in MongoDB in favor of aggregation pipelines.
      * Use {@link #aggregate(List)} with aggregation stages for better performance and functionality.</p>

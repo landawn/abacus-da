@@ -396,7 +396,7 @@ public final class AsyncMongoCollectionExecutor {
      * @return a ContinuableFuture that completes with an Optional containing the converted object if found, or empty if not found
      * @throws IllegalArgumentException if objectId or rowType is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
-     * @see #get(ObjectId, Collection, Class)
+     * @see #get(String, Class)
      */
     public <T> ContinuableFuture<Optional<T>> get(final ObjectId objectId, final Class<T> rowType) {
         return asyncExecutor.execute(() -> collectionExecutor.get(objectId, rowType));
@@ -1057,7 +1057,7 @@ public final class AsyncMongoCollectionExecutor {
      *
      * // Block for the value when needed (get() throws InterruptedException, ExecutionException):
      * OptionalBoolean active = async.queryForBoolean("isActive", Filters.eq("userId", "123")).get();
-     * // returns OptionalBoolean.of(true) when the matched doc's "isActive" is true // throws InterruptedException, ExecutionException
+     * // returns OptionalBoolean.of(true) when the matched doc's "isActive" is true
      *
      * // No document matches the filter:
      * OptionalBoolean none = async.queryForBoolean("isActive", Filters.eq("userId", "absent")).get();
@@ -1208,7 +1208,7 @@ public final class AsyncMongoCollectionExecutor {
      *
      * // Block for the value:
      * OptionalInt age = async.queryForInt("age", Filters.eq("userId", "user123")).get();
-     * // returns OptionalInt.of(30) for a matched doc; OptionalInt.empty() if none match // throws InterruptedException, ExecutionException
+     * // returns OptionalInt.of(30) for a matched doc; OptionalInt.empty() if none match
      * }</pre>
      *
      * @param propName the name of the integer property to retrieve
@@ -1439,7 +1439,7 @@ public final class AsyncMongoCollectionExecutor {
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code Nullable<T>}
      *         holding the typed Date value (possibly {@code null} for missing/null fields) when at
      *         least one document matches; {@code Nullable.empty()} when no document matches
-     * @throws IllegalArgumentException if filter is null, or if propName or valueType is null or empty (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if propName is null or empty, or if valueType is null (propagated through future)
      * @throws ClassCastException if the value cannot be cast to the specified type (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #queryForDate(String, Bson)
@@ -1481,7 +1481,7 @@ public final class AsyncMongoCollectionExecutor {
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code Nullable<V>}
      *         holding the converted value (possibly {@code null} for missing/null fields) when at
      *         least one document matches; {@code Nullable.empty()} when no document matches
-     * @throws IllegalArgumentException if filter is null, or if propName or valueType is null or empty (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if propName is null or empty, or if valueType is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Nullable
      * @see #queryForSingleNonNull(String, Bson, Class)
@@ -1521,7 +1521,7 @@ public final class AsyncMongoCollectionExecutor {
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code Optional<V>}
      *         holding the (non-null) converted value when a document is matched and the field carries
      *         a non-null value; {@code Optional.empty()} when no document matches the filter
-     * @throws IllegalArgumentException if filter is null, or if propName or valueType is null or empty (propagated through future)
+     * @throws IllegalArgumentException if filter is null, or if propName is null or empty, or if valueType is null (propagated through future)
      * @throws NullPointerException if a document is matched but the field is absent, the raw value is
      *         {@code null}, or the conversion to {@code valueType} yields {@code null}, because
      *         {@link Optional#of(Object)} rejects a null payload (propagated through future)
@@ -2597,7 +2597,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param objectId the string representation of the ObjectId to identify the document
      * @param replacement the replacement document (will preserve the original _id)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
-     * @throws IllegalArgumentException if objectId is null, empty, or invalid format (propagated through future)
+     * @throws IllegalArgumentException if objectId is null, empty, or not a valid hex ObjectId (propagated through future)
      * @throws IllegalArgumentException if replacement is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see UpdateResult
@@ -2728,7 +2728,7 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param objectId the string representation of the ObjectId to identify the document for deletion
      * @return a ContinuableFuture that completes with DeleteResult containing operation details
-     * @throws IllegalArgumentException if objectId is null, empty, or invalid format (propagated through future)
+     * @throws IllegalArgumentException if objectId is null, empty, or not a valid hex ObjectId (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see DeleteResult
      * @see #deleteOne(ObjectId)
@@ -3543,7 +3543,7 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method performs a non-blocking group operation on documents by the specified field.
      * It's a convenience method that creates an aggregation pipeline with a $group stage.
-     * This method is marked as @Beta and may change in future versions.</p>
+     * This is a beta API and may change in future versions.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3567,7 +3567,7 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method performs a non-blocking group operation on documents by multiple fields.
      * It's a convenience method that creates an aggregation pipeline with a $group stage
-     * for composite grouping. This method is marked as @Beta and may change in future versions.</p>
+     * for composite grouping. This is a beta API and may change in future versions.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3595,7 +3595,7 @@ public final class AsyncMongoCollectionExecutor {
      * that creates an aggregation pipeline with $group and $sum stages. The result includes the
      * grouping field value and a count of documents for each distinct value.</p>
      *
-     * <p>This method is marked as @Beta and may change in future versions.</p>
+     * <p>This is a beta API and may change in future versions.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3633,7 +3633,7 @@ public final class AsyncMongoCollectionExecutor {
      * creates an aggregation pipeline with $group and $sum stages for composite grouping. The
      * result includes the grouping field values as a composite key and a count of documents.</p>
      *
-     * <p>This method is marked as @Beta and may change in future versions.</p>
+     * <p>This is a beta API and may change in future versions.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3682,12 +3682,12 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(stream -> stream.forEach(System.out::println));
      * }</pre>
      *
+     * @deprecated Use {@link #aggregate(List)} with aggregation pipeline instead.
      * @param mapFunction the JavaScript map function
      * @param reduceFunction the JavaScript reduce function
      * @return a ContinuableFuture that completes with a Stream of result Documents
      * @throws IllegalArgumentException if mapFunction or reduceFunction is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
-     * @deprecated Use {@link #aggregate(List)} with aggregation pipeline instead.
      * @see #aggregate(List)
      */
     @Deprecated
@@ -3708,6 +3708,7 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(stream -> stream.forEach(sum -> System.out.println(sum)));
      * }</pre>
      *
+     * @deprecated Use {@link #aggregate(List, Class)} with aggregation pipeline instead.
      * @param <T> the type of the result documents
      * @param mapFunction the JavaScript map function
      * @param reduceFunction the JavaScript reduce function
@@ -3715,7 +3716,6 @@ public final class AsyncMongoCollectionExecutor {
      * @return a ContinuableFuture that completes with a Stream of result objects
      * @throws IllegalArgumentException if any parameter is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
-     * @deprecated Use {@link #aggregate(List, Class)} with aggregation pipeline instead.
      * @see #aggregate(List, Class)
      */
     @Deprecated

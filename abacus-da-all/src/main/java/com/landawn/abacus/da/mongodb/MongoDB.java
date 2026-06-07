@@ -291,12 +291,13 @@ public final class MongoDB extends MongoDBBase {
      * mongoDB.collectionMapper(User.class);                  // same as mongoDB.collectionMapper("User", User.class)
      *
      * // Edge case: a null type cannot be named.
-     * mongoDB.collectionMapper((Class<User>) null);          // throws (null rowType while computing the collection name)
+     * mongoDB.collectionMapper((Class<User>) null);          // throws NullPointerException (null rowType is dereferenced while computing the collection name)
      * }</pre>
      *
      * @param <T> the entity type for mapping
      * @param rowType the Class object representing the entity type
      * @return a MongoCollectionMapper for the specified entity type
+     * @throws NullPointerException if rowType is null (the simple-name lookup dereferences it first)
      * @see MongoCollectionMapper
      */
     public <T> MongoCollectionMapper<T> collectionMapper(final Class<T> rowType) {

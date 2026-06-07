@@ -979,7 +979,7 @@ public abstract class MongoDBBase {
      * @param rowType the target class - can be an entity class with getter/setter methods, Map.class, or basic single value type (Primitive/String/Date...)
      * @return a List containing all results converted to the specified type (empty list if no results)
      * @throws NullPointerException if findIterable or rowType is null
-     * @throws IllegalArgumentException if rowType is not supported (e.g. a document with more than two fields cannot be converted to a primitive/String/Date)
+     * @throws IllegalArgumentException if a result document cannot be projected onto {@code rowType} (e.g. a document with more than two fields targeted at a primitive/String/Date scalar)
      * @see com.mongodb.client.MongoIterable
      * @see #toEntity(Document, Class)
      */

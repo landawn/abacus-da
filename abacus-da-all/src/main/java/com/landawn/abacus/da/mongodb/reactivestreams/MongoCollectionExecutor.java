@@ -108,16 +108,16 @@ import reactor.core.publisher.Mono;
  * <pre>{@code
  * MongoCollectionExecutor executor = reactiveMongoDB.collectionExecutor("users");
  * 
- * // Single value operations (Mono-like):
- * Publisher<Long> countPublisher = executor.count();
- * Publisher<Document> findFirstPublisher = executor.findFirst(Filters.eq("status", "active"));
+ * // Single value operations (single value, Mono):
+ * Mono<Long> countMono = executor.count();
+ * Mono<Document> firstMono = executor.findFirst(Filters.eq("status", "active"));
  *
- * // Multi-value operations (Flux-like):
- * Flux<Document> findPublisher = executor.list(Filters.gte("age", 18));
- * 
+ * // Multi-value operations (multi value, Flux):
+ * Flux<Document> docs = executor.list(Filters.gte("age", 18));
+ *
  * // With Project Reactor integration:
- * Mono<Long> totalCount = Mono.from(countPublisher);
- * Flux<Document> documents = Flux.from(findPublisher)
+ * Mono<Long> totalCount = Mono.from(countMono);
+ * Flux<Document> documents = Flux.from(docs)
  *     .filter(doc -> doc.getInteger("score") > 80)
  *     .take(100)
  *     .doOnNext(doc -> System.out.println(doc.toJson()));
@@ -583,7 +583,8 @@ public final class MongoCollectionExecutor {
      * @param <T> the type to convert the document to
      * @param objectId the ObjectId as a string to search for
      * @param rowType the Class representing the target type for conversion
-     * @return a Mono that emits the converted object, or empty if no document matches the ObjectId
+     * @return a {@code Mono} that emits the converted object on subscription, or completes empty
+     *         when no document matches the ObjectId
      * @throws IllegalArgumentException if objectId is null/empty, rowType is null, or objectId is not a valid ObjectId hex string
      * @see ObjectId
      */
@@ -611,7 +612,8 @@ public final class MongoCollectionExecutor {
      * @param <T> the type to convert the document to
      * @param objectId the ObjectId to search for
      * @param rowType the Class representing the target type for conversion
-     * @return a Mono that emits the converted object, or empty if no document matches the ObjectId
+     * @return a {@code Mono} that emits the converted object on subscription, or completes empty
+     *         when no document matches the ObjectId
      * @throws IllegalArgumentException if objectId or rowType is null
      * @see ObjectId
      */
@@ -641,7 +643,8 @@ public final class MongoCollectionExecutor {
      * @param selectPropNames the collection of field names to include in the projection
      *                        (null/empty selects all fields)
      * @param rowType the Class representing the target type for conversion
-     * @return a Mono that emits the converted projected object, or empty if no document matches the ObjectId
+     * @return a {@code Mono} that emits the converted projected object on subscription, or completes
+     *         empty when no document matches the ObjectId
      * @throws IllegalArgumentException if objectId is null, empty, or not a valid ObjectId hex string
      * @see ObjectId
      * @see com.mongodb.client.model.Projections
@@ -673,7 +676,8 @@ public final class MongoCollectionExecutor {
      * @param selectPropNames the collection of field names to include in the projection
      *                        (null/empty selects all fields)
      * @param rowType the Class representing the target type for conversion
-     * @return a Mono that emits the converted projected object, or empty if no document matches the ObjectId
+     * @return a {@code Mono} that emits the converted projected object on subscription, or completes
+     *         empty when no document matches the ObjectId
      * @throws IllegalArgumentException if objectId is null
      * @see ObjectId
      * @see com.mongodb.client.model.Projections
@@ -686,8 +690,8 @@ public final class MongoCollectionExecutor {
      * Finds the first document matching the specified filter reactively.
      *
      * <p>This method provides a reactive way to retrieve the first document that matches the given
-     * filter criteria. The operation completes when the first matching document is found or
-     * when it's determined that no matching documents exist.</p>
+     * filter criteria. On subscription, the returned {@code Mono} emits the first matching document
+     * and completes, or completes empty when no document matches.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1746,6 +1750,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with typed rows within the specified range
      * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site), or if offset or count is negative
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      */
     public <T> Mono<Dataset> query(final Bson filter, final int offset, final int count, final Class<T> rowType) {
         return query(null, filter, offset, count, rowType);
@@ -1769,6 +1774,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with projected fields and typed rows
      * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      */
     public <T> Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) {
         return query(selectPropNames, filter, 0, Integer.MAX_VALUE, rowType);
@@ -1794,6 +1800,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with projected fields and typed rows within range
      * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site), or if offset or count is negative
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      */
     public <T> Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count, final Class<T> rowType) {
         return query(selectPropNames, filter, null, offset, count, rowType);
@@ -1819,6 +1826,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with projected fields and sorted typed rows
      * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      */
     public <T> Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
         return query(selectPropNames, filter, sort, 0, Integer.MAX_VALUE, rowType);
@@ -1846,6 +1854,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with all specified constraints applied
      * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site), or if offset or count is negative
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      */
     public <T> Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
@@ -1875,6 +1884,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with projected and sorted typed rows
      * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      */
     public <T> Mono<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
         return query(projection, filter, sort, 0, Integer.MAX_VALUE, rowType);
@@ -1901,6 +1911,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with all specified constraints applied
      * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site), or if offset or count is negative
+     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      */
     public <T> Mono<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType) {
         return executeQuery(projection, filter, sort, offset, count).collectList().map(rowList -> MongoDB.extractData(rowList, rowType));
@@ -2277,7 +2288,8 @@ public final class MongoCollectionExecutor {
      *
      * @param objectId the string representation of the document's ObjectId
      * @param update the update specification (Bson/Document/Map/entity class)
-     * @return a Mono that emits the UpdateResult containing operation details
+     * @return a Mono that emits the UpdateResult containing details about the operation including
+     *         matched count, modified count, and upserted id if applicable
      */
     public Mono<UpdateResult> updateOne(final String objectId, final Object update) {
         return updateOne(createObjectId(objectId), update);
@@ -2298,7 +2310,8 @@ public final class MongoCollectionExecutor {
      *
      * @param objectId the ObjectId of the document to update
      * @param update the update specification (Bson/Document/Map/entity class)
-     * @return a Mono that emits the UpdateResult containing operation details
+     * @return a Mono that emits the UpdateResult containing details about the operation including
+     *         matched count, modified count, and upserted id if applicable
      */
     public Mono<UpdateResult> updateOne(final ObjectId objectId, final Object update) {
         return updateOne(MongoDBBase.objectId2Filter(objectId), update);
@@ -2331,6 +2344,7 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to identify the document to update
      * @param update the update specification (Bson/Document/Map/entity class)
      * @return a Mono that emits the UpdateResult containing operation details
+     * @throws IllegalArgumentException if filter is null
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final Object update) {
         return updateOne(filter, update, null);
@@ -3140,7 +3154,8 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to find the document; must not be null
      * @param update the update operations to apply; must not be null
      * @param rowType the class to deserialize the result into; must not be null
-     * @return a Mono that emits the found document mapped to the specified type
+     * @return a Mono that emits the found document mapped to the specified type, or completes empty
+     *         when no document matches the filter
      * @throws IllegalArgumentException if any parameter is null
      * @see #findOneAndUpdate(Bson, Object, FindOneAndUpdateOptions, Class)
      */
@@ -3169,7 +3184,8 @@ public final class MongoCollectionExecutor {
      * @param update the update operations to apply; must not be null
      * @param options the options such as upsert, return document, projection, or sort;
      *                may be null to use default options
-     * @return a Mono that emits the found document (before or after update based on options)
+     * @return a Mono that emits the found document (before or after update based on options), or
+     *         completes empty when no document matches the filter
      * @throws IllegalArgumentException if filter or update is null
      */
     public Mono<Document> findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options) {
@@ -3203,7 +3219,8 @@ public final class MongoCollectionExecutor {
      * @param options the options such as upsert, return document, projection, or sort;
      *                may be null to use default options
      * @param rowType the class to deserialize the result into; must not be null
-     * @return a Mono that emits the found document mapped to the specified type
+     * @return a Mono that emits the found document mapped to the specified type, or completes empty
+     *         when no document matches the filter
      * @throws IllegalArgumentException if filter, update, or rowType is null
      */
     public <T> Mono<T> findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options, final Class<T> rowType) {
@@ -3240,7 +3257,7 @@ public final class MongoCollectionExecutor {
      *
      * @param filter the query filter to find the document; must not be null
      * @param objList collection of update operations to apply; must not be null or empty
-     * @return a Mono that emits the found document
+     * @return a Mono that emits the found document, or completes empty when no document matches the filter
      * @throws IllegalArgumentException if filter or objList is null or empty
      * @see #findOneAndUpdate(Bson, Collection, FindOneAndUpdateOptions)
      */
@@ -3264,7 +3281,8 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to find the document; must not be null
      * @param objList collection of update operations to apply; must not be null or empty
      * @param rowType the class to deserialize the result into; must not be null
-     * @return a Mono that emits the found document mapped to the specified type
+     * @return a Mono that emits the found document mapped to the specified type, or completes empty
+     *         when no document matches the filter
      * @throws IllegalArgumentException if any parameter is null or objList is empty
      * @see #findOneAndUpdate(Bson, Collection, FindOneAndUpdateOptions, Class)
      */
@@ -3294,7 +3312,8 @@ public final class MongoCollectionExecutor {
      * @param objList collection of update operations to apply as a pipeline; must not be null or empty
      * @param options the options such as upsert, return document, projection, or sort;
      *                may be null to use default options
-     * @return a Mono that emits the found document (before or after update based on options)
+     * @return a Mono that emits the found document (before or after update based on options), or
+     *         completes empty when no document matches the filter
      * @throws IllegalArgumentException if filter or objList is null or empty
      */
     public Mono<Document> findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options) {
@@ -3330,7 +3349,8 @@ public final class MongoCollectionExecutor {
      * @param options the options such as upsert, return document, projection, or sort;
      *                may be null to use default options
      * @param rowType the class to deserialize the result into; must not be null
-     * @return a Mono that emits the found document mapped to the specified type
+     * @return a Mono that emits the found document mapped to the specified type, or completes empty
+     *         when no document matches the filter
      * @throws IllegalArgumentException if filter, objList, or rowType is null, or objList is empty
      */
     public <T> Mono<T> findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options, final Class<T> rowType) {
@@ -3394,7 +3414,8 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to find the document; must not be null
      * @param replacement the replacement document; must not be null
      * @param rowType the class to deserialize the result into; must not be null
-     * @return a Mono that emits the found document mapped to the specified type
+     * @return a Mono that emits the found document mapped to the specified type, or completes empty
+     *         when no document matches the filter
      * @throws IllegalArgumentException if any parameter is null
      * @see #findOneAndReplace(Bson, Object, FindOneAndReplaceOptions, Class)
      */
@@ -3423,7 +3444,8 @@ public final class MongoCollectionExecutor {
      * @param replacement the replacement document; must not be null
      * @param options the options such as upsert, return document, projection, or sort;
      *                may be null to use default options
-     * @return a Mono that emits the found document (before or after replacement based on options)
+     * @return a Mono that emits the found document (before or after replacement based on options),
+     *         or completes empty when no document matches the filter
      * @throws IllegalArgumentException if filter or replacement is null
      */
     public Mono<Document> findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options) {
@@ -3459,7 +3481,8 @@ public final class MongoCollectionExecutor {
      * @param options the options such as upsert, return document, projection, or sort;
      *                may be null to use default options
      * @param rowType the class to deserialize the result into; must not be null
-     * @return a Mono that emits the found document mapped to the specified type
+     * @return a Mono that emits the found document mapped to the specified type, or completes empty
+     *         when no document matches the filter
      * @throws IllegalArgumentException if filter, replacement, or rowType is null
      */
     public <T> Mono<T> findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options, final Class<T> rowType) {
@@ -3517,7 +3540,8 @@ public final class MongoCollectionExecutor {
      * @param <T> the type of the returned document
      * @param filter the query filter to find the document to delete; must not be null
      * @param rowType the class to deserialize the deleted document into; must not be null
-     * @return a Mono that emits the deleted document mapped to the specified type
+     * @return a Mono that emits the deleted document mapped to the specified type, or completes empty
+     *         when no document matches the filter
      * @throws IllegalArgumentException if filter or rowType is null
      * @see #findOneAndDelete(Bson, FindOneAndDeleteOptions, Class)
      */
@@ -3544,7 +3568,7 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to find the document to delete; must not be null
      * @param options the options such as projection, sort, or collation;
      *                may be null to use default options
-     * @return a Mono that emits the deleted document
+     * @return a Mono that emits the deleted document, or completes empty when no document matches the filter
      * @throws IllegalArgumentException if filter is null
      */
     public Mono<Document> findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options) {
@@ -3577,7 +3601,8 @@ public final class MongoCollectionExecutor {
      * @param options the options such as projection, sort, or collation;
      *                may be null to use default options
      * @param rowType the class to deserialize the deleted document into; must not be null
-     * @return a Mono that emits the deleted document mapped to the specified type
+     * @return a Mono that emits the deleted document mapped to the specified type, or completes empty
+     *         when no document matches the filter
      * @throws IllegalArgumentException if filter or rowType is null
      */
     public <T> Mono<T> findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options, final Class<T> rowType) {
@@ -3610,6 +3635,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the class type of the distinct values; must not be null
      * @return a cold {@code Flux} that, on subscription, emits each distinct value of the field
      *         (deduplicated by the server), then completes
+     * @throws IllegalArgumentException if fieldName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
      * @see #distinct(String, Bson, Class)
      */
@@ -3637,7 +3663,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the class type of the distinct values; must not be null
      * @return a cold {@code Flux} that, on subscription, emits each distinct value found among the
      *         filtered documents, then completes
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if fieldName is null or empty, or filter is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
      */
     public <T> Flux<T> distinct(final String fieldName, final Bson filter, final Class<T> rowType) {
@@ -3740,7 +3766,7 @@ public final class MongoCollectionExecutor {
      *
      * @param fieldName the field name to group by; must not be null
      * @return a Flux that emits documents grouped by the specified field
-     * @throws IllegalArgumentException if fieldName is null
+     * @throws IllegalArgumentException if fieldName is null or empty
      * @see #groupBy(String, Class)
      */
     @Beta
@@ -3763,7 +3789,7 @@ public final class MongoCollectionExecutor {
      * @param fieldName the field name to group by; must not be null
      * @param rowType the class to deserialize results into; must not be null
      * @return a Flux that emits grouped documents mapped to the specified type
-     * @throws IllegalArgumentException if fieldName or rowType is null
+     * @throws IllegalArgumentException if fieldName is null or empty, or rowType is null
      * @see #groupBy(Collection, Class)
      */
     @Beta
@@ -3849,7 +3875,7 @@ public final class MongoCollectionExecutor {
      *
      * @param fieldName the field name to group by; must not be null
      * @return a Flux that emits documents with _id (group key) and count fields
-     * @throws IllegalArgumentException if fieldName is null
+     * @throws IllegalArgumentException if fieldName is null or empty
      * @see #groupByAndCount(String, Class)
      */
     @Beta
@@ -3872,7 +3898,7 @@ public final class MongoCollectionExecutor {
      * @param fieldName the field name to group by; must not be null
      * @param rowType the class to deserialize results into; must not be null
      * @return a Flux that emits grouped and counted documents mapped to the specified type
-     * @throws IllegalArgumentException if fieldName or rowType is null
+     * @throws IllegalArgumentException if fieldName is null or empty, or rowType is null
      */
     @Beta
     public <T> Flux<T> groupByAndCount(final String fieldName, final Class<T> rowType) {
