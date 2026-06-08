@@ -2347,7 +2347,13 @@ public class BigQueryExecutor {
             sqlBuilder.limit(count);
         }
 
-        return sqlBuilder.build();
+        final SP sp = sqlBuilder.build();
+
+        // BigQuery (GoogleSQL) quotes identifiers with backticks; a double-quoted token is a string literal.
+        // SqlBuilder emits ANSI double-quoted column aliases (e.g. SELECT id AS "id"), which BigQuery rejects
+        // with "Unexpected string literal". Every value in the generated SELECT is a positional '?' parameter
+        // (no string literals), so the only double quotes are alias delimiters; rewrite them to backticks.
+        return sp.query().indexOf('"') < 0 ? sp : new SP(sp.query().replace('"', '`'), sp.parameters());
     }
 
     private static final Function<Object, QueryParameterValue> defaultQueryParameterCreator = value -> {

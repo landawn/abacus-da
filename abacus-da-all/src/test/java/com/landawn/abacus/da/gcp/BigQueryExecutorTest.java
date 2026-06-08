@@ -482,6 +482,26 @@ public class BigQueryExecutorTest extends TestBase {
         assertFalse(sql.contains(":"), sql);
     }
 
+    // ---------------------------------------------------------------------------------------------
+    // Regression: SELECT must alias columns with BigQuery backticks (`id`), not ANSI double quotes
+    // ("id"). BigQuery/GoogleSQL parses a double-quoted token as a STRING LITERAL, so the SqlBuilder
+    // default `SELECT id AS "id"` is rejected with "Unexpected string literal". Only a live BigQuery
+    // run surfaced this; prepareQuery now rewrites the identifier quoting to backticks.
+    // ---------------------------------------------------------------------------------------------
+    @Test
+    public void testQueryGeneratesBacktickQuotedAliasesNotDoubleQuotes() throws Exception {
+        when(mockTableResult.getTotalRows()).thenReturn(0L);
+        when(mockTableResult.getSchema()).thenReturn(Schema.of(FieldList.of(Field.of("id", StandardSQLTypeName.INT64))));
+        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<FieldValueList>());
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        executor.query(TestEntity.class, Filters.eq("id", 1));
+
+        final String sql = captureGeneratedSql();
+        assertFalse(sql.contains("\""), "alias must not be ANSI double-quoted (BigQuery reads it as a string literal): " + sql);
+        assertTrue(sql.contains("`"), "alias must be backtick-quoted for BigQuery: " + sql);
+    }
+
     @Test
     public void testExistsWithClassAndIds() throws Exception {
         when(mockTableResult.getTotalRows()).thenReturn(1L);

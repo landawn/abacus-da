@@ -92,7 +92,7 @@ import com.landawn.abacus.util.NamingPolicy;
  * <li>{@code deleteAllItemsByPartitionKey} is skipped if the emulator reports the feature is unavailable.</li>
  * </ul>
  */
-public class CosmosContainerExecutor2 extends TestBase {
+public class CosmosContainerExecutor2Test extends TestBase {
 
     private static final String ENDPOINT = "https://localhost:8081";
 
