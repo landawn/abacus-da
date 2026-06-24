@@ -5,6 +5,7 @@
 package com.landawn.abacus.da.cassandra;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -15,20 +16,22 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 import com.landawn.abacus.da.TestBase;
-import com.landawn.abacus.da.cassandra.CqlBuilder.ACCB;
-import com.landawn.abacus.da.cassandra.CqlBuilder.LCCB;
-import com.landawn.abacus.da.cassandra.CqlBuilder.NAC;
-import com.landawn.abacus.da.cassandra.CqlBuilder.NLC;
-import com.landawn.abacus.da.cassandra.CqlBuilder.NSB;
-import com.landawn.abacus.da.cassandra.CqlBuilder.NSC;
-import com.landawn.abacus.da.cassandra.CqlBuilder.PAC;
-import com.landawn.abacus.da.cassandra.CqlBuilder.PLC;
-import com.landawn.abacus.da.cassandra.CqlBuilder.PSB;
-import com.landawn.abacus.da.cassandra.CqlBuilder.PSC;
-import com.landawn.abacus.da.cassandra.CqlBuilder.SCCB;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.ACCB;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.LCCB;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.NAC;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.NLC;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.NSB;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.NSC;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.PAC;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.PLC;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.PSB;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.PSC;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.SCCB;
 import com.landawn.abacus.da.entity.Account;
 import com.landawn.abacus.da.entity.Users;
+import com.landawn.abacus.query.AbstractQueryBuilder.SP;
 import com.landawn.abacus.query.Filters;
+import com.landawn.abacus.query.condition.Condition;
 import com.landawn.abacus.query.condition.In;
 import com.landawn.abacus.util.Beans;
 import com.landawn.abacus.util.N;
@@ -3835,5 +3838,259 @@ public class CqlBuilderTest extends TestBase {
     public void testCqlBuilder_repeatQM_DeprecatedAliasDelegates() {
         // Deprecated alias must produce the same output as repeatPlaceholders.
         assertEquals(CqlBuilder.repeatPlaceholders(3), CqlBuilder.repeatQM(3));
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Regression tests for clause-ordering / parameter-preservation / escaping bug fixes.
+    // ---------------------------------------------------------------------------------------------
+
+    /**
+     * Regression guard for {@code appendUsingOption}: calling {@code usingTTL} BEFORE
+     * {@code where()}/{@code build()} on {@code update(entityClass)} used to consume the one-shot
+     * {@code init} with {@code init(false)}, silently dropping the implicit SET assignments expanded
+     * from the entity class (the query ended up with an empty SET clause).
+     */
+    @Test
+    public void test_update_entityClass_usingTTL_beforeWhere_preservesSetClause() {
+        final SP sp = PSC.update(Account.class).usingTTL(3600).where(Filters.eq("id", 1)).build();
+        final String cql = sp.query();
+        N.println(cql);
+
+        assertTrue(cql.contains("UPDATE account USING TTL 3600 SET "), cql);
+
+        // The SET clause must contain the entity's set assignments, not be empty.
+        final int setIdx = cql.indexOf(" SET ");
+        final int whereIdx = cql.indexOf(" WHERE ");
+        assertTrue(setIdx > 0 && whereIdx > setIdx, cql);
+        final String setClause = cql.substring(setIdx + " SET ".length(), whereIdx);
+        assertFalse(setClause.trim().isEmpty(), cql);
+        assertTrue(setClause.contains("first_name = ?"), cql);
+        assertTrue(cql.endsWith(" WHERE id = ?"), cql);
+
+        // Placeholder count = one per SET assignment + 1 for the WHERE.
+        final int setAssignmentCount = setClause.split(", ").length;
+        assertEquals(setAssignmentCount + 1, Strings.countMatches(cql, '?'), cql);
+
+        // set(propNames) renders bare '?' placeholders without binding values, so only the WHERE
+        // value is collected — the regression was parameters (and SET) being dropped entirely.
+        assertEquals(N.asList(1), sp.parameters());
+    }
+
+    /**
+     * Same regression as {@link #test_update_entityClass_usingTTL_beforeWhere_preservesSetClause()}
+     * via the {@code usingTimestamp(String)} overload (which shared the broken
+     * {@code appendUsingOption} path).
+     */
+    @Test
+    public void test_update_entityClass_usingTimestamp_beforeWhere_preservesSetClause() {
+        final SP sp = PSC.update(Account.class).usingTimestamp("123").where(Filters.eq("id", 1)).build();
+        final String cql = sp.query();
+        N.println(cql);
+
+        assertTrue(cql.contains("UPDATE account USING TIMESTAMP 123 SET "), cql);
+
+        final int setIdx = cql.indexOf(" SET ");
+        final int whereIdx = cql.indexOf(" WHERE ");
+        assertTrue(setIdx > 0 && whereIdx > setIdx, cql);
+        final String setClause = cql.substring(setIdx + " SET ".length(), whereIdx);
+        assertFalse(setClause.trim().isEmpty(), cql);
+        assertTrue(setClause.contains("first_name = ?"), cql);
+
+        final int setAssignmentCount = setClause.split(", ").length;
+        assertEquals(setAssignmentCount + 1, Strings.countMatches(cql, '?'), cql);
+        assertEquals(N.asList(1), sp.parameters());
+    }
+
+    /**
+     * Regression guard for INSERT clause ordering: the CQL grammar is
+     * {@code INSERT ... VALUES (...) [IF NOT EXISTS] [USING ...]}, so IF NOT EXISTS must precede
+     * USING TTL regardless of the order in which the builder methods are called. Previously
+     * {@code ifNotExists()} after {@code usingTTL(...)} appended IF NOT EXISTS after the USING
+     * clause, and {@code usingTTL(...)} after {@code ifNotExists()} inserted USING before IF.
+     */
+    @Test
+    public void test_insert_ifNotExists_usingTTL_orderedPerCqlGrammar_bothCallOrders() {
+        final String expected = "INSERT INTO account (id, first_name) VALUES (?, ?) IF NOT EXISTS USING TTL 3600";
+
+        final String ifFirst = PSC.insert("id", "firstName").into("account").ifNotExists().usingTTL(3600).build().query();
+        N.println(ifFirst);
+        assertEquals(expected, ifFirst);
+
+        final String usingFirst = PSC.insert("id", "firstName").into("account").usingTTL(3600).ifNotExists().build().query();
+        N.println(usingFirst);
+        assertEquals(expected, usingFirst);
+    }
+
+    /**
+     * Regression guard for {@code checkInsertClauseOrder}: appending USING/IF/ALLOW FILTERING
+     * clauses to an INSERT before {@code into()} used to insert the clause into the empty buffer
+     * (silently prepending it before the INSERT keyword); it must throw IllegalStateException.
+     */
+    @Test
+    public void test_insert_usingOrIf_beforeInto_throwsIllegalStateException() {
+        assertThrows(IllegalStateException.class, () -> PSC.insert("id").usingTTL(60));
+        assertThrows(IllegalStateException.class, () -> PSC.insert("id").ifNotExists());
+        assertThrows(IllegalStateException.class, () -> PSC.insert("id").onlyIf(Filters.isNull("name")));
+    }
+
+    /**
+     * Regression guard for {@code iF(Condition)}/{@code onlyIf(Condition)} with an AND junction:
+     * Cassandra's LWT grammar is {@code IF columnCondition (AND columnCondition)*} and rejects
+     * parenthesized members, so junction members must render WITHOUT per-member parentheses in the
+     * IF clause (WHERE junction rendering keeps its parentheses and is unaffected).
+     */
+    @Test
+    public void test_onlyIf_andJunction_rendersWithoutParentheses() {
+        final String cql = PSC.update("account")
+                .set("firstName")
+                .where(Filters.eq("id", 1))
+                .onlyIf(Filters.and(Filters.eq("lastName", "x"), Filters.lt("id", 3)))
+                .build()
+                .query();
+        N.println(cql);
+
+        assertEquals("UPDATE account SET first_name = ? WHERE id = ? IF last_name = ? AND id < ?", cql);
+
+        // iF(Condition) is the same path.
+        final String iFCql = PSC.update("account")
+                .set("firstName")
+                .where(Filters.eq("id", 1))
+                .iF(Filters.and(Filters.eq("lastName", "x"), Filters.lt("id", 3)))
+                .build()
+                .query();
+        assertEquals(cql, iFCql);
+
+        // The WHERE-clause junction rendering (with parentheses) is unaffected by the IF fix.
+        final String whereCql = PSC.select("id").from("account").where(Filters.and(Filters.eq("a", 1), Filters.eq("b", 2))).build().query();
+        assertEquals("SELECT id FROM account WHERE (a = ?) AND (b = ?)", whereCql);
+    }
+
+    /**
+     * Regression guard for the In/NotIn branches of {@code appendCondition}: they must iterate
+     * {@code getValues()} (one placeholder per IN-list element), not {@code getParameters()} (which
+     * splices Condition-typed elements like {@code Filters.QME} out of the list and silently changed
+     * the placeholder count from 3 to 2).
+     */
+    @Test
+    public void test_in_withConditionTypedElement_rendersOnePlaceholderPerElement() {
+        final SP sp = PSC.select("firstName").from("account").where(Filters.in("id", java.util.Arrays.asList(1, Filters.QME, 3))).build();
+        N.println(sp.query());
+
+        assertTrue(sp.query().endsWith("WHERE id IN (?, ?, ?)"), sp.query());
+        // The QME element renders as a bare '?' without binding a value.
+        assertEquals(N.asList(1, 3), sp.parameters());
+    }
+
+    /**
+     * Regression guard for the SubQuery branch of {@code appendCondition}: the subquery used to be
+     * rendered via {@code ...build().query()} which dropped the subquery's bind parameters, leaving
+     * '?' placeholders with no bound values. The parameters must now be propagated to the outer
+     * builder, and a SubQuery with a NULL condition (allowed by the SubQuery contract) must render
+     * without a WHERE clause instead of throwing.
+     */
+    @Test
+    public void test_subQuery_parametersPreserved() {
+        final Condition cond = Filters.in("id", Filters.subQuery("account", N.asList("id"), Filters.eq("lastName", "Smith")));
+        final SP sp = PSC.select("firstName").from("account").where(cond).build();
+        N.println(sp.query());
+
+        assertTrue(sp.query().contains("IN (SELECT id FROM account WHERE last_name = ?)"), sp.query());
+        assertEquals(N.asList("Smith"), sp.parameters());
+
+        // Named builder: the subquery's named placeholder and parameter must be preserved too.
+        final Condition namedCond = Filters.in("id", Filters.subQuery("account", N.asList("id"), Filters.eq("lastName", "Smith")));
+        final SP namedSp = NSC.select("firstName").from("account").where(namedCond).build();
+        N.println(namedSp.query());
+        assertTrue(namedSp.query().contains("IN (SELECT id FROM account WHERE last_name = :lastName)"), namedSp.query());
+        assertEquals(N.asList("Smith"), namedSp.parameters());
+    }
+
+    @Test
+    public void test_subQuery_withNullCondition_rendersWithoutWhere() {
+        final Condition cond = Filters.in("id", Filters.subQuery("account", N.asList("id"), (Condition) null));
+        final SP sp = PSC.select("firstName").from("account").where(cond).build();
+        N.println(sp.query());
+
+        assertTrue(sp.query().contains("IN (SELECT id FROM account)"), sp.query());
+        assertTrue(sp.parameters().isEmpty(), sp.parameters().toString());
+    }
+
+    /**
+     * Regression guard for {@code setParameterForRawSQL}: CQL escapes a single quote inside a string
+     * literal by doubling it ({@code 'O''Brien'}); the SQL-style backslash escaping previously
+     * inherited from the parent builder is a CQL syntax error.
+     */
+    @Test
+    public void test_rawBuilder_escapesSingleQuoteCqlStyle() {
+        final String cql = SCCB.select("firstName").from("account").where(Filters.eq("lastName", "O'Brien")).build().query();
+        N.println(cql);
+
+        assertTrue(cql.contains("last_name = 'O''Brien'"), cql);
+        assertFalse(cql.contains("\\"), cql);
+    }
+
+    /**
+     * Regression guard for {@code getDeletePropNamesByClass}: {@code delete(entityClass)} must use
+     * the writable prop names (id / read-only / transient props removed) — Cassandra rejects DELETE
+     * on primary-key columns. Previously the full select prop-name list (including the id) was used.
+     */
+    @Test
+    public void test_delete_entityClass_excludesIdProps() {
+        // Account: the conventional "id" prop must not appear in the DELETE column list
+        // (it still appears in the WHERE clause, which is fine).
+        final String cql = PSC.delete(Account.class).from("account").where(Filters.eq("id", 1)).build().query();
+        N.println(cql);
+
+        assertTrue(cql.startsWith("DELETE "), cql);
+        final String columnList = cql.substring("DELETE ".length(), cql.indexOf(" FROM "));
+        assertFalse(columnList.trim().isEmpty(), cql);
+        assertTrue(N.asList(columnList.split(", ")).contains("first_name"), cql);
+        assertFalse(N.asList(columnList.split(", ")).contains("id"), cql);
+
+        // Users: the @Id-annotated "id" prop must be excluded as well.
+        final String usersCql = NSC.delete(Users.class).from(Users.class).build().query();
+        N.println(usersCql);
+
+        final String usersColumnList = usersCql.substring("DELETE ".length(), usersCql.indexOf(" FROM "));
+        assertTrue(N.asList(usersColumnList.split(", ")).contains("name"), usersCql);
+        assertFalse(N.asList(usersColumnList.split(", ")).contains("id"), usersCql);
+    }
+
+    /**
+     * Regression guard for {@code assertNotClosed}: after {@code build()} releases the internal
+     * buffer, calling clause methods must throw IllegalStateException (not NullPointerException).
+     */
+    @Test
+    public void test_builder_usedAfterBuild_throwsIllegalStateException() {
+        final CqlBuilder ttlBuilder = PSC.select("firstName").from("account");
+        ttlBuilder.build();
+        assertThrows(IllegalStateException.class, () -> ttlBuilder.usingTTL(1));
+
+        final CqlBuilder ifExistsBuilder = PSC.select("firstName").from("account");
+        ifExistsBuilder.build();
+        assertThrows(IllegalStateException.class, ifExistsBuilder::ifExists);
+
+        final CqlBuilder allowFilteringBuilder = PSC.select("firstName").from("account");
+        allowFilteringBuilder.build();
+        assertThrows(IllegalStateException.class, allowFilteringBuilder::allowFiltering);
+    }
+
+    /**
+     * Regression guard for BETWEEN named-parameter naming: an alias-qualified prop name like
+     * {@code "o.orderDate"} must produce {@code :minOrderDate}/{@code :maxOrderDate} (alias prefix
+     * stripped via {@code sanitizeNamedParameterName}), not punctuation-bearing placeholders like
+     * {@code :minO.orderDate} that named-parameter parsers reject.
+     */
+    @Test
+    public void test_between_namedParams_withAliasQualifiedProp() {
+        final SP sp = NSC.select("firstName").from("account").where(Filters.between("o.orderDate", "a", "b")).build();
+        N.println(sp.query());
+
+        assertTrue(sp.query().contains("BETWEEN :minOrderDate AND :maxOrderDate"), sp.query());
+        assertEquals(N.asList("a", "b"), sp.parameters());
+
+        // Non-regression: the simple unaliased case keeps :minPropName/:maxPropName.
+        final String simple = NSC.select("id").from("account").where(Filters.between("age", 18, 65)).build().query();
+        assertEquals("SELECT id FROM account WHERE age BETWEEN :minAge AND :maxAge", simple);
     }
 }

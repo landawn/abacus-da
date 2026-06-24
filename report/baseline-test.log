@@ -1,0 +1,647 @@
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::staticFieldBase has been called by com.google.inject.internal.aop.HiddenClassDefiner (file:/C:/Users/haiyangl/dev-softwares/apache-maven-3.9.11/lib/guice-5.1.0-classes.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.inject.internal.aop.HiddenClassDefiner
+WARNING: sun.misc.Unsafe::staticFieldBase will be removed in a future release
+[INFO] Scanning for projects...
+[INFO] Inspecting build with total of 1 modules
+[INFO] Installing Central Publishing features
+[INFO] 
+[INFO] ------------------< com.landawn.abacus:abacus-da-all >------------------
+[INFO] Building abacus-da-all 2.7.7
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[WARNING] 2 problems were encountered while building the effective model for org.apache.yetus:audience-annotations:jar:0.5.0 during dependency collection step for project (use -X to see details)
+[INFO] 
+[INFO] --- clean:3.2.0:clean (default-clean) @ abacus-da-all ---
+[INFO] Deleting C:\Users\haiyangl\Landawn\abacus-da\abacus-da-all\target
+[INFO] 
+[INFO] --- flatten:1.7.3:clean (flatten.clean) @ abacus-da-all ---
+[INFO] Deleting C:\Users\haiyangl\Landawn\abacus-da\abacus-da-all\.flattened-pom.xml
+[INFO] 
+[INFO] --- jacoco:0.8.15:prepare-agent (prepare-agent) @ abacus-da-all ---
+[INFO] argLine set to -javaagent:C:\\Users\\haiyangl\\.m2\\repository\\org\\jacoco\\org.jacoco.agent\\0.8.15\\org.jacoco.agent-0.8.15-runtime.jar=destfile=C:\\Users\\haiyangl\\Landawn\\abacus-da\\abacus-da-all\\target\\jacoco.exec
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ abacus-da-all ---
+[INFO] Copying 0 resource from src\main\resources to target\classes
+[INFO] 
+[INFO] --- flatten:1.7.3:flatten (flatten) @ abacus-da-all ---
+[INFO] Generating flattened POM of project com.landawn.abacus:abacus-da-all:jar:2.7.7...
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ abacus-da-all ---
+[INFO] Recompiling the module because of changed source code.
+[INFO] Compiling 51 source files with javac [debug release 17] to target\classes
+[WARNING] /C:/Users/haiyangl/Landawn/abacus-da/abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/AsyncCassandraExecutor.java:[46,14] deprecated item is not annotated with @Deprecated
+[WARNING] /C:/Users/haiyangl/Landawn/abacus-da/abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java:[239,14] deprecated item is not annotated with @Deprecated
+[WARNING] /C:/Users/haiyangl/Landawn/abacus-da/abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyGet.java:[992,16] deprecated item is not annotated with @Deprecated
+[INFO] /C:/Users/haiyangl/Landawn/abacus-da/abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java: Some input files use unchecked or unsafe operations.
+[INFO] /C:/Users/haiyangl/Landawn/abacus-da/abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ abacus-da-all ---
+[INFO] Copying 0 resource from src\test\resources to target\test-classes
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ abacus-da-all ---
+[INFO] Recompiling the module because of changed dependency.
+[INFO] Compiling 76 source files with javac [debug release 17] to target\test-classes
+[INFO] /C:/Users/haiyangl/Landawn/abacus-da/abacus-da-all/src/test/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutorTest.java: Some input files use or override a deprecated API.
+[INFO] /C:/Users/haiyangl/Landawn/abacus-da/abacus-da-all/src/test/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutorTest.java: Recompile with -Xlint:deprecation for details.
+[INFO] /C:/Users/haiyangl/Landawn/abacus-da/abacus-da-all/src/test/java/com/landawn/abacus/da/TestBase.java: Some input files use unchecked or unsafe operations.
+[INFO] /C:/Users/haiyangl/Landawn/abacus-da/abacus-da-all/src/test/java/com/landawn/abacus/da/TestBase.java: Recompile with -Xlint:unchecked for details.
+[INFO] 
+[INFO] --- surefire:3.5.5:test (default-test) @ abacus-da-all ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.landawn.abacus.da.AbacusDATestSuite
+[INFO] Running com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest
+SLF4J(W): No SLF4J providers were found.
+SLF4J(W): Defaulting to no-operation (NOP) logger implementation
+SLF4J(W): See https://www.slf4j.org/codes.html#noProviders for further details.
+SLF4J(W): Class path contains SLF4J bindings targeting slf4j-api versions 1.7.x or earlier.
+SLF4J(W): Ignoring binding found at [jar:file:/C:/Users/haiyangl/.m2/repository/org/slf4j/slf4j-reload4j/1.7.36/slf4j-reload4j-1.7.36.jar!/org/slf4j/impl/StaticLoggerBinder.class]
+SLF4J(W): See https://www.slf4j.org/codes.html#ignoredBindings for an explanation.
+Jun 10, 2026 7:21:22 AM com.landawn.abacus.logging.LoggerFactory getLogger
+INFO: Initialized with Log4j v2 Logger
+Mockito is currently self-attaching to enable the inline-mock-maker. This will no longer work in future releases of the JDK. Please add Mockito as an agent to your build as described in Mockito's documentation: https://javadoc.io/doc/org.mockito/mockito-core/latest/org.mockito/org/mockito/Mockito.html#0.3
+Java HotSpot(TM) 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+WARNING: A Java agent has been loaded dynamically (C:\Users\haiyangl\.m2\repository\net\bytebuddy\byte-buddy-agent\1.17.7\byte-buddy-agent-1.17.7.jar)
+WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
+WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
+WARNING: Dynamic loading of agents will be disallowed by default in a future release
+[INFO] Tests run: 158, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.890 s -- in com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest
+[INFO] Running com.landawn.abacus.da.mongodb.reactivestreams.MongoCollectionMapperTest
+[INFO] Tests run: 87, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.499 s -- in com.landawn.abacus.da.mongodb.reactivestreams.MongoCollectionMapperTest
+[INFO] Running com.landawn.abacus.da.cassandra.CassandraExecutorTest
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by com.datastax.oss.driver.shaded.guava.common.util.concurrent.AbstractFuture$UnsafeAtomicHelper (file:/C:/Users/haiyangl/.m2/repository/org/apache/cassandra/java-driver-guava-shaded/4.19.3/java-driver-guava-shaded-4.19.3.jar)
+WARNING: Please consider reporting this to the maintainers of class com.datastax.oss.driver.shaded.guava.common.util.concurrent.AbstractFuture$UnsafeAtomicHelper
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by com.kenai.jffi.internal.StubLoader in an unnamed module (file:/C:/Users/haiyangl/.m2/repository/com/github/jnr/jffi/1.2.16/jffi-1.2.16.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+null
+[{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[["jazz", "2013"]], data=null}]
+[{id=756716f7-2e54-4715-9f00-91dcbea6cf50, data=null, title=La Petite Tonkinoise, artist=Jos�phine Baker, album=Bye Bye Blackbird, tags=[["jazz", "2013"]]}]
+[La Petite Tonkinoise]
+INSERT INTO simplex.users (id, name, addresses, someDate, last_update_time, created_time, bytes, shorts) VALUES (:id, :name, :addresses, :someDate, :lastUpdateTime, :createdTime, :bytes, :shorts)
+[e92cb96b-3cd3-4c90-8da1-e587428d643d]
+INSERT INTO simplex.users (id, name, addresses, someDate, last_update_time, created_time, bytes, shorts) VALUES (:id, :name, :addresses, :someDate, :lastUpdateTime, :createdTime, :bytes, :shorts)
+[fc452b4d-ef30-43d6-a684-eda26a344ab5, 96fde687-1ba5-402c-bb15-d8d01013d325, 9fda5875-335d-4cc5-87ab-e5ef429ba632, dee721bc-39a1-48be-bebf-1787d7134670, bb569669-9ac8-4f6a-9f89-bc646b385326, b65a6ee1-b69f-4c9f-be8f-2229f3b8eceb, 05a3bde3-0b50-44a5-a6db-346b1f4b2d0b, 071e37f9-6233-42db-a0f6-a3a6370bb056, 2e6be20c-1094-4cf5-ab59-77b392615844, 033ac43d-ca36-411d-911b-c18fa3abad34, 29f3c823-a295-4a8d-bf9d-2e282f65ff28]
+Users(id=fc452b4d-ef30-43d6-a684-eda26a344ab5, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 07:21:27.112, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=96fde687-1ba5-402c-bb15-d8d01013d325, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 07:21:27.112, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=9fda5875-335d-4cc5-87ab-e5ef429ba632, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 07:21:27.112, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=dee721bc-39a1-48be-bebf-1787d7134670, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 07:21:27.112, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=bb569669-9ac8-4f6a-9f89-bc646b385326, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 07:21:27.112, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=b65a6ee1-b69f-4c9f-be8f-2229f3b8eceb, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 07:21:27.112, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=05a3bde3-0b50-44a5-a6db-346b1f4b2d0b, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 07:21:27.112, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=071e37f9-6233-42db-a0f6-a3a6370bb056, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 07:21:27.112, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=2e6be20c-1094-4cf5-ab59-77b392615844, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 07:21:27.112, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=033ac43d-ca36-411d-911b-c18fa3abad34, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 07:21:27.112, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=29f3c823-a295-4a8d-bf9d-2e282f65ff28, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 07:21:27.112, bytes=[1, 2, 3], shorts=[1, 2, 3])
+null
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[["jazz", "2013"]], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, data=null, title=La Petite Tonkinoise, artist=Jos�phine Baker, album=Bye Bye Blackbird, tags=[["jazz", "2013"]]}
++--------------------------------------+-------------------+-----------------+------+--------------------+----------------------+
+| id                                   | album             | artist          | data | tags               | title                |
++--------------------------------------+-------------------+-----------------+------+--------------------+----------------------+
+| 756716f7-2e54-4715-9f00-91dcbea6cf50 | Bye Bye Blackbird | Jos�phine Baker | null | [["jazz", "2013"]] | La Petite Tonkinoise |
++--------------------------------------+-------------------+-----------------+------+--------------------+----------------------+
+756716f7-2e54-4715-9f00-91dcbea6cf50
+756716f7-2e54-4715-9f00-91dcbea6cf50
+INSERT INTO simplex.users (id, name, addresses, someDate, last_update_time, created_time, bytes, shorts) VALUES (:id, :name, :addresses, :someDate, :lastUpdateTime, :createdTime, :bytes, :shorts)
+[ecdb7056-2c07-4bd0-b0c8-77d903098e94, d4a13c5d-621e-4ebe-bb5e-375572364132, ca72f078-d163-4425-8980-33b0bfceec92, 68196ae0-bb09-45af-9ff9-a84dd3c56ae7, 86bd9bae-0224-48e2-9504-1f1230237dff, c718b83a-4a1c-4f83-8386-1cd8f6492973, 959479d3-9d2f-4eab-99ab-a1a296f0894f, decf5f32-0321-49a4-b859-7a66b7a8e642, 339d8412-948b-4ed9-9ae7-4092b78379f0, 52e65ba6-ebcf-4133-b7ed-a1a950f57cc9, a5ad0da4-b26d-4aae-aeb1-e2690c7c95df]
+title                         	album               	artist              
+-------------------------------+-----------------------+--------------------
+La Petite Tonkinoise          	Bye Bye Blackbird   	Jos�phine Baker     
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, data=null, title=La Petite Tonkinoise, artist=Jos�phine Baker, album=Bye Bye Blackbird, tags=[2013, jazz]}
+{columnNames=[id, album, artist, data, tags, title], isFrozen=false, columns={id=[], album=[], artist=[], data=[], tags=[], title=[]}}
++--------------------------------------+-------------------+-----------------+------+--------------+----------------------+
+| id                                   | album             | artist          | data | tags         | title                |
++--------------------------------------+-------------------+-----------------+------+--------------+----------------------+
+| 756716f7-2e54-4715-9f00-91dcbea6cf50 | Bye Bye Blackbird | Jos�phine Baker | null | [2013, jazz] | La Petite Tonkinoise |
++--------------------------------------+-------------------+-----------------+------+--------------+----------------------+
+INSERT INTO simplex.users (id, name, addresses, someDate, last_update_time, created_time, bytes, shorts) VALUES (:id, :name, :addresses, :someDate, :lastUpdateTime, :createdTime, :bytes, :shorts)
+[24446e19-5309-4d40-ada9-027dbbdb9dfe, fae1faf4-01a8-4b73-aa23-1add7cebc6aa, dbaea281-2901-4b17-88c2-a334f40731a5, 70ae554e-ec8f-42e0-9684-95411426731e, 69d2ef31-2a98-416a-b89b-e4145f6f7448, 428da9e6-6759-4718-8051-83ba9c448eee, 6e9abb90-0d5d-4e0b-b8cb-283c0f2fcae1, ad81255c-88f4-4d2d-8051-04e63fc37d54, 818188e8-61b6-48f6-99e6-e366707df80d, 4de286c6-eb10-4f98-8240-e0a620a2cb87, b65654d7-0700-4830-afab-7698c191b269]
+DELETE name FROM simplex.users WHERE id = ?
+Users(id=24446e19-5309-4d40-ada9-027dbbdb9dfe, name=Users.Name(firstName=fn, lastName=ln), addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=07:21:27.567175800, createdTime=2026-06-10 07:21:27.567, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users.Name(firstName=fn, lastName=ln)
+title                         	album               	artist              
+-------------------------------+-----------------------+--------------------
+La Petite Tonkinoise          	Bye Bye Blackbird   	Jos�phine Baker     
+{song_id=756716f7-2e54-4715-9f00-91dcbea6cf50, id=2cc9ccb7-6221-4ccb-8387-f22b6a1b354d, title=La Petite Tonkinoise, artist=Jos�phine Baker, album=Bye Bye Blackbird}
+{columnNames=[id, title, album, artist, song_id], isFrozen=false, columns={id=[], title=[], album=[], artist=[], song_id=[]}}
+{columnNames=[id, title, album, artist, song_id], isFrozen=false, columns={id=[2cc9ccb7-6221-4ccb-8387-f22b6a1b354d], title=[La Petite Tonkinoise], album=[Bye Bye Blackbird], artist=[Jos�phine Baker], song_id=[756716f7-2e54-4715-9f00-91dcbea6cf50]}}
++--------------------------------------+-------------------+--------+------+------+-------+
+| id                                   | album             | artist | data | tags | title |
++--------------------------------------+-------------------+--------+------+------+-------+
+| 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d | new new new Album | null   | null | []   | null  |
++--------------------------------------+-------------------+--------+------+------+-------+
+UPDATE simplex.songs SET title = ?, album = ? WHERE id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d
+[]
+null
+true
++--------------------------------------+---------------+--------+------+------+---------------+
+| id                                   | album         | artist | data | tags | title         |
++--------------------------------------+---------------+--------+------+------+---------------+
+| 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d | new new Album | null   | null | []   | new new title |
++--------------------------------------+---------------+--------+------+------+---------------+
+DELETE FROM simplex.songs WHERE id = ?
+[]
+null
+true
++----+-------+--------+------+------+-------+
+| id | album | artist | data | tags | title |
++----+-------+--------+------+------+-------+
+|                                           |
++----+-------+--------+------+------+-------+
+UPDATE simplex.songs SET album = :album WHERE id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d
+[]
+null
+true
++--------------------------------------+-------------------+--------+------+------+-------+
+| id                                   | album             | artist | data | tags | title |
++--------------------------------------+-------------------+--------+------+------+-------+
+| 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d | new new new Album | null   | null | []   | null  |
++--------------------------------------+-------------------+--------+------+------+-------+
+
+INSERT INTO simplex.users (id, name, addresses, someDate, last_update_time, created_time, bytes, shorts) VALUES (:id, :name, :addresses, :someDate, :lastUpdateTime, :createdTime, :bytes, :shorts)
+[Users(id=f5cb848d-c22b-4e76-9795-bc40a0d96b59, name=Users.Name(firstName=fn, lastName=ln), addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=07:21:27.838748800, createdTime=2026-06-10 07:21:27.838, bytes=[1, 2, 3], shorts=[1, 2, 3])]
+title                         	album               	artist              
+-------------------------------+-----------------------+--------------------
+La Petite Tonkinoise          	Bye Bye Blackbird   	Jos�phine Baker     
+{song_id=756716f7-2e54-4715-9f00-91dcbea6cf50, id=2cc9ccb7-6221-4ccb-8387-f22b6a1b354d, title=La Petite Tonkinoise, artist=Jos�phine Baker, album=Bye Bye Blackbird}
+{columnNames=[id, title, album, artist, song_id], isFrozen=false, columns={id=[], title=[], album=[], artist=[], song_id=[]}}
+{columnNames=[id, title, album, artist, song_id], isFrozen=false, columns={id=[2cc9ccb7-6221-4ccb-8387-f22b6a1b354d], title=[La Petite Tonkinoise], album=[Bye Bye Blackbird], artist=[Jos�phine Baker], song_id=[756716f7-2e54-4715-9f00-91dcbea6cf50]}}
+
+null
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[["jazz", "2013"]], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, data=null, title=La Petite Tonkinoise, artist=Jos�phine Baker, album=Bye Bye Blackbird, tags=[["jazz", "2013"]]}
++--------------------------------------+-------------------+-----------------+------+--------------------+----------------------+
+| id                                   | album             | artist          | data | tags               | title                |
++--------------------------------------+-------------------+-----------------+------+--------------------+----------------------+
+| 756716f7-2e54-4715-9f00-91dcbea6cf50 | Bye Bye Blackbird | Jos�phine Baker | null | [["jazz", "2013"]] | La Petite Tonkinoise |
++--------------------------------------+-------------------+-----------------+------+--------------------+----------------------+
+756716f7-2e54-4715-9f00-91dcbea6cf50
+756716f7-2e54-4715-9f00-91dcbea6cf50
+[INFO] Tests run: 81, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.271 s -- in com.landawn.abacus.da.cassandra.CassandraExecutorTest
+[INFO] Running com.landawn.abacus.da.cassandra.AsyncCassandraExecutorTest
+[INFO] Tests run: 31, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.499 s -- in com.landawn.abacus.da.cassandra.AsyncCassandraExecutorTest
+[INFO] Running com.landawn.abacus.da.hbase.AnyOperationTest
+[INFO] Tests run: 19, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.071 s -- in com.landawn.abacus.da.hbase.AnyOperationTest
+[INFO] Running com.landawn.abacus.da.hbase.AnyScanTest
+[INFO] Tests run: 72, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.039 s -- in com.landawn.abacus.da.hbase.AnyScanTest
+[INFO] Running com.landawn.abacus.da.azure.CosmosContainerExecutor2Test
+[WARNING] Tests run: 56, Failures: 0, Errors: 0, Skipped: 19, Time elapsed: 1.872 s -- in com.landawn.abacus.da.azure.CosmosContainerExecutor2Test
+[INFO] Running com.landawn.abacus.da.hbase.AnyDeleteTest
+[INFO] Tests run: 44, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.032 s -- in com.landawn.abacus.da.hbase.AnyDeleteTest
+[INFO] Running com.landawn.abacus.da.aws.dynamodb.AsyncDynamoDBExecutorV2Test
+[INFO] Tests run: 75, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.326 s -- in com.landawn.abacus.da.aws.dynamodb.AsyncDynamoDBExecutorV2Test
+[INFO] Running com.landawn.abacus.da.hbase.HBaseMapperTest
+[INFO] Tests run: 32, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.410 s -- in com.landawn.abacus.da.hbase.HBaseMapperTest
+[INFO] Running com.landawn.abacus.da.mongodb.MongoDBExecutorTest
+{_id=36666138623135662d396134, gui=f8d2184d-acfd-46, emailAddress=7e480c91-b5a@email.com, firstName=38480043-091f-45, middleName=a0f48bf2-5a21-46, lastName=0bd11895-bc99-4d, birthDate=Wed Jun 10 07:21:31 PDT 2026, status=906735840, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026, contact=Document{{id=1906817577615552484, accountId=8548998591314004612, mobile=7337406e-7631-41, telephone=da0ce958-3e20-46, email=9a5d6bf2-e5a@email.com, address=d0914942-e3d4-42, address2=d6e246de-9250-49, city=978bf592-159e-43, state=6ec201ee-8869-4c, country=fa270acf-a476-47, zipCode=b41c141e-2ebc-4e, category=43205b0a-06d4-46, description=7c0f879b-8fdb-4f, status=-627906723, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026}}}
+{columnNames=[lastName, birthDate], isFrozen=false, columns={lastName=[0bd11895-bc99-4d], birthDate=[2026-06-10 07:21:31.286]}}
+{columnNames=[id, gui, emailAddress, firstName, middleName, lastName, birthDate, status, lastUpdateTime, createTime, contact, devices], isFrozen=false, columns={id=[36666138623135662d396134], gui=[null], emailAddress=[null], firstName=[null], middleName=[null], lastName=[0bd11895-bc99-4d], birthDate=[2026-06-10 07:21:31.286], status=[0], lastUpdateTime=[null], createTime=[null], contact=[null], devices=[null]}}
+{_id=33303133393766302d616463, gui=9d7cffe1-b7c1-4b, emailAddress=c03f7774-7ff@email.com, firstName=19c6b8dc-dee2-40, middleName=7b1e933f-f7d2-4f, lastName=a8d36df7-de3b-42, birthDate=Wed Jun 10 07:21:31 PDT 2026, status=-1052614770, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026, contact=Document{{id=1520626354807483654, accountId=7323637380218391857, mobile=0c7a9c37-9ba1-40, telephone=a8cea01c-5f8b-44, email=30a36883-a6e@email.com, address=43b705d3-d422-49, address2=0b75638f-0a8b-43, city=13c1b230-909d-48, state=c7aff615-7341-4a, country=c77e4aca-1962-42, zipCode=c655c5e7-fb43-4f, category=b4df9abf-c020-4c, description=402e50a1-d56e-48, status=1804698154, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026}}}
+[Document{{_id=63616239613130332d616539, gui=9d7cffe1-b7c1-4b, emailAddress=c03f7774-7ff@email.com, firstName=19c6b8dc-dee2-40, middleName=7b1e933f-f7d2-4f, lastName=a8d36df7-de3b-42, birthDate=Wed Jun 10 07:21:31 PDT 2026, status=-1052614770, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026, contact=Document{{id=1520626354807483654, accountId=7323637380218391857, mobile=0c7a9c37-9ba1-40, telephone=a8cea01c-5f8b-44, email=30a36883-a6e@email.com, address=43b705d3-d422-49, address2=0b75638f-0a8b-43, city=13c1b230-909d-48, state=c7aff615-7341-4a, country=c77e4aca-1962-42, zipCode=c655c5e7-fb43-4f, category=b4df9abf-c020-4c, description=402e50a1-d56e-48, status=1804698154, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026}}}}]
+[Document{{_id=63616239613130332d616539, gui=9d7cffe1-b7c1-4b, emailAddress=c03f7774-7ff@email.com, firstName=19c6b8dc-dee2-40, middleName=7b1e933f-f7d2-4f, lastName=a8d36df7-de3b-42, birthDate=Wed Jun 10 07:21:31 PDT 2026, status=-1052614770, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026, contact=Document{{id=1520626354807483654, accountId=7323637380218391857, mobile=0c7a9c37-9ba1-40, telephone=a8cea01c-5f8b-44, email=30a36883-a6e@email.com, address=43b705d3-d422-49, address2=0b75638f-0a8b-43, city=13c1b230-909d-48, state=c7aff615-7341-4a, country=c77e4aca-1962-42, zipCode=c655c5e7-fb43-4f, category=b4df9abf-c020-4c, description=402e50a1-d56e-48, status=1804698154, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026}}}}]
+[Document{{_id=63616239613130332d616539, gui=9d7cffe1-b7c1-4b, emailAddress=c03f7774-7ff@email.com, firstName=19c6b8dc-dee2-40, middleName=7b1e933f-f7d2-4f, lastName=a8d36df7-de3b-42, birthDate=Wed Jun 10 07:21:31 PDT 2026, status=-1052614770, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026, contact=Document{{id=1520626354807483654, accountId=7323637380218391857, mobile=0c7a9c37-9ba1-40, telephone=a8cea01c-5f8b-44, email=30a36883-a6e@email.com, address=43b705d3-d422-49, address2=0b75638f-0a8b-43, city=13c1b230-909d-48, state=c7aff615-7341-4a, country=c77e4aca-1962-42, zipCode=c655c5e7-fb43-4f, category=b4df9abf-c020-4c, description=402e50a1-d56e-48, status=1804698154, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026}}}}]
+{_id=31373463376634302d366530, gui=099a0083-434b-4b, emailAddress=5a36593a-296@email.com, firstName=60a06367-7100-4a, middleName=edb5476e-03f2-48, lastName=d9b5cdec-80c1-4c, birthDate=Wed Jun 10 07:21:31 PDT 2026, status=-1109340722, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026, contact=Document{{id=-1221490111286224525, accountId=5051209771853170029, mobile=368226b9-c8b3-48, telephone=20ad9ac8-23ed-47, email=709efb67-3e1@email.com, address=a06bcc08-10f9-4a, address2=def5481e-e3de-48, city=e3787894-c842-45, state=ffd00d15-3e4e-4d, country=98a3c183-59fb-48, zipCode=511a677e-cf18-4c, category=bbc0f568-7d9f-49, description=99900864-d62c-4d, status=-154755825, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026}}}
+[Document{{_id=61646361333638382d636437, gui=099a0083-434b-4b, emailAddress=5a36593a-296@email.com, firstName=60a06367-7100-4a, middleName=edb5476e-03f2-48, lastName=d9b5cdec-80c1-4c, birthDate=Wed Jun 10 07:21:31 PDT 2026, status=-1109340722, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026, contact=Document{{id=-1221490111286224525, accountId=5051209771853170029, mobile=368226b9-c8b3-48, telephone=20ad9ac8-23ed-47, email=709efb67-3e1@email.com, address=a06bcc08-10f9-4a, address2=def5481e-e3de-48, city=e3787894-c842-45, state=ffd00d15-3e4e-4d, country=98a3c183-59fb-48, zipCode=511a677e-cf18-4c, category=bbc0f568-7d9f-49, description=99900864-d62c-4d, status=-154755825, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026}}}}]
+[Document{{_id=61646361333638382d636437, gui=099a0083-434b-4b, emailAddress=5a36593a-296@email.com, firstName=60a06367-7100-4a, middleName=edb5476e-03f2-48, lastName=d9b5cdec-80c1-4c, birthDate=Wed Jun 10 07:21:31 PDT 2026, status=-1109340722, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026, contact=Document{{id=-1221490111286224525, accountId=5051209771853170029, mobile=368226b9-c8b3-48, telephone=20ad9ac8-23ed-47, email=709efb67-3e1@email.com, address=a06bcc08-10f9-4a, address2=def5481e-e3de-48, city=e3787894-c842-45, state=ffd00d15-3e4e-4d, country=98a3c183-59fb-48, zipCode=511a677e-cf18-4c, category=bbc0f568-7d9f-49, description=99900864-d62c-4d, status=-154755825, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026}}}}]
+[Document{{_id=61646361333638382d636437, gui=099a0083-434b-4b, emailAddress=5a36593a-296@email.com, firstName=60a06367-7100-4a, middleName=edb5476e-03f2-48, lastName=d9b5cdec-80c1-4c, birthDate=Wed Jun 10 07:21:31 PDT 2026, status=-1109340722, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026, contact=Document{{id=-1221490111286224525, accountId=5051209771853170029, mobile=368226b9-c8b3-48, telephone=20ad9ac8-23ed-47, email=709efb67-3e1@email.com, address=a06bcc08-10f9-4a, address2=def5481e-e3de-48, city=e3787894-c842-45, state=ffd00d15-3e4e-4d, country=98a3c183-59fb-48, zipCode=511a677e-cf18-4c, category=bbc0f568-7d9f-49, description=99900864-d62c-4d, status=-154755825, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026}}}}]
+{_id=39376635653166612d316433, gui=1439876f-4d37-4a, emailAddress=5d001d55-883@email.com, firstName=8cfae57f-e43f-41, middleName=37453218-36e4-43, lastName=bd212816-0ed5-49, birthDate=Wed Jun 10 07:21:31 PDT 2026, status=-1683991359, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026, contact=Document{{id=3365382002808090181, accountId=-1837677634261952861, mobile=83e43eff-f465-4d, telephone=c7c68a47-5384-44, email=74b0211f-f08@email.com, address=70ee993d-c56f-4e, address2=0e6d38dd-b69d-44, city=88e30c9c-1034-47, state=a118dd6e-b142-43, country=ee87df52-8e60-46, zipCode=0d185d32-423d-49, category=dcde1f31-e282-46, description=49634211-ed17-40, status=-246484799, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026}}}
+bd212816-0ed5-49
+{columnNames=[lastName, birthDate], isFrozen=false, columns={lastName=[bd212816-0ed5-49], birthDate=[2026-06-10 07:21:31.726]}}
+{columnNames=[id, gui, emailAddress, firstName, middleName, lastName, birthDate, status, lastUpdateTime, createTime, contact, devices], isFrozen=false, columns={id=[39376635653166612d316433], gui=[null], emailAddress=[null], firstName=[null], middleName=[null], lastName=[bd212816-0ed5-49], birthDate=[2026-06-10 07:21:31.726], status=[0], lastUpdateTime=[null], createTime=[null], contact=[null], devices=[null]}}
+[Document{{_id=32376462376438382d623666, gui=066948e4-be06-44, emailAddress=39dc906a-5e5@email.com, firstName=a594e555-eab5-45, middleName=221f7760-5298-49, lastName=ce81c011-3cfa-4d, birthDate=Wed Jun 10 07:21:31 PDT 2026, status=-1532575282, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026, contact=Document{{id=7112608903120276502, accountId=-7998150485023740432, mobile=ce037446-09b7-4c, telephone=a9dba682-398c-4a, email=1f6bad02-a55@email.com, address=33bcd35c-3ee2-4e, address2=60053af5-abff-45, city=47676980-ebe3-40, state=e1d68ec1-13fd-45, country=798b4a6e-a329-4d, zipCode=6761c42a-84b0-4a, category=f3bab8a9-4e07-43, description=0fa15044-4618-40, status=719589265, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026}}}}]
++--------------------------+------------------+------------------------+------------------+------------------+------------------+------------------------------+-----------+------------------------------+------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| _id                      | gui              | emailAddress           | firstName        | middleName       | lastName         | birthDate                    | status    | lastUpdateTime               | createTime                   | contact                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
++--------------------------+------------------+------------------------+------------------+------------------+------------------+------------------------------+-----------+------------------------------+------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 32353665366431632d646630 | 37d4c920-d389-4b | 4c8a25db-437@email.com | ebd7829a-8f0e-43 | f9fa371a-35a5-4c | 1a7fcf2b-3311-4e | Wed Jun 10 07:21:31 PDT 2026 | 745482744 | Wed Jun 10 07:21:31 PDT 2026 | Wed Jun 10 07:21:31 PDT 2026 | Document{{id=-4002953256100939465, accountId=6637517264455051523, mobile=22805ba9-6f7e-4e, telephone=f0609105-1647-40, email=227f934a-9cd@email.com, address=a33a4996-c22c-49, address2=49d6504d-0b7c-43, city=8193d5c8-2de1-40, state=de8fb369-801f-47, country=86bf5cb5-28a0-4f, zipCode=975a0f3f-6db3-41, category=65e37bf6-289b-44, description=e5af3a4f-9efd-44, status=-1165998171, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026}} |
++--------------------------+------------------+------------------------+------------------+------------------+------------------+------------------------------+-----------+------------------------------+------------------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
++------+------------------+------------------------+------------------+------------------+------------------+-------------------------+-----------+-------------------------+-------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+---------+
+| id   | gui              | emailAddress           | firstName        | middleName       | lastName         | birthDate               | status    | lastUpdateTime          | createTime              | contact                                                                                                                                                                                                                                                                                                                                                                                                                                                      | devices |
++------+------------------+------------------------+------------------+------------------+------------------+-------------------------+-----------+-------------------------+-------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+---------+
+| null | 37d4c920-d389-4b | 4c8a25db-437@email.com | ebd7829a-8f0e-43 | f9fa371a-35a5-4c | 1a7fcf2b-3311-4e | 2026-06-10 07:21:31.786 | 745482744 | 2026-06-10 07:21:31.786 | 2026-06-10 07:21:31.786 | {id=-4002953256100939465, accountId=6637517264455051523, mobile=22805ba9-6f7e-4e, telephone=f0609105-1647-40, email=227f934a-9cd@email.com, address=a33a4996-c22c-49, address2=49d6504d-0b7c-43, city=8193d5c8-2de1-40, state=de8fb369-801f-47, country=86bf5cb5-28a0-4f, zipCode=975a0f3f-6db3-41, category=65e37bf6-289b-44, description=e5af3a4f-9efd-44, status=-1165998171, lastUpdateTime=2026-06-10 07:21:31.786, createTime=2026-06-10 07:21:31.786} | null    |
++------+------------------+------------------------+------------------+------------------+------------------+-------------------------+-----------+-------------------------+-------------------------+--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+---------+
+{id=null, gui=37d4c920-d389-4b, emailAddress=4c8a25db-437@email.com, firstName=ebd7829a-8f0e-43, middleName=f9fa371a-35a5-4c, lastName=1a7fcf2b-3311-4e, birthDate=2026-06-10 07:21:31.786, status=745482744, lastUpdateTime=2026-06-10 07:21:31.786, createTime=2026-06-10 07:21:31.786, contact={id=-4002953256100939465, accountId=6637517264455051523, mobile=22805ba9-6f7e-4e, telephone=f0609105-1647-40, email=227f934a-9cd@email.com, address=a33a4996-c22c-49, address2=49d6504d-0b7c-43, city=8193d5c8-2de1-40, state=de8fb369-801f-47, country=86bf5cb5-28a0-4f, zipCode=975a0f3f-6db3-41, category=65e37bf6-289b-44, description=e5af3a4f-9efd-44, status=-1165998171, lastUpdateTime=2026-06-10 07:21:31.786, createTime=2026-06-10 07:21:31.786}, devices=null}
+{gui=37d4c920-d389-4b, emailAddress=4c8a25db-437@email.com, firstName=ebd7829a-8f0e-43, middleName=f9fa371a-35a5-4c, lastName=1a7fcf2b-3311-4e, birthDate=2026-06-10 07:21:31.786, status=745482744, lastUpdateTime=2026-06-10 07:21:31.786, createTime=2026-06-10 07:21:31.786, contact={id=-4002953256100939465, accountId=6637517264455051523, mobile=22805ba9-6f7e-4e, telephone=f0609105-1647-40, email=227f934a-9cd@email.com, address=a33a4996-c22c-49, address2=49d6504d-0b7c-43, city=8193d5c8-2de1-40, state=de8fb369-801f-47, country=86bf5cb5-28a0-4f, zipCode=975a0f3f-6db3-41, category=65e37bf6-289b-44, description=e5af3a4f-9efd-44, status=-1165998171, lastUpdateTime=2026-06-10 07:21:31.786, createTime=2026-06-10 07:21:31.786}}
+{gui=37d4c920-d389-4b, emailAddress=4c8a25db-437@email.com, firstName=ebd7829a-8f0e-43, middleName=f9fa371a-35a5-4c, lastName=1a7fcf2b-3311-4e, birthDate=2026-06-10 07:21:31.786, status=745482744, lastUpdateTime=2026-06-10 07:21:31.786, createTime=2026-06-10 07:21:31.786, contact={id=-4002953256100939465, accountId=6637517264455051523, mobile=22805ba9-6f7e-4e, telephone=f0609105-1647-40, email=227f934a-9cd@email.com, address=a33a4996-c22c-49, address2=49d6504d-0b7c-43, city=8193d5c8-2de1-40, state=de8fb369-801f-47, country=86bf5cb5-28a0-4f, zipCode=975a0f3f-6db3-41, category=65e37bf6-289b-44, description=e5af3a4f-9efd-44, status=-1165998171, lastUpdateTime=2026-06-10 07:21:31.786, createTime=2026-06-10 07:21:31.786}, _id=32353665366431632d646630}
+{id=32353665366431632d646630, gui=37d4c920-d389-4b, emailAddress=4c8a25db-437@email.com, firstName=ebd7829a-8f0e-43, middleName=f9fa371a-35a5-4c, lastName=1a7fcf2b-3311-4e, birthDate=2026-06-10 07:21:31.786, status=745482744, lastUpdateTime=2026-06-10 07:21:31.786, createTime=2026-06-10 07:21:31.786, contact={id=-4002953256100939465, accountId=6637517264455051523, mobile=22805ba9-6f7e-4e, telephone=f0609105-1647-40, email=227f934a-9cd@email.com, address=a33a4996-c22c-49, address2=49d6504d-0b7c-43, city=8193d5c8-2de1-40, state=de8fb369-801f-47, country=86bf5cb5-28a0-4f, zipCode=975a0f3f-6db3-41, category=65e37bf6-289b-44, description=e5af3a4f-9efd-44, status=-1165998171, lastUpdateTime=2026-06-10 07:21:31.786, createTime=2026-06-10 07:21:31.786}}
+[Document{{_id=firstName123}}, Document{{_id=9b7d33df-cfc8-4a}}, Document{{_id=a9c74b44-3e35-46}}]
+[Document{{_id=firstName123, count=1}}, Document{{_id=9b7d33df-cfc8-4a, count=1}}, Document{{_id=a9c74b44-3e35-46, count=2}}]
+[Document{{_id=Document{{firstName=a9c74b44-3e35-46}}}}, Document{{_id=Document{{firstName=9b7d33df-cfc8-4a}}}}, Document{{_id=Document{{firstName=firstName123}}}}]
+[Document{{_id=Document{{firstName=a9c74b44-3e35-46}}, count=2}}, Document{{_id=Document{{firstName=9b7d33df-cfc8-4a}}, count=1}}, Document{{_id=Document{{firstName=firstName123}}, count=1}}]
+[Document{{_id=Document{{firstName=9b7d33df-cfc8-4a, lastName=0d08066c-f309-4f}}}}, Document{{_id=Document{{firstName=a9c74b44-3e35-46, lastName=867d0cd9-4728-41}}}}, Document{{_id=Document{{firstName=firstName123, lastName=867d0cd9-4728-41}}}}]
+[Document{{_id=Document{{firstName=9b7d33df-cfc8-4a, lastName=0d08066c-f309-4f}}, count=1}}, Document{{_id=Document{{firstName=a9c74b44-3e35-46, lastName=867d0cd9-4728-41}}, count=2}}, Document{{_id=Document{{firstName=firstName123, lastName=867d0cd9-4728-41}}, count=1}}]
+[1d5692a8-6cce-43, a431df40-d5e4-43]
+{_id=33336565343533612d346261, gui=996e7d2b-297e-45, emailAddress=67926a94-568@email.com, firstName=433ad7c7-7805-44, middleName=1002e0fb-f6f5-4f, lastName=3dad781e-d55d-4f, birthDate=Wed Jun 10 07:21:31 PDT 2026, status=-1467786919, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026, contact=Document{{id=-4495553806830384642, accountId=-3687779612754649896, mobile=7fb94f2d-d1b9-48, telephone=386653ad-0b87-47, email=41f75f82-385@email.com, address=735f2d94-9181-4b, address2=41f6fe51-b62f-42, city=19759248-ff1a-4b, state=8619331b-2bd2-4d, country=c5a9db29-63c5-49, zipCode=0f045085-af8a-47, category=9866bf3e-d54f-4d, description=3509fdd7-a57c-4d, status=-79151479, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026}}}
+{columnNames=[lastName, birthDate], isFrozen=false, columns={lastName=[3dad781e-d55d-4f], birthDate=[2026-06-10 07:21:31.894]}}
+{columnNames=[id, gui, emailAddress, firstName, middleName, lastName, birthDate, status, lastUpdateTime, createTime, contact, devices], isFrozen=false, columns={id=[33336565343533612d346261], gui=[null], emailAddress=[null], firstName=[null], middleName=[null], lastName=[3dad781e-d55d-4f], birthDate=[2026-06-10 07:21:31.894], status=[0], lastUpdateTime=[null], createTime=[null], contact=[null], devices=[null]}}
+{_id=6a2972eb5bbee3e9b927b7a5, lastName=80ba58cc-1789-4e9c-ab39-255f8922f05d, firstName=97ea53f2-0418-4bb1-8868-436d9d0ba547, props=Document{{prop1=1, prop2=2}}}
+{_id=33613936323531642d633734, gui=506ffeef-e328-4e, emailAddress=88ed1551-716@email.com, firstName=f072caaf-35c8-41, middleName=980ff091-6f44-4d, lastName=2e9f3630-25fd-40, birthDate=Wed Jun 10 07:21:31 PDT 2026, status=-300680604, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026, contact=Document{{id=5359778840536055806, accountId=-6666360050233663646, mobile=fb75d594-d8f3-45, telephone=0fe6fb26-f6db-44, email=a7681791-af8@email.com, address=92b62751-1c22-4d, address2=312e3bf1-af38-42, city=f2d4d9f5-279e-45, state=548bc280-e928-41, country=c045e3e0-93bb-40, zipCode=4a6221a3-a099-48, category=bbc25326-306e-48, description=73469454-1e5f-4b, status=-782068444, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026}}}
+[Document{{_id=39333834653339612d653461, gui=506ffeef-e328-4e, emailAddress=88ed1551-716@email.com, firstName=f072caaf-35c8-41, middleName=980ff091-6f44-4d, lastName=2e9f3630-25fd-40, birthDate=Wed Jun 10 07:21:31 PDT 2026, status=-300680604, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026, contact=Document{{id=5359778840536055806, accountId=-6666360050233663646, mobile=fb75d594-d8f3-45, telephone=0fe6fb26-f6db-44, email=a7681791-af8@email.com, address=92b62751-1c22-4d, address2=312e3bf1-af38-42, city=f2d4d9f5-279e-45, state=548bc280-e928-41, country=c045e3e0-93bb-40, zipCode=4a6221a3-a099-48, category=bbc25326-306e-48, description=73469454-1e5f-4b, status=-782068444, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026}}}}]
+[Document{{_id=39333834653339612d653461, gui=506ffeef-e328-4e, emailAddress=88ed1551-716@email.com, firstName=f072caaf-35c8-41, middleName=980ff091-6f44-4d, lastName=2e9f3630-25fd-40, birthDate=Wed Jun 10 07:21:31 PDT 2026, status=-300680604, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026, contact=Document{{id=5359778840536055806, accountId=-6666360050233663646, mobile=fb75d594-d8f3-45, telephone=0fe6fb26-f6db-44, email=a7681791-af8@email.com, address=92b62751-1c22-4d, address2=312e3bf1-af38-42, city=f2d4d9f5-279e-45, state=548bc280-e928-41, country=c045e3e0-93bb-40, zipCode=4a6221a3-a099-48, category=bbc25326-306e-48, description=73469454-1e5f-4b, status=-782068444, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026}}}}]
+[Document{{_id=39333834653339612d653461, gui=506ffeef-e328-4e, emailAddress=88ed1551-716@email.com, firstName=f072caaf-35c8-41, middleName=980ff091-6f44-4d, lastName=2e9f3630-25fd-40, birthDate=Wed Jun 10 07:21:31 PDT 2026, status=-300680604, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026, contact=Document{{id=5359778840536055806, accountId=-6666360050233663646, mobile=fb75d594-d8f3-45, telephone=0fe6fb26-f6db-44, email=a7681791-af8@email.com, address=92b62751-1c22-4d, address2=312e3bf1-af38-42, city=f2d4d9f5-279e-45, state=548bc280-e928-41, country=c045e3e0-93bb-40, zipCode=4a6221a3-a099-48, category=bbc25326-306e-48, description=73469454-1e5f-4b, status=-782068444, lastUpdateTime=Wed Jun 10 07:21:31 PDT 2026, createTime=Wed Jun 10 07:21:31 PDT 2026}}}}]
+[Document{{_id=719b1e1a-72ca-42, total=-770963898}}]
+{_id=65363966303637332d303130, gui=873417ce-cfbd-45, emailAddress=636b37e7-d5a@email.com, firstName=12805466-c99f-4f, middleName=c49c5bfa-1108-41, lastName=91407af9-b44f-49, birthDate=Wed Jun 10 07:21:32 PDT 2026, status=72327372, lastUpdateTime=Wed Jun 10 07:21:32 PDT 2026, createTime=Wed Jun 10 07:21:32 PDT 2026, contact=Document{{id=-6976362690239810660, accountId=6561291894800407227, mobile=c993956e-d410-4a, telephone=067a34b2-e4ba-4a, email=ba062166-328@email.com, address=5f85e8cd-4527-44, address2=9fd62ec1-6b33-4c, city=36d2e5b5-c104-4d, state=4f7de715-5c58-49, country=72eca461-c0d4-4c, zipCode=ffe3b0c2-013a-44, category=8b3f41e6-07e6-44, description=47c6442a-25d7-40, status=832673256, lastUpdateTime=Wed Jun 10 07:21:32 PDT 2026, createTime=Wed Jun 10 07:21:32 PDT 2026}}}
+[Document{{_id=62316137643262342d656237, gui=873417ce-cfbd-45, emailAddress=636b37e7-d5a@email.com, firstName=12805466-c99f-4f, middleName=c49c5bfa-1108-41, lastName=91407af9-b44f-49, birthDate=Wed Jun 10 07:21:32 PDT 2026, status=72327372, lastUpdateTime=Wed Jun 10 07:21:32 PDT 2026, createTime=Wed Jun 10 07:21:32 PDT 2026, contact=Document{{id=-6976362690239810660, accountId=6561291894800407227, mobile=c993956e-d410-4a, telephone=067a34b2-e4ba-4a, email=ba062166-328@email.com, address=5f85e8cd-4527-44, address2=9fd62ec1-6b33-4c, city=36d2e5b5-c104-4d, state=4f7de715-5c58-49, country=72eca461-c0d4-4c, zipCode=ffe3b0c2-013a-44, category=8b3f41e6-07e6-44, description=47c6442a-25d7-40, status=832673256, lastUpdateTime=Wed Jun 10 07:21:32 PDT 2026, createTime=Wed Jun 10 07:21:32 PDT 2026}}}}]
+[Document{{_id=62316137643262342d656237, gui=873417ce-cfbd-45, emailAddress=636b37e7-d5a@email.com, firstName=12805466-c99f-4f, middleName=c49c5bfa-1108-41, lastName=91407af9-b44f-49, birthDate=Wed Jun 10 07:21:32 PDT 2026, status=72327372, lastUpdateTime=Wed Jun 10 07:21:32 PDT 2026, createTime=Wed Jun 10 07:21:32 PDT 2026, contact=Document{{id=-6976362690239810660, accountId=6561291894800407227, mobile=c993956e-d410-4a, telephone=067a34b2-e4ba-4a, email=ba062166-328@email.com, address=5f85e8cd-4527-44, address2=9fd62ec1-6b33-4c, city=36d2e5b5-c104-4d, state=4f7de715-5c58-49, country=72eca461-c0d4-4c, zipCode=ffe3b0c2-013a-44, category=8b3f41e6-07e6-44, description=47c6442a-25d7-40, status=832673256, lastUpdateTime=Wed Jun 10 07:21:32 PDT 2026, createTime=Wed Jun 10 07:21:32 PDT 2026}}}}]
+[Document{{_id=62316137643262342d656237, gui=873417ce-cfbd-45, emailAddress=636b37e7-d5a@email.com, firstName=12805466-c99f-4f, middleName=c49c5bfa-1108-41, lastName=91407af9-b44f-49, birthDate=Wed Jun 10 07:21:32 PDT 2026, status=72327372, lastUpdateTime=Wed Jun 10 07:21:32 PDT 2026, createTime=Wed Jun 10 07:21:32 PDT 2026, contact=Document{{id=-6976362690239810660, accountId=6561291894800407227, mobile=c993956e-d410-4a, telephone=067a34b2-e4ba-4a, email=ba062166-328@email.com, address=5f85e8cd-4527-44, address2=9fd62ec1-6b33-4c, city=36d2e5b5-c104-4d, state=4f7de715-5c58-49, country=72eca461-c0d4-4c, zipCode=ffe3b0c2-013a-44, category=8b3f41e6-07e6-44, description=47c6442a-25d7-40, status=832673256, lastUpdateTime=Wed Jun 10 07:21:32 PDT 2026, createTime=Wed Jun 10 07:21:32 PDT 2026}}}}]
+[Document{{_id=61a382b7-3fcf-4c, value=2.169611906E9}}, Document{{_id=c119c4a8-6e0c-4e, value=1.003247773E9}}]
+[{_id=61a382b7-3fcf-4c, value=2.169611906E9}, {_id=c119c4a8-6e0c-4e, value=1.003247773E9}]
+{id=30626631623230612d366136, gui=ec881949-9bb7-45, emailAddress=9ac19e62-2b6@email.com, firstName=c119c4a8-6e0c-4e, middleName=d90f526d-ee9d-40, lastName=f7de7b1d-8c9e-40, birthDate=2026-06-10 07:21:32.261, status=1003247773, lastUpdateTime=2026-06-10 07:21:32.261, createTime=2026-06-10 07:21:32.261, contact={id=4658660311221609311, accountId=-4307633167399978934, mobile=945bd8f4-01b6-4d, telephone=a32ff0e6-0b03-40, email=d1bbb2e3-858@email.com, address=3173a5dc-f9df-46, address2=736b4911-78ce-43, city=a46dffa8-c00a-4a, state=27f02a76-6d8e-40, country=8b2ab24f-9851-49, zipCode=a20fc6ae-18b2-47, category=9e13e387-d366-4d, description=8fbf907f-14c5-43, status=1391308752, lastUpdateTime=2026-06-10 07:21:32.261, createTime=2026-06-10 07:21:32.261}, devices=null}
+{id=32326664366365352d326561, gui=8e44f0c9-8371-48, emailAddress=dab74c3a-871@email.com, firstName=90d7569a-1db4-47, middleName=7ce9093d-5e04-4f, lastName=f65585b0-f120-4d, birthDate=2026-06-10 07:21:32.33, status=-1359374586, lastUpdateTime=2026-06-10 07:21:32.33, createTime=2026-06-10 07:21:32.33, contact={id=1499732149486092156, accountId=5742063848506236917, mobile=58cc7fdd-af94-45, telephone=3c65c88c-5754-46, email=53336cb3-570@email.com, address=6408a529-dd83-42, address2=7471d9d2-4172-45, city=8f55d72d-46ad-4e, state=7a0e27a9-0b75-40, country=3ac08fc6-0806-4b, zipCode=ce26acf8-4551-42, category=b60c0150-461f-47, description=41d7f14f-35a6-45, status=971756832, lastUpdateTime=2026-06-10 07:21:32.33, createTime=2026-06-10 07:21:32.33}, devices=null}
+[Document{{_id=36343361393231612d363438, gui=10d405d0-3b95-46, emailAddress=5829063a-9e9@email.com, firstName=022a5b26-dd6d-47, middleName=06242852-297f-41, lastName=68937f52-b132-47, birthDate=Wed Jun 10 07:21:32 PDT 2026, status=-1603295546, lastUpdateTime=Wed Jun 10 07:21:32 PDT 2026, createTime=Wed Jun 10 07:21:32 PDT 2026, contact=Document{{id=-7170613831609097861, accountId=-6706947543787591000, mobile=8d277156-75ac-40, telephone=236af5a4-a037-4c, email=4ff99763-9d6@email.com, address=1abea7d3-be1b-4b, address2=4a9d9ccc-3db2-49, city=8ed0a859-2eaa-41, state=aa00bd87-fdf3-48, country=00353654-edce-40, zipCode=e005e369-dbdc-42, category=d8ec5c32-7e08-4b, description=4f4e14af-3230-46, status=-1445063014, lastUpdateTime=Wed Jun 10 07:21:32 PDT 2026, createTime=Wed Jun 10 07:21:32 PDT 2026}}}}]
+{_id=65653633393861382d633663, gui=241abd94-3367-47, emailAddress=e68695b3-34e@email.com, firstName=0d55cab0-f162-47, middleName=47694cda-fed4-41, lastName=13ccf8a5-c3a5-4f, birthDate=Wed Jun 10 07:21:32 PDT 2026, status=-1796069355, lastUpdateTime=Wed Jun 10 07:21:32 PDT 2026, createTime=Wed Jun 10 07:21:32 PDT 2026, contact=Document{{id=-8221365322016917352, accountId=-966216835207930859, mobile=44be9c21-e680-4f, telephone=dd1a049d-d6b8-4d, email=aa05d05e-5dd@email.com, address=0ce4e710-277a-48, address2=72c421db-6c86-4d, city=7f941333-3398-42, state=c221549f-dc08-4d, country=a4addf67-f94e-4c, zipCode=fe11d658-e48e-48, category=9391b3c5-c722-4b, description=2ca83a7b-8f16-4f, status=1474262538, lastUpdateTime=Wed Jun 10 07:21:32 PDT 2026, createTime=Wed Jun 10 07:21:32 PDT 2026}}}
+13ccf8a5-c3a5-4f
+{columnNames=[lastName, birthDate], isFrozen=false, columns={lastName=[13ccf8a5-c3a5-4f], birthDate=[2026-06-10 07:21:32.354]}}
+{columnNames=[id, gui, emailAddress, firstName, middleName, lastName, birthDate, status, lastUpdateTime, createTime, contact, devices], isFrozen=false, columns={id=[65653633393861382d633663], gui=[null], emailAddress=[null], firstName=[null], middleName=[null], lastName=[13ccf8a5-c3a5-4f], birthDate=[2026-06-10 07:21:32.354], status=[0], lastUpdateTime=[null], createTime=[null], contact=[null], devices=[null]}}
+[INFO] Tests run: 17, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 1.190 s -- in com.landawn.abacus.da.mongodb.MongoDBExecutorTest
+[INFO] Running com.landawn.abacus.da.search.LuceneExecutorTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.landawn.abacus.da.search.LuceneExecutorTest
+[INFO] Running com.landawn.abacus.da.cassandra.ParsedCqlTest
+[INFO] Tests run: 33, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.016 s -- in com.landawn.abacus.da.cassandra.ParsedCqlTest
+[INFO] Running com.landawn.abacus.da.search.ElasticsearchExecutorTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.002 s -- in com.landawn.abacus.da.search.ElasticsearchExecutorTest
+[INFO] Running com.landawn.abacus.da.hbase.AsyncHBaseExecutorTest
+[INFO] Tests run: 39, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.250 s -- in com.landawn.abacus.da.hbase.AsyncHBaseExecutorTest
+[INFO] Running com.landawn.abacus.da.azure.CosmosContainerExecutorTest
+[INFO] Tests run: 50, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.662 s -- in com.landawn.abacus.da.azure.CosmosContainerExecutorTest
+[INFO] Running com.landawn.abacus.da.mongodb.reactivestreams.MongoCollectionExecutorTest
+[INFO] Tests run: 165, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.899 s -- in com.landawn.abacus.da.mongodb.reactivestreams.MongoCollectionExecutorTest
+[INFO] Running com.landawn.abacus.da.search.SolrExecutorTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.landawn.abacus.da.search.SolrExecutorTest
+[INFO] Running com.landawn.abacus.da.mongodb.MongoDBTest
+[INFO] Tests run: 17, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.109 s -- in com.landawn.abacus.da.mongodb.MongoDBTest
+[INFO] Running com.landawn.abacus.da.hbase.HBaseExecutorStaticTest
+[INFO] Tests run: 73, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.109 s -- in com.landawn.abacus.da.hbase.HBaseExecutorStaticTest
+[INFO] Running com.landawn.abacus.da.hbase.AnyAppendTest
+[INFO] Tests run: 27, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.011 s -- in com.landawn.abacus.da.hbase.AnyAppendTest
+[INFO] Running com.landawn.abacus.da.hbase.AnyQueryTest
+[INFO] Tests run: 22, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.111 s -- in com.landawn.abacus.da.hbase.AnyQueryTest
+[INFO] Running com.landawn.abacus.da.mongodb.MDBTest
+[INFO] Tests run: 44, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.027 s -- in com.landawn.abacus.da.mongodb.MDBTest
+[INFO] Running com.landawn.abacus.da.cassandra.CqlMapperTest
+[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.035 s -- in com.landawn.abacus.da.cassandra.CqlMapperTest
+[INFO] Running com.landawn.abacus.da.mongodb.AsyncMongoCollectionExecutorTest
+[INFO] Tests run: 214, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.237 s -- in com.landawn.abacus.da.mongodb.AsyncMongoCollectionExecutorTest
+[INFO] Running com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutor01Test
+log4j:WARN No appenders could be found for logger (com.amazonaws.AmazonWebServiceClient).
+log4j:WARN Please initialize the log4j system properly.
+log4j:WARN See http://logging.apache.org/log4j/1.2/faq.html#noconfig for more info.
+[INFO] Tests run: 212, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.472 s -- in com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutor01Test
+[INFO] Running com.landawn.abacus.da.hbase.AnyIncrementTest
+[INFO] Tests run: 29, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.015 s -- in com.landawn.abacus.da.hbase.AnyIncrementTest
+[INFO] Running com.landawn.abacus.da.aws.dynamodb.AsyncDynamoDBExecutorTest
+[INFO] Tests run: 38, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.143 s -- in com.landawn.abacus.da.aws.dynamodb.AsyncDynamoDBExecutorTest
+[INFO] Running com.landawn.abacus.da.hbase.AnyOperationWithAttributesTest
+[INFO] Tests run: 19, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.012 s -- in com.landawn.abacus.da.hbase.AnyOperationWithAttributesTest
+[INFO] Running com.landawn.abacus.da.mongodb.AnyUtilTest
+[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.landawn.abacus.da.mongodb.AnyUtilTest
+[INFO] Running com.landawn.abacus.da.mongodb.reactivestreams.MongoDBTest
+[INFO] Tests run: 18, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.103 s -- in com.landawn.abacus.da.mongodb.reactivestreams.MongoDBTest
+[INFO] Running com.landawn.abacus.da.mongodb.MongoDBBaseTest
+[INFO] Tests run: 44, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.035 s -- in com.landawn.abacus.da.mongodb.MongoDBBaseTest
+[INFO] Running com.landawn.abacus.da.cassandra.v3.AsyncCassandraExecutorTest
+[INFO] Tests run: 19, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.502 s -- in com.landawn.abacus.da.cassandra.v3.AsyncCassandraExecutorTest
+[INFO] Running com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutorV2_2Test
+[INFO] Tests run: 194, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.103 s -- in com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutorV2_2Test
+[INFO] Running com.landawn.abacus.da.cassandra.CassandraExecutor01Test
+[INFO] Tests run: 29, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.699 s -- in com.landawn.abacus.da.cassandra.CassandraExecutor01Test
+[INFO] Running com.landawn.abacus.da.hbase.AnyGetTest
+[INFO] Tests run: 45, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.010 s -- in com.landawn.abacus.da.hbase.AnyGetTest
+[INFO] Running com.landawn.abacus.da.hbase.AnyRowMutationsTest
+[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.005 s -- in com.landawn.abacus.da.hbase.AnyRowMutationsTest
+[INFO] Running com.landawn.abacus.da.cassandra.v3.CassandraExecutorTest
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+null
+[{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[["jazz", "2013"]], data=null}]
+[{id=756716f7-2e54-4715-9f00-91dcbea6cf50, data=null, title=La Petite Tonkinoise, artist=Jos�phine Baker, album=Bye Bye Blackbird, tags=[["jazz", "2013"]]}]
+[La Petite Tonkinoise]
+INSERT INTO simplex.users (id, name, addresses, someDate, last_update_time, created_time, bytes, shorts) VALUES (:id, :name, :addresses, :someDate, :lastUpdateTime, :createdTime, :bytes, :shorts)
+[86a4a89d-85ef-4185-919a-d8cd92436420]
+INSERT INTO simplex.users (id, name, addresses, someDate, last_update_time, created_time, bytes, shorts) VALUES (:id, :name, :addresses, :someDate, :lastUpdateTime, :createdTime, :bytes, :shorts)
+[124a2270-a6a1-4cd5-a52f-f1d16c722b23, 08f96584-8bfe-4edf-ba8d-22dfbec41fbe, 498aec0f-f538-4808-8cac-17dd5d98d018, c2ef8bf4-d405-4c30-b18e-b237ebf4e7fc, 58e11d6d-0781-4d7d-b9e0-be2335df5bc6, 80991f78-992a-45d6-9b88-bb8e1d3f76ac, 68948c2c-5c32-4866-8489-8677da3d43ef, 45765c20-d378-4a70-80c3-774ded793981, 46657aa7-bf3a-40bc-b563-41b6cccc1f1e, 43c48b97-4101-4482-bb3b-e28ecead04ef, 37203a68-bb06-4b58-91b5-10d5579116dd]
+Users(id=124a2270-a6a1-4cd5-a52f-f1d16c722b23, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 07:21:39.615, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=08f96584-8bfe-4edf-ba8d-22dfbec41fbe, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 07:21:39.615, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=498aec0f-f538-4808-8cac-17dd5d98d018, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 07:21:39.615, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=c2ef8bf4-d405-4c30-b18e-b237ebf4e7fc, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 07:21:39.615, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=58e11d6d-0781-4d7d-b9e0-be2335df5bc6, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 07:21:39.615, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=80991f78-992a-45d6-9b88-bb8e1d3f76ac, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 07:21:39.615, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=68948c2c-5c32-4866-8489-8677da3d43ef, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 07:21:39.615, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=45765c20-d378-4a70-80c3-774ded793981, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 07:21:39.615, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=46657aa7-bf3a-40bc-b563-41b6cccc1f1e, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 07:21:39.615, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=43c48b97-4101-4482-bb3b-e28ecead04ef, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 07:21:39.615, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=37203a68-bb06-4b58-91b5-10d5579116dd, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 07:21:39.615, bytes=[1, 2, 3], shorts=[1, 2, 3])
+null
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[["jazz", "2013"]], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, data=null, title=La Petite Tonkinoise, artist=Jos�phine Baker, album=Bye Bye Blackbird, tags=[["jazz", "2013"]]}
++--------------------------------------+-------------------+-----------------+------+--------------------+----------------------+
+| id                                   | album             | artist          | data | tags               | title                |
++--------------------------------------+-------------------+-----------------+------+--------------------+----------------------+
+| 756716f7-2e54-4715-9f00-91dcbea6cf50 | Bye Bye Blackbird | Jos�phine Baker | null | [["jazz", "2013"]] | La Petite Tonkinoise |
++--------------------------------------+-------------------+-----------------+------+--------------------+----------------------+
+756716f7-2e54-4715-9f00-91dcbea6cf50
+756716f7-2e54-4715-9f00-91dcbea6cf50
+INSERT INTO simplex.users (id, name, addresses, someDate, last_update_time, created_time, bytes, shorts) VALUES (:id, :name, :addresses, :someDate, :lastUpdateTime, :createdTime, :bytes, :shorts)
+[9ecb4435-cbc7-48d1-92d0-418d2ef7b908, 309899ce-9b9c-483e-8c3b-5bcc61eb9b50, 7f1aa355-d140-4886-8564-671f10388fae, 55c45b70-7b32-4b5f-9736-b26edd00e1d4, 1c72bd1d-aeca-4880-897f-5aa755801309, 86c3901c-1c66-4183-82dc-b10bc5db835a, 58fba080-a4ca-4f60-94bf-efd35567bd44, 5837bc17-9a3f-4382-9027-541c90c7f77a, 8e2d4279-8e55-4773-91f0-6e041950f297, bd7a9a9f-9d2b-422b-9a21-306f87ec8503, de6fd3c7-3c22-44e5-86fd-43973be910d9]
+title                         	album               	artist              
+-------------------------------+-----------------------+--------------------
+La Petite Tonkinoise          	Bye Bye Blackbird   	Jos�phine Baker     
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, data=null, title=La Petite Tonkinoise, artist=Jos�phine Baker, album=Bye Bye Blackbird, tags=[2013, jazz]}
+{columnNames=[id, album, artist, data, tags, title], isFrozen=false, columns={id=[], album=[], artist=[], data=[], tags=[], title=[]}}
++--------------------------------------+-------------------+-----------------+------+--------------+----------------------+
+| id                                   | album             | artist          | data | tags         | title                |
++--------------------------------------+-------------------+-----------------+------+--------------+----------------------+
+| 756716f7-2e54-4715-9f00-91dcbea6cf50 | Bye Bye Blackbird | Jos�phine Baker | null | [2013, jazz] | La Petite Tonkinoise |
++--------------------------------------+-------------------+-----------------+------+--------------+----------------------+
+INSERT INTO simplex.users (id, name, addresses, someDate, last_update_time, created_time, bytes, shorts) VALUES (:id, :name, :addresses, :someDate, :lastUpdateTime, :createdTime, :bytes, :shorts)
+[39efbdc8-b93b-493e-829a-6dd97acd4c94, 4332e342-31a4-4bdb-b6c1-7ddff10629fb, 8cf69dae-f621-400e-856a-05bd4198a4c1, 8482f30e-3987-4cf8-a87c-e37bc9f7c77f, 339a0630-f472-4666-a0c1-ff326b94a875, a0c1d3de-0844-45c3-9e34-68a707f8a4ca, 4b001117-ffbf-48ab-baa2-f7a0f2d9b950, eb9c8f7a-c1a3-4290-a91c-f3940cc4fa5a, 58df6a3b-1054-442d-a6b3-32db1f995d24, 895a62ca-b8af-405d-bc1a-d7446c279343, 84ac0025-a397-4cff-8cfe-dd21d7e4738b]
+DELETE name FROM simplex.users WHERE id = ?
+Users(id=39efbdc8-b93b-493e-829a-6dd97acd4c94, name=Users.Name(firstName=fn, lastName=ln), addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 07:21:40.002, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users.Name(firstName=fn, lastName=ln)
+title                         	album               	artist              
+-------------------------------+-----------------------+--------------------
+La Petite Tonkinoise          	Bye Bye Blackbird   	Jos�phine Baker     
+{song_id=756716f7-2e54-4715-9f00-91dcbea6cf50, id=2cc9ccb7-6221-4ccb-8387-f22b6a1b354d, title=La Petite Tonkinoise, artist=Jos�phine Baker, album=Bye Bye Blackbird}
+{columnNames=[id, title, album, artist, song_id], isFrozen=false, columns={id=[], title=[], album=[], artist=[], song_id=[]}}
+{columnNames=[id, title, album, artist, song_id], isFrozen=false, columns={id=[2cc9ccb7-6221-4ccb-8387-f22b6a1b354d], title=[La Petite Tonkinoise], album=[Bye Bye Blackbird], artist=[Jos�phine Baker], song_id=[756716f7-2e54-4715-9f00-91dcbea6cf50]}}
++--------------------------------------+-------------------+--------+------+------+-------+
+| id                                   | album             | artist | data | tags | title |
++--------------------------------------+-------------------+--------+------+------+-------+
+| 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d | new new new Album | null   | null | []   | null  |
++--------------------------------------+-------------------+--------+------+------+-------+
+UPDATE simplex.songs SET title = ?, album = ? WHERE id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d
+[]
+null
+true
++--------------------------------------+---------------+--------+------+------+---------------+
+| id                                   | album         | artist | data | tags | title         |
++--------------------------------------+---------------+--------+------+------+---------------+
+| 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d | new new Album | null   | null | []   | new new title |
++--------------------------------------+---------------+--------+------+------+---------------+
+DELETE FROM simplex.songs WHERE id = ?
+[]
+null
+true
++----+-------+--------+------+------+-------+
+| id | album | artist | data | tags | title |
++----+-------+--------+------+------+-------+
+|                                           |
++----+-------+--------+------+------+-------+
+UPDATE simplex.songs SET album = :album WHERE id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d
+[]
+null
+true
++--------------------------------------+-------------------+--------+------+------+-------+
+| id                                   | album             | artist | data | tags | title |
++--------------------------------------+-------------------+--------+------+------+-------+
+| 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d | new new new Album | null   | null | []   | null  |
++--------------------------------------+-------------------+--------+------+------+-------+
+
+INSERT INTO simplex.users (id, name, addresses, someDate, last_update_time, created_time, bytes, shorts) VALUES (:id, :name, :addresses, :someDate, :lastUpdateTime, :createdTime, :bytes, :shorts)
+[Users(id=bba34eca-500e-43e2-a48b-a85be892ea3e, name=Users.Name(firstName=fn, lastName=ln), addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 07:21:44.438, bytes=[1, 2, 3], shorts=[1, 2, 3])]
+title                         	album               	artist              
+-------------------------------+-----------------------+--------------------
+La Petite Tonkinoise          	Bye Bye Blackbird   	Jos�phine Baker     
+{song_id=756716f7-2e54-4715-9f00-91dcbea6cf50, id=2cc9ccb7-6221-4ccb-8387-f22b6a1b354d, title=La Petite Tonkinoise, artist=Jos�phine Baker, album=Bye Bye Blackbird}
+{columnNames=[id, title, album, artist, song_id], isFrozen=false, columns={id=[], title=[], album=[], artist=[], song_id=[]}}
+{columnNames=[id, title, album, artist, song_id], isFrozen=false, columns={id=[2cc9ccb7-6221-4ccb-8387-f22b6a1b354d], title=[La Petite Tonkinoise], album=[Bye Bye Blackbird], artist=[Jos�phine Baker], song_id=[756716f7-2e54-4715-9f00-91dcbea6cf50]}}
+
+null
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[["jazz", "2013"]], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, data=null, title=La Petite Tonkinoise, artist=Jos�phine Baker, album=Bye Bye Blackbird, tags=[["jazz", "2013"]]}
++--------------------------------------+-------------------+-----------------+------+--------------------+----------------------+
+| id                                   | album             | artist          | data | tags               | title                |
++--------------------------------------+-------------------+-----------------+------+--------------------+----------------------+
+| 756716f7-2e54-4715-9f00-91dcbea6cf50 | Bye Bye Blackbird | Jos�phine Baker | null | [["jazz", "2013"]] | La Petite Tonkinoise |
++--------------------------------------+-------------------+-----------------+------+--------------------+----------------------+
+756716f7-2e54-4715-9f00-91dcbea6cf50
+756716f7-2e54-4715-9f00-91dcbea6cf50
+[INFO] Tests run: 93, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.515 s -- in com.landawn.abacus.da.cassandra.v3.CassandraExecutorTest
+[INFO] Running com.landawn.abacus.da.cassandra.CqlBuilderTest
+SELECT id FROM account WHERE (a = ?) AND (b = ?)
+
+========================================================================================================================
+(unit: milliseconds)
+threadNum=16; loops=10000
+startTime: 2026-06-10T07:21:45
+endTime:   2026-06-10T07:21:46
+totalElapsedTime: 1161.695
+
+
+<method name>,  |avg time|, |min time|, |max time|, |0.01% >=|, |0.1% >=|,  |1% >=|,    |10% >=|,   |20% >=|,   |50% >=|,   |80% >=|,   |90% >=|,   |99% >=|,   |99.9% >=|, |99.99% >=|
+run,            0.113,      0.003,      13.190,     6.084,      2.362,      0.617,      0.284,      0.194,      0.082,      0.005,      0.004,      0.003,      0.003,      0.003,      
+
+========================================================================================================================
+
+========================================================================================================================
+(unit: milliseconds)
+threadNum=16; loops=10000
+startTime: 2026-06-10T07:21:48
+endTime:   2026-06-10T07:21:48
+totalElapsedTime: 843.030
+
+
+<method name>,  |avg time|, |min time|, |max time|, |0.01% >=|, |0.1% >=|,  |1% >=|,    |10% >=|,   |20% >=|,   |50% >=|,   |80% >=|,   |90% >=|,   |99% >=|,   |99.9% >=|, |99.99% >=|
+run,            0.083,      0.003,      5.442,      5.050,      0.706,      0.428,      0.210,      0.153,      0.074,      0.004,      0.003,      0.003,      0.003,      0.003,      
+
+========================================================================================================================
+========================================================================================================================
+<br/>(unit: milliseconds)
+<br/>threadNum=16; loops=10000
+<br/>startTime: 2026-06-10T07:21:50
+<br/>endTime:   2026-06-10T07:21:51
+<br/>totalElapsedTime: 931.559
+<br/>
+<br/>
+<table width="1200" border="1">
+<tr>
+<th>method name</th>
+<th>avg time</th>
+<th>min time</th>
+<th>max time</th>
+<th>0.01% &gt;=</th>
+<th>0.1% &gt;=</th>
+<th>1% &gt;=</th>
+<th>10% &gt;=</th>
+<th>20% &gt;=</th>
+<th>50% &gt;=</th>
+<th>80% &gt;=</th>
+<th>90% &gt;=</th>
+<th>99% &gt;=</th>
+<th>99.9% &gt;=</th>
+<th>99.99% &gt;=</th>
+</tr>
+<tr>
+<td>run</td>
+<td>0.092</td>
+<td>0.003</td>
+<td>7.573</td>
+<td>4.219</td>
+<td>0.714</td>
+<td>0.441</td>
+<td>0.230</td>
+<td>0.166</td>
+<td>0.081</td>
+<td>0.004</td>
+<td>0.003</td>
+<td>0.003</td>
+<td>0.003</td>
+<td>0.003</td>
+</tr>
+</table>
+========================================================================================================================
+SP[query=DELETE FROM simplex.users WHERE id IN (:id1, :id2), parameters=[a, b]]
+DELETE id, name, addresses, someDate, last_update_time, created_time, bytes, shorts FROM simplex.users WHERE id IN (:id1, :id2)
+SELECT id FROM account WHERE  NOT (status = ?)
+SELECT id FROM account WHERE  NOT (first_name = ?)
+SELECT id FROM account WHERE  NOT (status = 'X')
+SELECT id FROM account WHERE  NOT (status = :status)
+UPDATE account USING TTL 3600 SET first_name = ? WHERE id = ?
+UPDATE account USING TIMESTAMP 1000000 SET first_name = ? WHERE id = ?
+UPDATE account USING TIMESTAMP 2000 SET first_name = ? WHERE id = ?
+UPDATE account USING TIMESTAMP 42 SET first_name = ? WHERE id = ?
+SELECT id FROM account WHERE age BETWEEN ? AND ?
+SELECT id FROM account WHERE age NOT BETWEEN ? AND ?
+SELECT id FROM account WHERE id IN (?, ?, ?)
+SELECT id FROM account WHERE id NOT IN (?, ?, ?)
+SELECT id FROM account WHERE age BETWEEN :minAge AND :maxAge
+SELECT id FROM account WHERE id IN (:id1, :id2, :id3)
+SELECT count(*) FROM account WHERE id = :id
+SELECT count(*) FROM account WHERE id = :id LIMIT 1
+SELECT first_name AS "firstName", last_name AS "lastName" FROM account WHERE id = ?
+DELETE first_name, last_name FROM account WHERE id = ?
+DELETE FROM account WHERE id = ?
+BETWEEN PSC: SELECT id FROM account WHERE age BETWEEN ? AND ?
+BETWEEN NSC: SELECT id FROM account WHERE age BETWEEN :minAge AND :maxAge
+NOTBETWEEN PSC: SELECT id FROM account WHERE age NOT BETWEEN ? AND ?
+IN PSC: SELECT id FROM account WHERE id IN (?, ?, ?)
+IN NSC: SELECT id FROM account WHERE id IN (:id1, :id2, :id3)
+NOTIN NSC: SELECT id FROM account WHERE id NOT IN (:id1, :id2, :id3)
+iF cond PSC: UPDATE account SET first_name = ? WHERE id = ? IF status = ?
+DELETE cols: DELETE first_name, last_name FROM account WHERE id = ?
+AND junction: SELECT id FROM account WHERE (a = ?) AND (b = ?)
+TTL+IF order: UPDATE account USING TTL 60 SET first_name = ? WHERE id = ? IF s = ?
+INSERT TTL: INSERT INTO account (id, name) VALUES (?, ?) USING TTL 60
+batchInsert: INSERT INTO account (first_name) VALUES ('a'), ('b')
+NotEqual null: SELECT id FROM account WHERE first_name != 'x'
+InSubQuery: SELECT id FROM account WHERE id IN (SELECT id FROM account WHERE status = ?)
+NotInSubQuery: SELECT id FROM account WHERE id NOT IN (SELECT id FROM account WHERE status = :status)
+parse cond NSC: (status = :status) AND (balance > :balance)
+parse cond SCCB: (status = 'A') AND (balance > 1000)
+update entity: UPDATE account SET first_name = ?, last_name = ? WHERE id = 1
+multi-col InSubQuery: SELECT id FROM account WHERE (a, b) IN (SELECT x, y FROM t WHERE z = ?)
+eq null SCCB: SELECT id FROM account WHERE first_name = null
+count SCCB: SELECT count(*) FROM account WHERE id = 1
+UPDATE account USING TTL 3600 SET first_name = ? WHERE id = ?
+UPDATE account USING TIMESTAMP 1234567890123000 SET first_name = ? WHERE id = ?
+UPDATE account USING TIMESTAMP 1234567890123000 SET first_name = ? WHERE id = ?
+UPDATE account SET first_name = ? WHERE id = ? IF EXISTS
+UPDATE account SET first_name = ? WHERE id = ? IF NOT EXISTS
+SELECT first_name AS "firstName" FROM account WHERE id = ? ALLOW FILTERING
+UPDATE account SET first_name = ? WHERE id = ? IF status = 'inactive'
+UPDATE account SET first_name = ? WHERE id = ? IF status = 'inactive'
+UPDATE account SET first_name = ? WHERE id = ? IF status = ?
+SELECT first_name AS "firstName" FROM account WHERE id = 123
+SELECT FIRST_NAME AS "firstName" FROM account WHERE ID = 123
+SELECT firstName FROM account WHERE id = 123
+SELECT first_name AS "firstName" FROM account WHERE id = ?
+SELECT FIRST_NAME AS "firstName" FROM account WHERE ID = ?
+SELECT firstName FROM account WHERE id = ?
+SELECT first_name AS "firstName" FROM account WHERE id = :id
+SELECT FIRST_NAME AS "firstName" FROM account WHERE ID = :id
+SELECT firstName FROM account WHERE id = :id
+SELECT first_name AS "firstName", last_name AS "lastName" FROM account WHERE id = :id LIMIT 9
+[INFO] Tests run: 501, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 6.726 s -- in com.landawn.abacus.da.cassandra.CqlBuilderTest
+[INFO] Running com.landawn.abacus.da.cassandra.CassandraExecutorBaseTest
+[INFO] Tests run: 78, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.036 s -- in com.landawn.abacus.da.cassandra.CassandraExecutorBaseTest
+[INFO] Running com.landawn.abacus.da.neo4j.Neo4jExecutorTest
+[INFO] Tests run: 70, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 7.003 s -- in com.landawn.abacus.da.neo4j.Neo4jExecutorTest
+[INFO] Running com.landawn.abacus.da.mongodb.MongoCollectionMapperTest
+[INFO] Tests run: 99, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.031 s -- in com.landawn.abacus.da.mongodb.MongoCollectionMapperTest
+[INFO] Running com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutorV2Test
+[INFO] Tests run: 200, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.167 s -- in com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutorV2Test
+[INFO] Running com.landawn.abacus.da.hbase.AnyPutTest
+[INFO] Tests run: 72, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.025 s -- in com.landawn.abacus.da.hbase.AnyPutTest
+[INFO] Running com.landawn.abacus.da.hbase.AnyMutationTest
+Jun 10, 2026 7:21:58 AM com.google.protobuf.GeneratedMessage warnPre22Gencode
+WARNING: Vulnerable protobuf generated type in use: org.apache.hadoop.hbase.protobuf.generated.ClientProtos$CellVisibility
+As of 2022/09/29 (release 21.7) makeExtensionsImmutable should not be called from protobuf gencode. If you are seeing this message, your gencode is vulnerable to a denial of service attack. You should regenerate your code using protobuf 25.6 or later. Use the latest version that meets your needs. However, if you understand the risks and wish to continue with vulnerable gencode, you can set the system property `-Dcom.google.protobuf.use_unsafe_pre22_gencode` on the command line to silence this warning. You also can set `-Dcom.google.protobuf.error_on_unsafe_pre22_gencode` to throw an error instead. See security vulnerability: https://github.com/protocolbuffers/protobuf/security/advisories/GHSA-h4h5-3hr4-j3g2
+[INFO] Tests run: 40, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.019 s -- in com.landawn.abacus.da.hbase.AnyMutationTest
+[INFO] Running com.landawn.abacus.da.gcp.BigQueryExecutorTest
+[INFO] Tests run: 139, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.795 s -- in com.landawn.abacus.da.gcp.BigQueryExecutorTest
+[INFO] Tests run: 0, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 37.13 s -- in com.landawn.abacus.da.AbacusDATestSuite
+[INFO] 
+[INFO] Results:
+[INFO] 
+[INFO] Tests run: 3341, Failures: 0, Errors: 0, Skipped: 2
+[INFO] 
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  54.016 s
+[INFO] Finished at: 2026-06-10T07:21:59-07:00
+[INFO] ------------------------------------------------------------------------

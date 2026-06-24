@@ -14,6 +14,10 @@
 
 package com.landawn.abacus.da.cassandra;
 
+import static com.landawn.abacus.da.cassandra.CqlBuilder.NAC;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.NLC;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.NSC;
+
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
@@ -25,9 +29,6 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 
 import com.landawn.abacus.annotation.Beta;
-import com.landawn.abacus.da.cassandra.CqlBuilder.NAC;
-import com.landawn.abacus.da.cassandra.CqlBuilder.NLC;
-import com.landawn.abacus.da.cassandra.CqlBuilder.NSC;
 import com.landawn.abacus.exception.DuplicateResultException;
 import com.landawn.abacus.query.AbstractQueryBuilder.SP;
 import com.landawn.abacus.query.Filters;
@@ -176,7 +177,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
     protected static final String NULL_STR = "NULL";
 
     protected static final ImmutableList<String> EXISTS_SELECT_PROP_NAMES = ImmutableList.of("1");
-    protected static final ImmutableList<String> COUNT_SELECT_PROP_NAMES = ImmutableList.of(NSC.COUNT_ALL);
+    protected static final ImmutableList<String> COUNT_SELECT_PROP_NAMES = ImmutableList.of(CqlBuilder.COUNT_ALL);
 
     protected static final int POOLABLE_LENGTH = 1024;
 
@@ -226,14 +227,14 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Registers primary key field names for the specified entity class.
-     * 
+     *
      * <p>This method allows manual registration of key fields for entity classes that do not
      * use {@code @Id} annotations. The registered key names are used by CRUD operations to
      * identify primary key columns for WHERE clauses in SELECT, UPDATE, and DELETE operations.</p>
-     * 
+     *
      * <p><b>Important:</b> This method is deprecated. New code should use {@code @Id} annotations
      * on entity fields or {@code javax.persistence.Id} annotations instead of manual registration.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Legacy approach (deprecated)
@@ -257,7 +258,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *     // other fields...
      * }
      * }</pre>
-     * 
+     *
      * @param entityClass the entity class
      * @param keyNames collection of property names that comprise the primary key
      * @throws IllegalArgumentException if keyNames is null or empty
@@ -279,14 +280,14 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Retrieves the primary key field names for the specified entity class.
-     * 
+     *
      * <p>This method returns the list of property names that comprise the primary key for
      * the given entity class. It first checks for manually registered keys, then falls back
      * to introspecting the class for {@code @Id} annotations.</p>
-     * 
+     *
      * <p>The returned key names are used internally by CRUD operations to construct
      * appropriate WHERE clauses for database operations.</p>
-     * 
+     *
      * @param entityClass the entity class
      * @return an immutable list of property names that form the primary key (empty if neither
      *         registration nor {@code @Id} annotations are present)
@@ -295,7 +296,6 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
         Tuple2<ImmutableList<String>, ImmutableSet<String>> tp = entityKeyNamesMap.get(entityClass);
 
         if (tp == null) {
-            @SuppressWarnings("deprecation")
             final List<String> idPropNames = QueryUtil.getIdPropNames(entityClass);
             tp = Tuple.of(ImmutableList.copyOf(idPropNames), ImmutableSet.copyOf(idPropNames));
             final Tuple2<ImmutableList<String>, ImmutableSet<String>> existing = entityKeyNamesMap.putIfAbsent(entityClass, tp);
@@ -309,11 +309,11 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Retrieves the primary key field names as a Set for the specified entity class.
-     * 
+     *
      * <p>This method returns the same key names as {@link #getKeyNames(Class)} but as a Set
      * for efficient lookup operations. This is particularly useful when checking if a
      * property name is part of the primary key.</p>
-     * 
+     *
      * @param entityClass the entity class
      * @return an immutable set of property names that form the primary key (empty if neither
      *         registration nor {@code @Id} annotations are present)
@@ -323,7 +323,6 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
         Tuple2<ImmutableList<String>, ImmutableSet<String>> tp = entityKeyNamesMap.get(entityClass);
 
         if (tp == null) {
-            @SuppressWarnings("deprecation")
             final List<String> idPropNames = QueryUtil.getIdPropNames(entityClass);
             tp = Tuple.of(ImmutableList.copyOf(idPropNames), ImmutableSet.copyOf(idPropNames));
             final Tuple2<ImmutableList<String>, ImmutableSet<String>> existing = entityKeyNamesMap.putIfAbsent(entityClass, tp);
@@ -337,23 +336,23 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Converts primary key ID values into a WHERE condition for database operations.
-     * 
+     *
      * <p>This method creates a {@link Condition} object from the provided ID values,
      * matching them against the primary key fields of the target entity class. For
      * single-key entities, it creates a simple equality condition. For composite keys,
      * it creates an AND condition with all key components.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Single key entity
      * Condition cond = idsToCondition(User.class, "user123");
      * // Result: WHERE user_id = ?
-     * 
+     *
      * // Composite key entity
      * Condition cond = idsToCondition(UserSession.class, "user123", "session456");
      * // Result: WHERE user_id = ? AND session_id = ?
      * }</pre>
-     * 
+     *
      * @param targetClass the entity class whose primary-key column names are used
      * @param ids the ID values in the same order as the key fields
      * @return a Condition representing the primary key equality check
@@ -384,23 +383,23 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Extracts primary key values from an entity and converts them into a WHERE condition.
-     * 
+     *
      * <p>This method inspects the provided entity object, extracts the values from its
      * primary key properties, and creates an appropriate {@link Condition} for database
      * operations. This is commonly used in UPDATE and DELETE operations where the entity
      * object contains the key values needed to identify the target row.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * User user = new User();
      * user.setUserId("user123");
      * user.setTenantId("tenant456");
-     * 
+     *
      * Condition cond = entityToCondition(user);
      * // Result: WHERE user_id = ? AND tenant_id = ?
      * // with values "user123" and "tenant456"
      * }</pre>
-     * 
+     *
      * @param entity the entity object containing primary key values
      * @return a Condition representing the primary key equality check based on entity values
      * @throws IllegalArgumentException if no key names are defined for the entity class, or a key property value is null or empty
@@ -448,25 +447,25 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Creates a WHERE condition to match any entity in the provided collection.
-     * 
+     *
      * <p>This method generates a condition that can match any of the entities in the collection
      * by their primary key values. For single-key entities, it creates an IN condition. For
      * composite-key entities, it creates an OR condition with AND clauses for each entity's
      * key components.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Single key entities
      * List<User> users = Arrays.asList(user1, user2, user3);
      * Condition cond = entityToCondition(User.class, users);
      * // Result: WHERE user_id IN (?, ?, ?)
-     * 
+     *
      * // Composite key entities
      * List<UserSession> sessions = Arrays.asList(session1, session2);
      * Condition cond = entityToCondition(UserSession.class, sessions);
      * // Result: WHERE (user_id = ? AND session_id = ?) OR (user_id = ? AND session_id = ?)
      * }</pre>
-     * 
+     *
      * @param entityClass the entity class
      * @param entities the collection of entities whose keys should be matched
      * @return a Condition that matches any entity in the collection by primary key
@@ -569,10 +568,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Retrieves an entity based on a custom WHERE condition.
-     * 
+     *
      * <p>This method performs a SELECT query using the provided condition
      * and returns the matching entity wrapped in an Optional.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Condition cond = Filters.eq("email", "user@example.com");
@@ -594,11 +593,11 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Retrieves specific properties of an entity based on a custom WHERE condition.
-     * 
+     *
      * <p>This method performs a SELECT query for only the specified properties
      * using the provided condition. This is useful for optimizing queries when
      * only certain fields are needed.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Condition cond = Filters.and(Filters.eq("status", "active"), Filters.gte("age", 18));
@@ -683,7 +682,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Retrieves an entity based on a custom WHERE condition through the nullable {@code gett} variant.
-     * 
+     *
      * <p>This method performs a SELECT query using the provided condition
      * and returns the entity directly or {@code null} instead of {@link Optional}.</p>
      *
@@ -708,7 +707,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Retrieves specific properties of an entity based on a custom WHERE condition through the nullable {@code gett} variant.
-     * 
+     *
      * <p>This abstract method must be implemented by concrete subclasses to perform
      * the actual database query and entity mapping. It is the terminal {@code gett} overload all
      * other {@code gett}/{@code get} façades delegate to.</p>
@@ -797,22 +796,23 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p>This method creates a batch INSERT statement for all provided entities
      * and executes them together for better performance. All entities must be
-     * of the same type. The base does <i>not</i> validate {@code entities} itself; it delegates
-     * straight to the subclass's batch-statement builder, so an empty collection simply yields an
-     * empty batch and a {@code null} collection surfaces as the driver builder's own error.</p>
+     * of the same type. The base delegates to the subclass's batch-statement builder, and the
+     * shipped executors validate the input there: a {@code null} or empty collection is rejected
+     * with an {@code IllegalArgumentException}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<User> users = Arrays.asList(user1, user2, user3);
      * ResultSet result = executor.batchInsert(users, BatchType.LOGGED); // returns the driver ResultSet for the batch
      *
-     * // No base-level empty-check: an empty list produces an empty batch (subclass-dependent).
-     * ResultSet empty = executor.batchInsert(new ArrayList<>(), BatchType.LOGGED); // returns the (empty) batch ResultSet
+     * executor.batchInsert(new ArrayList<>(), BatchType.LOGGED); // throws IllegalArgumentException (entities is empty)
      * }</pre>
      *
      * @param entities the collection of entities to insert
      * @param type the batch type
      * @return the result set from the batch INSERT operation
+     * @throws IllegalArgumentException if {@code entities} is {@code null} or empty (enforced by the
+     *         shipped executors' batch-statement builders)
      */
     public RS batchInsert(final Collection<?> entities, final BT type) {
         final ST stmt = prepareBatchInsertStatement(entities, type);
@@ -825,8 +825,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p>This method creates a batch INSERT statement for all provided property maps
      * and executes them together for better performance. As with {@link #batchInsert(Collection, Object)},
-     * the base performs no validation of {@code propsList}; it delegates directly to the subclass's
-     * batch-statement builder.</p>
+     * the base delegates to the subclass's batch-statement builder, and the shipped executors
+     * reject a {@code null} or empty {@code propsList} with an {@code IllegalArgumentException}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -836,14 +836,15 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * ResultSet result = executor.batchInsert(User.class, propsList, BatchType.LOGGED); // returns the driver ResultSet for the batch
      *
-     * // No base-level empty-check: an empty list produces an empty batch (subclass-dependent).
-     * ResultSet empty = executor.batchInsert(User.class, new ArrayList<>(), BatchType.LOGGED); // returns the (empty) batch ResultSet
+     * executor.batchInsert(User.class, new ArrayList<>(), BatchType.LOGGED); // throws IllegalArgumentException (propsList is empty)
      * }</pre>
      *
      * @param targetClass the entity class
      * @param propsList the collection of property maps to insert
      * @param type the batch type
      * @return the result set from the batch INSERT operation
+     * @throws IllegalArgumentException if {@code propsList} is {@code null} or empty (enforced by the
+     *         shipped executors' batch-statement builders)
      */
     public RS batchInsert(final Class<?> targetClass, final Collection<? extends Map<String, Object>> propsList, final BT type) {
         final ST stmt = prepareBatchInsertStatement(targetClass, propsList, type);
@@ -883,11 +884,11 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Updates specific properties of an entity in the database.
-     * 
+     *
      * <p>This method generates an UPDATE statement for only the specified properties
      * and executes it. The primary key fields are used in the WHERE clause to identify
      * the record to update.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * User user = new User();
@@ -949,10 +950,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Executes a custom UPDATE query with parameters.
-     * 
+     *
      * <p>This method executes a user-provided UPDATE query with the specified parameters.
      * Parameters are bound positionally to the query's placeholders.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * String query = "UPDATE users SET status = ? WHERE last_login < ?";
@@ -969,11 +970,11 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Performs a batch update of multiple entities.
-     * 
+     *
      * <p>This method creates a batch UPDATE statement for all provided entities
      * and executes them together for better performance. By default, all non-key
      * properties are updated.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<User> users = Arrays.asList(user1, user2, user3);
@@ -1001,10 +1002,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Performs a batch update of specific properties for multiple entities.
-     * 
+     *
      * <p>This method creates a batch UPDATE statement for all provided entities,
      * updating only the specified properties, and executes them together for better performance.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<User> users = Arrays.asList(user1, user2, user3);
@@ -1037,8 +1038,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p>This method creates a batch UPDATE statement for all provided property maps
      * and executes them together for better performance. Each map must contain the
      * key fields to identify the record and the fields to update. Like the other
-     * {@code (Class, propsList, BT)} batch overloads, the base performs no validation of
-     * {@code propsList}; it delegates directly to the subclass's batch-statement builder.</p>
+     * {@code (Class, propsList, BT)} batch overloads, the base delegates to the subclass's
+     * batch-statement builder, and the shipped executors reject a {@code null} or empty
+     * {@code propsList} with an {@code IllegalArgumentException}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1048,14 +1050,15 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * ResultSet result = executor.batchUpdate(User.class, propsList, BatchType.LOGGED); // returns the driver ResultSet for the batch
      *
-     * // No base-level empty-check: an empty list produces an empty batch (subclass-dependent).
-     * ResultSet empty = executor.batchUpdate(User.class, new ArrayList<>(), BatchType.LOGGED); // returns the (empty) batch ResultSet
+     * executor.batchUpdate(User.class, new ArrayList<>(), BatchType.LOGGED); // throws IllegalArgumentException (propsList is empty)
      * }</pre>
      *
      * @param targetClass the entity class
      * @param propsList the collection of property maps to update
      * @param type the batch type
      * @return the result set from the batch UPDATE operation
+     * @throws IllegalArgumentException if {@code propsList} is {@code null} or empty (enforced by the
+     *         shipped executors' batch-statement builders)
      */
     public RS batchUpdate(final Class<?> targetClass, final Collection<? extends Map<String, Object>> propsList, final BT type) {
         final ST stmt = prepareBatchUpdateStatement(targetClass, propsList, type);
@@ -1067,9 +1070,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * Performs a batch update with a custom query and multiple parameter sets.
      *
      * <p>This method executes the same UPDATE query multiple times with different
-     * parameter sets in a single batch for better performance. The base performs no validation of
-     * {@code query} / {@code parametersList}; it delegates directly to the subclass's
-     * batch-statement builder.</p>
+     * parameter sets in a single batch for better performance. The base delegates to the
+     * subclass's batch-statement builder, and the shipped executors reject a {@code null} or
+     * empty {@code parametersList} with an {@code IllegalArgumentException}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1080,12 +1083,16 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * );
      *
      * ResultSet result = executor.batchUpdate(query, params, BatchType.LOGGED); // returns the driver ResultSet for the batch
+     *
+     * executor.batchUpdate(query, new ArrayList<>(), BatchType.LOGGED); // throws IllegalArgumentException (parametersList is empty)
      * }</pre>
      *
      * @param query the UPDATE query to execute
      * @param parametersList the collection of parameter arrays
      * @param type the batch type
      * @return the result set from the batch UPDATE operation
+     * @throws IllegalArgumentException if {@code parametersList} is {@code null} or empty (enforced
+     *         by the shipped executors' batch-statement builders)
      */
     public RS batchUpdate(final String query, final Collection<?> parametersList, final BT type) {
         final ST stmt = prepareBatchUpdateStatement(query, parametersList, type);
@@ -1265,10 +1272,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Performs a batch delete of multiple entities.
-     * 
+     *
      * <p>This method deletes all provided entities in a single batch operation
      * for better performance. Each entity must have its primary key values set.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<User> usersToDelete = Arrays.asList(user1, user2, user3);
@@ -1294,10 +1301,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Performs a batch delete of specific properties from multiple entities.
-     * 
+     *
      * <p>This method deletes specific column values from all provided entities
      * in a single batch operation. If propNamesToDelete is null, entire rows are deleted.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<User> users = Arrays.asList(user1, user2, user3);
@@ -2913,7 +2920,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Prepares an INSERT statement for the given entity.
-     * 
+     *
      * @param entity the entity to insert
      * @return the prepared statement with parameters
      */
@@ -2937,7 +2944,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Prepares an INSERT statement for the given properties.
-     * 
+     *
      * @param targetClass the entity class
      * @param props map of property names to values
      * @return the prepared statement with parameters
@@ -2960,7 +2967,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Prepares a batch statement of the specified type.
-     * 
+     *
      * @param type the batch type
      * @return the prepared batch statement
      */
@@ -2968,7 +2975,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Prepares a batch INSERT statement for multiple entities.
-     * 
+     *
      * @param entities collection of entities to insert
      * @param type the batch type
      * @return the prepared batch statement
@@ -2977,7 +2984,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Prepares a batch INSERT statement for multiple property maps.
-     * 
+     *
      * @param targetClass the entity class
      * @param propsList collection of property maps
      * @param type the batch type
@@ -2987,7 +2994,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Prepares an UPDATE statement for the given entity.
-     * 
+     *
      * @param entity the entity containing updated values
      * @param propNamesToUpdate collection of property names to update
      * @return the prepared statement with parameters
@@ -3016,7 +3023,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Prepares an UPDATE statement with a WHERE clause.
-     * 
+     *
      * @param targetClass the entity class
      * @param props map of property names to new values
      * @param whereClause the WHERE condition
@@ -3042,7 +3049,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Prepares a batch UPDATE statement for multiple entities.
-     * 
+     *
      * @param entities collection of entities to update
      * @param propNamesToUpdate collection of property names to update
      * @param type the batch type
@@ -3052,7 +3059,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Prepares a batch UPDATE statement for multiple property maps.
-     * 
+     *
      * @param targetClass the entity class
      * @param propsList collection of property maps
      * @param type the batch type
@@ -3062,7 +3069,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Prepares a batch UPDATE statement with parameterized queries.
-     * 
+     *
      * @param query the update query template
      * @param parametersList collection of parameter arrays
      * @param type the batch type
@@ -3072,7 +3079,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Prepares a DELETE statement with a WHERE clause.
-     * 
+     *
      * @param targetClass the entity class
      * @param propNamesToDelete collection of property names to delete, or null to delete entire records
      * @param whereClause the WHERE condition
@@ -3110,7 +3117,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Prepares a SELECT query for the specified entity class and conditions.
-     * 
+     *
      * @param <T> the entity type
      * @param targetClass the entity class
      * @param selectPropNames the property names to select (null for all properties)
@@ -3123,30 +3130,30 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Prepares a SELECT query statement with the specified parameters.
-     * 
+     *
      * <p>This method constructs a CQL SELECT query based on the target entity class,
      * optional property selection, WHERE condition, and result limit. The query is
      * built according to the configured naming policy for column name transformation.</p>
-     * 
+     *
      * <p>The method supports different naming policies:</p>
      * <ul>
      * <li><strong>SNAKE_CASE:</strong> camelCase → snake_case</li>
      * <li><strong>SCREAMING_SNAKE_CASE:</strong> camelCase → SCREAMING_SNAKE_CASE</li>
      * <li><strong>CAMEL_CASE:</strong> preserves original camelCase</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Select specific properties with condition and limit
-     * SP statement = prepareQuery(User.class, 
-     *     Arrays.asList("name", "email"), 
-     *     Filters.eq("status", "active"), 
+     * SP statement = prepareQuery(User.class,
+     *     Arrays.asList("name", "email"),
+     *     Filters.eq("status", "active"),
      *     10);
-     * 
+     *
      * // Select all properties without condition
      * SP statement = prepareQuery(User.class, null, null, 0);
      * }</pre>
-     * 
+     *
      * @param <T> the target entity type
      * @param targetClass the entity class
      * @param selectPropNames the property names to select (null for all properties)
@@ -3199,7 +3206,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Prepares a statement from a CQL query string.
-     * 
+     *
      * @param query the CQL query
      * @return the prepared statement
      */
@@ -3207,7 +3214,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Prepares a statement from a CQL query with parameters.
-     * 
+     *
      * @param query the CQL query
      * @param parameters the query parameters
      * @return the prepared statement
@@ -3216,7 +3223,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Prepares a reusable prepared statement from a CQL query.
-     * 
+     *
      * @param query the CQL query
      * @return the prepared statement
      */
@@ -3224,7 +3231,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Binds parameters to a prepared statement.
-     * 
+     *
      * @param preStmt the prepared statement
      * @param parameters the query parameters
      * @return the bound statement ready for execution
@@ -3233,7 +3240,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Parses a CQL query string into a ParsedCql object with caching support.
-     * 
+     *
      * <p>This method first attempts to retrieve a pre-configured CQL statement from
      * the CQL mapper (if available), falling back to parsing the raw CQL string if
      * not found. This provides a two-tier approach to CQL management:</p>
@@ -3241,7 +3248,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <li><strong>Mapped CQL:</strong> Pre-configured statements with metadata</li>
      * <li><strong>Ad-hoc CQL:</strong> Dynamic parsing of arbitrary CQL strings</li>
      * </ol>
-     * 
+     *
      * <p>The parsing process includes:</p>
      * <ul>
      * <li>Parameter detection and normalization (positional, named, MyBatis-style)</li>
@@ -3249,21 +3256,21 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <li>Caching for improved performance on repeated queries</li>
      * <li>Metadata extraction for statement configuration</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Parse mapped CQL (retrieved from CqlMapper if available)
      * ParsedCql parsed1 = parseCql("getUserById");
-     * 
+     *
      * // Parse ad-hoc CQL string
      * ParsedCql parsed2 = parseCql("SELECT * FROM users WHERE status = ?");
-     * 
+     *
      * // Access parsing results
      * String parameterizedCql = parsed2.getParameterizedCql();
      * int paramCount = parsed2.parameterCount();
      * Map<String, String> attributes = parsed2.getAttributes();
      * }</pre>
-     * 
+     *
      * @param cql the CQL query string to parse (may be a mapper key or raw CQL)
      * @return a ParsedCql object containing the parsed query and metadata
      * @see CqlMapper#get(String)
@@ -3285,7 +3292,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Converts a result set to a List of the specified type.
-     * 
+     *
      * @param <T> the target type
      * @param targetClass the entity class
      * @param execute the result set to convert
@@ -3295,7 +3302,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Extracts data from a result set into a Dataset.
-     * 
+     *
      * @param targetClass the entity class
      * @param execute the result set to extract from
      * @return a Dataset containing the extracted data
@@ -3315,7 +3322,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     /**
      * Creates a row mapper function for the specified target class.
-     * 
+     *
      * @param <T> the target type
      * @param targetClass the entity class
      * @return a function that maps result rows to the target type

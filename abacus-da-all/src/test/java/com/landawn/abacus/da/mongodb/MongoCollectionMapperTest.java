@@ -632,13 +632,18 @@ public class MongoCollectionMapperTest extends TestBase {
 
     @Test
     public void testDistinct() {
+        // distinct routes through a $group/$project pipeline so distinct scalar values come back as
+        // {fieldName: value} documents decodable into the mapped entity type (the driver's native
+        // distinct(field, entityClass) decodes raw scalar VALUES with the entity codec and throws).
         String fieldName = "category";
         Stream<TestEntity> stream = Stream.of(new TestEntity());
-        when(mockCollExecutor.distinct(fieldName, TestEntity.class)).thenReturn(stream);
+        List<org.bson.conversions.Bson> expectedPipeline = Arrays.asList(new Document("$group", new Document("_id", "$" + fieldName)),
+                new Document("$project", new Document("_id", 0).append(fieldName, "$_id")));
+        when(mockCollExecutor.aggregate(expectedPipeline, TestEntity.class)).thenReturn(stream);
 
         Stream<TestEntity> result = mapper.distinct(fieldName);
         Assertions.assertNotNull(result);
-        verify(mockCollExecutor).distinct(fieldName, TestEntity.class);
+        verify(mockCollExecutor).aggregate(expectedPipeline, TestEntity.class);
     }
 
     @Test
@@ -646,11 +651,25 @@ public class MongoCollectionMapperTest extends TestBase {
         String fieldName = "category";
         Document filter = new Document("status", "active");
         Stream<TestEntity> stream = Stream.of(new TestEntity());
-        when(mockCollExecutor.distinct(fieldName, filter, TestEntity.class)).thenReturn(stream);
+        when(mockCollExecutor.aggregate(org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.eq(TestEntity.class))).thenReturn(stream);
 
         Stream<TestEntity> result = mapper.distinct(fieldName, filter);
         Assertions.assertNotNull(result);
-        verify(mockCollExecutor).distinct(fieldName, filter, TestEntity.class);
+
+        @SuppressWarnings("rawtypes")
+        org.mockito.ArgumentCaptor<List> pipelineCaptor = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(mockCollExecutor).aggregate(pipelineCaptor.capture(), org.mockito.ArgumentMatchers.eq(TestEntity.class));
+
+        List<?> pipeline = pipelineCaptor.getValue();
+        Assertions.assertEquals(3, pipeline.size());
+        // First stage matches the filter, then $group on the field, then $project surfacing the value.
+        Assertions.assertEquals(new Document("$group", new Document("_id", "$" + fieldName)), pipeline.get(1));
+        Assertions.assertEquals(new Document("$project", new Document("_id", 0).append(fieldName, "$_id")), pipeline.get(2));
+    }
+
+    @Test
+    public void testDistinctWithFilter_nullFilter_throws() {
+        Assertions.assertThrows(IllegalArgumentException.class, () -> mapper.distinct("category", null));
     }
 
     @Test

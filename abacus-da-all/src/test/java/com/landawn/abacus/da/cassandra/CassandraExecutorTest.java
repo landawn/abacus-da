@@ -33,10 +33,10 @@ import com.datastax.oss.driver.api.core.type.codec.registry.MutableCodecRegistry
 import com.datastax.oss.driver.internal.core.type.codec.registry.DefaultCodecRegistry;
 import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.da.cassandra.CassandraExecutor.UDTCodec;
-import com.landawn.abacus.da.cassandra.CqlBuilder.LCCB;
-import com.landawn.abacus.da.cassandra.CqlBuilder.NLC;
-import com.landawn.abacus.da.cassandra.CqlBuilder.NSC;
-import com.landawn.abacus.da.cassandra.CqlBuilder.SCCB;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.LCCB;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.NLC;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.NSC;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.SCCB;
 import com.landawn.abacus.da.entity.Song;
 import com.landawn.abacus.da.entity.Users;
 import com.landawn.abacus.query.Filters;

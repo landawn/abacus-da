@@ -9,7 +9,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.HashMap;
@@ -63,8 +62,7 @@ import com.landawn.abacus.util.stream.Stream;
  *
  * <h2>Running locally</h2>
  * <pre>{@code
- * docker run --rm -d --name bigquery-emulator -p 9050:9050 `
- *   ghcr.io/goccy/bigquery-emulator:latest --project=test-project
+ * docker run --rm -d --name bigquery-emulator -p 9050:9050  ghcr.io/goccy/bigquery-emulator:latest --project=test-project
  * mvn -pl abacus-da-all test -Dtest=BigQueryExecutorTest2
  * }</pre>
  *
@@ -102,12 +100,7 @@ public class BigQueryExecutorTest2 extends TestBase {
     @BeforeAll
     public static void setUpClass() {
         // Building the client does not connect; the first query does.
-        bigQuery = BigQueryOptions.newBuilder()
-                .setProjectId(PROJECT)
-                .setHost(ENDPOINT)
-                .setCredentials(NoCredentials.getInstance())
-                .build()
-                .getService();
+        bigQuery = BigQueryOptions.newBuilder().setProjectId(PROJECT).setHost(ENDPOINT).setCredentials(NoCredentials.getInstance()).build().getService();
         executor = new BigQueryExecutor(bigQuery);
 
         try {
@@ -1544,8 +1537,7 @@ public class BigQueryExecutorTest2 extends TestBase {
         e.setIdB(b);
         e.setValue("new");
         assertNotNull(executor.update(e));
-        assertEquals("new",
-                executor.queryForSingleValue(String.class, "SELECT value FROM " + CK_TABLE + " WHERE id_a = ? AND id_b = ?", a, b).orElse(null));
+        assertEquals("new", executor.queryForSingleValue(String.class, "SELECT value FROM " + CK_TABLE + " WHERE id_a = ? AND id_b = ?", a, b).orElse(null));
     }
 
     // ====================================================================================================

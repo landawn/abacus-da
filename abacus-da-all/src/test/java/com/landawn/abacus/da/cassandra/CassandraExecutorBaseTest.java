@@ -426,14 +426,10 @@ public class CassandraExecutorBaseTest extends TestBase {
         // "@throws IllegalArgumentException if propName is null or empty". The sibling queryForSingleValue
         // already guarded propName; queryForSingleNonNull was missing the guard and threw NPE (from List.of(null))
         // for a null propName and silently built a malformed projection for an empty one.
-        assertThrows(IllegalArgumentException.class,
-                () -> executor.queryForSingleValue(TestEntity.class, String.class, null, Filters.eq("id", 1L)));
-        assertThrows(IllegalArgumentException.class,
-                () -> executor.queryForSingleValue(TestEntity.class, String.class, "", Filters.eq("id", 1L)));
-        assertThrows(IllegalArgumentException.class,
-                () -> executor.queryForSingleNonNull(TestEntity.class, String.class, null, Filters.eq("id", 1L)));
-        assertThrows(IllegalArgumentException.class,
-                () -> executor.queryForSingleNonNull(TestEntity.class, String.class, "", Filters.eq("id", 1L)));
+        assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleValue(TestEntity.class, String.class, null, Filters.eq("id", 1L)));
+        assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleValue(TestEntity.class, String.class, "", Filters.eq("id", 1L)));
+        assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleNonNull(TestEntity.class, String.class, null, Filters.eq("id", 1L)));
+        assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleNonNull(TestEntity.class, String.class, "", Filters.eq("id", 1L)));
     }
 
     @Test
@@ -885,7 +881,8 @@ public class CassandraExecutorBaseTest extends TestBase {
         b.setUserId("u2");
         b.setSessionId("s2");
 
-        assertThrows(IllegalArgumentException.class, () -> TestCassandraExecutor.exposedEntityToConditionCollection(CompositeKeyEntity.class, Arrays.asList(a, b)));
+        assertThrows(IllegalArgumentException.class,
+                () -> TestCassandraExecutor.exposedEntityToConditionCollection(CompositeKeyEntity.class, Arrays.asList(a, b)));
     }
 
     @Test

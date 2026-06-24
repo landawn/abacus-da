@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 
 import org.bson.Document;
 import org.bson.conversions.Bson;
@@ -26,6 +27,8 @@ import org.bson.types.ObjectId;
 import com.landawn.abacus.annotation.Beta;
 import com.landawn.abacus.da.mongodb.MongoDBBase;
 import com.landawn.abacus.type.Type;
+import com.landawn.abacus.util.Beans;
+import com.landawn.abacus.util.ClassUtil;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.function.Function;
@@ -1037,8 +1040,16 @@ public final class MongoCollectionExecutor {
      * @return a Flux that emits matching documents with all specified constraints, converted to type T
      * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site), or if offset or count is negative
      */
+    @SuppressWarnings("unchecked")
     public <T> Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
+        // Same short-circuit as the sync executor (MongoDBBase.toList / sync stream): when the caller asks
+        // for Document/Map/Object, return the raw documents untouched instead of rebuilding them through
+        // readRow (which would throw "Unsupported target type" for Object.class).
+        if (rowType.isAssignableFrom(Document.class)) {
+            return (Flux<T>) query(selectPropNames, filter, sort, offset, count);
+        }
+
         return query(selectPropNames, filter, sort, offset, count).mapNotNull(toEntity(rowType));
     }
 
@@ -1090,7 +1101,13 @@ public final class MongoCollectionExecutor {
      * @return a Flux that emits matching documents with all specified constraints, converted to type T
      * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site), or if offset or count is negative
      */
+    @SuppressWarnings("unchecked")
     public <T> Flux<T> list(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType) {
+        // Same short-circuit as the sync executor: raw documents for Document/Map/Object targets.
+        if (rowType.isAssignableFrom(Document.class)) {
+            return (Flux<T>) executeQuery(projection, filter, sort, offset, count);
+        }
+
         return executeQuery(projection, filter, sort, offset, count).mapNotNull(toEntity(rowType));
     }
 
@@ -1589,9 +1606,9 @@ public final class MongoCollectionExecutor {
      * executor.queryForDate("lastModified", Filters.eq("docId", "x"), Timestamp.class)
      *         .subscribe(v -> {}, e -> {}, () -> System.out.println("absent")); // prints "absent"
      *
-     * // Negative: null rowType -> Mono errors with IllegalArgumentException on subscription.
-     * executor.queryForDate("lastModified", Filters.eq("docId", id), (Class<Timestamp>) null)
-     *         .subscribe(v -> {}, err -> System.out.println(err.getClass())); // IllegalArgumentException
+     * // Negative: null rowType -> IllegalArgumentException is thrown synchronously at the call site
+     * // (before any Mono is returned), because rowType is validated eagerly.
+     * executor.queryForDate("lastModified", Filters.eq("docId", id), (Class<Timestamp>) null); // throws IllegalArgumentException
      * }</pre>
      *
      * @param <T> the specific Date subtype to return
@@ -1642,8 +1659,8 @@ public final class MongoCollectionExecutor {
      * executor.queryForSingleValue("balance", Filters.eq("accountId", "x"), BigDecimal.class)
      *         .subscribe(b -> {}, e -> {}, () -> System.out.println("absent")); // prints "absent"
      *
-     * // Negative: a blank propName throws IllegalArgumentException synchronously (at call time,
-     * // before any Mono is returned), because propName is validated eagerly.
+     * // Negative: a blank propName or a null valueType throws IllegalArgumentException synchronously
+     * // (at call time, before any Mono is returned), because both are validated eagerly.
      * executor.queryForSingleValue("", Filters.eq("accountId", id), BigDecimal.class); // throws IllegalArgumentException
      * }</pre>
      *
@@ -1659,12 +1676,19 @@ public final class MongoCollectionExecutor {
      */
     public <V> Mono<V> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType) {
         N.checkArgNotEmpty(propName, "propName");
+        N.checkArgNotNull(valueType, "valueType");
 
         return query(N.asList(propName), filter, null, 0, 1).next().flatMap(doc -> convert(doc, propName, valueType));
     }
 
     private static <V> Mono<V> convert(final Document doc, final String propName, final Class<V> targetType) {
-        return N.isEmpty(doc) ? Mono.empty() : Mono.justOrEmpty(N.convert(doc.get(propName), targetType));
+        return N.isEmpty(doc) ? Mono.empty() : Mono.justOrEmpty(N.convert(getPropValueByPath(doc, propName), targetType));
+    }
+
+    // Document.get does a flat key lookup, but a dotted path like "address.city" is a valid projection:
+    // the server returns {address: {city: ...}}, so the nested value must be resolved via getEmbedded.
+    private static Object getPropValueByPath(final Document doc, final String propName) {
+        return propName.indexOf('.') < 0 ? doc.get(propName) : doc.getEmbedded(java.util.Arrays.asList(propName.split("\\.")), Object.class);
     }
 
     /**
@@ -1858,6 +1882,8 @@ public final class MongoCollectionExecutor {
      */
     public <T> Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
+        checkResultClass(rowType);
+
         if (N.isEmpty(selectPropNames)) {
             return query(selectPropNames, filter, sort, offset, count).collectList().map(rowList -> MongoDB.extractData(rowList, rowType));
         } else {
@@ -1914,7 +1940,19 @@ public final class MongoCollectionExecutor {
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      */
     public <T> Mono<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType) {
+        checkResultClass(rowType);
+
         return executeQuery(projection, filter, sort, offset, count).collectList().map(rowList -> MongoDB.extractData(rowList, rowType));
+    }
+
+    // Mirrors the validation MongoDBBase.extractData(Collection, MongoIterable, Class) applies on the sync
+    // side, so an invalid rowType fails fast with the same IllegalArgumentException instead of producing a
+    // malformed Dataset on subscription.
+    private static void checkResultClass(final Class<?> rowType) {
+        if (!(Beans.isBeanClass(rowType) || Map.class.isAssignableFrom(rowType))) {
+            throw new IllegalArgumentException("The target class must be an entity class with getter\\setter methods or Map.class\\Document.class. But it is: "
+                    + ClassUtil.getCanonicalClassName(rowType));
+        }
     }
 
     private static <T> Function<Document, T> toEntity(final Class<T> rowType) {
@@ -2118,8 +2156,8 @@ public final class MongoCollectionExecutor {
      * @param obj the object to insert (Document/Map/entity class); must not be null
      * @return a {@code Mono} that, on subscription, emits exactly one {@link InsertOneResult}
      *         describing the operation, then completes
-     * @throws NullPointerException if obj is null (thrown synchronously at call time, since the
-     *         object is converted to a document eagerly before the {@code Mono} is built)
+     * @throws IllegalArgumentException if obj is null (thrown synchronously at call time, before
+     *         the {@code Mono} is built)
      * @throws com.mongodb.MongoWriteException if the insert violates a unique constraint or
      *         document validation (signalled via {@code Mono})
      * @see #insertOne(Object, InsertOneOptions)
@@ -2150,6 +2188,8 @@ public final class MongoCollectionExecutor {
      *         document validation (signalled via {@code Mono})
      */
     public Mono<InsertOneResult> insertOne(final Object obj, final InsertOneOptions options) {
+        N.checkArgNotNull(obj, "obj");
+
         if (options == null) {
             return Mono.from(coll.insertOne(toDocument(obj)));
         } else {
@@ -2463,15 +2503,27 @@ public final class MongoCollectionExecutor {
             if (!doc.isEmpty() && doc.keySet().iterator().next().startsWith(_$)) {
                 return doc;
             }
+
+            doc.remove(MongoDBBase._ID);
         } else if (bson instanceof final BasicDBObject dbObject) { //NOSONAR
             if (!dbObject.isEmpty() && dbObject.keySet().iterator().next().startsWith(_$)) {
                 return dbObject;
             }
+
+            dbObject.remove(MongoDBBase._ID);
         } else {
             // A driver-built Bson (e.g. Updates.set(...)/Updates.combine(...)) is already a
             // complete update expression. It is neither Document nor BasicDBObject, so it must
             // be returned as-is rather than (incorrectly) re-wrapped in a {$set: ...} document.
             return bson;
+        }
+
+        // _id was stripped above: it is immutable server-side, and {$set: {_id: ...}} fails for every
+        // matched document whose _id differs — breaking the common "fetch entity, modify a field,
+        // update by filter" pattern. The server also rejects an empty $set; fail fast instead.
+        if (bson instanceof final Document doc && doc.isEmpty() || bson instanceof final BasicDBObject dbObject && dbObject.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "The update payload is empty (no non-null updatable properties besides the immutable _id). MongoDB rejects an empty $set");
         }
 
         return new Document(_$SET, bson);

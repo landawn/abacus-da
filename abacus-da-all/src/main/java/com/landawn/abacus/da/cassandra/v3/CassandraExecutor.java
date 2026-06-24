@@ -55,7 +55,6 @@ import com.datastax.driver.mapping.Mapper;
 import com.datastax.driver.mapping.MappingManager;
 import com.landawn.abacus.da.cassandra.CassandraExecutorBase;
 import com.landawn.abacus.da.cassandra.CqlBuilder;
-import com.landawn.abacus.da.cassandra.CqlBuilder.NSC;
 import com.landawn.abacus.da.cassandra.CqlMapper;
 import com.landawn.abacus.da.cassandra.ParsedCql;
 import com.landawn.abacus.exception.DuplicateResultException;
@@ -94,13 +93,13 @@ import lombok.experimental.Accessors;
 
 /**
  * Legacy Cassandra database executor for Cassandra Java Driver 3.x compatibility.
- * 
+ *
  * <p><strong>IMPORTANT:</strong> This is a legacy implementation designed for compatibility
  * with Cassandra Java Driver 3.x. For new applications, use the modern
  * {@link com.landawn.abacus.da.cassandra.CassandraExecutor} which supports
  * the latest Cassandra Java Driver 4.x with improved performance, better async support,
  * and enhanced features.</p>
- * 
+ *
  * <p>This executor provides comprehensive database operations for Cassandra using the
  * DataStax Java Driver 3.x API. It offers the same rich feature set as the modern
  * executor but uses the older driver architecture and API interfaces.</p>
@@ -143,7 +142,7 @@ import lombok.experimental.Accessors;
  *     </ul>
  * </li>
  * </ul>
- * 
+ *
  * <h3>Migration Path</h3>
  * <p>Applications using this legacy executor should consider migrating to the modern
  * {@link com.landawn.abacus.da.cassandra.CassandraExecutor} for:</p>
@@ -154,7 +153,7 @@ import lombok.experimental.Accessors;
  * <li>Active development and bug fixes</li>
  * <li>Support for newer Cassandra features</li>
  * </ul>
- * 
+ *
  * <h3>Basic Usage Examples</h3>
  *
  * <p><b>Usage Examples:</b></p>
@@ -164,57 +163,57 @@ import lombok.experimental.Accessors;
  *     .addContactPoint("127.0.0.1")
  *     .build();
  * Session session = cluster.connect("mykeyspace");
- * 
+ *
  * // Create executor with custom settings
  * StatementSettings settings = StatementSettings.builder()
  *     .consistency(ConsistencyLevel.QUORUM)
  *     .fetchSize(1000)
  *     .readTimeoutMillis(30000)
  *     .build();
- * 
+ *
  * CassandraExecutor executor = new CassandraExecutor(session, settings);
- * 
+ *
  * // Basic operations
  * List<User> users = executor.list(User.class, "SELECT * FROM users WHERE status = ?", "active");
- * 
+ *
  * // Entity operations
  * User user = new User("john", "john@example.com", "active");
  * executor.insert(user);
- * 
+ *
  * // Async operations (returned by AsyncCassandraExecutor)
  * ContinuableFuture<List<User>> futureUsers = executor.async().list(User.class,
  *     "SELECT * FROM users WHERE created_at > ?", yesterday);
  * }</pre>
- * 
+ *
  * <h3>Advanced Features</h3>
  *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * // Custom type codec registration
  * executor.registerTypeCodec(CustomAddress.class);
- * 
+ *
  * // Batch operations
  * List<User> users = Arrays.asList(user1, user2, user3);
  * executor.batchInsert(users, BatchStatement.Type.LOGGED);
- * 
+ *
  * // UDT (User Defined Type) support
  * UserType addressType = cluster.getMetadata()
  *     .getKeyspace("mykeyspace")
  *     .getUserType("address");
- * 
+ *
  * UDTCodec<Address> addressCodec = UDTCodec.create(addressType, Address.class);
  * cluster.getConfiguration().getCodecRegistry().register(addressCodec);
- * 
+ *
  * // Custom row mapping
- * List<String> userNames = executor.list(String.class, 
+ * List<String> userNames = executor.list(String.class,
  *     "SELECT name FROM users WHERE department = ?", "engineering");
  * }</pre>
- * 
+ *
  * <h3>Thread Safety</h3>
  * <p>This class is thread-safe and designed for concurrent use. The underlying Cassandra
  * session and prepared statement pools are managed safely across multiple threads.
  * However, applications should properly manage the session and cluster lifecycle.</p>
- * 
+ *
  * <h3>Resource Management</h3>
  * <p>Always properly close resources to avoid connection leaks. The executor's
  * {@link #close()} closes the underlying {@link com.datastax.driver.core.Session},
@@ -226,7 +225,7 @@ import lombok.experimental.Accessors;
  * }
  * // executor.close() has already released session + cluster + caches.
  * }</pre>
- * 
+ *
  * @deprecated Use {@link com.landawn.abacus.da.cassandra.CassandraExecutor}
  *             for new applications (requires Cassandra Java Driver 4.x).
  * @see com.landawn.abacus.da.cassandra.CassandraExecutor
@@ -251,7 +250,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
     static final ImmutableList<String> EXISTS_SELECT_PROP_NAMES = ImmutableList.of("1");
 
-    static final ImmutableList<String> COUNT_SELECT_PROP_NAMES = ImmutableList.of(NSC.COUNT_ALL);
+    static final ImmutableList<String> COUNT_SELECT_PROP_NAMES = ImmutableList.of(CqlBuilder.COUNT_ALL);
 
     static final int POOLABLE_LENGTH = 1024;
 
@@ -310,11 +309,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
     /**
      * Creates a new CassandraExecutor with the specified Cassandra session (Driver 3.x).
-     * 
+     *
      * <p>This constructor initializes the executor with default settings and no CQL mapper.
      * The session should be obtained from a properly configured Cluster instance with
      * appropriate contact points and keyspace settings.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Cluster cluster = Cluster.builder().addContactPoint("127.0.0.1").build();
@@ -331,11 +330,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
     /**
      * Creates a new CassandraExecutor with specified session and statement settings.
-     * 
+     *
      * <p>This constructor allows configuration of default statement execution behavior
      * while using automatic discovery for other settings. The statement settings will
      * be applied to all operations unless overridden on a per-operation basis.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * StatementSettings settings = StatementSettings.builder()
@@ -355,11 +354,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
     /**
      * Creates a new CassandraExecutor with session, settings, and CQL mapper.
-     * 
+     *
      * <p>This constructor enables use of pre-configured CQL statements stored in external
      * configuration files through the CQL mapper, while also allowing custom statement
      * execution settings. This is useful for applications that externalize complex queries.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * CqlMapper cqlMapper = new CqlMapper("queries.xml");
@@ -380,11 +379,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
     /**
      * Creates a new CassandraExecutor with full configuration options for Driver 3.x.
-     * 
+     *
      * <p>This constructor provides complete control over executor behavior, including
      * statement execution settings, pre-configured CQL mappings, and property name
      * mapping policies for entity operations.</p>
-     * 
+     *
      * <h4>StatementSettings Configuration:</h4>
      * <ul>
      * <li><strong>consistency:</strong> Default consistency level (ONE, QUORUM, ALL, etc.)</li>
@@ -394,7 +393,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <li><strong>readTimeoutMillis:</strong> Query timeout in milliseconds</li>
      * <li><strong>traceQuery:</strong> Enable query tracing for debugging</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * StatementSettings settings = StatementSettings.builder()
@@ -404,7 +403,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *     .readTimeoutMillis(30000)
      *     .traceQuery(false)
      *     .build();
-     * 
+     *
      * CassandraExecutor executor = new CassandraExecutor(
      *     session, settings, cqlMapper, NamingPolicy.SNAKE_CASE); // null namingPolicy defaults to SNAKE_CASE
      * }</pre>
@@ -441,11 +440,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
     /**
      * Returns the underlying Cassandra cluster instance from Driver 3.x.
-     * 
+     *
      * <p>This provides access to the cluster configuration, metadata, and connection
      * pooling settings. Use with caution as direct cluster manipulation can affect
      * the executor's behavior and connection management.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Cluster cluster = executor.cluster();       // returns the same Cluster used to build this executor
@@ -463,11 +462,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
     /**
      * Returns the underlying Cassandra session from Driver 3.x.
-     * 
+     *
      * <p>This provides direct access to the session for operations not covered by
      * the executor API. Use with caution as direct session manipulation bypasses
      * the executor's statement management and pooling features.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Session session = executor.session();       // returns the underlying Session (never null)
@@ -674,7 +673,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 final Method method = Beans.getPropGetter(targetClass, columnNameList.get(i));
                 columnClasses[i] = method != null ? method.getReturnType() : null;
             } else {
-                columnClasses[i] = isMap ? Map.class : Object[].class;
+                // null = no per-column conversion (raw driver values), per the documented contract for
+                // non-bean targets; nested Row values still flatten through readRow below. Object[].class
+                // here would force every scalar through N.convert(value, Object[].class) and wrap it.
+                columnClasses[i] = isMap ? Map.class : null;
             }
         }
 
@@ -1111,7 +1113,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <p>This method retrieves at most one entity matching the specified condition.
      * If no entity is found, it returns {@code null}. If multiple entities match,
      * it throws {@link DuplicateResultException}.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * User user = executor.gett(User.class,
@@ -1359,25 +1361,25 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
     /**
      * Creates a stream of results from a statement with custom row mapping.
-     * 
+     *
      * <p>This method returns a Stream that lazily fetches and maps rows using
      * the provided row mapper function. The statement can be pre-configured with
      * specific settings like consistency level and fetch size.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Statement stmt = new SimpleStatement("SELECT * FROM large_table")
      *     .setFetchSize(5000)
      *     .setConsistencyLevel(ConsistencyLevel.ONE);
-     * 
+     *
      * try (Stream<Record> stream = executor.stream(stmt,
      *     (columns, row) -> mapToRecord(row))) {
-     *     
+     *
      *     long count = stream.filter(record -> record.isValid()).count();
      *     System.out.println("Valid records: " + count);
      * }
      * }</pre>
-     * 
+     *
      * @param <T> the result type
      * @param statement the statement to execute
      * @param rowMapper function to convert column definitions and rows to result objects
@@ -1777,7 +1779,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      */
     @Override
     protected BatchStatement prepareBatchUpdateStatement(final String query, final Collection<?> parametersList, final BatchStatement.Type type) {
-        N.checkArgument(N.notEmpty(parametersList), "'propsList' can't be null or empty.");
+        N.checkArgument(N.notEmpty(parametersList), "'parametersList' can't be null or empty.");
         N.checkElementNotNull(parametersList);
 
         final BatchStatement stmt = prepareBatchStatement(type);
@@ -1898,7 +1900,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         Class<?> javaClazz = null;
 
         if (parameterCount == 0) {
-            return preStmt.bind();
+            // bind(preStmt) (not preStmt.bind()) so the configured StatementSettings are still applied.
+            return bind(preStmt);
         } else if (N.isEmpty(parameters)) {
             throw new IllegalArgumentException("Null or empty parameters for parameterized query: " + query);
         }
@@ -1977,6 +1980,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         if (values.length < parameterCount) {
             throw new IllegalArgumentException(
                     "Not enough parameters for parameterized query: expected " + parameterCount + " but got " + values.length + " for query: " + query);
+        }
+
+        // Defensive copy: 'values' may alias the caller's own array (the varargs array itself, or an
+        // Object[] passed as the single parameter); the conversion loop below must not mutate caller data.
+        if (values == parameters || (parameters.length == 1 && parameters[0] == values)) {
+            values = values.clone();
         }
 
         for (int i = 0; i < parameterCount; i++) {
@@ -2692,11 +2701,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
     /**
      * Configuration settings for Cassandra statements.
-     * 
+     *
      * <p>This class encapsulates all configurable options for statement execution,
      * including consistency levels, retry policies, timeouts, and tracing options.
      * It uses a fluent builder pattern for easy configuration.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * StatementSettings settings = StatementSettings.builder()
@@ -2707,7 +2716,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *     .readTimeoutMillis(30000)
      *     .traceQuery(true)
      *     .build();
-     * 
+     *
      * CassandraExecutor executor = new CassandraExecutor(session, settings);
      * }</pre>
      *

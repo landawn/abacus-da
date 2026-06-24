@@ -139,6 +139,29 @@ public class CassandraExecutor01Test extends TestBase {
         assertNotNull(dataset2);
     }
 
+    /**
+     * Regression guard for {@code extractData(ResultSet, Class)} with a non-bean, non-Map target
+     * class: scalar column values must be kept raw. Previously the column class for non-bean targets
+     * defaulted to {@code Object[].class}, which forced every scalar through
+     * {@code N.convert(value, Object[].class)} and wrapped it into an {@code Object[]}.
+     */
+    @Test
+    public void testExtractData_nonBeanTargetClass_keepsScalarValuesRaw() {
+        when(mockResultSet.all()).thenReturn(Arrays.asList(mockRow));
+        when(mockResultSet.getColumnDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(mockColumnDef);
+        when(mockColumnDef.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("title"));
+        when(mockRow.getObject(0)).thenReturn("abc");
+
+        Dataset ds = CassandraExecutor.extractData(mockResultSet, String.class);
+
+        assertEquals(1, ds.size());
+        // The Dataset cursor starts at row 0; the scalar must be the raw String, not Object[].
+        Object value = ds.get("title");
+        assertEquals("abc", value);
+    }
+
     @Test
     public void testToList() {
         // Setup mock data

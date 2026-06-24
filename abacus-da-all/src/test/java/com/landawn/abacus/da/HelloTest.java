@@ -4,7 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import org.junit.jupiter.api.Test;
 
-import com.landawn.abacus.da.cassandra.CqlBuilder.PSC;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.PSC;
 import com.landawn.abacus.query.Filters;
 import com.landawn.abacus.util.N;
 

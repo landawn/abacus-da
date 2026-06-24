@@ -1,6 +1,6 @@
 package com.landawn.abacus.da;
 
-import com.landawn.abacus.da.cassandra.CqlBuilder.NSC;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.NSC;
 import com.landawn.abacus.da.entity.Users;
 import com.landawn.abacus.query.Filters;
 import com.landawn.abacus.query.condition.In;

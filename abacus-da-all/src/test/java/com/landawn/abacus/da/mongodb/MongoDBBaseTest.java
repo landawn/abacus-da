@@ -3,6 +3,7 @@ package com.landawn.abacus.da.mongodb;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -270,6 +271,25 @@ public class MongoDBBaseTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toDBObject(new Object()));
     }
 
+    // -- name-value pair varargs with a non-String NAME slot --
+
+    @Test
+    public void testToDocumentWithNonStringNameThrowsIAE() {
+        // The NAME slot of a name/value pair must be a String. Previously this surfaced as a raw
+        // ClassCastException; it is now rejected with the documented IllegalArgumentException.
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toDocument(30, "x"));
+    }
+
+    @Test
+    public void testToBSONObjectWithNonStringNameThrowsIAE() {
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toBSONObject(30, "x"));
+    }
+
+    @Test
+    public void testToDBObjectWithNonStringNameThrowsIAE() {
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toDBObject(30, "x"));
+    }
+
     // -- resetObjectId branches via toDocument (Map-based String/Date/byte[] keyed as _id) --
 
     @Test
@@ -289,7 +309,7 @@ public class MongoDBBaseTest extends TestBase {
     }
 
     @Test
-    public void testResetObjectIdMapWithDateIdConvertedToObjectId() {
+    public void testResetObjectIdMapWithDateIdKeptAsIs() {
         Map<String, Object> map = new HashMap<>();
         Date when = new Date();
         map.put("_id", when);
@@ -297,8 +317,37 @@ public class MongoDBBaseTest extends TestBase {
 
         Document doc = MongoDBBase.toDocument(map);
 
+        // A Date is a legal MongoDB _id and is kept as-is. (Previously it was silently replaced by a
+        // freshly generated ObjectId whose random component made the stored id non-deterministic.)
         assertTrue(doc.containsKey("_id"));
-        assertTrue(doc.get("_id") instanceof ObjectId);
+        assertEquals(when, doc.get("_id"));
+    }
+
+    @Test
+    public void testResetObjectIdMapWithNonHexStringIdKeptAsIs() {
+        // A non-24-hex String is a legal MongoDB _id and must be written as-is. (Previously
+        // new ObjectId(String) threw IllegalArgumentException and the whole write failed.)
+        Map<String, Object> map = new HashMap<>();
+        map.put("_id", "user-123");
+        map.put("name", "s");
+
+        Document doc = MongoDBBase.toDocument(map);
+
+        assertEquals("user-123", doc.get("_id"));
+    }
+
+    @Test
+    public void testResetObjectIdMapWithNon12ByteArrayIdKeptAsIs() {
+        // A byte[] that is not exactly 12 bytes cannot be an ObjectId and is kept as-is.
+        // (Previously new ObjectId(byte[]) threw IllegalArgumentException and the write failed.)
+        Map<String, Object> map = new HashMap<>();
+        byte[] id = new byte[] { 1, 2, 3 };
+        map.put("_id", id);
+        map.put("name", "b");
+
+        Document doc = MongoDBBase.toDocument(map);
+
+        assertSame(id, doc.get("_id"));
     }
 
     @Test
@@ -375,6 +424,22 @@ public class MongoDBBaseTest extends TestBase {
         when(mockFindIterable.into(any())).thenReturn(new ArrayList<>());
         List<String> result = MongoDBBase.toList(mockFindIterable, String.class);
         assertEquals(0, result.size());
+    }
+
+    @Test
+    public void testToListScalarProjectionDerivesPropNameFromFirstRowThatCarriesIt() {
+        // Regression: a matched document that lacks the projected field comes back as {_id: ...} only.
+        // When such a document happens to be FIRST, the scalar property name must still be derived from
+        // a later row that carries the non-_id key — previously every value was silently read from "_id".
+        Document idOnly = new Document("_id", new ObjectId());
+        Document withName = new Document("_id", new ObjectId()).append("name", "alice");
+        when(mockFindIterable.into(any())).thenReturn(Arrays.asList(idOnly, withName));
+
+        List<String> result = MongoDBBase.toList(mockFindIterable, String.class);
+
+        assertEquals(2, result.size());
+        assertNull(result.get(0)); // first row has no "name" value
+        assertEquals("alice", result.get(1)); // read from "name", NOT from "_id"
     }
 
     // -- toBson convenience method (delegates to toDocument) --

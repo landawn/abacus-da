@@ -15,6 +15,7 @@
 package com.landawn.abacus.da.mongodb;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
@@ -242,8 +243,8 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * if (executor.exists("507f1f77bcf86cd799439011")) {                                    // returns true only when a document with that _id exists
-     *     executor.updateOne("507f1f77bcf86cd799439011", "{$set: {lastSeen: new Date()}}"); // returns an UpdateResult
+     * if (executor.exists("507f1f77bcf86cd799439011")) {                                          // returns true only when a document with that _id exists
+     *     executor.updateOne("507f1f77bcf86cd799439011", Updates.set("lastSeen", new Date()));    // returns an UpdateResult
      * }
      *
      * executor.exists("");   // throws IllegalArgumentException (empty objectId)
@@ -294,9 +295,9 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * boolean hasActiveUsers = executor.exists(Filters.eq("status", "active"));               // true if at least one match
-     * boolean hasRecentUsers = executor.exists("{createdAt: {$gte: ISODate('2023-01-01')}}"); // true if any match
-     * executor.exists((Bson) null);                                                           // throws IllegalArgumentException (filter must not be null)
+     * boolean hasActiveUsers = executor.exists(Filters.eq("status", "active"));                  // true if at least one match
+     * boolean hasRecentUsers = executor.exists(Filters.gte("createdAt", Dates.parseDate("2023-01-01"))); // true if any match
+     * executor.exists((Bson) null);                                                              // throws IllegalArgumentException (filter must not be null)
      * }</pre>
      *
      * @param filter the query filter to match documents against (must not be null)
@@ -342,9 +343,9 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * long activeUsers = executor.count(Filters.eq("status", "active")); // number of matching documents (0 if none)
-     * long adultUsers = executor.count("{age: {$gte: 18}}");             // number of matching documents
-     * executor.count((Bson) null);                                       // throws IllegalArgumentException (use count() for an unfiltered count)
+     * long activeUsers = executor.count(Filters.eq("status", "active"));         // number of matching documents (0 if none)
+     * long adultUsers = executor.count(Document.parse("{age: {$gte: 18}}"));     // number of matching documents
+     * executor.count((Bson) null);                                               // throws IllegalArgumentException (use count() for an unfiltered count)
      * }</pre>
      *
      * @param filter the query filter to count matching documents (must not be null; use {@link #count()}
@@ -1563,7 +1564,8 @@ public final class MongoCollectionExecutor {
      *
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents
      * or fields are ignored. This is the foundational method used by the primitive {@code queryForXxx}
-     * convenience methods.</p>
+     * convenience methods. Dotted property paths (e.g. {@code "address.city"}) are supported and resolve
+     * to the nested value.</p>
      *
      * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned <i>only</i> when no
      * document matches the filter ({@code findIterable.first()} yields {@code null}). When a document
@@ -1602,14 +1604,21 @@ public final class MongoCollectionExecutor {
 
         final Document doc = findIterable.first();
 
-        return N.isEmpty(doc) ? (Nullable<V>) Nullable.empty() : Nullable.of(N.convert(doc.get(propName), valueType));
+        return N.isEmpty(doc) ? (Nullable<V>) Nullable.empty() : Nullable.of(N.convert(getPropValueByPath(doc, propName), valueType));
+    }
+
+    // Document.get does a flat key lookup, but a dotted path like "address.city" is a valid projection:
+    // the server returns {address: {city: ...}}, so the nested value must be resolved via getEmbedded.
+    private static Object getPropValueByPath(final Document doc, final String propName) {
+        return propName.indexOf('.') < 0 ? doc.get(propName) : doc.getEmbedded(Arrays.asList(propName.split("\\.")), Object.class);
     }
 
     /**
      * Executes a query and returns the value of {@code propName} from the first matching document, converted to the specified type and wrapped in an {@link Optional} that never carries a null payload.
      *
      * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents
-     * or fields are ignored.</p>
+     * or fields are ignored. Dotted property paths (e.g. {@code "address.city"}) are supported and resolve
+     * to the nested value.</p>
      *
      * <p><b>Empty vs. present semantics:</b> {@code Optional.empty()} is returned <i>only</i> when no
      * document matches the filter. When a document is matched, its {@code propName} value is converted
@@ -1655,7 +1664,7 @@ public final class MongoCollectionExecutor {
             return (Optional<V>) Optional.empty();
         }
 
-        return Optional.of(N.convert(doc.get(propName), valueType));
+        return Optional.of(N.convert(getPropValueByPath(doc, propName), valueType));
     }
 
     /**
@@ -2835,9 +2844,10 @@ public final class MongoCollectionExecutor {
      *       fields through this path.</li>
      *   <li>{@link java.util.Map} inputs are copied via {@code putAll}, so map entries with {@code null}
      *       values are preserved and will be sent as {@code $set: {field: null}}.</li>
-     *   <li>The resulting {@code Document}/{@code BasicDBObject} is wrapped in a {@code {$set: doc}}
-     *       envelope. An empty input therefore produces {@code {$set: {}}}, which the server treats as a
-     *       no-op modification.</li>
+     *   <li>The immutable {@code _id} field is stripped from the converted document, and the result is
+     *       wrapped in a {@code {$set: doc}} envelope. If the payload is empty after conversion (no
+     *       non-null updatable properties besides {@code _id}), an {@link IllegalArgumentException} is
+     *       thrown — the server rejects an empty {@code $set}.</li>
      * </ul>
      *
      * <p><b>Note:</b> This method performs a blocking operation. For non-blocking operations, use {@link #async()}.</p>
@@ -2859,7 +2869,8 @@ public final class MongoCollectionExecutor {
      * @param objectId the string representation of the ObjectId identifying the document to update
      * @param update the update operations - can be Bson, Document with update operators, {@code Map<String, Object>}, or entity class with getter/setter methods
      * @return UpdateResult containing information about the update operation
-     * @throws IllegalArgumentException if objectId or update is null, or objectId format is invalid
+     * @throws IllegalArgumentException if objectId or update is null, objectId format is invalid, or the
+     *         converted update payload is empty (no non-null updatable properties besides {@code _id})
      * @throws com.mongodb.MongoWriteException if the update operation fails
      * @throws com.mongodb.MongoException if the database operation fails
      * @see UpdateResult
@@ -2958,12 +2969,16 @@ public final class MongoCollectionExecutor {
      * 
      * <p>Applies a collection of update operations to the first matching document.
      * Useful for complex updates requiring multiple operations.</p>
-     * 
+     *
+     * <p><b>Note:</b> The collection is executed as an aggregation-pipeline update, which only allows
+     * {@code $set}/{@code $addFields}/{@code $project}/{@code $unset}/{@code $replaceRoot}/{@code $replaceWith}
+     * stages — operators such as {@code Updates.inc(...)} or {@code Updates.push(...)} are rejected by the server.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<Bson> updates = Arrays.asList(
      *     Updates.set("status", "processed"),
-     *     Updates.inc("processCount", 1)
+     *     Updates.set("processedAt", new Date())
      * );
      * executor.updateOne(filter, updates); // returns UpdateResult; applies the aggregation-pipeline updates to the first match
      * }</pre>
@@ -3051,15 +3066,29 @@ public final class MongoCollectionExecutor {
             if (!doc.isEmpty() && doc.keySet().iterator().next().startsWith(_$)) {
                 return doc;
             }
+
+            doc.remove(MongoDBBase._ID);
         } else if (bson instanceof final BasicDBObject dbObject) { //NOSONAR
             if (!dbObject.isEmpty() && dbObject.keySet().iterator().next().startsWith(_$)) {
                 return dbObject;
             }
+
+            dbObject.remove(MongoDBBase._ID);
         } else {
             // A driver-built Bson (e.g. Updates.set(...)/Updates.combine(...)) is already a
             // complete update expression. It is neither Document nor BasicDBObject, so it must
             // be returned as-is rather than (incorrectly) re-wrapped in a {$set: ...} document.
             return bson;
+        }
+
+        // _id was stripped above: it is immutable server-side, and {$set: {_id: ...}} fails for every
+        // matched document whose _id differs — breaking the common "fetch entity, modify a field,
+        // update by filter" pattern (updateMany with an entity payload failed on all but one document).
+
+        // The server rejects an empty $set ("'$set' is empty"); fail fast with a clear message instead.
+        if (bson instanceof final Document doc && doc.isEmpty() || bson instanceof final BasicDBObject dbObject && dbObject.isEmpty()) {
+            throw new IllegalArgumentException(
+                    "The update payload is empty (no non-null updatable properties besides the immutable _id). MongoDB rejects an empty $set");
         }
 
         return new Document(_$SET, bson);
@@ -3192,15 +3221,18 @@ public final class MongoCollectionExecutor {
      * <p>This method performs a bulk update operation using multiple update documents or objects.
      * Each item in the collection represents an update operation that will be applied to matching
      * documents. This is useful for performing multiple different updates in a single operation.</p>
-     * 
+     *
+     * <p><b>Note:</b> The collection is executed as an aggregation-pipeline update, which only allows
+     * {@code $set}/{@code $addFields}/{@code $project}/{@code $unset}/{@code $replaceRoot}/{@code $replaceWith}
+     * stages — operators such as {@code Updates.inc(...)} or {@code Updates.push(...)} are rejected by the server.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Apply multiple updates to matching documents:
+     * // Apply multiple pipeline-stage updates to matching documents:
      * Bson filter = Filters.eq("status", "pending");
      * List<Bson> updates = Arrays.asList(
      *     Updates.set("status", "processed"),
-     *     Updates.set("processedAt", new Date()),
-     *     Updates.inc("processCount", 1)
+     *     Updates.set("processedAt", new Date())
      * );
      * UpdateResult result = executor.updateMany(filter, updates); // returns UpdateResult; pipeline updates applied to every match
      * }</pre>
@@ -3225,15 +3257,19 @@ public final class MongoCollectionExecutor {
      * <p>This method performs a bulk update operation using multiple update documents with additional
      * control through UpdateOptions. This provides maximum flexibility for complex update scenarios
      * requiring multiple operations with specific write concerns, upsert behavior, or array filters.</p>
-     * 
+     *
+     * <p><b>Note:</b> The collection is executed as an aggregation-pipeline update, which only allows
+     * {@code $set}/{@code $addFields}/{@code $project}/{@code $unset}/{@code $replaceRoot}/{@code $replaceWith}
+     * stages — operators such as {@code Updates.inc(...)} or {@code Updates.push(...)} are rejected by the server.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Complex update with multiple operations and options:
+     * // Complex pipeline update with multiple stages and options:
      * Bson filter = Filters.eq("status", "shipping");
      * List<Bson> updates = Arrays.asList(
      *     Updates.set("status", "delivered"),
      *     Updates.set("deliveredAt", LocalDateTime.now()),
-     *     Updates.push("statusHistory", new Document("status", "delivered"))
+     *     new Document("$unset", "trackingTemp")
      * );
      * UpdateOptions options = new UpdateOptions().bypassDocumentValidation(true);
      * UpdateResult result = executor.updateMany(filter, updates, options); // returns UpdateResult; updates every match, bypassing validation
@@ -3740,12 +3776,16 @@ public final class MongoCollectionExecutor {
      * Finds and updates a document using multiple update operations.
      * 
      * <p>Atomically applies multiple update operations to a single document.</p>
-     * 
+     *
+     * <p><b>Note:</b> The collection is executed as an aggregation-pipeline update, which only allows
+     * {@code $set}/{@code $addFields}/{@code $project}/{@code $unset}/{@code $replaceRoot}/{@code $replaceWith}
+     * stages — operators such as {@code Updates.inc(...)} or {@code Updates.currentDate(...)} are rejected by the server.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<Bson> updates = Arrays.asList(
      *     Updates.set("status", "processed"),
-     *     Updates.currentDate("lastModified")
+     *     Updates.set("lastModified", new Date())
      * );
      * Document result = executor.findOneAndUpdate(filter, updates); // returns the PRE-update document (default BEFORE), or null if no match
      * }</pre>
@@ -4164,6 +4204,8 @@ public final class MongoCollectionExecutor {
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> Stream<T> aggregate(final List<? extends Bson> pipeline, final Class<T> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         final MongoCursor<Document> cursor = coll.aggregate(pipeline, Document.class).iterator();
 
         return Stream.of(cursor).map(toEntity(rowType)).onClose(Fn.close(cursor));
@@ -4212,6 +4254,7 @@ public final class MongoCollectionExecutor {
     @Beta
     public <T> Stream<T> groupBy(final String fieldName, final Class<T> rowType) {
         N.checkArgNotEmpty(fieldName, "fieldName");
+        N.checkArgNotNull(rowType, "rowType");
 
         return aggregate(groupByPipeline(fieldName, false, rowType), rowType);
     }

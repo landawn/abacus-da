@@ -771,7 +771,12 @@ public final class HBaseExecutor implements AutoCloseable {
             throw new IllegalArgumentException("Map type is not supported for HBase result conversion");
         }
 
-        if (result.isEmpty() || !result.advance()) {
+        // Don't probe with result.advance() here: Result implements CellScanner with a single internal
+        // cursor, and a probing advance() would leave the cursor consumed. After a full conversion the
+        // cursor already sits at end-of-cells, so a second conversion of the same Result would throw
+        // NoSuchElementException from Result.advance(). A non-empty Result always has at least one cell,
+        // and both branches below reset the cursor via result.cellScanner() before reading.
+        if (result.isEmpty()) {
             return type.defaultValue();
         }
 
@@ -794,8 +799,10 @@ public final class HBaseExecutor implements AutoCloseable {
             final T value = (T) getCellValue(cell, type);
 
             if (cellScanner.advance()) {
-                throw new IllegalArgumentException("Cannot convert result with columns: " + getFamilyString(cell) + ":" + getQualifierString(cell)
-                        + " to class: " + ClassUtil.getCanonicalClassName(type.javaType()));
+                final Cell extraCell = cellScanner.current();
+                throw new IllegalArgumentException(
+                        "Cannot convert a result with more than one cell to class: " + ClassUtil.getCanonicalClassName(type.javaType())
+                                + ". Found unexpected extra column: " + getFamilyString(extraCell) + ":" + getQualifierString(extraCell));
             }
 
             return value;
@@ -902,6 +909,27 @@ public final class HBaseExecutor implements AutoCloseable {
 
                 if (familyTP == null) {
                     familyTP = familyTPMap.get(EMPTY_QUALIFIER);
+
+                    // The family map keeps a single EMPTY_QUALIFIER fallback entry which the last-registered
+                    // bean-typed property sharing this family overwrites. When the fallback's bean class doesn't
+                    // own this qualifier, resolve it against each candidate bean property of the family so cells
+                    // of the other nested beans are not dropped or misrouted.
+                    if (familyTP != null) {
+                        final PropInfo fallbackPropInfo = entityInfo.getPropInfo(familyTP._1);
+
+                        if (fallbackPropInfo != null && fallbackPropInfo.jsonXmlType.isBean()
+                                && !getFamilyColumnFieldNameMap(fallbackPropInfo.jsonXmlType.javaType())._2.containsKey(qualifier)) {
+                            for (final Tuple2<String, Boolean> candidateTP : familyTPMap.values()) {
+                                final PropInfo candidatePropInfo = candidateTP == familyTP ? null : entityInfo.getPropInfo(candidateTP._1);
+
+                                if (candidatePropInfo != null && candidatePropInfo.jsonXmlType.isBean()
+                                        && getFamilyColumnFieldNameMap(candidatePropInfo.jsonXmlType.javaType())._2.containsKey(qualifier)) {
+                                    familyTP = candidateTP;
+                                    break;
+                                }
+                            }
+                        }
+                    }
                 }
 
                 // ignore the unknown column:
@@ -1160,8 +1188,10 @@ public final class HBaseExecutor implements AutoCloseable {
             final T value = (T) getCellValue(cell, type);
 
             if (cellScanner.advance()) {
-                throw new IllegalArgumentException("Cannot convert result with columns: " + getFamilyString(cell) + ":" + getQualifierString(cell)
-                        + " to class: " + ClassUtil.getCanonicalClassName(type.javaType()));
+                final Cell extraCell = cellScanner.current();
+                throw new IllegalArgumentException(
+                        "Cannot convert a result with more than one cell to class: " + ClassUtil.getCanonicalClassName(type.javaType())
+                                + ". Found unexpected extra column: " + getFamilyString(extraCell) + ":" + getQualifierString(extraCell));
             }
 
             return value;
@@ -1172,14 +1202,27 @@ public final class HBaseExecutor implements AutoCloseable {
         return t -> toValue(t, targetType);
     }
 
+    // ByteBuffer is special-cased to mirror the write side (toValueBytes stores a ByteBuffer's raw remaining
+    // bytes): reading it back through Type.valueOf(String) would base64-decode the UTF-8 string of those raw
+    // bytes and silently corrupt the value.
     private static Object getRowKeyValue(final Cell cell, final Type<?> targetType) {
-        return byte[].class.equals(targetType.javaType()) ? copyOf(cell.getRowArray(), cell.getRowOffset(), cell.getRowLength())
-                : targetType.valueOf(getRowKeyString(cell));
+        if (byte[].class.equals(targetType.javaType())) {
+            return copyOf(cell.getRowArray(), cell.getRowOffset(), cell.getRowLength());
+        } else if (ByteBuffer.class.equals(targetType.javaType())) {
+            return ByteBuffer.wrap(copyOf(cell.getRowArray(), cell.getRowOffset(), cell.getRowLength()));
+        } else {
+            return targetType.valueOf(getRowKeyString(cell));
+        }
     }
 
     private static Object getCellValue(final Cell cell, final Type<?> targetType) {
-        return byte[].class.equals(targetType.javaType()) ? copyOf(cell.getValueArray(), cell.getValueOffset(), cell.getValueLength())
-                : targetType.valueOf(getValueString(cell));
+        if (byte[].class.equals(targetType.javaType())) {
+            return copyOf(cell.getValueArray(), cell.getValueOffset(), cell.getValueLength());
+        } else if (ByteBuffer.class.equals(targetType.javaType())) {
+            return ByteBuffer.wrap(copyOf(cell.getValueArray(), cell.getValueOffset(), cell.getValueLength()));
+        } else {
+            return targetType.valueOf(getValueString(cell));
+        }
     }
 
     private static byte[] copyOf(final byte[] bytes, final int offset, final int len) {
@@ -1290,7 +1333,7 @@ public final class HBaseExecutor implements AutoCloseable {
 
             if (entityInfo.tableName.isEmpty()) {
                 throw new IllegalArgumentException("Entity class " + targetEntityClass
-                        + " must be annotated with @Table (com.landawn.abacus.annotation, javax.persistence, or jakarta.persistence). Alternatively, use HBaseExecutor.mapper(String tableName, Class<T> entityClass)");
+                        + " must be annotated with @Table (com.landawn.abacus.annotation, javax.persistence, or jakarta.persistence). Alternatively, use HBaseExecutor.mapper(Class<T> targetEntityClass, String tableName, NamingPolicy namingPolicy)");
             }
 
             mapper = mapper(targetEntityClass, entityInfo.tableName.get(), NamingPolicy.CAMEL_CASE);
@@ -2788,7 +2831,12 @@ public final class HBaseExecutor implements AutoCloseable {
         } catch (final IOException e) {
             throw new UncheckedIOException(e);
         } catch (final Throwable e) {
-            throw new Exception(e);
+            // Don't mask JVM errors or downgrade unchecked exceptions by wrapping them in a checked Exception.
+            if (e instanceof Error error) {
+                throw error;
+            }
+
+            throw e instanceof Exception exception ? exception : new Exception(e);
         } finally {
             closeQuietly(table);
         }
@@ -2835,7 +2883,12 @@ public final class HBaseExecutor implements AutoCloseable {
         } catch (final IOException e) {
             throw new UncheckedIOException(e);
         } catch (final Throwable e) {
-            throw new Exception(e);
+            // Don't mask JVM errors or downgrade unchecked exceptions by wrapping them in a checked Exception.
+            if (e instanceof Error error) {
+                throw error;
+            }
+
+            throw e instanceof Exception exception ? exception : new Exception(e);
         } finally {
             closeQuietly(table);
         }
@@ -2884,7 +2937,12 @@ public final class HBaseExecutor implements AutoCloseable {
         } catch (final IOException e) {
             throw new UncheckedIOException(e);
         } catch (final Throwable e) {
-            throw new Exception(e);
+            // Don't mask JVM errors or downgrade unchecked exceptions by wrapping them in a checked Exception.
+            if (e instanceof Error error) {
+                throw error;
+            }
+
+            throw e instanceof Exception exception ? exception : new Exception(e);
         } finally {
             closeQuietly(table);
         }
@@ -3090,7 +3148,6 @@ public final class HBaseExecutor implements AutoCloseable {
 
             N.checkArgument(Beans.isBeanClass(targetEntityClass), "{} is not an entity class with getter/setter method", targetEntityClass);
 
-            @SuppressWarnings("deprecation")
             final List<String> idPropNames = QueryUtil.getIdPropNames(targetEntityClass);
 
             if (idPropNames.size() != 1) {

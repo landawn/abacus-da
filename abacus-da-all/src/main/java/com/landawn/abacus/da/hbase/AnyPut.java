@@ -906,7 +906,15 @@ public final class AnyPut extends AnyMutation<AnyPut> {
                     "Row key property is required to create AnyPut instance. But no row key property found in class: " + ClassUtil.getCanonicalClassName(cls));
         }
 
-        final AnyPut anyPut = new AnyPut(Beans.<Object> getPropValue(entity, rowKeyGetMethod));
+        final Object rowKeyValue = Beans.<Object> getPropValue(entity, rowKeyGetMethod);
+
+        if (rowKeyValue == null) {
+            throw new IllegalArgumentException(
+                    "Row key property is required to create AnyPut instance. But the row key property value is null in the entity of class: "
+                            + ClassUtil.getCanonicalClassName(cls));
+        }
+
+        final AnyPut anyPut = new AnyPut(rowKeyValue);
         final boolean annotatedByDefaultColumnFamily = HBaseExecutor.hasColumnFamilyValue(entityInfo.getAnnotation(ColumnFamily.class));
 
         PropInfo columnPropInfo = null;

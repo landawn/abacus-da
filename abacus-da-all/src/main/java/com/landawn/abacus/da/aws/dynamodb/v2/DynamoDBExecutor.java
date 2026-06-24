@@ -332,7 +332,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
             if (entityInfo.tableName.isEmpty()) {
                 throw new IllegalArgumentException("Entity class " + cls
-                        + " must be annotated with @Table (com.landawn.abacus.annotation, javax.persistence, or jakarta.persistence). Alternatively, use DynamoDBExecutor.mapper(String tableName, Class<T> entityClass)");
+                        + " must be annotated with @Table (com.landawn.abacus.annotation, javax.persistence, or jakarta.persistence). Alternatively, use DynamoDBExecutor.mapper(Class<T> targetEntityClass, String tableName, NamingPolicy namingPolicy)");
             }
 
             return mapper(cls, entityInfo.tableName.get(), NamingPolicy.CAMEL_CASE);
@@ -375,8 +375,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *
      * // Map to table with underscore convention
      * DynamoDBExecutor.Mapper<Product> mapper = executor.mapper(
-     *     Product.class, 
-     *     "product_catalog", 
+     *     Product.class,
+     *     "product_catalog",
      *     NamingPolicy.SNAKE_CASE
      * );
      *
@@ -603,7 +603,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValue> key = asKey(
-     *     "userId", "user123", 
+     *     "userId", "user123",
      *     "timestamp", 1640995200L
      * );
      * // Results in: {
@@ -1539,6 +1539,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
             ret = x.s();
         } else if (x.n() != null) {
             ret = x.n();
+        } else if (x.nul() != null) {
+            // Degenerate hand-built AttributeValue with NUL=false (DynamoDB itself only emits NUL=true,
+            // which is handled at the top). Mirrors the v1 getNULL() fallback instead of throwing.
+            ret = x.nul();
         } else {
             throw new IllegalArgumentException("Unsupported Attribute type: " + x);
         }
@@ -1903,6 +1907,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param items the List of DynamoDB items (Maps) to convert
      * @return a Dataset containing the extracted data, never null
      */
+    @SuppressWarnings("deprecation")
     static Dataset extractData(final List<Map<String, AttributeValue>> items, final int offset, final int count) {
         N.checkArgument(offset >= 0 && count >= 0, "'offset' and 'count' can't be negative: %s, %s", offset, count);
 
@@ -2231,7 +2236,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *     "Orders", orderKeys
      * );
      *
-     * Map<String, List<Map<String, Object>>> results = 
+     * Map<String, List<Map<String, Object>>> results =
      *     executor.batchGetItem(requestItems);
      *
      * List<Map<String, Object>> users = results.get("Users");
@@ -2944,7 +2949,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * <p>This method performs a query operation using AWS SDK v2 and returns the results as a list of entities
      * of the specified target class. If the query result is paginated and no exclusive start key was set on the
      * request, this method automatically fetches and aggregates all remaining pages. When the caller has
-     * already set {@code exclusiveStartKey}, only the single returned page is materialized.</p>
+     * already set {@code exclusiveStartKey}, only the single returned page is materialized. Note that a
+     * {@code limit} set on the request acts as a page size only — auto-pagination still fetches ALL
+     * matching rows.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3064,7 +3071,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * containing entities of the specified target class. If {@code targetClass} is {@code null} or a Map type,
      * the Dataset is built directly from the raw item attributes. If the query result is paginated and no
      * exclusive start key was set on the request, this method automatically fetches and aggregates all
-     * remaining pages.</p>
+     * remaining pages. Note that a {@code limit} set on the request acts as a page size only —
+     * auto-pagination still fetches ALL matching rows.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3271,7 +3279,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Map<String, Condition> scanFilter = Map.of("status", Condition.builder().eq("active").build());
+     * Map<String, Condition> scanFilter = Filters.eq("status", "active");
      * Stream<Map<String, Object>> results = executor.scan("Users", scanFilter);
      * }</pre>
      *
@@ -3294,7 +3302,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<String> attributesToGet = Arrays.asList("userId", "name");
-     * Map<String, Condition> scanFilter = Map.of("status", Condition.builder().eq("active").build());
+     * Map<String, Condition> scanFilter = Filters.eq("status", "active");
      * Stream<Map<String, Object>> results = executor.scan("Users", attributesToGet, scanFilter);
      * }</pre>
      *
@@ -3365,7 +3373,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Map<String, Condition> scanFilter = Map.of("status", Condition.builder().eq("active").build());
+     * Map<String, Condition> scanFilter = Filters.eq("status", "active");
      * Stream<User> results = executor.scan("Users", scanFilter, User.class);
      * }</pre>
      *
@@ -3392,7 +3400,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<String> attributesToGet = Arrays.asList("userId", "name");
-     * Map<String, Condition> scanFilter = Map.of("status", Condition.builder().eq("active").build());
+     * Map<String, Condition> scanFilter = Filters.eq("status", "active");
      * Stream<User> results = executor.scan("Users", attributesToGet, scanFilter, User.class);
      * }</pre>
      *
@@ -3534,29 +3542,29 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
     /**
      * A generic mapper class for performing CRUD operations on DynamoDB entities.
-     * 
+     *
      * <p>This mapper provides a simplified interface for interacting with DynamoDB tables,
      * automatically handling entity-to-DynamoDB attribute conversions and supporting batch operations.
      * The mapper requires entities to have properly annotated ID fields and follow JavaBean conventions
      * with getter/setter methods.</p>
-     * 
+     *
      * <p>The mapper is initialized through the DynamoDBExecutor and is tied to a specific table and entity class.
      * It handles key extraction, attribute conversion, and provides both single-item and batch operations.</p>
-     * 
+     *
      * <p><b>Thread Safety:</b> Instances of this class are thread-safe and can be shared across multiple threads.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * DynamoDBExecutor executor = new DynamoDBExecutor(dynamoDbClient);
      * Mapper<User> userMapper = executor.mapper(User.class);
-     * 
+     *
      * // Get a single item
      * User user = userMapper.getItem(asKey("userId", "12345"));
-     * 
+     *
      * // Put a new item
      * User newUser = new User("67890", "John Doe");
      * userMapper.putItem(newUser);
-     * 
+     *
      * // Batch operations
      * List<User> users = Arrays.asList(user1, user2, user3);
      * userMapper.batchPutItem(users);
@@ -3578,11 +3586,11 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Constructs a new Mapper instance for the specified entity class.
-         * 
+         *
          * <p>This constructor validates that the target class is a proper entity class with
          * getter/setter methods and exactly one ID field defined. It initializes the mapper
          * with the necessary metadata for entity-to-DynamoDB conversions.</p>
-         * 
+         *
          * @param targetEntityClass the class of entities this mapper will handle; must be a valid bean class with ID annotations
          * @param dynamoDBExecutor the executor to use for DynamoDB operations; must not be null
          * @param tableName the name of the DynamoDB table; must not be null or empty
@@ -3598,7 +3606,6 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
             N.checkArgument(Beans.isBeanClass(targetEntityClass), "{} is not an entity class with getter/setter method", targetEntityClass);
 
-            @SuppressWarnings("deprecation")
             final List<String> idPropNames = QueryUtil.getIdPropNames(targetEntityClass);
 
             if (idPropNames.size() != 1) {
@@ -3620,18 +3627,18 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Retrieves an item from DynamoDB using the key values extracted from the provided entity.
-         * 
+         *
          * <p>This method extracts the key attributes from the entity object and uses them to
          * fetch the corresponding item from DynamoDB. The entity parameter should have its
          * key fields populated.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * User keyEntity = new User();
          * keyEntity.setUserId("12345");
          * User fullUser = userMapper.getItem(keyEntity);
          * }</pre>
-         * 
+         *
          * @param entity an entity instance with populated key fields
          * @return the retrieved entity with all attributes populated, or null if not found
          * @throws NullPointerException if {@code entity} is null
@@ -3642,18 +3649,18 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Retrieves an item from DynamoDB with optional consistent read guarantee.
-         * 
+         *
          * <p>When consistentRead is true, DynamoDB returns the most recent data reflecting all writes
          * that received a successful response prior to the read. This may have higher latency and
          * lower throughput than eventually consistent reads.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * User keyEntity = new User();
          * keyEntity.setUserId("12345");
          * User user = userMapper.getItem(keyEntity, true);   // Consistent read
          * }</pre>
-         * 
+         *
          * @param entity an entity instance with populated key fields
          * @param consistentRead true for strongly consistent read, {@code false} for eventually consistent, null to use default
          * @return the retrieved entity with all attributes populated, or null if not found
@@ -3665,16 +3672,16 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Retrieves an item from DynamoDB using the provided key attributes.
-         * 
+         *
          * <p>This method allows direct specification of key attributes without requiring an entity instance.
          * The key map should contain all required key attributes for the table (partition key and sort key if applicable).</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, AttributeValue> key = asKey("userId", "12345");
          * User user = userMapper.getItem(key);
          * }</pre>
-         * 
+         *
          * @param key a map containing the key attributes (partition key and sort key if applicable)
          * @return the retrieved entity with all attributes populated, or null if not found
          */
@@ -3684,11 +3691,11 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Retrieves an item using a fully configured GetItemRequest.
-         * 
+         *
          * <p>This method provides full control over the get operation, allowing specification of
          * projection expressions, return consumed capacity, and other advanced options.
          * If the table name is not specified in the request, it will be automatically set to this mapper's table.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * GetItemRequest request = GetItemRequest.builder()
@@ -3697,7 +3704,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          *     .build();
          * User user = userMapper.getItem(request);
          * }</pre>
-         * 
+         *
          * @param getItemRequest the fully configured request object
          * @return the retrieved entity, or null if not found
          * @throws IllegalArgumentException if the request specifies a different table than this mapper's table
@@ -3714,7 +3721,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * DynamoDB limits batch get operations to 100 items per request; this method does NOT split
          * larger collections automatically — the caller is responsible for batching to stay within
          * the service limit.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<User> keyEntities = Arrays.asList(
@@ -3724,7 +3731,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * );
          * List<User> users = userMapper.batchGetItem(keyEntities);
          * }</pre>
-         * 
+         *
          * @param entities collection of entities with populated key fields
          * @return list of retrieved entities; may be smaller than input if some items don't exist
          * @throws NullPointerException if {@code entities} (or any element in it) is null
@@ -3742,16 +3749,16 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Retrieves multiple items with optional consumed capacity information.
-         * 
+         *
          * <p>This method performs a batch get operation and can return information about the
          * consumed read capacity units, useful for monitoring and optimization.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<User> users = userMapper.batchGetItem(keyEntities, "TOTAL");
          * // Check logs or response for consumed capacity information
          * }</pre>
-         * 
+         *
          * @param entities collection of entities with populated key fields
          * @param returnConsumedCapacity specify "INDEXES", "TOTAL", or "NONE" for capacity details
          * @return list of retrieved entities; may be smaller than input if some items don't exist
@@ -3770,10 +3777,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Retrieves multiple items using a fully configured BatchGetItemRequest.
-         * 
+         *
          * <p>This method provides full control over the batch get operation, including
          * attribute projections and consumed capacity settings.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * BatchGetItemRequest request = BatchGetItemRequest.builder()
@@ -3782,7 +3789,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          *     .build();
          * List<User> users = userMapper.batchGetItem(request);
          * }</pre>
-         * 
+         *
          * @param batchGetItemRequest the fully configured batch request
          * @return list of retrieved entities
          * @throws IllegalArgumentException if the request specifies a different table than this mapper's table
@@ -3800,16 +3807,16 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Saves an entity to DynamoDB, creating a new item or replacing an existing one.
-         * 
+         *
          * <p>This method converts the entity to DynamoDB attributes using the configured naming policy
          * and writes it to the table. If an item with the same key already exists, it will be completely replaced.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * User user = new User("12345", "John Doe", "john@example.com");
          * PutItemResponse response = userMapper.putItem(user);
          * }</pre>
-         * 
+         *
          * @param entity the entity to save; all non-null fields will be written
          * @return the response from DynamoDB containing metadata about the operation
          * @throws NullPointerException if {@code entity} is null
@@ -3820,17 +3827,17 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Saves an entity with optional return values specification.
-         * 
+         *
          * <p>This method allows you to specify what values should be returned after the put operation,
          * such as the old item's attributes before it was replaced.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * User user = new User("12345", "John Doe", "john@example.com");
          * PutItemResponse response = userMapper.putItem(user, "ALL_OLD");
          * // response will contain the previous item's attributes if it existed
          * }</pre>
-         * 
+         *
          * @param entity the entity to save
          * @param returnValues specify "ALL_OLD", "NONE", etc. for what to return
          * @return the response from DynamoDB, potentially containing old item attributes
@@ -3842,11 +3849,11 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Saves an item using a fully configured PutItemRequest.
-         * 
+         *
          * <p>This method provides full control over the put operation, including conditional expressions,
          * return values, and other advanced options. If the table name is not specified in the request,
          * it will be automatically set to this mapper's table.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * PutItemRequest request = PutItemRequest.builder()
@@ -3855,7 +3862,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          *     .build();
          * PutItemResponse response = userMapper.putItem(request);
          * }</pre>
-         * 
+         *
          * @param putItemRequest the fully configured request object
          * @return the response from DynamoDB
          * @throws IllegalArgumentException if the request specifies a different table than this mapper's table
@@ -3873,7 +3880,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * the service limit. Each item write is atomic, but the batch as a whole is not transactional;
          * any individual writes that DynamoDB could not process are returned in
          * {@link BatchWriteItemResponse#unprocessedItems()} and must be retried by the caller.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<User> users = Arrays.asList(
@@ -3883,7 +3890,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * );
          * BatchWriteItemResponse response = userMapper.batchPutItem(users);
          * }</pre>
-         * 
+         *
          * @param entities collection of entities to save
          * @return the response containing information about unprocessed items if any
          * @throws NullPointerException if {@code entities} (or any element in it) is null
@@ -3894,11 +3901,11 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Updates an existing item in DynamoDB with the non-null fields from the entity.
-         * 
+         *
          * <p>This method performs a partial update, only modifying attributes that are non-null
          * in the provided entity. The key fields must be populated to identify the item to update.
          * Fields with null values in the entity will not be modified in DynamoDB.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * User updates = new User();
@@ -3907,7 +3914,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * // Only email will be updated, other fields remain unchanged
          * UpdateItemResponse response = userMapper.updateItem(updates);
          * }</pre>
-         * 
+         *
          * @param entity the entity containing updates; key fields must be populated
          * @return the response from DynamoDB containing metadata about the operation
          * @throws NullPointerException if {@code entity} is null
@@ -3918,10 +3925,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Updates an item with optional return values specification.
-         * 
+         *
          * <p>This method allows you to specify what values should be returned after the update,
          * such as all new attribute values or only the updated attributes.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * User updates = new User();
@@ -3930,7 +3937,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * UpdateItemResponse response = userMapper.updateItem(updates, "ALL_NEW");
          * // response will contain all attributes of the item after the update
          * }</pre>
-         * 
+         *
          * @param entity the entity containing updates
          * @param returnValues specify "ALL_NEW", "ALL_OLD", "UPDATED_NEW", "UPDATED_OLD", or "NONE"
          * @return the response from DynamoDB, potentially containing item attributes
@@ -3942,11 +3949,11 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Updates an item using a fully configured UpdateItemRequest.
-         * 
+         *
          * <p>This method provides full control over the update operation, including update expressions,
          * conditional expressions, and return values. If the table name is not specified in the request,
          * it will be automatically set to this mapper's table.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * UpdateItemRequest request = UpdateItemRequest.builder()
@@ -3957,7 +3964,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          *     .build();
          * UpdateItemResponse response = userMapper.updateItem(request);
          * }</pre>
-         * 
+         *
          * @param updateItemRequest the fully configured request object
          * @return the response from DynamoDB
          * @throws IllegalArgumentException if the request specifies a different table than this mapper's table
@@ -3968,17 +3975,17 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Deletes an item from DynamoDB using the key values extracted from the provided entity.
-         * 
+         *
          * <p>This method extracts the key attributes from the entity and deletes the corresponding
          * item from DynamoDB. Only the key fields need to be populated in the entity.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * User userToDelete = new User();
          * userToDelete.setUserId("12345");
          * DeleteItemResponse response = userMapper.deleteItem(userToDelete);
          * }</pre>
-         * 
+         *
          * @param entity an entity instance with populated key fields
          * @return the response from DynamoDB containing metadata about the operation
          * @throws NullPointerException if {@code entity} is null
@@ -3989,10 +3996,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Deletes an item with optional return values specification.
-         * 
+         *
          * <p>This method allows you to specify that the deleted item's attributes should be
          * returned in the response, useful for logging or confirmation purposes.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * User userToDelete = new User();
@@ -4000,7 +4007,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * DeleteItemResponse response = userMapper.deleteItem(userToDelete, "ALL_OLD");
          * // response will contain the deleted item's attributes
          * }</pre>
-         * 
+         *
          * @param entity an entity instance with populated key fields
          * @param returnValues specify "ALL_OLD" or "NONE" for what to return
          * @return the response from DynamoDB, potentially containing the deleted item's attributes
@@ -4012,15 +4019,15 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Deletes an item from DynamoDB using the provided key attributes.
-         * 
+         *
          * <p>This method allows direct specification of key attributes without requiring an entity instance.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, AttributeValue> key = asKey("userId", "12345");
          * DeleteItemResponse response = userMapper.deleteItem(key);
          * }</pre>
-         * 
+         *
          * @param key a map containing the key attributes (partition key and sort key if applicable)
          * @return the response from DynamoDB containing metadata about the operation
          */
@@ -4030,11 +4037,11 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Deletes an item using a fully configured DeleteItemRequest.
-         * 
+         *
          * <p>This method provides full control over the delete operation, including conditional expressions
          * and return values. If the table name is not specified in the request, it will be automatically
          * set to this mapper's table.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * DeleteItemRequest request = DeleteItemRequest.builder()
@@ -4044,7 +4051,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          *     .build();
          * DeleteItemResponse response = userMapper.deleteItem(request);
          * }</pre>
-         * 
+         *
          * @param deleteItemRequest the fully configured request object
          * @return the response from DynamoDB
          * @throws IllegalArgumentException if the request specifies a different table than this mapper's table
@@ -4062,7 +4069,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * the service limit. Each delete is atomic, but the batch as a whole is not transactional;
          * any individual deletes that DynamoDB could not process are returned in
          * {@link BatchWriteItemResponse#unprocessedItems()} and must be retried by the caller.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<User> usersToDelete = Arrays.asList(
@@ -4072,7 +4079,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * );
          * BatchWriteItemResponse response = userMapper.batchDeleteItem(usersToDelete);
          * }</pre>
-         * 
+         *
          * @param entities collection of entities with populated key fields to delete
          * @return the response containing information about unprocessed items if any
          * @throws NullPointerException if {@code entities} (or any element in it) is null
@@ -4083,10 +4090,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Performs a batch write operation using a fully configured BatchWriteItemRequest.
-         * 
+         *
          * <p>This method can handle mixed operations (puts and deletes) in a single batch request.
          * It provides full control over the batch operation parameters.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, List<WriteRequest>> requestItems = new HashMap<>();
@@ -4099,7 +4106,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          *     .build();
          * BatchWriteItemResponse response = userMapper.batchWriteItem(request);
          * }</pre>
-         * 
+         *
          * @param batchWriteItemRequest the fully configured batch request
          * @return the response containing information about unprocessed items if any
          * @throws IllegalArgumentException if the request specifies a different table than this mapper's table
@@ -4110,11 +4117,11 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Executes a query and returns the results as a list of entities.
-         * 
+         *
          * <p>This method performs a query operation on the table using the provided query request
          * and converts the results to entity objects. Queries are efficient for retrieving multiple
          * items with the same partition key.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * QueryRequest request = QueryRequest.builder()
@@ -4123,7 +4130,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          *     .build();
          * List<User> users = userMapper.list(request);
          * }</pre>
-         * 
+         *
          * @param queryRequest the query request with key conditions and other parameters
          * @return a list of entities matching the query; empty list if no matches found
          * @throws IllegalArgumentException if the request specifies a different table than this mapper's table
@@ -4134,10 +4141,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Executes a query and returns the results as a Dataset.
-         * 
+         *
          * <p>This method provides query results in a Dataset format, which offers additional
          * functionality for data manipulation and analysis beyond a simple list.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * QueryRequest request = QueryRequest.builder()
@@ -4147,7 +4154,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * Dataset dataset = userMapper.query(request);
          * // Use Dataset methods for further processing
          * }</pre>
-         * 
+         *
          * @param queryRequest the query request with key conditions and other parameters
          * @return a Dataset containing the query results
          * @throws IllegalArgumentException if the request specifies a different table than this mapper's table
@@ -4158,11 +4165,11 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Executes a query and returns the results as a Stream of entities.
-         * 
+         *
          * <p>This method is ideal for processing large result sets lazily. The stream will
          * automatically handle pagination, fetching additional pages as needed when elements
          * are consumed from the stream.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * QueryRequest request = QueryRequest.builder()
@@ -4173,7 +4180,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          *     .filter(user -> user.getAge() > 18)
          *     .forEach(user -> System.out.println(user.getName()));
          * }</pre>
-         * 
+         *
          * @param queryRequest the query request with key conditions and other parameters
          * @return a Stream of entities; the stream should be closed after use
          * @throws IllegalArgumentException if the request specifies a different table than this mapper's table
@@ -4184,17 +4191,17 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Performs a table scan with optional attribute projection.
-         * 
+         *
          * <p>This method scans the entire table and returns a stream of entities. You can specify
          * which attributes to retrieve to reduce data transfer and improve performance.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<String> attributes = Arrays.asList("userId", "userName", "email");
          * Stream<User> users = userMapper.scan(attributes);
          * users.forEach(user -> System.out.println(user.getUserName()));
          * }</pre>
-         * 
+         *
          * @param attributesToGet list of attribute names to retrieve; null to get all attributes
          * @return a Stream of entities from the scan operation
          */
@@ -4204,17 +4211,17 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Performs a filtered table scan.
-         * 
+         *
          * <p>This method scans the table and applies the specified filter conditions to the results.
          * Note that filtering happens after items are read, so this still consumes read capacity
          * for all scanned items.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, Condition> filter = Filters.gt("age", 18);
          * Stream<User> adults = userMapper.scan(filter);
          * }</pre>
-         * 
+         *
          * @param scanFilter map of attribute names to conditions for filtering results
          * @return a Stream of entities matching the filter conditions
          */
@@ -4224,17 +4231,17 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Performs a filtered table scan with attribute projection.
-         * 
+         *
          * <p>This method combines filtering and attribute projection, allowing you to both limit
          * which items are returned and which attributes are included in each item.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<String> attributes = Arrays.asList("userId", "userName");
          * Map<String, Condition> filter = Filters.eq("status", "ACTIVE");
          * Stream<User> activeUsers = userMapper.scan(attributes, filter);
          * }</pre>
-         * 
+         *
          * @param attributesToGet list of attribute names to retrieve
          * @param scanFilter map of attribute names to conditions for filtering results
          * @return a Stream of entities matching the filter with only specified attributes
@@ -4245,11 +4252,11 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Performs a scan using a fully configured ScanRequest.
-         * 
+         *
          * <p>This method provides full control over the scan operation, including filter expressions,
          * projection expressions, and pagination settings. If the table name is not specified in
          * the request, it will be automatically set to this mapper's table.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * ScanRequest request = ScanRequest.builder()
@@ -4259,7 +4266,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          *     .build();
          * Stream<User> users = userMapper.scan(request);
          * }</pre>
-         * 
+         *
          * @param scanRequest the fully configured scan request
          * @return a Stream of entities from the scan operation
          * @throws IllegalArgumentException if the request specifies a different table than this mapper's table
@@ -4408,23 +4415,23 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
     /**
      * Utility class providing static factory methods for creating DynamoDB filter conditions.
-     * 
+     *
      * <p>This class offers a convenient API for building scan and query filters without directly
      * constructing Condition objects. All methods return Map objects that can be used directly
      * with scan operations or combined using the ConditionBuilder.</p>
-     * 
+     *
      * <p>The class provides static factory methods for all DynamoDB comparison operators including
      * equality, range comparisons, null checks, and string operations, plus a {@link #builder()}
      * method that returns a fluent {@link ConditionBuilder} for composing compound filters.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Simple equality filter
      * Map<String, Condition> filter = Filters.eq("status", "ACTIVE");
-     * 
+     *
      * // Range filter
      * Map<String, Condition> ageFilter = Filters.bt("age", 18, 65);
-     * 
+     *
      * // Complex filter using builder
      * Map<String, Condition> complexFilter = Filters.builder()
      *     .eq("status", "ACTIVE")
@@ -4432,7 +4439,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *     .contains("email", "@example.com")
      *     .build();
      * }</pre>
-     * 
+     *
      * @author haiyangli
      * @since 1.0
      */
@@ -4443,9 +4450,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Creates an equality condition filter.
-         * 
+         *
          * <p>This filter matches items where the specified attribute equals the given value.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, Condition> filter = Filters.eq("userId", "12345"); // {userId -> EQ "12345"}, size 1
@@ -4461,9 +4468,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Creates a not-equal condition filter.
-         * 
+         *
          * <p>This filter matches items where the specified attribute does not equal the given value.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, Condition> filter = Filters.ne("status", "DELETED"); // {status -> NE "DELETED"}, size 1
@@ -4479,9 +4486,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Creates a greater-than condition filter.
-         * 
+         *
          * <p>This filter matches items where the specified attribute is greater than the given value.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, Condition> filter = Filters.gt("age", 18); // {age -> GT "18"}, size 1
@@ -4497,9 +4504,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Creates a greater-than-or-equal condition filter.
-         * 
+         *
          * <p>This filter matches items where the specified attribute is greater than or equal to the given value.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, Condition> filter = Filters.ge("score", 60); // {score -> GE "60"}, size 1
@@ -4515,9 +4522,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Creates a less-than condition filter.
-         * 
+         *
          * <p>This filter matches items where the specified attribute is less than the given value.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, Condition> filter = Filters.lt("price", 100.00); // {price -> LT "100.0"}, size 1
@@ -4533,9 +4540,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Creates a less-than-or-equal condition filter.
-         * 
+         *
          * <p>This filter matches items where the specified attribute is less than or equal to the given value.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, Condition> filter = Filters.le("quantity", 10); // {quantity -> LE "10"}, size 1
@@ -4551,9 +4558,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Creates a between condition filter for range queries.
-         * 
+         *
          * <p>This filter matches items where the specified attribute value is between the min and max values, inclusive.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, Condition> filter = Filters.bt("age", 18, 65); // {age -> BETWEEN ["18","65"]}, size 1
@@ -4574,9 +4581,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Creates a null check condition filter.
-         * 
+         *
          * <p>This filter matches items where the specified attribute does not exist or has a null value.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, Condition> filter = Filters.isNull("deletedAt"); // {deletedAt -> NULL}, size 1
@@ -4591,9 +4598,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Creates a not-null check condition filter.
-         * 
+         *
          * <p>This filter matches items where the specified attribute exists and is not null.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, Condition> filter = Filters.notNull("email"); // {email -> NOT_NULL}, size 1
@@ -4608,10 +4615,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Creates a contains condition filter for substring matching.
-         * 
+         *
          * <p>This filter matches items where the specified attribute contains the given value as a substring.
          * For set attributes, it checks if the set contains the specified value.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, Condition> filter = Filters.contains("description", "important"); // {description -> CONTAINS "important"}, size 1
@@ -4627,9 +4634,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Creates a not-contains condition filter.
-         * 
+         *
          * <p>This filter matches items where the specified attribute does not contain the given value.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, Condition> filter = Filters.notContains("tags", "deprecated"); // {tags -> NOT_CONTAINS "deprecated"}, size 1
@@ -4646,9 +4653,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Creates a begins-with condition filter for prefix matching.
-         * 
+         *
          * <p>This filter matches items where the specified string attribute begins with the given prefix.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, Condition> filter = Filters.beginsWith("email", "admin@"); // {email -> BEGINS_WITH "admin@"}, size 1
@@ -4664,9 +4671,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Creates an IN condition filter with variable arguments.
-         * 
+         *
          * <p>This filter matches items where the specified attribute's value is one of the provided values.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, Condition> filter = Filters.in("status", "ACTIVE", "PENDING", "PROCESSING"); // {status -> IN ["ACTIVE","PENDING","PROCESSING"]}, size 1
@@ -4686,9 +4693,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Creates an IN condition filter with a collection of values.
-         * 
+         *
          * <p>This filter matches items where the specified attribute's value is one of the values in the collection.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<String> validStatuses = Arrays.asList("ACTIVE", "PENDING", "PROCESSING");
@@ -4736,10 +4743,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Creates a new ConditionBuilder for constructing complex filter conditions.
-         * 
+         *
          * <p>The builder allows chaining multiple conditions together to create compound filters
          * for scan and query operations.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, Condition> filter = Filters.builder()
@@ -4759,16 +4766,16 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
     /**
      * A builder class for constructing complex DynamoDB filter conditions using a fluent API.
-     * 
+     *
      * <p>This builder allows chaining multiple condition methods to create compound filters
      * for scan and query operations. Each method adds a condition for a specific attribute,
      * and the build() method returns the complete filter as a Map.</p>
-     * 
+     *
      * <p>The builder follows the builder pattern and provides a more readable way to construct
      * complex filters compared to manually creating and combining Condition objects.</p>
-     * 
+     *
      * <p><b>Thread Safety:</b> This builder is NOT thread-safe and should not be shared between threads.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, Condition> complexFilter = Filters.builder()
@@ -4791,7 +4798,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Constructs a new ConditionBuilder instance.
-         * 
+         *
          * <p>Initializes an empty condition map that will be populated through the builder methods.</p>
          */
         ConditionBuilder() {
@@ -4827,9 +4834,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Adds an equality condition to the filter.
-         * 
+         *
          * <p>The condition will match items where the specified attribute equals the given value.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * builder.eq("userId", "12345"); // adds {userId -> EQ "12345"}; returns this builder
@@ -4847,9 +4854,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Adds a not-equal condition to the filter.
-         * 
+         *
          * <p>The condition will match items where the specified attribute does not equal the given value.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * builder.ne("status", "DELETED"); // adds {status -> NE "DELETED"}; returns this builder
@@ -4867,9 +4874,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Adds a greater-than condition to the filter.
-         * 
+         *
          * <p>The condition will match items where the specified attribute is greater than the given value.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * builder.gt("age", 18); // adds {age -> GT "18"}; returns this builder
@@ -4887,9 +4894,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Adds a greater-than-or-equal condition to the filter.
-         * 
+         *
          * <p>The condition will match items where the specified attribute is greater than or equal to the given value.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * builder.ge("score", 60); // adds {score -> GE "60"}; returns this builder
@@ -4907,9 +4914,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Adds a less-than condition to the filter.
-         * 
+         *
          * <p>The condition will match items where the specified attribute is less than the given value.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * builder.lt("price", 100.00); // adds {price -> LT "100.0"}; returns this builder
@@ -4927,9 +4934,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Adds a less-than-or-equal condition to the filter.
-         * 
+         *
          * <p>The condition will match items where the specified attribute is less than or equal to the given value.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * builder.le("quantity", 10); // adds {quantity -> LE "10"}; returns this builder
@@ -4947,10 +4954,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Adds a between condition to the filter for range queries.
-         * 
+         *
          * <p>The condition will match items where the specified attribute value is between
          * the min and max values, inclusive.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * builder.bt("age", 18, 65); // adds {age -> BETWEEN ["18","65"]}; returns this builder
@@ -4973,9 +4980,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Adds a null check condition to the filter.
-         * 
+         *
          * <p>The condition will match items where the specified attribute does not exist or has a null value.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * builder.isNull("deletedAt"); // adds {deletedAt -> NULL}; returns this builder
@@ -4992,9 +4999,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Adds a not-null check condition to the filter.
-         * 
+         *
          * <p>The condition will match items where the specified attribute exists and is not null.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * builder.notNull("email"); // adds {email -> NOT_NULL}; returns this builder
@@ -5011,10 +5018,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Adds a contains condition to the filter for substring matching.
-         * 
+         *
          * <p>The condition will match items where the specified attribute contains the given value as a substring.
          * For set attributes, it checks if the set contains the specified value.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * builder.contains("description", "important"); // adds {description -> CONTAINS "important"}; returns this builder
@@ -5032,9 +5039,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Adds a not-contains condition to the filter.
-         * 
+         *
          * <p>The condition will match items where the specified attribute does not contain the given value.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * builder.notContains("tags", "deprecated"); // adds {tags -> NOT_CONTAINS "deprecated"}; returns this builder
@@ -5052,9 +5059,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Adds a begins-with condition to the filter for prefix matching.
-         * 
+         *
          * <p>The condition will match items where the specified string attribute begins with the given prefix.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * builder.beginsWith("email", "admin@"); // adds {email -> BEGINS_WITH "admin@"}; returns this builder
@@ -5072,9 +5079,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Adds an IN condition to the filter with variable arguments.
-         * 
+         *
          * <p>The condition will match items where the specified attribute's value is one of the provided values.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * builder.in("status", "ACTIVE", "PENDING", "PROCESSING"); // adds {status -> IN ["ACTIVE","PENDING","PROCESSING"]}; returns this builder
@@ -5092,9 +5099,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Adds an IN condition to the filter with a collection of values.
-         * 
+         *
          * <p>The condition will match items where the specified attribute's value is one of the values in the collection.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<String> validStatuses = Arrays.asList("ACTIVE", "PENDING", "PROCESSING");
@@ -5113,10 +5120,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
         /**
          * Builds the final filter condition map.
-         * 
+         *
          * <p>Returns a map containing all the conditions added to this builder.
          * After calling this method, the builder cannot be reused.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * ConditionBuilder builder = Filters.builder().eq("status", "ACTIVE").gt("age", 18);

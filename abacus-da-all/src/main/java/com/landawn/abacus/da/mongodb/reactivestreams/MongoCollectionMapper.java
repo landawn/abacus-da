@@ -274,9 +274,9 @@ public final class MongoCollectionMapper<T> {
      * // Edge: always emits exactly one boolean (never completes empty), so defaultIfEmpty is unnecessary.
      * boolean present = userMapper.exists(userId).block();   // present == true or false, never null from empty
      *
-     * // Negative: null id -> error signal (IllegalArgumentException) on subscription.
-     * userMapper.exists((ObjectId) null)
-     *     .subscribe(e -> {}, err -> System.err.println("Null id rejected: " + err));   // onError(IllegalArgumentException)
+     * // Negative: null id is rejected with IllegalArgumentException, thrown synchronously at the
+     * // call site (before any Mono is returned).
+     * userMapper.exists((ObjectId) null);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param objectId the ObjectId to check for existence
@@ -305,7 +305,7 @@ public final class MongoCollectionMapper<T> {
      * Mono<Boolean> none = userMapper.exists(Filters.eq("status", "no-such-status"));   // emits false
      *
      * // Edge: empty filter matches every document -> emits true unless the collection is empty.
-     * Mono<Boolean> anyAtAll = userMapper.exists(Filters.empty());   // emits true iff collection is non-empty
+     * Mono<Boolean> anyAtAll = userMapper.exists(Filters.empty());   // emits true if collection is non-empty
      *
      * // Negative: null filter is rejected with IllegalArgumentException, thrown synchronously at the
      * // call site (before any Mono is returned).
@@ -481,9 +481,9 @@ public final class MongoCollectionMapper<T> {
      * // Edge: cold publisher — nothing runs until subscription.
      * Mono<User> notRunYet = userMapper.get(userId);   // no query issued yet
      *
-     * // Negative: null id -> error signal (IllegalArgumentException) on subscription.
-     * userMapper.get((ObjectId) null)
-     *     .subscribe(u -> {}, err -> System.err.println("Null id: " + err));   // onError(IllegalArgumentException)
+     * // Negative: null id is rejected with IllegalArgumentException, thrown synchronously at the
+     * // call site (before any Mono is returned).
+     * userMapper.get((ObjectId) null);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param objectId the ObjectId to search for
@@ -556,9 +556,9 @@ public final class MongoCollectionMapper<T> {
      * // Edge: cold publisher — building it issues no query until subscribed.
      * Mono<User> notRunYet = userMapper.get(userId, fields);   // nothing executed yet
      *
-     * // Negative: null id -> error signal (IllegalArgumentException) on subscription.
-     * userMapper.get((ObjectId) null, fields)
-     *     .subscribe(u -> {}, err -> System.err.println("Null id: " + err));   // onError(IllegalArgumentException)
+     * // Negative: null id is rejected with IllegalArgumentException, thrown synchronously at the
+     * // call site (before any Mono is returned).
+     * userMapper.get((ObjectId) null, fields);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param objectId the ObjectId to search for
@@ -813,10 +813,10 @@ public final class MongoCollectionMapper<T> {
      *
      * @param filter the query filter to match documents against
      * @param offset the number of documents to skip (must be &gt;= 0)
-     * @param count the maximum number of documents to return (must be &gt; 0)
+     * @param count the maximum number of documents to return (must be &gt;= 0; {@code 0} yields an empty result)
      * @return a cold {@code Flux} that, on subscription, emits up to {@code count} matching entities
      *         decoded as {@code T} (honouring downstream demand), then completes
-     * @throws IllegalArgumentException if filter is null, offset is negative, or count is non-positive
+     * @throws IllegalArgumentException if filter is null, offset is negative, or count is negative
      */
     public Flux<T> list(final Bson filter, final int offset, final int count) {
         return collectionExecutor.list(filter, offset, count, rowType);
@@ -887,9 +887,9 @@ public final class MongoCollectionMapper<T> {
      * @param selectPropNames the collection of property names to include in the results
      * @param filter the query filter to match documents against
      * @param offset the number of documents to skip (must be >= 0)
-     * @param count the maximum number of documents to return (must be > 0)
+     * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
      * @return a Flux that emits the paginated matching entities with specified fields
-     * @throws IllegalArgumentException if filter is null, offset is negative, or count is non-positive
+     * @throws IllegalArgumentException if filter is null, offset is negative, or count is negative
      */
     public Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count) {
         return collectionExecutor.list(selectPropNames, filter, offset, count, rowType);
@@ -962,9 +962,9 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results
      * @param offset the number of documents to skip (must be >= 0)
-     * @param count the maximum number of documents to return (must be > 0)
+     * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
      * @return a Flux that emits the fully controlled query results
-     * @throws IllegalArgumentException if filter is null, offset is negative, or count is non-positive
+     * @throws IllegalArgumentException if filter is null, offset is negative, or count is negative
      */
     public Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count) {
         return collectionExecutor.list(selectPropNames, filter, sort, offset, count, rowType);
@@ -1001,7 +1001,7 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results (can be null)
      * @return a Flux that emits matching entities with projection applied
-     * @throws IllegalArgumentException if projection or filter is null
+     * @throws IllegalArgumentException if filter is null
      * @see com.mongodb.client.model.Projections
      */
     public Flux<T> list(final Bson projection, final Bson filter, final Bson sort) {
@@ -1039,9 +1039,9 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results (can be null)
      * @param offset the number of documents to skip (must be >= 0)
-     * @param count the maximum number of documents to return (must be > 0)
+     * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
      * @return a Flux that emits the fully controlled query results with projection
-     * @throws IllegalArgumentException if projection or filter is null
+     * @throws IllegalArgumentException if filter is null
      */
     public Flux<T> list(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count) {
         return collectionExecutor.list(projection, filter, sort, offset, count, rowType);
@@ -1678,9 +1678,9 @@ public final class MongoCollectionMapper<T> {
      *
      * @param filter the query filter to match documents against
      * @param offset the number of documents to skip (must be >= 0)
-     * @param count the maximum number of documents to return (must be > 0)
+     * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
      * @return a Mono that emits a Dataset containing the paginated results
-     * @throws IllegalArgumentException if filter is null, offset is negative, or count is non-positive
+     * @throws IllegalArgumentException if filter is null, offset is negative, or count is negative
      */
     public Mono<Dataset> query(final Bson filter, final int offset, final int count) {
         return collectionExecutor.query(filter, offset, count, rowType);
@@ -1749,9 +1749,9 @@ public final class MongoCollectionMapper<T> {
      * @param selectPropNames the collection of property names to include in the results
      * @param filter the query filter to match documents against
      * @param offset the number of documents to skip (must be >= 0)
-     * @param count the maximum number of documents to return (must be > 0)
+     * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
      * @return a Mono that emits a Dataset with projected and paginated results
-     * @throws IllegalArgumentException if filter is null, offset is negative, or count is non-positive
+     * @throws IllegalArgumentException if filter is null, offset is negative, or count is negative
      */
     public Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count) {
         return collectionExecutor.query(selectPropNames, filter, offset, count, rowType);
@@ -1824,9 +1824,9 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results
      * @param offset the number of documents to skip (must be >= 0)
-     * @param count the maximum number of documents to return (must be > 0)
+     * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
      * @return a Mono that emits a fully controlled Dataset result
-     * @throws IllegalArgumentException if filter is null, offset is negative, or count is non-positive
+     * @throws IllegalArgumentException if filter is null, offset is negative, or count is negative
      */
     public Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count) {
         return collectionExecutor.query(selectPropNames, filter, sort, offset, count, rowType);
@@ -1866,7 +1866,7 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results (can be null)
      * @return a Mono that emits a Dataset with projection and sorting applied
-     * @throws IllegalArgumentException if projection or filter is null
+     * @throws IllegalArgumentException if filter is null
      */
     public Mono<Dataset> query(final Bson projection, final Bson filter, final Bson sort) {
         return collectionExecutor.query(projection, filter, sort, rowType);
@@ -1902,9 +1902,9 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results (can be null)
      * @param offset the number of documents to skip (must be >= 0)
-     * @param count the maximum number of documents to return (must be > 0)
+     * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
      * @return a Mono that emits a fully controlled Dataset with projection
-     * @throws IllegalArgumentException if projection or filter is null
+     * @throws IllegalArgumentException if filter is null
      */
     public Mono<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count) {
         return collectionExecutor.query(projection, filter, sort, offset, count, rowType);
@@ -3077,9 +3077,9 @@ public final class MongoCollectionMapper<T> {
      * userMapper.aggregate(Arrays.asList(Aggregates.match(Filters.gte("age", 1000))))
      *     .count().subscribe(n -> System.out.println("groups: " + n));   // emits 0
      *
-     * // Negative: null pipeline -> error signal (IllegalArgumentException) on subscription.
-     * userMapper.aggregate((List<Bson>) null)
-     *     .subscribe(r -> {}, err -> System.err.println("Null pipeline: " + err));   // onError(IllegalArgumentException)
+     * // Negative: the driver validates the pipeline eagerly, so a null pipeline throws
+     * // IllegalArgumentException synchronously at the call site (before any Flux is returned).
+     * userMapper.aggregate((List<Bson>) null);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param pipeline list of aggregation stages to execute in order; the pipeline itself may be

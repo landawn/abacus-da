@@ -728,8 +728,7 @@ public class MongoCollectionExecutorTest extends TestBase {
 
         when(mockCollection.aggregate(anyList(), eq(Document.class))).thenAnswer(invocation -> {
             final List<?> pipeline = invocation.getArgument(0);
-            final Document row = pipeline.size() > 1 ? new Document("department", "sales").append("count", 2)
-                    : new Document("_id", "sales").append("count", 2);
+            final Document row = pipeline.size() > 1 ? new Document("department", "sales").append("count", 2) : new Document("_id", "sales").append("count", 2);
 
             when(aggregateIterable.iterator()).thenReturn(cursor);
             when(cursor.hasNext()).thenReturn(true, false);
@@ -1796,6 +1795,115 @@ public class MongoCollectionExecutorTest extends TestBase {
         verify(mockCollection, never()).find(any(Bson.class));
         verify(mockCollection, never()).countDocuments(any(Bson.class));
         verify(mockCollection, never()).countDocuments(any(Bson.class), any(CountOptions.class));
+    }
+
+    // ========= Regression: entity/Map update payloads must not carry the immutable _id into $set =========
+
+    @Test
+    public void testUpdateManyWithEntityPayloadStripsIdFromSet() {
+        // Regression: the immutable _id is stripped from the converted update document. Previously the
+        // generated {$set: {_id: ..., ...}} failed server-side for every matched document whose _id differs.
+        Document filter = new Document("status", "active");
+        TestEntity entity = new TestEntity();
+        entity.setId("507f1f77bcf86cd799439011");
+        entity.setName("alice");
+        UpdateResult updateResult = mock(UpdateResult.class);
+        org.mockito.ArgumentCaptor<Bson> updateCaptor = org.mockito.ArgumentCaptor.forClass(Bson.class);
+        when(mockCollection.updateMany(any(Bson.class), any(Bson.class))).thenReturn(updateResult);
+
+        executor.updateMany(filter, entity);
+
+        verify(mockCollection).updateMany(any(Bson.class), updateCaptor.capture());
+        Document captured = (Document) updateCaptor.getValue();
+        Assertions.assertTrue(captured.containsKey("$set"));
+        Document setDoc = (Document) captured.get("$set");
+        Assertions.assertFalse(setDoc.containsKey("_id"));
+        Assertions.assertEquals("alice", setDoc.get("name"));
+    }
+
+    @Test
+    public void testUpdateOneWithMapPayloadStripsIdFromSet() {
+        Document filter = new Document("status", "active");
+        java.util.Map<String, Object> update = new java.util.HashMap<>();
+        update.put("_id", new ObjectId());
+        update.put("name", "bob");
+        UpdateResult updateResult = mock(UpdateResult.class);
+        org.mockito.ArgumentCaptor<Bson> updateCaptor = org.mockito.ArgumentCaptor.forClass(Bson.class);
+        when(mockCollection.updateOne(any(Bson.class), any(Bson.class))).thenReturn(updateResult);
+
+        executor.updateOne(filter, update);
+
+        verify(mockCollection).updateOne(any(Bson.class), updateCaptor.capture());
+        Document captured = (Document) updateCaptor.getValue();
+        Assertions.assertTrue(captured.containsKey("$set"));
+        Document setDoc = (Document) captured.get("$set");
+        Assertions.assertFalse(setDoc.containsKey("_id"));
+        Assertions.assertEquals("bob", setDoc.get("name"));
+    }
+
+    @Test
+    public void testUpdateOneWithEmptyMapPayloadThrowsIAE() {
+        // Regression: {$set: {}} is rejected by the server ("'$set' is empty"); the executor now fails
+        // fast with IllegalArgumentException instead of sending the no-op update. The driver must NOT
+        // be invoked.
+        Document filter = new Document("status", "active");
+
+        IllegalArgumentException ex = Assertions.assertThrows(IllegalArgumentException.class,
+                () -> executor.updateOne(filter, new java.util.HashMap<String, Object>()));
+
+        Assertions.assertTrue(ex.getMessage().contains("empty"));
+        verify(mockCollection, never()).updateOne(any(Bson.class), any(Bson.class));
+    }
+
+    @Test
+    public void testUpdateManyWithEntityOnlyIdPayloadThrowsIAE() {
+        // An entity whose only non-null property is the id converts to {_id: ...}; once the immutable
+        // _id is stripped, the payload is empty and must be rejected before reaching the server.
+        Document filter = new Document("status", "active");
+        TestEntity entity = new TestEntity();
+        entity.setId("507f1f77bcf86cd799439011");
+
+        IllegalArgumentException ex = Assertions.assertThrows(IllegalArgumentException.class, () -> executor.updateMany(filter, entity));
+
+        Assertions.assertTrue(ex.getMessage().contains("empty"));
+        verify(mockCollection, never()).updateMany(any(Bson.class), any(Bson.class));
+    }
+
+    // ========= Regression: dotted property paths in queryForSingleValue =========
+
+    @Test
+    public void testQueryForSingleValueWithDottedPathReadsNestedValue() {
+        // Regression: a dotted path like "address.city" is a valid projection; the server returns
+        // {address: {city: ...}}. Previously the flat doc.get("address.city") lookup yielded a
+        // present-but-null result; the nested value must be resolved.
+        Document filter = new Document("id", 1);
+        Document doc = new Document("address", new Document("city", "Berlin"));
+        when(mockFindIterable.first()).thenReturn(doc);
+
+        Nullable<String> result = executor.queryForSingleValue("address.city", filter, String.class);
+
+        Assertions.assertTrue(result.isPresent());
+        Assertions.assertEquals("Berlin", result.get());
+    }
+
+    // ========= Regression: aggregate/groupBy reject a null rowType eagerly =========
+
+    @Test
+    public void testAggregateWithNullRowTypeThrowsIAE() {
+        // Regression: a null rowType is now rejected eagerly with IllegalArgumentException, before any
+        // aggregation cursor is opened.
+        List<Document> pipeline = Arrays.asList(new Document("$match", new Document("status", "active")));
+
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.aggregate(pipeline, (Class<Document>) null));
+
+        verify(mockCollection, never()).aggregate(anyList(), eq(Document.class));
+    }
+
+    @Test
+    public void testGroupByWithNullRowTypeThrowsIAE() {
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.groupBy("category", (Class<Document>) null));
+
+        verify(mockCollection, never()).aggregate(anyList(), eq(Document.class));
     }
 
     public static class GroupRow {

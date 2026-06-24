@@ -175,7 +175,7 @@ import lombok.experimental.Accessors;
  *
  * // Named parameter binding
  * Optional<User> found = executor.findFirst(User.class,
- *     "SELECT * FROM users WHERE email = :email", 
+ *     "SELECT * FROM users WHERE email = :email",
  *     N.asMap("email", "john@example.com"));
  *
  * // Asynchronous operations
@@ -582,6 +582,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @return a Dataset with type-converted data based on the target class
      * @throws NullPointerException if resultSet is null
      */
+    @SuppressWarnings("deprecation")
     public static Dataset extractData(final ResultSet resultSet, final Class<?> targetClass) {
         final boolean isEntity = Beans.isBeanClass(targetClass);
         final boolean isMap = targetClass != null && Map.class.isAssignableFrom(targetClass);
@@ -601,7 +602,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 final Method method = Beans.getPropGetter(targetClass, columnNameList.get(i));
                 columnClasses[i] = method != null ? method.getReturnType() : null;
             } else {
-                columnClasses[i] = isMap ? Map.class : Object[].class;
+                // null = no per-column conversion (raw driver values), per the documented contract for
+                // non-bean targets; nested Row values still flatten through readRow below. Object[].class
+                // here would force every scalar through N.convert(value, Object[].class) and wrap it.
+                columnClasses[i] = isMap ? Map.class : null;
             }
         }
 
@@ -1266,7 +1270,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *     String name = row.getString("name");
      *     Instant lastLogin = row.getInstant("last_login");
      *
-     *     return new UserActivity(id, name, 
+     *     return new UserActivity(id, name,
      *         lastLogin != null ? Duration.between(lastLogin, Instant.now()) : null);
      * };
      *
@@ -1344,7 +1348,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <pre>{@code
      * // Positional parameters
      * ResultSet users = executor.execute(
-     *     "SELECT * FROM users WHERE status = ? AND created_at > ?", 
+     *     "SELECT * FROM users WHERE status = ? AND created_at > ?",
      *     "active", yesterday);
      *
      * // Named parameters with map
@@ -1359,7 +1363,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * searchCriteria.setStatus("active");
      * searchCriteria.setDepartment("engineering");
      * ResultSet engineeringUsers = executor.execute(
-     *     "SELECT * FROM users WHERE status = :status AND department = :department", 
+     *     "SELECT * FROM users WHERE status = :status AND department = :department",
      *     searchCriteria);
      * }</pre>
      *
@@ -1583,7 +1587,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
     @Override
     protected Statement<?> prepareBatchUpdateStatement(final String query, final Collection<?> parametersList, final BatchType type) {
-        N.checkArgument(N.notEmpty(parametersList), "'propsList' can't be null or empty.");
+        N.checkArgument(N.notEmpty(parametersList), "'parametersList' can't be null or empty.");
         N.checkElementNotNull(parametersList);
 
         BatchStatement stmt = prepareBatchStatement(type);
@@ -1659,7 +1663,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         Class<?> javaClass = null;
 
         if (parameterCount == 0) {
-            return preStmt.bind();
+            // bind(preStmt) (not preStmt.bind()) so the configured StatementSettings are still applied.
+            return bind(preStmt);
         } else if (N.isEmpty(parameters)) {
             throw new IllegalArgumentException("Null or empty parameters for parameterized query: " + query);
         }
@@ -1668,7 +1673,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             colType = columnDefinitions.get(0).getType();
             javaClass = protocolCodeDataType.get(colType.getProtocolCode());
 
-            if (parameters[0] == null || (javaClass.isAssignableFrom(parameters[0].getClass()) || codecRegistry.codecFor(colType).accepts(parameters[0]))) {
+            if (parameters[0] == null
+                    || (javaClass == null || javaClass.isAssignableFrom(parameters[0].getClass()) || codecRegistry.codecFor(colType).accepts(parameters[0]))) {
                 return bind(preStmt, parameters);
             } else if (parameters[0] instanceof List && ((List<Object>) parameters[0]).size() == 1) {
                 final Object tmp = ((List<Object>) parameters[0]).get(0);
@@ -1739,13 +1745,19 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                     "Not enough parameters for parameterized query: expected " + parameterCount + " but got " + values.length + " for query: " + query);
         }
 
+        // Defensive copy: 'values' may alias the caller's own array (the varargs array itself, or an
+        // Object[] passed as the single parameter); the conversion loop below must not mutate caller data.
+        if (values == parameters || (parameters.length == 1 && parameters[0] == values)) {
+            values = values.clone();
+        }
+
         for (int i = 0; i < parameterCount; i++) {
             colType = columnDefinitions.get(i).getType();
             javaClass = protocolCodeDataType.get(colType.getProtocolCode());
 
             if (values[i] == null) {
                 // Keep explicit nulls as null. The driver will bind or reject them according to the column type.
-            } else if (javaClass.isAssignableFrom(values[i].getClass()) || codecRegistry.codecFor(colType).accepts(values[i])) {
+            } else if (javaClass == null || javaClass.isAssignableFrom(values[i].getClass()) || codecRegistry.codecFor(colType).accepts(values[i])) {
                 // continue;
             } else {
                 try {

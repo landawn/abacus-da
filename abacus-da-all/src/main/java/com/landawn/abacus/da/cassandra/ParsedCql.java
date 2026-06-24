@@ -527,9 +527,9 @@ public final class ParsedCql {
     /**
      * Returns the attributes map associated with this parsed CQL statement.
      * 
-     * <p>Attributes provide metadata about the CQL statement that can influence
-     * execution behavior. Common attributes include:</p>
-     * 
+     * <p>Attributes are descriptive metadata carried along with the CQL statement
+     * (typically loaded from the XML configuration). Common attributes include:</p>
+     *
      * <ul>
      * <li><strong>timeout:</strong> Query timeout in milliseconds</li>
      * <li><strong>consistency:</strong> Consistency level (ONE, QUORUM, ALL, etc.)</li>
@@ -537,11 +537,14 @@ public final class ParsedCql {
      * <li><strong>fetchSize:</strong> Number of rows to fetch per page</li>
      * <li><strong>tracing:</strong> Enable/disable query tracing</li>
      * </ul>
-     * 
-     * <p>The returned map is mutable and can be modified after parsing if needed.
-     * Changes to this map will affect how the statement is executed if the attributes
-     * are used by the executor.</p>
-     * 
+     *
+     * <p><b>Note:</b> attributes are retained for XML round-tripping and as metadata only;
+     * they are <i>not</i> applied to statement execution by either executor, so changing them
+     * does not affect how the statement runs. The returned map is the live internal map (not a
+     * defensive copy), and mutating it is discouraged: instances parsed <i>without</i> attributes
+     * are cached and shared, so a mutation through this map leaks into every other caller that
+     * parses the same CQL text for the lifetime of the cache entry.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // No attributes supplied => empty (never null) map
@@ -555,13 +558,15 @@ public final class ParsedCql {
      * parsed.getAttributes().get("timeout");        // returns "5000"
      * parsed.getAttributes().get("consistency");    // returns "QUORUM"
      *
-     * // The returned map is mutable; changes are reflected on subsequent reads
+     * // The map is the live internal map; mutations are visible on subsequent reads
+     * // (and, for no-attrs parses, to other callers sharing the cached instance).
      * parsed.getAttributes().put("fetchSize", "100");
-     * parsed.getAttributes().get("fetchSize");      // returns "100"
+     * parsed.getAttributes().get("fetchSize");      // returns "100" (still NOT applied at execution)
      * parsed.getAttributes().get("missingKey");     // returns null (absent key)
      * }</pre>
      *
-     * @return a mutable map of attribute name-value pairs, never null but may be empty
+     * @return the live internal map of attribute name-value pairs, never null but may be empty;
+     *         treat it as read-only
      */
     public Map<String, String> getAttributes() {
         return attrs;

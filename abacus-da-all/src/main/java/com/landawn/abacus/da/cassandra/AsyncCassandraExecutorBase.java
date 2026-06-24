@@ -482,8 +482,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Typical: an UNLOGGED batch for higher-throughput same-partition writes.
      * async.batchInsert(users, BatchType.UNLOGGED).get(); // returns the driver result set
      *
-     * // Edge: no base-level empty-check; an empty list produces an empty batch (subclass-dependent).
-     * async.batchInsert(Collections.emptyList(), BatchType.LOGGED).get(); // returns the (empty) batch result set
+     * // Edge: the shipped executors validate the input; an empty list is rejected immediately
+     * // (before any future is created) with an IllegalArgumentException.
+     * async.batchInsert(Collections.emptyList(), BatchType.LOGGED); // throws IllegalArgumentException
      * }</pre>
      *
      * @param entities the entities to insert
@@ -512,8 +513,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Typical: an UNLOGGED batch for same-partition writes.
      * async.batchInsert(User.class, rows, BatchType.UNLOGGED).get(); // returns the driver result set
      *
-     * // Edge: no base-level empty-check; an empty list produces an empty batch (subclass-dependent).
-     * async.batchInsert(User.class, Collections.emptyList(), BatchType.LOGGED).get(); // returns the (empty) batch result set
+     * // Edge: the shipped executors validate the input; an empty list is rejected immediately
+     * // (before any future is created) with an IllegalArgumentException.
+     * async.batchInsert(User.class, Collections.emptyList(), BatchType.LOGGED); // throws IllegalArgumentException
      * }</pre>
      *
      * @param targetClass the entity class identifying the target table and column mappings
@@ -760,8 +762,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Typical: an UNLOGGED batch for same-partition updates.
      * async.batchUpdate(User.class, rows, BatchType.UNLOGGED).get(); // returns the driver result set
      *
-     * // Edge: no base-level empty-check; an empty list produces an empty batch (subclass-dependent).
-     * async.batchUpdate(User.class, Collections.emptyList(), BatchType.LOGGED).get(); // returns the (empty) batch result set
+     * // Edge: the shipped executors validate the input; an empty list is rejected immediately
+     * // (before any future is created) with an IllegalArgumentException.
+     * async.batchUpdate(User.class, Collections.emptyList(), BatchType.LOGGED); // throws IllegalArgumentException
      * }</pre>
      *
      * @param targetClass the entity class identifying the target table
@@ -788,8 +791,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Typical: an UNLOGGED batch of same-partition statements.
      * async.batchUpdate("UPDATE users SET status = ? WHERE id = ?", rows, BatchType.UNLOGGED).get();
      *
-     * // Edge: no base-level empty-check; an empty parametersList produces an empty batch (subclass-dependent).
-     * async.batchUpdate("UPDATE users SET name = ? WHERE id = ?", Collections.emptyList(), BatchType.LOGGED).get(); // returns the (empty) batch result set
+     * // Edge: the shipped executors validate the input; an empty parametersList is rejected
+     * // immediately (before any future is created) with an IllegalArgumentException.
+     * async.batchUpdate("UPDATE users SET name = ? WHERE id = ?", Collections.emptyList(), BatchType.LOGGED); // throws IllegalArgumentException
      *
      * // Edge: a malformed query likewise completes the future exceptionally.
      * try {
@@ -1886,7 +1890,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * OptionalBoolean ob = async.queryForBoolean(User.class, "active", Filters.eq("id", 1L)).get();
      * if (ob.isPresent()) { useFlag(ob.getAsBoolean()); }
      *
-     * // Edge: no matching row (or a null value) -> the future completes with an empty OptionalBoolean.
+     * // Edge: only "no matching row" yields an empty OptionalBoolean; if a row matches but the
+     * // column is NULL, the OptionalBoolean is PRESENT and holds the primitive default false.
      * boolean empty = async.queryForBoolean(User.class, "active", Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
      * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
@@ -1901,8 +1906,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the entity class identifying the target table
      * @param propName the property whose value is selected
      * @param whereClause the WHERE condition selecting at most one row
-     * @return a future whose payload is an {@link OptionalBoolean} holding the value, or empty if
-     *         no row matches or the value is {@code null}
+     * @return a future whose payload is a <i>present</i> {@link OptionalBoolean} holding the value
+     *         ({@code false} when the column is {@code null}); empty only when no row matches
      */
     public <T> ContinuableFuture<OptionalBoolean> queryForBoolean(final Class<T> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Boolean.class, propName, whereClause).map(CassandraExecutorBase.boolean_mapper);
@@ -1923,7 +1928,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * OptionalChar oc = async.queryForChar(User.class, "grade", Filters.eq("id", 1L)).get();
      * if (oc.isPresent()) { useGrade(oc.getAsChar()); }
      *
-     * // Edge: no matching row (or a null value) -> the future completes with an empty OptionalChar.
+     * // Edge: only "no matching row" yields an empty OptionalChar; if a row matches but the
+     * // column is NULL, the OptionalChar is PRESENT and holds the primitive default (char) 0.
      * boolean empty = async.queryForChar(User.class, "grade", Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
      * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
@@ -1938,8 +1944,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the entity class identifying the target table
      * @param propName the property whose value is selected
      * @param whereClause the WHERE condition selecting at most one row
-     * @return a future whose payload is an {@link OptionalChar} holding the value, or empty if no
-     *         row matches or the value is {@code null}
+     * @return a future whose payload is a <i>present</i> {@link OptionalChar} holding the value
+     *         ({@code (char) 0} when the column is {@code null}); empty only when no row matches
      */
     public <T> ContinuableFuture<OptionalChar> queryForChar(final Class<T> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Character.class, propName, whereClause).map(CassandraExecutorBase.char_mapper);
@@ -1960,7 +1966,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * OptionalByte ob = async.queryForByte(User.class, "level", Filters.eq("id", 1L)).get();
      * if (ob.isPresent()) { useLevel(ob.getAsByte()); }
      *
-     * // Edge: no matching row (or a null value) -> the future completes with an empty OptionalByte.
+     * // Edge: only "no matching row" yields an empty OptionalByte; if a row matches but the
+     * // column is NULL, the OptionalByte is PRESENT and holds the primitive default (byte) 0.
      * boolean empty = async.queryForByte(User.class, "level", Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
      * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
@@ -1975,8 +1982,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the entity class identifying the target table
      * @param propName the property whose value is selected
      * @param whereClause the WHERE condition selecting at most one row
-     * @return a future whose payload is an {@link OptionalByte} holding the value, or empty if no
-     *         row matches or the value is {@code null}
+     * @return a future whose payload is a <i>present</i> {@link OptionalByte} holding the value
+     *         ({@code (byte) 0} when the column is {@code null}); empty only when no row matches
      */
     public <T> ContinuableFuture<OptionalByte> queryForByte(final Class<T> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Byte.class, propName, whereClause).map(CassandraExecutorBase.byte_mapper);
@@ -1997,7 +2004,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * OptionalShort os = async.queryForShort(User.class, "count", Filters.eq("id", 1L)).get();
      * if (os.isPresent()) { useCount(os.getAsShort()); }
      *
-     * // Edge: no matching row (or a null value) -> the future completes with an empty OptionalShort.
+     * // Edge: only "no matching row" yields an empty OptionalShort; if a row matches but the
+     * // column is NULL, the OptionalShort is PRESENT and holds the primitive default (short) 0.
      * boolean empty = async.queryForShort(User.class, "count", Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
      * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
@@ -2012,8 +2020,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the entity class identifying the target table
      * @param propName the property whose value is selected
      * @param whereClause the WHERE condition selecting at most one row
-     * @return a future whose payload is an {@link OptionalShort} holding the value, or empty if
-     *         no row matches or the value is {@code null}
+     * @return a future whose payload is a <i>present</i> {@link OptionalShort} holding the value
+     *         ({@code (short) 0} when the column is {@code null}); empty only when no row matches
      */
     public <T> ContinuableFuture<OptionalShort> queryForShort(final Class<T> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Short.class, propName, whereClause).map(CassandraExecutorBase.short_mapper);
@@ -2034,7 +2042,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * OptionalInt oi = async.queryForInt(User.class, "age", Filters.eq("id", 1L)).get();
      * if (oi.isPresent()) { useAge(oi.getAsInt()); }
      *
-     * // Edge: no matching row (or a null value) -> the future completes with an empty OptionalInt.
+     * // Edge: only "no matching row" yields an empty OptionalInt; if a row matches but the
+     * // column is NULL, the OptionalInt is PRESENT and holds the primitive default 0.
      * boolean empty = async.queryForInt(User.class, "age", Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
      * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
@@ -2049,8 +2058,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the entity class identifying the target table
      * @param propName the property whose value is selected
      * @param whereClause the WHERE condition selecting at most one row
-     * @return a future whose payload is an {@link OptionalInt} holding the value, or empty if no
-     *         row matches or the value is {@code null}
+     * @return a future whose payload is a <i>present</i> {@link OptionalInt} holding the value
+     *         ({@code 0} when the column is {@code null}); empty only when no row matches
      */
     public <T> ContinuableFuture<OptionalInt> queryForInt(final Class<T> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Integer.class, propName, whereClause).map(CassandraExecutorBase.int_mapper);
@@ -2071,7 +2080,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * OptionalLong ol = async.queryForLong(User.class, "id", Filters.eq("email", "a@b.com")).get();
      * if (ol.isPresent()) { useId(ol.getAsLong()); }
      *
-     * // Edge: no matching row (or a null value) -> the future completes with an empty OptionalLong.
+     * // Edge: only "no matching row" yields an empty OptionalLong; if a row matches but the
+     * // column is NULL, the OptionalLong is PRESENT and holds the primitive default 0L.
      * boolean empty = async.queryForLong(User.class, "id", Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
      * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
@@ -2086,8 +2096,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the entity class identifying the target table
      * @param propName the property whose value is selected
      * @param whereClause the WHERE condition selecting at most one row
-     * @return a future whose payload is an {@link OptionalLong} holding the value, or empty if no
-     *         row matches or the value is {@code null}
+     * @return a future whose payload is a <i>present</i> {@link OptionalLong} holding the value
+     *         ({@code 0L} when the column is {@code null}); empty only when no row matches
      */
     public <T> ContinuableFuture<OptionalLong> queryForLong(final Class<T> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Long.class, propName, whereClause).map(CassandraExecutorBase.long_mapper);
@@ -2108,7 +2118,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * OptionalFloat of = async.queryForFloat(User.class, "score", Filters.eq("id", 1L)).get();
      * if (of.isPresent()) { useScore(of.getAsFloat()); }
      *
-     * // Edge: no matching row (or a null value) -> the future completes with an empty OptionalFloat.
+     * // Edge: only "no matching row" yields an empty OptionalFloat; if a row matches but the
+     * // column is NULL, the OptionalFloat is PRESENT and holds the primitive default 0f.
      * boolean empty = async.queryForFloat(User.class, "score", Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
      * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
@@ -2123,8 +2134,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the entity class identifying the target table
      * @param propName the property whose value is selected
      * @param whereClause the WHERE condition selecting at most one row
-     * @return a future whose payload is an {@link OptionalFloat} holding the value, or empty if
-     *         no row matches or the value is {@code null}
+     * @return a future whose payload is a <i>present</i> {@link OptionalFloat} holding the value
+     *         ({@code 0f} when the column is {@code null}); empty only when no row matches
      */
     public <T> ContinuableFuture<OptionalFloat> queryForFloat(final Class<T> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Float.class, propName, whereClause).map(CassandraExecutorBase.float_mapper);
@@ -2145,7 +2156,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * OptionalDouble od = async.queryForDouble(User.class, "price", Filters.eq("id", 1L)).get();
      * if (od.isPresent()) { usePrice(od.getAsDouble()); }
      *
-     * // Edge: no matching row (or a null value) -> the future completes with an empty OptionalDouble.
+     * // Edge: only "no matching row" yields an empty OptionalDouble; if a row matches but the
+     * // column is NULL, the OptionalDouble is PRESENT and holds the primitive default 0d.
      * boolean empty = async.queryForDouble(User.class, "price", Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
      * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
@@ -2160,8 +2172,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the entity class identifying the target table
      * @param propName the property whose value is selected
      * @param whereClause the WHERE condition selecting at most one row
-     * @return a future whose payload is an {@link OptionalDouble} holding the value, or empty if
-     *         no row matches or the value is {@code null}
+     * @return a future whose payload is a <i>present</i> {@link OptionalDouble} holding the value
+     *         ({@code 0d} when the column is {@code null}); empty only when no row matches
      */
     public <T> ContinuableFuture<OptionalDouble> queryForDouble(final Class<T> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Double.class, propName, whereClause).map(CassandraExecutorBase.double_mapper);
@@ -2383,7 +2395,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * OptionalBoolean ob = async.queryForBoolean("SELECT active FROM users WHERE id = ?", 1L).get();
      * if (ob.isPresent()) { useFlag(ob.getAsBoolean()); }
      *
-     * // Edge: no matching row (or a null value) -> the future completes with an empty OptionalBoolean.
+     * // Edge: only "no matching row" yields an empty OptionalBoolean; if a row matches but the
+     * // column is NULL, the OptionalBoolean is PRESENT and holds the primitive default false.
      * boolean empty = async.queryForBoolean("SELECT active FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
      *
      * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
@@ -2396,8 +2409,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
-     * @return a future whose payload is an {@link OptionalBoolean} holding the value, or empty if
-     *         the query returned no row or the value is {@code null}
+     * @return a future whose payload is a <i>present</i> {@link OptionalBoolean} holding the value
+     *         ({@code false} when the column is {@code null}); empty only when the query returned no row
      */
     public final ContinuableFuture<OptionalBoolean> queryForBoolean(final String query, final Object... parameters) {
         return queryForSingleValue(Boolean.class, query, parameters).map(CassandraExecutorBase.boolean_mapper);
@@ -2418,7 +2431,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * OptionalChar oc = async.queryForChar("SELECT grade FROM users WHERE id = ?", 1L).get();
      * if (oc.isPresent()) { useGrade(oc.getAsChar()); }
      *
-     * // Edge: no matching row (or a null value) -> the future completes with an empty OptionalChar.
+     * // Edge: only "no matching row" yields an empty OptionalChar; if a row matches but the
+     * // column is NULL, the OptionalChar is PRESENT and holds the primitive default (char) 0.
      * boolean empty = async.queryForChar("SELECT grade FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
      *
      * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
@@ -2431,8 +2445,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
-     * @return a future whose payload is an {@link OptionalChar} holding the value, or empty if
-     *         the query returned no row or the value is {@code null}
+     * @return a future whose payload is a <i>present</i> {@link OptionalChar} holding the value
+     *         ({@code (char) 0} when the column is {@code null}); empty only when the query returned no row
      */
     public final ContinuableFuture<OptionalChar> queryForChar(final String query, final Object... parameters) {
         return queryForSingleValue(Character.class, query, parameters).map(CassandraExecutorBase.char_mapper);
@@ -2453,7 +2467,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * OptionalByte ob = async.queryForByte("SELECT level FROM users WHERE id = ?", 1L).get();
      * if (ob.isPresent()) { useLevel(ob.getAsByte()); }
      *
-     * // Edge: no matching row (or a null value) -> the future completes with an empty OptionalByte.
+     * // Edge: only "no matching row" yields an empty OptionalByte; if a row matches but the
+     * // column is NULL, the OptionalByte is PRESENT and holds the primitive default (byte) 0.
      * boolean empty = async.queryForByte("SELECT level FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
      *
      * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
@@ -2466,8 +2481,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
-     * @return a future whose payload is an {@link OptionalByte} holding the value, or empty if
-     *         the query returned no row or the value is {@code null}
+     * @return a future whose payload is a <i>present</i> {@link OptionalByte} holding the value
+     *         ({@code (byte) 0} when the column is {@code null}); empty only when the query returned no row
      */
     public final ContinuableFuture<OptionalByte> queryForByte(final String query, final Object... parameters) {
         return queryForSingleValue(Byte.class, query, parameters).map(CassandraExecutorBase.byte_mapper);
@@ -2488,7 +2503,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * OptionalShort os = async.queryForShort("SELECT count FROM users WHERE id = ?", 1L).get();
      * if (os.isPresent()) { useCount(os.getAsShort()); }
      *
-     * // Edge: no matching row (or a null value) -> the future completes with an empty OptionalShort.
+     * // Edge: only "no matching row" yields an empty OptionalShort; if a row matches but the
+     * // column is NULL, the OptionalShort is PRESENT and holds the primitive default (short) 0.
      * boolean empty = async.queryForShort("SELECT count FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
      *
      * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
@@ -2501,8 +2517,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
-     * @return a future whose payload is an {@link OptionalShort} holding the value, or empty if
-     *         the query returned no row or the value is {@code null}
+     * @return a future whose payload is a <i>present</i> {@link OptionalShort} holding the value
+     *         ({@code (short) 0} when the column is {@code null}); empty only when the query returned no row
      */
     public final ContinuableFuture<OptionalShort> queryForShort(final String query, final Object... parameters) {
         return queryForSingleValue(Short.class, query, parameters).map(CassandraExecutorBase.short_mapper);
@@ -2522,7 +2538,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Typical: a COUNT(*) read as an int.
      * int total = async.queryForInt("SELECT COUNT(*) FROM users").get().orElse(0);
      *
-     * // Edge: no matching row (or a null value) -> the future completes with an empty OptionalInt.
+     * // Edge: only "no matching row" yields an empty OptionalInt; if a row matches but the
+     * // column is NULL, the OptionalInt is PRESENT and holds the primitive default 0.
      * boolean empty = async.queryForInt("SELECT age FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
      *
      * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
@@ -2535,8 +2552,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
-     * @return a future whose payload is an {@link OptionalInt} holding the value, or empty if the
-     *         query returned no row or the value is {@code null}
+     * @return a future whose payload is a <i>present</i> {@link OptionalInt} holding the value
+     *         ({@code 0} when the column is {@code null}); empty only when the query returned no row
      */
     public final ContinuableFuture<OptionalInt> queryForInt(final String query, final Object... parameters) {
         return queryForSingleValue(Integer.class, query, parameters).map(CassandraExecutorBase.int_mapper);
@@ -2556,7 +2573,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Typical: read a long id column.
      * long id = async.queryForLong("SELECT id FROM users WHERE email = ?", "a@b.com").get().orElse(0L);
      *
-     * // Edge: no matching row (or a null value) -> the future completes with an empty OptionalLong.
+     * // Edge: only "no matching row" yields an empty OptionalLong; if a row matches but the
+     * // column is NULL, the OptionalLong is PRESENT and holds the primitive default 0L.
      * boolean empty = async.queryForLong("SELECT id FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
      *
      * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
@@ -2569,8 +2587,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
-     * @return a future whose payload is an {@link OptionalLong} holding the value, or empty if
-     *         the query returned no row or the value is {@code null}
+     * @return a future whose payload is a <i>present</i> {@link OptionalLong} holding the value
+     *         ({@code 0L} when the column is {@code null}); empty only when the query returned no row
      */
     public final ContinuableFuture<OptionalLong> queryForLong(final String query, final Object... parameters) {
         return queryForSingleValue(Long.class, query, parameters).map(CassandraExecutorBase.long_mapper);
@@ -2591,7 +2609,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * OptionalFloat of = async.queryForFloat("SELECT score FROM users WHERE id = ?", 1L).get();
      * if (of.isPresent()) { useScore(of.getAsFloat()); }
      *
-     * // Edge: no matching row (or a null value) -> the future completes with an empty OptionalFloat.
+     * // Edge: only "no matching row" yields an empty OptionalFloat; if a row matches but the
+     * // column is NULL, the OptionalFloat is PRESENT and holds the primitive default 0f.
      * boolean empty = async.queryForFloat("SELECT score FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
      *
      * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
@@ -2604,8 +2623,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
-     * @return a future whose payload is an {@link OptionalFloat} holding the value, or empty if
-     *         the query returned no row or the value is {@code null}
+     * @return a future whose payload is a <i>present</i> {@link OptionalFloat} holding the value
+     *         ({@code 0f} when the column is {@code null}); empty only when the query returned no row
      */
     public final ContinuableFuture<OptionalFloat> queryForFloat(final String query, final Object... parameters) {
         return queryForSingleValue(Float.class, query, parameters).map(CassandraExecutorBase.float_mapper);
@@ -2626,7 +2645,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * OptionalDouble od = async.queryForDouble("SELECT price FROM users WHERE id = ?", 1L).get();
      * if (od.isPresent()) { usePrice(od.getAsDouble()); }
      *
-     * // Edge: no matching row (or a null value) -> the future completes with an empty OptionalDouble.
+     * // Edge: only "no matching row" yields an empty OptionalDouble; if a row matches but the
+     * // column is NULL, the OptionalDouble is PRESENT and holds the primitive default 0d.
      * boolean empty = async.queryForDouble("SELECT price FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
      *
      * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
@@ -2639,8 +2659,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
-     * @return a future whose payload is an {@link OptionalDouble} holding the value, or empty if
-     *         the query returned no row or the value is {@code null}
+     * @return a future whose payload is a <i>present</i> {@link OptionalDouble} holding the value
+     *         ({@code 0d} when the column is {@code null}); empty only when the query returned no row
      */
     public final ContinuableFuture<OptionalDouble> queryForDouble(final String query, final Object... parameters) {
         return queryForSingleValue(Double.class, query, parameters).map(CassandraExecutorBase.double_mapper);

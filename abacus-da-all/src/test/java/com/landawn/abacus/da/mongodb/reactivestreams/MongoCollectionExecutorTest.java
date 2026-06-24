@@ -1529,8 +1529,7 @@ public class MongoCollectionExecutorTest extends TestBase {
     public void testGroupByAndCountTypedMapsSingleGroupKey() {
         when(mockCollection.aggregate(anyList(), eq(Document.class))).thenAnswer(invocation -> {
             final List<?> pipeline = invocation.getArgument(0);
-            final Document row = pipeline.size() > 1 ? new Document("department", "sales").append("count", 2)
-                    : new Document("_id", "sales").append("count", 2);
+            final Document row = pipeline.size() > 1 ? new Document("department", "sales").append("count", 2) : new Document("_id", "sales").append("count", 2);
 
             stubEmits(mockAggregatePublisher, row);
             return mockAggregatePublisher;
@@ -2325,6 +2324,99 @@ public class MongoCollectionExecutorTest extends TestBase {
         // The eager guard short-circuits before the driver is touched.
         verify(mockCollection, org.mockito.Mockito.never()).find(any(Bson.class));
         verify(mockCollection, org.mockito.Mockito.never()).countDocuments(any(Bson.class));
+    }
+
+    // ========= Regression: eager IllegalArgumentException at the call site (not NPE / not deferred) =========
+
+    @Test
+    public void testInsertOneWithNullObjectThrowsIAESynchronously() {
+        // Regression: insertOne(null) converted the payload eagerly and surfaced a raw NPE. It must
+        // throw IllegalArgumentException synchronously, before any Mono is built or the driver touched.
+        assertThrows(IllegalArgumentException.class, () -> executor.insertOne((Object) null));
+
+        verify(mockCollection, org.mockito.Mockito.never()).insertOne(any(Document.class));
+    }
+
+    @Test
+    public void testInsertOneWithNullObjectAndOptionsThrowsIAESynchronously() {
+        InsertOneOptions options = new InsertOneOptions();
+
+        assertThrows(IllegalArgumentException.class, () -> executor.insertOne(null, options));
+
+        verify(mockCollection, org.mockito.Mockito.never()).insertOne(any(Document.class), any(InsertOneOptions.class));
+    }
+
+    @Test
+    public void testQueryForSingleValueWithNullValueTypeThrowsIAESynchronously() {
+        // Regression: a null valueType is now validated eagerly, so IllegalArgumentException is thrown
+        // at the call site (before any Mono is returned) instead of erroring on subscription.
+        Bson filter = new Document("id", 1);
+
+        assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleValue("prop", filter, null));
+
+        verify(mockCollection, org.mockito.Mockito.never()).find(any(Bson.class));
+    }
+
+    @Test
+    public void testQueryDatasetWithInvalidRowTypeThrowsIAESynchronously() {
+        // Regression: an invalid rowType (not a bean / Map / Document) is rejected synchronously at the
+        // call site (checkResultClass), mirroring the sync executor, instead of producing a malformed
+        // Dataset on subscription.
+        Collection<String> selectPropNames = Arrays.asList("name");
+        Bson projection = Projections.include("name");
+        Bson filter = new Document("active", true);
+        Bson sort = new Document("name", 1);
+
+        assertThrows(IllegalArgumentException.class, () -> executor.query(selectPropNames, filter, sort, 0, 10, String.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.query(projection, filter, sort, 0, 10, String.class));
+
+        verify(mockCollection, org.mockito.Mockito.never()).find(any(Bson.class));
+    }
+
+    // ========= Regression: list(..., Document.class/Object.class) short-circuits to the raw documents =========
+
+    @Test
+    public void testListWithDocumentRowTypeReturnsRawDocumentInstances() {
+        // Regression: when the caller asks for Document, the raw documents must be returned untouched
+        // (same instances), not rebuilt through readRow.
+        Collection<String> selectPropNames = Arrays.asList("name");
+        Bson filter = new Document("active", true);
+        Bson sort = new Document("name", 1);
+        int offset = 2;
+        int count = 10;
+        Document doc1 = new Document("name", "a").append("value", 1).append("extra", true);
+        Document doc2 = new Document("name", "b").append("value", 2).append("extra", false);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.skip(offset)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(count)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc1, doc2);
+
+        Flux<Document> result = executor.list(selectPropNames, filter, sort, offset, count, Document.class);
+
+        StepVerifier.create(result).assertNext(d -> assertSame(doc1, d)).assertNext(d -> assertSame(doc2, d)).verifyComplete();
+    }
+
+    @Test
+    public void testListWithObjectRowTypeNoLongerThrowsForWideDocuments() {
+        // Regression: list(..., Object.class) previously rebuilt each row through readRow, which threw
+        // for documents with more than two fields. Object.class now short-circuits to the raw documents.
+        Bson projection = Projections.include("a", "b", "c");
+        Bson filter = new Document("active", true);
+        Bson sort = new Document("a", 1);
+        Document wideDoc = new Document("a", 1).append("b", 2).append("c", 3);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(projection)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(10)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, wideDoc);
+
+        Flux<Object> result = executor.list(projection, filter, sort, 0, 10, Object.class);
+
+        StepVerifier.create(result).assertNext(o -> assertSame(wideDoc, o)).verifyComplete();
     }
 
     public static class GroupRow {

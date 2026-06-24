@@ -1436,6 +1436,25 @@ public class BigQueryExecutorTest extends TestBase {
         assertEquals(QueryParameterValue.timestamp(1_000_000L).getValue(), values.get(0).getValue());
     }
 
+    /**
+     * Regression: binding a com.google.cloud.Timestamp previously went through toDate().getTime(),
+     * which truncates to millisecond precision — the microsecond component that BigQuery TIMESTAMP
+     * carries was silently dropped (...123456 µs became ...123000 µs), so a WHERE equality on a value
+     * read back from BigQuery could fail to match. The binding now computes
+     * seconds * 1_000_000 + nanos / 1_000.
+     */
+    @Test
+    public void testBuildQueryParameterValueWithGoogleTimestampPreservesMicros() {
+        final com.google.cloud.Timestamp ts = com.google.cloud.Timestamp.ofTimeSecondsAndNanos(1_700_000_000L, 123_456_000);
+
+        final List<QueryParameterValue> values = BigQueryExecutor.buildQueryParameterValue(ts);
+
+        assertEquals(1, values.size());
+        assertEquals(StandardSQLTypeName.TIMESTAMP, values.get(0).getType());
+        // 1_700_000_000 s + 123_456_000 ns == 1_700_000_000_123_456 µs (not ...123_000 µs).
+        assertEquals(QueryParameterValue.timestamp(1_700_000_000_123_456L).getValue(), values.get(0).getValue());
+    }
+
     @Test
     public void testBuildQueryParameterValueWithGoogleDate() {
         Object[] params = new Object[] { com.google.cloud.Date.fromYearMonthDay(2024, 1, 1) };
@@ -1479,6 +1498,106 @@ public class BigQueryExecutorTest extends TestBase {
         final Map<String, Object> map = BigQueryExecutor.toMap(fields, row, com.landawn.abacus.util.IntFunctions.ofLinkedHashMap());
 
         assertEquals(Arrays.asList("a", "b"), map.get("tags"));
+    }
+
+    // ---------------------------------------------------------------------------------------------
+    // Regression: toEntity must unwrap REPEATED columns. FieldValue.getValue() of a REPEATED column
+    // returns a List<FieldValue>; the old code stored that list as-is into a List-typed property, so
+    // the raw FieldValue wrappers leaked into e.g. a List<String> property (heap pollution surfacing
+    // as ClassCastException at the call site). The fixed path mirrors the toMap unwrapping.
+    // ---------------------------------------------------------------------------------------------
+    @Test
+    public void testToEntity_UnwrapsRepeatedFieldValues() {
+        final Field idField = Field.of("id", StandardSQLTypeName.INT64);
+        final Field tagsField = Field.newBuilder("tags", StandardSQLTypeName.STRING).setMode(Field.Mode.REPEATED).build();
+        final FieldList fields = FieldList.of(idField, tagsField);
+        final FieldValueList row = FieldValueList.of(
+                Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "7"),
+                        FieldValue.of(FieldValue.Attribute.REPEATED,
+                                Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "a"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "b")))),
+                fields);
+
+        final TestEntityWithTags entity = BigQueryExecutor.toEntity(fields, row, TestEntityWithTags.class);
+
+        assertEquals(7, entity.getId());
+        assertEquals(Arrays.asList("a", "b"), entity.getTags());
+        assertTrue(entity.getTags().get(0) instanceof String, "REPEATED elements must be plain values, not FieldValue wrappers");
+    }
+
+    // Regression: a RECORD value assigned to a List-typed property must be converted through readRow
+    // (plain values). FieldValueList IS a List, so the old plain assignability check stored the raw
+    // FieldValue wrappers into the List property instead of converting.
+    @Test
+    public void testToEntity_RecordIntoListTypedProperty_ConvertedToPlainValues() {
+        final Field innerX = Field.of("x", StandardSQLTypeName.STRING);
+        final Field innerY = Field.of("y", StandardSQLTypeName.STRING);
+        final FieldList innerFields = FieldList.of(innerX, innerY);
+        final FieldValueList innerRow = FieldValueList
+                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "v1"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "v2")), innerFields);
+
+        final Field idField = Field.of("id", StandardSQLTypeName.INT64);
+        final Field structField = Field.of("struct", StandardSQLTypeName.STRUCT, innerFields);
+        final FieldList fields = FieldList.of(idField, structField);
+        final FieldValueList row = FieldValueList
+                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1"), FieldValue.of(FieldValue.Attribute.RECORD, innerRow)), fields);
+
+        final TestEntityWithStructList entity = BigQueryExecutor.toEntity(fields, row, TestEntityWithStructList.class);
+
+        assertEquals(1, entity.getId());
+        assertEquals(Arrays.asList("v1", "v2"), entity.getStruct());
+        assertTrue(entity.getStruct().get(0) instanceof String, "RECORD elements must be plain values, not FieldValue wrappers");
+    }
+
+    // Regression: extractData must unwrap REPEATED columns the same way — the Dataset cell is a List
+    // of plain values, not a List of FieldValue wrappers.
+    @Test
+    public void testExtractData_UnwrapsRepeatedFieldValues_EntityTarget() {
+        final Field idField = Field.of("id", StandardSQLTypeName.INT64);
+        final Field tagsField = Field.newBuilder("tags", StandardSQLTypeName.STRING).setMode(Field.Mode.REPEATED).build();
+        final FieldList fields = FieldList.of(idField, tagsField);
+        final Schema schema = Schema.of(fields);
+
+        final List<FieldValueList> rows = new ArrayList<>();
+        rows.add(FieldValueList.of(
+                Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "7"),
+                        FieldValue.of(FieldValue.Attribute.REPEATED,
+                                Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "a"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "b")))),
+                fields));
+
+        when(mockTableResult.getTotalRows()).thenReturn(1L);
+        when(mockTableResult.getSchema()).thenReturn(schema);
+        when(mockTableResult.iterateAll()).thenReturn(rows);
+
+        final Dataset dataset = BigQueryExecutor.extractData(mockTableResult, TestEntityWithTags.class);
+
+        assertEquals(1, dataset.size());
+        assertEquals(Arrays.asList("a", "b"), dataset.getColumn("tags").get(0));
+    }
+
+    // Regression: with a non-bean target class (e.g. Object[]), scalar column values must stay raw.
+    // The old code set columnClasses[i] = Object[].class for every column, forcing each scalar through
+    // N.convert(value, Object[].class), which mangled plain values like "abc".
+    @Test
+    public void testExtractData_ScalarPassthroughForNonBeanTarget() {
+        final Field idField = Field.of("id", StandardSQLTypeName.INT64);
+        final Field nameField = Field.of("name", StandardSQLTypeName.STRING);
+        final FieldList fields = FieldList.of(idField, nameField);
+        final Schema schema = Schema.of(fields);
+
+        final List<FieldValueList> rows = new ArrayList<>();
+        rows.add(FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "abc")),
+                fields));
+
+        when(mockTableResult.getTotalRows()).thenReturn(1L);
+        when(mockTableResult.getSchema()).thenReturn(schema);
+        when(mockTableResult.iterateAll()).thenReturn(rows);
+
+        final Dataset dataset = BigQueryExecutor.extractData(mockTableResult, Object[].class);
+
+        assertEquals(1, dataset.size());
+        // Raw scalar values, not values wrapped/mangled into Object[].
+        assertEquals("1", dataset.getColumn("id").get(0));
+        assertEquals("abc", dataset.getColumn("name").get(0));
     }
 
     // ---------- toList for non-bean basic types (single-column) ----------
@@ -2142,6 +2261,50 @@ public class BigQueryExecutorTest extends TestBase {
 
         public void setNestedName(String nestedName) {
             this.nestedName = nestedName;
+        }
+    }
+
+    // Entity with a List<String> property targeted by a REPEATED column.
+    public static class TestEntityWithTags {
+        private int id;
+        private List<String> tags;
+
+        public int getId() {
+            return id;
+        }
+
+        public void setId(int id) {
+            this.id = id;
+        }
+
+        public List<String> getTags() {
+            return tags;
+        }
+
+        public void setTags(List<String> tags) {
+            this.tags = tags;
+        }
+    }
+
+    // Entity with a List-typed property targeted by a RECORD (STRUCT) column.
+    public static class TestEntityWithStructList {
+        private int id;
+        private List<String> struct;
+
+        public int getId() {
+            return id;
+        }
+
+        public void setId(int id) {
+            this.id = id;
+        }
+
+        public List<String> getStruct() {
+            return struct;
+        }
+
+        public void setStruct(List<String> struct) {
+            this.struct = struct;
         }
     }
 }

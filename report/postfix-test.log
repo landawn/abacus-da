@@ -1,0 +1,1037 @@
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::staticFieldBase has been called by com.google.inject.internal.aop.HiddenClassDefiner (file:/C:/Users/haiyangl/dev-softwares/apache-maven-3.9.11/lib/guice-5.1.0-classes.jar)
+WARNING: Please consider reporting this to the maintainers of class com.google.inject.internal.aop.HiddenClassDefiner
+WARNING: sun.misc.Unsafe::staticFieldBase will be removed in a future release
+[INFO] Scanning for projects...
+[INFO] Inspecting build with total of 1 modules
+[INFO] Installing Central Publishing features
+[INFO] 
+[INFO] ------------------< com.landawn.abacus:abacus-da-all >------------------
+[INFO] Building abacus-da-all 2.7.7
+[INFO]   from pom.xml
+[INFO] --------------------------------[ jar ]---------------------------------
+[WARNING] 2 problems were encountered while building the effective model for org.apache.yetus:audience-annotations:jar:0.5.0 during dependency collection step for project (use -X to see details)
+[INFO] 
+[INFO] --- jacoco:0.8.15:prepare-agent (prepare-agent) @ abacus-da-all ---
+[INFO] argLine set to -javaagent:C:\\Users\\haiyangl\\.m2\\repository\\org\\jacoco\\org.jacoco.agent\\0.8.15\\org.jacoco.agent-0.8.15-runtime.jar=destfile=C:\\Users\\haiyangl\\Landawn\\abacus-da\\abacus-da-all\\target\\jacoco.exec
+[INFO] 
+[INFO] --- resources:3.3.1:resources (default-resources) @ abacus-da-all ---
+[INFO] Copying 0 resource from src\main\resources to target\classes
+[INFO] 
+[INFO] --- flatten:1.7.3:flatten (flatten) @ abacus-da-all ---
+[INFO] Generating flattened POM of project com.landawn.abacus:abacus-da-all:jar:2.7.7...
+[INFO] 
+[INFO] --- compiler:3.15.0:compile (default-compile) @ abacus-da-all ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- resources:3.3.1:testResources (default-testResources) @ abacus-da-all ---
+[INFO] Copying 0 resource from src\test\resources to target\test-classes
+[INFO] 
+[INFO] --- compiler:3.15.0:testCompile (default-testCompile) @ abacus-da-all ---
+[INFO] Nothing to compile - all classes are up to date.
+[INFO] 
+[INFO] --- surefire:3.5.5:test (default-test) @ abacus-da-all ---
+[INFO] Using auto detected provider org.apache.maven.surefire.junitplatform.JUnitPlatformProvider
+[INFO] 
+[INFO] -------------------------------------------------------
+[INFO]  T E S T S
+[INFO] -------------------------------------------------------
+[INFO] Running com.landawn.abacus.da.AbacusDATestSuite
+[INFO] Running com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest
+SLF4J(W): No SLF4J providers were found.
+SLF4J(W): Defaulting to no-operation (NOP) logger implementation
+SLF4J(W): See https://www.slf4j.org/codes.html#noProviders for further details.
+SLF4J(W): Class path contains SLF4J bindings targeting slf4j-api versions 1.7.x or earlier.
+SLF4J(W): Ignoring binding found at [jar:file:/C:/Users/haiyangl/.m2/repository/org/slf4j/slf4j-reload4j/1.7.36/slf4j-reload4j-1.7.36.jar!/org/slf4j/impl/StaticLoggerBinder.class]
+SLF4J(W): See https://www.slf4j.org/codes.html#ignoredBindings for an explanation.
+Jun 10, 2026 4:38:02 PM com.landawn.abacus.logging.LoggerFactory getLogger
+INFO: Initialized with Log4j v2 Logger
+Mockito is currently self-attaching to enable the inline-mock-maker. This will no longer work in future releases of the JDK. Please add Mockito as an agent to your build as described in Mockito's documentation: https://javadoc.io/doc/org.mockito/mockito-core/latest/org.mockito/org/mockito/Mockito.html#0.3
+Java HotSpot(TM) 64-Bit Server VM warning: Sharing is only supported for boot loader classes because bootstrap classpath has been appended
+WARNING: A Java agent has been loaded dynamically (C:\Users\haiyangl\.m2\repository\net\bytebuddy\byte-buddy-agent\1.17.7\byte-buddy-agent-1.17.7.jar)
+WARNING: If a serviceability tool is in use, please run with -XX:+EnableDynamicAgentLoading to hide this warning
+WARNING: If a serviceability tool is not in use, please run with -Djdk.instrument.traceUsage for more information
+WARNING: Dynamic loading of agents will be disallowed by default in a future release
+[INFO] Tests run: 158, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 3.249 s -- in com.landawn.abacus.da.mongodb.MongoCollectionExecutorTest
+[INFO] Running com.landawn.abacus.da.mongodb.reactivestreams.MongoCollectionMapperTest
+[INFO] Tests run: 87, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.504 s -- in com.landawn.abacus.da.mongodb.reactivestreams.MongoCollectionMapperTest
+[INFO] Running com.landawn.abacus.da.cassandra.CassandraExecutorTest
+WARNING: A terminally deprecated method in sun.misc.Unsafe has been called
+WARNING: sun.misc.Unsafe::objectFieldOffset has been called by com.datastax.oss.driver.shaded.guava.common.util.concurrent.AbstractFuture$UnsafeAtomicHelper (file:/C:/Users/haiyangl/.m2/repository/org/apache/cassandra/java-driver-guava-shaded/4.19.3/java-driver-guava-shaded-4.19.3.jar)
+WARNING: Please consider reporting this to the maintainers of class com.datastax.oss.driver.shaded.guava.common.util.concurrent.AbstractFuture$UnsafeAtomicHelper
+WARNING: sun.misc.Unsafe::objectFieldOffset will be removed in a future release
+WARNING: A restricted method in java.lang.System has been called
+WARNING: java.lang.System::load has been called by com.kenai.jffi.internal.StubLoader in an unnamed module (file:/C:/Users/haiyangl/.m2/repository/com/github/jnr/jffi/1.2.16/jffi-1.2.16.jar)
+WARNING: Use --enable-native-access=ALL-UNNAMED to avoid a warning for callers in this module
+WARNING: Restricted methods will be blocked in a future release unless native access is enabled
+
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+null
+[{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[["jazz", "2013"]], data=null}]
+[{id=756716f7-2e54-4715-9f00-91dcbea6cf50, data=null, title=La Petite Tonkinoise, artist=Jos�phine Baker, album=Bye Bye Blackbird, tags=[["jazz", "2013"]]}]
+[La Petite Tonkinoise]
+INSERT INTO simplex.users (id, name, addresses, someDate, last_update_time, created_time, bytes, shorts) VALUES (:id, :name, :addresses, :someDate, :lastUpdateTime, :createdTime, :bytes, :shorts)
+[e18bbd22-cee9-4dd0-b9a6-be0c8734b9ca]
+INSERT INTO simplex.users (id, name, addresses, someDate, last_update_time, created_time, bytes, shorts) VALUES (:id, :name, :addresses, :someDate, :lastUpdateTime, :createdTime, :bytes, :shorts)
+[fbc02a50-de0e-4707-8d9b-8241b4e3eebc, f366c7b8-e7e2-4f28-8655-3acb6302c665, 2d34eaf1-fa2f-45ff-9e27-82e07df4b15e, 0e506f09-d613-449a-b536-8c202e35fc7f, cde7f20e-85be-4c0a-b578-dc761467b7f2, 92c8fa0f-debc-4396-84c2-4b1bc5f9ca64, afb54ecc-7348-4e15-a507-35cd3e534c6d, b2f5d5e5-e3fa-413f-b62b-18b7240cc4a3, 7778ef71-0fcd-4f8c-bfd3-c49a6dc6c4d0, 09b86dd1-6aec-447a-8ff5-89a28aa07072, 8b7b1d93-a7ea-4371-9bcd-17e0992afb14]
+Users(id=fbc02a50-de0e-4707-8d9b-8241b4e3eebc, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 16:38:08.148, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=f366c7b8-e7e2-4f28-8655-3acb6302c665, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 16:38:08.148, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=2d34eaf1-fa2f-45ff-9e27-82e07df4b15e, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 16:38:08.148, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=0e506f09-d613-449a-b536-8c202e35fc7f, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 16:38:08.148, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=cde7f20e-85be-4c0a-b578-dc761467b7f2, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 16:38:08.148, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=92c8fa0f-debc-4396-84c2-4b1bc5f9ca64, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 16:38:08.148, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=afb54ecc-7348-4e15-a507-35cd3e534c6d, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 16:38:08.148, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=b2f5d5e5-e3fa-413f-b62b-18b7240cc4a3, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 16:38:08.148, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=7778ef71-0fcd-4f8c-bfd3-c49a6dc6c4d0, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 16:38:08.148, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=09b86dd1-6aec-447a-8ff5-89a28aa07072, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 16:38:08.148, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=8b7b1d93-a7ea-4371-9bcd-17e0992afb14, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 16:38:08.148, bytes=[1, 2, 3], shorts=[1, 2, 3])
+null
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[["jazz", "2013"]], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, data=null, title=La Petite Tonkinoise, artist=Jos�phine Baker, album=Bye Bye Blackbird, tags=[["jazz", "2013"]]}
++--------------------------------------+-------------------+-----------------+------+--------------------+----------------------+
+| id                                   | album             | artist          | data | tags               | title                |
++--------------------------------------+-------------------+-----------------+------+--------------------+----------------------+
+| 756716f7-2e54-4715-9f00-91dcbea6cf50 | Bye Bye Blackbird | Jos�phine Baker | null | [["jazz", "2013"]] | La Petite Tonkinoise |
++--------------------------------------+-------------------+-----------------+------+--------------------+----------------------+
+756716f7-2e54-4715-9f00-91dcbea6cf50
+756716f7-2e54-4715-9f00-91dcbea6cf50
+INSERT INTO simplex.users (id, name, addresses, someDate, last_update_time, created_time, bytes, shorts) VALUES (:id, :name, :addresses, :someDate, :lastUpdateTime, :createdTime, :bytes, :shorts)
+[c3bb196a-2d4d-4336-ba90-3d66ceda6809, 3305a973-455a-400c-9808-1e28abea4829, 7a3a40d8-96d2-42f6-b9f6-e59a412f5633, 096d29f0-b5a8-485b-a2a1-13ab047e6dfa, b1b504bb-96ee-4249-b508-a124a661c16e, 863a9948-9629-4134-a482-a177e2af6110, d99a757b-5338-46a9-9e00-2e60994239a9, 034a3178-d570-4b7e-9359-78fb25670e64, 142812ec-76dd-4a65-8343-cfd93eac1f13, 44fc4481-119e-4216-9505-f28867335368, 451a61ed-969f-4f90-9818-e60e93eae824]
+title                         	album               	artist              
+-------------------------------+-----------------------+--------------------
+La Petite Tonkinoise          	Bye Bye Blackbird   	Jos�phine Baker     
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, data=null, title=La Petite Tonkinoise, artist=Jos�phine Baker, album=Bye Bye Blackbird, tags=[2013, jazz]}
+{columnNames=[id, album, artist, data, tags, title], isFrozen=false, columns={id=[], album=[], artist=[], data=[], tags=[], title=[]}}
++--------------------------------------+-------------------+-----------------+------+--------------+----------------------+
+| id                                   | album             | artist          | data | tags         | title                |
++--------------------------------------+-------------------+-----------------+------+--------------+----------------------+
+| 756716f7-2e54-4715-9f00-91dcbea6cf50 | Bye Bye Blackbird | Jos�phine Baker | null | [2013, jazz] | La Petite Tonkinoise |
++--------------------------------------+-------------------+-----------------+------+--------------+----------------------+
+INSERT INTO simplex.users (id, name, addresses, someDate, last_update_time, created_time, bytes, shorts) VALUES (:id, :name, :addresses, :someDate, :lastUpdateTime, :createdTime, :bytes, :shorts)
+[7e39d1f7-8b29-46bb-9f66-22ef842dc31a, a99e28b9-b11a-4c4a-bb00-8fe4c38e1b69, 1d834476-e97a-411b-9712-f9049aff0283, db37ad66-ad1b-4913-8937-3da660ec70a7, 0ee64a2e-ce16-47f7-8c72-fd0e24602d14, 525cd5cc-73bf-4db7-b195-1395a449b325, c671844f-0786-453c-8830-ca2b7753aca9, acf9ccf5-f751-42ef-8eb4-6206e8e2dc82, 7f15501b-67db-437f-87bc-cd3d09c2c588, 8ddf6fc0-976e-4a32-9bf1-18504fd7b607, c48d9acf-96c5-49a1-bb4a-d98d37377383]
+DELETE name FROM simplex.users WHERE id = ?
+Users(id=7e39d1f7-8b29-46bb-9f66-22ef842dc31a, name=Users.Name(firstName=fn, lastName=ln), addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=16:38:08.620967500, createdTime=2026-06-10 16:38:08.062, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users.Name(firstName=fn, lastName=ln)
+title                         	album               	artist              
+-------------------------------+-----------------------+--------------------
+La Petite Tonkinoise          	Bye Bye Blackbird   	Jos�phine Baker     
+{song_id=756716f7-2e54-4715-9f00-91dcbea6cf50, id=2cc9ccb7-6221-4ccb-8387-f22b6a1b354d, title=La Petite Tonkinoise, artist=Jos�phine Baker, album=Bye Bye Blackbird}
+{columnNames=[id, title, album, artist, song_id], isFrozen=false, columns={id=[], title=[], album=[], artist=[], song_id=[]}}
+{columnNames=[id, title, album, artist, song_id], isFrozen=false, columns={id=[2cc9ccb7-6221-4ccb-8387-f22b6a1b354d], title=[La Petite Tonkinoise], album=[Bye Bye Blackbird], artist=[Jos�phine Baker], song_id=[756716f7-2e54-4715-9f00-91dcbea6cf50]}}
++--------------------------------------+-------------------+--------+------+------+-------+
+| id                                   | album             | artist | data | tags | title |
++--------------------------------------+-------------------+--------+------+------+-------+
+| 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d | new new new Album | null   | null | []   | null  |
++--------------------------------------+-------------------+--------+------+------+-------+
+UPDATE simplex.songs SET title = ?, album = ? WHERE id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d
+[]
+null
+true
++--------------------------------------+---------------+--------+------+------+---------------+
+| id                                   | album         | artist | data | tags | title         |
++--------------------------------------+---------------+--------+------+------+---------------+
+| 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d | new new Album | null   | null | []   | new new title |
++--------------------------------------+---------------+--------+------+------+---------------+
+DELETE FROM simplex.songs WHERE id = ?
+[]
+null
+true
++----+-------+--------+------+------+-------+
+| id | album | artist | data | tags | title |
++----+-------+--------+------+------+-------+
+|                                           |
++----+-------+--------+------+------+-------+
+UPDATE simplex.songs SET album = :album WHERE id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d
+[]
+null
+true
++--------------------------------------+-------------------+--------+------+------+-------+
+| id                                   | album             | artist | data | tags | title |
++--------------------------------------+-------------------+--------+------+------+-------+
+| 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d | new new new Album | null   | null | []   | null  |
++--------------------------------------+-------------------+--------+------+------+-------+
+
+INSERT INTO simplex.users (id, name, addresses, someDate, last_update_time, created_time, bytes, shorts) VALUES (:id, :name, :addresses, :someDate, :lastUpdateTime, :createdTime, :bytes, :shorts)
+[Users(id=1acd8546-4180-416e-b00e-69b8e7983319, name=Users.Name(firstName=fn, lastName=ln), addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=16:38:08.928549700, createdTime=2026-06-10 16:38:08.928, bytes=[1, 2, 3], shorts=[1, 2, 3])]
+title                         	album               	artist              
+-------------------------------+-----------------------+--------------------
+La Petite Tonkinoise          	Bye Bye Blackbird   	Jos�phine Baker     
+{song_id=756716f7-2e54-4715-9f00-91dcbea6cf50, id=2cc9ccb7-6221-4ccb-8387-f22b6a1b354d, title=La Petite Tonkinoise, artist=Jos�phine Baker, album=Bye Bye Blackbird}
+{columnNames=[id, title, album, artist, song_id], isFrozen=false, columns={id=[], title=[], album=[], artist=[], song_id=[]}}
+{columnNames=[id, title, album, artist, song_id], isFrozen=false, columns={id=[2cc9ccb7-6221-4ccb-8387-f22b6a1b354d], title=[La Petite Tonkinoise], album=[Bye Bye Blackbird], artist=[Jos�phine Baker], song_id=[756716f7-2e54-4715-9f00-91dcbea6cf50]}}
+
+null
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[["jazz", "2013"]], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, data=null, title=La Petite Tonkinoise, artist=Jos�phine Baker, album=Bye Bye Blackbird, tags=[["jazz", "2013"]]}
++--------------------------------------+-------------------+-----------------+------+--------------------+----------------------+
+| id                                   | album             | artist          | data | tags               | title                |
++--------------------------------------+-------------------+-----------------+------+--------------------+----------------------+
+| 756716f7-2e54-4715-9f00-91dcbea6cf50 | Bye Bye Blackbird | Jos�phine Baker | null | [["jazz", "2013"]] | La Petite Tonkinoise |
++--------------------------------------+-------------------+-----------------+------+--------------------+----------------------+
+756716f7-2e54-4715-9f00-91dcbea6cf50
+756716f7-2e54-4715-9f00-91dcbea6cf50
+[INFO] Tests run: 81, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.652 s -- in com.landawn.abacus.da.cassandra.CassandraExecutorTest
+[INFO] Running com.landawn.abacus.da.cassandra.AsyncCassandraExecutorTest
+[INFO] Tests run: 31, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.503 s -- in com.landawn.abacus.da.cassandra.AsyncCassandraExecutorTest
+[INFO] Running com.landawn.abacus.da.hbase.AnyOperationTest
+[INFO] Tests run: 19, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.071 s -- in com.landawn.abacus.da.hbase.AnyOperationTest
+[INFO] Running com.landawn.abacus.da.hbase.AnyScanTest
+[INFO] Tests run: 72, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.049 s -- in com.landawn.abacus.da.hbase.AnyScanTest
+[INFO] Running com.landawn.abacus.da.azure.CosmosContainerExecutor2Test
+[WARNING] Tests run: 56, Failures: 0, Errors: 0, Skipped: 19, Time elapsed: 2.196 s -- in com.landawn.abacus.da.azure.CosmosContainerExecutor2Test
+[INFO] Running com.landawn.abacus.da.hbase.AnyDeleteTest
+[INFO] Tests run: 44, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.035 s -- in com.landawn.abacus.da.hbase.AnyDeleteTest
+[INFO] Running com.landawn.abacus.da.aws.dynamodb.AsyncDynamoDBExecutorV2Test
+[INFO] Tests run: 75, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.419 s -- in com.landawn.abacus.da.aws.dynamodb.AsyncDynamoDBExecutorV2Test
+[INFO] Running com.landawn.abacus.da.hbase.HBaseMapperTest
+[INFO] Tests run: 32, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.386 s -- in com.landawn.abacus.da.hbase.HBaseMapperTest
+[INFO] Running com.landawn.abacus.da.mongodb.MongoDBExecutorTest
+{_id=63396666613261622d616364, gui=b8ad9767-b7f0-47, emailAddress=bb6107d3-2c0@email.com, firstName=ea6a8018-58cc-4a, middleName=f13d736f-6ad5-44, lastName=ba4f3e26-c02b-4d, birthDate=Wed Jun 10 16:38:12 PDT 2026, status=-1144070917, lastUpdateTime=Wed Jun 10 16:38:12 PDT 2026, createTime=Wed Jun 10 16:38:12 PDT 2026, contact=Document{{id=2133487645853925620, accountId=7601580434578352536, mobile=220a0c9c-5b10-42, telephone=31da7d14-d6c1-4e, email=08e80f9a-ed2@email.com, address=1110c361-f229-46, address2=7d95592a-05f9-4e, city=e7ceefa2-c70d-44, state=83a267ff-2e1d-46, country=15919462-f674-40, zipCode=c1f44aed-fe90-4c, category=2a4fcaeb-29e2-4c, description=00eb0a1c-5357-4d, status=1268068941, lastUpdateTime=Wed Jun 10 16:38:12 PDT 2026, createTime=Wed Jun 10 16:38:12 PDT 2026}}}
+{columnNames=[lastName, birthDate], isFrozen=false, columns={lastName=[ba4f3e26-c02b-4d], birthDate=[2026-06-10 16:38:12.83]}}
+{columnNames=[id, gui, emailAddress, firstName, middleName, lastName, birthDate, status, lastUpdateTime, createTime, contact, devices], isFrozen=false, columns={id=[63396666613261622d616364], gui=[null], emailAddress=[null], firstName=[null], middleName=[null], lastName=[ba4f3e26-c02b-4d], birthDate=[2026-06-10 16:38:12.83], status=[0], lastUpdateTime=[null], createTime=[null], contact=[null], devices=[null]}}
+{_id=35623961303865342d663865, gui=4d607d02-6000-49, emailAddress=09887aa6-a28@email.com, firstName=9192d02d-0fcb-42, middleName=87fea9f0-8330-4d, lastName=fcec6987-f856-45, birthDate=Wed Jun 10 16:38:12 PDT 2026, status=-1970706201, lastUpdateTime=Wed Jun 10 16:38:12 PDT 2026, createTime=Wed Jun 10 16:38:12 PDT 2026, contact=Document{{id=4545564191276487196, accountId=-890434829785812785, mobile=b6e57845-7a30-42, telephone=4e7c7f65-2ac5-4b, email=046ee243-6e6@email.com, address=3790e845-51c1-47, address2=e5447101-c0b0-40, city=85af5310-a790-4e, state=797151fd-d866-4c, country=6d191387-f988-49, zipCode=e4a2fb04-b8ba-40, category=abe42b89-08f6-45, description=5e5edab6-5b75-4b, status=1667193570, lastUpdateTime=Wed Jun 10 16:38:12 PDT 2026, createTime=Wed Jun 10 16:38:12 PDT 2026}}}
+[Document{{_id=62643935643765302d343636, gui=4d607d02-6000-49, emailAddress=09887aa6-a28@email.com, firstName=9192d02d-0fcb-42, middleName=87fea9f0-8330-4d, lastName=fcec6987-f856-45, birthDate=Wed Jun 10 16:38:12 PDT 2026, status=-1970706201, lastUpdateTime=Wed Jun 10 16:38:12 PDT 2026, createTime=Wed Jun 10 16:38:12 PDT 2026, contact=Document{{id=4545564191276487196, accountId=-890434829785812785, mobile=b6e57845-7a30-42, telephone=4e7c7f65-2ac5-4b, email=046ee243-6e6@email.com, address=3790e845-51c1-47, address2=e5447101-c0b0-40, city=85af5310-a790-4e, state=797151fd-d866-4c, country=6d191387-f988-49, zipCode=e4a2fb04-b8ba-40, category=abe42b89-08f6-45, description=5e5edab6-5b75-4b, status=1667193570, lastUpdateTime=Wed Jun 10 16:38:12 PDT 2026, createTime=Wed Jun 10 16:38:12 PDT 2026}}}}]
+[Document{{_id=62643935643765302d343636, gui=4d607d02-6000-49, emailAddress=09887aa6-a28@email.com, firstName=9192d02d-0fcb-42, middleName=87fea9f0-8330-4d, lastName=fcec6987-f856-45, birthDate=Wed Jun 10 16:38:12 PDT 2026, status=-1970706201, lastUpdateTime=Wed Jun 10 16:38:12 PDT 2026, createTime=Wed Jun 10 16:38:12 PDT 2026, contact=Document{{id=4545564191276487196, accountId=-890434829785812785, mobile=b6e57845-7a30-42, telephone=4e7c7f65-2ac5-4b, email=046ee243-6e6@email.com, address=3790e845-51c1-47, address2=e5447101-c0b0-40, city=85af5310-a790-4e, state=797151fd-d866-4c, country=6d191387-f988-49, zipCode=e4a2fb04-b8ba-40, category=abe42b89-08f6-45, description=5e5edab6-5b75-4b, status=1667193570, lastUpdateTime=Wed Jun 10 16:38:12 PDT 2026, createTime=Wed Jun 10 16:38:12 PDT 2026}}}}]
+[Document{{_id=62643935643765302d343636, gui=4d607d02-6000-49, emailAddress=09887aa6-a28@email.com, firstName=9192d02d-0fcb-42, middleName=87fea9f0-8330-4d, lastName=fcec6987-f856-45, birthDate=Wed Jun 10 16:38:12 PDT 2026, status=-1970706201, lastUpdateTime=Wed Jun 10 16:38:12 PDT 2026, createTime=Wed Jun 10 16:38:12 PDT 2026, contact=Document{{id=4545564191276487196, accountId=-890434829785812785, mobile=b6e57845-7a30-42, telephone=4e7c7f65-2ac5-4b, email=046ee243-6e6@email.com, address=3790e845-51c1-47, address2=e5447101-c0b0-40, city=85af5310-a790-4e, state=797151fd-d866-4c, country=6d191387-f988-49, zipCode=e4a2fb04-b8ba-40, category=abe42b89-08f6-45, description=5e5edab6-5b75-4b, status=1667193570, lastUpdateTime=Wed Jun 10 16:38:12 PDT 2026, createTime=Wed Jun 10 16:38:12 PDT 2026}}}}]
+null
+Jun 10, 2026 4:38:13 PM org.junit.platform.launcher.core.CompositeEngineExecutionListener lambda$notifyEach$0
+WARNING: EngineExecutionListener [org.junit.platform.launcher.core.ExecutionListenerAdapter] threw exception for method: executionFinished(TestMethodTestDescriptor: [engine:junit-platform-suite]/[suite:com.landawn.abacus.da.AbacusDATestSuite]/[engine:junit-jupiter]/[class:com.landawn.abacus.da.mongodb.MongoDBExecutorTest]/[method:test_update_async()], TestExecutionResult [status = FAILED, throwable = java.lang.NullPointerException: Cannot invoke "org.bson.Document.getObjectId(Object)" because "doc" is null])
+org.junit.platform.commons.PreconditionViolationException: No TestIdentifier with unique ID [[engine:junit-platform-suite]/[suite:com.landawn.abacus.da.AbacusDATestSuite]] has been added to this TestPlan.
+	at org.junit.platform.commons.util.Preconditions.condition(Preconditions.java:389)
+	at org.junit.platform.commons.util.Preconditions.notNull(Preconditions.java:74)
+	at org.junit.platform.launcher.TestPlan.getTestIdentifier(TestPlan.java:227)
+	at java.base/java.util.Optional.map(Optional.java:260)
+	at org.junit.platform.launcher.TestPlan.getParent(TestPlan.java:170)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.collectTestDescription(MutableTestExecutionSummary.java:235)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.lambda$collectTestDescription$0(MutableTestExecutionSummary.java:235)
+	at java.base/java.util.Optional.ifPresent(Optional.java:178)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.collectTestDescription(MutableTestExecutionSummary.java:235)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.lambda$collectTestDescription$0(MutableTestExecutionSummary.java:235)
+	at java.base/java.util.Optional.ifPresent(Optional.java:178)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.collectTestDescription(MutableTestExecutionSummary.java:235)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.describeTest(MutableTestExecutionSummary.java:229)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.addFailure(MutableTestExecutionSummary.java:80)
+	at org.junit.platform.launcher.listeners.SummaryGeneratingListener.lambda$executionFinished$0(SummaryGeneratingListener.java:140)
+	at java.base/java.util.Optional.ifPresent(Optional.java:178)
+	at org.junit.platform.launcher.listeners.SummaryGeneratingListener.executionFinished(SummaryGeneratingListener.java:139)
+	at org.junit.platform.launcher.core.ExecutionListenerAdapter.executionFinished(ExecutionListenerAdapter.java:57)
+	at org.junit.platform.launcher.core.CompositeEngineExecutionListener.lambda$executionFinished$0(CompositeEngineExecutionListener.java:60)
+	at org.junit.platform.launcher.core.CompositeEngineExecutionListener.lambda$notifyEach$0(CompositeEngineExecutionListener.java:82)
+	at org.junit.platform.commons.util.CollectionUtils.forEachInReverseOrder(CollectionUtils.java:213)
+	at org.junit.platform.launcher.core.IterationOrder$2.forEach(IterationOrder.java:30)
+	at org.junit.platform.launcher.core.CompositeEngineExecutionListener.notifyEach(CompositeEngineExecutionListener.java:80)
+	at org.junit.platform.launcher.core.CompositeEngineExecutionListener.executionFinished(CompositeEngineExecutionListener.java:59)
+	at org.junit.platform.launcher.core.DelegatingEngineExecutionListener.executionFinished(DelegatingEngineExecutionListener.java:47)
+	at org.junit.platform.launcher.core.StackTracePruningEngineExecutionListener.executionFinished(StackTracePruningEngineExecutionListener.java:46)
+	at org.junit.platform.launcher.core.DelegatingEngineExecutionListener.executionFinished(DelegatingEngineExecutionListener.java:47)
+	at org.junit.platform.launcher.core.OutcomeDelayingEngineExecutionListener.executionFinished(OutcomeDelayingEngineExecutionListener.java:71)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.reportCompletion(NodeTestTask.java:224)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:121)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1604)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:42)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$2(NodeTestTask.java:180)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:74)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$1(NodeTestTask.java:166)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:139)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$0(NodeTestTask.java:164)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:74)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:163)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:116)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1604)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:42)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$2(NodeTestTask.java:180)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:74)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$1(NodeTestTask.java:166)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:139)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$0(NodeTestTask.java:164)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:74)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:163)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:116)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.submit(SameThreadHierarchicalTestExecutorService.java:36)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestExecutor.execute(HierarchicalTestExecutor.java:52)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestEngine.execute(HierarchicalTestEngine.java:58)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.executeEngine(EngineExecutionOrchestrator.java:256)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.failOrExecuteEngine(EngineExecutionOrchestrator.java:228)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:189)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:109)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:90)
+	at org.junit.platform.suite.engine.SuiteLauncher.execute(SuiteLauncher.java:65)
+	at org.junit.platform.suite.engine.SuiteTestDescriptor.executeTests(SuiteTestDescriptor.java:208)
+	at org.junit.platform.suite.engine.SuiteTestDescriptor.execute(SuiteTestDescriptor.java:173)
+	at org.junit.platform.suite.engine.SuiteTestEngine.execute(SuiteTestEngine.java:80)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.executeEngine(EngineExecutionOrchestrator.java:256)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.failOrExecuteEngine(EngineExecutionOrchestrator.java:228)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:189)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:109)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.lambda$execute$0(EngineExecutionOrchestrator.java:66)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.withInterceptedStreams(EngineExecutionOrchestrator.java:168)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:65)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:137)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:126)
+	at org.junit.platform.launcher.core.DelegatingLauncher.execute(DelegatingLauncher.java:71)
+	at org.junit.platform.launcher.core.InterceptingLauncher.lambda$execute$2(InterceptingLauncher.java:66)
+	at org.junit.platform.launcher.core.ClasspathAlignmentCheckingLauncherInterceptor.intercept(ClasspathAlignmentCheckingLauncherInterceptor.java:25)
+	at org.junit.platform.launcher.core.InterceptingLauncher.execute(InterceptingLauncher.java:65)
+	at org.junit.platform.launcher.core.DelegatingLauncher.execute(DelegatingLauncher.java:71)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565)
+	at org.apache.maven.surefire.api.util.ReflectionUtils.invokeMethodWithArray(ReflectionUtils.java:125)
+	at org.apache.maven.surefire.junitplatform.LauncherAdapter.executeWithCancellationToken(LauncherAdapter.java:68)
+	at org.apache.maven.surefire.junitplatform.LauncherAdapter.execute(LauncherAdapter.java:54)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.execute(JUnitPlatformProvider.java:203)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invokeAllTests(JUnitPlatformProvider.java:168)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invoke(JUnitPlatformProvider.java:136)
+	at org.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)
+	at org.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)
+	at org.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)
+	at org.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)
+
+{_id=35363263666131362d633263, gui=12be460d-8f08-4c, emailAddress=f7bd83c6-049@email.com, firstName=58bc3ceb-9cd7-46, middleName=4d1ca103-a3c4-49, lastName=e53a503f-6050-4e, birthDate=Wed Jun 10 16:38:13 PDT 2026, status=1705074912, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026, contact=Document{{id=-1260255944090222207, accountId=-7306951938668824444, mobile=258ceb71-97ab-4c, telephone=3baa5fbb-61ef-48, email=16313f8d-444@email.com, address=57ddabcb-a4c1-41, address2=6c91a741-fb41-4b, city=f8a1712f-b9b4-4e, state=0abdb2f5-d339-4a, country=a2ffa5a6-86ad-4e, zipCode=5b0ed85f-9606-4d, category=8851e41e-a9f8-45, description=f6d9a7cc-9d69-47, status=414308133, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026}}}
+e53a503f-6050-4e
+{columnNames=[lastName, birthDate], isFrozen=false, columns={lastName=[e53a503f-6050-4e], birthDate=[2026-06-10 16:38:13.085]}}
+{columnNames=[id, gui, emailAddress, firstName, middleName, lastName, birthDate, status, lastUpdateTime, createTime, contact, devices], isFrozen=false, columns={id=[35363263666131362d633263], gui=[null], emailAddress=[null], firstName=[null], middleName=[null], lastName=[e53a503f-6050-4e], birthDate=[2026-06-10 16:38:13.085], status=[0], lastUpdateTime=[null], createTime=[null], contact=[null], devices=[null]}}
+[Document{{_id=32383737636137372d613462, gui=200e0b61-47cb-43, emailAddress=709100ee-989@email.com, firstName=adf110a5-d60d-43, middleName=f83012e2-4bb5-4f, lastName=92853a8f-64fe-4b, birthDate=Wed Jun 10 16:38:13 PDT 2026, status=1897468549, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026, contact=Document{{id=-4938682285416475508, accountId=-5993950149997907089, mobile=7360172c-f4f0-46, telephone=24a87f23-0aa0-40, email=966fcf97-ecc@email.com, address=81a40e8c-6f59-45, address2=ffac612b-99d1-41, city=647bba56-e389-42, state=b00a4493-799a-46, country=7d12ac8b-1b5e-43, zipCode=3cc51320-b14c-48, category=eaded341-671c-49, description=62a917bb-0adc-41, status=1203721028, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026}}}}]
++--------------------------+------------------+------------------------+------------------+------------------+------------------+------------------------------+------------+------------------------------+------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| _id                      | gui              | emailAddress           | firstName        | middleName       | lastName         | birthDate                    | status     | lastUpdateTime               | createTime                   | contact                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
++--------------------------+------------------+------------------------+------------------+------------------+------------------+------------------------------+------------+------------------------------+------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
+| 65663663373334362d393437 | cffd3034-5d6c-4f | 3710467b-d2a@email.com | 6db63292-714d-4b | 90018cb7-9c84-47 | de3563f9-1740-48 | Wed Jun 10 16:38:13 PDT 2026 | -416058794 | Wed Jun 10 16:38:13 PDT 2026 | Wed Jun 10 16:38:13 PDT 2026 | Document{{id=5753207615921242716, accountId=-7201930459113530985, mobile=eb86bb94-0cdc-48, telephone=e66c15c8-3459-46, email=936af0af-f09@email.com, address=20ea2398-5049-46, address2=8a46099c-536b-4b, city=defa149d-9161-42, state=fcb95a43-d8a5-4a, country=184f4b0e-d4f3-4d, zipCode=ef72991b-d49c-4b, category=43faef88-dbae-4d, description=c748ff91-d671-41, status=1609459436, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026}} |
++--------------------------+------------------+------------------------+------------------+------------------+------------------+------------------------------+------------+------------------------------+------------------------------+---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+
++------+------------------+------------------------+------------------+------------------+------------------+-------------------------+------------+-------------------------+-------------------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+---------+
+| id   | gui              | emailAddress           | firstName        | middleName       | lastName         | birthDate               | status     | lastUpdateTime          | createTime              | contact                                                                                                                                                                                                                                                                                                                                                                                                                                                     | devices |
++------+------------------+------------------------+------------------+------------------+------------------+-------------------------+------------+-------------------------+-------------------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+---------+
+| null | cffd3034-5d6c-4f | 3710467b-d2a@email.com | 6db63292-714d-4b | 90018cb7-9c84-47 | de3563f9-1740-48 | 2026-06-10 16:38:13.174 | -416058794 | 2026-06-10 16:38:13.174 | 2026-06-10 16:38:13.174 | {id=5753207615921242716, accountId=-7201930459113530985, mobile=eb86bb94-0cdc-48, telephone=e66c15c8-3459-46, email=936af0af-f09@email.com, address=20ea2398-5049-46, address2=8a46099c-536b-4b, city=defa149d-9161-42, state=fcb95a43-d8a5-4a, country=184f4b0e-d4f3-4d, zipCode=ef72991b-d49c-4b, category=43faef88-dbae-4d, description=c748ff91-d671-41, status=1609459436, lastUpdateTime=2026-06-10 16:38:13.174, createTime=2026-06-10 16:38:13.174} | null    |
++------+------------------+------------------------+------------------+------------------+------------------+-------------------------+------------+-------------------------+-------------------------+-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------+---------+
+{id=null, gui=cffd3034-5d6c-4f, emailAddress=3710467b-d2a@email.com, firstName=6db63292-714d-4b, middleName=90018cb7-9c84-47, lastName=de3563f9-1740-48, birthDate=2026-06-10 16:38:13.174, status=-416058794, lastUpdateTime=2026-06-10 16:38:13.174, createTime=2026-06-10 16:38:13.174, contact={id=5753207615921242716, accountId=-7201930459113530985, mobile=eb86bb94-0cdc-48, telephone=e66c15c8-3459-46, email=936af0af-f09@email.com, address=20ea2398-5049-46, address2=8a46099c-536b-4b, city=defa149d-9161-42, state=fcb95a43-d8a5-4a, country=184f4b0e-d4f3-4d, zipCode=ef72991b-d49c-4b, category=43faef88-dbae-4d, description=c748ff91-d671-41, status=1609459436, lastUpdateTime=2026-06-10 16:38:13.174, createTime=2026-06-10 16:38:13.174}, devices=null}
+{gui=cffd3034-5d6c-4f, emailAddress=3710467b-d2a@email.com, firstName=6db63292-714d-4b, middleName=90018cb7-9c84-47, lastName=de3563f9-1740-48, birthDate=2026-06-10 16:38:13.174, status=-416058794, lastUpdateTime=2026-06-10 16:38:13.174, createTime=2026-06-10 16:38:13.174, contact={id=5753207615921242716, accountId=-7201930459113530985, mobile=eb86bb94-0cdc-48, telephone=e66c15c8-3459-46, email=936af0af-f09@email.com, address=20ea2398-5049-46, address2=8a46099c-536b-4b, city=defa149d-9161-42, state=fcb95a43-d8a5-4a, country=184f4b0e-d4f3-4d, zipCode=ef72991b-d49c-4b, category=43faef88-dbae-4d, description=c748ff91-d671-41, status=1609459436, lastUpdateTime=2026-06-10 16:38:13.174, createTime=2026-06-10 16:38:13.174}}
+{gui=cffd3034-5d6c-4f, emailAddress=3710467b-d2a@email.com, firstName=6db63292-714d-4b, middleName=90018cb7-9c84-47, lastName=de3563f9-1740-48, birthDate=2026-06-10 16:38:13.174, status=-416058794, lastUpdateTime=2026-06-10 16:38:13.174, createTime=2026-06-10 16:38:13.174, contact={id=5753207615921242716, accountId=-7201930459113530985, mobile=eb86bb94-0cdc-48, telephone=e66c15c8-3459-46, email=936af0af-f09@email.com, address=20ea2398-5049-46, address2=8a46099c-536b-4b, city=defa149d-9161-42, state=fcb95a43-d8a5-4a, country=184f4b0e-d4f3-4d, zipCode=ef72991b-d49c-4b, category=43faef88-dbae-4d, description=c748ff91-d671-41, status=1609459436, lastUpdateTime=2026-06-10 16:38:13.174, createTime=2026-06-10 16:38:13.174}, _id=65663663373334362d393437}
+{id=65663663373334362d393437, gui=cffd3034-5d6c-4f, emailAddress=3710467b-d2a@email.com, firstName=6db63292-714d-4b, middleName=90018cb7-9c84-47, lastName=de3563f9-1740-48, birthDate=2026-06-10 16:38:13.174, status=-416058794, lastUpdateTime=2026-06-10 16:38:13.174, createTime=2026-06-10 16:38:13.174, contact={id=5753207615921242716, accountId=-7201930459113530985, mobile=eb86bb94-0cdc-48, telephone=e66c15c8-3459-46, email=936af0af-f09@email.com, address=20ea2398-5049-46, address2=8a46099c-536b-4b, city=defa149d-9161-42, state=fcb95a43-d8a5-4a, country=184f4b0e-d4f3-4d, zipCode=ef72991b-d49c-4b, category=43faef88-dbae-4d, description=c748ff91-d671-41, status=1609459436, lastUpdateTime=2026-06-10 16:38:13.174, createTime=2026-06-10 16:38:13.174}}
+[Document{{_id=ce9d0b4b-5c98-42}}, Document{{_id=firstName123}}, Document{{_id=c2658f22-71d6-44}}]
+[Document{{_id=ce9d0b4b-5c98-42, count=2}}, Document{{_id=firstName123, count=1}}, Document{{_id=c2658f22-71d6-44, count=1}}]
+[Document{{_id=Document{{firstName=ce9d0b4b-5c98-42}}}}, Document{{_id=Document{{firstName=firstName123}}}}, Document{{_id=Document{{firstName=c2658f22-71d6-44}}}}]
+[Document{{_id=Document{{firstName=ce9d0b4b-5c98-42}}, count=2}}, Document{{_id=Document{{firstName=firstName123}}, count=1}}, Document{{_id=Document{{firstName=c2658f22-71d6-44}}, count=1}}]
+[Document{{_id=Document{{firstName=ce9d0b4b-5c98-42, lastName=280b8116-d33e-41}}}}, Document{{_id=Document{{firstName=c2658f22-71d6-44, lastName=905eccb4-de02-49}}}}, Document{{_id=Document{{firstName=firstName123, lastName=280b8116-d33e-41}}}}]
+[Document{{_id=Document{{firstName=ce9d0b4b-5c98-42, lastName=280b8116-d33e-41}}, count=2}}, Document{{_id=Document{{firstName=c2658f22-71d6-44, lastName=905eccb4-de02-49}}, count=1}}, Document{{_id=Document{{firstName=firstName123, lastName=280b8116-d33e-41}}, count=1}}]
+[27d992a0-78b0-43, a35124ae-f2cc-41]
+{_id=32333933323631352d613861, gui=5832e204-71fe-45, emailAddress=27046d4c-82c@email.com, firstName=eabf0d3d-8957-46, middleName=710b6e9a-85ff-41, lastName=ca0e5cbe-500d-4d, birthDate=Wed Jun 10 16:38:13 PDT 2026, status=1139897812, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026, contact=Document{{id=1999013347960714641, accountId=-5096765501650110753, mobile=a0419a7d-d504-4e, telephone=e1e5a056-fc41-4c, email=e72c6fb8-181@email.com, address=067f28f7-7c6e-4a, address2=ac48c8dd-bd9f-47, city=0488b0b1-6226-40, state=4a4b2510-bd32-46, country=3776b518-19e5-40, zipCode=aed6c46a-d983-4e, category=825fa202-2464-4c, description=5d01d86f-3f2d-4e, status=-1091052928, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026}}}
+{columnNames=[lastName, birthDate], isFrozen=false, columns={lastName=[ca0e5cbe-500d-4d], birthDate=[2026-06-10 16:38:13.279]}}
+{columnNames=[id, gui, emailAddress, firstName, middleName, lastName, birthDate, status, lastUpdateTime, createTime, contact, devices], isFrozen=false, columns={id=[32333933323631352d613861], gui=[null], emailAddress=[null], firstName=[null], middleName=[null], lastName=[ca0e5cbe-500d-4d], birthDate=[2026-06-10 16:38:13.279], status=[0], lastUpdateTime=[null], createTime=[null], contact=[null], devices=[null]}}
+{_id=6a29f5651b25c03742f4efe9, lastName=d8ded701-f317-44d7-b35c-e8c62d2209ae, firstName=762933c9-d3fe-4294-b88a-270427b8376d, props=Document{{prop1=1, prop2=2}}}
+{_id=62323431336438372d373734, gui=d14775eb-8cb0-4d, emailAddress=92b8e208-0c8@email.com, firstName=e2b34a0f-c0d9-48, middleName=63dafaa5-d28b-48, lastName=3e0ad175-5fed-43, birthDate=Wed Jun 10 16:38:13 PDT 2026, status=-245885253, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026, contact=Document{{id=-8350010406644362645, accountId=8466722372105390500, mobile=6daf1439-1ba4-40, telephone=b221ced0-3622-40, email=26ae2b8d-128@email.com, address=a4c82932-9d8a-4b, address2=c2cf1ad6-c47b-4b, city=bead0456-359f-4f, state=59ea1463-7182-4b, country=025e550a-d08b-46, zipCode=28a4ed36-7097-44, category=c48b6277-8286-4b, description=4db0b28e-f117-49, status=1891845473, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026}}}
+[Document{{_id=38663131363164392d396566, gui=d14775eb-8cb0-4d, emailAddress=92b8e208-0c8@email.com, firstName=e2b34a0f-c0d9-48, middleName=63dafaa5-d28b-48, lastName=3e0ad175-5fed-43, birthDate=Wed Jun 10 16:38:13 PDT 2026, status=-245885253, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026, contact=Document{{id=-8350010406644362645, accountId=8466722372105390500, mobile=6daf1439-1ba4-40, telephone=b221ced0-3622-40, email=26ae2b8d-128@email.com, address=a4c82932-9d8a-4b, address2=c2cf1ad6-c47b-4b, city=bead0456-359f-4f, state=59ea1463-7182-4b, country=025e550a-d08b-46, zipCode=28a4ed36-7097-44, category=c48b6277-8286-4b, description=4db0b28e-f117-49, status=1891845473, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026}}}}]
+[Document{{_id=38663131363164392d396566, gui=d14775eb-8cb0-4d, emailAddress=92b8e208-0c8@email.com, firstName=e2b34a0f-c0d9-48, middleName=63dafaa5-d28b-48, lastName=3e0ad175-5fed-43, birthDate=Wed Jun 10 16:38:13 PDT 2026, status=-245885253, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026, contact=Document{{id=-8350010406644362645, accountId=8466722372105390500, mobile=6daf1439-1ba4-40, telephone=b221ced0-3622-40, email=26ae2b8d-128@email.com, address=a4c82932-9d8a-4b, address2=c2cf1ad6-c47b-4b, city=bead0456-359f-4f, state=59ea1463-7182-4b, country=025e550a-d08b-46, zipCode=28a4ed36-7097-44, category=c48b6277-8286-4b, description=4db0b28e-f117-49, status=1891845473, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026}}}}]
+[Document{{_id=38663131363164392d396566, gui=d14775eb-8cb0-4d, emailAddress=92b8e208-0c8@email.com, firstName=e2b34a0f-c0d9-48, middleName=63dafaa5-d28b-48, lastName=3e0ad175-5fed-43, birthDate=Wed Jun 10 16:38:13 PDT 2026, status=-245885253, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026, contact=Document{{id=-8350010406644362645, accountId=8466722372105390500, mobile=6daf1439-1ba4-40, telephone=b221ced0-3622-40, email=26ae2b8d-128@email.com, address=a4c82932-9d8a-4b, address2=c2cf1ad6-c47b-4b, city=bead0456-359f-4f, state=59ea1463-7182-4b, country=025e550a-d08b-46, zipCode=28a4ed36-7097-44, category=c48b6277-8286-4b, description=4db0b28e-f117-49, status=1891845473, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026}}}}]
+[Document{{_id=df3050ed-eb5a-49, total=-1685120846}}]
+{_id=35396138666537392d653966, gui=bc2da9ef-92c4-45, emailAddress=c1206fc8-2bf@email.com, firstName=20ccc517-affe-44, middleName=b28e2b7e-bd10-4b, lastName=c4f03a08-513e-46, birthDate=Wed Jun 10 16:38:13 PDT 2026, status=-1714926419, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026, contact=Document{{id=516468941386038043, accountId=2753802452912946277, mobile=546d52d4-f0d9-42, telephone=5cd0d85d-57a2-43, email=b791296b-782@email.com, address=063f2cb1-dfde-47, address2=fcd34218-250e-45, city=c5ba082a-a675-45, state=67062737-a150-45, country=7ffd2f92-f12f-42, zipCode=6a797c4f-de21-44, category=33efa6ba-e415-45, description=5a085310-ea76-48, status=1989024714, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026}}}
+[Document{{_id=66646239626137372d656332, gui=bc2da9ef-92c4-45, emailAddress=c1206fc8-2bf@email.com, firstName=20ccc517-affe-44, middleName=b28e2b7e-bd10-4b, lastName=c4f03a08-513e-46, birthDate=Wed Jun 10 16:38:13 PDT 2026, status=-1714926419, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026, contact=Document{{id=516468941386038043, accountId=2753802452912946277, mobile=546d52d4-f0d9-42, telephone=5cd0d85d-57a2-43, email=b791296b-782@email.com, address=063f2cb1-dfde-47, address2=fcd34218-250e-45, city=c5ba082a-a675-45, state=67062737-a150-45, country=7ffd2f92-f12f-42, zipCode=6a797c4f-de21-44, category=33efa6ba-e415-45, description=5a085310-ea76-48, status=1989024714, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026}}}}]
+[Document{{_id=66646239626137372d656332, gui=bc2da9ef-92c4-45, emailAddress=c1206fc8-2bf@email.com, firstName=20ccc517-affe-44, middleName=b28e2b7e-bd10-4b, lastName=c4f03a08-513e-46, birthDate=Wed Jun 10 16:38:13 PDT 2026, status=-1714926419, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026, contact=Document{{id=516468941386038043, accountId=2753802452912946277, mobile=546d52d4-f0d9-42, telephone=5cd0d85d-57a2-43, email=b791296b-782@email.com, address=063f2cb1-dfde-47, address2=fcd34218-250e-45, city=c5ba082a-a675-45, state=67062737-a150-45, country=7ffd2f92-f12f-42, zipCode=6a797c4f-de21-44, category=33efa6ba-e415-45, description=5a085310-ea76-48, status=1989024714, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026}}}}]
+[Document{{_id=66646239626137372d656332, gui=bc2da9ef-92c4-45, emailAddress=c1206fc8-2bf@email.com, firstName=20ccc517-affe-44, middleName=b28e2b7e-bd10-4b, lastName=c4f03a08-513e-46, birthDate=Wed Jun 10 16:38:13 PDT 2026, status=-1714926419, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026, contact=Document{{id=516468941386038043, accountId=2753802452912946277, mobile=546d52d4-f0d9-42, telephone=5cd0d85d-57a2-43, email=b791296b-782@email.com, address=063f2cb1-dfde-47, address2=fcd34218-250e-45, city=c5ba082a-a675-45, state=67062737-a150-45, country=7ffd2f92-f12f-42, zipCode=6a797c4f-de21-44, category=33efa6ba-e415-45, description=5a085310-ea76-48, status=1989024714, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026}}}}]
+[Document{{_id=a428addd-679b-4b, value=8.30325452E8}}, Document{{_id=8672b195-5a55-4f, value=1.881660614E9}}]
+[{_id=a428addd-679b-4b, value=8.30325452E8}, {_id=8672b195-5a55-4f, value=1.881660614E9}]
+{id=38353261363830322d383137, gui=a4762339-6aa2-47, emailAddress=5dc07785-a24@email.com, firstName=8672b195-5a55-4f, middleName=2887916d-ee5c-45, lastName=9f8e59ee-77bb-49, birthDate=2026-06-10 16:38:13.701, status=1881660614, lastUpdateTime=2026-06-10 16:38:13.701, createTime=2026-06-10 16:38:13.701, contact={id=7336118223158305147, accountId=-4730678249399355628, mobile=2c7caaff-021c-46, telephone=81c495aa-862e-4e, email=65efe5e9-2f6@email.com, address=14eebd57-feb8-45, address2=7678c90b-8b1a-4f, city=fbb15c0c-9a38-4d, state=31c5fe02-28e8-40, country=0daefc16-9e3a-48, zipCode=7501bd13-0c6b-40, category=836445b5-3039-4a, description=e3e3cbf0-8066-45, status=-817534435, lastUpdateTime=2026-06-10 16:38:13.702, createTime=2026-06-10 16:38:13.702}, devices=null}
+{id=39363666666464642d663466, gui=a6581a77-d69f-41, emailAddress=958c2b92-71f@email.com, firstName=64e99f80-0ead-4a, middleName=44874e49-16bc-46, lastName=807d59c3-6f44-47, birthDate=2026-06-10 16:38:13.765, status=2053884729, lastUpdateTime=2026-06-10 16:38:13.765, createTime=2026-06-10 16:38:13.765, contact={id=-1940567402833359984, accountId=-485309911611923713, mobile=5c406ac3-5711-44, telephone=cab4e7a9-fa7b-4a, email=d4d869ee-75f@email.com, address=cee57595-d667-45, address2=d9e3f5a9-8dd5-4b, city=64a72b3b-c135-43, state=f9307884-b2c6-48, country=866f9ddf-cb44-48, zipCode=b1e035f6-b548-44, category=3981b09c-28cf-4e, description=93b3aa03-a718-43, status=559590176, lastUpdateTime=2026-06-10 16:38:13.765, createTime=2026-06-10 16:38:13.765}, devices=null}
+[Document{{_id=31326435623635622d616164, gui=71441b3f-9bab-41, emailAddress=22822e42-552@email.com, firstName=945f2209-5d6c-48, middleName=23e1822e-98e6-45, lastName=6f1badfb-9dc2-4d, birthDate=Wed Jun 10 16:38:13 PDT 2026, status=-1708779015, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026, contact=Document{{id=6888071821516127251, accountId=8131753352307488256, mobile=037ca536-6a0c-4c, telephone=c5416e31-2ac3-4e, email=d92cd007-061@email.com, address=8b38024d-69f3-45, address2=834d98a2-cbd5-4a, city=9a46dd08-4518-47, state=a22a28f4-695b-48, country=58e5fa06-36ee-41, zipCode=fe254198-e387-42, category=d54f5cfb-1dbd-41, description=c9a2d917-8837-42, status=-242698701, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026}}}}]
+{_id=39343132643130372d346539, gui=076ee138-b025-44, emailAddress=96f80aa8-f1a@email.com, firstName=d95ed694-254e-44, middleName=7b96fe5f-ca7e-48, lastName=ca11f65a-6a09-44, birthDate=Wed Jun 10 16:38:13 PDT 2026, status=1645660678, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026, contact=Document{{id=895888333901749625, accountId=-2805360144915515739, mobile=4f075894-0408-45, telephone=67852868-87fd-42, email=778021e5-74a@email.com, address=49ddb25e-7fde-43, address2=ef67807a-0f21-45, city=a1c3ac21-4e0e-41, state=5a2b7ea0-026b-41, country=2f9c2a1d-5ee2-44, zipCode=8764cebc-aaa0-46, category=4e32b345-6ca5-41, description=3acf26ae-6665-4c, status=-296450322, lastUpdateTime=Wed Jun 10 16:38:13 PDT 2026, createTime=Wed Jun 10 16:38:13 PDT 2026}}}
+ca11f65a-6a09-44
+{columnNames=[lastName, birthDate], isFrozen=false, columns={lastName=[ca11f65a-6a09-44], birthDate=[2026-06-10 16:38:13.804]}}
+{columnNames=[id, gui, emailAddress, firstName, middleName, lastName, birthDate, status, lastUpdateTime, createTime, contact, devices], isFrozen=false, columns={id=[39343132643130372d346539], gui=[null], emailAddress=[null], firstName=[null], middleName=[null], lastName=[ca11f65a-6a09-44], birthDate=[2026-06-10 16:38:13.804], status=[0], lastUpdateTime=[null], createTime=[null], contact=[null], devices=[null]}}
+[ERROR] Tests run: 17, Failures: 0, Errors: 1, Skipped: 0, Time elapsed: 1.122 s <<< FAILURE! -- in com.landawn.abacus.da.mongodb.MongoDBExecutorTest
+[ERROR] com.landawn.abacus.da.AbacusDATestSuite.test_update_async -- Time elapsed: 0.005 s <<< ERROR!
+java.lang.NullPointerException: Cannot invoke "org.bson.Document.getObjectId(Object)" because "doc" is null
+	at com.landawn.abacus.da.mongodb.MongoDBExecutorTest.test_update_async(MongoDBExecutorTest.java:1005)
+
+[INFO] Running com.landawn.abacus.da.search.LuceneExecutorTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.landawn.abacus.da.search.LuceneExecutorTest
+[INFO] Running com.landawn.abacus.da.cassandra.ParsedCqlTest
+[INFO] Tests run: 33, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.017 s -- in com.landawn.abacus.da.cassandra.ParsedCqlTest
+[INFO] Running com.landawn.abacus.da.search.ElasticsearchExecutorTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.landawn.abacus.da.search.ElasticsearchExecutorTest
+[INFO] Running com.landawn.abacus.da.hbase.AsyncHBaseExecutorTest
+[INFO] Tests run: 39, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.218 s -- in com.landawn.abacus.da.hbase.AsyncHBaseExecutorTest
+[INFO] Running com.landawn.abacus.da.azure.CosmosContainerExecutorTest
+[INFO] Tests run: 50, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.343 s -- in com.landawn.abacus.da.azure.CosmosContainerExecutorTest
+[INFO] Running com.landawn.abacus.da.mongodb.reactivestreams.MongoCollectionExecutorTest
+[INFO] Tests run: 165, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.888 s -- in com.landawn.abacus.da.mongodb.reactivestreams.MongoCollectionExecutorTest
+[INFO] Running com.landawn.abacus.da.search.SolrExecutorTest
+[INFO] Tests run: 4, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.003 s -- in com.landawn.abacus.da.search.SolrExecutorTest
+[INFO] Running com.landawn.abacus.da.mongodb.MongoDBTest
+[INFO] Tests run: 17, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.115 s -- in com.landawn.abacus.da.mongodb.MongoDBTest
+[INFO] Running com.landawn.abacus.da.hbase.HBaseExecutorStaticTest
+[INFO] Tests run: 73, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.138 s -- in com.landawn.abacus.da.hbase.HBaseExecutorStaticTest
+[INFO] Running com.landawn.abacus.da.hbase.AnyAppendTest
+[INFO] Tests run: 27, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.014 s -- in com.landawn.abacus.da.hbase.AnyAppendTest
+[INFO] Running com.landawn.abacus.da.hbase.AnyQueryTest
+[INFO] Tests run: 22, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.111 s -- in com.landawn.abacus.da.hbase.AnyQueryTest
+[INFO] Running com.landawn.abacus.da.mongodb.MDBTest
+[INFO] Tests run: 44, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.031 s -- in com.landawn.abacus.da.mongodb.MDBTest
+[INFO] Running com.landawn.abacus.da.cassandra.CqlMapperTest
+[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.034 s -- in com.landawn.abacus.da.cassandra.CqlMapperTest
+[INFO] Running com.landawn.abacus.da.mongodb.AsyncMongoCollectionExecutorTest
+[INFO] Tests run: 214, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.239 s -- in com.landawn.abacus.da.mongodb.AsyncMongoCollectionExecutorTest
+[INFO] Running com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutor01Test
+log4j:WARN No appenders could be found for logger (com.amazonaws.AmazonWebServiceClient).
+log4j:WARN Please initialize the log4j system properly.
+log4j:WARN See http://logging.apache.org/log4j/1.2/faq.html#noconfig for more info.
+[INFO] Tests run: 212, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.564 s -- in com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutor01Test
+[INFO] Running com.landawn.abacus.da.hbase.AnyIncrementTest
+[INFO] Tests run: 29, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.018 s -- in com.landawn.abacus.da.hbase.AnyIncrementTest
+[INFO] Running com.landawn.abacus.da.aws.dynamodb.AsyncDynamoDBExecutorTest
+[INFO] Tests run: 38, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.166 s -- in com.landawn.abacus.da.aws.dynamodb.AsyncDynamoDBExecutorTest
+[INFO] Running com.landawn.abacus.da.hbase.AnyOperationWithAttributesTest
+[INFO] Tests run: 19, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.008 s -- in com.landawn.abacus.da.hbase.AnyOperationWithAttributesTest
+[INFO] Running com.landawn.abacus.da.mongodb.AnyUtilTest
+[INFO] Tests run: 11, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.006 s -- in com.landawn.abacus.da.mongodb.AnyUtilTest
+[INFO] Running com.landawn.abacus.da.mongodb.reactivestreams.MongoDBTest
+[INFO] Tests run: 18, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.129 s -- in com.landawn.abacus.da.mongodb.reactivestreams.MongoDBTest
+[INFO] Running com.landawn.abacus.da.mongodb.MongoDBBaseTest
+Jun 10, 2026 4:38:16 PM org.junit.platform.launcher.core.CompositeEngineExecutionListener lambda$notifyEach$0
+WARNING: EngineExecutionListener [org.junit.platform.launcher.core.ExecutionListenerAdapter] threw exception for method: executionFinished(TestMethodTestDescriptor: [engine:junit-platform-suite]/[suite:com.landawn.abacus.da.AbacusDATestSuite]/[engine:junit-jupiter]/[class:com.landawn.abacus.da.mongodb.MongoDBBaseTest]/[method:testResetObjectIdMapWithDateIdConvertedToObjectId()], TestExecutionResult [status = FAILED, throwable = org.opentest4j.AssertionFailedError: expected: <true> but was: <false>])
+org.junit.platform.commons.PreconditionViolationException: No TestIdentifier with unique ID [[engine:junit-platform-suite]/[suite:com.landawn.abacus.da.AbacusDATestSuite]] has been added to this TestPlan.
+	at org.junit.platform.commons.util.Preconditions.condition(Preconditions.java:389)
+	at org.junit.platform.commons.util.Preconditions.notNull(Preconditions.java:74)
+	at org.junit.platform.launcher.TestPlan.getTestIdentifier(TestPlan.java:227)
+	at java.base/java.util.Optional.map(Optional.java:260)
+	at org.junit.platform.launcher.TestPlan.getParent(TestPlan.java:170)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.collectTestDescription(MutableTestExecutionSummary.java:235)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.lambda$collectTestDescription$0(MutableTestExecutionSummary.java:235)
+	at java.base/java.util.Optional.ifPresent(Optional.java:178)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.collectTestDescription(MutableTestExecutionSummary.java:235)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.lambda$collectTestDescription$0(MutableTestExecutionSummary.java:235)
+	at java.base/java.util.Optional.ifPresent(Optional.java:178)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.collectTestDescription(MutableTestExecutionSummary.java:235)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.describeTest(MutableTestExecutionSummary.java:229)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.addFailure(MutableTestExecutionSummary.java:80)
+	at org.junit.platform.launcher.listeners.SummaryGeneratingListener.lambda$executionFinished$0(SummaryGeneratingListener.java:140)
+	at java.base/java.util.Optional.ifPresent(Optional.java:178)
+	at org.junit.platform.launcher.listeners.SummaryGeneratingListener.executionFinished(SummaryGeneratingListener.java:139)
+	at org.junit.platform.launcher.core.ExecutionListenerAdapter.executionFinished(ExecutionListenerAdapter.java:57)
+	at org.junit.platform.launcher.core.CompositeEngineExecutionListener.lambda$executionFinished$0(CompositeEngineExecutionListener.java:60)
+	at org.junit.platform.launcher.core.CompositeEngineExecutionListener.lambda$notifyEach$0(CompositeEngineExecutionListener.java:82)
+	at org.junit.platform.commons.util.CollectionUtils.forEachInReverseOrder(CollectionUtils.java:213)
+	at org.junit.platform.launcher.core.IterationOrder$2.forEach(IterationOrder.java:30)
+	at org.junit.platform.launcher.core.CompositeEngineExecutionListener.notifyEach(CompositeEngineExecutionListener.java:80)
+	at org.junit.platform.launcher.core.CompositeEngineExecutionListener.executionFinished(CompositeEngineExecutionListener.java:59)
+	at org.junit.platform.launcher.core.DelegatingEngineExecutionListener.executionFinished(DelegatingEngineExecutionListener.java:47)
+	at org.junit.platform.launcher.core.StackTracePruningEngineExecutionListener.executionFinished(StackTracePruningEngineExecutionListener.java:46)
+	at org.junit.platform.launcher.core.DelegatingEngineExecutionListener.executionFinished(DelegatingEngineExecutionListener.java:47)
+	at org.junit.platform.launcher.core.OutcomeDelayingEngineExecutionListener.executionFinished(OutcomeDelayingEngineExecutionListener.java:71)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.reportCompletion(NodeTestTask.java:224)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:121)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1604)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:42)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$2(NodeTestTask.java:180)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:74)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$1(NodeTestTask.java:166)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:139)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$0(NodeTestTask.java:164)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:74)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:163)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:116)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1604)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:42)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$2(NodeTestTask.java:180)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:74)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$1(NodeTestTask.java:166)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:139)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$0(NodeTestTask.java:164)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:74)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:163)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:116)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.submit(SameThreadHierarchicalTestExecutorService.java:36)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestExecutor.execute(HierarchicalTestExecutor.java:52)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestEngine.execute(HierarchicalTestEngine.java:58)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.executeEngine(EngineExecutionOrchestrator.java:256)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.failOrExecuteEngine(EngineExecutionOrchestrator.java:228)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:189)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:109)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:90)
+	at org.junit.platform.suite.engine.SuiteLauncher.execute(SuiteLauncher.java:65)
+	at org.junit.platform.suite.engine.SuiteTestDescriptor.executeTests(SuiteTestDescriptor.java:208)
+	at org.junit.platform.suite.engine.SuiteTestDescriptor.execute(SuiteTestDescriptor.java:173)
+	at org.junit.platform.suite.engine.SuiteTestEngine.execute(SuiteTestEngine.java:80)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.executeEngine(EngineExecutionOrchestrator.java:256)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.failOrExecuteEngine(EngineExecutionOrchestrator.java:228)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:189)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:109)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.lambda$execute$0(EngineExecutionOrchestrator.java:66)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.withInterceptedStreams(EngineExecutionOrchestrator.java:168)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:65)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:137)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:126)
+	at org.junit.platform.launcher.core.DelegatingLauncher.execute(DelegatingLauncher.java:71)
+	at org.junit.platform.launcher.core.InterceptingLauncher.lambda$execute$2(InterceptingLauncher.java:66)
+	at org.junit.platform.launcher.core.ClasspathAlignmentCheckingLauncherInterceptor.intercept(ClasspathAlignmentCheckingLauncherInterceptor.java:25)
+	at org.junit.platform.launcher.core.InterceptingLauncher.execute(InterceptingLauncher.java:65)
+	at org.junit.platform.launcher.core.DelegatingLauncher.execute(DelegatingLauncher.java:71)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565)
+	at org.apache.maven.surefire.api.util.ReflectionUtils.invokeMethodWithArray(ReflectionUtils.java:125)
+	at org.apache.maven.surefire.junitplatform.LauncherAdapter.executeWithCancellationToken(LauncherAdapter.java:68)
+	at org.apache.maven.surefire.junitplatform.LauncherAdapter.execute(LauncherAdapter.java:54)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.execute(JUnitPlatformProvider.java:203)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invokeAllTests(JUnitPlatformProvider.java:168)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invoke(JUnitPlatformProvider.java:136)
+	at org.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)
+	at org.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)
+	at org.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)
+	at org.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)
+
+[ERROR] Tests run: 44, Failures: 1, Errors: 0, Skipped: 0, Time elapsed: 0.069 s <<< FAILURE! -- in com.landawn.abacus.da.mongodb.MongoDBBaseTest
+[ERROR] com.landawn.abacus.da.AbacusDATestSuite.testResetObjectIdMapWithDateIdConvertedToObjectId -- Time elapsed: 0.004 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: <true> but was: <false>
+	at org.junit.jupiter.api.Assertions.assertTrue(Assertions.java:190)
+	at com.landawn.abacus.da.mongodb.MongoDBBaseTest.testResetObjectIdMapWithDateIdConvertedToObjectId(MongoDBBaseTest.java:301)
+
+[INFO] Running com.landawn.abacus.da.cassandra.v3.AsyncCassandraExecutorTest
+[INFO] Tests run: 19, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.549 s -- in com.landawn.abacus.da.cassandra.v3.AsyncCassandraExecutorTest
+[INFO] Running com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutorV2_2Test
+[INFO] Tests run: 194, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 2.404 s -- in com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutorV2_2Test
+[INFO] Running com.landawn.abacus.da.cassandra.CassandraExecutor01Test
+[INFO] Tests run: 29, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.714 s -- in com.landawn.abacus.da.cassandra.CassandraExecutor01Test
+[INFO] Running com.landawn.abacus.da.hbase.AnyGetTest
+[INFO] Tests run: 45, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.010 s -- in com.landawn.abacus.da.hbase.AnyGetTest
+[INFO] Running com.landawn.abacus.da.hbase.AnyRowMutationsTest
+[INFO] Tests run: 20, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.004 s -- in com.landawn.abacus.da.hbase.AnyRowMutationsTest
+[INFO] Running com.landawn.abacus.da.cassandra.v3.CassandraExecutorTest
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+null
+[{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[["jazz", "2013"]], data=null}]
+[{id=756716f7-2e54-4715-9f00-91dcbea6cf50, data=null, title=La Petite Tonkinoise, artist=Jos�phine Baker, album=Bye Bye Blackbird, tags=[["jazz", "2013"]]}]
+[La Petite Tonkinoise]
+INSERT INTO simplex.users (id, name, addresses, someDate, last_update_time, created_time, bytes, shorts) VALUES (:id, :name, :addresses, :someDate, :lastUpdateTime, :createdTime, :bytes, :shorts)
+[38d535f7-0461-4f8c-8459-b5445538630d]
+INSERT INTO simplex.users (id, name, addresses, someDate, last_update_time, created_time, bytes, shorts) VALUES (:id, :name, :addresses, :someDate, :lastUpdateTime, :createdTime, :bytes, :shorts)
+[74fc3640-066f-4ad5-9cf1-ef5f6c09a764, c832fe95-450c-45ad-92f4-d84fa01a3198, dafec318-9a5e-40d5-b40b-a0f12ec094de, da933fc4-2a22-4b1d-8cff-687ad2b86bd4, 716d7766-9034-4afa-a049-350fa0320eb1, 44269ced-c266-4770-95df-5e654c9eeb05, 5292470f-01c0-4444-8f35-58f2f148f3b0, 0bb0b6ca-36ad-48b7-874b-645f9c6b87bb, 08551ad2-dbed-4c60-9e1a-b9dc4ca404fe, 5995901b-f48a-42aa-b2ec-d35ed6408450, de1ebe8a-7a5e-4b2c-aac0-3505f3c07920]
+Users(id=74fc3640-066f-4ad5-9cf1-ef5f6c09a764, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 16:38:21.291, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=c832fe95-450c-45ad-92f4-d84fa01a3198, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 16:38:21.291, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=dafec318-9a5e-40d5-b40b-a0f12ec094de, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 16:38:21.291, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=da933fc4-2a22-4b1d-8cff-687ad2b86bd4, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 16:38:21.291, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=716d7766-9034-4afa-a049-350fa0320eb1, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 16:38:21.291, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=44269ced-c266-4770-95df-5e654c9eeb05, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 16:38:21.291, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=5292470f-01c0-4444-8f35-58f2f148f3b0, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 16:38:21.291, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=0bb0b6ca-36ad-48b7-874b-645f9c6b87bb, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 16:38:21.291, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=08551ad2-dbed-4c60-9e1a-b9dc4ca404fe, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 16:38:21.291, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=5995901b-f48a-42aa-b2ec-d35ed6408450, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 16:38:21.291, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users(id=de1ebe8a-7a5e-4b2c-aac0-3505f3c07920, name=null, addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 16:38:21.291, bytes=[1, 2, 3], shorts=[1, 2, 3])
+null
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[["jazz", "2013"]], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, data=null, title=La Petite Tonkinoise, artist=Jos�phine Baker, album=Bye Bye Blackbird, tags=[["jazz", "2013"]]}
++--------------------------------------+-------------------+-----------------+------+--------------------+----------------------+
+| id                                   | album             | artist          | data | tags               | title                |
++--------------------------------------+-------------------+-----------------+------+--------------------+----------------------+
+| 756716f7-2e54-4715-9f00-91dcbea6cf50 | Bye Bye Blackbird | Jos�phine Baker | null | [["jazz", "2013"]] | La Petite Tonkinoise |
++--------------------------------------+-------------------+-----------------+------+--------------------+----------------------+
+756716f7-2e54-4715-9f00-91dcbea6cf50
+756716f7-2e54-4715-9f00-91dcbea6cf50
+INSERT INTO simplex.users (id, name, addresses, someDate, last_update_time, created_time, bytes, shorts) VALUES (:id, :name, :addresses, :someDate, :lastUpdateTime, :createdTime, :bytes, :shorts)
+[337755a7-dc70-4d1a-b310-7fbfdfc9f1ca, b268bc68-7a84-4911-a5c6-b34a6705f17f, 22d6186d-50cd-4223-ac8f-8d426bff90ae, 14f9d641-ea42-4eef-8b17-10e58c0e3f21, 7fe19463-d146-4922-be02-32b5ce3924a1, a1b151d2-e5de-4ad7-9fae-c362a9db35b3, 66687874-a686-4cec-8a00-bd9b9ab00f69, f72a13b9-3715-45cf-b165-86fe2fa8892a, 2883357a-47f6-447c-abd5-6c753b69f127, c05e15f7-b7c1-491a-b13d-b71e06064dae, cac756f0-1db9-48f5-814b-eec5e9d705e5]
+title                         	album               	artist              
+-------------------------------+-----------------------+--------------------
+La Petite Tonkinoise          	Bye Bye Blackbird   	Jos�phine Baker     
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[2013, jazz], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, data=null, title=La Petite Tonkinoise, artist=Jos�phine Baker, album=Bye Bye Blackbird, tags=[2013, jazz]}
+{columnNames=[id, album, artist, data, tags, title], isFrozen=false, columns={id=[], album=[], artist=[], data=[], tags=[], title=[]}}
++--------------------------------------+-------------------+-----------------+------+--------------+----------------------+
+| id                                   | album             | artist          | data | tags         | title                |
++--------------------------------------+-------------------+-----------------+------+--------------+----------------------+
+| 756716f7-2e54-4715-9f00-91dcbea6cf50 | Bye Bye Blackbird | Jos�phine Baker | null | [2013, jazz] | La Petite Tonkinoise |
++--------------------------------------+-------------------+-----------------+------+--------------+----------------------+
+INSERT INTO simplex.users (id, name, addresses, someDate, last_update_time, created_time, bytes, shorts) VALUES (:id, :name, :addresses, :someDate, :lastUpdateTime, :createdTime, :bytes, :shorts)
+[ae9e5888-7d16-4a03-96db-4a330657dfcc, 94c6d583-a3cf-4500-88c0-a8b62b52bdbe, 346de93d-a776-4fcc-afce-48c98572e0d4, 0140d06a-e881-4f0e-bdce-d38aca91afa7, a69d47b5-91af-4ad2-aaa0-005284170467, d164b764-39e5-4096-bba6-02f1f3f33e0f, 70b42f38-5676-43c8-aff6-841e3bcca97a, 26f00beb-e51d-4ea0-876e-f92cd6e968bc, 5c6e56ca-e923-4b1c-8c13-ea7091c61960, ded58c57-6199-43e1-8f11-78509dc6bbda, 0eae5047-07bf-4437-a461-3a16714a68b4]
+DELETE name FROM simplex.users WHERE id = ?
+Users(id=ae9e5888-7d16-4a03-96db-4a330657dfcc, name=Users.Name(firstName=fn, lastName=ln), addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 16:38:21.7, bytes=[1, 2, 3], shorts=[1, 2, 3])
+Users.Name(firstName=fn, lastName=ln)
+title                         	album               	artist              
+-------------------------------+-----------------------+--------------------
+La Petite Tonkinoise          	Bye Bye Blackbird   	Jos�phine Baker     
+{song_id=756716f7-2e54-4715-9f00-91dcbea6cf50, id=2cc9ccb7-6221-4ccb-8387-f22b6a1b354d, title=La Petite Tonkinoise, artist=Jos�phine Baker, album=Bye Bye Blackbird}
+{columnNames=[id, title, album, artist, song_id], isFrozen=false, columns={id=[], title=[], album=[], artist=[], song_id=[]}}
+{columnNames=[id, title, album, artist, song_id], isFrozen=false, columns={id=[2cc9ccb7-6221-4ccb-8387-f22b6a1b354d], title=[La Petite Tonkinoise], album=[Bye Bye Blackbird], artist=[Jos�phine Baker], song_id=[756716f7-2e54-4715-9f00-91dcbea6cf50]}}
++--------------------------------------+-------------------+--------+------+------+-------+
+| id                                   | album             | artist | data | tags | title |
++--------------------------------------+-------------------+--------+------+------+-------+
+| 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d | new new new Album | null   | null | []   | null  |
++--------------------------------------+-------------------+--------+------+------+-------+
+UPDATE simplex.songs SET title = ?, album = ? WHERE id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d
+[]
+null
+true
++--------------------------------------+---------------+--------+------+------+---------------+
+| id                                   | album         | artist | data | tags | title         |
++--------------------------------------+---------------+--------+------+------+---------------+
+| 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d | new new Album | null   | null | []   | new new title |
++--------------------------------------+---------------+--------+------+------+---------------+
+DELETE FROM simplex.songs WHERE id = ?
+[]
+null
+true
++----+-------+--------+------+------+-------+
+| id | album | artist | data | tags | title |
++----+-------+--------+------+------+-------+
+|                                           |
++----+-------+--------+------+------+-------+
+UPDATE simplex.songs SET album = :album WHERE id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d
+[]
+null
+true
++--------------------------------------+-------------------+--------+------+------+-------+
+| id                                   | album             | artist | data | tags | title |
++--------------------------------------+-------------------+--------+------+------+-------+
+| 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d | new new new Album | null   | null | []   | null  |
++--------------------------------------+-------------------+--------+------+------+-------+
+
+INSERT INTO simplex.users (id, name, addresses, someDate, last_update_time, created_time, bytes, shorts) VALUES (:id, :name, :addresses, :someDate, :lastUpdateTime, :createdTime, :bytes, :shorts)
+[Users(id=817d7657-363f-4ee8-ac23-4d9b02bd7b3a, name=Users.Name(firstName=fn, lastName=ln), addresses={home=Users.Address(street=1, city=sunnyvale, zipCode=123)}, someDate=2026-06-10, lastUpdateTime=null, createdTime=2026-06-10 16:38:26.168, bytes=[1, 2, 3], shorts=[1, 2, 3])]
+title                         	album               	artist              
+-------------------------------+-----------------------+--------------------
+La Petite Tonkinoise          	Bye Bye Blackbird   	Jos�phine Baker     
+{song_id=756716f7-2e54-4715-9f00-91dcbea6cf50, id=2cc9ccb7-6221-4ccb-8387-f22b6a1b354d, title=La Petite Tonkinoise, artist=Jos�phine Baker, album=Bye Bye Blackbird}
+{columnNames=[id, title, album, artist, song_id], isFrozen=false, columns={id=[], title=[], album=[], artist=[], song_id=[]}}
+{columnNames=[id, title, album, artist, song_id], isFrozen=false, columns={id=[2cc9ccb7-6221-4ccb-8387-f22b6a1b354d], title=[La Petite Tonkinoise], album=[Bye Bye Blackbird], artist=[Jos�phine Baker], song_id=[756716f7-2e54-4715-9f00-91dcbea6cf50]}}
+
+null
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, title=La Petite Tonkinoise, album=Bye Bye Blackbird, artist=Jos�phine Baker, tags=[["jazz", "2013"]], data=null}
+{id=756716f7-2e54-4715-9f00-91dcbea6cf50, data=null, title=La Petite Tonkinoise, artist=Jos�phine Baker, album=Bye Bye Blackbird, tags=[["jazz", "2013"]]}
++--------------------------------------+-------------------+-----------------+------+--------------------+----------------------+
+| id                                   | album             | artist          | data | tags               | title                |
++--------------------------------------+-------------------+-----------------+------+--------------------+----------------------+
+| 756716f7-2e54-4715-9f00-91dcbea6cf50 | Bye Bye Blackbird | Jos�phine Baker | null | [["jazz", "2013"]] | La Petite Tonkinoise |
++--------------------------------------+-------------------+-----------------+------+--------------------+----------------------+
+756716f7-2e54-4715-9f00-91dcbea6cf50
+756716f7-2e54-4715-9f00-91dcbea6cf50
+[INFO] Tests run: 93, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 5.583 s -- in com.landawn.abacus.da.cassandra.v3.CassandraExecutorTest
+[INFO] Running com.landawn.abacus.da.cassandra.CqlBuilderTest
+SELECT id FROM account WHERE (a = ?) AND (b = ?)
+
+========================================================================================================================
+(unit: milliseconds)
+threadNum=16; loops=10000
+startTime: 2026-06-10T16:38:27
+endTime:   2026-06-10T16:38:28
+totalElapsedTime: 985.683
+
+
+<method name>,  |avg time|, |min time|, |max time|, |0.01% >=|, |0.1% >=|,  |1% >=|,    |10% >=|,   |20% >=|,   |50% >=|,   |80% >=|,   |90% >=|,   |99% >=|,   |99.9% >=|, |99.99% >=|
+run,            0.097,      0.003,      5.698,      5.402,      1.269,      0.496,      0.238,      0.170,      0.078,      0.004,      0.004,      0.003,      0.003,      0.003,      
+
+========================================================================================================================
+
+========================================================================================================================
+(unit: milliseconds)
+threadNum=16; loops=10000
+startTime: 2026-06-10T16:38:29
+endTime:   2026-06-10T16:38:30
+totalElapsedTime: 841.405
+
+
+<method name>,  |avg time|, |min time|, |max time|, |0.01% >=|, |0.1% >=|,  |1% >=|,    |10% >=|,   |20% >=|,   |50% >=|,   |80% >=|,   |90% >=|,   |99% >=|,   |99.9% >=|, |99.99% >=|
+run,            0.083,      0.003,      8.125,      5.653,      0.800,      0.415,      0.208,      0.154,      0.072,      0.004,      0.003,      0.003,      0.003,      0.003,      
+
+========================================================================================================================
+========================================================================================================================
+<br/>(unit: milliseconds)
+<br/>threadNum=16; loops=10000
+<br/>startTime: 2026-06-10T16:38:31
+<br/>endTime:   2026-06-10T16:38:32
+<br/>totalElapsedTime: 886.390
+<br/>
+<br/>
+<table width="1200" border="1">
+<tr>
+<th>method name</th>
+<th>avg time</th>
+<th>min time</th>
+<th>max time</th>
+<th>0.01% &gt;=</th>
+<th>0.1% &gt;=</th>
+<th>1% &gt;=</th>
+<th>10% &gt;=</th>
+<th>20% &gt;=</th>
+<th>50% &gt;=</th>
+<th>80% &gt;=</th>
+<th>90% &gt;=</th>
+<th>99% &gt;=</th>
+<th>99.9% &gt;=</th>
+<th>99.99% &gt;=</th>
+</tr>
+<tr>
+<td>run</td>
+<td>0.087</td>
+<td>0.003</td>
+<td>5.826</td>
+<td>5.350</td>
+<td>1.363</td>
+<td>0.479</td>
+<td>0.233</td>
+<td>0.160</td>
+<td>0.009</td>
+<td>0.004</td>
+<td>0.004</td>
+<td>0.003</td>
+<td>0.003</td>
+<td>0.003</td>
+</tr>
+</table>
+========================================================================================================================
+SP[query=DELETE FROM simplex.users WHERE id IN (:id1, :id2), parameters=[a, b]]
+DELETE name, addresses, someDate, last_update_time, created_time, bytes, shorts FROM simplex.users WHERE id IN (:id1, :id2)
+SELECT id FROM account WHERE  NOT (status = ?)
+SELECT id FROM account WHERE  NOT (first_name = ?)
+SELECT id FROM account WHERE  NOT (status = 'X')
+SELECT id FROM account WHERE  NOT (status = :status)
+UPDATE account USING TTL 3600 SET first_name = ? WHERE id = ?
+UPDATE account USING TIMESTAMP 1000000 SET first_name = ? WHERE id = ?
+UPDATE account USING TIMESTAMP 2000 SET first_name = ? WHERE id = ?
+UPDATE account USING TIMESTAMP 42 SET first_name = ? WHERE id = ?
+SELECT id FROM account WHERE age BETWEEN ? AND ?
+SELECT id FROM account WHERE age NOT BETWEEN ? AND ?
+SELECT id FROM account WHERE id IN (?, ?, ?)
+SELECT id FROM account WHERE id NOT IN (?, ?, ?)
+SELECT id FROM account WHERE age BETWEEN :minAge AND :maxAge
+SELECT id FROM account WHERE id IN (:id1, :id2, :id3)
+SELECT count(*) FROM account WHERE id = :id
+SELECT count(*) FROM account WHERE id = :id LIMIT 1
+SELECT first_name AS "firstName", last_name AS "lastName" FROM account WHERE id = ?
+DELETE first_name, last_name FROM account WHERE id = ?
+DELETE FROM account WHERE id = ?
+BETWEEN PSC: SELECT id FROM account WHERE age BETWEEN ? AND ?
+BETWEEN NSC: SELECT id FROM account WHERE age BETWEEN :minAge AND :maxAge
+NOTBETWEEN PSC: SELECT id FROM account WHERE age NOT BETWEEN ? AND ?
+IN PSC: SELECT id FROM account WHERE id IN (?, ?, ?)
+IN NSC: SELECT id FROM account WHERE id IN (:id1, :id2, :id3)
+NOTIN NSC: SELECT id FROM account WHERE id NOT IN (:id1, :id2, :id3)
+iF cond PSC: UPDATE account SET first_name = ? WHERE id = ? IF status = ?
+DELETE cols: DELETE first_name, last_name FROM account WHERE id = ?
+AND junction: SELECT id FROM account WHERE (a = ?) AND (b = ?)
+TTL+IF order: UPDATE account USING TTL 60 SET first_name = ? WHERE id = ? IF s = ?
+INSERT TTL: INSERT INTO account (id, name) VALUES (?, ?) USING TTL 60
+batchInsert: INSERT INTO account (first_name) VALUES ('a'), ('b')
+NotEqual null: SELECT id FROM account WHERE first_name != 'x'
+InSubQuery: SELECT id FROM account WHERE id IN (SELECT id FROM account WHERE status = ?)
+NotInSubQuery: SELECT id FROM account WHERE id NOT IN (SELECT id FROM account WHERE status = :status)
+parse cond NSC: (status = :status) AND (balance > :balance)
+parse cond SCCB: (status = 'A') AND (balance > 1000)
+update entity: UPDATE account SET first_name = ?, last_name = ? WHERE id = 1
+multi-col InSubQuery: SELECT id FROM account WHERE (a, b) IN (SELECT x, y FROM t WHERE z = ?)
+eq null SCCB: SELECT id FROM account WHERE first_name = null
+count SCCB: SELECT count(*) FROM account WHERE id = 1
+UPDATE account USING TTL 3600 SET first_name = ? WHERE id = ?
+UPDATE account USING TIMESTAMP 1234567890123000 SET first_name = ? WHERE id = ?
+UPDATE account USING TIMESTAMP 1234567890123000 SET first_name = ? WHERE id = ?
+UPDATE account SET first_name = ? WHERE id = ? IF EXISTS
+UPDATE account SET first_name = ? WHERE id = ? IF NOT EXISTS
+SELECT first_name AS "firstName" FROM account WHERE id = ? ALLOW FILTERING
+UPDATE account SET first_name = ? WHERE id = ? IF status = 'inactive'
+UPDATE account SET first_name = ? WHERE id = ? IF status = 'inactive'
+UPDATE account SET first_name = ? WHERE id = ? IF status = ?
+SELECT first_name AS "firstName" FROM account WHERE id = 123
+SELECT FIRST_NAME AS "firstName" FROM account WHERE ID = 123
+SELECT firstName FROM account WHERE id = 123
+SELECT first_name AS "firstName" FROM account WHERE id = ?
+SELECT FIRST_NAME AS "firstName" FROM account WHERE ID = ?
+SELECT firstName FROM account WHERE id = ?
+SELECT first_name AS "firstName" FROM account WHERE id = :id
+SELECT FIRST_NAME AS "firstName" FROM account WHERE ID = :id
+SELECT firstName FROM account WHERE id = :id
+SELECT first_name AS "firstName", last_name AS "lastName" FROM account WHERE id = :id LIMIT 9
+[INFO] Tests run: 501, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 6.481 s -- in com.landawn.abacus.da.cassandra.CqlBuilderTest
+[INFO] Running com.landawn.abacus.da.cassandra.CassandraExecutorBaseTest
+[INFO] Tests run: 78, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.033 s -- in com.landawn.abacus.da.cassandra.CassandraExecutorBaseTest
+[INFO] Running com.landawn.abacus.da.neo4j.Neo4jExecutorTest
+[INFO] Tests run: 70, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 7.001 s -- in com.landawn.abacus.da.neo4j.Neo4jExecutorTest
+[INFO] Running com.landawn.abacus.da.mongodb.MongoCollectionMapperTest
+Jun 10, 2026 4:38:39 PM org.junit.platform.launcher.core.CompositeEngineExecutionListener lambda$notifyEach$0
+WARNING: EngineExecutionListener [org.junit.platform.launcher.core.ExecutionListenerAdapter] threw exception for method: executionFinished(TestMethodTestDescriptor: [engine:junit-platform-suite]/[suite:com.landawn.abacus.da.AbacusDATestSuite]/[engine:junit-jupiter]/[class:com.landawn.abacus.da.mongodb.MongoCollectionMapperTest]/[method:testDistinctWithFilter()], TestExecutionResult [status = FAILED, throwable = org.opentest4j.AssertionFailedError: expected: not <null>])
+org.junit.platform.commons.PreconditionViolationException: No TestIdentifier with unique ID [[engine:junit-platform-suite]/[suite:com.landawn.abacus.da.AbacusDATestSuite]] has been added to this TestPlan.
+	at org.junit.platform.commons.util.Preconditions.condition(Preconditions.java:389)
+	at org.junit.platform.commons.util.Preconditions.notNull(Preconditions.java:74)
+	at org.junit.platform.launcher.TestPlan.getTestIdentifier(TestPlan.java:227)
+	at java.base/java.util.Optional.map(Optional.java:260)
+	at org.junit.platform.launcher.TestPlan.getParent(TestPlan.java:170)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.collectTestDescription(MutableTestExecutionSummary.java:235)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.lambda$collectTestDescription$0(MutableTestExecutionSummary.java:235)
+	at java.base/java.util.Optional.ifPresent(Optional.java:178)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.collectTestDescription(MutableTestExecutionSummary.java:235)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.lambda$collectTestDescription$0(MutableTestExecutionSummary.java:235)
+	at java.base/java.util.Optional.ifPresent(Optional.java:178)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.collectTestDescription(MutableTestExecutionSummary.java:235)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.describeTest(MutableTestExecutionSummary.java:229)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.addFailure(MutableTestExecutionSummary.java:80)
+	at org.junit.platform.launcher.listeners.SummaryGeneratingListener.lambda$executionFinished$0(SummaryGeneratingListener.java:140)
+	at java.base/java.util.Optional.ifPresent(Optional.java:178)
+	at org.junit.platform.launcher.listeners.SummaryGeneratingListener.executionFinished(SummaryGeneratingListener.java:139)
+	at org.junit.platform.launcher.core.ExecutionListenerAdapter.executionFinished(ExecutionListenerAdapter.java:57)
+	at org.junit.platform.launcher.core.CompositeEngineExecutionListener.lambda$executionFinished$0(CompositeEngineExecutionListener.java:60)
+	at org.junit.platform.launcher.core.CompositeEngineExecutionListener.lambda$notifyEach$0(CompositeEngineExecutionListener.java:82)
+	at org.junit.platform.commons.util.CollectionUtils.forEachInReverseOrder(CollectionUtils.java:213)
+	at org.junit.platform.launcher.core.IterationOrder$2.forEach(IterationOrder.java:30)
+	at org.junit.platform.launcher.core.CompositeEngineExecutionListener.notifyEach(CompositeEngineExecutionListener.java:80)
+	at org.junit.platform.launcher.core.CompositeEngineExecutionListener.executionFinished(CompositeEngineExecutionListener.java:59)
+	at org.junit.platform.launcher.core.DelegatingEngineExecutionListener.executionFinished(DelegatingEngineExecutionListener.java:47)
+	at org.junit.platform.launcher.core.StackTracePruningEngineExecutionListener.executionFinished(StackTracePruningEngineExecutionListener.java:46)
+	at org.junit.platform.launcher.core.DelegatingEngineExecutionListener.executionFinished(DelegatingEngineExecutionListener.java:47)
+	at org.junit.platform.launcher.core.OutcomeDelayingEngineExecutionListener.executionFinished(OutcomeDelayingEngineExecutionListener.java:71)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.reportCompletion(NodeTestTask.java:224)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:121)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1604)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:42)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$2(NodeTestTask.java:180)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:74)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$1(NodeTestTask.java:166)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:139)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$0(NodeTestTask.java:164)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:74)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:163)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:116)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1604)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:42)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$2(NodeTestTask.java:180)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:74)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$1(NodeTestTask.java:166)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:139)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$0(NodeTestTask.java:164)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:74)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:163)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:116)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.submit(SameThreadHierarchicalTestExecutorService.java:36)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestExecutor.execute(HierarchicalTestExecutor.java:52)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestEngine.execute(HierarchicalTestEngine.java:58)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.executeEngine(EngineExecutionOrchestrator.java:256)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.failOrExecuteEngine(EngineExecutionOrchestrator.java:228)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:189)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:109)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:90)
+	at org.junit.platform.suite.engine.SuiteLauncher.execute(SuiteLauncher.java:65)
+	at org.junit.platform.suite.engine.SuiteTestDescriptor.executeTests(SuiteTestDescriptor.java:208)
+	at org.junit.platform.suite.engine.SuiteTestDescriptor.execute(SuiteTestDescriptor.java:173)
+	at org.junit.platform.suite.engine.SuiteTestEngine.execute(SuiteTestEngine.java:80)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.executeEngine(EngineExecutionOrchestrator.java:256)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.failOrExecuteEngine(EngineExecutionOrchestrator.java:228)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:189)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:109)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.lambda$execute$0(EngineExecutionOrchestrator.java:66)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.withInterceptedStreams(EngineExecutionOrchestrator.java:168)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:65)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:137)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:126)
+	at org.junit.platform.launcher.core.DelegatingLauncher.execute(DelegatingLauncher.java:71)
+	at org.junit.platform.launcher.core.InterceptingLauncher.lambda$execute$2(InterceptingLauncher.java:66)
+	at org.junit.platform.launcher.core.ClasspathAlignmentCheckingLauncherInterceptor.intercept(ClasspathAlignmentCheckingLauncherInterceptor.java:25)
+	at org.junit.platform.launcher.core.InterceptingLauncher.execute(InterceptingLauncher.java:65)
+	at org.junit.platform.launcher.core.DelegatingLauncher.execute(DelegatingLauncher.java:71)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565)
+	at org.apache.maven.surefire.api.util.ReflectionUtils.invokeMethodWithArray(ReflectionUtils.java:125)
+	at org.apache.maven.surefire.junitplatform.LauncherAdapter.executeWithCancellationToken(LauncherAdapter.java:68)
+	at org.apache.maven.surefire.junitplatform.LauncherAdapter.execute(LauncherAdapter.java:54)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.execute(JUnitPlatformProvider.java:203)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invokeAllTests(JUnitPlatformProvider.java:168)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invoke(JUnitPlatformProvider.java:136)
+	at org.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)
+	at org.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)
+	at org.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)
+	at org.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)
+
+Jun 10, 2026 4:38:39 PM org.junit.platform.launcher.core.CompositeEngineExecutionListener lambda$notifyEach$0
+WARNING: EngineExecutionListener [org.junit.platform.launcher.core.ExecutionListenerAdapter] threw exception for method: executionFinished(TestMethodTestDescriptor: [engine:junit-platform-suite]/[suite:com.landawn.abacus.da.AbacusDATestSuite]/[engine:junit-jupiter]/[class:com.landawn.abacus.da.mongodb.MongoCollectionMapperTest]/[method:testDistinct()], TestExecutionResult [status = FAILED, throwable = org.opentest4j.AssertionFailedError: expected: not <null>])
+org.junit.platform.commons.PreconditionViolationException: No TestIdentifier with unique ID [[engine:junit-platform-suite]/[suite:com.landawn.abacus.da.AbacusDATestSuite]] has been added to this TestPlan.
+	at org.junit.platform.commons.util.Preconditions.condition(Preconditions.java:389)
+	at org.junit.platform.commons.util.Preconditions.notNull(Preconditions.java:74)
+	at org.junit.platform.launcher.TestPlan.getTestIdentifier(TestPlan.java:227)
+	at java.base/java.util.Optional.map(Optional.java:260)
+	at org.junit.platform.launcher.TestPlan.getParent(TestPlan.java:170)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.collectTestDescription(MutableTestExecutionSummary.java:235)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.lambda$collectTestDescription$0(MutableTestExecutionSummary.java:235)
+	at java.base/java.util.Optional.ifPresent(Optional.java:178)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.collectTestDescription(MutableTestExecutionSummary.java:235)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.lambda$collectTestDescription$0(MutableTestExecutionSummary.java:235)
+	at java.base/java.util.Optional.ifPresent(Optional.java:178)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.collectTestDescription(MutableTestExecutionSummary.java:235)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.describeTest(MutableTestExecutionSummary.java:229)
+	at org.junit.platform.launcher.listeners.MutableTestExecutionSummary.addFailure(MutableTestExecutionSummary.java:80)
+	at org.junit.platform.launcher.listeners.SummaryGeneratingListener.lambda$executionFinished$0(SummaryGeneratingListener.java:140)
+	at java.base/java.util.Optional.ifPresent(Optional.java:178)
+	at org.junit.platform.launcher.listeners.SummaryGeneratingListener.executionFinished(SummaryGeneratingListener.java:139)
+	at org.junit.platform.launcher.core.ExecutionListenerAdapter.executionFinished(ExecutionListenerAdapter.java:57)
+	at org.junit.platform.launcher.core.CompositeEngineExecutionListener.lambda$executionFinished$0(CompositeEngineExecutionListener.java:60)
+	at org.junit.platform.launcher.core.CompositeEngineExecutionListener.lambda$notifyEach$0(CompositeEngineExecutionListener.java:82)
+	at org.junit.platform.commons.util.CollectionUtils.forEachInReverseOrder(CollectionUtils.java:213)
+	at org.junit.platform.launcher.core.IterationOrder$2.forEach(IterationOrder.java:30)
+	at org.junit.platform.launcher.core.CompositeEngineExecutionListener.notifyEach(CompositeEngineExecutionListener.java:80)
+	at org.junit.platform.launcher.core.CompositeEngineExecutionListener.executionFinished(CompositeEngineExecutionListener.java:59)
+	at org.junit.platform.launcher.core.DelegatingEngineExecutionListener.executionFinished(DelegatingEngineExecutionListener.java:47)
+	at org.junit.platform.launcher.core.StackTracePruningEngineExecutionListener.executionFinished(StackTracePruningEngineExecutionListener.java:46)
+	at org.junit.platform.launcher.core.DelegatingEngineExecutionListener.executionFinished(DelegatingEngineExecutionListener.java:47)
+	at org.junit.platform.launcher.core.OutcomeDelayingEngineExecutionListener.executionFinished(OutcomeDelayingEngineExecutionListener.java:71)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.reportCompletion(NodeTestTask.java:224)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:121)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1604)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:42)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$2(NodeTestTask.java:180)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:74)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$1(NodeTestTask.java:166)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:139)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$0(NodeTestTask.java:164)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:74)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:163)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:116)
+	at java.base/java.util.ArrayList.forEach(ArrayList.java:1604)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.invokeAll(SameThreadHierarchicalTestExecutorService.java:42)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$2(NodeTestTask.java:180)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:74)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$1(NodeTestTask.java:166)
+	at org.junit.platform.engine.support.hierarchical.Node.around(Node.java:139)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.lambda$executeRecursively$0(NodeTestTask.java:164)
+	at org.junit.platform.engine.support.hierarchical.ThrowableCollector.execute(ThrowableCollector.java:74)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.executeRecursively(NodeTestTask.java:163)
+	at org.junit.platform.engine.support.hierarchical.NodeTestTask.execute(NodeTestTask.java:116)
+	at org.junit.platform.engine.support.hierarchical.SameThreadHierarchicalTestExecutorService.submit(SameThreadHierarchicalTestExecutorService.java:36)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestExecutor.execute(HierarchicalTestExecutor.java:52)
+	at org.junit.platform.engine.support.hierarchical.HierarchicalTestEngine.execute(HierarchicalTestEngine.java:58)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.executeEngine(EngineExecutionOrchestrator.java:256)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.failOrExecuteEngine(EngineExecutionOrchestrator.java:228)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:189)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:109)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:90)
+	at org.junit.platform.suite.engine.SuiteLauncher.execute(SuiteLauncher.java:65)
+	at org.junit.platform.suite.engine.SuiteTestDescriptor.executeTests(SuiteTestDescriptor.java:208)
+	at org.junit.platform.suite.engine.SuiteTestDescriptor.execute(SuiteTestDescriptor.java:173)
+	at org.junit.platform.suite.engine.SuiteTestEngine.execute(SuiteTestEngine.java:80)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.executeEngine(EngineExecutionOrchestrator.java:256)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.failOrExecuteEngine(EngineExecutionOrchestrator.java:228)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:189)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:109)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.lambda$execute$0(EngineExecutionOrchestrator.java:66)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.withInterceptedStreams(EngineExecutionOrchestrator.java:168)
+	at org.junit.platform.launcher.core.EngineExecutionOrchestrator.execute(EngineExecutionOrchestrator.java:65)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:137)
+	at org.junit.platform.launcher.core.DefaultLauncher.execute(DefaultLauncher.java:126)
+	at org.junit.platform.launcher.core.DelegatingLauncher.execute(DelegatingLauncher.java:71)
+	at org.junit.platform.launcher.core.InterceptingLauncher.lambda$execute$2(InterceptingLauncher.java:66)
+	at org.junit.platform.launcher.core.ClasspathAlignmentCheckingLauncherInterceptor.intercept(ClasspathAlignmentCheckingLauncherInterceptor.java:25)
+	at org.junit.platform.launcher.core.InterceptingLauncher.execute(InterceptingLauncher.java:65)
+	at org.junit.platform.launcher.core.DelegatingLauncher.execute(DelegatingLauncher.java:71)
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104)
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565)
+	at org.apache.maven.surefire.api.util.ReflectionUtils.invokeMethodWithArray(ReflectionUtils.java:125)
+	at org.apache.maven.surefire.junitplatform.LauncherAdapter.executeWithCancellationToken(LauncherAdapter.java:68)
+	at org.apache.maven.surefire.junitplatform.LauncherAdapter.execute(LauncherAdapter.java:54)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.execute(JUnitPlatformProvider.java:203)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invokeAllTests(JUnitPlatformProvider.java:168)
+	at org.apache.maven.surefire.junitplatform.JUnitPlatformProvider.invoke(JUnitPlatformProvider.java:136)
+	at org.apache.maven.surefire.booter.ForkedBooter.runSuitesInProcess(ForkedBooter.java:385)
+	at org.apache.maven.surefire.booter.ForkedBooter.execute(ForkedBooter.java:162)
+	at org.apache.maven.surefire.booter.ForkedBooter.run(ForkedBooter.java:507)
+	at org.apache.maven.surefire.booter.ForkedBooter.main(ForkedBooter.java:495)
+
+[ERROR] Tests run: 99, Failures: 2, Errors: 0, Skipped: 0, Time elapsed: 0.034 s <<< FAILURE! -- in com.landawn.abacus.da.mongodb.MongoCollectionMapperTest
+[ERROR] com.landawn.abacus.da.AbacusDATestSuite.testDistinctWithFilter -- Time elapsed: 0.002 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: not <null>
+	at org.junit.jupiter.api.Assertions.assertNotNull(Assertions.java:336)
+	at com.landawn.abacus.da.mongodb.MongoCollectionMapperTest.testDistinctWithFilter(MongoCollectionMapperTest.java:652)
+
+[ERROR] com.landawn.abacus.da.AbacusDATestSuite.testDistinct -- Time elapsed: 0.001 s <<< FAILURE!
+org.opentest4j.AssertionFailedError: expected: not <null>
+	at org.junit.jupiter.api.Assertions.assertNotNull(Assertions.java:336)
+	at com.landawn.abacus.da.mongodb.MongoCollectionMapperTest.testDistinct(MongoCollectionMapperTest.java:640)
+
+[INFO] Running com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutorV2Test
+[INFO] Tests run: 200, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.304 s -- in com.landawn.abacus.da.aws.dynamodb.DynamoDBExecutorV2Test
+[INFO] Running com.landawn.abacus.da.hbase.AnyPutTest
+[INFO] Tests run: 72, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.029 s -- in com.landawn.abacus.da.hbase.AnyPutTest
+[INFO] Running com.landawn.abacus.da.hbase.AnyMutationTest
+Jun 10, 2026 4:38:40 PM com.google.protobuf.GeneratedMessage warnPre22Gencode
+WARNING: Vulnerable protobuf generated type in use: org.apache.hadoop.hbase.protobuf.generated.ClientProtos$CellVisibility
+As of 2022/09/29 (release 21.7) makeExtensionsImmutable should not be called from protobuf gencode. If you are seeing this message, your gencode is vulnerable to a denial of service attack. You should regenerate your code using protobuf 25.6 or later. Use the latest version that meets your needs. However, if you understand the risks and wish to continue with vulnerable gencode, you can set the system property `-Dcom.google.protobuf.use_unsafe_pre22_gencode` on the command line to silence this warning. You also can set `-Dcom.google.protobuf.error_on_unsafe_pre22_gencode` to throw an error instead. See security vulnerability: https://github.com/protocolbuffers/protobuf/security/advisories/GHSA-h4h5-3hr4-j3g2
+[INFO] Tests run: 40, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.025 s -- in com.landawn.abacus.da.hbase.AnyMutationTest
+[INFO] Running com.landawn.abacus.da.gcp.BigQueryExecutorTest
+[INFO] Tests run: 139, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.853 s -- in com.landawn.abacus.da.gcp.BigQueryExecutorTest
+[INFO] Tests run: 0, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 38.50 s -- in com.landawn.abacus.da.AbacusDATestSuite
+[INFO] 
+[INFO] Results:
+[INFO] 
+[ERROR] Failures: 
+[ERROR] com.landawn.abacus.da.AbacusDATestSuite.testDistinct
+[INFO]   Run 1: PASS
+[INFO]   Run 2: PASS
+[INFO]   Run 3: PASS
+[INFO]   Run 4: PASS
+[ERROR]   Run 5: AbacusDATestSuite.testDistinct expected: not <null>
+[INFO] 
+[ERROR] com.landawn.abacus.da.AbacusDATestSuite.testDistinctWithFilter
+[INFO]   Run 1: PASS
+[INFO]   Run 2: PASS
+[INFO]   Run 3: PASS
+[INFO]   Run 4: PASS
+[ERROR]   Run 5: AbacusDATestSuite.testDistinctWithFilter expected: not <null>
+[INFO] 
+[ERROR]   AbacusDATestSuite.testResetObjectIdMapWithDateIdConvertedToObjectId expected: <true> but was: <false>
+[ERROR] Errors: 
+[ERROR]   AbacusDATestSuite.test_update_async � NullPointer Cannot invoke "org.bson.Document.getObjectId(Object)" because "doc" is null
+[INFO] 
+[ERROR] Tests run: 3333, Failures: 3, Errors: 1, Skipped: 2
+[INFO] 
+[ERROR] There are test failures.
+
+See C:\Users\haiyangl\Landawn\abacus-da\abacus-da-all\target\surefire-reports for the individual test results.
+See dump files (if any exist) [date].dump, [date]-jvmRun[N].dump and [date].dumpstream.
+[INFO] ------------------------------------------------------------------------
+[INFO] BUILD SUCCESS
+[INFO] ------------------------------------------------------------------------
+[INFO] Total time:  44.252 s
+[INFO] Finished at: 2026-06-10T16:38:41-07:00
+[INFO] ------------------------------------------------------------------------

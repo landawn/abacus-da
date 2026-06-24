@@ -3,7 +3,6 @@ package com.landawn.abacus.da.mongodb;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Date;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -111,7 +110,7 @@ public abstract class MongoDBBase {
 
     /**
      * MongoDB's default document identifier field name used in BSON documents.
-     * 
+     *
      * <p>This constant represents the standard "_id" field that MongoDB automatically
      * creates for every document if not explicitly provided. It's used throughout
      * the framework for ObjectId operations and document identification.</p>
@@ -519,7 +518,7 @@ public abstract class MongoDBBase {
 
     /**
      * Creates a MongoDB Document from variable arguments representing property name-value pairs or a single object.
-     * 
+     *
      * <p>This method provides flexible Document creation supporting multiple input patterns:
      * alternating property names and values, a single object to be converted, or no arguments
      * for an empty Document. This is a convenience method that delegates to {@link #toDocument(Object)}
@@ -604,6 +603,13 @@ public abstract class MongoDBBase {
             }
 
             for (int i = 0; i < a.length; i++) {
+                // Validate eagerly so a non-String name surfaces as the documented IllegalArgumentException
+                // instead of a raw ClassCastException.
+                if (!(a[i] instanceof String)) {
+                    throw new IllegalArgumentException("Parameters must be property name-value pairs whose names are Strings, but found "
+                            + (a[i] == null ? "null" : a[i].getClass().getName()) + " at index " + i);
+                }
+
                 result.put((String) a[i], a[++i]);
             }
         } else {
@@ -660,6 +666,13 @@ public abstract class MongoDBBase {
             }
 
             for (int i = 0; i < a.length; i++) {
+                // Validate eagerly so a non-String name surfaces as the documented IllegalArgumentException
+                // instead of a raw ClassCastException.
+                if (!(a[i] instanceof String)) {
+                    throw new IllegalArgumentException("Parameters must be property name-value pairs whose names are Strings, but found "
+                            + (a[i] == null ? "null" : a[i].getClass().getName()) + " at index " + i);
+                }
+
                 result.put((String) a[i], a[++i]);
             }
         } else {
@@ -712,12 +725,12 @@ public abstract class MongoDBBase {
 
     /**
      * Converts an object to a BasicDBObject for legacy MongoDB operations.
-     * 
+     *
      * <p>This method converts various object types to the legacy BasicDBObject format used by
      * older MongoDB Java driver versions. It accepts entity objects with getter/setter methods,
      * Maps, or arrays of property name-value pairs. The resulting BasicDBObject can be used
      * with legacy MongoDB driver APIs that require this specific document format.</p>
-     * 
+     *
      * <p>The method handles ObjectId reset operations to ensure proper MongoDB document structure,
      * maintaining compatibility with MongoDB's document identification system.</p>
      *
@@ -758,6 +771,13 @@ public abstract class MongoDBBase {
             }
 
             for (int i = 0; i < a.length; i++) {
+                // Validate eagerly so a non-String name surfaces as the documented IllegalArgumentException
+                // instead of a raw ClassCastException.
+                if (!(a[i] instanceof String)) {
+                    throw new IllegalArgumentException("Parameters must be property name-value pairs whose names are Strings, but found "
+                            + (a[i] == null ? "null" : a[i].getClass().getName()) + " at index " + i);
+                }
+
                 result.put((String) a[i], a[++i]);
             }
         } else {
@@ -813,11 +833,11 @@ public abstract class MongoDBBase {
 
     /**
      * Converts a MongoDB Document to a Java Map with default configuration.
-     * 
+     *
      * <p>This method converts a MongoDB Document to a standard Java Map&lt;String, Object&gt;
      * using default conversion settings. It provides a simple way to work with MongoDB
      * documents using familiar Java collection interfaces.</p>
-     * 
+     *
      * <p>The conversion handles nested documents, arrays, and MongoDB-specific types
      * appropriately, creating a nested Map structure that mirrors the document hierarchy.</p>
      *
@@ -847,12 +867,12 @@ public abstract class MongoDBBase {
 
     /**
      * Converts a MongoDB Document to a Java Map using a custom map supplier.
-     * 
+     *
      * <p>This method converts a MongoDB Document to a Map using a provided IntFunction
      * to create the target Map instance. This allows for precise control over the Map
      * implementation used, enabling optimizations such as pre-sizing the map based on
      * the document size or using specialized Map implementations.</p>
-     * 
+     *
      * <p>The mapSupplier function receives the document size as input, allowing it to
      * create appropriately sized Map instances to minimize rehashing and improve performance.</p>
      *
@@ -1009,14 +1029,38 @@ public abstract class MongoDBBase {
                         }
                     } else {
                         for (final Object row : rowList) {
-                            resultList.add(Beans.copyInto(row, rowType));
+                            resultList.add(Beans.copyAs(row, rowType));
                         }
                     }
                 } else if (firstNonNull.get() instanceof Map && ((Map<String, Object>) firstNonNull.get()).size() <= 2) {
-                    final Map<String, Object> m = (Map<String, Object>) firstNonNull.get();
-                    final String propName = N.findFirst(m.keySet(), Fn.notEqual(_ID)).orElse(_ID);
+                    // Derive the scalar property name from the first row that actually carries a non-_id key.
+                    // A matched document that lacks the projected field comes back as {_id: ...} only; if such
+                    // a document happened to be first, every row would silently be read from "_id" instead.
+                    String propName = null;
 
-                    if (m.get(propName) != null && rowType.isAssignableFrom(m.get(propName).getClass())) {
+                    for (final Object row : rowList) {
+                        if (row instanceof Map) {
+                            propName = N.findFirst(((Map<String, Object>) row).keySet(), Fn.notEqual(_ID)).orElse(null);
+
+                            if (propName != null) {
+                                break;
+                            }
+                        }
+                    }
+
+                    if (propName == null) {
+                        propName = _ID;
+                    }
+
+                    Object sampleValue = null;
+
+                    for (final Object row : rowList) {
+                        if (row instanceof Map && (sampleValue = ((Map<String, Object>) row).get(propName)) != null) {
+                            break;
+                        }
+                    }
+
+                    if (sampleValue != null && rowType.isAssignableFrom(sampleValue.getClass())) {
                         for (final Object row : rowList) {
                             resultList.add(((Map<String, Object>) row).get(propName));
                         }
@@ -1565,20 +1609,21 @@ public abstract class MongoDBBase {
         if (idPropertyName != null && doc.containsKey(idPropertyName)) {
             Object id = doc.remove(idPropertyName);
 
-            try {
-                if (id instanceof String) {
-                    id = new ObjectId((String) id);
-                } else if (id instanceof Date) {
-                    id = new ObjectId((Date) id);
-                } else if (id instanceof byte[]) {
-                    id = new ObjectId((byte[]) id);
-                }
-            } finally {
-                if (id != null) {
-                    doc.put(_ID, id);
-                } else {
-                    doc.remove(_ID);
-                }
+            // Convert to ObjectId only when the value unambiguously is one: a 24-hex-char String or a
+            // 12-byte array. Any other legal _id value (an arbitrary String, a Date, other byte arrays)
+            // is stored as-is. Converting unconditionally made any non-hex String id fail the whole write
+            // with an IllegalArgumentException, and silently replaced a Date id with a freshly generated
+            // (non-deterministic) ObjectId.
+            if (id instanceof final String str && ObjectId.isValid(str)) {
+                id = new ObjectId(str);
+            } else if (id instanceof final byte[] bytes && bytes.length == 12) {
+                id = new ObjectId(bytes);
+            }
+
+            if (id != null) {
+                doc.put(_ID, id);
+            } else {
+                doc.remove(_ID);
             }
         }
     }

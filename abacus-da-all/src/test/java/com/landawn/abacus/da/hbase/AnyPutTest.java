@@ -194,6 +194,19 @@ public class AnyPutTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> AnyPut.create(user, (NamingPolicy) null));
     }
 
+    /**
+     * Regression: an entity whose registered row-key property holds a {@code null} VALUE must be
+     * rejected with a clear {@link IllegalArgumentException} (previously a bare
+     * {@code NullPointerException} escaped from inside HBase's {@code Put} constructor).
+     */
+    @Test
+    public void testCreate_entity_nullRowKeyValue_throwsIAE() {
+        SimpleUser user = new SimpleUser(null, "Alice", "alice@x");
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> AnyPut.create(user));
+        assertTrue(ex.getMessage() != null && ex.getMessage().contains("Row key"), "Exception message must mention the row key, but was: " + ex.getMessage());
+    }
+
     @Test
     public void testCreate_collectionOfEntities() {
         List<SimpleUser> users = Arrays.asList(new SimpleUser("u1", "A", "a@x"), new SimpleUser("u2", "B", "b@x"));
@@ -551,7 +564,7 @@ public class AnyPutTest extends TestBase {
     @Test
     public void testEquals_matchesUnderlyingPutEquals() {
         // AnyPut.equals delegates to Put.equals: two AnyPut wrappers are equal
-        // iff their underlying Put objects are equal.
+        // if their underlying Put objects are equal.
         AnyPut p1 = AnyPut.of("row");
         AnyPut p2 = AnyPut.of("row");
         assertEquals(p1.val().equals(p2.val()), p1.equals(p2));

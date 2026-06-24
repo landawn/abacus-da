@@ -163,14 +163,13 @@ public class CosmosContainerExecutor2Test extends TestBase {
             } catch (final Exception e) {
                 querySupported = false;
                 queryUnsupportedReason = queryProbeFailureReason(e);
-                System.err.println("[CosmosContainerExecutor2] SQL query API unavailable on this endpoint; query-based tests will be skipped: "
-                        + queryUnsupportedReason);
+                System.err.println(
+                        "[CosmosContainerExecutor2] SQL query API unavailable on this endpoint; query-based tests will be skipped: " + queryUnsupportedReason);
             }
         } catch (final Throwable t) {
             cosmosAvailable = false;
             unavailabilityReason = t.toString();
-            System.err.println("[CosmosContainerExecutor2] Cosmos emulator unavailable at " + ENDPOINT
-                    + " - database-backed tests will be skipped: " + t);
+            System.err.println("[CosmosContainerExecutor2] Cosmos emulator unavailable at " + ENDPOINT + " - database-backed tests will be skipped: " + t);
         }
     }
 
@@ -433,8 +432,7 @@ public class CosmosContainerExecutor2Test extends TestBase {
         executor.createItem(itemIn(partition, "delete-all-2"));
 
         try {
-            final CosmosItemResponse<Object> response = executor.deleteAllItemsByPartitionKey(new PartitionKey(partition),
-                    new CosmosItemRequestOptions());
+            final CosmosItemResponse<Object> response = executor.deleteAllItemsByPartitionKey(new PartitionKey(partition), new CosmosItemRequestOptions());
             assertTrue(response.getStatusCode() >= 200 && response.getStatusCode() < 300);
         } catch (final CosmosException e) {
             // The "delete all by partition key" feature is not enabled on every emulator build; skip rather than fail.
@@ -587,8 +585,7 @@ public class CosmosContainerExecutor2Test extends TestBase {
         executor.createItem(item);
 
         final CosmosQueryRequestOptions options = new CosmosQueryRequestOptions().setMaxBufferedItemCount(10);
-        final CosmosPagedIterable<TestItem> response = executor.queryItems("SELECT * FROM c WHERE c.value = '" + value + "'", options,
-                TestItem.class);
+        final CosmosPagedIterable<TestItem> response = executor.queryItems("SELECT * FROM c WHERE c.value = '" + value + "'", options, TestItem.class);
 
         final List<TestItem> results = response.stream().toList();
         assertEquals(1, results.size());
@@ -807,15 +804,19 @@ public class CosmosContainerExecutor2Test extends TestBase {
         executor.createItem(item);
 
         // SNAKE_CASE: single-word "value" -> "value", matches the stored (lower-case) JSON field.
-        assertEquals(1, new CosmosContainerExecutor(container, NamingPolicy.SNAKE_CASE).streamItems(Filters.eq("value", value), TestItem.class).toList().size());
+        assertEquals(1,
+                new CosmosContainerExecutor(container, NamingPolicy.SNAKE_CASE).streamItems(Filters.eq("value", value), TestItem.class).toList().size());
 
         // CAMEL_CASE: "value" stays "value", matches.
-        assertEquals(1, new CosmosContainerExecutor(container, NamingPolicy.CAMEL_CASE).streamItems(Filters.eq("value", value), TestItem.class).toList().size());
+        assertEquals(1,
+                new CosmosContainerExecutor(container, NamingPolicy.CAMEL_CASE).streamItems(Filters.eq("value", value), TestItem.class).toList().size());
 
         // SCREAMING_SNAKE_CASE: "value" -> "VALUE". Cosmos identifiers are case-sensitive, so the query is
         // valid SQL and executes without error but matches nothing against the lower-case stored field.
         assertEquals(0,
-                new CosmosContainerExecutor(container, NamingPolicy.SCREAMING_SNAKE_CASE).streamItems(Filters.eq("value", value), TestItem.class).toList().size());
+                new CosmosContainerExecutor(container, NamingPolicy.SCREAMING_SNAKE_CASE).streamItems(Filters.eq("value", value), TestItem.class)
+                        .toList()
+                        .size());
     }
 
     @Test
@@ -930,8 +931,7 @@ public class CosmosContainerExecutor2Test extends TestBase {
         final TestItem item = itemIn(newPartition(), "cond-by-id-pk");
         executor.createItem(item);
 
-        final List<TestItem> results = executor
-                .streamItems(Arrays.asList("id"), Filters.eq("id", item.id).and(Filters.eq("name", item.name)), TestItem.class)
+        final List<TestItem> results = executor.streamItems(Arrays.asList("id"), Filters.eq("id", item.id).and(Filters.eq("name", item.name)), TestItem.class)
                 .toList();
 
         assertEquals(1, results.size());

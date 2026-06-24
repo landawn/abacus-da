@@ -2281,6 +2281,22 @@ public class DynamoDBExecutorV2Test extends TestBase {
         assertEquals("", result.get("k"));
     }
 
+    /**
+     * Regression test for toValue's NUL=false fallback: a hand-built AttributeValue with NUL=false
+     * (DynamoDB itself only ever emits NUL=true, which is handled by the top null-check) previously
+     * fell through every branch and threw IllegalArgumentException ("Unsupported Attribute type").
+     * It now mirrors the v1 getNULL() fallback and yields Boolean.FALSE.
+     */
+    @Test
+    public void testToValue_NulFalseViaToMap_YieldsFalseInsteadOfThrowing() {
+        Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("flag", AttributeValue.builder().nul(false).build());
+
+        Map<String, Object> result = assertDoesNotThrow(() -> DynamoDBExecutor.toMap(item));
+
+        assertEquals(Boolean.FALSE, result.get("flag"));
+    }
+
     // TODO: testToValue_NestedMapBranch - AttributeValue.builder().m() wraps as UnmodifiableMap which N.newMap
     // cannot instantiate. This branch is reached via the public API path but not testable in isolation.
 

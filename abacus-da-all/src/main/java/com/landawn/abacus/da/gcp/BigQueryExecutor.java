@@ -14,6 +14,10 @@
 
 package com.landawn.abacus.da.gcp;
 
+import static com.landawn.abacus.query.SqlBuilder.PAC;
+import static com.landawn.abacus.query.SqlBuilder.PLC;
+import static com.landawn.abacus.query.SqlBuilder.PSC;
+
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -46,9 +50,6 @@ import com.landawn.abacus.query.AbstractQueryBuilder.SP;
 import com.landawn.abacus.query.Filters;
 import com.landawn.abacus.query.QueryUtil;
 import com.landawn.abacus.query.SqlBuilder;
-import com.landawn.abacus.query.SqlBuilder.PAC;
-import com.landawn.abacus.query.SqlBuilder.PLC;
-import com.landawn.abacus.query.SqlBuilder.PSC;
 import com.landawn.abacus.query.condition.Condition;
 import com.landawn.abacus.type.Type;
 import com.landawn.abacus.util.Beans;
@@ -116,8 +117,12 @@ import com.landawn.abacus.util.stream.Stream;
  * {@code Boolean}, integer/floating-point primitives and their boxed equivalents,
  * {@link BigDecimal}, {@code java.util.Date}/{@code java.sql.*}, {@code com.google.cloud.Date},
  * {@code com.google.cloud.Timestamp}, and {@code byte[]} are mapped to their native BigQuery
- * types; everything else is serialised to JSON). {@code null} parameters must be wrapped in a
- * {@link QueryParameterValue} so the SQL type is known.</p>
+ * types; arrays, collections, maps, and beans are serialised to JSON; any other scalar &mdash;
+ * including {@code java.time} types such as {@code LocalDate}/{@code LocalDateTime}/{@code Instant},
+ * enums, and {@code UUID} &mdash; is bound as a {@code STRING} parameter, so use
+ * {@code java.sql.Date}/{@code java.sql.Timestamp} to bind native DATE/TIMESTAMP values).
+ * {@code null} parameters must be wrapped in a {@link QueryParameterValue} so the SQL type is
+ * known.</p>
  *
  * <h2>Result Set Pagination</h2>
  * <p>Pagination is delegated to BigQuery's {@link TableResult}: {@link #list}/{@link #query}
@@ -411,14 +416,55 @@ public class BigQueryExecutor {
 
             parameterType = propInfo.clazz;
 
-            if ((propValue == null || parameterType.isAssignableFrom(propValue.getClass())) || !(propValue instanceof FieldValueList)) {
-                propInfo.setPropValue(entity, propValue);
+            if (propValue instanceof FieldValueList) {
+                // RECORD value. Note a FieldValueList IS a List, so a plain assignability check against a
+                // List-typed property would store the raw FieldValue wrappers; convert through readRow
+                // unless the property explicitly wants the raw FieldValueList.
+                if (FieldValueList.class.isAssignableFrom(parameterType)) {
+                    propInfo.setPropValue(entity, propValue);
+                } else {
+                    propInfo.setPropValue(entity, readRow((FieldValueList) propValue, parameterType));
+                }
+            } else if (propValue instanceof List) {
+                // REPEATED column: FieldValue.getValue() returns List<FieldValue>. Unwrap the wrapper
+                // elements (mirroring the toMap path's toMapValue) and convert through the property's
+                // FULL generic type so e.g. a List<Long> property holds typed values. N.convert can't be
+                // used here: it short-circuits when the raw container class is assignable
+                // (ArrayList -> List) and would keep the raw String elements, so the value is rebuilt
+                // through the parameterized Type's JSON codec instead.
+                final Object unwrapped = unwrapRepeatedValue(fields.get(i), (List<?>) propValue);
+                propInfo.setPropValue(entity, propInfo.jsonXmlType.isParameterizedType() ? propInfo.jsonXmlType.valueOf(N.toJson(unwrapped)) : unwrapped);
             } else {
-                propInfo.setPropValue(entity, readRow((FieldValueList) propValue, parameterType));
+                propInfo.setPropValue(entity, propValue);
             }
         }
 
         return entityInfo.finishBeanResult(entity);
+    }
+
+    // Unwraps a REPEATED column's value — a List of FieldValue wrappers — into a List of plain values,
+    // converting nested RECORD elements via the field's sub-fields. This is the entity/array/Dataset
+    // sibling of the map path's toMapValue.
+    private static Object unwrapRepeatedValue(final Field field, final List<?> values) {
+        final List<Object> list = new ArrayList<>(values.size());
+        final FieldList subFields = field == null ? null : field.getSubFields();
+
+        for (final Object element : values) {
+            if (element instanceof final FieldValue repeatedFieldValue) {
+                final Object repeatedValue = repeatedFieldValue.getValue();
+
+                if (repeatedValue instanceof FieldValueList) {
+                    list.add(subFields == null ? readRow((FieldValueList) repeatedValue, Object[].class)
+                            : toMap(subFields, (FieldValueList) repeatedValue, IntFunctions.ofMap()));
+                } else {
+                    list.add(repeatedValue);
+                }
+            } else {
+                list.add(element);
+            }
+        }
+
+        return list;
     }
 
     /**
@@ -689,6 +735,8 @@ public class BigQueryExecutor {
 
                 if (value instanceof FieldValueList) {
                     a[i] = readRow((FieldValueList) value, Object[].class);
+                } else if (value instanceof List) {
+                    a[i] = unwrapRepeatedValue(fields.get(i), (List<?>) value);
                 } else {
                     a[i] = value;
                 }
@@ -703,6 +751,8 @@ public class BigQueryExecutor {
 
                 if (value instanceof FieldValueList) {
                     c.add(readRow((FieldValueList) value, List.class));
+                } else if (value instanceof List) {
+                    c.add(unwrapRepeatedValue(fields.get(i), (List<?>) value));
                 } else {
                     c.add(value);
                 }
@@ -753,6 +803,8 @@ public class BigQueryExecutor {
 
                         if (value instanceof FieldValueList) {
                             a[i] = readRow((FieldValueList) value, Object[].class);
+                        } else if (value instanceof List) {
+                            a[i] = unwrapRepeatedValue(rowFields.get(i), (List<?>) value);
                         } else {
                             a[i] = value;
                         }
@@ -783,6 +835,8 @@ public class BigQueryExecutor {
 
                         if (value instanceof FieldValueList) {
                             c.add(readRow((FieldValueList) value, List.class));
+                        } else if (value instanceof List) {
+                            c.add(unwrapRepeatedValue(rowFields.get(i), (List<?>) value));
                         } else {
                             c.add(value);
                         }
@@ -907,16 +961,18 @@ public class BigQueryExecutor {
      * @see #stream(Class, String, Object...)
      */
     public static <T> List<T> toList(final TableResult tableResult, final Class<T> targetClass) {
-        final int rowCount = Numbers.toIntExact(tableResult.getTotalRows());
+        final Schema schema = tableResult.getSchema();
 
-        if (rowCount == 0) {
+        // A null schema (e.g. a DML statement's TableResult) has no result columns regardless of the
+        // affected-row count — checked before toIntExact, which would overflow on a DML statement that
+        // touched more than Integer.MAX_VALUE rows.
+        if (schema == null) {
             return new ArrayList<>(0);
         }
 
-        final Schema schema = tableResult.getSchema();
+        final int rowCount = Numbers.toIntExact(tableResult.getTotalRows());
 
-        // A null schema (e.g. a DML statement's TableResult) has no result columns regardless of the affected-row count.
-        if (schema == null) {
+        if (rowCount == 0) {
             return new ArrayList<>(0);
         }
 
@@ -974,14 +1030,17 @@ public class BigQueryExecutor {
      * @see RowDataset
      * @see #query(Class, String, Object...)
      */
-    @SuppressWarnings("null")
+    @SuppressWarnings({ "null", "deprecation" })
     public static Dataset extractData(final TableResult tableResult, final Class<?> targetClass) {
-        final int rowCount = Numbers.toIntExact(tableResult.getTotalRows());
         final Schema schema = tableResult.getSchema();
 
+        // Null schema (DML statement) checked before toIntExact: getTotalRows() is the affected-row
+        // count there and could overflow the int conversion.
         if (schema == null) {
             return N.newEmptyDataset();
         }
+
+        final int rowCount = Numbers.toIntExact(tableResult.getTotalRows());
 
         final FieldList fields = schema.getFields();
         final Iterable<FieldValueList> rows = tableResult.iterateAll();
@@ -1012,7 +1071,10 @@ public class BigQueryExecutor {
 
                 columnClasses[i] = propInfo == null ? null : propInfo.clazz;
             } else {
-                columnClasses[i] = isMap ? Map.class : Object[].class;
+                // null = no per-column conversion (raw values), per the documented contract for non-bean
+                // targets; nested STRUCTs still flatten to Object[] through the readRow branch below.
+                // Object[].class here would force every scalar through N.convert(value, Object[].class).
+                columnClasses[i] = isMap ? Map.class : null;
             }
         }
 
@@ -1024,6 +1086,9 @@ public class BigQueryExecutor {
 
                 if (value instanceof FieldValueList && (columnClasses[i] == null || !columnClasses[i].isAssignableFrom(FieldValueList.class))) {
                     columnList.get(i).add(readRow((FieldValueList) value, columnClasses[i]));
+                } else if (value instanceof List && !(value instanceof FieldValueList)) {
+                    // REPEATED column: unwrap the FieldValue wrapper elements (mirrors the toMap path).
+                    columnList.get(i).add(unwrapRepeatedValue(fields.get(i), (List<?>) value));
                 } else if (value == null || targetClass == null || isMap || columnClasses[i] == null || columnClasses[i].isAssignableFrom(value.getClass())) {
                     columnList.get(i).add(value);
                 } else {
@@ -1242,13 +1307,13 @@ public class BigQueryExecutor {
 
         switch (namingPolicy) {
             case SNAKE_CASE:
-                return PSC.update(targetClass).set(entity, primaryKeyNames).where(Filters.and(conds)).build();
+                return PSC.update(targetClass).setEntity(entity, primaryKeyNames).where(Filters.and(conds)).build();
 
             case SCREAMING_SNAKE_CASE:
-                return PAC.update(targetClass).set(entity, primaryKeyNames).where(Filters.and(conds)).build();
+                return PAC.update(targetClass).setEntity(entity, primaryKeyNames).where(Filters.and(conds)).build();
 
             case CAMEL_CASE:
-                return PLC.update(targetClass).set(entity, primaryKeyNames).where(Filters.and(conds)).build();
+                return PLC.update(targetClass).setEntity(entity, primaryKeyNames).where(Filters.and(conds)).build();
 
             default:
                 throw new IllegalStateException("Unsupported naming policy: " + namingPolicy);
@@ -1489,7 +1554,6 @@ public class BigQueryExecutor {
         Tuple2<ImmutableList<String>, ImmutableSet<String>> tp = entityKeyNamesMap.get(entityClass);
 
         if (tp == null) {
-            @SuppressWarnings("deprecation")
             final List<String> idPropNames = QueryUtil.getIdPropNames(entityClass);
             tp = Tuple.of(ImmutableList.copyOf(idPropNames), ImmutableSet.copyOf(idPropNames));
             entityKeyNamesMap.put(entityClass, tp);
@@ -1502,7 +1566,6 @@ public class BigQueryExecutor {
         Tuple2<ImmutableList<String>, ImmutableSet<String>> tp = entityKeyNamesMap.get(entityClass);
 
         if (tp == null) {
-            @SuppressWarnings("deprecation")
             final List<String> idPropNames = QueryUtil.getIdPropNames(entityClass);
             tp = Tuple.of(ImmutableList.copyOf(idPropNames), ImmutableSet.copyOf(idPropNames));
             entityKeyNamesMap.put(entityClass, tp);
@@ -1853,7 +1916,7 @@ public class BigQueryExecutor {
      * String sql = "SELECT customer_id, name, email FROM customers " +
      *              "WHERE status = ? AND created_date > ?";
      * Dataset dataset = executor.query(Customer.class, sql,
-     *     "active", LocalDate.now().minusMonths(6));   // returns a columnar Dataset of the selected columns
+     *     "active", java.sql.Date.valueOf(LocalDate.now().minusMonths(6)));   // java.sql.Date binds as a native DATE parameter
      *
      * // Process results
      * dataset.size();                                  // returns the number of rows
@@ -1862,7 +1925,8 @@ public class BigQueryExecutor {
      * // Complex query with aggregation
      * String aggQuery = "SELECT status, COUNT(*) as count, AVG(order_amount) as avg_amount " +
      *                   "FROM orders WHERE order_date >= ? GROUP BY status";
-     * Dataset aggDataset = executor.query(Map.class, aggQuery, LocalDate.now().minusMonths(1));   // returns a Dataset
+     * Dataset aggDataset = executor.query(Map.class, aggQuery,
+     *     java.sql.Date.valueOf(LocalDate.now().minusMonths(1)));   // returns a Dataset
      * }</pre>
      *
      * @param targetClass the target class for result conversion (entity class with getter/setter methods or Map.class)
@@ -1973,7 +2037,7 @@ public class BigQueryExecutor {
      * // Execute SQL query with parameters
      * String sql = "SELECT * FROM customers WHERE status = ? AND created_date > ?";
      * List<Customer> customers = executor.list(Customer.class, sql,
-     *     "active", LocalDate.now().minusMonths(6));   // returns a List of entities (empty if no rows match)
+     *     "active", java.sql.Date.valueOf(LocalDate.now().minusMonths(6)));   // java.sql.Date binds as a native DATE parameter
      *
      * // Complex JOIN query
      * String joinSql = "SELECT c.customer_id, c.name, COUNT(o.order_id) as order_count " +
@@ -2093,7 +2157,7 @@ public class BigQueryExecutor {
      * // Stream query results
      * String sql = "SELECT * FROM customers WHERE status = ? AND created_date > ?";
      * Stream<Customer> stream = executor.stream(Customer.class, sql,
-     *     "active", LocalDate.now().minusMonths(6));   // returns a lazy Stream of matching entities
+     *     "active", java.sql.Date.valueOf(LocalDate.now().minusMonths(6)));   // java.sql.Date binds as a native DATE parameter
      *
      * // Process stream with filtering and mapping (abacus Stream)
      * List<String> premiumEmails = stream
@@ -2104,7 +2168,7 @@ public class BigQueryExecutor {
      * // Stream for analytics
      * String analyticsSql = "SELECT order_date, SUM(amount) as total FROM orders " +
      *                       "WHERE order_date >= ? GROUP BY order_date";
-     * executor.stream(Map.class, analyticsSql, LocalDate.now().minusDays(30))
+     * executor.stream(Map.class, analyticsSql, java.sql.Date.valueOf(LocalDate.now().minusDays(30)))
      *     .forEach(row -> System.out.println(row.get("order_date") + ": " + row.get("total")));
      * }</pre>
      *
@@ -2119,9 +2183,13 @@ public class BigQueryExecutor {
      * @see Stream
      */
     public final <T> Stream<T> stream(final Class<T> targetClass, final String query, final Object... parameters) {
-        final Function<? super FieldValueList, ? extends T> mapper = createRowMapper(targetClass, null);
+        final TableResult tableResult = execute(query, parameters);
+        // Pass the result schema instead of null: the null path falls back to the reflective
+        // FieldValueList.schema accessor, which is unavailable on some library versions.
+        final FieldList fields = tableResult.getSchema() == null ? null : tableResult.getSchema().getFields();
+        final Function<? super FieldValueList, ? extends T> mapper = createRowMapper(targetClass, fields);
 
-        return Stream.of(execute(query, parameters).iterateAll()).map(mapper);
+        return Stream.of(tableResult.iterateAll()).map(mapper);
     }
 
     /**
@@ -2169,10 +2237,14 @@ public class BigQueryExecutor {
             logger.debug("Executing query: {}", queryConfig.getQuery());
         }
 
-        final Function<? super FieldValueList, ? extends T> mapper = createRowMapper(targetClass, null);
-
         try {
-            return Stream.of(bigQuery.query(queryConfig).iterateAll()).map(mapper);
+            final TableResult tableResult = bigQuery.query(queryConfig);
+            // Pass the result schema instead of null: the null path falls back to the reflective
+            // FieldValueList.schema accessor, which is unavailable on some library versions.
+            final FieldList fields = tableResult.getSchema() == null ? null : tableResult.getSchema().getFields();
+            final Function<? super FieldValueList, ? extends T> mapper = createRowMapper(targetClass, fields);
+
+            return Stream.of(tableResult.iterateAll()).map(mapper);
         } catch (final InterruptedException e) {
             Thread.currentThread().interrupt();
             throw ExceptionUtil.toRuntimeException(e, true);
@@ -2255,15 +2327,15 @@ public class BigQueryExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // SELECT
+     * // SELECT (java.sql.Date binds as a native DATE parameter; a raw LocalDate would bind as STRING)
      * TableResult result = executor.execute(
      *     "SELECT * FROM customers WHERE status = ? AND created_date > ?",
-     *     "active", LocalDate.now().minusMonths(6));   // returns a TableResult holding the selected rows
+     *     "active", java.sql.Date.valueOf(LocalDate.now().minusMonths(6)));   // returns a TableResult holding the selected rows
      *
      * // DML (returned TableResult exposes the affected-row count via getTotalRows())
      * TableResult updated = executor.execute(
      *     "UPDATE customers SET status = ? WHERE last_order_date < ?",
-     *     "inactive", LocalDate.now().minusYears(1));   // returns a TableResult; getTotalRows() is the affected-row count
+     *     "inactive", java.sql.Date.valueOf(LocalDate.now().minusYears(1)));   // returns a TableResult; getTotalRows() is the affected-row count
      *
      * // DDL (no parameters; returned TableResult has no schema)
      * executor.execute("CREATE TABLE IF NOT EXISTS test_table (id STRING, name STRING)");   // returns a TableResult
@@ -2387,8 +2459,13 @@ public class BigQueryExecutor {
         queryParameterMap.put(java.sql.Timestamp.class, value -> QueryParameterValue.timestamp(toMicros((java.sql.Timestamp) value)));
 
         queryParameterMap.put(com.google.cloud.Date.class, value -> QueryParameterValue.date(value.toString()));
-        queryParameterMap.put(com.google.cloud.Timestamp.class,
-                value -> QueryParameterValue.timestamp(TimeUnit.MILLISECONDS.toMicros(((com.google.cloud.Timestamp) value).toDate().getTime())));
+        queryParameterMap.put(com.google.cloud.Timestamp.class, value -> {
+            // Preserve microsecond precision: toDate() truncates to milliseconds, silently losing the
+            // micro component that BigQuery TIMESTAMP carries (a WHERE equality on a value read back
+            // from BigQuery could then fail to match).
+            final com.google.cloud.Timestamp ts = (com.google.cloud.Timestamp) value;
+            return QueryParameterValue.timestamp(TimeUnit.SECONDS.toMicros(ts.getSeconds()) + ts.getNanos() / 1_000L);
+        });
 
         queryParameterMap.put(byte[].class, value -> QueryParameterValue.bytes((byte[]) value));
     }
@@ -2412,14 +2489,16 @@ public class BigQueryExecutor {
      *       {@code java.util.Date}, {@code java.sql.Date}/{@code Time}/{@code Timestamp},
      *       {@code com.google.cloud.Date}, {@code com.google.cloud.Timestamp}, and {@code byte[]}
      *       are mapped to their canonical BigQuery types.</li>
-     *   <li>Arrays, collections, maps, and other beans are serialised to JSON and bound as
-     *       {@code STRING} via {@link QueryParameterValue#json(String)}.</li>
+     *   <li>Arrays, collections, maps, and beans are serialised to JSON via
+     *       {@link QueryParameterValue#json(String)}.</li>
+     *   <li>Any other scalar (e.g. {@code java.time} types such as {@code LocalDate}, enums,
+     *       {@code UUID}) is bound as a {@code STRING} parameter from its string form.</li>
      * </ol>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<QueryParameterValue> params = BigQueryExecutor.buildQueryParameterValue(
-     *     "John", 25, LocalDate.now());
+     *     "John", 25, LocalDate.now());   // LocalDate binds as STRING; use java.sql.Date for a native DATE
      * }</pre>
      *
      * @param parameters the values to convert; may be {@code null} or empty

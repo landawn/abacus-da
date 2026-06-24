@@ -1688,6 +1688,77 @@ public class DynamoDBExecutor01Test extends TestBase {
         assertNull(result.get("nullVal"));
     }
 
+    /**
+     * Regression test for toValue's M branch: it previously instantiated the result map from the
+     * input map's runtime class via N.newMap(attrMap.getClass(), size). A caller-built AttributeValue
+     * holding an immutable map (e.g. java.util.Map.of(...)) made that instantiation throw; the branch
+     * now copies into a LinkedHashMap regardless of the input map's concrete class.
+     */
+    @Test
+    public void testToValue_ImmutableMapInMAttribute_NoLongerThrows() {
+        Map<String, AttributeValue> item = new HashMap<>();
+        item.put("m", new AttributeValue().withM(Map.of("a", new AttributeValue("x"))));
+
+        Map<String, Object> result = assertDoesNotThrow(() -> DynamoDBExecutor.toMap(item));
+
+        Map<?, ?> inner = (Map<?, ?>) result.get("m");
+        assertNotNull(inner);
+        assertEquals("x", inner.get("a"));
+    }
+
+    /**
+     * Regression tests for toEntity's container conversion: elements of native NS/L/M attributes were
+     * previously left as Strings inside generically-typed properties (Set&lt;Integer&gt;, List&lt;Long&gt;,
+     * Map&lt;String, Integer&gt;) — heap pollution surfacing as ClassCastException at the call site.
+     * Values are now rebuilt through the property's full parameterized type.
+     */
+    @Test
+    public void testToEntity_NsAttributeIntoTypedSet_convertsElements() {
+        Map<String, AttributeValue> item = new HashMap<>();
+        item.put("id", new AttributeValue("e1"));
+        item.put("scores", new AttributeValue().withNS("1", "2"));
+
+        GenericPropsEntity entity = DynamoDBExecutor.toEntity(item, GenericPropsEntity.class);
+
+        assertNotNull(entity.getScores());
+        assertTrue(entity.getScores().contains(Integer.valueOf(1)));
+        assertTrue(entity.getScores().contains(Integer.valueOf(2)));
+
+        int sum = 0;
+        for (Integer score : entity.getScores()) { // would throw ClassCastException before the fix
+            sum += score;
+        }
+        assertEquals(3, sum);
+    }
+
+    @Test
+    public void testToEntity_LAttributeOfNIntoTypedList_convertsElements() {
+        Map<String, AttributeValue> item = new HashMap<>();
+        item.put("id", new AttributeValue("e2"));
+        item.put("counts", new AttributeValue().withL(new AttributeValue().withN("5"), new AttributeValue().withN("7")));
+
+        GenericPropsEntity entity = DynamoDBExecutor.toEntity(item, GenericPropsEntity.class);
+
+        assertNotNull(entity.getCounts());
+        assertEquals(2, entity.getCounts().size());
+        assertEquals(Long.valueOf(5L), entity.getCounts().get(0)); // would throw ClassCastException before the fix
+        assertEquals(Long.valueOf(7L), entity.getCounts().get(1));
+    }
+
+    @Test
+    public void testToEntity_MAttributeIntoTypedMap_convertsValues() {
+        Map<String, AttributeValue> item = new HashMap<>();
+        item.put("id", new AttributeValue("e3"));
+        Map<String, AttributeValue> ratings = new HashMap<>();
+        ratings.put("quality", new AttributeValue().withN("4"));
+        item.put("ratings", new AttributeValue().withM(ratings));
+
+        GenericPropsEntity entity = DynamoDBExecutor.toEntity(item, GenericPropsEntity.class);
+
+        assertNotNull(entity.getRatings());
+        assertEquals(Integer.valueOf(4), entity.getRatings().get("quality")); // ClassCastException before the fix
+    }
+
     // toItem(Object, NamingPolicy) Map branch (camel-case and non-camel-case branches)
     @Test
     public void testToItem_FromMapWithSnakeCase() {
@@ -2493,6 +2564,47 @@ public class DynamoDBExecutor01Test extends TestBase {
 
         public void setFirstName(String firstName) {
             this.firstName = firstName;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Table(name = "TestTable")
+    public static class GenericPropsEntity {
+        @com.landawn.abacus.annotation.Id
+        private String id;
+        private java.util.Set<Integer> scores;
+        private List<Long> counts;
+        private Map<String, Integer> ratings;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(String id) {
+            this.id = id;
+        }
+
+        public java.util.Set<Integer> getScores() {
+            return scores;
+        }
+
+        public void setScores(java.util.Set<Integer> scores) {
+            this.scores = scores;
+        }
+
+        public List<Long> getCounts() {
+            return counts;
+        }
+
+        public void setCounts(List<Long> counts) {
+            this.counts = counts;
+        }
+
+        public Map<String, Integer> getRatings() {
+            return ratings;
+        }
+
+        public void setRatings(Map<String, Integer> ratings) {
+            this.ratings = ratings;
         }
     }
 

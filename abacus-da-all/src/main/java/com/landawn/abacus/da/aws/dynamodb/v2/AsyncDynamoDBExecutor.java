@@ -134,7 +134,7 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
  * <pre>{@code
  * // Initialize async executor
  * AsyncDynamoDBExecutor executor = new AsyncDynamoDBExecutor(dynamoDbAsyncClient);
- * 
+ *
  * // Basic async operations
  * CompletableFuture<User> userFuture = executor.getItem("Users", key, User.class);
  * userFuture.thenApply(User::getName)
@@ -143,17 +143,17 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
  *               logger.error("Failed to get user", ex);
  *               return null;
  *           });
- * 
+ *
  * // Parallel operations
  * CompletableFuture<User> user1 = executor.getItem("Users", key1, User.class);
  * CompletableFuture<User> user2 = executor.getItem("Users", key2, User.class);
  * CompletableFuture<List<User>> bothUsers = user1.thenCombine(user2, Arrays::asList);
- * 
+ *
  * // Batch operations
- * CompletableFuture<Map<String, List<User>>> batchResult = 
+ * CompletableFuture<Map<String, List<User>>> batchResult =
  *     executor.batchGetItem(requestItems, User.class);
  * }</pre>
- * 
+ *
  * <h3>Error Handling:</h3>
  * <p>All CompletableFuture results may complete exceptionally with DynamoDbException or its subclasses.
  * Common exceptions include ResourceNotFoundException, ConditionalCheckFailedException, and
@@ -221,11 +221,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Returns the underlying DynamoDB async client used by this executor.
-     * 
+     *
      * <p>This provides direct access to the async client for operations not covered by this executor
      * or for advanced configuration. Use with caution as direct client usage bypasses this executor's
      * object mapping and convenience features.</p>
-     * 
+     *
      * <p>The returned client is the same instance used internally and should not be closed
      * separately from this executor.</p>
      *
@@ -254,14 +254,14 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Creates a type-safe async mapper for the specified entity class with automatic table name detection.
-     * 
-     * <p>This method creates a cached async mapper that provides type-safe asynchronous operations for a specific 
-     * entity class. The table name is automatically derived from @Table annotations on the class. The mapper 
+     *
+     * <p>This method creates a cached async mapper that provides type-safe asynchronous operations for a specific
+     * entity class. The table name is automatically derived from @Table annotations on the class. The mapper
      * uses CAMEL_CASE naming policy by default for attribute name conversion.</p>
-     * 
+     *
      * <p>Entity classes must be annotated with @Table, @javax.persistence.Table, or @jakarta.persistence.Table
      * to specify the DynamoDB table name. ID fields must be annotated with appropriate key annotations.</p>
-     * 
+     *
      * <p><b>Async Benefits:</b></p>
      * <ul>
      * <li>All mapper operations return CompletableFuture for non-blocking execution</li>
@@ -269,7 +269,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <li>Efficient resource utilization for high-concurrency scenarios</li>
      * <li>Compatible with timeout and error handling mechanisms</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * @Table("Users")
@@ -279,7 +279,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     private String name;
      *     // getters and setters...
      * }
-     * 
+     *
      * // Typical: table name is derived from @Table("Users")
      * AsyncDynamoDBExecutor.Mapper<User> userMapper = executor.mapper(User.class);
      * CompletableFuture<User> userFuture = userMapper.getItem(user);
@@ -305,28 +305,26 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
     public <T> Mapper<T> mapper(final Class<T> targetEntityClass) {
         N.checkArgNotNull(targetEntityClass, "targetEntityClass");
 
+        // computeIfAbsent (matching the sync executor) so concurrent callers get the documented
+        // "same instance" guarantee instead of racing check-then-act.
         @SuppressWarnings("rawtypes")
-        Mapper result = mapperPool.get(targetEntityClass);
-
-        if (result == null) {
-            final BeanInfo entityInfo = ParserUtil.getBeanInfo(targetEntityClass);
+        final Mapper result = mapperPool.computeIfAbsent(targetEntityClass, cls -> {
+            final BeanInfo entityInfo = ParserUtil.getBeanInfo(cls);
 
             if (entityInfo.tableName.isEmpty()) {
-                throw new IllegalArgumentException("Entity class " + targetEntityClass
-                        + " must be annotated with @Table (com.landawn.abacus.annotation, javax.persistence, or jakarta.persistence). Alternatively, use AsyncDynamoDBExecutor.mapper(String tableName, Class<T> entityClass)");
+                throw new IllegalArgumentException("Entity class " + cls
+                        + " must be annotated with @Table (com.landawn.abacus.annotation, javax.persistence, or jakarta.persistence). Alternatively, use AsyncDynamoDBExecutor.mapper(Class<T> targetEntityClass, String tableName, NamingPolicy namingPolicy)");
             }
 
-            result = mapper(targetEntityClass, entityInfo.tableName.get(), NamingPolicy.CAMEL_CASE);
-
-            mapperPool.put(targetEntityClass, result);
-        }
+            return mapper(cls, entityInfo.tableName.get(), NamingPolicy.CAMEL_CASE);
+        });
 
         return result;
     }
 
     /**
      * Creates a type-safe async mapper for the specified entity class with explicit table name and naming policy.
-     * 
+     *
      * <p>This method creates an async mapper with full customization of table name and attribute naming policy.
      * Unlike the single-parameter version, this doesn't require @Table annotations and allows complete
      * control over table mapping. Each call creates a new mapper instance (not cached).</p>
@@ -338,7 +336,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <li>SNAKE_CASE - "userName" → "user_name"</li>
      * <li>SCREAMING_SNAKE_CASE - "userName" → "USER_NAME"</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * public class Product {
@@ -346,7 +344,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     private String name;
      *     // getters and setters...
      * }
-     * 
+     *
      * // Typical: explicit table + naming policy, no @Table required
      * AsyncDynamoDBExecutor.Mapper<Product> mapper =
      *     executor.mapper(Product.class, "ProductTable", NamingPolicy.SNAKE_CASE);   // new instance (not cached)
@@ -376,11 +374,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously retrieves an item from the specified DynamoDB table.
-     * 
+     *
      * <p>This method performs an eventually consistent read by default and returns the item
      * as a Map of attribute names to Java objects. The CompletableFuture will complete with
      * null if the item doesn't exist, or complete exceptionally if the operation fails.</p>
-     * 
+     *
      * <p><b>Async Operation Benefits:</b></p>
      * <ul>
      * <li>Non-blocking - frees up calling thread for other operations</li>
@@ -388,7 +386,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <li>Error handling - use exceptionally() or handle() for robust error management</li>
      * <li>Timeout support - apply timeouts using orTimeout() methods</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValue> key = Map.of("userId", AttributeValue.builder().s("user123").build());
@@ -428,21 +426,21 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously retrieves an item from the specified table with optional consistent read.
-     * 
+     *
      * <p>This method allows you to control the read consistency level while maintaining all benefits
      * of asynchronous execution. Strongly consistent reads ensure you get the most recent item data
      * but consume more read capacity and may have slightly higher latency.</p>
-     * 
+     *
      * <p><b>Read Consistency Trade-offs:</b></p>
      * <ul>
      * <li><b>Eventually Consistent (false/null):</b> Lower latency, better throughput, lower cost</li>
      * <li><b>Strongly Consistent (true):</b> Guaranteed latest data, higher resource consumption</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValue> key = Map.of("accountId", AttributeValue.builder().s("ACC-456").build());
-     * 
+     *
      * // Use strong consistency for financial data
      * CompletableFuture<Map<String, Object>> accountFuture =
      *     executor.getItem("Accounts", key, true);
@@ -454,13 +452,13 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *                  }
      *              })
      *              .exceptionally(ex -> {
-     *                  if (ex instanceof TimeoutException) {
+     *                  if (ex.getCause() instanceof TimeoutException) { // ex is a CompletionException wrapper here
      *                      logger.warn("Account lookup timed out");
      *                  }
      *                  return null;
      *              });
      * }</pre>
-     * 
+     *
      * @param tableName the name of the table to get the item from. Must not be null or empty.
      * @param key the primary key of the item to retrieve. Must include all key attributes. Must not be null.
      * @param consistentRead whether to perform a consistent read (true) or eventually consistent read (false/null)
@@ -475,11 +473,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously retrieves an item using a GetItemRequest.
-     * 
+     *
      * <p>This method provides complete control over the get operation, allowing you to specify
      * all parameters including projection expressions, return consumed capacity, and more.
      * This is the most flexible way to retrieve items from DynamoDB asynchronously.</p>
-     * 
+     *
      * <p><b>Advanced Features Available:</b></p>
      * <ul>
      * <li>Projection expressions for retrieving specific attributes</li>
@@ -487,7 +485,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <li>Return consumed capacity for monitoring</li>
      * <li>Consistent read configuration</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * GetItemRequest request = GetItemRequest.builder()
@@ -525,11 +523,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously retrieves a single item from DynamoDB table and converts it to the specified type.
-     * 
+     *
      * <p>This method performs an async GetItem operation with eventually consistent reads by default.
      * The returned CompletableFuture will complete with the converted item when the operation succeeds,
      * or complete exceptionally if the operation fails.</p>
-     * 
+     *
      * <p><b>Async Operation Benefits:</b></p>
      * <ul>
      * <li>Non-blocking - doesn't tie up calling thread</li>
@@ -537,7 +535,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <li>Efficient - uses NIO-based networking</li>
      * <li>Scalable - supports high concurrency</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValue> key = Map.of("id", AttributeValue.builder().s("u1").build());
@@ -577,17 +575,17 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously retrieves a single item with specified read consistency and converts it to the target type.
-     * 
+     *
      * <p>This method provides full control over read consistency while maintaining the benefits of asynchronous
      * execution. Strongly consistent reads ensure the most up-to-date data but consume more read capacity
      * and may have slightly higher latency.</p>
-     * 
+     *
      * <p><b>Read Consistency Impact on Async Operations:</b></p>
      * <ul>
      * <li><b>Eventually Consistent:</b> Lower latency, better throughput, lower cost</li>
      * <li><b>Strongly Consistent:</b> Guaranteed latest data, higher resource consumption</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Strong consistency for critical reads
@@ -597,13 +595,13 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * userFuture.orTimeout(5, TimeUnit.SECONDS)
      *           .thenAccept(user -> processUser(user))
      *           .exceptionally(ex -> {
-     *               if (ex instanceof TimeoutException) {
+     *               if (ex.getCause() instanceof TimeoutException) { // ex is a CompletionException wrapper here
      *                   logger.warn("Get item timed out");
      *               }
      *               return null;
      *           });
      * }</pre>
-     * 
+     *
      * @param <T> the target type for conversion
      * @param tableName the name of the DynamoDB table. Must not be null or empty.
      * @param key the primary key of the item to retrieve. Must not be null or empty.
@@ -625,11 +623,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously retrieves an item using a GetItemRequest and converts it to the target type.
-     * 
+     *
      * <p>This method provides the most flexibility by combining full request control with
      * automatic type conversion. You can use all DynamoDB features while maintaining type safety
      * and asynchronous execution benefits.</p>
-     * 
+     *
      * <p><b>Advanced Usage Benefits:</b></p>
      * <ul>
      * <li>Complete control over DynamoDB request parameters</li>
@@ -637,7 +635,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <li>Non-blocking execution with CompletableFuture</li>
      * <li>Support for all DynamoDB v2 SDK features</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * public class ProductSummary {
@@ -646,7 +644,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     private Boolean inStock;
      *     // getters and setters...
      * }
-     * 
+     *
      * GetItemRequest request = GetItemRequest.builder()
      *     .tableName("Products")
      *     .key(Map.of("productId", AttributeValue.builder().s("PROD-123").build()))
@@ -654,10 +652,10 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     .expressionAttributeNames(Map.of("#name", "productName"))
      *     .consistentRead(false)
      *     .build();
-     * 
-     * CompletableFuture<ProductSummary> productFuture = 
+     *
+     * CompletableFuture<ProductSummary> productFuture =
      *     executor.getItem(request, ProductSummary.class);
-     * 
+     *
      * productFuture.thenCompose(product -> {
      *     if (product != null && product.getInStock()) {
      *         return processAvailableProduct(product);
@@ -666,7 +664,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     }
      * });
      * }</pre>
-     * 
+     *
      * @param <T> the type to convert the item to
      * @param getItemRequest the complete GetItemRequest with all parameters configured. Must not be null.
      * @param targetClass the class to convert the item to (entity beans need a public no-arg constructor;
@@ -683,12 +681,12 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously performs a batch get operation to retrieve multiple items from multiple tables.
-     * 
+     *
      * <p>This method can retrieve up to 100 items in a single async call, with a maximum total size
      * of 16 MB. If any requested items are not found, they will simply be omitted from the
      * results. The operation performs eventually consistent reads by default and returns a
      * CompletableFuture for non-blocking execution.</p>
-     * 
+     *
      * <p><b>Batch Operation Benefits:</b></p>
      * <ul>
      * <li>Retrieves multiple items in a single network round-trip</li>
@@ -699,7 +697,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <p><b>Unprocessed keys:</b> DynamoDB may return some keys as unprocessed when batch limits
      * are reached or throttling occurs. This method does NOT automatically retry unprocessed keys —
      * inspect the underlying {@link BatchGetItemRequest}/response and re-issue if needed.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * KeysAndAttributes userKeys = KeysAndAttributes.builder()
@@ -709,9 +707,9 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     ))
      *     .projectionExpression("userId, name, email")
      *     .build();
-     * 
+     *
      * Map<String, KeysAndAttributes> requestItems = Map.of("Users", userKeys);
-     * 
+     *
      * CompletableFuture<Map<String, List<Map<String, Object>>>> batchFuture =
      *     executor.batchGetItem(requestItems);
      *
@@ -724,7 +722,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     return null;
      * });
      * }</pre>
-     * 
+     *
      * @param requestItems a map where keys are table names and values are KeysAndAttributes
      *                    objects specifying the items to retrieve from each table. Must not be null.
      * @return a CompletableFuture containing a map of table names to lists of retrieved items,
@@ -738,11 +736,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously performs a batch get operation with consumed capacity reporting.
-     * 
+     *
      * <p>This method extends the basic batch get by allowing you to track the read capacity
      * consumed by the operation asynchronously. This is useful for monitoring and optimizing
      * your DynamoDB usage and costs in high-throughput async applications.</p>
-     * 
+     *
      * <p><b>Capacity Monitoring Benefits:</b></p>
      * <ul>
      * <li>Real-time capacity consumption tracking for cost optimization</li>
@@ -750,7 +748,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <li>Debugging high-consumption operations</li>
      * <li>Compliance with capacity budget constraints</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * KeysAndAttributes productKeys = KeysAndAttributes.builder()
@@ -760,9 +758,9 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     ))
      *     .consistentRead(true) // Higher capacity consumption
      *     .build();
-     * 
+     *
      * Map<String, KeysAndAttributes> requestItems = Map.of("Products", productKeys);
-     * 
+     *
      * CompletableFuture<Map<String, List<Map<String, Object>>>> future =
      *     executor.batchGetItem(requestItems, "TOTAL");
      *
@@ -771,7 +769,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     // Note: Consumed capacity info available in underlying response metadata
      * });
      * }</pre>
-     * 
+     *
      * @param requestItems a map of table names to KeysAndAttributes specifying the items to retrieve.
      *                    Must not be null.
      * @param returnConsumedCapacity determines the level of detail about consumed capacity returned:
@@ -788,12 +786,12 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously performs a batch get operation using a BatchGetItemRequest.
-     * 
+     *
      * <p>This method provides complete control over the batch get operation, allowing you
      * to specify all parameters including projection expressions, consistent reads per table,
      * and return consumed capacity settings. All operations execute asynchronously with
      * CompletableFuture support.</p>
-     * 
+     *
      * <p><b>Advanced Configuration Options:</b></p>
      * <ul>
      * <li>Per-table projection expressions and attribute filtering</li>
@@ -823,7 +821,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     ))
      *     .returnConsumedCapacity(ReturnConsumedCapacity.INDEXES)
      *     .build();
-     * 
+     *
      * CompletableFuture<Map<String, List<Map<String, Object>>>> future =
      *     executor.batchGetItem(request);
      *
@@ -833,7 +831,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     });
      * });
      * }</pre>
-     * 
+     *
      * @param batchGetItemRequest the complete BatchGetItemRequest with all parameters configured.
      *                           Must not be null.
      * @return a CompletableFuture containing a map of table names to lists of retrieved items
@@ -845,11 +843,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously retrieves multiple items from DynamoDB in a batch operation.
-     * 
+     *
      * <p>This method performs a batch get operation to retrieve items from one or more tables
      * efficiently in a single request. The items are converted to the specified target class type.
      * This is more efficient than multiple individual getItem calls.</p>
-     * 
+     *
      * <p><b>Batch Limits:</b></p>
      * <ul>
      * <li>Maximum 100 items per request across all tables</li>
@@ -857,7 +855,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <li>Eventually consistent reads by default (set {@code consistentRead} per table on
      *     {@link KeysAndAttributes} for strongly consistent reads)</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, KeysAndAttributes> requestItems = new HashMap<>();
@@ -866,14 +864,14 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     Map.of("userId", AttributeValue.builder().s("user2").build())
      * );
      * requestItems.put("Users", KeysAndAttributes.builder().keys(keys).build());
-     * 
+     *
      * executor.batchGetItem(requestItems, User.class)
      *     .thenAccept(results -> {
      *         List<User> users = results.get("Users");
      *         System.out.println("Retrieved " + users.size() + " users");
      *     });
      * }</pre>
-     * 
+     *
      * @param <T> the type of objects to return
      * @param requestItems map of table names to keys and attributes to retrieve. Must not be null.
      * @param targetClass the class to convert results to. Must not be null.
@@ -888,22 +886,22 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously retrieves multiple items with consumed capacity reporting.
-     * 
+     *
      * <p>This method is similar to {@link #batchGetItem(Map, Class)} but includes
      * information about the read capacity consumed by the operation. This is useful
      * for monitoring and optimizing DynamoDB costs and performance.</p>
-     * 
+     *
      * <p><b>Consumed Capacity Options:</b></p>
      * <ul>
      * <li><b>NONE</b> - No consumed capacity info returned (default)</li>
      * <li><b>TOTAL</b> - Returns total consumed capacity</li>
      * <li><b>INDEXES</b> - Returns consumed capacity for each table and index</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, KeysAndAttributes> requestItems = createBatchKeys(userIds);
-     * 
+     *
      * executor.batchGetItem(requestItems, "TOTAL", User.class)
      *     .thenAccept(results -> {
      *         List<User> users = results.get("Users");
@@ -911,7 +909,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *         // Response includes consumed capacity information
      *     });
      * }</pre>
-     * 
+     *
      * @param <T> the type of objects to return
      * @param requestItems map of table names to keys and attributes to retrieve. Must not be null.
      * @param returnConsumedCapacity specifies consumed capacity detail level: "NONE", "TOTAL", or "INDEXES"
@@ -931,11 +929,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously retrieves multiple items using a custom BatchGetItemRequest.
-     * 
+     *
      * <p>This method provides full control over the batch get operation, allowing
      * specification of all DynamoDB batch get parameters including projection expressions,
      * consistency settings, and consumed capacity reporting across multiple tables.</p>
-     * 
+     *
      * <p><b>Advanced Features:</b></p>
      * <ul>
      * <li>Projection expressions to retrieve specific attributes</li>
@@ -943,7 +941,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <li>Expression attribute names for reserved words</li>
      * <li>Consumed capacity and metrics reporting</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, KeysAndAttributes> requestItems = new HashMap<>();
@@ -953,16 +951,16 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     .expressionAttributeNames(Map.of("#s", "status"))
      *     .consistentRead(true)
      *     .build());
-     * 
+     *
      * BatchGetItemRequest request = BatchGetItemRequest.builder()
      *     .requestItems(requestItems)
      *     .returnConsumedCapacity(ReturnConsumedCapacity.TOTAL)
      *     .build();
-     * 
+     *
      * executor.batchGetItem(request, User.class)
      *     .thenAccept(results -> processResults(results));
      * }</pre>
-     * 
+     *
      * @param <T> the type of objects to return
      * @param batchGetItemRequest the complete BatchGetItemRequest. Must not be null.
      * @param targetClass the class to convert results to. Must not be null.
@@ -975,12 +973,12 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously puts an item into the specified DynamoDB table using AWS SDK v2.
-     * 
+     *
      * <p>This method creates a new item or replaces an existing item with the same primary key
      * asynchronously. The operation uses AWS SDK v2's non-blocking async client for improved
      * performance and resource utilization. By default, no information about the previous
      * item is returned.</p>
-     * 
+     *
      * <p><b>Async Operation Benefits:</b></p>
      * <ul>
      * <li>Non-blocking execution frees up calling thread</li>
@@ -988,7 +986,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <li>Composable with other async operations using CompletableFuture</li>
      * <li>Enhanced error handling with exception propagation</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValue> item = new HashMap<>();
@@ -1014,7 +1012,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *         return null;
      *     });
      * }</pre>
-     * 
+     *
      * @param tableName the name of the DynamoDB table to put the item into. Must not be null.
      * @param item the item to put, represented as a map of attribute names to AttributeValue objects.
      *            Must include all required attributes. Must not be null.
@@ -1031,11 +1029,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously puts an item into DynamoDB table with return value specification using AWS SDK v2.
-     * 
+     *
      * <p>This method creates a new item or replaces an existing item while allowing you to specify
      * what values should be returned after the operation completes. This is useful for retrieving
      * the old item values or confirming the operation success with specific attributes.</p>
-     * 
+     *
      * <p><b>Return Value Options (PutItem):</b></p>
      * <ul>
      * <li><b>NONE</b> - Nothing is returned (default, best performance)</li>
@@ -1084,11 +1082,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously puts an item using a complete PutItemRequest with AWS SDK v2.
-     * 
+     *
      * <p>This method provides maximum flexibility by accepting a fully configured PutItemRequest.
      * You can specify all DynamoDB PutItem parameters including condition expressions,
      * expression attribute names/values, return value specifications, and capacity monitoring.</p>
-     * 
+     *
      * <p><b>Advanced Features Available:</b></p>
      * <ul>
      * <li>Conditional puts with condition expressions</li>
@@ -1097,7 +1095,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <li>Return consumed capacity for monitoring</li>
      * <li>Return item collection metrics</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * PutItemRequest request = PutItemRequest.builder()
@@ -1111,12 +1109,12 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     .returnValues(ReturnValue.ALL_OLD)
      *     .returnConsumedCapacity(ReturnConsumedCapacity.TOTAL)
      *     .build();
-     * 
+     *
      * CompletableFuture<PutItemResponse> future = executor.putItem(request);
      *
      * future.thenAccept(response -> {
      *         System.out.println("Consumed capacity: " + response.consumedCapacity().capacityUnits());
-     *         if (response.attributes() != null) {
+     *         if (response.hasAttributes() && !response.attributes().isEmpty()) { // attributes() never returns null in SDK v2
      *             System.out.println("Replaced existing item");
      *         }
      *     })
@@ -1127,7 +1125,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *         return null;
      *     });
      * }</pre>
-     * 
+     *
      * @param putItemRequest the complete PutItemRequest with all parameters configured. Must not be null.
      * @return a {@code CompletableFuture} that completes with the {@link PutItemResponse}, or
      *         completes exceptionally (wrapped in {@link java.util.concurrent.CompletionException})
@@ -1191,11 +1189,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously performs batch write operations on DynamoDB tables.
-     * 
+     *
      * <p>This method efficiently writes or deletes multiple items across one or more tables
      * in a single request. Each table can have a mix of put and delete operations.
      * Batch writes are atomic at the item level but not at the batch level.</p>
-     * 
+     *
      * <p><b>Batch Write Limits:</b></p>
      * <ul>
      * <li>Maximum 25 write requests per batch</li>
@@ -1204,12 +1202,12 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <li>No conditional expressions supported</li>
      * <li>No return values for individual operations</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, List<WriteRequest>> requestItems = new HashMap<>();
      * List<WriteRequest> userWrites = new ArrayList<>();
-     * 
+     *
      * // Add put requests
      * userWrites.add(WriteRequest.builder()
      *     .putRequest(PutRequest.builder()
@@ -1219,16 +1217,16 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *         ))
      *         .build())
      *     .build());
-     * 
+     *
      * // Add delete requests
      * userWrites.add(WriteRequest.builder()
      *     .deleteRequest(DeleteRequest.builder()
      *         .key(Map.of("userId", AttributeValue.fromS("user2")))
      *         .build())
      *     .build());
-     * 
+     *
      * requestItems.put("Users", userWrites);
-     * 
+     *
      * executor.batchWriteItem(requestItems)
      *     .thenAccept(response -> {
      *         if (response.unprocessedItems().isEmpty()) {
@@ -1239,7 +1237,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *         }
      *     });
      * }</pre>
-     * 
+     *
      * @param requestItems map of table names to lists of write requests. Must not be null.
      * @return a CompletableFuture containing BatchWriteItemResponse with unprocessed items if any
      * @throws IllegalArgumentException if requestItems is null or exceeds batch limits
@@ -1252,11 +1250,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously performs batch write operations using a custom BatchWriteItemRequest.
-     * 
+     *
      * <p>This method provides full control over batch write operations, allowing specification
      * of all parameters including return consumed capacity and metrics. Useful for complex
      * batch operations across multiple tables with detailed monitoring requirements.</p>
-     * 
+     *
      * <p><b>Advanced Features:</b></p>
      * <ul>
      * <li>Mixed put and delete operations</li>
@@ -1264,7 +1262,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <li>Consumed capacity reporting</li>
      * <li>Item collection metrics for local secondary indexes</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * BatchWriteItemRequest request = BatchWriteItemRequest.builder()
@@ -1272,7 +1270,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     .returnConsumedCapacity(ReturnConsumedCapacity.TOTAL)
      *     .returnItemCollectionMetrics(ReturnItemCollectionMetrics.SIZE)
      *     .build();
-     * 
+     *
      * executor.batchWriteItem(request)
      *     .thenAccept(response -> {
      *         System.out.println("Total consumed capacity: " +
@@ -1286,7 +1284,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *         }
      *     });
      * }</pre>
-     * 
+     *
      * @param batchWriteItemRequest the complete BatchWriteItemRequest. Must not be null.
      * @return a CompletableFuture containing BatchWriteItemResponse with operation results
      * @throws IllegalArgumentException if batchWriteItemRequest is null
@@ -1297,23 +1295,23 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously updates an item in DynamoDB table using attribute updates with AWS SDK v2.
-     * 
+     *
      * <p>This method modifies an existing item by specifying which attributes to update using
      * AttributeValueUpdate objects. Each update can use different actions (PUT, ADD, DELETE)
      * to modify attributes in various ways. If the item doesn't exist, a new item is created
      * with the specified attributes (unless a condition expression prevents it).</p>
-     * 
+     *
      * <p><b>Update Actions:</b></p>
      * <ul>
      * <li><b>PUT</b> - Set attribute to new value (replace existing)</li>
      * <li><b>ADD</b> - Add to numeric values or add elements to sets</li>
      * <li><b>DELETE</b> - Remove attribute or remove elements from sets</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValue> key = asKey("userId", "user123");
-     * 
+     *
      * Map<String, AttributeValueUpdate> updates = new HashMap<>();
      * updates.put("loginCount", AttributeValueUpdate.builder()
      *     .value(AttributeValue.fromN("1"))
@@ -1323,7 +1321,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     .value(AttributeValue.fromS(Instant.now().toString()))
      *     .action(AttributeAction.PUT)
      *     .build());
-     * 
+     *
      * CompletableFuture<UpdateItemResponse> future =
      *     executor.updateItem("Users", key, updates);
      *
@@ -1335,7 +1333,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *         return null;
      *     });
      * }</pre>
-     * 
+     *
      * @param tableName the name of the DynamoDB table containing the item to update. Must not be null.
      * @param key the primary key of the item to update, must include all key attributes. Must not be null.
      * @param attributeUpdates a map of attribute names to AttributeValueUpdate objects specifying the updates. Must not be null.
@@ -1352,11 +1350,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously updates an item with return value specification.
-     * 
+     *
      * <p>This method is similar to {@link #updateItem(String, Map, Map)} but allows
      * specifying which values to return after the update. This is useful for retrieving
      * the updated values or the old values for audit purposes.</p>
-     * 
+     *
      * <p><b>Return Value Options:</b></p>
      * <ul>
      * <li><b>NONE</b> - No values returned (default)</li>
@@ -1365,19 +1363,19 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <li><b>ALL_NEW</b> - All attributes after the update</li>
      * <li><b>UPDATED_NEW</b> - Only updated attributes after the update</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValue> key = asKey("userId", "user123");
      * Map<String, AttributeValueUpdate> updates = createUpdates();
-     * 
+     *
      * executor.updateItem("Users", key, updates, "ALL_NEW")
      *     .thenAccept(response -> {
      *         Map<String, AttributeValue> newAttributes = response.attributes();
      *         System.out.println("Updated user: " + newAttributes);
      *     });
      * }</pre>
-     * 
+     *
      * @param tableName the name of the DynamoDB table. Must not be null.
      * @param key the primary key of the item to update. Must not be null.
      * @param attributeUpdates map of updates to apply. Must not be null.
@@ -1399,11 +1397,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously updates an item using a complete UpdateItemRequest with AWS SDK v2.
-     * 
+     *
      * <p>This method provides maximum flexibility for update operations by accepting a fully
      * configured UpdateItemRequest. You can use modern expression-based updates, conditional
      * updates, and access all advanced DynamoDB update features.</p>
-     * 
+     *
      * <p><b>Advanced Update Features:</b></p>
      * <ul>
      * <li>Update expressions for modern, efficient updates</li>
@@ -1413,7 +1411,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <li>Return value specifications</li>
      * <li>Capacity consumption monitoring</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Example with Update Expressions:</b></p>
      * <pre>{@code
      * UpdateItemRequest request = UpdateItemRequest.builder()
@@ -1433,9 +1431,9 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     ))
      *     .returnValues(ReturnValue.UPDATED_NEW)
      *     .build();
-     * 
+     *
      * CompletableFuture<UpdateItemResponse> future = executor.updateItem(request);
-     * 
+     *
      * future.thenAccept(response -> {
      *         Map<String, AttributeValue> updatedAttrs = response.attributes();
      *         System.out.println("Updated attributes: " + updatedAttrs);
@@ -1447,7 +1445,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *         return null;
      *     });
      * }</pre>
-     * 
+     *
      * @param updateItemRequest the complete UpdateItemRequest with all parameters configured. Must not be null.
      * @return a CompletableFuture containing the UpdateItemResponse with operation results
      * @throws IllegalArgumentException if updateItemRequest is null
@@ -1465,13 +1463,13 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * DynamoDB's {@code DeleteItem} is idempotent — deleting a non-existent item completes
      * successfully without error. By default, no information about the deleted item is returned;
      * use {@link #deleteItem(String, Map, String)} with {@code "ALL_OLD"} to recover it.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValue> key = Map.of(
      *     "userId", AttributeValue.fromS("user123")
      * );
-     * 
+     *
      * executor.deleteItem("Users", key)
      *     .thenAccept(response -> {
      *         System.out.println("Item deleted successfully");
@@ -1481,7 +1479,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *         return null;
      *     });
      * }</pre>
-     * 
+     *
      * @param tableName the name of the DynamoDB table. Must not be null.
      * @param key the primary key of the item to delete. Must include all key attributes. Must not be null.
      * @return a CompletableFuture containing the DeleteItemResponse with operation metadata
@@ -1495,20 +1493,20 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously deletes an item with return value specification.
-     * 
+     *
      * <p>This method deletes an item and optionally returns the attributes of the deleted item.
      * This is useful for audit trails or confirming what was actually deleted.</p>
-     * 
+     *
      * <p><b>Return Value Options:</b></p>
      * <ul>
      * <li><b>NONE</b> - No values returned (default)</li>
      * <li><b>ALL_OLD</b> - All attributes of the deleted item</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValue> key = asKey("userId", "user123");
-     * 
+     *
      * executor.deleteItem("Users", key, "ALL_OLD")
      *     .thenAccept(response -> {
      *         Map<String, AttributeValue> deletedItem = response.attributes();
@@ -1520,7 +1518,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *         }
      *     });
      * }</pre>
-     * 
+     *
      * @param tableName the name of the DynamoDB table. Must not be null.
      * @param key the primary key of the item to delete. Must not be null.
      * @param returnValues specifies whether to return the deleted item: "NONE" or "ALL_OLD"
@@ -1535,10 +1533,10 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously deletes an item using a custom DeleteItemRequest.
-     * 
+     *
      * <p>This method provides full control over the delete operation, allowing specification
      * of conditional expressions, return values, and consumed capacity reporting.</p>
-     * 
+     *
      * <p><b>Advanced Features:</b></p>
      * <ul>
      * <li>Conditional deletes with condition expressions</li>
@@ -1546,7 +1544,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <li>Consumed capacity reporting</li>
      * <li>Expression attribute names and values</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * DeleteItemRequest request = DeleteItemRequest.builder()
@@ -1560,7 +1558,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     .returnValues(ReturnValue.ALL_OLD)
      *     .returnConsumedCapacity(ReturnConsumedCapacity.TOTAL)
      *     .build();
-     * 
+     *
      * executor.deleteItem(request)
      *     .thenAccept(response -> {
      *         System.out.println("Deleted inactive user");
@@ -1573,7 +1571,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *         return null;
      *     });
      * }</pre>
-     * 
+     *
      * @param deleteItemRequest the complete DeleteItemRequest. Must not be null.
      * @return a CompletableFuture containing DeleteItemResponse with operation results
      * @throws IllegalArgumentException if deleteItemRequest is null
@@ -1599,7 +1597,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <li>Results are loaded entirely into memory</li>
      * <li>Consider using {@link #stream(QueryRequest)} for large datasets</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * QueryRequest queryRequest = QueryRequest.builder()
@@ -1636,11 +1634,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously executes a query and returns all matching items as a list of typed objects.
-     * 
+     *
      * <p>This method performs a Query operation and converts the results to instances of the
      * specified target class. It automatically handles pagination to retrieve all matching items.
      * This provides type safety and automatic object mapping for entity classes.</p>
-     * 
+     *
      * <p><b>Pagination Behavior:</b></p>
      * <ul>
      * <li>Automatically fetches all pages of results when {@code exclusiveStartKey} is NOT set on
@@ -1649,7 +1647,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <li>All results loaded into memory at once</li>
      * <li>May timeout for very large result sets</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * QueryRequest queryRequest = QueryRequest.builder()
@@ -1662,14 +1660,14 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     ))
      *     .scanIndexForward(false)  // Most recent first
      *     .build();
-     * 
+     *
      * CompletableFuture<List<Order>> future = executor.list(queryRequest, Order.class);
      * future.thenAccept(orders -> {
      *     System.out.println("Found " + orders.size() + " recent orders");
      *     orders.forEach(order -> processOrder(order));
      * });
      * }</pre>
-     * 
+     *
      * @param <T> the type of objects to return
      * @param queryRequest the QueryRequest with query parameters. Must not be null.
      * @param targetClass the class to convert results to. Must not be null.
@@ -1717,7 +1715,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <li>Filtering and transformation</li>
      * <li>SQL-like operations on results</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * QueryRequest queryRequest = QueryRequest.builder()
@@ -1754,11 +1752,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously executes a query and returns results as a typed Dataset.
-     * 
+     *
      * <p>This method performs a Query operation and returns results in a Dataset format
      * with type conversion to the specified class. This combines the benefits of Dataset
      * operations with type safety for entity classes.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * QueryRequest queryRequest = QueryRequest.builder()
@@ -1771,7 +1769,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *         ":minPrice", AttributeValue.fromN("100")
      *     ))
      *     .build();
-     * 
+     *
      * executor.query(queryRequest, Product.class)
      *     .thenAccept(dataset -> {
      *         // Work with typed Product objects in Dataset
@@ -1779,11 +1777,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *             .mapToDouble(product -> product.getPrice())
      *             .average()
      *             .orElse(0.0);
-     *         
+     *
      *         System.out.println("Average price: $" + avgPrice);
      *     });
      * }</pre>
-     * 
+     *
      * <p><b>Automatic pagination:</b> When the caller has not set {@code exclusiveStartKey} on the
      * request, all pages are fetched and concatenated into the returned Dataset; if it was set,
      * only the single page returned by DynamoDB is materialized.</p>
@@ -1828,11 +1826,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously executes a query and returns matching items as a memory-efficient Stream.
-     * 
+     *
      * <p>This method creates a lazy-loading Stream that fetches query results on-demand using
      * pagination. This is the preferred approach for processing large result sets as it minimizes
      * memory usage and allows for efficient processing of millions of items.</p>
-     * 
+     *
      * <p><b>Stream Benefits:</b></p>
      * <ul>
      * <li>Memory-efficient - loads data in pages as needed</li>
@@ -1841,7 +1839,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <li>Automatic pagination handling</li>
      * <li>Can be interrupted or limited easily</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * QueryRequest queryRequest = QueryRequest.builder()
@@ -1853,7 +1851,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *         ":since", AttributeValue.fromN(String.valueOf(Instant.now().minus(30, ChronoUnit.DAYS).toEpochMilli()))
      *     ))
      *     .build();
-     * 
+     *
      * // Typical: a lazy Stream; terminal ops drive page fetches and block the consuming thread
      * CompletableFuture<Stream<Map<String, Object>>> future = executor.stream(queryRequest);
      * List<Map<String, Object>> all = future.get().toList();   // materialize every matching item (abacus Stream)
@@ -1880,11 +1878,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously executes a query and returns matching items as a typed Stream.
-     * 
+     *
      * <p>This method creates a lazy-loading Stream that fetches query results on-demand
      * and converts them to instances of the specified target class. Combines memory
      * efficiency with type safety for large result sets.</p>
-     * 
+     *
      * <p><b>Pagination and Streaming:</b></p>
      * <ul>
      * <li>Pages are fetched as the stream is consumed</li>
@@ -1892,7 +1890,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <li>Stream can be interrupted at any point</li>
      * <li>Ideal for processing large datasets incrementally</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * QueryRequest queryRequest = QueryRequest.builder()
@@ -1904,10 +1902,10 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *         ":threshold", AttributeValue.fromN("1000")
      *     ))
      *     .build();
-     * 
-     * CompletableFuture<Stream<Transaction>> future = 
+     *
+     * CompletableFuture<Stream<Transaction>> future =
      *     executor.stream(queryRequest, Transaction.class);
-     * 
+     *
      * future.thenAccept(transactionStream -> {
      *     // Process large transactions efficiently
      *     Map<String, Double> totals = transactionStream
@@ -1915,12 +1913,12 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *             Transaction::getCategory,
      *             Collectors.summingDouble(Transaction::getAmount)
      *         ));
-     *     
-     *     totals.forEach((category, total) -> 
+     *
+     *     totals.forEach((category, total) ->
      *         System.out.println(category + ": $" + total));
      * });
      * }</pre>
-     * 
+     *
      * <p><b>Threading note:</b> the {@code CompletableFuture} completes (almost immediately) on the
      * common {@link java.util.concurrent.ForkJoinPool}; the wrapped iterator then performs each
      * page fetch synchronously inside the consumer's thread via a blocking
@@ -1984,14 +1982,14 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously scans a table and returns specified attributes as a Stream.
-     * 
+     *
      * <p>This method performs a table scan operation, retrieving only the specified attributes
      * from all items in the table. Scans are expensive operations that read every item
      * in the table regardless of any filter conditions.</p>
-     * 
+     *
      * <p><b>Performance Warning:</b> Scans consume read capacity for every item in the table.
      * Consider using Query operations with appropriate indexes for better performance.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<String> attributes = Arrays.asList("userId", "email", "status");
@@ -2021,13 +2019,13 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously scans a table with filter conditions.
-     * 
+     *
      * <p>This method performs a table scan with specified filter conditions. Note that
      * filters are applied AFTER items are read, so this still consumes read capacity
      * for all items in the table. The filter only reduces the amount of data transferred.</p>
-     * 
+     *
      * <p><b>Important:</b> Scan filters don't reduce read costs - they only reduce network transfer.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, Condition> scanFilter = new HashMap<>();
@@ -2039,13 +2037,13 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     .comparisonOperator(ComparisonOperator.EQ)
      *     .attributeValueList(AttributeValue.builder().s("USA").build())
      *     .build());
-     * 
+     *
      * executor.scan("Users", scanFilter)
      *     .thenAccept(stream -> {
      *         stream.forEach(user -> processEligibleUser(user));
      *     });
      * }</pre>
-     * 
+     *
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
      * @param scanFilter map of attribute names to filter conditions
      * @return a CompletableFuture containing a Stream of filtered items
@@ -2059,11 +2057,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously scans a table with both attribute projection and filtering.
-     * 
+     *
      * <p>This method combines attribute projection and filtering in a single scan operation.
      * Only specified attributes are retrieved, and results are filtered according to the
      * provided conditions. Remember that filtering happens after reading items.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<String> attributes = Arrays.asList("userId", "email", "lastLogin");
@@ -2075,7 +2073,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *             .build())
      *         .build()
      * );
-     * 
+     *
      * executor.scan("Users", attributes, filter)
      *     .thenAccept(stream -> {
      *         List<String> recentUserEmails = stream
@@ -2084,7 +2082,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *         sendReengagementEmails(recentUserEmails);
      *     });
      * }</pre>
-     * 
+     *
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
      * @param attributesToGet list of attribute names to retrieve, null for all
      * @param scanFilter map of attribute names to filter conditions
@@ -2100,11 +2098,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously scans a table using a custom ScanRequest.
-     * 
+     *
      * <p>This method provides full control over the scan operation through a complete
      * ScanRequest. Returns results as a Stream of Maps for memory-efficient processing
      * of large tables.</p>
-     * 
+     *
      * <p><b>Advanced Scan Features:</b></p>
      * <ul>
      * <li>Filter expressions for complex conditions</li>
@@ -2113,7 +2111,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * <li>Consistent reads (expensive for scans)</li>
      * <li>Pagination control with limit and exclusiveStartKey</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ScanRequest scanRequest = ScanRequest.builder()
@@ -2127,13 +2125,13 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     ))
      *     .limit(100)  // Process in batches of 100
      *     .build();
-     * 
+     *
      * executor.scan(scanRequest)
      *     .thenAccept(stream -> {
      *         stream.forEach(product -> displayProduct(product));
      *     });
      * }</pre>
-     * 
+     *
      * @param scanRequest the complete ScanRequest with all parameters. Must not be null.
      * @return a CompletableFuture containing a Stream of items as Maps
      * @throws IllegalArgumentException if scanRequest is null
@@ -2145,15 +2143,15 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously scans a table and returns specified attributes as a typed Stream.
-     * 
+     *
      * <p>This method performs a table scan operation with attribute projection and
      * converts results to instances of the specified target class. Provides type safety
      * while maintaining memory efficiency through streaming.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<String> attributes = Arrays.asList("userId", "name", "email");
-     * 
+     *
      * executor.scan("Users", attributes, User.class)
      *     .thenAccept(userStream -> {
      *         List<User> users = userStream
@@ -2162,7 +2160,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *         System.out.println("Found " + users.size() + " users with email");
      *     });
      * }</pre>
-     * 
+     *
      * @param <T> the type of objects in the stream
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
      * @param attributesToGet list of attribute names to retrieve, null for all attributes
@@ -2178,11 +2176,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously scans a table with filter conditions and returns results as a typed Stream.
-     * 
+     *
      * <p>This method performs a table scan with specified filter conditions and converts
      * the results to instances of the specified target class. This provides type safety
      * while allowing for filtering of results.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, Condition> scanFilter = new HashMap<>();
@@ -2190,13 +2188,13 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     .comparisonOperator(ComparisonOperator.EQ)
      *     .attributeValueList(AttributeValue.builder().s("ACTIVE").build())
      *     .build());
-     * 
+     *
      * executor.scan("Users", scanFilter, User.class)
      *     .thenAccept(userStream -> {
      *         userStream.forEach(user -> processActiveUser(user));
      *     });
      * }</pre>
-     * 
+     *
      * @param <T> the type of objects in the stream
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
      * @param scanFilter map of attribute names to filter conditions
@@ -2213,11 +2211,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
     /**
      * Asynchronously scans a table with attribute projection and filter conditions,
      * returning results as a typed Stream.
-     * 
+     *
      * <p>This method combines attribute projection and filtering in a single scan operation,
      * converting results to instances of the specified target class. This provides type safety
      * while allowing for efficient processing of large datasets.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<String> attributes = Arrays.asList("userId", "email", "status");
@@ -2226,13 +2224,13 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *     .comparisonOperator(ComparisonOperator.EQ)
      *     .attributeValueList(AttributeValue.builder().s("ACTIVE").build())
      *     .build());
-     * 
+     *
      * executor.scan("Users", attributes, scanFilter, User.class)
      *     .thenAccept(userStream -> {
      *         userStream.forEach(user -> processActiveUser(user));
      *     });
      * }</pre>
-     * 
+     *
      * @param <T> the type of objects in the stream
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
      * @param attributesToGet list of attribute names to retrieve, null for all attributes
@@ -2250,11 +2248,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
     /**
      * Asynchronously scans a table using a custom ScanRequest and returns results as a typed Stream.
-     * 
+     *
      * <p>This method provides full control over the scan operation through a complete ScanRequest
      * and converts results to instances of the specified target class. This allows for type-safe
      * processing of large datasets while maintaining memory efficiency through streaming.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ScanRequest scanRequest = ScanRequest.builder()
@@ -2264,13 +2262,13 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      *         ":status", AttributeValue.fromS("PENDING")
      *     ))
      *     .build();
-     * 
+     *
      * CompletableFuture<Stream<Order>> future = executor.scan(scanRequest, Order.class);
      * future.thenAccept(orderStream -> {
      *     orderStream.forEach(order -> processPendingOrder(order));
      * });
      * }</pre>
-     * 
+     *
      * <p><b>Threading note:</b> identical to {@link #stream(QueryRequest, Class)} — the returned
      * {@code CompletableFuture} completes immediately on {@link java.util.concurrent.ForkJoinPool}
      * with a lazy {@link Stream}; each subsequent page is fetched synchronously inside the consuming
@@ -2441,17 +2439,17 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Constructs a new Mapper instance for the specified entity class and DynamoDB table.
-         * 
+         *
          * <p>This constructor validates that the entity class is a proper bean class with
          * getter/setter methods and exactly one field annotated with @Id for the primary key.
          * The naming policy determines how Java property names are converted to DynamoDB attribute names.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * AsyncDynamoDBExecutor.Mapper<Product> productMapper =
          *     executor.mapper(Product.class, "products-table", NamingPolicy.SCREAMING_SNAKE_CASE);
          * }</pre>
-         * 
+         *
          * @param targetEntityClass the class of entities this mapper will handle. Must not be null
          *                         and must be a valid bean class with exactly one @Id field.
          * @param dynamoDBExecutor the async executor for DynamoDB operations. Must not be null.
@@ -2469,7 +2467,6 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
             N.checkArgument(Beans.isBeanClass(targetEntityClass), "{} is not an entity class with getter/setter method", targetEntityClass);
 
-            @SuppressWarnings("deprecation")
             final List<String> idPropNames = QueryUtil.getIdPropNames(targetEntityClass);
 
             if (idPropNames.size() != 1) {
@@ -2491,16 +2488,16 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously retrieves an item using an entity instance as the key.
-         * 
+         *
          * <p>This method extracts the primary key values from the provided entity instance
          * and uses them to retrieve the complete item from DynamoDB. The entity must have
          * the key attributes properly set (usually the @Id annotated fields).</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * User userKey = new User();
          * userKey.setUserId("user123");   // Primary key
-         * 
+         *
          * CompletableFuture<User> future = userMapper.getItem(userKey);
          * future.thenAccept(user -> {
          *     if (user != null) {
@@ -2508,7 +2505,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          *     }
          * });
          * }</pre>
-         * 
+         *
          * @param entity the entity instance with key attributes set. Must not be null.
          * @return a CompletableFuture containing the retrieved entity, or null if not found
          * @throws NullPointerException if {@code entity} is null
@@ -2519,21 +2516,21 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously retrieves an item using an entity instance as the key with read consistency control.
-         * 
+         *
          * <p>This method is similar to {@link #getItem(Object)} but allows specification of read consistency.
          * Strongly consistent reads return the most recent data but may have higher latency and consume
          * more read capacity units than eventually consistent reads.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * User userKey = new User();
          * userKey.setUserId("user123");
-         * 
+         *
          * // Strongly consistent read
          * userMapper.getItem(userKey, true)
          *     .thenAccept(user -> System.out.println("Latest user data: " + user));
          * }</pre>
-         * 
+         *
          * @param entity the entity instance with key attributes set. Must not be null.
          * @param consistentRead true for strongly consistent reads, {@code false} for eventually consistent,
          *                      null to use AWS-default behavior
@@ -2546,20 +2543,20 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously retrieves an item using a DynamoDB key map.
-         * 
+         *
          * <p>This method provides direct control over the key specification using DynamoDB's
          * AttributeValue format. This is useful when working with composite keys or when
          * the key is already in AttributeValue format.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, AttributeValue> key = new HashMap<>();
          * key.put("userId", AttributeValue.builder().s("user123").build());
-         * 
+         *
          * userMapper.getItem(key)
          *     .thenAccept(user -> System.out.println("Found: " + user));
          * }</pre>
-         * 
+         *
          * @param key a map of attribute names to AttributeValues representing the primary key.
          *           Must not be null and must contain all key attributes.
          * @return a CompletableFuture containing the retrieved entity, or null if not found
@@ -2606,11 +2603,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously retrieves multiple items using a collection of entity instances as keys.
-         * 
+         *
          * <p>This method extracts primary keys from the provided entity instances and performs
          * a batch get operation to retrieve up to 100 items efficiently. This is much more
          * efficient than individual getItem calls when retrieving multiple items.</p>
-         * 
+         *
          * <p><b>Batch Limits and Performance:</b></p>
          * <ul>
          * <li>Maximum 100 items per batch request</li>
@@ -2618,7 +2615,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          * <li>Single network round-trip for multiple items</li>
          * <li>Eventually consistent reads by default</li>
          * </ul>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<User> userKeys = Arrays.asList(
@@ -2626,14 +2623,14 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          *     createUserKey("user2"),
          *     createUserKey("user3")
          * );
-         * 
+         *
          * CompletableFuture<List<User>> future = userMapper.batchGetItem(userKeys);
          * future.thenAccept(users -> {
          *     System.out.println("Retrieved " + users.size() + " users");
          *     users.forEach(user -> System.out.println(user.getName()));
          * });
          * }</pre>
-         * 
+         *
          * @param entities collection of entity instances with key attributes set. Must not be null.
          * @return a CompletableFuture containing a list of retrieved entities (may be fewer than requested)
          * @throws NullPointerException if {@code entities} (or any element in it) is null
@@ -2651,22 +2648,22 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously retrieves multiple items with consumed capacity reporting.
-         * 
+         *
          * <p>This method is similar to {@link #batchGetItem(Collection)} but allows requesting
          * information about the read capacity units consumed by the operation. This is useful
          * for monitoring and optimizing DynamoDB usage costs.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<User> userKeys = createUserKeys(userIds);
-         * 
+         *
          * userMapper.batchGetItem(userKeys, "TOTAL")
          *     .thenAccept(users -> {
          *         System.out.println("Retrieved " + users.size() + " users");
          *         // Consumed capacity info available in response
          *     });
          * }</pre>
-         * 
+         *
          * @param entities collection of entity instances with key attributes set. Must not be null.
          * @param returnConsumedCapacity specifies the level of detail for consumed capacity.
          *                              Valid values: "INDEXES", "TOTAL", "NONE"
@@ -2687,22 +2684,22 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously retrieves multiple items using a custom BatchGetItemRequest.
-         * 
+         *
          * <p>This method provides full control over the batch get operation, allowing
          * specification of multiple tables, projection expressions, and other advanced options.
          * The response will only include items from this mapper's table.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * BatchGetItemRequest request = BatchGetItemRequest.builder()
          *     .requestItems(createBatchKeys(userIds))
          *     .returnConsumedCapacity("TOTAL")
          *     .build();
-         * 
+         *
          * userMapper.batchGetItem(request)
          *     .thenAccept(users -> processUsers(users));
          * }</pre>
-         * 
+         *
          * @param batchGetItemRequest the complete BatchGetItemRequest. Must not be null.
          * @return a CompletableFuture containing a list of retrieved entities from this mapper's table
          * @throws IllegalArgumentException if the request specifies a different table name
@@ -2721,24 +2718,24 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously puts an entity into the DynamoDB table.
-         * 
+         *
          * <p>This method converts the entity to a DynamoDB item and stores it in the table.
          * If an item with the same primary key already exists, it will be completely replaced.
          * The conversion follows the configured naming policy and handles all supported data types.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * User newUser = new User();
          * newUser.setUserId("user123");
          * newUser.setName("John Doe");
          * newUser.setEmail("john@example.com");
-         * 
+         *
          * CompletableFuture<PutItemResponse> future = userMapper.putItem(newUser);
          * future.thenAccept(response -> {
          *     System.out.println("User saved successfully");
          * });
          * }</pre>
-         * 
+         *
          * @param entity the entity to save. Must not be null and must have all required attributes.
          * @return a CompletableFuture containing the PutItemResponse with operation metadata
          * @throws NullPointerException if {@code entity} is null
@@ -2749,23 +2746,23 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously puts an entity into the table with return values specification.
-         * 
+         *
          * <p>This method allows retrieving the old item values when replacing an existing item.
          * This is useful for audit trails or when you need to know what was replaced.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * User updatedUser = new User();
          * updatedUser.setUserId("user123");
          * updatedUser.setName("Jane Doe");
-         * 
+         *
          * userMapper.putItem(updatedUser, "ALL_OLD")
          *     .thenAccept(response -> {
          *         // response.attributes() contains the old item if it existed
          *         System.out.println("Replaced user data");
          *     });
          * }</pre>
-         * 
+         *
          * @param entity the entity to save. Must not be null.
          * @param returnValues specifies which attributes to return. Valid values:
          *                    "NONE" (default), "ALL_OLD"
@@ -2778,18 +2775,18 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously puts an item using a custom PutItemRequest.
-         * 
+         *
          * <p>This method provides full control over the put operation, allowing specification
          * of conditional expressions, return values, and other advanced options. If the table
          * name is not specified in the request, it will be automatically set.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * PutItemRequest request = PutItemRequest.builder()
          *     .item(toItem(user))
          *     .conditionExpression("attribute_not_exists(userId)")
          *     .build();
-         * 
+         *
          * userMapper.putItem(request)
          *     .thenAccept(response -> System.out.println("New user created"))
          *     .exceptionally(ex -> {
@@ -2797,7 +2794,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          *         return null;
          *     });
          * }</pre>
-         * 
+         *
          * @param putItemRequest the complete PutItemRequest. Must not be null.
          * @return a CompletableFuture containing the PutItemResponse
          * @throws IllegalArgumentException if the request specifies a different table name
@@ -2852,11 +2849,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously updates an item using an entity instance.
-         * 
+         *
          * <p>This method extracts the primary key from the entity and creates update operations
          * for all non-null properties. Only changed attributes are included in the update operation,
          * making it efficient for partial updates. The key attributes are used to identify the item.</p>
-         * 
+         *
          * <p><b>Update Behavior:</b></p>
          * <ul>
          * <li>Only non-null entity properties are updated</li>
@@ -2864,7 +2861,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          * <li>Null properties are ignored (not deleted)</li>
          * <li>Key attributes are used for item identification only</li>
          * </ul>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * User updateUser = new User();
@@ -2872,13 +2869,13 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          * updateUser.setEmail("new@example.com");   // Only this will be updated
          * updateUser.setLastLogin(Instant.now());
          * // name and other properties remain unchanged
-         * 
+         *
          * CompletableFuture<UpdateItemResponse> future = userMapper.updateItem(updateUser);
          * future.thenAccept(response -> {
          *     System.out.println("User updated successfully");
          * });
          * }</pre>
-         * 
+         *
          * @param entity the entity instance with key and updated attributes set. Must not be null.
          * @return a CompletableFuture containing the UpdateItemResponse with operation metadata
          * @throws NullPointerException if {@code entity} is null
@@ -2889,24 +2886,24 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously updates an item with return values specification.
-         * 
+         *
          * <p>This method is similar to {@link #updateItem(Object)} but allows specifying
          * which values to return after the update. This is useful for retrieving the updated
          * values or the old values for audit purposes.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * User updateUser = new User();
          * updateUser.setUserId("user123");
          * updateUser.setEmail("updated@example.com");
-         * 
+         *
          * userMapper.updateItem(updateUser, "ALL_NEW")
          *     .thenAccept(response -> {
          *         // response.attributes() contains all attributes after update
          *         System.out.println("Updated user: " + response.attributes());
          *     });
          * }</pre>
-         * 
+         *
          * @param entity the entity instance with key and updated attributes set. Must not be null.
          * @param returnValues specifies which attributes to return. Valid values:
          *                    "NONE", "ALL_OLD", "UPDATED_OLD", "ALL_NEW", "UPDATED_NEW"
@@ -2919,11 +2916,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously updates an item using a custom UpdateItemRequest.
-         * 
+         *
          * <p>This method provides full control over the update operation, allowing specification
          * of update expressions, conditional expressions, and other advanced options. If the table
          * name is not specified in the request, it will be automatically set.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * UpdateItemRequest request = UpdateItemRequest.builder()
@@ -2935,11 +2932,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          *         ":inc", AttributeValue.builder().n("1").build()
          *     ))
          *     .build();
-         * 
+         *
          * userMapper.updateItem(request)
          *     .thenAccept(response -> System.out.println("User updated"));
          * }</pre>
-         * 
+         *
          * @param updateItemRequest the complete UpdateItemRequest. Must not be null.
          * @return a CompletableFuture containing the UpdateItemResponse
          * @throws IllegalArgumentException if the request specifies a different table name
@@ -2950,20 +2947,20 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously deletes an item using an entity instance as the key.
-         * 
+         *
          * <p>This method extracts the primary key from the entity and deletes the corresponding
          * item from DynamoDB. Only the key attributes need to be set in the entity; other
          * attributes are ignored.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * User userToDelete = new User();
          * userToDelete.setUserId("user123");   // Only key needed
-         * 
+         *
          * userMapper.deleteItem(userToDelete)
          *     .thenAccept(response -> System.out.println("User deleted"));
          * }</pre>
-         * 
+         *
          * @param entity the entity instance with key attributes set. Must not be null.
          * @return a CompletableFuture containing the DeleteItemResponse with operation metadata
          * @throws NullPointerException if {@code entity} is null
@@ -2974,16 +2971,16 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously deletes an item with return values specification.
-         * 
+         *
          * <p>This method is similar to {@link #deleteItem(Object)} but allows retrieving
          * the deleted item's attributes. This is useful for audit trails or confirming
          * what was actually deleted.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * User userToDelete = new User();
          * userToDelete.setUserId("user123");
-         * 
+         *
          * userMapper.deleteItem(userToDelete, "ALL_OLD")
          *     .thenAccept(response -> {
          *         if (!response.attributes().isEmpty()) {
@@ -2991,7 +2988,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          *         }
          *     });
          * }</pre>
-         * 
+         *
          * @param entity the entity instance with key attributes set. Must not be null.
          * @param returnValues specifies which attributes to return. Valid values:
          *                    "NONE" (default), "ALL_OLD"
@@ -3004,20 +3001,20 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously deletes an item using a DynamoDB key map.
-         * 
+         *
          * <p>This method provides direct control over the key specification using DynamoDB's
          * AttributeValue format. This is useful when working with composite keys or when
          * the key is already in AttributeValue format.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, AttributeValue> key = new HashMap<>();
          * key.put("userId", AttributeValue.builder().s("user123").build());
-         * 
+         *
          * userMapper.deleteItem(key)
          *     .thenAccept(response -> System.out.println("Item deleted"));
          * }</pre>
-         * 
+         *
          * @param key a map of attribute names to AttributeValues representing the primary key.
          *           Must not be null and must contain all key attributes.
          * @return a CompletableFuture containing the DeleteItemResponse
@@ -3029,11 +3026,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously deletes an item using a custom DeleteItemRequest.
-         * 
+         *
          * <p>This method provides full control over the delete operation, allowing specification
          * of conditional expressions and return values. If the table name is not specified
          * in the request, it will be automatically set.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * DeleteItemRequest request = DeleteItemRequest.builder()
@@ -3041,7 +3038,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          *     .conditionExpression("attribute_exists(userId)")
          *     .returnValues("ALL_OLD")
          *     .build();
-         * 
+         *
          * userMapper.deleteItem(request)
          *     .thenAccept(response -> System.out.println("Deleted: " + response.attributes()))
          *     .exceptionally(ex -> {
@@ -3049,7 +3046,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          *         return null;
          *     });
          * }</pre>
-         * 
+         *
          * @param deleteItemRequest the complete DeleteItemRequest. Must not be null.
          * @return a CompletableFuture containing the DeleteItemResponse
          * @throws IllegalArgumentException if the request specifies a different table name
@@ -3060,18 +3057,18 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously performs a batch delete operation for multiple entities.
-         * 
+         *
          * <p>This method efficiently deletes multiple items from DynamoDB in a single request.
          * It's much more efficient than individual deleteItem calls when removing multiple items.
          * Note that batch operations do not support conditional expressions.</p>
-         * 
+         *
          * <p><b>Batch Limits:</b></p>
          * <ul>
          * <li>Maximum 25 items per batch request</li>
          * <li>No conditional expressions supported</li>
          * <li>No return values for deleted items</li>
          * </ul>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<User> usersToDelete = Arrays.asList(
@@ -3079,7 +3076,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          *     createUserKey("user2"),
          *     createUserKey("user3")
          * );
-         * 
+         *
          * userMapper.batchDeleteItem(usersToDelete)
          *     .thenAccept(response -> {
          *         if (response.unprocessedItems().isEmpty()) {
@@ -3087,7 +3084,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          *         }
          *     });
          * }</pre>
-         * 
+         *
          * @param entities collection of entities with key attributes set. Must not be null.
          * @return a CompletableFuture containing the BatchWriteItemResponse with unprocessed items if any
          * @throws NullPointerException if {@code entities} (or any element in it) is null
@@ -3098,35 +3095,35 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously performs a batch write operation using a custom BatchWriteItemRequest.
-         * 
+         *
          * <p>This method provides full control over batch write operations, allowing mixed
          * put and delete requests in a single batch. This is the most flexible batch operation
          * but requires manual request construction.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, List<WriteRequest>> requestItems = new HashMap<>();
          * List<WriteRequest> writeRequests = new ArrayList<>();
-         * 
+         *
          * // Add put requests
          * writeRequests.add(WriteRequest.builder()
          *     .putRequest(PutRequest.builder().item(toItem(newUser)).build())
          *     .build());
-         * 
+         *
          * // Add delete requests
          * writeRequests.add(WriteRequest.builder()
          *     .deleteRequest(DeleteRequest.builder().key(createKey(oldUser)).build())
          *     .build());
-         * 
+         *
          * requestItems.put("users-table", writeRequests);
          * BatchWriteItemRequest request = BatchWriteItemRequest.builder()
          *     .requestItems(requestItems)
          *     .build();
-         * 
+         *
          * userMapper.batchWriteItem(request)
          *     .thenAccept(response -> processResponse(response));
          * }</pre>
-         * 
+         *
          * @param batchWriteItemRequest the complete BatchWriteItemRequest. Must not be null.
          * @return a CompletableFuture containing the BatchWriteItemResponse
          * @throws IllegalArgumentException if the request specifies a different table name
@@ -3137,11 +3134,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously executes a query and returns results as a list.
-         * 
+         *
          * <p>This method performs a query operation on the table using the specified query request
          * and returns all matching items as a list. Queries are efficient for retrieving items
          * with a specific partition key value and optional sort key conditions.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * QueryRequest request = QueryRequest.builder()
@@ -3150,13 +3147,13 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          *         ":userId", AttributeValue.builder().s("user123").build()
          *     ))
          *     .build();
-         * 
+         *
          * userMapper.list(request)
          *     .thenAccept(users -> {
          *         System.out.println("Found " + users.size() + " matching users");
          *     });
          * }</pre>
-         * 
+         *
          * @param queryRequest the QueryRequest specifying query parameters. Must not be null.
          * @return a CompletableFuture containing a list of all matching entities
          * @throws IllegalArgumentException if the request specifies a different table name
@@ -3167,11 +3164,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously executes a query and returns results as a Dataset.
-         * 
+         *
          * <p>This method performs a query operation and returns results in a Dataset format,
          * which provides additional functionality for data manipulation and analysis beyond
          * a simple list. Datasets support operations like filtering, mapping, and aggregation.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * QueryRequest request = QueryRequest.builder()
@@ -3181,7 +3178,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          *         ":email", AttributeValue.builder().s("user@example.com").build()
          *     ))
          *     .build();
-         * 
+         *
          * userMapper.query(request)
          *     .thenAccept(dataset -> {
          *         // Use Dataset operations for analysis
@@ -3190,7 +3187,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          *         });
          *     });
          * }</pre>
-         * 
+         *
          * @param queryRequest the QueryRequest specifying query parameters. Must not be null.
          * @return a CompletableFuture containing a Dataset of matching entities
          * @throws IllegalArgumentException if the request specifies a different table name
@@ -3201,11 +3198,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously executes a query and returns results as a Stream.
-         * 
+         *
          * <p>This method performs a query operation and returns results as a Stream for
          * efficient processing of large result sets. The Stream allows lazy evaluation
          * and can handle pagination automatically for large queries.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * QueryRequest request = QueryRequest.builder()
@@ -3215,7 +3212,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          *     ))
          *     .limit(100)  // Process in batches
          *     .build();
-         * 
+         *
          * userMapper.stream(request)
          *     .thenAccept(stream -> {
          *         stream.filter(user -> user.getAge() > 18)
@@ -3223,7 +3220,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          *               .forEach(email -> sendNotification(email));
          *     });
          * }</pre>
-         * 
+         *
          * @param queryRequest the QueryRequest specifying query parameters. Must not be null.
          * @return a CompletableFuture containing a Stream of matching entities
          * @throws IllegalArgumentException if the request specifies a different table name
@@ -3234,24 +3231,24 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously performs a table scan with specified attributes to retrieve.
-         * 
+         *
          * <p>This method scans the entire table and returns all items, optionally projecting
          * only the specified attributes. Scans are expensive operations that read every item
          * in the table and should be used sparingly.</p>
-         * 
+         *
          * <p><b>Performance Warning:</b> Scans consume read capacity for every item in the table,
          * regardless of whether they match any filter criteria.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<String> attributes = Arrays.asList("userId", "email", "lastLogin");
-         * 
+         *
          * userMapper.scan(attributes)
          *     .thenAccept(stream -> {
          *         stream.forEach(user -> System.out.println(user.getEmail()));
          *     });
          * }</pre>
-         * 
+         *
          * @param attributesToGet list of attribute names to retrieve, null for all attributes
          * @return a CompletableFuture containing a Stream of all entities in the table
          */
@@ -3261,11 +3258,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously performs a table scan with filter conditions.
-         * 
+         *
          * <p>This method scans the entire table with specified filter conditions. Note that
          * filters are applied after the scan reads items, so this still consumes read capacity
          * for all items in the table. Consider using queries with indexes for better performance.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Map<String, Condition> scanFilter = new HashMap<>();
@@ -3273,13 +3270,13 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          *     .comparisonOperator(ComparisonOperator.GT)
          *     .attributeValueList(AttributeValue.builder().n("18").build())
          *     .build());
-         * 
+         *
          * userMapper.scan(scanFilter)
          *     .thenAccept(stream -> {
          *         stream.forEach(user -> processAdultUser(user));
          *     });
          * }</pre>
-         * 
+         *
          * @param scanFilter map of attribute names to filter conditions
          * @return a CompletableFuture containing a Stream of entities matching the filter
          */
@@ -3289,16 +3286,16 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously performs a table scan with both projection and filter.
-         * 
+         *
          * <p>This method combines attribute projection and filtering in a single scan operation.
          * This is useful when you need specific attributes from items matching certain criteria,
          * but remember that scans are expensive operations.</p>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<String> attributes = Arrays.asList("userId", "email");
          * Map<String, Condition> filter = createAgeFilter(18);
-         * 
+         *
          * userMapper.scan(attributes, filter)
          *     .thenAccept(stream -> {
          *         List<String> emails = stream.map(User::getEmail)
@@ -3306,7 +3303,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          *         sendBulkEmail(emails);
          *     });
          * }</pre>
-         * 
+         *
          * @param attributesToGet list of attribute names to retrieve, null for all attributes
          * @param scanFilter map of attribute names to filter conditions
          * @return a CompletableFuture containing a Stream of filtered entities
@@ -3317,11 +3314,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
 
         /**
          * Asynchronously performs a scan using a custom ScanRequest.
-         * 
+         *
          * <p>This method provides full control over the scan operation, allowing specification
          * of filter expressions, pagination, parallel scans, and other advanced options.
          * If the table name is not specified in the request, it will be automatically set.</p>
-         * 
+         *
          * <p><b>Advanced Features:</b></p>
          * <ul>
          * <li>Filter expressions for complex conditions</li>
@@ -3329,7 +3326,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          * <li>Parallel scans for large tables</li>
          * <li>Consistent reads (Note: expensive for scans)</li>
          * </ul>
-         * 
+         *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * ScanRequest request = ScanRequest.builder()
@@ -3340,11 +3337,11 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
          *     ))
          *     .limit(1000)
          *     .build();
-         * 
+         *
          * userMapper.scan(request)
          *     .thenAccept(stream -> processActiveAdults(stream));
          * }</pre>
-         * 
+         *
          * @param scanRequest the complete ScanRequest. Must not be null.
          * @return a CompletableFuture containing a Stream of entities from the scan
          * @throws IllegalArgumentException if the request specifies a different table name

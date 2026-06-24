@@ -46,7 +46,9 @@ import com.landawn.abacus.util.XmlUtil;
  * raw CQL strings. The XML loader recognizes a {@code <cqlMapper>} root with one or more
  * {@code <cql id="...">...</cql>} children; the element text is the CQL statement and the
  * remaining XML attributes are passed through to {@link ParsedCql} as a metadata
- * {@code Map<String,String>} (typical entries include {@code timeout}, {@code consistency}, etc.).</p>
+ * {@code Map<String,String>} (typical entries include {@code timeout}, {@code consistency}, etc.).
+ * Note that these attributes are retained for XML round-tripping and as descriptive metadata only:
+ * neither executor applies them (timeout, consistency, and so on) to statement execution.</p>
  *
  * <h2>Scope of "mapping"</h2>
  * <p>The mapping performed by this class is <strong>id&nbsp;&rarr;&nbsp;CQL string</strong> only.
@@ -585,7 +587,8 @@ public final class CqlMapper {
      * Indicates whether some other object is "equal to" this CqlMapper.
      * 
      * <p>Two CqlMapper instances are considered equal if they contain the same
-     * set of CQL statements with identical IDs, content, and attributes.</p>
+     * set of CQL statements with identical IDs and CQL text. Statement attributes do not
+     * affect equality, because {@link ParsedCql#equals(Object)} compares only the CQL text.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

@@ -858,8 +858,7 @@ public class DynamoDBExecutorV2_2Test extends TestBase {
 
     @Test
     public void testExtractData_EmptyItems() {
-        Dataset ds = DynamoDBExecutor
-                .extractData(software.amazon.awssdk.services.dynamodb.model.QueryResponse.builder().items(new ArrayList<>()).build());
+        Dataset ds = DynamoDBExecutor.extractData(software.amazon.awssdk.services.dynamodb.model.QueryResponse.builder().items(new ArrayList<>()).build());
         assertNotNull(ds);
         assertEquals(0, ds.size());
     }
@@ -1422,8 +1421,7 @@ public class DynamoDBExecutorV2_2Test extends TestBase {
         String id = id();
         executor.putItem(TEST_TABLE, DynamoDBExecutor.asItem("id", id));
 
-        Map<String, KeysAndAttributes> requestItems = Map.of(TEST_TABLE,
-                KeysAndAttributes.builder().keys(List.of(DynamoDBExecutor.asKey("id", id))).build());
+        Map<String, KeysAndAttributes> requestItems = Map.of(TEST_TABLE, KeysAndAttributes.builder().keys(List.of(DynamoDBExecutor.asKey("id", id))).build());
 
         Map<String, List<Map<String, Object>>> result = executor.batchGetItem(requestItems);
 
@@ -1438,8 +1436,7 @@ public class DynamoDBExecutorV2_2Test extends TestBase {
         String id = id();
         executor.putItem(TEST_TABLE, DynamoDBExecutor.asItem("id", id));
 
-        Map<String, KeysAndAttributes> requestItems = Map.of(TEST_TABLE,
-                KeysAndAttributes.builder().keys(List.of(DynamoDBExecutor.asKey("id", id))).build());
+        Map<String, KeysAndAttributes> requestItems = Map.of(TEST_TABLE, KeysAndAttributes.builder().keys(List.of(DynamoDBExecutor.asKey("id", id))).build());
 
         Map<String, List<Map<String, Object>>> result = executor.batchGetItem(requestItems, "TOTAL");
         assertNotNull(result);
@@ -1466,8 +1463,7 @@ public class DynamoDBExecutorV2_2Test extends TestBase {
         String id = id();
         executor.putItem(TEST_TABLE, DynamoDBExecutor.asItem("id", id, "name", "n"));
 
-        Map<String, KeysAndAttributes> requestItems = Map.of(TEST_TABLE,
-                KeysAndAttributes.builder().keys(List.of(DynamoDBExecutor.asKey("id", id))).build());
+        Map<String, KeysAndAttributes> requestItems = Map.of(TEST_TABLE, KeysAndAttributes.builder().keys(List.of(DynamoDBExecutor.asKey("id", id))).build());
         Map<String, List<TestEntity>> result = executor.batchGetItem(requestItems, TestEntity.class);
         assertNotNull(result);
         assertEquals(1, result.get(TEST_TABLE).size());
@@ -1492,8 +1488,7 @@ public class DynamoDBExecutorV2_2Test extends TestBase {
     public void testBatchGetItem_NullResponses() {
         assumeAvailable();
         // Request a key that does not exist -> no responses for the table.
-        Map<String, KeysAndAttributes> req = Map.of(TEST_TABLE,
-                KeysAndAttributes.builder().keys(List.of(DynamoDBExecutor.asKey("id", id()))).build());
+        Map<String, KeysAndAttributes> req = Map.of(TEST_TABLE, KeysAndAttributes.builder().keys(List.of(DynamoDBExecutor.asKey("id", id()))).build());
 
         Map<String, List<TestEntity>> result = executor.batchGetItem(req, TestEntity.class);
         assertNotNull(result);
@@ -2002,8 +1997,8 @@ public class DynamoDBExecutorV2_2Test extends TestBase {
         UpdateItemRequest request = UpdateItemRequest.builder()
                 .tableName(TEST_TABLE)
                 .key(DynamoDBExecutor.asKey("id", id))
-                .attributeUpdates(Map.of("name",
-                        AttributeValueUpdate.builder().value(AttributeValue.builder().s("req").build()).action(AttributeAction.PUT).build()))
+                .attributeUpdates(
+                        Map.of("name", AttributeValueUpdate.builder().value(AttributeValue.builder().s("req").build()).action(AttributeAction.PUT).build()))
                 .build();
         UpdateItemResponse result = mapper.updateItem(request);
         assertNotNull(result);

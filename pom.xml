@@ -60,14 +60,14 @@
 			<dependency>
 				<groupId>com.landawn.abacus</groupId>
 				<artifactId>abacus-common</artifactId>
-				<version>7.7.6</version>
+				<version>7.8.1</version>
 				<scope>provided</scope>
 			</dependency>
 
 			<dependency>
 				<groupId>com.landawn.abacus</groupId>
 				<artifactId>abacus-query</artifactId>
-				<version>4.7.6</version>
+				<version>4.8.0</version>
 				<scope>provided</scope>
 			</dependency>
 
@@ -106,14 +106,14 @@
 			<dependency>
 				<groupId>org.mongodb</groupId>
 				<artifactId>mongodb-driver-sync</artifactId>
-				<version>5.7.0</version>
+				<version>5.8.0</version>
 				<scope>provided</scope>
 			</dependency>
 
 			<dependency>
 				<groupId>org.mongodb</groupId>
 				<artifactId>mongodb-driver-reactivestreams</artifactId>
-				<version>5.7.0</version>
+				<version>5.8.0</version>
 				<scope>provided</scope>
 			</dependency>
 
@@ -134,14 +134,14 @@
 			<dependency>
 				<groupId>software.amazon.awssdk</groupId>
 				<artifactId>dynamodb</artifactId>
-				<version>2.44.12</version>
+				<version>2.46.5</version>
 				<scope>provided</scope>
 			</dependency>
 
 			<dependency>
 				<groupId>com.google.cloud</groupId>
 				<artifactId>google-cloud-bigquery</artifactId>
-				<version>2.66.0</version>
+				<version>2.67.0</version>
 				<scope>provided</scope>
 			</dependency>
 
@@ -155,7 +155,7 @@
 			<dependency>
 				<groupId>org.apache.cassandra</groupId>
 				<artifactId>java-driver-core</artifactId>
-				<version>4.19.2</version>
+				<version>4.19.3</version>
 				<scope>provided</scope>
 			</dependency>
 
@@ -383,7 +383,7 @@
 			<plugin>
 				<groupId>org.jacoco</groupId>
 				<artifactId>jacoco-maven-plugin</artifactId>
-				<version>0.8.14</version>
+				<version>0.8.15</version>
 				<executions>
 					<execution>
 						<id>prepare-agent</id>

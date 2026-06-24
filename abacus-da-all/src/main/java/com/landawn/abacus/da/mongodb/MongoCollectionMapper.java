@@ -14,6 +14,7 @@
 
 package com.landawn.abacus.da.mongodb;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
@@ -24,6 +25,7 @@ import org.bson.types.ObjectId;
 
 import com.landawn.abacus.annotation.Beta;
 import com.landawn.abacus.util.Dataset;
+import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.u.OptionalBoolean;
@@ -36,6 +38,7 @@ import com.landawn.abacus.util.u.OptionalLong;
 import com.landawn.abacus.util.u.OptionalShort;
 import com.landawn.abacus.util.stream.Stream;
 import com.mongodb.bulk.BulkWriteResult;
+import com.mongodb.client.model.Aggregates;
 import com.mongodb.client.model.BulkWriteOptions;
 import com.mongodb.client.model.CountOptions;
 import com.mongodb.client.model.DeleteOptions;
@@ -63,8 +66,10 @@ import com.mongodb.client.result.UpdateResult;
  *   <li>An entity property annotated with {@code @Id} (or named {@code id} when no annotation is
  *       present) is mapped to MongoDB's {@code _id} field on writes and back to the same property
  *       on reads.</li>
- *   <li>When the {@code _id} value is omitted, MongoDB assigns an {@link ObjectId}; the value is
- *       written back into the entity's id property after the insert returns.</li>
+ *   <li>When the {@code _id} value is omitted, MongoDB assigns an {@link ObjectId} during insert; the
+ *       generated value is <strong>not</strong> written back into the entity — the entity's id property
+ *       remains {@code null} after the insert returns, and the generated {@code _id} exists only in the
+ *       database.</li>
  *   <li>The {@code get/gett} and id-keyed {@code updateOne/replaceOne/deleteOne} overloads accept
  *       either an {@link ObjectId} or its 24-hex-character {@link String} form; the string overloads
  *       throw {@link IllegalArgumentException} if the string is not a valid hex ObjectId.</li>
@@ -94,8 +99,9 @@ import com.mongodb.client.result.UpdateResult;
  *       (see {@code com.mongodb.client.model.Sorts}). When omitted, the driver returns documents in
  *       the natural order, which is not stable across queries.</li>
  *   <li>{@code offset}/{@code count} are forwarded as the driver's {@code skip} and {@code limit}
- *       hints. {@code offset == 0} disables skip; {@code count <= 0} is treated as "no limit" by
- *       the underlying executor.</li>
+ *       hints. {@code offset == 0} disables skip; a negative {@code count} throws
+ *       {@link IllegalArgumentException}, {@code count == 0} yields an empty result, and
+ *       {@code Integer.MAX_VALUE} is effectively "no limit".</li>
  * </ul>
  *
  * <h2>Bulk-Write Atomicity</h2>
@@ -771,9 +777,10 @@ public final class MongoCollectionMapper<T> {
      *
      * @param filter the query filter to match entities against
      * @param offset the number of documents to skip from the beginning (0 for first page)
-     * @param count the maximum number of entities to return
+     * @param count the maximum number of entities to return ({@code 0} yields an empty list;
+     *        {@code Integer.MAX_VALUE} is effectively "no limit")
      * @return a List containing the requested page of matching entities
-     * @throws IllegalArgumentException if filter is null, offset is negative, or count is non-positive
+     * @throws IllegalArgumentException if filter is null, offset is negative, or count is negative
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #list(Bson)
      * @see #list(Collection, Bson, int, int)
@@ -1990,8 +1997,8 @@ public final class MongoCollectionMapper<T> {
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      *
      * User newUser = new User("John Doe", "john@example.com", 30);
-     * mapper.insertOne(newUser);            // void; on return newUser.getId() is the server-assigned _id (was null)
-     * String assignedId = newUser.getId();  // post-state: now non-null
+     * mapper.insertOne(newUser);            // void; the server-assigned _id is NOT written back into the entity
+     * String assignedId = newUser.getId();  // post-state: still null — the generated _id exists only in the database
      *
      * mapper.insertOne((User) null);        // throws IllegalArgumentException
      * }</pre>
@@ -2022,8 +2029,8 @@ public final class MongoCollectionMapper<T> {
      *
      * InsertOneOptions options = new InsertOneOptions()
      *     .bypassDocumentValidation(false);
-     * mapper.insertOne(newUser, options);  // void; on return newUser.getId() holds the server-assigned _id
-     * String assignedId = newUser.getId(); // post-state: now non-null
+     * mapper.insertOne(newUser, options);  // void; the server-assigned _id is NOT written back into the entity
+     * String assignedId = newUser.getId(); // post-state: still null — the generated _id exists only in the database
      * }</pre>
      *
      * @param obj the entity to insert
@@ -2056,8 +2063,8 @@ public final class MongoCollectionMapper<T> {
      *     new User("Bob", "bob@example.com", 35)
      * );
      *
-     * mapper.insertMany(users);                                             // void; on return every element has a server-assigned _id
-     * boolean allHaveIds = users.stream().allMatch(u -> u.getId() != null); // post-state: allHaveIds == true
+     * mapper.insertMany(users);                                             // void; server-assigned _ids are NOT written back into the entities
+     * boolean anyHasId = users.stream().anyMatch(u -> u.getId() != null);   // post-state: anyHasId == false — generated _ids exist only in the database
      *
      * mapper.insertMany(Collections.emptyList()); // throws IllegalArgumentException: empty list
      * }</pre>
@@ -2086,7 +2093,7 @@ public final class MongoCollectionMapper<T> {
      * InsertManyOptions options = new InsertManyOptions()
      *     .ordered(false)  // unordered: attempt every insert, report errors at the end
      *     .bypassDocumentValidation(true);
-     * mapper.insertMany(products, options); // void; on return each product has a server-assigned _id
+     * mapper.insertMany(products, options); // void; generated _ids exist only in the database, not in the entities
      * }</pre>
      *
      * @param objList collection of entities to insert
@@ -3103,7 +3110,24 @@ public final class MongoCollectionMapper<T> {
      * @see Stream
      */
     public Stream<T> distinct(final String fieldName) {
-        return collectionExecutor.distinct(fieldName, rowType);
+        return collectionExecutor.aggregate(distinctPipeline(fieldName, null), rowType);
+    }
+
+    // Routes distinct through a $group/$project pipeline (like groupBy) so each distinct scalar value
+    // comes back as a {fieldName: value} document decodable into the mapped entity type, as documented.
+    // The driver's native distinct(fieldName, entityClass) decodes each raw VALUE with the entity codec
+    // and throws BsonInvalidOperationException for any scalar field.
+    private static List<Bson> distinctPipeline(final String fieldName, final Bson filter) {
+        final List<Bson> pipeline = new ArrayList<>(3);
+
+        if (filter != null) {
+            pipeline.add(Aggregates.match(filter));
+        }
+
+        pipeline.add(new Document("$group", new Document("_id", "$" + fieldName)));
+        pipeline.add(new Document("$project", new Document("_id", 0).append(fieldName, "$_id")));
+
+        return pipeline;
     }
 
     /**
@@ -3133,7 +3157,9 @@ public final class MongoCollectionMapper<T> {
      * @see Stream
      */
     public Stream<T> distinct(final String fieldName, final Bson filter) {
-        return collectionExecutor.distinct(fieldName, filter, rowType);
+        N.checkArgNotNull(filter, "filter");
+
+        return collectionExecutor.aggregate(distinctPipeline(fieldName, filter), rowType);
     }
 
     /**
