@@ -673,33 +673,33 @@ public class CassandraExecutorTest extends TestBase {
 
     @Test
     public void test_ParsedCql_positionalParams() {
-        ParsedCql parsed = ParsedCql.parse("SELECT * FROM simplex.users WHERE id = ? AND status = ?", null);
+        ParsedCql parsed = ParsedCql.parse("SELECT * FROM simplex.users WHERE id = ? AND status = ?");
 
         assertEquals(2, parsed.parameterCount());
         assertTrue(parsed.namedParameters().isEmpty());
-        assertEquals("SELECT * FROM simplex.users WHERE id = ? AND status = ?", parsed.getParameterizedCql());
+        assertEquals("SELECT * FROM simplex.users WHERE id = ? AND status = ?", parsed.parameterizedCql());
     }
 
     @Test
     public void test_ParsedCql_namedColonParams() {
-        ParsedCql parsed = ParsedCql.parse("SELECT * FROM simplex.users WHERE id = :userId AND status = :st", null);
+        ParsedCql parsed = ParsedCql.parse("SELECT * FROM simplex.users WHERE id = :userId AND status = :st");
 
         assertEquals(2, parsed.parameterCount());
         Map<Integer, String> named = parsed.namedParameters();
         assertEquals("userId", named.get(0));
         assertEquals("st", named.get(1));
         // The colon syntax should be normalized to '?'
-        assertFalse(parsed.getParameterizedCql().contains(":"), "Parameterized CQL should not contain ':' " + parsed.getParameterizedCql());
+        assertFalse(parsed.parameterizedCql().contains(":"), "Parameterized CQL should not contain ':' " + parsed.parameterizedCql());
     }
 
     @Test
     public void test_ParsedCql_ibatisStyleParams() {
-        ParsedCql parsed = ParsedCql.parse("SELECT * FROM simplex.users WHERE id = #{userId} AND name = #{name}", null);
+        ParsedCql parsed = ParsedCql.parse("SELECT * FROM simplex.users WHERE id = #{userId} AND name = #{name}");
 
         assertEquals(2, parsed.parameterCount());
         assertEquals("userId", parsed.namedParameters().get(0));
         assertEquals("name", parsed.namedParameters().get(1));
-        assertFalse(parsed.getParameterizedCql().contains("#{"), "Parameterized CQL should not contain '#{' " + parsed.getParameterizedCql());
+        assertFalse(parsed.parameterizedCql().contains("#{"), "Parameterized CQL should not contain '#{' " + parsed.parameterizedCql());
     }
 
     @Test
@@ -710,7 +710,7 @@ public class CassandraExecutorTest extends TestBase {
         // because the SELECT statement will simply have no parameters - so we
         // verify the throw is raised OR the input is parsed without a named param.
         try {
-            ParsedCql parsed = ParsedCql.parse("SELECT * FROM simplex.users WHERE id = #{}", null);
+            ParsedCql parsed = ParsedCql.parse("SELECT * FROM simplex.users WHERE id = #{}");
             // If we got here, no exception was thrown. Make sure no bogus empty-named param was created.
             assertFalse(parsed.namedParameters().containsValue(""), "Empty-named parameter must not be silently registered: " + parsed.namedParameters());
         } catch (IllegalArgumentException e) {
@@ -721,78 +721,59 @@ public class CassandraExecutorTest extends TestBase {
     @Test
     public void test_ParsedCql_mixedStylesThrows() {
         // mix '?' and ':name'
-        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("SELECT * FROM simplex.users WHERE id = ? AND status = :st", null),
+        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("SELECT * FROM simplex.users WHERE id = ? AND status = :st"),
                 "Mixed parameter styles should throw IAE");
 
         // mix '?' and '#{name}'
-        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("SELECT * FROM simplex.users WHERE id = ? AND status = #{st}", null),
+        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("SELECT * FROM simplex.users WHERE id = ? AND status = #{st}"),
                 "Mixed '?' and '#{}' parameter styles should throw IAE");
 
         // mix ':name' and '#{name}'
-        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("SELECT * FROM simplex.users WHERE id = :id AND status = #{st}", null),
+        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse("SELECT * FROM simplex.users WHERE id = :id AND status = #{st}"),
                 "Mixed ':name' and '#{}' parameter styles should throw IAE");
     }
 
     @Test
     public void test_ParsedCql_nullCqlThrows() {
-        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse(null, null));
+        assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse(null));
     }
 
     @Test
     public void test_ParsedCql_caching() {
-        // The same CQL string with null attrs should return the same cached instance.
+        // The same CQL string should return the same cached instance.
         String cql = "SELECT * FROM simplex.users WHERE id = ? AND name = ?";
-        ParsedCql first = ParsedCql.parse(cql, null);
-        ParsedCql second = ParsedCql.parse(cql, null);
-        assertTrue(first == second, "Cached parse() should return the same instance for identical CQL with null attrs");
-
-        // With non-empty attrs, the cache is bypassed and a fresh instance is returned.
-        Map<String, String> attrs = new HashMap<>();
-        attrs.put("timeout", "5000");
-        ParsedCql withAttrs1 = ParsedCql.parse(cql, attrs);
-        ParsedCql withAttrs2 = ParsedCql.parse(cql, attrs);
-        assertTrue(withAttrs1 != withAttrs2, "Non-empty attrs should bypass the cache");
-        assertEquals("5000", withAttrs1.getAttributes().get("timeout"));
+        ParsedCql first = ParsedCql.parse(cql);
+        ParsedCql second = ParsedCql.parse(cql);
+        assertTrue(first == second, "Cached parse() should return the same instance for identical CQL");
     }
 
     @Test
     public void test_ParsedCql_trailingSemicolonRemoved() {
-        ParsedCql parsed = ParsedCql.parse("SELECT * FROM simplex.users WHERE id = ?;", null);
-        assertFalse(parsed.getParameterizedCql().endsWith(";"), "Trailing semicolon should be removed: " + parsed.getParameterizedCql());
+        ParsedCql parsed = ParsedCql.parse("SELECT * FROM simplex.users WHERE id = ?;");
+        assertFalse(parsed.parameterizedCql().endsWith(";"), "Trailing semicolon should be removed: " + parsed.parameterizedCql());
     }
 
     @Test
     public void test_ParsedCql_ddlNoParameterParsing() {
         // For non-DML statements (e.g. CREATE/ALTER/DROP) parameterCount is always 0
         // and the CQL is kept as-is (parameter style detection is skipped).
-        ParsedCql parsed = ParsedCql.parse("CREATE TABLE if not exists t (id uuid PRIMARY KEY, val text)", null);
+        ParsedCql parsed = ParsedCql.parse("CREATE TABLE if not exists t (id uuid PRIMARY KEY, val text)");
         assertEquals(0, parsed.parameterCount());
         assertTrue(parsed.namedParameters().isEmpty());
     }
 
     @Test
     public void test_ParsedCql_originalCqlTrimmed() {
-        ParsedCql parsed = ParsedCql.parse("   SELECT * FROM simplex.users WHERE id = ?   ", null);
+        ParsedCql parsed = ParsedCql.parse("   SELECT * FROM simplex.users WHERE id = ?   ");
         // originalCql() returns the trimmed original
         assertEquals("SELECT * FROM simplex.users WHERE id = ?", parsed.originalCql());
     }
 
     @Test
-    public void test_ParsedCql_attributesDefensiveCopy() {
-        Map<String, String> attrs = new HashMap<>();
-        attrs.put("timeout", "1000");
-        ParsedCql parsed = ParsedCql.parse("SELECT * FROM simplex.users WHERE id = ?", attrs);
-
-        // Mutating the source map after parse should not affect the ParsedCql's attrs.
-        attrs.put("timeout", "9999");
-        assertEquals("1000", parsed.getAttributes().get("timeout"));
-    }
-
-    @Test
     public void test_ParsedCql_equalsAndHashCode() {
-        ParsedCql a = ParsedCql.parse("SELECT 1 FROM simplex.users WHERE id = ?", null);
-        ParsedCql b = ParsedCql.parse("SELECT 1 FROM simplex.users WHERE id = ?", null);
-        ParsedCql c = ParsedCql.parse("SELECT 2 FROM simplex.users WHERE id = ?", null);
+        ParsedCql a = ParsedCql.parse("SELECT 1 FROM simplex.users WHERE id = ?");
+        ParsedCql b = ParsedCql.parse("SELECT 1 FROM simplex.users WHERE id = ?");
+        ParsedCql c = ParsedCql.parse("SELECT 2 FROM simplex.users WHERE id = ?");
 
         assertEquals(a, b);
         assertEquals(a.hashCode(), b.hashCode());
@@ -817,8 +798,21 @@ public class CassandraExecutorTest extends TestBase {
         ParsedCql parsed = mapper.get("findUser");
         assertNotNull(parsed);
         assertEquals(1, parsed.parameterCount());
-        assertEquals("3000", parsed.getAttributes().get("timeout"));
+        // Attributes live on the mapper, keyed by id (not on ParsedCql).
+        assertEquals("3000", mapper.getAttributes("findUser").get("timeout"));
         assertNull(mapper.get("nonExistent"));
+    }
+
+    @Test
+    public void test_CqlMapper_attributesDefensiveCopy() {
+        CqlMapper mapper = new CqlMapper();
+        Map<String, String> attrs = new HashMap<>();
+        attrs.put("timeout", "1000");
+        mapper.add("findUser", "SELECT * FROM simplex.users WHERE id = ?", attrs);
+
+        // Mutating the source map after add should not affect the mapper's stored attributes.
+        attrs.put("timeout", "9999");
+        assertEquals("1000", mapper.getAttributes("findUser").get("timeout"));
     }
 
     @Test
@@ -851,11 +845,11 @@ public class CassandraExecutorTest extends TestBase {
     public void test_CqlMapper_keySet_isEmpty_remove() {
         CqlMapper mapper = new CqlMapper();
         assertTrue(mapper.isEmpty());
-        assertTrue(mapper.keySet().isEmpty());
+        assertTrue(mapper.cqlIds().isEmpty());
 
         mapper.add("k1", "SELECT 3 FROM simplex.users WHERE id = ?", null);
         assertFalse(mapper.isEmpty());
-        assertTrue(mapper.keySet().contains("k1"));
+        assertTrue(mapper.cqlIds().contains("k1"));
 
         mapper.remove("k1");
         assertTrue(mapper.isEmpty());

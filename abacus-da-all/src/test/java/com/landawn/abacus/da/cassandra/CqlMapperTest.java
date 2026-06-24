@@ -13,6 +13,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.File;
+import java.io.InputStream;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -31,24 +33,26 @@ public class CqlMapperTest extends TestBase {
     public void testDefaultConstructor_IsEmpty() {
         final CqlMapper m = new CqlMapper();
         assertTrue(m.isEmpty());
-        assertTrue(m.keySet().isEmpty());
+        assertTrue(m.cqlIds().isEmpty());
     }
 
     @Test
     public void testAddParsedCql_StoresAndRetrieves() {
         final CqlMapper m = new CqlMapper();
-        final ParsedCql parsed = ParsedCql.parse("SELECT * FROM mapper_test_add_parsed WHERE id = ?", null);
+        final ParsedCql parsed = ParsedCql.parse("SELECT * FROM mapper_test_add_parsed WHERE id = ?");
         final ParsedCql previous = m.add("findById", parsed);
         assertNull(previous);
         assertEquals(parsed, m.get("findById"));
         assertFalse(m.isEmpty());
+        // No attributes supplied => empty (never null for a present id).
+        assertTrue(m.getAttributes("findById").isEmpty());
     }
 
     @Test
     public void testAddParsedCql_ReplacesExisting() {
         final CqlMapper m = new CqlMapper();
-        final ParsedCql p1 = ParsedCql.parse("SELECT * FROM mapper_test_replace_a WHERE id = ?", null);
-        final ParsedCql p2 = ParsedCql.parse("SELECT * FROM mapper_test_replace_b WHERE id = ?", null);
+        final ParsedCql p1 = ParsedCql.parse("SELECT * FROM mapper_test_replace_a WHERE id = ?");
+        final ParsedCql p2 = ParsedCql.parse("SELECT * FROM mapper_test_replace_b WHERE id = ?");
         m.add("dup", p1);
         // add(String, ParsedCql) returns prior mapping when the ID is reused.
         final ParsedCql prior = m.add("dup", p2);
@@ -57,7 +61,18 @@ public class CqlMapperTest extends TestBase {
     }
 
     @Test
-    public void testAddCqlString_StoresParsedCql() {
+    public void testAddParsedCql_WithAttributes() {
+        final CqlMapper m = new CqlMapper();
+        final ParsedCql parsed = ParsedCql.parse("SELECT * FROM mapper_test_add_parsed_attrs WHERE id = ?");
+        final Map<String, String> attrs = new HashMap<>();
+        attrs.put("consistency", "QUORUM");
+        assertNull(m.add("findById", parsed, attrs));
+        assertEquals(parsed, m.get("findById"));
+        assertEquals("QUORUM", m.getAttributes("findById").get("consistency"));
+    }
+
+    @Test
+    public void testAddCqlString_StoresParsedCqlAndAttributes() {
         final CqlMapper m = new CqlMapper();
         final Map<String, String> attrs = new HashMap<>();
         attrs.put("timeout", "3000");
@@ -65,7 +80,33 @@ public class CqlMapperTest extends TestBase {
         final ParsedCql parsed = m.get("findUsers");
         assertNotNull(parsed);
         assertEquals(1, parsed.parameterCount());
-        assertEquals("3000", parsed.getAttributes().get("timeout"));
+        // Attributes live on the mapper, keyed by id (not on ParsedCql).
+        assertEquals("3000", m.getAttributes("findUsers").get("timeout"));
+    }
+
+    @Test
+    public void testAddCqlString_NoAttributesOverload() {
+        final CqlMapper m = new CqlMapper();
+        m.add("findAll", "SELECT * FROM mapper_test_add_no_attrs");
+        assertNotNull(m.get("findAll"));
+        assertTrue(m.getAttributes("findAll").isEmpty());
+    }
+
+    @Test
+    public void testGetAttributes_AbsentIdReturnsNull() {
+        final CqlMapper m = new CqlMapper();
+        assertNull(m.getAttributes("noSuchId"));
+    }
+
+    @Test
+    public void testRemove_AlsoClearsAttributes() {
+        final CqlMapper m = new CqlMapper();
+        final Map<String, String> attrs = new HashMap<>();
+        attrs.put("timeout", "1000");
+        m.add("k", "SELECT * FROM mapper_test_remove_attrs WHERE id = ?", attrs);
+        m.remove("k");
+        assertNull(m.get("k"));
+        assertNull(m.getAttributes("k"));
     }
 
     @Test
@@ -106,7 +147,7 @@ public class CqlMapperTest extends TestBase {
         final CqlMapper m = new CqlMapper();
         m.add("alpha", "SELECT * FROM mapper_test_keyset_a", null);
         m.add("beta", "SELECT * FROM mapper_test_keyset_b", null);
-        final Set<String> keys = m.keySet();
+        final Set<String> keys = m.cqlIds();
         assertEquals(2, keys.size());
         assertTrue(keys.contains("alpha"));
         assertTrue(keys.contains("beta"));
@@ -117,8 +158,8 @@ public class CqlMapperTest extends TestBase {
         final CqlMapper m = new CqlMapper();
         m.add("k", "SELECT * FROM mapper_test_keyset_readonly", null);
         // keySet() is a read-only live view: it reflects the mapper but cannot mutate it.
-        assertThrows(UnsupportedOperationException.class, () -> m.keySet().clear());
-        assertThrows(UnsupportedOperationException.class, () -> m.keySet().remove("k"));
+        assertThrows(UnsupportedOperationException.class, () -> m.cqlIds().clear());
+        assertThrows(UnsupportedOperationException.class, () -> m.cqlIds().remove("k"));
         assertTrue(m.containsId("k"));
     }
 
@@ -165,31 +206,67 @@ public class CqlMapperTest extends TestBase {
         assertNotSame(m1, m2);
     }
 
+    @Test
+    public void testCopy_PreservesAttributes() {
+        final CqlMapper m1 = new CqlMapper();
+        final Map<String, String> attrs = new HashMap<>();
+        attrs.put("timeout", "2000");
+        m1.add("k", "SELECT * FROM mapper_test_copy_attrs WHERE id = ?", attrs);
+        final CqlMapper m2 = m1.copy();
+        assertEquals("2000", m2.getAttributes("k").get("timeout"));
+        // Independent: removing from the copy leaves the original's attributes intact.
+        m2.remove("k");
+        assertEquals("2000", m1.getAttributes("k").get("timeout"));
+        assertNull(m2.getAttributes("k"));
+    }
+
     // ---------------------------------------------------------------------------------------------
-    // saveTo / loadFrom: exercised only via input-validation paths because XmlUtil at runtime
-    // requires jakarta.xml.bind which is not on the test classpath in this environment.
+    // Static load(...) factories: exercised only via input-validation paths (XmlUtil needs
+    // jakarta.xml.bind at runtime, which is not on the test classpath here).
     // ---------------------------------------------------------------------------------------------
 
     @Test
-    public void testLoadFrom_NullFilePathThrows() {
-        final CqlMapper m = new CqlMapper();
-        assertThrows(IllegalArgumentException.class, () -> m.loadFrom(null));
+    public void testLoad_String_NullThrows() {
+        assertThrows(IllegalArgumentException.class, () -> CqlMapper.load((String) null));
     }
 
     @Test
-    public void testLoadFrom_EmptyFilePathThrows() {
-        final CqlMapper m = new CqlMapper();
-        assertThrows(IllegalArgumentException.class, () -> m.loadFrom(""));
+    public void testLoad_String_EmptyThrows() {
+        assertThrows(IllegalArgumentException.class, () -> CqlMapper.load(""));
     }
 
     @Test
-    public void testLoadFrom_MissingFileThrows() {
-        final CqlMapper m = new CqlMapper();
-        // Non-existent file -> findFile throws unchecked.
-        assertThrows(RuntimeException.class, () -> m.loadFrom("/definitely/not/an/existing/path/cql-mapper-missing.xml"));
+    public void testLoad_String_BlankThrows() {
+        // Non-empty but resolves to no paths after splitting/trimming.
+        assertThrows(IllegalArgumentException.class, () -> CqlMapper.load("   "));
     }
 
-    // TODO: round-trip saveTo/loadFrom tests skipped — XmlUtil requires jakarta.xml.bind at runtime, which is not on the test classpath.
+    @Test
+    public void testLoad_String_MissingFileThrows() {
+        assertThrows(RuntimeException.class, () -> CqlMapper.load("/definitely/not/an/existing/path/cql-mapper-load-missing.xml"));
+    }
+
+    @Test
+    public void testLoad_Files_NullArrayThrows() {
+        assertThrows(IllegalArgumentException.class, () -> CqlMapper.load((File[]) null));
+    }
+
+    @Test
+    public void testLoad_Files_EmptyArrayThrows() {
+        assertThrows(IllegalArgumentException.class, () -> CqlMapper.load(new File[0]));
+    }
+
+    @Test
+    public void testLoad_Files_NullElementThrows() {
+        assertThrows(IllegalArgumentException.class, () -> CqlMapper.load((File) null));
+    }
+
+    @Test
+    public void testLoad_InputStream_NullThrows() {
+        assertThrows(IllegalArgumentException.class, () -> CqlMapper.load((InputStream) null));
+    }
+
+    // TODO: round-trip saveTo/loadFrom/load tests skipped — XmlUtil requires jakarta.xml.bind at runtime, which is not on the test classpath.
 
     // ---------------------------------------------------------------------------------------------
     // equals / hashCode / toString.
@@ -211,6 +288,20 @@ public class CqlMapperTest extends TestBase {
         final CqlMapper m2 = new CqlMapper();
         m1.add("k", "SELECT 1 FROM equals_diff_content_a", null);
         m2.add("k", "SELECT 1 FROM equals_diff_content_b", null);
+        assertNotEquals(m1, m2);
+    }
+
+    @Test
+    public void testEquals_DifferentAttributes() {
+        // Same id + CQL but different metadata attributes => not equal (attributes are part of mapper state).
+        final CqlMapper m1 = new CqlMapper();
+        final CqlMapper m2 = new CqlMapper();
+        final Map<String, String> a1 = new HashMap<>();
+        a1.put("timeout", "1000");
+        final Map<String, String> a2 = new HashMap<>();
+        a2.put("timeout", "2000");
+        m1.add("k", "SELECT 1 FROM equals_diff_attrs", a1);
+        m2.add("k", "SELECT 1 FROM equals_diff_attrs", a2);
         assertNotEquals(m1, m2);
     }
 

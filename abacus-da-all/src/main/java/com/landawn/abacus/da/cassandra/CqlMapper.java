@@ -21,11 +21,11 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
-import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
+import java.util.Objects;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -37,6 +37,8 @@ import com.landawn.abacus.exception.ParsingException;
 import com.landawn.abacus.exception.UncheckedIOException;
 import com.landawn.abacus.logging.Logger;
 import com.landawn.abacus.logging.LoggerFactory;
+import com.landawn.abacus.util.ImmutableMap;
+import com.landawn.abacus.util.ImmutableSet;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.PropertiesUtil;
 import com.landawn.abacus.util.XmlUtil;
@@ -48,8 +50,9 @@ import com.landawn.abacus.util.XmlUtil;
  * code can refer to queries by name (for example {@code "findAccountById"}) instead of embedding
  * raw CQL strings. The XML loader recognizes a {@code <cqlMapper>} root with one or more
  * {@code <cql id="...">...</cql>} children; the element text is the CQL statement and the
- * remaining XML attributes are passed through to {@link ParsedCql} as a metadata
- * {@code Map<String,String>} (typical entries include {@code timeout}, {@code consistency}, etc.).
+ * remaining XML attributes are stored in this mapper as per-id metadata (a
+ * {@code Map<String,String>} retrievable via {@link #getAttributes(String)}; typical entries
+ * include {@code timeout}, {@code consistency}, etc.).
  * Note that these attributes are retained for XML round-tripping and as descriptive metadata only:
  * neither executor applies them (timeout, consistency, and so on) to statement execution.</p>
  *
@@ -147,6 +150,8 @@ public final class CqlMapper {
 
     private final Map<String, ParsedCql> cqlMap = new LinkedHashMap<>();
 
+    private final Map<String, ImmutableMap<String, String>> attrsMap = new HashMap<>();
+
     /**
      * Constructs a new empty CqlMapper instance.
      *
@@ -168,105 +173,152 @@ public final class CqlMapper {
     }
 
     /**
-     * Constructs a CqlMapper and loads CQL statements from the specified file path.
-     * 
-     * <p>This constructor immediately loads and parses all CQL statements from the given file,
-     * making them available for use. The file should be in the XML format expected by this mapper.</p>
+     * Creates a new {@code CqlMapper} by loading CQL definitions from one or more XML files.
+     *
+     * <p>Multiple file paths may be supplied separated by comma ',' or semicolon ';'. Definitions
+     * from all files are merged into the returned mapper; duplicate ids (within or across files) are
+     * rejected.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * CqlMapper m = new CqlMapper("classpath:cql-config.xml"); // loads all <cql> entries from the file
-     * new CqlMapper((String) null);                            // throws IllegalArgumentException (null path)
-     * new CqlMapper("");                                       // throws IllegalArgumentException (empty path)
-     * new CqlMapper("/no/such/file.xml");                      // throws RuntimeException (file not found)
-     * }</pre>
-     *
-     * @param filePath the path to the XML file containing CQL statements. Can be:
-     *                 <ul>
-     *                 <li>Absolute file path: {@code "/path/to/cql-config.xml"}</li>
-     *                 <li>Classpath resource: {@code "classpath:cql-config.xml"}</li>
-     *                 <li>Multiple paths separated by ',' or ';': {@code "file1.xml,file2.xml"}</li>
-     *                 </ul>
-     * @throws IllegalArgumentException if {@code filePath} is null or empty, if duplicate CQL IDs
-     *         are found, or if a {@code <cql>} element is missing the required {@code id} attribute
-     * @throws UncheckedIOException if the file cannot be read or parsed
-     * @throws ParsingException if the XML content is malformed
-     * @throws RuntimeException if the file is not found, or the required {@code <cqlMapper>} root
-     *         element is missing from an input file
-     * @see #loadFrom(String)
-     */
-    public CqlMapper(final String filePath) {
-        this();
-
-        loadFrom(filePath);
-    }
-
-    /**
-     * Loads CQL statements from one or more XML configuration files.
-     * 
-     * <p>This method supports loading from multiple files by separating file paths with
-     * comma ',' or semicolon ';'. All CQL statements from all specified files will be
-     * merged into this mapper instance. If duplicate IDs are found across files,
-     * an exception will be thrown.</p>
-     * 
-     * <p>The method automatically detects and handles different file path formats:</p>
-     * <ul>
-     * <li><strong>Single file:</strong> {@code "cql-config.xml"}</li>
-     * <li><strong>Multiple files with comma:</strong> {@code "file1.xml,file2.xml,file3.xml"}</li>
-     * <li><strong>Multiple files with semicolon:</strong> {@code "file1.xml;file2.xml;file3.xml"}</li>
-     * </ul>
-     *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * CqlMapper m = new CqlMapper();
-     * m.loadFrom("classpath:user-queries.xml");        // merges entries from one file
-     * m.loadFrom("a.xml,b.xml");                       // merges entries from both files
-     * m.loadFrom("   ");                               // no-op: blank path resolves to no files, mapper unchanged
-     * m.loadFrom((String) null);                       // throws IllegalArgumentException (null path)
-     * m.loadFrom("");                                  // throws IllegalArgumentException (empty path)
-     * m.loadFrom("/no/such/file.xml");                 // throws RuntimeException (file not found)
+     * CqlMapper m = CqlMapper.load("classpath:cql-config.xml");  // single file
+     * CqlMapper both = CqlMapper.load("a.xml,b.xml");            // merges entries from both files
+     * CqlMapper.load((String) null);                            // throws IllegalArgumentException (null path)
+     * CqlMapper.load("");                                       // throws IllegalArgumentException (empty path)
+     * CqlMapper.load("   ");                                    // throws IllegalArgumentException (no paths after splitting)
+     * CqlMapper.load("/no/such/file.xml");                      // throws RuntimeException (file not found)
      * }</pre>
      *
      * @param filePath single file path or multiple file paths separated by ',' or ';'
-     * @throws UncheckedIOException if any file cannot be read
+     * @return a new CqlMapper populated with the loaded CQL definitions
+     * @throws IllegalArgumentException if {@code filePath} is null/empty, resolves to no paths after splitting,
+     *         if duplicate CQL ids are found, or if a {@code <cql>} element is missing its {@code id} attribute
+     * @throws UncheckedIOException if a file cannot be read
      * @throws ParsingException if any XML file is malformed
-     * @throws IllegalArgumentException if {@code filePath} is null or empty, if duplicate CQL IDs
-     *         are found, or if a {@code <cql>} element is missing the required {@code id} attribute
-     * @throws RuntimeException if a file is not found, or the required {@code <cqlMapper>} root
-     *         element is missing from an input file
+     * @throws RuntimeException if a file is not found, or the required {@code <cqlMapper>} root element is missing
+     * @see #loadFrom(String)
      */
-    public void loadFrom(final String filePath) throws UncheckedIOException {
+    public static CqlMapper load(final String filePath) {
         N.checkArgNotEmpty(filePath, "filePath");
+
+        final List<String> filePaths = splitFilePaths(filePath);
+
+        if (filePaths.isEmpty()) {
+            throw new IllegalArgumentException("File path is empty after splitting: " + filePath);
+        }
+
+        final CqlMapper cqlMapper = new CqlMapper();
+
+        for (final String subFilePath : filePaths) {
+            cqlMapper.loadFile(PropertiesUtil.formatPath(PropertiesUtil.findFile(subFilePath)));
+        }
+
+        return cqlMapper;
+    }
+
+    /**
+     * Creates a new {@code CqlMapper} by loading CQL definitions from one or more XML files.
+     * Each file must contain a {@code <cqlMapper>} root element; definitions from all files are merged
+     * into the returned mapper. Duplicate ids across files are rejected.
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * CqlMapper m = CqlMapper.load(new File("a.xml"), new File("b.xml"));
+     * }</pre>
+     *
+     * @param files one or more XML files to load (must be non-empty and contain no null element)
+     * @return a new CqlMapper populated with the loaded CQL definitions
+     * @throws IllegalArgumentException if {@code files} is null or empty, if any element is null,
+     *         if duplicate CQL ids are found, or if a {@code <cql>} element is missing its {@code id} attribute
+     * @throws UncheckedIOException if a file cannot be read
+     * @throws ParsingException if any XML file is malformed
+     * @throws RuntimeException if the required {@code <cqlMapper>} root element is missing
+     */
+    public static CqlMapper load(final File... files) {
+        N.checkArgNotEmpty(files, "files");
+
+        final CqlMapper cqlMapper = new CqlMapper();
+
+        for (final File file : files) {
+            N.checkArgNotNull(file, "file");
+            cqlMapper.loadFile(file);
+        }
+
+        return cqlMapper;
+    }
+
+    /**
+     * Creates a new {@code CqlMapper} by loading CQL definitions from the supplied input stream.
+     * The stream content must contain a {@code <cqlMapper>} root element. The caller opens the stream
+     * and remains responsible for closing it (typically via try-with-resources); this method does not
+     * close it.
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * try (InputStream is = new FileInputStream("cql-config.xml")) {
+     *     CqlMapper m = CqlMapper.load(is);
+     * }
+     * }</pre>
+     *
+     * @param is the input stream to read the XML CQL definitions from (must not be null)
+     * @return a new CqlMapper populated with the loaded CQL definitions
+     * @throws IllegalArgumentException if {@code is} is null, if duplicate CQL ids are found,
+     *         or if a {@code <cql>} element is missing its {@code id} attribute
+     * @throws UncheckedIOException if an I/O error occurs reading the stream
+     * @throws ParsingException if the XML content is malformed, or does not contain a {@code <cqlMapper>} element
+     */
+    public static CqlMapper load(final InputStream is) {
+        N.checkArgNotNull(is, "is");
+
+        final CqlMapper cqlMapper = new CqlMapper();
+        cqlMapper.loadStream(is, "input stream");
+
+        return cqlMapper;
+    }
+
+    /**
+     * Splits a comma/semicolon-separated list of file paths into trimmed, non-empty entries.
+     *
+     * @param filePath the raw path expression (one or more paths separated by ',' or ';')
+     * @return the list of trimmed, non-empty file paths (possibly empty if all entries are blank)
+     */
+    private static List<String> splitFilePaths(final String filePath) {
         final String[] splitPaths = filePath.split("[,;]");
         final List<String> filePaths = new ArrayList<>(splitPaths.length);
 
-        String trimmedPath = null;
         for (final String splitPath : splitPaths) {
-            trimmedPath = splitPath.trim();
+            final String trimmedPath = splitPath.trim();
 
             if (N.notEmpty(trimmedPath)) {
                 filePaths.add(trimmedPath);
             }
         }
 
-        for (final String subFilePath : filePaths) {
-            final File file = PropertiesUtil.formatPath(PropertiesUtil.findFile(subFilePath));
+        return filePaths;
+    }
 
-            if (logger.isInfoEnabled()) {
-                logger.info("Loading CQL mapper from file: {}", file.getAbsolutePath());
-            }
+    /**
+     * Loads the CQL definitions from {@code file} into this mapper, opening and closing the file stream.
+     *
+     * @param file the XML file to read
+     * @throws UncheckedIOException if an I/O error occurs reading the file
+     * @throws ParsingException if the XML content is malformed
+     */
+    private void loadFile(final File file) {
+        if (logger.isInfoEnabled()) {
+            logger.info("Loading CQL mapper from file: {}", file.getAbsolutePath());
+        }
 
-            try (InputStream is = new FileInputStream(file)) {
-                loadStream(is, file.getAbsolutePath());
-            } catch (final IOException e) {
-                throw new UncheckedIOException(e);
-            }
+        try (InputStream is = new FileInputStream(file)) {
+            loadStream(is, file.getAbsolutePath());
+        } catch (final IOException e) {
+            throw new UncheckedIOException(e);
         }
     }
 
     /**
      * Parses the XML read from {@code is} and merges its {@code <cql>} definitions into this mapper.
-     * The stream is not closed by this method; the caller (here {@link #loadFrom(String)}) owns and closes it.
+     * The stream is not closed by this method; the caller owns and closes it.
      *
      * @param is the input stream to read the XML CQL definitions from
      * @param sourceLabel a human-readable label identifying the source, used in error messages
@@ -321,33 +373,33 @@ public final class CqlMapper {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * CqlMapper m = new CqlMapper();
-     * m.keySet();                                       // returns [] (empty set for an empty mapper)
+     * m.cqlIds();                                       // returns [] (empty set for an empty mapper)
      * m.add("findUserById", "SELECT * FROM users WHERE id = ?", null);
      * m.add("findAll", "SELECT * FROM users", null);
-     * m.keySet();                                       // returns ["findUserById", "findAll"]
+     * m.cqlIds();                                       // returns ["findUserById", "findAll"]
      * m.remove("findAll");
-     * m.keySet();                                       // returns ["findUserById"] (live view reflects removal)
-     * m.keySet().clear();                              // throws UnsupportedOperationException (read-only view)
+     * m.cqlIds();                                       // returns ["findUserById"] (live view reflects removal)
+     * m.cqlIds().clear();                              // throws UnsupportedOperationException (read-only view)
      * }</pre>
      *
      * @return a read-only, live view of the set of all CQL statement IDs currently in this mapper
      */
-    public Set<String> keySet() {
-        return Collections.unmodifiableSet(cqlMap.keySet());
+    public ImmutableSet<String> cqlIds() {
+        return ImmutableSet.copyOf(cqlMap.keySet());
     }
 
     /**
      * Retrieves a parsed CQL statement by its identifier.
-     * 
+     *
      * <p>Returns the ParsedCql object associated with the given ID, which contains
-     * the original CQL statement, parameterized version, and any associated attributes
-     * (such as timeout settings). Returns null if no CQL statement is found for the
-     * given ID.</p>
-     * 
+     * the original CQL statement and its parameterized version. Any metadata attributes
+     * are stored separately on the mapper and are retrievable via {@link #getAttributes(String)}.
+     * Returns null if no CQL statement is found for the given ID.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * CqlMapper mapper = new CqlMapper();
-     * ParsedCql added = ParsedCql.parse("SELECT * FROM users WHERE id = ?", null);
+     * ParsedCql added = ParsedCql.parse("SELECT * FROM users WHERE id = ?");
      * mapper.add("findUserById", added);
      *
      * ParsedCql parsedCql = mapper.get("findUserById");   // returns the stored ParsedCql (same instance)
@@ -385,20 +437,22 @@ public final class CqlMapper {
     }
 
     /**
-     * Adds a pre-parsed CQL statement to this mapper.
-     * 
+     * Adds a pre-parsed CQL statement to this mapper, with no metadata attributes.
+     *
      * <p>This method allows you to add a ParsedCql object directly to the mapper,
      * which is useful when you have already parsed CQL statements or want to add
      * statements programmatically. If a statement with the same ID already exists,
-     * it will be replaced and the previous ParsedCql object will be returned.</p>
-     * 
+     * it will be replaced (along with its attributes) and the previous ParsedCql object
+     * will be returned. This is a convenience overload of {@link #add(String, ParsedCql, Map)}
+     * with an empty attribute map.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * CqlMapper mapper = new CqlMapper();
-     * ParsedCql p1 = ParsedCql.parse("SELECT * FROM users WHERE id = ?", null);
+     * ParsedCql p1 = ParsedCql.parse("SELECT * FROM users WHERE id = ?");
      * mapper.add("findUserById", p1);                  // returns null (no previous mapping)
      *
-     * ParsedCql p2 = ParsedCql.parse("SELECT name FROM users WHERE id = ?", null);
+     * ParsedCql p2 = ParsedCql.parse("SELECT name FROM users WHERE id = ?");
      * mapper.add("findUserById", p2);                  // returns p1 (id reused; previous value replaced)
      * mapper.get("findUserById");                      // returns p2 (the new mapping)
      * }</pre>
@@ -407,18 +461,69 @@ public final class CqlMapper {
      * @param parsedCql the pre-parsed CQL statement object
      * @return the previous ParsedCql associated with the ID, or null if none existed
      * @see ParsedCql
+     * @see #add(String, ParsedCql, Map)
      */
     public ParsedCql add(final String id, final ParsedCql parsedCql) {
+        return add(id, parsedCql, null);
+    }
+
+    /**
+     * Adds a pre-parsed CQL statement together with its metadata attributes to this mapper.
+     *
+     * <p>If a statement with the same ID already exists, it will be replaced (along with its
+     * attributes) and the previous ParsedCql object will be returned. The attributes are stored
+     * on the mapper, keyed by id, and are retrievable via {@link #getAttributes(String)}.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * CqlMapper mapper = new CqlMapper();
+     * Map<String, String> attrs = new HashMap<>();
+     * attrs.put("timeout", "5000");
+     * mapper.add("findUserById", ParsedCql.parse("SELECT * FROM users WHERE id = ?"), attrs);
+     * mapper.getAttributes("findUserById").get("timeout");   // returns "5000"
+     * }</pre>
+     *
+     * @param id the unique identifier for this CQL statement; used as the map key as-is; not validated
+     * @param parsedCql the pre-parsed CQL statement object
+     * @param attrs optional attributes map for statement metadata (may be null or empty)
+     * @return the previous ParsedCql associated with the ID, or null if none existed
+     * @see ParsedCql
+     */
+    public ParsedCql add(final String id, final ParsedCql parsedCql, final Map<String, String> attrs) {
+        attrsMap.put(id, N.isEmpty(attrs) ? ImmutableMap.empty() : ImmutableMap.copyOf(attrs));
+
         return cqlMap.put(id, parsedCql);
     }
 
     /**
+     * Adds a CQL statement string to this mapper, with no metadata attributes.
+     *
+     * <p>The CQL string is parsed via {@link ParsedCql#parse(String)} before being stored. This is a
+     * convenience overload of {@link #add(String, String, Map)} with an empty attribute map.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * CqlMapper mapper = new CqlMapper();
+     * mapper.add("findAll", "SELECT * FROM users");
+     * }</pre>
+     *
+     * @param id the unique identifier for this CQL statement; used as the map key as-is; not validated
+     * @param cql the CQL statement string to be parsed and stored
+     * @throws IllegalArgumentException if the ID already exists, if {@code cql} is null,
+     *         or if the CQL is invalid
+     */
+    public void add(final String id, final String cql) {
+        add(id, cql, null);
+    }
+
+    /**
      * Adds a new CQL statement with attributes to this mapper.
-     * 
-     * <p>This method parses the provided CQL statement and stores it with the given ID
-     * and attributes. The attributes map can contain metadata such as timeout values,
-     * consistency levels, or other configuration parameters specific to this CQL statement.</p>
-     * 
+     *
+     * <p>This method parses the provided CQL statement and stores it with the given ID,
+     * along with the supplied attributes. The attributes map can contain metadata such as timeout
+     * values, consistency levels, or other configuration parameters specific to this CQL statement;
+     * they are stored on the mapper, keyed by id, and are retrievable via {@link #getAttributes(String)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * CqlMapper mapper = new CqlMapper();
@@ -427,6 +532,7 @@ public final class CqlMapper {
      * attrs.put("consistency", "QUORUM");
      * mapper.add("insertUser", "INSERT INTO users (id, name) VALUES (?, ?)", attrs);
      * mapper.get("insertUser").parameterCount();       // returns 2
+     * mapper.getAttributes("insertUser").get("timeout"); // returns "5000"
      *
      * mapper.add("plain", "SELECT * FROM users", null); // attrs may be null; stored attributes are empty
      *
@@ -448,12 +554,43 @@ public final class CqlMapper {
             throw new IllegalArgumentException(id + " already exists with cql: " + cqlMap.get(id));
         }
 
-        cqlMap.put(id, ParsedCql.parse(cql, attrs));
+        cqlMap.put(id, ParsedCql.parse(cql));
+        attrsMap.put(id, N.isEmpty(attrs) ? ImmutableMap.empty() : ImmutableMap.copyOf(attrs));
+    }
+
+    /**
+     * Retrieves the metadata attributes registered for the specified CQL statement id.
+     *
+     * <p>Attributes are descriptive metadata carried alongside the CQL statement (typically loaded from
+     * the XML configuration); common entries include {@code timeout} and {@code consistency}. They are
+     * retained for XML round-tripping and as metadata only — neither executor applies them to statement
+     * execution.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * CqlMapper m = new CqlMapper();
+     * Map<String, String> attrs = new HashMap<>();
+     * attrs.put("timeout", "3000");
+     * m.add("findUserById", "SELECT * FROM users WHERE id = ?", attrs);
+     * m.getAttributes("findUserById").get("timeout");   // returns "3000"
+     *
+     * m.add("findAll", "SELECT * FROM users");
+     * m.getAttributes("findAll").isEmpty();             // returns true (present id, no attributes)
+     *
+     * m.getAttributes("noSuchId");                      // returns null (id not present)
+     * }</pre>
+     *
+     * @param id the identifier of the CQL statement
+     * @return an immutable map of attribute name-value pairs (empty if the id has no attributes),
+     *         or {@code null} if the id is not present in this mapper
+     */
+    public ImmutableMap<String, String> getAttributes(final String id) {
+        return attrsMap.get(id);
     }
 
     /**
      * Removes a CQL statement from this mapper.
-     * 
+     *
      * <p>Removes the CQL statement associated with the given ID from this mapper.
      * If no statement exists with the specified ID, this method does nothing.</p>
      *
@@ -472,17 +609,18 @@ public final class CqlMapper {
      */
     public void remove(final String id) {
         cqlMap.remove(id);
+        attrsMap.remove(id);
     }
 
     /**
      * Creates a copy of this CqlMapper.
      *
-     * <p>Returns a new CqlMapper instance whose internal map contains the same
-     * ID-to-{@link ParsedCql} mappings as this mapper. The copy is shallow: the two
-     * maps are independent, so adding or removing statements from one will not affect
-     * the other, but the {@code ParsedCql} values themselves are shared (not cloned)
-     * between the two mappers. This is useful for creating isolated mapper instances
-     * for different application contexts.</p>
+     * <p>Returns a new CqlMapper instance whose internal maps contain the same
+     * ID-to-{@link ParsedCql} mappings and ID-to-attributes mappings as this mapper. The copy is
+     * shallow: the two mappers are independent, so adding or removing statements from one will not
+     * affect the other, but the {@code ParsedCql} values (and the immutable attribute maps)
+     * themselves are shared (not cloned) between the two mappers. This is useful for creating
+     * isolated mapper instances for different application contexts.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -503,18 +641,19 @@ public final class CqlMapper {
         final CqlMapper copy = new CqlMapper();
 
         copy.cqlMap.putAll(cqlMap);
+        copy.attrsMap.putAll(attrsMap);
 
         return copy;
     }
 
     /**
      * Saves all CQL statements in this mapper to an XML file.
-     * 
+     *
      * <p>Exports all CQL statements currently stored in this mapper to the specified
      * file in the standard XML format. This is useful for persisting programmatically
      * added CQL statements or creating configuration backups. The generated XML will
      * include all statements with their IDs and attributes.</p>
-     * 
+     *
      * <p>The output format matches the input format expected by {@link #loadFrom(String)}:</p>
      * <pre>{@code
      * <?xml version="1.0" encoding="UTF-8"?>
@@ -605,7 +744,7 @@ public final class CqlMapper {
 
                 final Element cqlNode = doc.createElement(CQL);
 
-                final Map<String, String> attrs = parsedCql.getAttributes();
+                final Map<String, String> attrs = attrsMap.get(id);
 
                 if (!N.isEmpty(attrs)) {
                     for (final Map.Entry<String, String> attrEntry : attrs.entrySet()) {
@@ -674,17 +813,16 @@ public final class CqlMapper {
 
     /**
      * Returns the hash code for this CqlMapper.
-     * 
-     * <p>The hash code is computed based on the internal CQL statements map,
-     * ensuring that two CqlMapper instances with the same statements will
+     *
+     * <p>The hash code is computed from the internal CQL statements map and the per-id attributes
+     * map, ensuring that two CqlMapper instances with the same statements and attributes will
      * have the same hash code.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * new CqlMapper().hashCode();                       // returns 0 (empty map hashes to 0)
-     *
      * CqlMapper m1 = new CqlMapper();
      * CqlMapper m2 = new CqlMapper();
+     * (m1.hashCode() == m2.hashCode());                 // true (two empty mappers share a hash code)
      * m1.add("k", "SELECT 1 FROM t", null);
      * m2.add("k", "SELECT 1 FROM t", null);
      * (m1.hashCode() == m2.hashCode());                 // true (equal mappers share a hash code)
@@ -694,15 +832,14 @@ public final class CqlMapper {
      */
     @Override
     public int hashCode() {
-        return cqlMap.hashCode();
+        return Objects.hash(cqlMap, attrsMap);
     }
 
     /**
      * Indicates whether some other object is "equal to" this CqlMapper.
-     * 
-     * <p>Two CqlMapper instances are considered equal if they contain the same
-     * set of CQL statements with identical IDs and CQL text. Statement attributes do not
-     * affect equality, because {@link ParsedCql#equals(Object)} compares only the CQL text.</p>
+     *
+     * <p>Two CqlMapper instances are considered equal if they contain the same set of CQL
+     * statements (identical IDs and CQL text) and the same per-id metadata attributes.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -712,7 +849,7 @@ public final class CqlMapper {
      * m1.equals(m2);                                    // returns true (both empty)
      * m1.add("k", "SELECT 1 FROM t", null);
      * m2.add("k", "SELECT 1 FROM t", null);
-     * m1.equals(m2);                                    // returns true (same mappings)
+     * m1.equals(m2);                                    // returns true (same mappings and attributes)
      * m1.equals(null);                                  // returns false (null argument)
      * m1.equals("not a mapper");                        // returns false (different type)
      * }</pre>
@@ -722,12 +859,12 @@ public final class CqlMapper {
      */
     @Override
     public boolean equals(final Object obj) {
-        return this == obj || (obj instanceof CqlMapper && N.equals(((CqlMapper) obj).cqlMap, cqlMap));
+        return this == obj || (obj instanceof CqlMapper && N.equals(((CqlMapper) obj).cqlMap, cqlMap) && N.equals(((CqlMapper) obj).attrsMap, attrsMap));
     }
 
     /**
      * Returns a string representation of this CqlMapper.
-     * 
+     *
      * <p>The string representation includes all CQL statements stored in this mapper,
      * showing their IDs and associated ParsedCql objects. This is primarily useful
      * for debugging and logging purposes.</p>

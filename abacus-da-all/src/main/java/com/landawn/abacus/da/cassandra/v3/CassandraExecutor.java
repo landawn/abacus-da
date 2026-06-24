@@ -1833,7 +1833,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
         if (stmt == null) {
             final ParsedCql parseCql = parseCql(query);
-            final String cql = parseCql.getParameterizedCql();
+            final String cql = parseCql.parameterizedCql();
             stmt = bind(prepare(cql));
 
             if (query.length() <= POOLABLE_LENGTH) {
@@ -1876,7 +1876,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
 
         final ParsedCql parseCql = parseCql(query);
-        final String cql = parseCql.getParameterizedCql();
+        final String cql = parseCql.parameterizedCql();
         PreparedStatement preStmt = null;
 
         if (query.length() <= POOLABLE_LENGTH) {

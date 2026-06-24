@@ -3266,15 +3266,14 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * ParsedCql parsed2 = parseCql("SELECT * FROM users WHERE status = ?");
      *
      * // Access parsing results
-     * String parameterizedCql = parsed2.getParameterizedCql();
+     * String parameterizedCql = parsed2.parameterizedCql();
      * int paramCount = parsed2.parameterCount();
-     * Map<String, String> attributes = parsed2.getAttributes();
      * }</pre>
      *
      * @param cql the CQL query string to parse (may be a mapper key or raw CQL)
      * @return a ParsedCql object containing the parsed query and metadata
      * @see CqlMapper#get(String)
-     * @see ParsedCql#parse(String, Map)
+     * @see ParsedCql#parse(String)
      */
     protected ParsedCql parseCql(final String cql) {
         ParsedCql parsedCql = null;
@@ -3284,7 +3283,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
         }
 
         if (parsedCql == null) {
-            parsedCql = ParsedCql.parse(cql, null);
+            parsedCql = ParsedCql.parse(cql);
         }
 
         return parsedCql;
