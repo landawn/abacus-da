@@ -82,6 +82,26 @@ public class CqlMapperTest extends TestBase {
     }
 
     @Test
+    public void testContainsId() {
+        final CqlMapper m = new CqlMapper();
+        m.add("findById", "SELECT * FROM mapper_test_contains WHERE id = ?", null);
+        assertTrue(m.containsId("findById"));
+        assertFalse(m.containsId("missing"));
+        assertFalse(m.containsId(null));
+    }
+
+    @Test
+    public void testSize_ReflectsAddAndRemove() {
+        final CqlMapper m = new CqlMapper();
+        assertEquals(0, m.size());
+        m.add("a", "SELECT * FROM mapper_test_size_a", null);
+        m.add("b", "SELECT * FROM mapper_test_size_b", null);
+        assertEquals(2, m.size());
+        m.remove("a");
+        assertEquals(1, m.size());
+    }
+
+    @Test
     public void testKeySet_ContainsAddedIds() {
         final CqlMapper m = new CqlMapper();
         m.add("alpha", "SELECT * FROM mapper_test_keyset_a", null);
@@ -90,6 +110,16 @@ public class CqlMapperTest extends TestBase {
         assertEquals(2, keys.size());
         assertTrue(keys.contains("alpha"));
         assertTrue(keys.contains("beta"));
+    }
+
+    @Test
+    public void testKeySet_IsReadOnly() {
+        final CqlMapper m = new CqlMapper();
+        m.add("k", "SELECT * FROM mapper_test_keyset_readonly", null);
+        // keySet() is a read-only live view: it reflects the mapper but cannot mutate it.
+        assertThrows(UnsupportedOperationException.class, () -> m.keySet().clear());
+        assertThrows(UnsupportedOperationException.class, () -> m.keySet().remove("k"));
+        assertTrue(m.containsId("k"));
     }
 
     @Test

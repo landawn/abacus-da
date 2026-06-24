@@ -1316,7 +1316,7 @@ public abstract class MongoDBBase {
      * <ul>
      * <li><strong>Map objects:</strong> Extracts specified keys and preserves Map structure if target type is Map</li>
      * <li><strong>Document objects:</strong> Converts to target type using the framework's type conversion system</li>
-     * <li><strong>Other objects:</strong> Uses property extraction and type conversion as appropriate</li>
+     * <li><strong>Other objects:</strong> Extracts the selected properties directly (no per-row conversion to the target type)</li>
      * </ul>
      *
      * <p><b>Usage Examples:</b></p>

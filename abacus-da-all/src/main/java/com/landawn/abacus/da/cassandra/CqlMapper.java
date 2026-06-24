@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -34,6 +35,8 @@ import org.xml.sax.SAXException;
 
 import com.landawn.abacus.exception.ParsingException;
 import com.landawn.abacus.exception.UncheckedIOException;
+import com.landawn.abacus.logging.Logger;
+import com.landawn.abacus.logging.LoggerFactory;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.PropertiesUtil;
 import com.landawn.abacus.util.XmlUtil;
@@ -125,6 +128,8 @@ import com.landawn.abacus.util.XmlUtil;
  */
 public final class CqlMapper {
 
+    static final Logger logger = LoggerFactory.getLogger(CqlMapper.class);
+
     /**
      * XML element name for the root cqlMapper element.
      */
@@ -139,8 +144,6 @@ public final class CqlMapper {
      * XML attribute name for the statement identifier.
      */
     public static final String ID = "id";
-
-    static final String TIMEOUT = "timeout";
 
     private final Map<String, ParsedCql> cqlMap = new LinkedHashMap<>();
 
@@ -249,32 +252,59 @@ public final class CqlMapper {
         for (final String subFilePath : filePaths) {
             final File file = PropertiesUtil.formatPath(PropertiesUtil.findFile(subFilePath));
 
+            if (logger.isInfoEnabled()) {
+                logger.info("Loading CQL mapper from file: {}", file.getAbsolutePath());
+            }
+
             try (InputStream is = new FileInputStream(file)) {
-
-                final Document doc = XmlUtil.createDOMParser(true, true).parse(is);
-                final NodeList cqlMapperEle = doc.getElementsByTagName(CqlMapper.CQL_MAPPER);
-
-                if (0 == cqlMapperEle.getLength()) {
-                    throw new RuntimeException("Missing required 'cqlMapper' root element in XML configuration");
-                }
-
-                final List<Element> cqlElementList = XmlUtil.getElementsByTagName((Element) cqlMapperEle.item(0), CQL);
-
-                for (final Element cqlElement : cqlElementList) {
-                    final Map<String, String> attrMap = XmlUtil.readAttributes(cqlElement);
-                    final String id = attrMap.remove(ID);
-
-                    if (N.isEmpty(id)) {
-                        throw new IllegalArgumentException("Missing required 'id' attribute for CQL element in XML configuration");
-                    }
-
-                    add(id, XmlUtil.getTextContent(cqlElement), attrMap);
-                }
+                loadStream(is, file.getAbsolutePath());
             } catch (final IOException e) {
                 throw new UncheckedIOException(e);
-            } catch (final SAXException e) {
-                throw new ParsingException(e);
             }
+        }
+    }
+
+    /**
+     * Parses the XML read from {@code is} and merges its {@code <cql>} definitions into this mapper.
+     * The stream is not closed by this method; the caller (here {@link #loadFrom(String)}) owns and closes it.
+     *
+     * @param is the input stream to read the XML CQL definitions from
+     * @param sourceLabel a human-readable label identifying the source, used in error messages
+     * @throws UncheckedIOException if an I/O error occurs while reading the stream
+     * @throws ParsingException if the XML content is malformed
+     * @throws RuntimeException if the required {@code <cqlMapper>} root element is missing
+     * @throws IllegalArgumentException if a {@code <cql>} element is missing its {@code id} attribute,
+     *         or if a duplicate id is encountered
+     */
+    private void loadStream(final InputStream is, final String sourceLabel) {
+        try {
+            final Document doc = XmlUtil.createDOMParser(true, true).parse(is);
+            final NodeList cqlMapperEle = doc.getElementsByTagName(CqlMapper.CQL_MAPPER);
+
+            if (0 == cqlMapperEle.getLength()) {
+                throw new RuntimeException("Missing required 'cqlMapper' root element in: " + sourceLabel);
+            }
+
+            final List<Element> cqlElementList = XmlUtil.getElementsByTagName((Element) cqlMapperEle.item(0), CQL);
+
+            for (final Element cqlElement : cqlElementList) {
+                final Map<String, String> attrMap = XmlUtil.readAttributes(cqlElement);
+                final String id = attrMap.remove(ID);
+
+                if (N.isEmpty(id)) {
+                    throw new IllegalArgumentException("Missing required 'id' attribute for CQL element in: " + sourceLabel);
+                }
+
+                add(id, XmlUtil.getTextContent(cqlElement), attrMap);
+            }
+
+            if (logger.isDebugEnabled()) {
+                logger.debug("Loaded {} CQL statements from: {}", cqlElementList.size(), sourceLabel);
+            }
+        } catch (final IOException e) {
+            throw new UncheckedIOException(e);
+        } catch (final SAXException e) {
+            throw new ParsingException(e);
         }
     }
 
@@ -283,8 +313,10 @@ public final class CqlMapper {
      *
      * <p>This method provides access to all the IDs that have been loaded into this mapper,
      * allowing you to discover what CQL statements are available. The returned set is a
-     * live view of the internal key set, so subsequent {@code add}/{@code remove} calls are
-     * reflected in a previously returned set.</p>
+     * read-only live view of the internal key set, so subsequent {@code add}/{@code remove} calls are
+     * reflected in a previously returned set. Attempts to modify the returned set (or its iterator)
+     * throw {@link UnsupportedOperationException}; use {@link #add} / {@link #remove} to change the
+     * mapper's contents.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -295,12 +327,13 @@ public final class CqlMapper {
      * m.keySet();                                       // returns ["findUserById", "findAll"]
      * m.remove("findAll");
      * m.keySet();                                       // returns ["findUserById"] (live view reflects removal)
+     * m.keySet().clear();                              // throws UnsupportedOperationException (read-only view)
      * }</pre>
      *
-     * @return a set containing all CQL statement IDs currently in this mapper
+     * @return a read-only, live view of the set of all CQL statement IDs currently in this mapper
      */
     public Set<String> keySet() {
-        return cqlMap.keySet();
+        return Collections.unmodifiableSet(cqlMap.keySet());
     }
 
     /**
@@ -330,6 +363,25 @@ public final class CqlMapper {
      */
     public ParsedCql get(final String id) {
         return cqlMap.get(id);
+    }
+
+    /**
+     * Returns {@code true} if this mapper contains a CQL statement registered under the specified identifier.
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * CqlMapper m = new CqlMapper();
+     * m.add("findUserById", "SELECT * FROM users WHERE id = ?", null);
+     * m.containsId("findUserById");                     // returns true
+     * m.containsId("noSuchId");                         // returns false (id absent)
+     * m.containsId(null);                               // returns false (no null key present)
+     * }</pre>
+     *
+     * @param id the identifier of the CQL statement to test
+     * @return {@code true} if a CQL statement is registered under {@code id}, {@code false} otherwise
+     */
+    public boolean containsId(final String id) {
+        return cqlMap.containsKey(id);
     }
 
     /**
@@ -479,6 +531,10 @@ public final class CqlMapper {
      * <p>If the parent directory of {@code file} does not yet exist, this method attempts to
      * create it.</p>
      *
+     * <p>The registered identifier (the map key) is always written as the {@code id} attribute and is
+     * protected from being overridden: any stray {@code id} entry in a statement's attributes map is
+     * ignored when emitting attributes.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * CqlMapper m = new CqlMapper();
@@ -496,6 +552,7 @@ public final class CqlMapper {
      * @param file the target file where the XML will be written
      * @throws UncheckedIOException if the parent directory cannot be created, or if the file
      *         cannot be written
+     * @see #saveTo(OutputStream)
      * @see #loadFrom(String)
      */
     public void saveTo(final File file) throws UncheckedIOException {
@@ -506,6 +563,39 @@ public final class CqlMapper {
         }
 
         try (OutputStream os = new FileOutputStream(file)) {
+            saveTo(os);
+        } catch (final IOException e) {
+            throw new UncheckedIOException(e);
+        }
+    }
+
+    /**
+     * Writes all CQL statements in this mapper to the supplied output stream as XML.
+     *
+     * <p>The output format matches the input format expected by {@link #loadFrom(String)}. The stream is
+     * flushed but <i>not</i> closed by this method; the caller retains ownership and is responsible for
+     * closing it.</p>
+     *
+     * <p>The registered identifier (the map key) is always written as the {@code id} attribute and is
+     * protected from being overridden: any stray {@code id} entry in a statement's attributes map is
+     * ignored when emitting attributes.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * CqlMapper m = new CqlMapper();
+     * m.add("findUserById", "SELECT * FROM users WHERE id = ?", null);
+     * try (OutputStream os = new FileOutputStream("target/cql/config.xml")) {
+     *     m.saveTo(os);
+     * }
+     * }</pre>
+     *
+     * @param os the output stream to write to (not closed by this method)
+     * @throws UncheckedIOException if an I/O error occurs while writing to the stream
+     * @see #saveTo(File)
+     * @see #loadFrom(String)
+     */
+    public void saveTo(final OutputStream os) throws UncheckedIOException {
+        try {
             final Document doc = XmlUtil.createDOMParser(true, true).newDocument();
             final Element cqlMapperNode = doc.createElement(CqlMapper.CQL_MAPPER);
 
@@ -514,15 +604,22 @@ public final class CqlMapper {
                 final ParsedCql parsedCql = cqlEntry.getValue();
 
                 final Element cqlNode = doc.createElement(CQL);
-                cqlNode.setAttribute(ID, id);
 
-                if (!N.isEmpty(parsedCql.getAttributes())) {
-                    final Map<String, String> attrs = parsedCql.getAttributes();
+                final Map<String, String> attrs = parsedCql.getAttributes();
 
+                if (!N.isEmpty(attrs)) {
                     for (final Map.Entry<String, String> attrEntry : attrs.entrySet()) {
+                        // Skip any stray "id" attribute so it cannot overwrite the canonical id set below.
+                        if (ID.equals(attrEntry.getKey())) {
+                            continue;
+                        }
+
                         cqlNode.setAttribute(attrEntry.getKey(), attrEntry.getValue());
                     }
                 }
+
+                // Set the id last to guarantee the entry key wins regardless of the attribute contents.
+                cqlNode.setAttribute(ID, id);
 
                 final Text cqlText = doc.createTextNode(parsedCql.originalCql());
                 cqlNode.appendChild(cqlText);
@@ -537,6 +634,23 @@ public final class CqlMapper {
         } catch (final IOException e) {
             throw new UncheckedIOException(e);
         }
+    }
+
+    /**
+     * Returns the number of CQL statements registered in this mapper.
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * CqlMapper m = new CqlMapper();
+     * m.size();                                         // returns 0 (newly created mapper)
+     * m.add("findUserById", "SELECT * FROM users WHERE id = ?", null);
+     * m.size();                                         // returns 1
+     * }</pre>
+     *
+     * @return the number of registered CQL statements
+     */
+    public int size() {
+        return cqlMap.size();
     }
 
     /**

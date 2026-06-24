@@ -2817,7 +2817,8 @@ public final class HBaseExecutor implements AutoCloseable {
      * @param callback the callback that receives each region's result
      * @throws UncheckedIOException if the call fails with an {@link IOException}
      * @throws Exception if the coprocessor invocation throws a non-{@link IOException}
-     *         {@link Throwable}; the original cause is wrapped in a new {@link Exception}
+     *         {@link Throwable}: it is rethrown as-is if it is already an {@link Exception}, otherwise
+     *         wrapped in a new {@link Exception} (an {@link Error} is always rethrown unchanged)
      * @see Service
      * @see Batch.Call
      * @see Batch.Callback
@@ -2869,8 +2870,9 @@ public final class HBaseExecutor implements AutoCloseable {
      * @param responsePrototype the prototype for the response message
      * @return a map of region names (byte arrays) to their corresponding response messages
      * @throws UncheckedIOException if an I/O error occurs during the operation
-     * @throws Exception if the coprocessor execution throws a checked exception other than {@link IOException}
-     *         (the original {@link Throwable} from the coprocessor is wrapped in a new {@link Exception})
+     * @throws Exception if the coprocessor execution throws a {@link Throwable} other than {@link IOException}:
+     *         it is rethrown as-is if it is already an {@link Exception}, otherwise wrapped in a new
+     *         {@link Exception} (an {@link Error} is always rethrown unchanged)
      * @see Message
      * @see Descriptors.MethodDescriptor
      */
@@ -2921,8 +2923,9 @@ public final class HBaseExecutor implements AutoCloseable {
      * @param responsePrototype the prototype for the response message
      * @param callback the callback to receive response messages from each region
      * @throws UncheckedIOException if an I/O error occurs during the operation
-     * @throws Exception if the coprocessor execution throws a checked exception other than {@link IOException}
-     *         (the original {@link Throwable} from the coprocessor is wrapped in a new {@link Exception})
+     * @throws Exception if the coprocessor execution throws a {@link Throwable} other than {@link IOException}:
+     *         it is rethrown as-is if it is already an {@link Exception}, otherwise wrapped in a new
+     *         {@link Exception} (an {@link Error} is always rethrown unchanged)
      * @see Message
      * @see Descriptors.MethodDescriptor
      * @see Batch.Callback

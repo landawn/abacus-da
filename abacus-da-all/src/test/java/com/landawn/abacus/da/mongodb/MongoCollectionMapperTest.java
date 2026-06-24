@@ -673,6 +673,19 @@ public class MongoCollectionMapperTest extends TestBase {
     }
 
     @Test
+    public void testDistinct_nullOrEmptyFieldName_throws() {
+        // Regression: distinct(...) documents "@throws IAE if fieldName is null or empty", but previously
+        // routed straight through the $group/$project pipeline without validating fieldName (a null
+        // fieldName degenerated to a "$null" group key, an empty one to an invalid "$" path).
+        Assertions.assertThrows(IllegalArgumentException.class, () -> mapper.distinct((String) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> mapper.distinct(""));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> mapper.distinct(null, new Document("status", "active")));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> mapper.distinct("", new Document("status", "active")));
+        // The underlying executor must not be reached when fieldName is invalid.
+        verify(mockCollExecutor, org.mockito.Mockito.never()).aggregate(org.mockito.ArgumentMatchers.anyList(), org.mockito.ArgumentMatchers.any());
+    }
+
+    @Test
     public void testAggregate() {
         List<Document> pipeline = Arrays.asList(new Document("$match", new Document("status", "active")));
         Stream<TestEntity> stream = Stream.of(new TestEntity());

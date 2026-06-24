@@ -1349,7 +1349,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * byte[] row = Bytes.toBytes("user123");
      * Cell cell = new KeyValue(row, Bytes.toBytes("info"), Bytes.toBytes("name"), Bytes.toBytes("John Doe"));
      *
-     * AnyPut put = AnyPut.of("user123").add(cell);   // returns the same AnyPut; throws IOException
+     * AnyPut put = AnyPut.of("user123").add(cell);   // returns the same AnyPut
      * boolean stored = put.has("info", "name");      // true
      *
      * // Edge: a cell whose row key differs from this Put's row key is rejected.

@@ -181,6 +181,9 @@ public final class ParsedCql {
 
     private final Map<String, String> attrs;
 
+    /** Cached hash code; this instance is effectively immutable, so {@code Objects.hash(cql)} is computed once. */
+    private final int hashCode;
+
     /**
      * Constructs a new ParsedCql instance by parsing the given CQL statement.
      * 
@@ -208,23 +211,17 @@ public final class ParsedCql {
      * @param cql the raw CQL statement to parse
      * @param attrs optional attributes map containing metadata such as timeout, consistency level, etc.
      * @throws IllegalArgumentException if the CQL contains a named parameter with an empty name,
-     *         or mixes different parameter styles ({@code ?}, {@code :name}, {@code #{name}}) in the same statement
+     *         mixes different parameter styles ({@code ?}, {@code :name}, {@code #{name}}) in the same statement,
+     *         or contains a malformed iBatis/MyBatis parameter that is missing its closing brace
      */
-    @SuppressWarnings({ "unchecked", "rawtypes" })
     private ParsedCql(final String cql, final Map<String, String> attrs) {
         this.cql = cql.trim();
         namedParameters = new HashMap<>();
-        this.attrs = N.isEmpty(attrs) ? (Map) new HashMap<>() : new HashMap<>(attrs);
+        this.attrs = N.isEmpty(attrs) ? new HashMap<>() : new HashMap<>(attrs);
+        hashCode = Objects.hash(this.cql);
 
         final List<String> words = SqlParser.parse(this.cql);
-
-        boolean isOpSqlPrefix = false;
-        for (final String word : words) {
-            if (Strings.isNotEmpty(word) && !(word.equals(" ") || word.startsWith("--") || word.startsWith("/*"))) {
-                isOpSqlPrefix = opSqlPrefixSet.contains(word.toUpperCase());
-                break;
-            }
-        }
+        final boolean isOpSqlPrefix = isOpSqlPrefix(words);
 
         int type = 0; // bit mask: 1 - '?', 2 - ':propName', 4 - '#{propName}'
 
@@ -235,7 +232,8 @@ public final class ParsedCql {
             try {
                 int curlyDepth = 0;
 
-                for (String word : words) {
+                for (int i = 0, size = words.size(); i < size; i++) {
+                    String word = words.get(i);
                     final int prevCurlyDepth = curlyDepth;
                     curlyDepth = updateCurlyDepth(curlyDepth, word);
 
@@ -243,15 +241,51 @@ public final class ParsedCql {
                         countOfParameter++;
 
                         type |= 1;
-                    } else if (word.startsWith(LEFT_OF_IBATIS_NAMED_PARAMETER) && word.endsWith(RIGHT_OF_IBATIS_NAMED_PARAMETER)) {
-                        if (word.length() <= 3) {
-                            throw new IllegalArgumentException("Invalid named parameter: " + word + ". Parameter name cannot be empty.");
+                    } else if (word.startsWith(LEFT_OF_IBATIS_NAMED_PARAMETER)) {
+                        // A single tokenized word may carry more than one '#{...}' marker (for example "#{a}#{b}"),
+                        // and the closing '}' may even land in a later token, because none of '#', '{', '}' are
+                        // guaranteed token separators. Extract every leading '#{...}' marker in turn, pulling in
+                        // following tokens until the closing '}' is found, and keep any trailing text for
+                        // re-processing. curlyDepth is advanced for every consumed token so the map/UDT literal
+                        // tracking used by the ':' branch below stays accurate; a well-formed '#{...}' marker
+                        // contributes a balanced '{'/'}' pair and therefore leaves the depth unchanged.
+                        final StringBuilder rebuilt = new StringBuilder(word.length() + 4);
+                        final StringBuilder ibatisTokenBuilder = new StringBuilder();
+
+                        while (word.startsWith(LEFT_OF_IBATIS_NAMED_PARAMETER)) {
+                            ibatisTokenBuilder.setLength(0);
+                            ibatisTokenBuilder.append(word);
+
+                            while (ibatisTokenBuilder.indexOf(RIGHT_OF_IBATIS_NAMED_PARAMETER) < 0 && i < size - 1) {
+                                final String next = words.get(++i);
+                                curlyDepth = updateCurlyDepth(curlyDepth, next);
+                                ibatisTokenBuilder.append(next);
+                            }
+
+                            final String ibatisToken = ibatisTokenBuilder.toString();
+                            final int rightBracketIndex = ibatisToken.indexOf(RIGHT_OF_IBATIS_NAMED_PARAMETER);
+
+                            if (rightBracketIndex < 0) {
+                                throw new IllegalArgumentException(
+                                        "Malformed iBatis/MyBatis parameter: missing closing '}' for token starting with '#{' in CQL: " + cql);
+                            }
+
+                            final String namedParameter = extractIbatisNamedParameter(ibatisToken.substring(2, rightBracketIndex));
+
+                            if (Strings.isEmpty(namedParameter)) {
+                                throw new IllegalArgumentException(
+                                        "Invalid named parameter: " + ibatisToken.substring(0, rightBracketIndex + 1) + ". Parameter name cannot be empty.");
+                            }
+
+                            namedParameters.put(countOfParameter++, namedParameter);
+                            rebuilt.append(SK.QUESTION_MARK);
+                            word = rightBracketIndex + 1 < ibatisToken.length() ? ibatisToken.substring(rightBracketIndex + 1) : Strings.EMPTY;
+
+                            type |= 4;
                         }
-                        namedParameters.put(countOfParameter++, word.substring(2, word.length() - 1));
 
-                        word = SK.QUESTION_MARK;
-
-                        type |= 4;
+                        rebuilt.append(word);
+                        word = rebuilt.toString();
                     } else if (word.length() >= 1 && word.charAt(0) == _PREFIX_OF_NAMED_PARAMETER) {
                         // A token starting with ':' is a named parameter ONLY when it is not inside a '{...}' map/UDT
                         // literal, where ':' is the key/value separator (e.g. {'a':1}). Use prevCurlyDepth (the brace
@@ -277,15 +311,13 @@ public final class ParsedCql {
                     sb.append(word);
                 }
 
-                final String tmpCql = Strings.stripToEmpty(sb.toString());
-                parameterizedCql = tmpCql.endsWith(";") ? tmpCql.substring(0, tmpCql.length() - 1) : tmpCql;
+                parameterizedCql = stripTrailingSemicolons(Strings.stripToEmpty(sb.toString()));
                 parameterCount = countOfParameter;
             } finally {
                 Objectory.recycle(sb);
             }
         } else {
-            final String tmpCql = Strings.stripToEmpty(cql);
-            parameterizedCql = tmpCql.endsWith(";") ? tmpCql.substring(0, tmpCql.length() - 1) : tmpCql;
+            parameterizedCql = stripTrailingSemicolons(Strings.stripToEmpty(this.cql));
             parameterCount = 0;
         }
     }
@@ -320,6 +352,77 @@ public final class ParsedCql {
         }
 
         return result;
+    }
+
+    /**
+     * Returns {@code true} if the first non-comment, non-whitespace token of the parsed statement is one of the
+     * recognized data-operation keywords ({@code SELECT}, {@code INSERT}, {@code UPDATE}, {@code DELETE},
+     * {@code MERGE}). Only such statements have their parameter placeholders detected and normalized; any other
+     * statement (DDL such as {@code CREATE}/{@code ALTER}/{@code DROP}, {@code BATCH}, etc.) is stored as-is.
+     */
+    private static boolean isOpSqlPrefix(final List<String> words) {
+        for (final String word : words) {
+            if (!isCommentOrSpaceToken(word)) {
+                return isOpSqlPrefixWord(word);
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Equivalent to {@code opSqlPrefixSet.contains(word.toUpperCase())} but without allocating a temporary
+     * upper-cased String. All entries of {@code opSqlPrefixSet} are uppercase ASCII keywords, so a
+     * case-insensitive scan yields the identical result.
+     */
+    private static boolean isOpSqlPrefixWord(final String word) {
+        for (final String prefix : opSqlPrefixSet) {
+            if (prefix.equalsIgnoreCase(word)) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static boolean isCommentOrSpaceToken(final String word) {
+        return Strings.isEmpty(word) || " ".equals(word) || word.startsWith("--") || word.startsWith("/*");
+    }
+
+    /**
+     * Extracts the parameter name from the inside of an iBatis/MyBatis {@code #{...}} marker. Leading and trailing
+     * whitespace is removed and, mirroring MyBatis, anything after the first comma (e.g. {@code #{id,jdbcType=INT}})
+     * is dropped so only the property name remains. Returns {@link Strings#EMPTY} when the content is empty or blank.
+     */
+    private static String extractIbatisNamedParameter(final String content) {
+        final String trimmed = Strings.stripToEmpty(content);
+
+        if (Strings.isEmpty(trimmed)) {
+            return Strings.EMPTY;
+        }
+
+        final int commaIndex = trimmed.indexOf(SK._COMMA);
+        return (commaIndex >= 0 ? trimmed.substring(0, commaIndex) : trimmed).trim();
+    }
+
+    /**
+     * Removes all trailing semicolons (and any whitespace between or around them) so that {@code "... ;"},
+     * {@code "... ;;"} and {@code "... ; ;"} all produce the same parameterized form.
+     */
+    private static String stripTrailingSemicolons(final String cql) {
+        int endIdx = cql.length();
+
+        while (endIdx > 0) {
+            final char ch = cql.charAt(endIdx - 1);
+
+            if (ch == ';' || Character.isWhitespace(ch)) {
+                endIdx--;
+            } else {
+                break;
+            }
+        }
+
+        return endIdx == cql.length() ? cql : cql.substring(0, endIdx);
     }
 
     /**
@@ -360,13 +463,15 @@ public final class ParsedCql {
      * ParsedCql.parse(null, null);                                          // throws IllegalArgumentException (cql is null)
      * ParsedCql.parse("SELECT * FROM u WHERE a = ? AND b = :x", null);      // throws IllegalArgumentException (mixed '?'/':name' styles)
      * ParsedCql.parse("SELECT * FROM u WHERE id = #{}", null);              // throws IllegalArgumentException (empty named parameter)
+     * ParsedCql.parse("SELECT * FROM u WHERE id = #{abc", null);            // throws IllegalArgumentException (iBatis parameter missing '}')
      * }</pre>
      *
      * @param cql the CQL statement to parse (used as cache key)
      * @param attrs optional attributes map for statement metadata; when non-empty, parsing bypasses cache
      * @return a ParsedCql instance, either newly created or retrieved from cache
-     * @throws IllegalArgumentException if {@code cql} is null, or the CQL contains a named
-     *         parameter with an empty name, or mixes different parameter styles
+     * @throws IllegalArgumentException if {@code cql} is null, the CQL contains a named parameter
+     *         with an empty name, mixes different parameter styles, or contains a malformed
+     *         iBatis/MyBatis parameter that is missing its closing brace
      */
     public static ParsedCql parse(final String cql, final Map<String, String> attrs) {
         N.checkArgNotNull(cql, "cql");
@@ -404,7 +509,7 @@ public final class ParsedCql {
      * <p>This method returns the CQL statement as it was provided to the parser, after
      * applying a {@code trim()} on the leading and trailing whitespace. Internal formatting,
      * whitespace, and the original parameter placeholders ({@code ?}, {@code :name},
-     * {@code #{name}}) are preserved, as is a trailing semicolon (which is only stripped from
+     * {@code #{name}}) are preserved, as are any trailing semicolons (which are only stripped from
      * the parameterized form). This is useful for logging, debugging, or when you
      * need to preserve the original query format.</p>
      *
@@ -430,7 +535,7 @@ public final class ParsedCql {
      * <li>All named parameters ({@code :name}) are converted to {@code ?}</li>
      * <li>All MyBatis-style parameters ({@code #{name}}) are converted to {@code ?}</li>
      * <li>Leading and trailing whitespace is stripped</li>
-     * <li>A single trailing semicolon, if present, is removed</li>
+     * <li>All trailing semicolons (and any whitespace between or around them) are removed</li>
      * </ul>
      * 
      * <p>This parameterized version is what gets sent to Cassandra for prepared statement creation.</p>
@@ -597,7 +702,7 @@ public final class ParsedCql {
      */
     @Override
     public int hashCode() {
-        return Objects.hash(cql);
+        return hashCode;
     }
 
     /**

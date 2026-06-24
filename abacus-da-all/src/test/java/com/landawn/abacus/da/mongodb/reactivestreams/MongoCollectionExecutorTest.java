@@ -1454,6 +1454,15 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
+    public void testAggregateWithNullRowTypeThrowsIAE() {
+        // Regression: aggregate(List, Class) documents "@throws IAE if pipeline or rowType is null"
+        // (matching the sync executor) but previously had no rowType guard and silently produced
+        // Object[] rows for a null rowType. The guard now throws eagerly at the call site.
+        List<Bson> pipeline = Arrays.asList(new Document("$match", new Document("status", "active")));
+        assertThrows(IllegalArgumentException.class, () -> executor.aggregate(pipeline, null));
+    }
+
+    @Test
     public void testGroupByWithFieldName() {
         String fieldName = "category";
         List<Document> groupResults = Arrays.asList(new Document("_id", "electronics"), new Document("_id", "books"));

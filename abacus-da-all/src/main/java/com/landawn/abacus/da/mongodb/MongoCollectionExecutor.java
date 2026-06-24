@@ -4117,7 +4117,7 @@ public final class MongoCollectionExecutor {
      * @param fieldName the field to get distinct values for
      * @param rowType the class of the field values
      * @return a Stream of distinct values
-     * @throws IllegalArgumentException if fieldName is null or empty, or if rowType is null
+     * @throws IllegalArgumentException if fieldName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> Stream<T> distinct(final String fieldName, final Class<T> rowType) {
@@ -4145,7 +4145,7 @@ public final class MongoCollectionExecutor {
      * @param filter BSON filter to apply before getting distinct values (must not be null)
      * @param rowType the class of the field values
      * @return a Stream of distinct values from filtered documents
-     * @throws IllegalArgumentException if filter is null, or if any other parameter is null
+     * @throws IllegalArgumentException if fieldName is null or empty, or filter is null
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> Stream<T> distinct(final String fieldName, final Bson filter, final Class<T> rowType) {

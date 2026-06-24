@@ -3110,6 +3110,8 @@ public final class MongoCollectionMapper<T> {
      * @see Stream
      */
     public Stream<T> distinct(final String fieldName) {
+        N.checkArgNotEmpty(fieldName, "fieldName");
+
         return collectionExecutor.aggregate(distinctPipeline(fieldName, null), rowType);
     }
 
@@ -3157,6 +3159,7 @@ public final class MongoCollectionMapper<T> {
      * @see Stream
      */
     public Stream<T> distinct(final String fieldName, final Bson filter) {
+        N.checkArgNotEmpty(fieldName, "fieldName");
         N.checkArgNotNull(filter, "filter");
 
         return collectionExecutor.aggregate(distinctPipeline(fieldName, filter), rowType);

@@ -773,7 +773,8 @@ public class BigQueryExecutor {
             }
 
         } else {
-            throw new IllegalArgumentException("Unsupported row/column type: " + ClassUtil.getCanonicalClassName(rowClass));
+            throw new IllegalArgumentException("Field count must be 1 to map a row to the single-value type: " + ClassUtil.getCanonicalClassName(rowClass)
+                    + ", but the row has " + fieldCount + " columns");
         }
 
         return (T) res;
@@ -1683,8 +1684,8 @@ public class BigQueryExecutor {
      * {@code whereClause}.
      * <p>
      * Implemented as a parameterised {@code SELECT <keys> FROM <table> WHERE ... LIMIT 1} query
-     * job; only the primary-key columns of {@code targetClass} are projected to keep bytes
-     * processed small. Note that even with {@code LIMIT 1} BigQuery still <i>scans</i> the qualifying
+     * job; the primary-key columns of {@code targetClass} (or all columns, if it declares no key) are
+     * projected to keep bytes processed small. Note that even with {@code LIMIT 1} BigQuery still <i>scans</i> the qualifying
      * data before applying the limit, so this is not free on large unpartitioned tables.
      *
      * <p><b>Usage Examples:</b></p>

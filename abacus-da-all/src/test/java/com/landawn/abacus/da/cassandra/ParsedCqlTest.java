@@ -153,6 +153,23 @@ public class ParsedCqlTest extends TestBase {
     }
 
     @Test
+    public void testParse_MultipleTrailingSemicolonsRemoved() {
+        // All trailing semicolons (and any whitespace between/around them) are stripped, not just one.
+        assertEquals("SELECT id FROM users WHERE id = ?", ParsedCql.parse("SELECT id FROM users WHERE id = ?;;", null).getParameterizedCql());
+        assertEquals("SELECT id FROM users WHERE id = ?", ParsedCql.parse("SELECT id FROM users WHERE id = ? ; ; ", null).getParameterizedCql());
+    }
+
+    @Test
+    public void testParse_IbatisParameterWithJdbcTypeUsesNameOnly() {
+        // MyBatis-style metadata after the first comma (e.g. jdbcType) is dropped; only the property name remains.
+        final ParsedCql parsed = ParsedCql.parse("UPDATE t SET n = #{name,jdbcType=TEXT} WHERE id = #{id}", null);
+        assertEquals(2, parsed.parameterCount());
+        assertEquals("name", parsed.namedParameters().get(0));
+        assertEquals("id", parsed.namedParameters().get(1));
+        assertFalse(parsed.getParameterizedCql().contains("#{"), parsed.getParameterizedCql());
+    }
+
+    @Test
     public void testParse_NullCqlThrows() {
         assertThrows(IllegalArgumentException.class, () -> ParsedCql.parse(null, null));
     }

@@ -427,6 +427,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @param timestamp the timestamp as a Date object
      * @return this CqlBuilder instance for method chaining
      * @throws IllegalArgumentException if timestamp is null
+     * @throws ArithmeticException if the timestamp in microseconds overflows a {@code long}
      * @see #usingTimestamp(long)
      * @see #usingTimestamp(String)
      */
@@ -456,6 +457,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      *
      * @param timestamp the timestamp in milliseconds since Unix epoch
      * @return this CqlBuilder instance for method chaining
+     * @throws ArithmeticException if the timestamp in microseconds ({@code timestamp * 1000}) overflows a {@code long}
      * @see #usingTimestamp(Date)
      * @see #usingTimestamp(String)
      */

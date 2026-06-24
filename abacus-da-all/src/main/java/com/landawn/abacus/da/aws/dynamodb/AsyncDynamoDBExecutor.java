@@ -1857,10 +1857,10 @@ public final class AsyncDynamoDBExecutor {
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table to scan, must not be {@code null}
-     * @param scanFilter map of attribute names to {@link Condition} objects for filtering results,
-     *                  must not be {@code null}. Multiple conditions are combined with AND logic
+     * @param scanFilter map of attribute names to {@link Condition} objects for filtering results;
+     *                  may be {@code null} to apply no filter. Multiple conditions are combined with AND logic
      * @return a {@link ContinuableFuture} containing a {@link Stream} of items matching all filter conditions
-     * @throws IllegalArgumentException if tableName or scanFilter is {@code null}
+     * @throws IllegalArgumentException if tableName is {@code null}
      * @see #scan(String, List, Map)
      */
     public ContinuableFuture<Stream<Map<String, Object>>> scan(final String tableName, final Map<String, Condition> scanFilter) {
@@ -1919,11 +1919,11 @@ public final class AsyncDynamoDBExecutor {
      * @param tableName the name of the DynamoDB table to scan, must not be {@code null}
      * @param attributesToGet list of attribute names to retrieve, or {@code null} to retrieve all attributes.
      *                       Projecting reduces network transfer but not read cost
-     * @param scanFilter map of attribute names to {@link Condition} objects for filtering results,
-     *                  must not be {@code null}. Multiple conditions are combined with AND logic.
+     * @param scanFilter map of attribute names to {@link Condition} objects for filtering results;
+     *                  may be {@code null} to apply no filter. Multiple conditions are combined with AND logic.
      * @return a {@link ContinuableFuture} containing a {@link Stream} of items matching all filter conditions
      *         with only specified attributes, providing lazy evaluation and automatic pagination
-     * @throws IllegalArgumentException if tableName or scanFilter is {@code null}
+     * @throws IllegalArgumentException if tableName is {@code null}
      * @see #scan(String, List)
      * @see #scan(String, Map)
      * @see #scan(ScanRequest)
@@ -2068,12 +2068,12 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param <T> the type to convert the scan results to
      * @param tableName the name of the DynamoDB table to scan, must not be {@code null}
-     * @param scanFilter map of attribute names to {@link Condition} objects for filtering results,
-     *                  must not be {@code null}
+     * @param scanFilter map of attribute names to {@link Condition} objects for filtering results;
+     *                  may be {@code null} to apply no filter
      * @param targetClass the class to convert each result item to, must not be {@code null}
      * @return a {@link ContinuableFuture} containing a {@link Stream} of items matching the filter conditions,
      *         each converted to type {@code T}
-     * @throws IllegalArgumentException if tableName, scanFilter, or targetClass is {@code null}
+     * @throws IllegalArgumentException if tableName or targetClass is {@code null}
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final Map<String, Condition> scanFilter, final Class<T> targetClass) {
         return asyncExecutor.execute(() -> dbExecutor.scan(tableName, scanFilter, targetClass));
@@ -2109,12 +2109,12 @@ public final class AsyncDynamoDBExecutor {
      * @param <T> the type to convert the scan results to
      * @param tableName the name of the DynamoDB table to scan, must not be {@code null}
      * @param attributesToGet list of attribute names to retrieve, or {@code null} to retrieve all attributes
-     * @param scanFilter map of attribute names to {@link Condition} objects for filtering results,
-     *                  must not be {@code null}
+     * @param scanFilter map of attribute names to {@link Condition} objects for filtering results;
+     *                  may be {@code null} to apply no filter
      * @param targetClass the class to convert each result item to, must not be {@code null}
      * @return a {@link ContinuableFuture} containing a {@link Stream} of filtered items with specified attributes,
      *         each converted to type {@code T}
-     * @throws IllegalArgumentException if tableName, scanFilter, or targetClass is {@code null}
+     * @throws IllegalArgumentException if tableName or targetClass is {@code null}
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final List<String> attributesToGet, final Map<String, Condition> scanFilter,
             final Class<T> targetClass) {

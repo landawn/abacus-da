@@ -3792,6 +3792,8 @@ public final class MongoCollectionExecutor {
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
      */
     public <T> Flux<T> aggregate(final List<? extends Bson> pipeline, final Class<T> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         return Flux.from(coll.aggregate(pipeline, Document.class)).mapNotNull(toEntity(rowType));
     }
 

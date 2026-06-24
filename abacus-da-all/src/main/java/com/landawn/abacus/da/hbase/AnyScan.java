@@ -49,8 +49,8 @@ import com.landawn.abacus.annotation.SuppressFBWarnings;
  *   <li><b>Prefix scans</b> can be configured via {@link #setStartStopRowForPrefixScan(byte[])}
  *       which translates the prefix into appropriate start/stop bounds without server-side filtering.</li>
  *   <li><b>Reversed scans</b> ({@link #setReversed(boolean)}) swap the natural traversal order: the
- *       scanner starts at the stop row (now treated as the upper bound) and moves backwards toward
- *       the start row.</li>
+ *       scanner starts at the start row (now treated as the upper bound) and moves backwards toward
+ *       the stop row.</li>
  * </ul>
  *
  * <h2>Throughput tuning</h2>
