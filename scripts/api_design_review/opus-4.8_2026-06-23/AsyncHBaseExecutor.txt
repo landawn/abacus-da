@@ -1,0 +1,43 @@
+API DESIGN REVIEW — hbase/AsyncHBaseExecutor.java
+public final class AsyncHBaseExecutor
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+
+1. OVERALL ASSESSMENT
+AsyncHBaseExecutor is a disciplined, near-perfect 1:1 async mirror of HBaseExecutor: every public method
+is a thin ContinuableFuture-returning delegate with a matching name, overload family, parameter order,
+and generics. Notably it uses targetClass consistently (the sync class's targetType drift does NOT appear
+here). No naming defects, no misplaced methods, no overload inconsistencies, no deprecation candidates.
+Only one by-design gap.
+
+2. NAMING ISSUES
+None. (Uses targetClass uniformly — the correct name; see HBaseExecutor §2.)
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- void-op family returns ContinuableFuture<Void> (resolves to null) | AsyncHBaseExecutor.java:1181,1222,
+  1259,1300 (put), 1341,1381,1419,1459 (delete), 1501,1544 (mutateRow), 1979/2076 (coprocessor+callback)
+  | Low | Correct mirror of the sync void methods and the house async convention. KEEP — informational.
+
+4. MISPLACED METHODS
+None. Infra methods (admin/connection/getTable/close/static mappers/registerRowKeyProperty) are correctly
+not mirrored and remain reachable via sync().
+
+5. MISSING METHODS
+- No async mapper() facade / no AsyncHBaseMapper type | sync HBaseExecutor.java:1327,1379; none in package
+  | Medium | By-design gap: async entity CRUD requires dropping to async.sync().mapper(...). Either add
+  AsyncHBaseExecutor.mapper(...) returning an AsyncHBaseMapper, or document the sync-only mapping on the
+  class Javadoc so the asymmetry is explicit.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+None. (Removed existsAll overloads are correctly absent — commented out at :233-250,326-330, matching
+HBaseExecutor.)
+
+CROSS-CLASS NOTES
+- Async return convention is ContinuableFuture<T> / ContinuableFuture<Void>; a single shared AsyncExecutor
+  (no per-call Executor param). Track ContinuableFuture vs other futures as a library-wide convention to
+  compare against the Cassandra/Mongo/DynamoDB async executors.
+
+--- DOC-FIX PASS 2026-06-23 ---
+Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its
+findings are code/design (see SUMMARY.txt section 2), or any doc-adjacent item was evaluated and
+intentionally left (documenting it would paper over a behavioral/design issue, or it is dead-comment
+cleanup deferred to the maintainer). `mvn -o clean compile` remains green.

@@ -1,0 +1,226 @@
+==================================================================================================
+API DESIGN REVIEW — CROSS-CLASS SUMMARY
+Package: com.landawn.abacus.da   |   Model: opus-4.8   |   Date: 2026-06-23
+Scope: 43 public classes (51 files; 8 package-private placeholders out of scope) under
+abacus-da-all/src/main/java. PARALLEL execution; every finding orchestrator-verified against source.
+==================================================================================================
+
+>>> DOC-FIX PASS UPDATE (2026-06-23) — Javadoc/comment-only fixes applied to source; `mvn -o clean
+    compile` stays green. NO code/signatures/behavior changed.
+    FIXED (6): MongoDBBase.objectId2Filter example; ColumnFamily "primitive"->"scalar" + missing @see
+      links; AsyncCassandraExecutorBase.count() @deprecated text; v3/AsyncCassandraExecutor two stream()
+      @throws tags; v3/CassandraExecutor.execute(Statement) false settings-overclaim sentence removed.
+    WITHDRAWN as CLAIM-INVALID (2): v4 CassandraExecutor.execute() overclaim (v4 never had the sentence —
+      v3-only); AnyRowMutations.add @throws IOException (HBase throws WrongRowIOException, an IOException
+      subclass — current doc correct).
+    ALREADY-CORRECT, no edit (2): CqlBuilder.usingTimestamp(String) micros caveat (documented 3x);
+      AnyAppend.add(Cell) log-and-swallow note (verified accurate vs hbase-client 2.6.0 bytecode).
+    Per-class reports carry inline [RESOLVED]/[WITHDRAWN]/[NO-ACTION] tags. Everything else below is
+    code/design and remains OPEN. <<<
+
+==================================================================================================
+
+OVERALL HEALTH
+The library is in good shape. Each integration (HBase, MongoDB blocking+reactive, Cassandra v3+v4
+sync+async, DynamoDB v1+v2 sync+async, BigQuery, Cosmos, Neo4j) is internally coherent and the per-class
+reports contain mostly LOW/MEDIUM consistency items, not correctness bugs. The strongest, most repeated
+issues are *cross-class consistency* problems — the same concept expressed differently across sibling
+classes — which is exactly what this review targets. There was exactly one behavioral defect (MongoDB
+reactive distinct on scalar fields) — now FIXED (2026-06-24; see §1.12 / P2-f) — and one headline
+architectural inconsistency (the v2 DynamoDB async future type). The out-of-scope package-private placeholders (search/*, blink/*, spark/*, ResultSets) are
+correctly hidden; their public counterparts (AWS/Hadoop utils) are not (see §1.11).
+
+==================================================================================================
+1. CONSISTENCY ISSUES SPANNING MULTIPLE CLASSES
+==================================================================================================
+
+1.1  ASYNC FUTURE TYPE — the one headline inconsistency  [verified by grep counts]
+     v2/AsyncDynamoDBExecutor returns native java.util.concurrent.CompletableFuture (193 uses, 0
+     ContinuableFuture). EVERY other async surface uses the library's ContinuableFuture:
+     AsyncHBaseExecutor, AsyncMongoCollectionExecutor, AsyncCassandraExecutorBase, and the v1
+     AsyncDynamoDBExecutor (126 ContinuableFuture, 0 CompletableFuture). This is a real API-shape break a
+     caller hits the moment they use two async executors. -> needs a library-level decision (P2).
+
+1.2  TWO RETURN-DISCIPLINE "SCHOOLS"
+     (a) SDK-mirror school — HBaseExecutor, DynamoDBExecutor v1+v2: return vendor result types and bare
+         nullable T (no Optional). (b) Library-discipline school — Mongo/Cassandra/BigQuery: get->Optional /
+         gett->T(null) / Nullable / empty, with a clean List vs Stream vs DataSet split. Both are
+         internally consistent; the split correlates with how tightly the executor mirrors a vendor SDK.
+         This is defensible but undocumented — decide and state it (P2), don't silently diverge.
+
+1.3  @Beta APPLIED UNEVENLY  [PARTIALLY RESOLVED 2026-06-24]
+     Sync executors mark the experimental scalar queryForXxx family @Beta; the async twins dropped it
+     (confirmed in Mongo AND Cassandra).
+     FIXED (2026-06-24): the sync/async parity gap — added @Beta to all 20 async Cassandra queryForXxx
+     overloads (+ import) and the 10 basic async Mongo queryForXxx methods (mirroring sync exactly;
+     queryForSingleValue / typed queryForDate excluded since their sync forms are not @Beta).
+     STILL OPEN: Cassandra's sync base is internally inconsistent (queryForString/Date @Beta but delegate
+     to non-@Beta queryForSingleValue); Cosmos marks streamAllItems @Beta but not the Condition
+     streamItems. -> finish with one @Beta pass over those.
+
+1.4  ACCESSOR / CONVERTER NAME DRIFT ACROSS TWINS  [RESOLVED 2026-06-24]
+     Same role, different names across blocking/reactive or v1/v2 twins. FIXED via hard renames (no
+     aliases), each pair unified:
+       - mongoCollection() (blocking) -> coll() to match the reactive twin
+       - mongoCollectionExecutor() (blocking) -> collectionExecutor() to match the reactive twin
+       - v2 attrValueOf/attrValueUpdateOf -> toAttributeValue/toAttributeValueUpdate to match Dynamo v1
+     All call-sites + tests updated; mvn -o clean test-compile green.
+
+1.5  PHANTOM TYPE PARAMETER <T>  [verified at 3 sites]
+     A method declares <T> bound only to a Class<T> param but returns an untyped Dataset/Nullable, so <T>
+     is dead and falsely implies a typed result:
+       - CassandraExecutorBase.query(Class<T>,Condition) :1558,1584
+       - AsyncDynamoDBExecutor(v1).query(QueryRequest,Class<T>) :1674
+       - BigQueryExecutor.queryForSingleValue(Class<T>,Class<V>,...) :1767
+     Fix = change to Class<?> (v2 dynamo + v2 sync already do this correctly). (P1, mechanical.)
+
+1.6  ACCESSORS LEAKING LIVE INTERNAL COLLECTIONS  [verified]
+     ParsedCql.namedParameters() returns the live mutable map of a POOLED/CACHED instance (corruptible by
+     any holder) :561; HBase AnyMutation.getFamilyCellMap() :191 and parts of MongoDBBase return live
+     maps. CqlMapper.getAttributes() (ImmutableMap) is the correct model. -> audit collection accessors
+     for defensive immutability (P1 for the pooled ParsedCql case; P3 for the SDK-mirror ones).
+
+1.7  FAIL-FAST / NULL-CONTRACT INCONSISTENCY WITHIN A CLASS  [verified]
+     BigQuery insert(Object) checkArgNotNull->IAE but update/delete NPE on entity.getClass() (:1139 vs
+     1249,1418); MongoDB.collection() skips the null-check that collectionExecutor()/collectionMapper()
+     perform; collectionMapper(Class) throws NPE vs IAE elsewhere. -> uniform up-front validation (P1/P2).
+
+1.8  DUAL-MEANING OVERLOADS / UNSAFE DISPATCH  [verified]
+     - MongoDBBase toBson/toDocument/toBSONObject/toDBObject each have (Object) AND (Object...) — an
+       Object[] silently binds to the "name/value pairs" form (:447/480, 515/551, 656/718, 761/826).
+     - Mongo updateOne/updateMany/findOneAndUpdate (Bson,Object) vs (Bson,Collection<?>): single update
+       spec vs list-of-operations dispatched on static type.
+     - CqlMapper.add(...): add(id,ParsedCql) upserts+returns-previous vs add(id,String) rejects-dup+
+       returns-void (:419/445 vs 468/505) — one name, two contracts and two return types.
+     -> give the distinct-meaning forms distinct names / unify the contract (P2).
+
+1.9  NAMING NOT ACCURATE TO BEHAVIOR  [verified]
+     - CqlBuilder.parse(Condition,Class) RENDERS a condition (builds a CqlBuilder); upstream SQLBuilder
+       calls it renderCondition (:2520).
+     - Neo4jExecutor.query(...) returns Stream, colliding with the family convention query->DataSet /
+       stream->Stream (:2203).
+     - AnyGet.toGet(Collection) returns a List (singular name) (:1120); AnyScan lacks the parallel toScan.
+     -> rename for accuracy (P2/P3; add-new + deprecate).
+
+1.10 DEPRECATION HYGIENE  [PARTIALLY RESOLVED 2026-06-24]
+     - [RESOLVED 2026-06-24] cassandra/v3/CassandraExecutor + v3/AsyncCassandraExecutor carried @deprecated
+       JAVADOC but NO @Deprecated ANNOTATION — FIXED: added @Deprecated to both v3 public types (compiler
+       now warns callers; also cleared their "deprecated-not-annotated" warnings). test-compile green.
+     - STILL OPEN: dead commented-out members imply non-existent API: HBaseExecutor existsAll/toMap/toBytes,
+       Neo4j queryDto (:2110), AnyOperation/AnyMutation comment blocks. (cleanup, deferred to maintainer.)
+     - Already-correct deprecations: HBase registerRowKeyProperty, Mongo registerIdProperty, Cassandra
+       registerKeys/count(String,...), DynamoDB ConditionBuilder.create, AnyScan of()/setRowPrefixFilter.
+
+1.11 EMPTY PUBLIC PLACEHOLDERS  [RESOLVED 2026-06-24]
+     AWSRDSUtil, AWSS3Util, HadoopUtil, HDFSUtil were PUBLIC, empty, unused. FIXED: made package-private
+     (removed `public`); zero refs so no breakage. test-compile green. (search/blink/spark placeholders +
+     ResultSets were already correctly package-private.)
+
+1.12 BLOCKING vs REACTIVE BEHAVIORAL DIVERGENCE  (the only true defect)  [RESOLVED 2026-06-24]
+     Mongo blocking mapper.distinct(field) routes scalar distinct through a $group/$project pipeline
+     because native distinct throws BsonInvalidOperationException on scalar fields (private distinctPipeline,
+     MongoCollectionMapper.java:3118); the REACTIVE mapper delegated to native distinct, so
+     mapper.distinct("scalarField") worked blocking but errored reactively.
+     FIXED: the reactive MAPPER now mirrors the same pipeline workaround (distinctPipeline ->
+     collectionExecutor.aggregate, + validation + corrected Javadoc) in
+     reactivestreams/MongoCollectionMapper.distinct(...). mvn -o clean test-compile green.
+     CORRECTION: the fix belongs in the MAPPER, not the executor — pipelining the reactive
+     executor.distinct(field, valueClass) would break its native scalar escape-hatch and diverge from the
+     blocking executor; that method was left unchanged.
+
+1.13 SYNC/ASYNC SURFACE GAPS (one-directional, sync richer)  [verified]
+     AsyncMongoCollectionExecutor lacks no-filter stream()/stream(Class) (sync :2041,2084),
+     estimatedDocumentCount (sync :415,438), and typed groupBy/groupByAndCount (sync :4255,4304). Async
+     Cassandra/HBase are otherwise complete mirrors. -> add the missing async wrappers (P2/P3).
+
+1.14 REDUNDANT OVERRIDES / OVERLOADS  [verified]
+     - AnyScan re-overrides base setColumnFamilyTimeRange (AnyGet doesn't; base already self-types) :673,707.
+     - AnyIncrement/AnyAppend setAttribute(String,byte[]) are observationally equivalent to the inherited
+       (String,Object) overload (toValueBytes is identity for byte[], HBaseExecutor:3029) :700/:635.
+     - UDTCodec.serialize/deserialize (Cassandra v4) are non-@Override v3-migration shims (driver v4 uses
+       encode/decode) :2103,2129.
+     -> remove/deprecate for a smaller, uniform surface (P3).
+
+==================================================================================================
+2. PRIORITIZED ACTION PLAN
+   P1 = clear win, low risk    P2 = worthwhile, needs a design decision    P3 = nice-to-have
+==================================================================================================
+
+----- P1 (do now; mostly mechanical, low/no compatibility impact) --------------------------------
+P1-a  [DONE 2026-06-24] Added @Deprecated to the cassandra.v3 public types (CassandraExecutor,
+      AsyncCassandraExecutor). [§1.10]  Compat: none (adds caller deprecation warnings; also cleared the
+      v3 "deprecated-not-annotated" warnings). test-compile green.
+P1-b  Fix BigQuery update(Object)/delete(Object) to checkArgNotNull (NPE->IAE), matching insert. [§1.7]
+      Effort: trivial.  Compat: improves null behavior; negligible risk.
+P1-c  Replace phantom <T> with Class<?> on the 3 query/queryForSingleValue methods. [§1.5]
+      Effort: trivial.  Compat: source-compatible in practice (callers don't bind T here).
+P1-d  Make ParsedCql.namedParameters() return an ImmutableMap (it exposes a pooled/shared mutable map).
+      [§1.6]  Effort: small.  Compat: only breaks callers that (wrongly) mutate it.
+P1-e  Rename HBaseExecutor get/scan param targetType -> targetClass (own class is 14/39 split; async twin
+      already uses targetClass). [HBaseExecutor.txt §2]  Effort: small.  Compat: param name only.
+P1-f  Remove AnyScan's redundant setColumnFamilyTimeRange overrides (inherit the self-typed base). [§1.14]
+      Effort: trivial.  Compat: none (identical behavior).
+P1-g  Delete dead commented-out members + fix the Cassandra execute() Javadoc overclaim. [§1.10]
+      Effort: trivial.  Compat: none (docs/comments).
+      [PARTIALLY DONE 2026-06-23] execute() overclaim FIXED in v3 (v4 never had it — claim was invalid).
+      Dead commented-out members (HBaseExecutor existsAll/toMap/toBytes, Neo4j queryDto, AnyOperation/
+      AnyMutation blocks) NOT removed — left as a deletion/cleanup call for the maintainer, still OPEN.
+
+----- P2 (worthwhile; each needs a design decision; some breaking) -------------------------------
+P2-a  ASYNC FUTURE TYPE: standardize v2/AsyncDynamoDBExecutor on ContinuableFuture (wrap the native
+      futures), OR consciously adopt CompletableFuture library-wide and document it as the direction.
+      [§1.1]  Effort: medium.  Compat: breaking on the v2 async signatures either way — decide once.
+P2-b  RETURN DISCIPLINE: either add get->Optional / gett convenience to the SDK-mirror executors (HBase,
+      Dynamo) for cross-executor uniformity, or formally document the "SDK-mirror vs library-discipline"
+      split. [§1.2]  Effort: medium.  Compat: additive if you add Optional accessors.
+P2-c  [PARTIALLY DONE 2026-06-24] @Beta PARITY. [§1.3]  Compat: none.
+      DONE: sync/async twin parity — async Cassandra (20) + async Mongo (10) queryForXxx now @Beta.
+      STILL OPEN: Cassandra-internal queryForSingleValue mismatch + Cosmos streamItems granularity.
+P2-d  [DONE 2026-06-24] ACCESSOR/CONVERTER NAME STANDARDIZATION. [§1.4]  Compat: BREAKING (hard renames,
+      no alias, per maintainer choice). coll() / collectionExecutor() / toAttributeValue(+Update) are now
+      the single names; all call-sites + tests updated; test-compile green.
+P2-e  DUAL-MEANING OVERLOADS: give distinct names to the pipeline/pairs forms (Mongo update*(Bson,
+      Collection<?>); MongoDBBase toBson/toDocument(Object...)) and UNIFY CqlMapper.add()'s duplicate
+      policy + return type. [§1.8]  Effort: medium.  Compat: add-new + deprecate old.
+P2-f  [DONE 2026-06-24] MONGO REACTIVE distinct() scalar-field fix. [§1.12]  Compat: bug-fix (behavior
+      improvement). Applied the $group/$project workaround in the reactive MAPPER (mirroring the blocking
+      mapper), NOT the reactive executor — pipelining the executor.distinct(field, valueClass) would have
+      broken its native scalar escape-hatch. test-compile green.
+P2-g  ADD MISSING ASYNC MONGO OPS (no-filter stream/stream(Class), estimatedDocumentCount, typed
+      groupBy/groupByAndCount). [§1.13]  Effort: small.  Compat: additive.
+P2-h  RELOCATE mongodb/AnyUtil (used only by dynamodb v2) out of the mongodb package. [AnyUtil.txt]
+      Effort: small.  Compat: package move (breaking only if referenced externally; it's an internal util).
+P2-i  CqlBuilder.parse -> add renderCondition (deprecate parse); Neo4j query() -> add stream() (deprecate
+      query() returning Stream). [§1.9]  Effort: small.  Compat: add-new + deprecate.
+
+----- P3 (nice-to-have) --------------------------------------------------------------------------
+P3-a  [DONE 2026-06-24] Made the empty public placeholders AWSRDSUtil, AWSS3Util, HadoopUtil, HDFSUtil
+      package-private (removed `public`). [§1.11]  test-compile green.
+P3-b  Round out CosmosContainerExecutor before GA: get->Optional point-read (404->empty), exists, count,
+      paged queryItems(Condition)/findFirst(Condition), and expose the dead top-N limit branch.
+      [CosmosContainerExecutor.txt]
+P3-c  Remove the redundant byte[] setAttribute overloads (AnyIncrement/AnyAppend) and deprecate UDTCodec
+      serialize/deserialize shims. [§1.14]
+P3-d  HBase Any* family ergonomics: AnyRowMutations.add(AnyPut)/add(AnyDelete) wrapper overloads; unify
+      AnyGet.familySet()/AnyScan.getFamilies() accessor name; add AnyScan.toScan to match AnyGet.toGet;
+      unify slice-param naming (rowOffset/rowLength vs offset/length) across the four AnyMutation subclasses.
+P3-e  Mongo insertOne/insertMany return the driver result (parity with the reactive twin). [MongoCollectionExecutor.txt]
+P3-f  BigQuery family completeness: get/gett by-id, queryForSingleNonNull, count(Class,Condition),
+      findFirst. [BigQueryExecutor.txt]
+P3-g  [DONE 2026-06-23] Javadoc/doc nits — ColumnFamily @see + "primitive"->"scalar" (FIXED); MongoDBBase
+      objectId2Filter example (FIXED); Cassandra count() @deprecated text parity (FIXED). AnyRowMutations
+      @throws IOException wording — WITHDRAWN, claim invalid (HBase throws WrongRowIOException ⊂ IOException,
+      so the existing doc is correct). This P3-g line is fully resolved.
+
+==================================================================================================
+NOTES ON METHOD/VERIFICATION FIDELITY
+- Several agent draft findings were CORRECTED during orchestrator verification and are reflected above:
+  (1) AnyAppend.add(Cell) does NOT "swallow" an exception (no try/catch; faithful HBase mirror);
+  (2) HBase setAttribute(String,byte[]) is REDUNDANT on Increment/Append, not "missing" on Put/Delete
+      (toValueBytes is identity for byte[]);
+  (3) AnyScan.getFamilies() returning null is a meaningful "all families" HBase signal (tempered to Low);
+  (4) AnyDelete toRowBytes vs toRowKeyBytes are behaviorally identical (both delegate to toValueBytes).
+- The v3/v4 Cassandra and v1/v2 DynamoDB divergences were checked against the underlying driver/SDK: the
+  structural differences (cluster()/mapper(), CqlSession vs Session, *Response vs *Result, DynamoDbEnhanced)
+  are driver-mandated and were NOT counted as drift; only same-concept name/contract differences were.
+==================================================================================================

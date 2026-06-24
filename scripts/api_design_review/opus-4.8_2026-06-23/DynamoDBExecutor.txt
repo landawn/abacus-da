@@ -1,0 +1,54 @@
+API DESIGN REVIEW — aws/dynamodb/DynamoDBExecutor.java  (AWS SDK v1)
+public final class DynamoDBExecutor implements AutoCloseable
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> CODE-FIX UPDATE (2026-06-24): the v1/v2 converter naming drift (section 2) is RESOLVED — the V2 twin
+    was hard-renamed to this class's toAttributeValue/toAttributeValueUpdate names (no alias); v1 unchanged.
+    See the [RESOLVED] tag. mvn -o clean test-compile green. <<<
+
+1. OVERALL ASSESSMENT
+The v1 DynamoDB executor is a large, coherent thin wrapper over the AWS SDK v1 AmazonDynamoDB API. Like
+HBaseExecutor (and unlike the mongo/cassandra get=Optional discipline), it intentionally returns SDK
+*Result types and bare nullable T/Map for single-item reads — an SDK-mirror style that is internally
+consistent and should NOT be re-flagged as an Optional violation. Findings are cross-twin (v1 vs v2)
+naming/parity items.
+
+2. NAMING ISSUES
+- [RESOLVED 2026-06-24 — code-fixed] toAttributeValue(Object) / toAttributeValueUpdate(Object[,
+  AttributeAction]) | DynamoDBExecutor.java:906,949,982 | High | Drift vs the v2 twin's attrValueOf /
+  attrValueUpdateOf. FIXED: the V2 twin was hard-renamed attrValueOf/attrValueUpdateOf ->
+  toAttributeValue/toAttributeValueUpdate to match THIS v1 class (no alias); v1 unchanged, both twins now
+  share the v1 names. (Note: maintainer chose the v1 `toX` names as canonical; this report had leaned
+  toward the v2 `...Of` spelling.) test-compile green.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- batchGetItem(Map,...) silently drops UnprocessedKeys | DynamoDBExecutor.java:2059,2080,2130,2152 | Low |
+  Documented convenience-vs-Request contract split (the Request overload is the escape hatch). No change
+  beyond existing docs; recorded.
+- getItem(...) returns bare nullable T/Map (no Optional) | :1865-2013 (+ Mapper :3477-3552) | Low | By
+  design (SDK-mirror, like HBase). Recorded, not flagged.
+
+4. MISPLACED METHODS
+- static converters (asKey/asItem/toItem/toMap/toEntity/toAttributeValue/toList/extractData) live on the
+  executor | DynamoDBExecutor.java:526-1818 | Low | Stylistically a util, but v2 co-locates identically and
+  Javadoc examples call DynamoDBExecutor.asKey(...) everywhere — KEEP (moving is a large break for cosmetic
+  gain).
+
+5. MISSING METHODS
+- toEntity(GetItemResult,Class) overload absent | DynamoDBExecutor.java (only toEntity(Map,Class) at :1319)
+  | Medium | The v2 twin has toEntity(GetItemResponse,Class) (v2:1263) with null/has-item guards. Add the
+  Result-accepting overload for v1 for parity (purely additive).
+
+6. DEPRECATION / REMOVAL CANDIDATES
+- ConditionBuilder.create() | DynamoDBExecutor.java:4736 | (already @Deprecated) | Replacement
+  Filters.builder(); keep removal in lockstep with the v2 twin's identical deprecation (v2:4831).
+
+CROSS-CLASS NOTES
+- v1 async() returns AsyncDynamoDBExecutor with ContinuableFuture (matches library async convention) — the
+  v2 pair diverges to CompletableFuture (see v2 async report; SUMMARY P-item).
+- v1<->v2 converter naming drift (toAttributeValue vs attrValueOf) is the main concrete cross-twin item.
+
+--- DOC-FIX PASS 2026-06-23 ---
+Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its
+findings are code/design (see SUMMARY.txt section 2), or any doc-adjacent item was evaluated and
+intentionally left (documenting it would paper over a behavioral/design issue, or it is dead-comment
+cleanup deferred to the maintainer). `mvn -o clean compile` remains green.

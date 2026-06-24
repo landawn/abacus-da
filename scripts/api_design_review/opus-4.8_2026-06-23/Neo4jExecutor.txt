@@ -1,0 +1,50 @@
+API DESIGN REVIEW — neo4j/Neo4jExecutor.java
+public final class Neo4jExecutor
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+
+1. OVERALL ASSESSMENT
+Neo4jExecutor faithfully mirrors the Neo4j OGM Session (load/loadAll/save/delete/count) plus a Cypher
+query surface. Cypher parameter-passing is clean ((String cypher, Map<String,?> params) with $name
+binding; no unsafe Object[] varargs). Session/pool ownership is correct and well documented. No
+correctness bugs. The OGM-native verbs (load/loadAll) are an intentional faithful mirror and should stay;
+the only structurally significant item is a query() return type that collides with the library's
+query/stream convention. Remaining items are optional additive family wrappers + a dead comment.
+
+2. NAMING ISSUES
+- query(String,Map) / query(String,Map,boolean) / query(Class,String,Map) return Stream |
+  Neo4jExecutor.java:2203,2258,2303 | Medium | Verified query(String,Map) returns Stream<Map<String,
+  Object>>. Across the executor family the convention is query(...) -> DataSet and stream(...) -> Stream;
+  here query() returns Stream. Rename these to stream(...) (the one genuinely reader-surprising
+  deviation), or add DataSet-returning query() and demote these to stream().
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- load(Class,ID) / load(Class,ID,int) return T-or-null | Neo4jExecutor.java:322,357 | Low | OGM-native
+  pass-through is fine; consider ADDING get(...)->Optional<T> (don't change load).
+- queryForObject(Class,String,Map) returns T-or-null | :2158 | Low | No Optional sibling; the library's
+  single-row-from-query primitive is findFirst->Optional — consider adding findFirst(...).
+- loadAll(...) returns Collection<T> (not List/Stream) | :1623 (+~50 overloads) | Low | Inherited from
+  Session#loadAll; narrowing to List needs a copy — KEEP by design.
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+- count(Class) count-all overload absent (have countEntitiesOfType(Class) and count(Class,Iterable<Filter>)
+  ) | Neo4jExecutor.java:2398,2355 | Low | Add count(Class) for family parity (keep the OGM-named
+  pass-through).
+- saveAll(Iterable)/delete(Iterable) bulk-write absent | :1994,2064 | Low | Optional collection-symmetry;
+  callers can loop — low value.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+- Dead commented-out queryDto(Class,String,Map) block | Neo4jExecutor.java:2110-2118 | Low | Delete — it
+  advertises a disabled API.
+
+CROSS-CLASS NOTES
+- query()->Stream is the only cross-executor naming deviation; OGM verbs (load/loadAll), Collection<T>
+  returns, and run(Consumer)/call(Function) @Beta escape-hatches are all intentional and correct.
+
+--- DOC-FIX PASS 2026-06-23 ---
+Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its
+findings are code/design (see SUMMARY.txt section 2), or any doc-adjacent item was evaluated and
+intentionally left (documenting it would paper over a behavioral/design issue, or it is dead-comment
+cleanup deferred to the maintainer). `mvn -o clean compile` remains green.

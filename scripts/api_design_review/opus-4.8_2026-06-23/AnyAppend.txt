@@ -1,0 +1,45 @@
+API DESIGN REVIEW — hbase/AnyAppend.java
+public final class AnyAppend extends AnyMutation<AnyAppend>
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> DOC-FIX PASS UPDATE (2026-06-23): no edit needed here, but add(Cell)'s Javadoc claim was VERIFIED
+    ACCURATE against hbase-client 2.6.0 bytecode — see the refined note below. The remaining items are
+    code changes and remain open. <<<
+
+1. OVERALL ASSESSMENT
+AnyAppend is a faithful fluent wrapper over HBase `Append`. No correctness defects. Findings are a
+redundant attribute overload and cross-class factory parity. NOTE: an earlier draft flagged add(Cell) as
+"silently swallowing" a wrong-row exception — the WRAPPER itself has no try/catch and declares no checked
+exception. The precise mechanism (verified by disassembling hbase-client 2.6.0): HBase's Append.add(Cell)
+override CATCHES the row-mismatch IOException, calls LOG.error(...), and returns without rethrowing — i.e.
+it logs-and-swallows. The wrapper's own Javadoc (AnyAppend.java:583-586) accurately documents exactly this
+("logs and swallows the row-mismatch IOException ... callers must enforce row consistency themselves"), so
+the doc is correct and was left unchanged. The Put/Delete/Increment-vs-Append difference in the
+`throws IOException` clause is a faithful mirror of HBase's own subclass API and is NOT a defect.
+
+2. NAMING ISSUES
+- of(byte[],int,int) slice params named offset/length | AnyAppend.java:269 | Low | Diverge from
+  AnyPut/AnyDelete rowOffset/rowLength. Converge across the four subclasses (see SUMMARY).
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+None actionable. add(Cell) (AnyAppend.java:604) faithfully mirrors HBase Append.add, which logs-and-
+swallows a row-mismatch IOException (verified against the jar); the wrapper's Javadoc documents this
+accurately — by design, [ALREADY-CORRECT 2026-06-23].
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+- of(Object,long) / of(Object,int,int) Object-keyed factories absent | AnyAppend.java | Low | Same
+  cosmetic parity gap as AnyIncrement; resolve via the unified factory set (SUMMARY). Confirming check:
+  confirm a real caller needs Object-keyed forms.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+- setAttribute(String,byte[]) | AnyAppend.java:635 | Medium | REDUNDANT — observationally equivalent to
+  the inherited base setAttribute(String,Object) (AnyOperationWithAttributes.java:143) since toValueBytes
+  is identity for byte[] (HBaseExecutor.java:3029-3030). Remove it (or add symmetrically to all four).
+  Recommend remove for a uniform surface.
+
+CROSS-CLASS NOTES
+- add(Cell) `throws` divergence vs Put/Delete/Increment is a faithful HBase mirror, NOT a defect
+  (corrects an earlier draft claim of "swallowing").
+- setAttribute(String,byte[]) redundancy shared with AnyIncrement — see SUMMARY.

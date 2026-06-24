@@ -1,0 +1,151 @@
+API DESIGN REVIEW — CqlBuilder (Cassandra CQL fluent builder)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java
+Reviewer: opus-4.8  Date: 2026-06-23
+Scope: PUBLIC methods/factories DECLARED in this class and its nested public Dsl class.
+       Methods INHERITED from AbstractQueryBuilder (into/from/set/where/groupBy/having/
+       orderBy/limit/offset/join/union/distinct/build/query/append…) are NOT re-flagged as
+       per-method findings — mirroring of SQLBuilder is by-design. CQL-validity concerns about
+       a few inherited verbs are recorded in CROSS-CLASS NOTES only.
+Baselines: abacus-query 4.8.0 SQLBuilder.java + AbstractQueryBuilder.java (the SQL twin).
+
+================================================================================
+SUMMARY
+================================================================================
+CqlBuilder is the CQL analogue of SQLBuilder: a thin subclass of AbstractQueryBuilder
+plus a nested immutable Dsl factory and 12 predefined Dsl constants (SCCB/ACCB/LCCB raw,
+PSB/PSC/PAC/PLC positional, NSB/NSC/NAC/NLC named). The statement-factory family
+(insert/batchInsert/update/delete/deleteFrom/select/selectFrom/count/parse) mirrors
+SQLBuilder closely and is internally consistent: null/empty validation is uniform, the
+varargs/Collection/Map/Class/entity overload set is complete and parallel across verbs,
+and the Cassandra-specific clause methods (usingTTL, usingTimestamp, onlyIf/iF, ifExists,
+ifNotExists, allowFiltering) are well-formed with correct clause-ordering logic.
+
+The one clearly ACTIONABLE finding is NAMING DRIFT against the modernized SQL twin: the
+standalone-condition factory is named parse(Condition, Class) here, but SQLBuilder 4.8.0
+renamed the same operation to renderCondition(Condition, Class) and @Deprecated the old
+fromCondition name. CqlBuilder thus carries a third, divergent name for an identical
+operation. Everything else is minor (a couple of doc/overload observations) or by-design.
+
+================================================================================
+1. FUNCTIONALITY
+================================================================================
+[F1] insert(Map<String,Object>) vs select(Map<String,String>) — Map-arg semantic overload
+     | CqlBuilder.java:1421 (insert) / :2124 (select) | Low
+  Two statement factories accept a single Map but the Map means OPPOSITE things:
+  insert(Map) = property->VALUE (data to insert), select(Map) = property->ALIAS (column
+  rename). This is inherited from SQLBuilder's design and is documented, but it is a known
+  builder foot-gun: a caller passing a Map<String,Object> alias map to select, or a
+  Map<String,String> name/value map to insert, gets silently wrong CQL with no type error
+  on the raw-types path. No change recommended (it mirrors the twin and changing it breaks
+  parity), but worth noting in the cross-class section as an inherent ambiguity.
+  - Low -> confirming check: already verified both signatures and Javadocs differ in intent.
+
+================================================================================
+2. NAMING
+================================================================================
+[N1] Dsl.parse(Condition cond, Class entityClass) | CqlBuilder.java:2520 | Medium  (PRIMARY FINDING)
+  Builds a condition-only builder (no SELECT/FROM, just the rendered condition) — identical
+  body to SQLBuilder's standalone-condition factory (sets _isForConditionOnly, append(cond)).
+  The SQL twin (abacus-query 4.8.0) renamed this exact operation:
+      SQLBuilder.renderCondition(Condition, Class)   <- current name (SQLBuilder.java:1817)
+      SQLBuilder.fromCondition(Condition, Class)      <- @Deprecated alias (SQLBuilder.java:1839)
+  CqlBuilder still calls it `parse`, a THIRD name for the same thing. `parse` is also a poor
+  verb here: it does not parse anything — it RENDERS a condition to CQL.
+  - Recommendation: add Dsl.renderCondition(Condition, Class) mirroring the twin, and either
+    @Deprecate `parse` (delegating to renderCondition) or keep it as a documented alias.
+    Aligns CqlBuilder with the modernized SQLBuilder vocabulary and fixes the misleading verb.
+  - Low -> confirming check: diff the two method bodies — already confirmed byte-for-byte
+    equivalent modulo type name (CqlBuilder vs SqlBuilder).
+
+[N2] onlyIf(...) preferred over iF(...) — naming pair is fine (NO ACTION)
+  onlyIf(String)/onlyIf(Condition) delegate to iF(String)/iF(Condition); Javadoc explicitly
+  states onlyIf is preferred and iF is retained only because `if` is a Java keyword. This is
+  a clean, well-documented "primary + keyword-workaround alias" pair. Recorded as a non-issue
+  so it is not mistaken for drift. (Note: iF is NOT @Deprecated and arguably should not be —
+  it is the verbatim-clause spelling; leaving as-is is reasonable.)
+
+================================================================================
+3. RETURN TYPE
+================================================================================
+None actionable. Every declared statement factory returns a fresh CqlBuilder; every
+clause method (usingTTL/usingTimestamp/onlyIf/iF/ifExists/ifNotExists/allowFiltering)
+returns `this` (fluent) — consistent with the builder contract. Terminal SP/String comes
+only from the inherited build()/query() family. No mixed terminal/fluent confusion.
+
+================================================================================
+4. PARAMETERS
+================================================================================
+[P1] usingTimestamp(String) unit contract differs from its sibling overloads | CqlBuilder.java:496 | Low
+  usingTimestamp(Date) and usingTimestamp(long) take MILLISECONDS and internally *1000 to
+  microseconds (Math.multiplyExact). usingTimestamp(String) appends the value VERBATIM and
+  the caller must supply MICROSECONDS. So within one overload family the unit silently
+  changes by 1000x depending on which overload you pick. It IS documented (the String
+  Javadoc calls this out), but per ground-rule 5 a documented inconsistency is still an
+  inconsistency: the same verb with the same conceptual argument should not switch units.
+  - Recommendation: either treat the String as a microsecond literal AND rename/clarify
+    (e.g. document as "raw micros literal"), or — for true parity — have the String overload
+    also assume millis and convert. Lowest-risk fix: keep behavior, strengthen the Javadoc
+    @param to lead with "MICROSECONDS (unlike the long/Date overloads)". Currently the note
+    is buried below the description.
+  - Low -> confirming check: already traced usingTimestamp(long) -> *1000; String -> as-is.
+
+[P2] repeatPlaceholders(int) / repeatQM(int) | CqlBuilder.java:301 / :334 | NO ACTION (see §6)
+  Clean: repeatQM is already @Deprecated and forwards to repeatPlaceholders. Both validate
+  non-negative count. Listed under deprecation, not a parameter defect.
+
+================================================================================
+5. CLASS PLACEMENT
+================================================================================
+None actionable. Statement factories correctly live on the immutable nested Dsl (so the
+12 constants can expose them); stateful clause methods correctly live on CqlBuilder
+itself. repeatPlaceholders/repeatQM are static utilities appropriately placed on the outer
+class. Mirrors SQLBuilder's layout exactly.
+
+================================================================================
+6. DEPRECATION CANDIDATES
+================================================================================
+[D1] repeatQM(int) | CqlBuilder.java:334 | NO ACTION — already @Deprecated, forwards to
+  repeatPlaceholders(int). Correct.
+
+[D2] Raw-CQL Dsl constants SCCB / ACCB / LCCB | CqlBuilder.java:167 / :176 / :186 | NO ACTION
+  Already @Deprecated with a clear CQL-injection rationale and a documented PSC/NSC migration
+  path. Correctly handled.
+
+[D3] parse(Condition, Class) | CqlBuilder.java:2520 | Medium — see [N1]. If renderCondition
+  is introduced, `parse` becomes a deprecation candidate (mirror SQLBuilder's
+  fromCondition @Deprecated pattern). Until then it is the only public name and must stay.
+
+No new deprecation candidates beyond the above.
+
+================================================================================
+CROSS-CLASS NOTES
+================================================================================
+SQLBuilder mirroring (BY-DESIGN — do not "fix"):
+  * insert/update/delete/deleteFrom/select/selectFrom/count/batchInsert overload sets are
+    parallel to SQLBuilder's and complete (String / String... / Collection / Map / Object /
+    Class, with and without excludedPropNames; selectFrom telescoping alias+subentity+exclude).
+    No missing builder verb relative to the twin.
+  * count(String)/count(Class) == select(COUNT_ALL_LIST).from(...) — identical to SQLBuilder.
+  * Double-quoted select aliases (AS "firstName") and the entity-class auto-alias behavior
+    match the twin and the executors map results back; not a CQL defect.
+
+NAMING DRIFT vs the MODERNIZED twin (ACTIONABLE — [N1]/[D3]):
+  * Standalone-condition factory: CqlBuilder.parse  vs  SQLBuilder.renderCondition (+
+    @Deprecated fromCondition). CqlBuilder should adopt renderCondition for vocabulary parity.
+
+Object[] vs varargs vs Collection ambiguity:
+  * The classic risk (an Object[]/List argument being read as varargs OR as a single value)
+    is AVOIDED here: insert/select/delete expose explicit String... AND Collection<String>
+    overloads, and entity/Class/Map have their own typed overloads, so there is no
+    Object-vs-Object[] collision. The only residual ambiguity is the SEMANTIC Map overload
+    in [F1] (alias-map vs value-map), not a varargs-spreading hazard.
+
+Inherited verbs that are NOT valid Cassandra CQL (surface-area note, not a per-method finding):
+  * groupBy / having / join / leftJoin / rightJoin / union / offset are inherited from
+    AbstractQueryBuilder and return CqlBuilder, but Cassandra CQL supports none of them; they
+    will silently emit invalid CQL. OR-junctions ARE explicitly guarded (appendCondition
+    throws "OR conditions are not supported by Cassandra CQL"), and ((a) AND (b)) nesting is
+    deliberately flattened — so the guarding is selective. limit() IS valid CQL. distinct()
+    maps to CQL SELECT DISTINCT but only legal on partition keys. Hardening these inherited
+    SQL-only verbs (override to throw, like the OR guard) would be a defensive improvement,
+    but it is a base-class-interaction concern, out of scope for this class's declared API.

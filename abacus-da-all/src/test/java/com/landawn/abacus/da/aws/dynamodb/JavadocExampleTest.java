@@ -77,15 +77,15 @@ public class JavadocExampleTest {
     }
 
     /**
-     * Test examples from v2/DynamoDBExecutor.java attrValueUpdateOf (line 474)
+     * Test examples from v2/DynamoDBExecutor.java toAttributeValueUpdate (line 474)
      */
     @Test
     public void testV2DynamoDBExecutor_AttrValueUpdateOf_Simple() {
         // Example from line 474-485
         Map<String, AttributeValueUpdate> updates = new HashMap<>();
-        updates.put("name", com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.attrValueUpdateOf("John Doe"));
-        updates.put("age", com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.attrValueUpdateOf(30));
-        updates.put("lastLogin", com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.attrValueUpdateOf(Instant.now().toString()));
+        updates.put("name", com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toAttributeValueUpdate("John Doe"));
+        updates.put("age", com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toAttributeValueUpdate(30));
+        updates.put("lastLogin", com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toAttributeValueUpdate(Instant.now().toString()));
 
         UpdateItemRequest.Builder requestBuilder = UpdateItemRequest.builder()
                 .tableName("Users")
@@ -101,35 +101,35 @@ public class JavadocExampleTest {
     }
 
     /**
-     * Test examples from v2/DynamoDBExecutor.java attrValueUpdateOf with actions (line 519)
+     * Test examples from v2/DynamoDBExecutor.java toAttributeValueUpdate with actions (line 519)
      */
     @Test
     public void testV2DynamoDBExecutor_AttrValueUpdateOf_WithActions() {
         // Example from line 519-542
         // Replace attribute value
-        AttributeValueUpdate put = com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.attrValueUpdateOf("updated name", AttributeAction.PUT);
+        AttributeValueUpdate put = com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toAttributeValueUpdate("updated name", AttributeAction.PUT);
         assertNotNull(put);
         assertEquals(AttributeAction.PUT, put.action());
 
         // Increment a numeric counter
-        AttributeValueUpdate increment = com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.attrValueUpdateOf(1, AttributeAction.ADD);
+        AttributeValueUpdate increment = com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toAttributeValueUpdate(1, AttributeAction.ADD);
         assertNotNull(increment);
         assertEquals(AttributeAction.ADD, increment.action());
 
         // Decrement a numeric value
-        AttributeValueUpdate decrement = com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.attrValueUpdateOf(-5, AttributeAction.ADD);
+        AttributeValueUpdate decrement = com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toAttributeValueUpdate(-5, AttributeAction.ADD);
         assertNotNull(decrement);
         assertEquals(AttributeAction.ADD, decrement.action());
 
         // Delete an attribute entirely
-        AttributeValueUpdate delete = com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.attrValueUpdateOf(null, AttributeAction.DELETE);
+        AttributeValueUpdate delete = com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toAttributeValueUpdate(null, AttributeAction.DELETE);
         assertNotNull(delete);
         assertEquals(AttributeAction.DELETE, delete.action());
 
         // Use in UpdateItem operation
         Map<String, AttributeValueUpdate> updates = new HashMap<>();
         updates.put("loginCount", increment);
-        updates.put("lastLogin", com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.attrValueUpdateOf(Instant.now().toString()));
+        updates.put("lastLogin", com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toAttributeValueUpdate(Instant.now().toString()));
 
         UpdateItemRequest request = UpdateItemRequest.builder()
                 .tableName("Users")
@@ -201,22 +201,22 @@ public class JavadocExampleTest {
     }
 
     /**
-     * Test attrValueOf method with different types
+     * Test toAttributeValue method with different types
      */
     @Test
     public void testV2DynamoDBExecutor_AttrValueOf_DifferentTypes() {
         // String value
-        AttributeValue stringAttr = com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.attrValueOf("test");
+        AttributeValue stringAttr = com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toAttributeValue("test");
         assertNotNull(stringAttr);
         assertEquals("test", stringAttr.s());
 
         // Number value
-        AttributeValue numberAttr = com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.attrValueOf(42);
+        AttributeValue numberAttr = com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toAttributeValue(42);
         assertNotNull(numberAttr);
         assertEquals("42", numberAttr.n());
 
         // Boolean value
-        AttributeValue boolAttr = com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.attrValueOf(true);
+        AttributeValue boolAttr = com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toAttributeValue(true);
         assertNotNull(boolAttr);
         assertTrue(boolAttr.bool());
     }
@@ -311,7 +311,7 @@ public class JavadocExampleTest {
     @Test
     public void testV2DynamoDBExecutor_NullHandling() {
         // Test that DELETE action can handle null value (as shown in line 530)
-        AttributeValueUpdate delete = com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.attrValueUpdateOf(null, AttributeAction.DELETE);
+        AttributeValueUpdate delete = com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toAttributeValueUpdate(null, AttributeAction.DELETE);
         assertNotNull(delete);
         assertEquals(AttributeAction.DELETE, delete.action());
     }
@@ -385,7 +385,7 @@ public class JavadocExampleTest {
         UpdateItemRequest updateRequest = UpdateItemRequest.builder()
                 .tableName("Users")
                 .key(com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.asKey("userId", "user123"))
-                .attributeUpdates(Map.of("status", com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.attrValueUpdateOf("active")))
+                .attributeUpdates(Map.of("status", com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toAttributeValueUpdate("active")))
                 .build();
 
         assertNotNull(updateRequest);

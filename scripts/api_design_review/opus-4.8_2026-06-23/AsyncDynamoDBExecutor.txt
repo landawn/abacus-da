@@ -1,0 +1,40 @@
+API DESIGN REVIEW — aws/dynamodb/AsyncDynamoDBExecutor.java  (AWS SDK v1, async)
+public final class AsyncDynamoDBExecutor
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+
+1. OVERALL ASSESSMENT
+A clean, thin async twin of the v1 DynamoDBExecutor: every public method is a one-line
+asyncExecutor.execute(() -> dbExecutor.<same>(...)) delegation returning ContinuableFuture<sync-payload>.
+Symmetry is strong and matches the library async convention (verified: 126 ContinuableFuture, 0
+CompletableFuture — consistent with AsyncHBaseExecutor/AsyncCassandraExecutor). sync() accessor + fixed
+AsyncExecutor (no per-call Executor overloads — also absent in siblings, so not a gap). Only one item.
+
+2. NAMING ISSUES
+None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- query(QueryRequest,Class<T>) declares an unused <T> | AsyncDynamoDBExecutor.java:1674 | High | The
+  return is ContinuableFuture<Dataset> (always untyped), so <T> is dead and falsely implies a T-typed
+  result. The sync sibling correctly uses Class<?> (DynamoDBExecutor.java:2815). Change to
+  ContinuableFuture<Dataset> query(QueryRequest, Class<?> targetClass). (All other Class<T> async methods —
+  getItem/list/stream/scan/batchGetItem — genuinely thread T and are fine.)
+
+4. MISPLACED METHODS
+None. Static helpers/config accessors/close() are correctly NOT mirrored async (consistent with siblings).
+
+5. MISSING METHODS
+None.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+None. (The lone sync @Deprecated is on nested ConditionBuilder.create(), not part of the async surface.)
+
+CROSS-CLASS NOTES
+- ContinuableFuture async convention upheld here — contrast with the v2 async twin (CompletableFuture).
+- The phantom-<T> on query is part of a recurring micro-pattern (also BigQuery queryForSingleValue,
+  Cassandra query(Class<T>,Condition)); consolidate in SUMMARY.
+
+--- DOC-FIX PASS 2026-06-23 ---
+Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its
+findings are code/design (see SUMMARY.txt section 2), or any doc-adjacent item was evaluated and
+intentionally left (documenting it would paper over a behavioral/design issue, or it is dead-comment
+cleanup deferred to the maintainer). `mvn -o clean compile` remains green.

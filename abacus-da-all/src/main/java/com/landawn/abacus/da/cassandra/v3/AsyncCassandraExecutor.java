@@ -43,6 +43,7 @@ import com.landawn.abacus.util.stream.Stream;
  * @see CassandraExecutor
  * @see com.landawn.abacus.da.cassandra.AsyncCassandraExecutor
  */
+@Deprecated
 public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row, ResultSet, Statement, PreparedStatement, BatchStatement.Type> {
 
     private final CassandraExecutor cassandraExecutor;
@@ -148,6 +149,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param rowMapper function that converts the column definitions and each row into a result object
      * @param parameters the query parameters
      * @return a future that completes with a Stream of mapped results
+     * @throws IllegalArgumentException if rowMapper is null
      */
     public <T> ContinuableFuture<Stream<T>> stream(final String query, final BiFunction<ColumnDefinitions, Row, T> rowMapper, final Object... parameters) {
         N.checkArgNotNull(rowMapper, "rowMapper");
@@ -189,6 +191,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param statement the statement to execute
      * @param rowMapper function that converts the column definitions and each row into a result object
      * @return a future that completes with a Stream of mapped results
+     * @throws IllegalArgumentException if rowMapper is null
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Statement statement, final BiFunction<ColumnDefinitions, Row, T> rowMapper) {
         N.checkArgNotNull(rowMapper, "rowMapper");

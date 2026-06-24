@@ -1,0 +1,147 @@
+API DESIGN REVIEW — AsyncHBaseExecutor
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AsyncHBaseExecutor.java (public final class, ~2084 lines)
+Sync sibling: abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java
+Reviewer: opus-4.8  Date: 2026-06-23
+Scope: all PUBLIC methods. REPORT-ONLY (no source modified).
+
+================================================================================
+1. OVERALL ASSESSMENT
+================================================================================
+AsyncHBaseExecutor is a textbook async wrapper: every public method is a thin
+ContinuableFuture-returning delegate to the identically-named HBaseExecutor
+method, submitted on a single shared AsyncExecutor. The operational surface
+(exists / get / scan / put / delete / mutateRow / append / increment /
+incrementColumnValue / coprocessorService / batchCoprocessorService, plus
+sync()) mirrors HBaseExecutor's data-plane methods exactly in name, overload
+shape, parameter order, generic signatures, and value-returning vs. void
+(here Void) semantics. Javadoc is thorough and matches behavior, including the
+documented contrast that the typed batch get() drops missing rows while the
+untyped batch get() preserves them positionally. The class is healthy; the only
+actionable items are (a) one return-type convention question that applies to the
+whole "void-op" family (ContinuableFuture<Void> resolving to null vs. a cleaner
+sentinel), and (b) deliberate gaps relative to the sync class — most notably the
+absence of any async mapper() facade — which are by-design but worth recording.
+No naming defects, no misplaced methods, no overload-family inconsistencies were
+found.
+
+================================================================================
+2. NAMING ISSUES
+================================================================================
+None. Every method name matches its HBaseExecutor counterpart exactly, and the
+generic type parameters mirror the sync class (e.g. coprocessorService uses
+<T extends Service, R> in both AsyncHBaseExecutor:1932 and HBaseExecutor:2778).
+sync() is an accurate, conventional name for "unwrap to the synchronous executor"
+(AsyncHBaseExecutor.java:155).
+
+================================================================================
+3. RETURN-TYPE AND PARAMETER ISSUES
+================================================================================
+
+[R1] void-result family returns ContinuableFuture<Void> that resolves to null
+     put(...) (4 overloads) | AsyncHBaseExecutor.java:1181,1222,1259,1300
+     delete(...) (4 overloads) | AsyncHBaseExecutor.java:1341,1381,1419,1459
+     mutateRow(...) (2 overloads) | AsyncHBaseExecutor.java:1501,1544
+     coprocessorService(...,Batch.Callback) | AsyncHBaseExecutor.java:1979
+     batchCoprocessorService(...,Batch.Callback) | AsyncHBaseExecutor.java:2076
+     | Confidence: Low
+     | Observation: the sync siblings are `void` methods, so wrapping them as
+       ContinuableFuture<Void> is the standard and correct async convention; the
+       lambdas explicitly `return null`. The only design nit is purely cosmetic:
+       the Javadoc examples assign the result to `Object done = ...get()` and say
+       "returns null on success", which is the natural consequence of Void. This
+       is the established async-pattern across the library, so it is consistent
+       and NOT a defect.
+     | Recommendation: keep as-is (ContinuableFuture<Void> is the right mirror of
+       a void sync method). No change.
+     | Confirming check (Low): grep other Async* wrappers in the codebase to
+       confirm ContinuableFuture<Void> is the house convention for void ops; if
+       so this entry is purely informational and can be dropped.
+
+No other return-type or parameter issues. Specifically verified as CONSISTENT
+(not findings):
+ - Optional-vs-null: no method returns Optional in either class; get(...) returns
+   the raw Result/T (possibly empty/null) in both, matching the sync sibling
+   (HBaseExecutor.java:1573,1713). Correct mirror.
+ - Stream-returning scans: ContinuableFuture<Stream<Result>> / <Stream<T>> all
+   mirror HBaseExecutor scan(...) exactly; Javadoc correctly warns the Stream
+   owns the scanner and the future resolves before lazy consumption opens the
+   table (AsyncHBaseExecutor.java:667–1147 vs HBaseExecutor.java:1826–2170).
+ - incrementColumnValue: all four overloads (String fam/qual ±Durability, byte[]
+   fam/qual ±Durability) preserve sync parameter order and the (Object rowKey)
+   type (AsyncHBaseExecutor.java:1734,1772,1810,1850 vs HBaseExecutor.java:2609,
+   2637,2663,2700). Returns ContinuableFuture<Long> wrapping sync `long`. Correct.
+ - No Executor/per-call AsyncExecutor parameter appears on any method; the single
+   constructor-supplied AsyncExecutor backs every call uniformly. Consistent.
+
+================================================================================
+4. MISPLACED METHODS (with target class)
+================================================================================
+None. Every method belongs on the async facade. sync() is correctly placed here
+(it is the unwrap accessor and has no sync-side equivalent — HBaseExecutor.async()
+is its mirror, HBaseExecutor.java:342).
+
+================================================================================
+5. MISSING METHODS (operations present on HBaseExecutor but absent here)
+================================================================================
+
+[M1] No async mapper() facade
+     HBaseExecutor.mapper(Class) | HBaseExecutor.java:1327
+     HBaseExecutor.mapper(Class, String, NamingPolicy) | HBaseExecutor.java:1379
+     | Confidence: Medium
+     | Observation: HBaseExecutor exposes a typed HBaseMapper<T,K> facade; there
+       is no async counterpart on AsyncHBaseExecutor and no AsyncHBaseMapper class
+       in the package (confirmed: package contains no Async* mapper file). Users
+       who want async entity-level CRUD must drop to async.sync().mapper(...) and
+       lose the ContinuableFuture surface for mapper operations.
+     | Recommendation: this is a by-design gap (mirroring it requires a whole new
+       AsyncHBaseMapper type). If async entity CRUD is a goal, add
+       AsyncHBaseExecutor.mapper(...) returning an AsyncHBaseMapper that wraps the
+       sync mapper on the same AsyncExecutor. Otherwise document the gap on the
+       class Javadoc ("entity mapping is synchronous-only; use sync().mapper()").
+     | Confirming check: none needed — verified no AsyncHBaseMapper exists via
+       package listing.
+
+[M2] Infrastructure/accessor methods intentionally not mirrored — NOT findings
+     admin() (HBaseExecutor.java:296), connection() (:318), getTable(String)
+     (:1271), close() (:3103), registerRowKeyProperty (static, :385),
+     static toList/toEntity (:574,:610,:731), constructors.
+     | Confidence: High (that these are correctly omitted)
+     | Rationale: these are connection-lifecycle, table-handle, static utility,
+       and construction concerns — not data-plane operations. Wrapping them in a
+       future would add no value (they do not block on HBase I/O in a way that
+       benefits from async) and lifecycle (close) must remain on the owning sync
+       executor. Reachable via sync() when needed. No action.
+
+================================================================================
+6. DEPRECATION / REMOVAL CANDIDATES (with replacement APIs)
+================================================================================
+None. No method in AsyncHBaseExecutor is @Deprecated, and none should be.
+Note: the commented-out existsAll(...) overloads (AsyncHBaseExecutor.java:233–250,
+326–330) were already removed in favor of exists(List)/exists(Collection); the
+async class correctly does NOT expose them, matching the same removal in
+HBaseExecutor (commented at HBaseExecutor.java:1477,1542). Healthy.
+
+================================================================================
+CROSS-CLASS NOTES (symmetry with HBaseExecutor; async return-type convention)
+================================================================================
+- 1:1 operational symmetry: every data-plane public method of HBaseExecutor has
+  exactly one async counterpart, same name, same overload family, same parameter
+  order and generics. No async-only operations and no sync-only data-plane
+  operations exist. The mirror is complete and disciplined.
+- Async return-type convention is applied uniformly and correctly:
+    sync T            -> ContinuableFuture<T>       (exists->Boolean, get->Result/T,
+                                                     append/increment->Result,
+                                                     incrementColumnValue->Long,
+                                                     coprocessorService map->Map)
+    sync Stream<X>    -> ContinuableFuture<Stream<X>> (scan family)
+    sync void         -> ContinuableFuture<Void>    (put/delete/mutateRow and the
+                                                     two callback coprocessor ops)
+  This matches the convention documented on the class header (AsyncHBaseExecutor.java:40–113).
+- Deliberate asymmetries (all acceptable): sync() (async-only unwrap; mirror of
+  HBaseExecutor.async()); no async mapper/admin/connection/getTable/close/static
+  utilities (lifecycle + non-data-plane, intentionally sync-only).
+- Threading model is uniform: a single constructor-supplied AsyncExecutor backs
+  every method; no per-call Executor overload exists or is needed.
+
+OVERALL: clean, consistent, no must-fix items. M1 (async mapper) is the only
+substantive design decision worth confirming; R1 is informational.

@@ -1075,6 +1075,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see MongoCollectionExecutor#queryForBoolean(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
      */
+    @Beta
     public ContinuableFuture<OptionalBoolean> queryForBoolean(final String propName, final Bson filter) {
         return asyncExecutor.execute(() -> collectionExecutor.queryForBoolean(propName, filter));
     }
@@ -1111,6 +1112,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see MongoCollectionExecutor#queryForChar(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
      */
+    @Beta
     public ContinuableFuture<OptionalChar> queryForChar(final String propName, final Bson filter) {
         return asyncExecutor.execute(() -> collectionExecutor.queryForChar(propName, filter));
     }
@@ -1147,6 +1149,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see MongoCollectionExecutor#queryForByte(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
      */
+    @Beta
     public ContinuableFuture<OptionalByte> queryForByte(final String propName, final Bson filter) {
         return asyncExecutor.execute(() -> collectionExecutor.queryForByte(propName, filter));
     }
@@ -1183,6 +1186,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see MongoCollectionExecutor#queryForShort(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
      */
+    @Beta
     public ContinuableFuture<OptionalShort> queryForShort(final String propName, final Bson filter) {
         return asyncExecutor.execute(() -> collectionExecutor.queryForShort(propName, filter));
     }
@@ -1222,6 +1226,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see MongoCollectionExecutor#queryForInt(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
      */
+    @Beta
     public ContinuableFuture<OptionalInt> queryForInt(final String propName, final Bson filter) {
         return asyncExecutor.execute(() -> collectionExecutor.queryForInt(propName, filter));
     }
@@ -1258,6 +1263,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see MongoCollectionExecutor#queryForLong(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
      */
+    @Beta
     public ContinuableFuture<OptionalLong> queryForLong(final String propName, final Bson filter) {
         return asyncExecutor.execute(() -> collectionExecutor.queryForLong(propName, filter));
     }
@@ -1295,6 +1301,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see MongoCollectionExecutor#queryForFloat(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
      */
+    @Beta
     public ContinuableFuture<OptionalFloat> queryForFloat(final String propName, final Bson filter) {
         return asyncExecutor.execute(() -> collectionExecutor.queryForFloat(propName, filter));
     }
@@ -1332,6 +1339,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see MongoCollectionExecutor#queryForDouble(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
      */
+    @Beta
     public ContinuableFuture<OptionalDouble> queryForDouble(final String propName, final Bson filter) {
         return asyncExecutor.execute(() -> collectionExecutor.queryForDouble(propName, filter));
     }
@@ -1368,6 +1376,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see MongoCollectionExecutor#queryForString(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
      */
+    @Beta
     public ContinuableFuture<Nullable<String>> queryForString(final String propName, final Bson filter) {
         return asyncExecutor.execute(() -> collectionExecutor.queryForString(propName, filter));
     }
@@ -1406,6 +1415,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see MongoCollectionExecutor#queryForDate(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
      */
+    @Beta
     public ContinuableFuture<Nullable<Date>> queryForDate(final String propName, final Bson filter) {
         return asyncExecutor.execute(() -> collectionExecutor.queryForDate(propName, filter));
     }

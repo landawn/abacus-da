@@ -1,0 +1,41 @@
+API DESIGN REVIEW — mongodb/AnyUtil.java
+public final class AnyUtil
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+
+1. OVERALL ASSESSMENT
+AnyUtil is a one-method static helper (array2Props(Object[]) -> Map<String,Object>) that converts an
+alternating name/value array into a property map. Its single method is correct, but it is in the WRONG
+package and has a non-descriptive name.
+
+2. NAMING ISSUES
+- class name AnyUtil | AnyUtil.java:13 | Medium | "AnyUtil" is uninformative for a single
+  name/value-pair-to-Map helper. Rename to something descriptive (e.g. PropsUtil / NameValueArrays) or
+  fold the method into an existing shared util.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- array2Props(Object[]) | AnyUtil.java:70 | Low | Silently coerces non-String property names via
+  N.stringOf, whereas the analogous pair-parsing in MongoDBBase (toBson/toDocument varargs) rejects
+  non-String names with IllegalArgumentException. Align the two on one policy. Confirming check: compare
+  to MongoDBBase pair-parser null/type handling.
+
+4. MISPLACED METHODS
+- ENTIRE CLASS is misplaced | AnyUtil.java:13 | High | Lives in com.landawn.abacus.da.mongodb but has NO
+  mongodb caller; its only main-source users are aws/dynamodb/v2/DynamoDBExecutor.java:1021,1105
+  (verified by repo grep). Move it next to the DynamoDB v2 executor (or into a genuinely shared util
+  package), so the dependency direction (dynamodb -> mongodb) is removed.
+
+5. MISSING METHODS
+None.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+None (but see §4 — relocate rather than keep here).
+
+CROSS-CLASS NOTES
+- Cross-package coupling smell: a DynamoDB executor depending on a class in the mongodb package. Relocating
+  AnyUtil removes an accidental inter-module dependency.
+
+--- DOC-FIX PASS 2026-06-23 ---
+Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its
+findings are code/design (see SUMMARY.txt section 2), or any doc-adjacent item was evaluated and
+intentionally left (documenting it would paper over a behavioral/design issue, or it is dead-comment
+cleanup deferred to the maintainer). `mvn -o clean compile` remains green.

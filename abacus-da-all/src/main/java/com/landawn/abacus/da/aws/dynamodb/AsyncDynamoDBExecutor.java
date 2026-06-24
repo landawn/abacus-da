@@ -122,11 +122,11 @@ public final class AsyncDynamoDBExecutor {
 
     /**
      * Returns the underlying synchronous DynamoDBExecutor.
-     * 
+     *
      * <p>This method provides access to the wrapped synchronous executor, allowing you to
      * perform blocking operations when needed. This is useful when you need to mix
      * synchronous and asynchronous operations in your application.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AsyncDynamoDBExecutor asyncExecutor = ...;
@@ -147,11 +147,11 @@ public final class AsyncDynamoDBExecutor {
 
     /**
      * Asynchronously retrieves an item from the specified DynamoDB table.
-     * 
+     *
      * <p>This method performs an eventually consistent read by default. The returned
      * map contains attribute names as keys and their corresponding values as Java objects.
      * If the item doesn't exist, the future will complete with {@code null}.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValue> key = Map.of("userId", new AttributeValue("12345"));
@@ -341,17 +341,17 @@ public final class AsyncDynamoDBExecutor {
 
     /**
      * Asynchronously retrieves an item from the specified table with optional consistent read and converts it to the target type.
-     * 
+     *
      * <p>This method provides full control over read consistency while maintaining the benefits of asynchronous
      * execution and automatic type conversion. Strongly consistent reads ensure the most up-to-date data
      * but consume more read capacity and may have slightly higher latency.</p>
-     * 
+     *
      * <p><b>Read Consistency Impact:</b></p>
      * <ul>
      * <li><b>Eventually Consistent (false/null):</b> Lower latency, better throughput, lower cost</li>
      * <li><b>Strongly Consistent (true):</b> Guaranteed latest data, higher resource consumption</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValue> key = Map.of("accountId", new AttributeValue("ACC-456"));
@@ -391,11 +391,11 @@ public final class AsyncDynamoDBExecutor {
 
     /**
      * Asynchronously retrieves an item using a GetItemRequest and converts it to the target type.
-     * 
+     *
      * <p>This method provides the most flexibility by combining full request control with automatic type conversion.
      * You can use all DynamoDB features including projection expressions, consistent read options, and expression
      * attribute names while maintaining type safety and asynchronous execution benefits.</p>
-     * 
+     *
      * <p><b>Advanced Features Available:</b></p>
      * <ul>
      * <li>Projection expressions for retrieving specific attributes only</li>
@@ -403,7 +403,7 @@ public final class AsyncDynamoDBExecutor {
      * <li>Return consumed capacity for cost monitoring</li>
      * <li>Consistent read configuration per request</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * GetItemRequest request = new GetItemRequest()
@@ -444,11 +444,11 @@ public final class AsyncDynamoDBExecutor {
 
     /**
      * Asynchronously performs a batch get operation to retrieve multiple items from multiple tables.
-     * 
+     *
      * <p>This method can retrieve up to 100 items in a single call, with a maximum total size
      * of 16 MB. If any requested items are not found, they will simply be omitted from the
      * results. The operation performs eventually consistent reads by default.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * KeysAndAttributes keysAndAttrs = new KeysAndAttributes()
@@ -488,11 +488,11 @@ public final class AsyncDynamoDBExecutor {
 
     /**
      * Asynchronously performs a batch get operation with consumed capacity reporting.
-     * 
+     *
      * <p>This method extends the basic batch get by allowing you to track the read capacity consumed
      * by the operation asynchronously. This is particularly useful for monitoring and optimizing
      * your DynamoDB usage and costs in high-throughput async applications.</p>
-     * 
+     *
      * <p><b>Capacity Monitoring Benefits:</b></p>
      * <ul>
      * <li>Real-time capacity consumption tracking for cost optimization</li>
@@ -500,14 +500,14 @@ public final class AsyncDynamoDBExecutor {
      * <li>Debugging high-consumption operations</li>
      * <li>Compliance with capacity budget constraints</li>
      * </ul>
-     * 
+     *
      * <p><b>Return Consumed Capacity Options:</b></p>
      * <ul>
      * <li><b>INDEXES</b> - Returns capacity consumed by table and all indexes</li>
      * <li><b>TOTAL</b> - Returns only the total consumed capacity units</li>
      * <li><b>NONE</b> - No capacity details returned (default)</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * KeysAndAttributes userKeys = new KeysAndAttributes()
@@ -623,11 +623,11 @@ public final class AsyncDynamoDBExecutor {
 
     /**
      * Asynchronously performs a batch get operation with automatic type conversion.
-     * 
+     *
      * <p>This method retrieves multiple items from one or more tables and automatically converts
      * each item to the specified target type. This provides type safety and eliminates the need
      * for manual conversion from DynamoDB's AttributeValue format.</p>
-     * 
+     *
      * <p><b>Type Conversion Benefits:</b></p>
      * <ul>
      * <li>Compile-time type safety with generic return types</li>
@@ -635,7 +635,7 @@ public final class AsyncDynamoDBExecutor {
      * <li>Support for all standard Java types and custom POJOs</li>
      * <li>Null handling for missing attributes</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * KeysAndAttributes orderKeys = new KeysAndAttributes()
@@ -644,7 +644,7 @@ public final class AsyncDynamoDBExecutor {
      *         Map.of("orderId", new AttributeValue("ORDER-002"))
      *     ))
      *     .withProjectionExpression("orderId, customerId, total, status");
-     * 
+     *
      * Map<String, KeysAndAttributes> requestItems = Map.of("Orders", orderKeys);
      *
      * // Typical: callback over per-table lists of converted POJOs
@@ -680,11 +680,11 @@ public final class AsyncDynamoDBExecutor {
 
     /**
      * Asynchronously performs a batch get operation with type conversion and capacity monitoring.
-     * 
+     *
      * <p>This method combines automatic type conversion with capacity consumption tracking,
      * providing both type safety and performance monitoring in a single operation. This is
      * ideal for production applications that need both strong typing and cost optimization.</p>
-     * 
+     *
      * <p><b>Combined Benefits:</b></p>
      * <ul>
      * <li>Type-safe retrieval with automatic conversion</li>
@@ -692,7 +692,7 @@ public final class AsyncDynamoDBExecutor {
      * <li>Performance metrics for scaling decisions</li>
      * <li>Production-ready error handling and logging</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * KeysAndAttributes productKeys = new KeysAndAttributes()
@@ -700,7 +700,7 @@ public final class AsyncDynamoDBExecutor {
      *         .map(id -> Map.of("productId", new AttributeValue(id)))
      *         .collect(Collectors.toList()))
      *     .withConsistentRead(false);   // Use eventually consistent for cost savings
-     * 
+     *
      * Map<String, KeysAndAttributes> requestItems = Map.of("Products", productKeys);
      *
      * // Typical: callback over converted POJOs while requesting capacity reporting
@@ -776,11 +776,11 @@ public final class AsyncDynamoDBExecutor {
 
     /**
      * Asynchronously puts an item into the specified DynamoDB table.
-     * 
+     *
      * <p>This method creates a new item or replaces an existing item with the same primary key.
      * By default, no information about the previous item is returned. Use the overloaded method
      * with returnValues parameter to retrieve the old item attributes.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValue> item = new HashMap<>();
@@ -873,11 +873,11 @@ public final class AsyncDynamoDBExecutor {
 
     /**
      * Asynchronously puts an item using a complete PutItemRequest with AWS SDK v1.
-     * 
+     *
      * <p>This method provides maximum flexibility by accepting a fully configured PutItemRequest.
      * You can specify all DynamoDB PutItem parameters including condition expressions,
      * expected values, return value specifications, and capacity monitoring.</p>
-     * 
+     *
      * <p><b>Advanced Features Available:</b></p>
      * <ul>
      * <li>Conditional puts with expected value conditions</li>
@@ -885,7 +885,7 @@ public final class AsyncDynamoDBExecutor {
      * <li>Return consumed capacity for monitoring and optimization</li>
      * <li>Return item collection metrics for tables with local secondary indexes</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * PutItemRequest request = new PutItemRequest()
@@ -1118,15 +1118,15 @@ public final class AsyncDynamoDBExecutor {
 
     /**
      * Asynchronously updates specific attributes of an item in the specified DynamoDB table.
-     * 
+     *
      * <p>This method performs partial updates on an existing item, modifying only the specified
      * attributes while leaving other attributes unchanged. If the item doesn't exist, a new item
      * is created with the specified attributes (unless a conditional expression prevents it).</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValue> key = Map.of("userId", new AttributeValue("12345"));
-     * 
+     *
      * Map<String, AttributeValueUpdate> updates = new HashMap<>();
      * updates.put("lastLogin", new AttributeValueUpdate()
      *     .withAction(AttributeAction.PUT)
@@ -1225,11 +1225,11 @@ public final class AsyncDynamoDBExecutor {
 
     /**
      * Asynchronously updates an item using a complete UpdateItemRequest with AWS SDK v1.
-     * 
+     *
      * <p>This method provides maximum flexibility for update operations by accepting a fully
      * configured UpdateItemRequest. You can use attribute-based updates, conditional updates,
      * and access all DynamoDB update features available in SDK v1.</p>
-     * 
+     *
      * <p><b>Advanced Update Features:</b></p>
      * <ul>
      * <li>Attribute updates with PUT, ADD, and DELETE actions</li>
@@ -1238,7 +1238,7 @@ public final class AsyncDynamoDBExecutor {
      * <li>Atomic counters and set operations</li>
      * <li>Capacity consumption monitoring</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * UpdateItemRequest request = new UpdateItemRequest()
@@ -1289,11 +1289,11 @@ public final class AsyncDynamoDBExecutor {
 
     /**
      * Asynchronously deletes an item from the specified DynamoDB table.
-     * 
+     *
      * <p>This method removes an entire item from the table. If the item doesn't exist,
      * the operation completes successfully without error. By default, no information
      * about the deleted item is returned.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValue> key = Map.of(
@@ -1389,11 +1389,11 @@ public final class AsyncDynamoDBExecutor {
 
     /**
      * Asynchronously deletes an item using a complete DeleteItemRequest with AWS SDK v1.
-     * 
+     *
      * <p>This method provides maximum flexibility for delete operations by accepting a fully
      * configured DeleteItemRequest. You can use conditional deletes, return value specifications,
      * and monitor capacity consumption.</p>
-     * 
+     *
      * <p><b>Advanced Delete Features:</b></p>
      * <ul>
      * <li>Conditional deletes with expected attribute values</li>
@@ -1401,7 +1401,7 @@ public final class AsyncDynamoDBExecutor {
      * <li>Capacity consumption monitoring</li>
      * <li>Item collection metrics for tables with local secondary indexes</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * DeleteItemRequest request = new DeleteItemRequest()
@@ -1449,12 +1449,12 @@ public final class AsyncDynamoDBExecutor {
 
     /**
      * Asynchronously executes a DynamoDB query and returns all matching items as a list.
-     * 
+     *
      * <p>This method performs a query operation using the specified key conditions and optional
      * filter expressions. Query operations are efficient for retrieving items with a specific
      * partition key value and optional sort key conditions. All matching items are collected
      * into a list, handling pagination automatically.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * QueryRequest request = new QueryRequest()
@@ -1492,11 +1492,11 @@ public final class AsyncDynamoDBExecutor {
 
     /**
      * Asynchronously executes a query and returns all matching items as a typed list.
-     * 
+     *
      * <p>This method performs a Query operation that retrieves items with the same partition key,
      * applies any specified filter conditions, and converts each item to the specified target type.
      * It automatically handles pagination to return ALL matching items in a single list.</p>
-     * 
+     *
      * <p><b>Type Conversion Benefits:</b></p>
      * <ul>
      * <li>Compile-time type safety with generic return types</li>
@@ -1504,7 +1504,7 @@ public final class AsyncDynamoDBExecutor {
      * <li>Support for primitive types, collections, and custom POJOs</li>
      * <li>Null-safe handling of missing or null attributes</li>
      * </ul>
-     * 
+     *
      * <p><b>Important Notes:</b></p>
      * <ul>
      * <li>Automatically handles pagination - retrieves ALL results</li>
@@ -1512,7 +1512,7 @@ public final class AsyncDynamoDBExecutor {
      * <li>Results are loaded entirely into memory</li>
      * <li>Consider using stream() for very large result sets</li>
      * </ul>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * QueryRequest queryRequest = new QueryRequest()
@@ -1526,7 +1526,7 @@ public final class AsyncDynamoDBExecutor {
      *     .withExpressionAttributeValues(Map.of(
      *         ":status", new AttributeValue("SHIPPED")
      *     ));
-     * 
+     *
      * ContinuableFuture<List<Order>> future = executor.list(queryRequest, Order.class); // returns immediately; work runs on the AsyncExecutor
      *
      * // Typical: callback over the converted list
@@ -1561,11 +1561,11 @@ public final class AsyncDynamoDBExecutor {
 
     /**
      * Asynchronously executes a DynamoDB query and returns the results as a Dataset.
-     * 
+     *
      * <p>This method performs a query operation and converts the results into a {@link Dataset},
      * which provides a tabular view of the data with additional analytical capabilities.
      * The Dataset preserves column order and provides methods for data manipulation and analysis.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * QueryRequest request = new QueryRequest()
@@ -1575,7 +1575,7 @@ public final class AsyncDynamoDBExecutor {
      *     .withExpressionAttributeValues(Map.of(
      *         ":cat", new AttributeValue("Electronics")
      *     ));
-     * 
+     *
      * // Typical: callback over the resulting Dataset
      * asyncExecutor.query(request)
      *     .thenRunAsync(dataset -> {
@@ -1660,7 +1660,6 @@ public final class AsyncDynamoDBExecutor {
      * boolean empty = asyncExecutor.query(noMatchRequest, Sale.class).get().isEmpty(); // returns true
      * }</pre>
      *
-     * @param <T> the type to associate with the Dataset columns for type operations
      * @param queryRequest the QueryRequest specifying the query parameters including key conditions,
      *                    filter expressions, and projection, must not be {@code null}
      * @param targetClass the class to associate with the Dataset for type operations; if {@code null}
@@ -1671,18 +1670,18 @@ public final class AsyncDynamoDBExecutor {
      * @see #query(QueryRequest)
      * @see #list(QueryRequest, Class)
      */
-    public <T> ContinuableFuture<Dataset> query(final QueryRequest queryRequest, final Class<T> targetClass) {
+    public ContinuableFuture<Dataset> query(final QueryRequest queryRequest, final Class<?> targetClass) {
         return asyncExecutor.execute(() -> dbExecutor.query(queryRequest, targetClass));
     }
 
     /**
      * Asynchronously executes a DynamoDB query and returns the results as a Stream.
-     * 
+     *
      * <p>This method provides memory-efficient processing of query results by returning a
      * {@link Stream} that lazily fetches items as needed. This is ideal for processing
      * large result sets without loading all items into memory at once. The stream handles
      * pagination automatically.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * QueryRequest request = new QueryRequest()
@@ -1692,7 +1691,7 @@ public final class AsyncDynamoDBExecutor {
      *         ":uid", new AttributeValue("user123"),
      *         ":ts", new AttributeValue().withN("1609459200")
      *     ));
-     * 
+     *
      * // Typical: callback that consumes the lazy stream
      * asyncExecutor.stream(request)
      *     .thenRunAsync(stream -> {
@@ -1789,11 +1788,11 @@ public final class AsyncDynamoDBExecutor {
 
     /**
      * Asynchronously performs a scan operation on the specified DynamoDB table with attribute projection.
-     * 
+     *
      * <p>This method scans the entire table and returns a stream of items. Scan operations
      * examine every item in the table and are less efficient than query operations.
      * Use scans sparingly and consider adding appropriate filters to reduce data transfer.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<String> attributes = Arrays.asList("userId", "name", "email");
@@ -1827,11 +1826,11 @@ public final class AsyncDynamoDBExecutor {
 
     /**
      * Asynchronously performs a filtered scan operation on the specified DynamoDB table.
-     * 
+     *
      * <p>This method scans the entire table but only returns items that match the specified
      * filter conditions. Note that filtering is applied after reading items, so you're still
      * charged for reading all items in the table. Consider using Query operations when possible.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, Condition> scanFilter = new HashMap<>();
@@ -2004,10 +2003,10 @@ public final class AsyncDynamoDBExecutor {
 
     /**
      * Asynchronously performs a scan operation with attribute projection and type conversion.
-     * 
+     *
      * <p>This method scans the table, projects specific attributes, and converts each result
      * item to the specified target type, providing type-safe scan operations.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<String> attributes = Arrays.asList("userId", "name", "email");
@@ -2041,10 +2040,10 @@ public final class AsyncDynamoDBExecutor {
 
     /**
      * Asynchronously performs a scan operation with filter conditions and type conversion.
-     * 
+     *
      * <p>This method scans the table with filter conditions and converts each matching result
      * item to the specified target type, combining filtering with type safety.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, Condition> filter = new HashMap<>();
@@ -2081,10 +2080,10 @@ public final class AsyncDynamoDBExecutor {
 
     /**
      * Asynchronously performs a scan operation with projection, filtering, and type conversion.
-     * 
+     *
      * <p>This method provides the most comprehensive scan operation, combining attribute projection,
      * filter conditions, and automatic type conversion for maximum flexibility and type safety.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<String> attributes = Arrays.asList("productId", "name", "price");
@@ -2123,10 +2122,10 @@ public final class AsyncDynamoDBExecutor {
 
     /**
      * Asynchronously performs a scan operation using a ScanRequest with type conversion.
-     * 
+     *
      * <p>This method provides full scan operation control with automatic type conversion,
      * allowing you to use all advanced scan features while maintaining type safety.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ScanRequest request = new ScanRequest().withTableName("Users");

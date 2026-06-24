@@ -1,0 +1,87 @@
+API DESIGN REVIEW — AsyncDynamoDBExecutor (AWS SDK v1, async twin)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/AsyncDynamoDBExecutor.java (2159 lines)
+Sync sibling: abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java (5065 lines)
+Reviewer model: opus-4.8   Date: 2026-06-23
+
+RELATIONSHIP SUMMARY
+--------------------
+AsyncDynamoDBExecutor is a thin async wrapper: every public method is `return asyncExecutor.execute(() -> dbExecutor.<sameMethod>(...))`.
+It mirrors the *instance* (per-item) operations of DynamoDBExecutor and returns ContinuableFuture<X> where X is exactly the
+sync return type. This matches the library async convention (cassandra/hbase AsyncXxxExecutor): ContinuableFuture return,
+package-private constructor obtained via sync().async(), a `sync()` accessor returning the backing executor, AsyncExecutor
+fixed at construction, NO per-call Executor overloads (verified absent in AsyncCassandraExecutor and AsyncHBaseExecutor too).
+Neither class carries any @Beta. Sync has exactly one @Deprecated, on ConditionBuilder.create() — a nested static builder,
+not part of the async surface, so no @Beta/@Deprecated parity gap exists.
+
+Async public surface (38 methods incl. sync()): getItem x6, batchGetItem x6, putItem x3, batchWriteItem x2, updateItem x3,
+deleteItem x3, list x2, query x2, stream x2, scan x8, plus sync(). All have a 1:1 sync counterpart. There are two
+PACKAGE-PRIVATE entity overloads — putItem(String,Object) and putItem(String,Object,String) — deliberately non-public to
+avoid Map-vs-Object overload ambiguity (documented; matches sync rationale). By-design.
+
+=====================================================================
+1. FUNCTIONALITY
+=====================================================================
+No functional defects. Each wrapper faithfully delegates to the sync method with identical args and payload type.
+
+=====================================================================
+2. NAMING
+=====================================================================
+No issues. Every async method name matches its sync sibling exactly (getItem/batchGetItem/putItem/batchWriteItem/
+updateItem/deleteItem/list/query/stream/scan/sync). `sync()` accessor name matches the cassandra/hbase convention.
+
+=====================================================================
+3. RETURN TYPE
+=====================================================================
+[F1] query(QueryRequest, Class<T>) declares an unbounded type parameter <T> that NEVER appears in the return type
+     (return is ContinuableFuture<Dataset>, not parameterized by T). The sync sibling correctly uses a wildcard:
+     `Dataset query(QueryRequest, Class<?>)`. The async twin's `<T>` is a vestigial, unused type variable that adds
+     no type safety and diverges from the sync signature. See section 4 [F1] — same overload, one finding.
+
+All other return types are correct: ContinuableFuture wrapping the exact sync payload (Map/T/PutItemResult/Stream/Dataset/
+List/...). Nullable payloads (getItem -> null when absent) are preserved as nullable future payloads, consistent with the
+sync side which returns plain nullable values rather than Optional. No Optional-inside-future inconsistency.
+
+=====================================================================
+4. PARAMETERS
+=====================================================================
+[F1] query(QueryRequest queryRequest, Class<T> targetClass) | AsyncDynamoDBExecutor.java:1674 | HIGH
+     Async declares `<T> ContinuableFuture<Dataset> query(QueryRequest, Class<T>)`; sync declares
+     `Dataset query(QueryRequest, Class<?>)` (DynamoDBExecutor.java:2815). The async `<T>` is unused (does not constrain
+     or appear in the return). Mismatched generics between twin signatures; the async form falsely suggests the result is
+     typed by T. Recommendation: change async to `ContinuableFuture<Dataset> query(QueryRequest queryRequest,
+     Class<?> targetClass)` to mirror the sync sibling and drop the dead type variable. (The other Class-typed async
+     methods — getItem/list/stream/scan/batchGetItem — legitimately use <T> because T flows into their return type;
+     query is the lone exception because its result is always Dataset.)
+
+Parameter ordering, names, and Executor-param policy: all consistent with sync and with the async library convention
+(no per-call Executor overloads anywhere in the family — not a gap).
+
+=====================================================================
+5. CLASS PLACEMENT / MISSING METHODS
+=====================================================================
+Intentional, by-design omissions (static helpers / config / lifecycle — all correctly NOT mirrored async; consistent
+with cassandra/hbase async twins which also omit their sync static helpers):
+  - Static converters & builders: asKey/asItem/asUpdateItem, toAttributeValue(Update), toItem/toUpdateItem, toMap,
+    toEntity, toList, extractData, Mapper inner class, Filters/ConditionBuilder. Pure/static — no async form warranted.
+  - Config/accessors: dynamoDBClient(), dynamoDBMapper(...), mapper(...), async(). Synchronous by nature.
+  - close()/AutoCloseable: AsyncDynamoDBExecutor is not AutoCloseable and exposes no close(); resource ownership stays
+    with the sync executor reachable via sync(). Reasonable.
+No missing instance-operation overloads: the async getItem/batchGetItem/putItem/batchWriteItem/updateItem/deleteItem/
+list/query/stream/scan overload sets are a complete 1:1 match of the sync instance-operation overload sets.
+
+=====================================================================
+6. DEPRECATION / @Beta PARITY
+=====================================================================
+No deprecation candidates. No @Beta on either class. The single sync @Deprecated (ConditionBuilder.create(),
+DynamoDBExecutor.java:4736) lives in a nested builder not exposed asynchronously — no parity action needed.
+
+=====================================================================
+CROSS-CLASS NOTES
+=====================================================================
+- Symmetry with sync v1: STRONG. All 36 async data-operation methods + sync() map 1:1 onto sync instance methods.
+  The only signature divergence is [F1] (query's unused <T> vs sync's Class<?>).
+- Async return convention: COMPLIANT. ContinuableFuture<payload> throughout; nullable payloads preserved (no Optional),
+  matching the sync side and the hbase/cassandra/mongo twins.
+- @Beta parity: N/A — neither sync nor async uses @Beta; async twins elsewhere have been dropping @Beta the sync side
+  carries, but here the sync side carries none, so there is nothing to drop. No finding.
+- Executor-param parity: COMPLIANT — no per-call Executor overloads on any sibling async twin (verified hbase, cassandra).

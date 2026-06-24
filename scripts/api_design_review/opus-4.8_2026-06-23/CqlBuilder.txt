@@ -1,0 +1,54 @@
+API DESIGN REVIEW — cassandra/CqlBuilder.java
+public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder>
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> DOC-FIX PASS UPDATE (2026-06-23): the usingTimestamp(String) micros item (section 3) was evaluated
+    and found ALREADY-CORRECT (documented in 3 places) — no edit. See the [NO-ACTION] tag. All other
+    findings are code/design and remain open. <<<
+
+1. OVERALL ASSESSMENT
+CqlBuilder is the CQL analogue of the core SQLBuilder, with the same fluent statement-factory families
+(insert/update/delete/deleteFrom/select/selectFrom/count/batchInsert) and naming-policy "flavor"
+subclasses. The verb set is complete and parallel to SQLBuilder — no missing statement verb — and the
+Object[]-vs-varargs spreading hazard is correctly avoided (explicit String... + Collection<String> +
+typed Class/Map/entity overloads). Already-deprecated members (repeatQM, SCCB/ACCB/LCCB constants) carry
+correct migration paths. Findings are one naming item and two low-severity doc/ambiguity notes.
+
+2. NAMING ISSUES
+- parse(Condition,Class<?>) | CqlBuilder.java:2520 | Medium | Misnomer: the body RENDERS a condition
+  (creates a CqlBuilder, sets QUERY op + condition-only, appends the condition, returns the builder) —
+  verified it does not parse anything. The core SQLBuilder names this operation renderCondition(Condition,
+  Class) (and @Deprecated the older fromCondition). Recommend adding renderCondition and deprecating/
+  aliasing parse. Confirming check: compare to SQLBuilder.renderCondition/fromCondition in the
+  abacus-common dependency to confirm the canonical name.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- [NO-ACTION — ALREADY-CORRECT 2026-06-23] usingTimestamp(String) vs usingTimestamp(Date)/(long) |
+  CqlBuilder.java:496 | Low | Unit contract differs (Date/long take MILLIS and *1000 internally; the
+  String form is appended VERBATIM and must already be MICROS). Doc-fix pass re-verified: the micros
+  contract is ALREADY documented prominently in three places — a dedicated <b>Note:</b> paragraph
+  (475-478), the example comment "Caller must supply microseconds when using this overload", and the
+  @param ("should represent microseconds since Unix epoch"). No inaccuracy to fix; no edit made. (The
+  underlying 1000x-unit-switch overload design is a code/API matter, out of doc-fix scope.)
+- insert(Map<String,Object>) vs select(Map<String,String>) | CqlBuilder.java:1421 / 2124 | Low | The same
+  single-Map arg shape means opposite things (insert = property->value; select = property->alias).
+  Inherited/documented mirror of SQLBuilder; flagged for awareness, no fix recommended (parity).
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+None (verb coverage is complete vs SQLBuilder).
+
+6. DEPRECATION / REMOVAL CANDIDATES
+- repeatQM(int) | CqlBuilder.java:334 | (already @Deprecated) | KEEP; forwards to repeatPlaceholders.
+- SCCB/ACCB/LCCB raw-CQL constant builders | :167,176,186 | (already @Deprecated) | KEEP; correct
+  CQL-injection rationale + PSC/NSC migration path documented.
+
+OTHER (defensive-hardening, base-class concern, out of strict scope)
+- Inherited-but-CQL-invalid verbs groupBy/having/join/union/offset return CqlBuilder and silently emit
+  invalid CQL, whereas OR-junctions ARE guarded (throw) | CqlBuilder.java (inherited) | Low | Consider
+  overriding the CQL-invalid verbs to throw UnsupportedOperationException, matching the OR-junction guard.
+
+CROSS-CLASS NOTES
+- The parse->renderCondition naming drift is a concrete divergence from the SQLBuilder the class is meant
+  to mirror; the Object[]/varargs footgun (seen in MongoDBBase toBson) is NOT present here — good.

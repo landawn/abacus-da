@@ -1,0 +1,58 @@
+API DESIGN REVIEW — hbase/HBaseExecutor.java
+public final class HBaseExecutor implements AutoCloseable
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+
+1. OVERALL ASSESSMENT
+HBaseExecutor is a comprehensive, well-structured sync facade over the HBase Table API plus entity
+mapping (via @ColumnFamily/@Id and the Any* value objects). The get/scan/exists/put/delete/mutateRow/
+append/increment/incrementColumnValue families are symmetric and complete, and the surface is mirrored
+1:1 by AsyncHBaseExecutor. The choice to return bare T/Result (null/default) rather than Optional is
+applied consistently across the whole class and its async twin — recorded as intentional, not flagged.
+The actionable items are one genuine internal naming inconsistency, a documented behavioral divergence in
+the typed batch-get, and some dead commented-out code.
+
+2. NAMING ISSUES
+- get(...,Class<T> targetType) and scan(...,Class<T> targetType) families | HBaseExecutor.java:1713,1743,
+  1770,1801,2034,2060,2084,2110,2137,2170 | High | Rename param targetType -> targetClass. Verified:
+  HBaseExecutor itself uses targetClass 39x but targetType 14x (internally inconsistent), and the async
+  mirror AsyncHBaseExecutor uses targetClass exclusively (30x, 0 targetType). Pure param-name change.
+- incrementColumnValue(...) family | HBaseExecutor.java:2609,2637,2663,2700 | (KEEP) | Name is a verbatim
+  pass-through of Table.incrementColumnValue; do not rename.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- typed get(String,List<Get>,Class<T>) / get(...,Collection<AnyGet>,Class<T>) DROP empty (not-found)
+  rows, whereas the raw get(String,List<Get>) is positionally aligned (one Result per request, possibly
+  empty) | HBaseExecutor.java:1743,1801 vs 1609 | Medium | A real consistency trap: the typed and raw
+  batch-gets have different result cardinality. Behavior is defensible (you cannot positionally map a
+  not-found row to a typed entity), so KEEP, but surface the divergence at the family level in the class
+  Javadoc, not only on the individual @return tags.
+
+4. MISPLACED METHODS
+- static toList(ResultScanner,...) / toEntity(Result,Class) | HBaseExecutor.java:574,610,731 | Low |
+  Connection-free pure mappers; stylistically they could live on a mapping util, but they reference no
+  instance state, are widely used, and are convenient here. Recommend KEEP.
+
+5. MISSING METHODS
+- mapper(Class<T>,String) CAMEL_CASE-default overload absent (have mapper(Class) and mapper(Class,String,
+  NamingPolicy)) | HBaseExecutor.java:1327,1379 | Low | Optional convenience overload to round out the
+  family.
+- toMap(Result) absent; Map targets are explicitly rejected and a toMap is left commented out |
+  HBaseExecutor.java:735-741 | Low | Either delete the dead comment or add a documented toMap(Result) ->
+  Map<String,Object> keyed by family:qualifier.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+- registerRowKeyProperty(Class,String) | HBaseExecutor.java:384 | High (already @Deprecated) | Replacement
+  is @Id. Still used internally (:418), so KEEP deprecated; do not remove yet.
+- Dead commented-out members: existsAll (1462-1487,1541-1544), toMap (735-741), toBytes (3043-3050) |
+  Low | Delete the comments — they imply API that does not exist.
+
+CROSS-CLASS NOTES
+- Operation-level symmetry with AsyncHBaseExecutor is 1:1 and correct (void <-> ContinuableFuture<Void>).
+- The only concrete sync/async drift is the targetType vs targetClass param name; align sync to async.
+- No Optional anywhere in either executor — consistent null/default convention.
+
+--- DOC-FIX PASS 2026-06-23 ---
+Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its
+findings are code/design (see SUMMARY.txt section 2), or any doc-adjacent item was evaluated and
+intentionally left (documenting it would paper over a behavioral/design issue, or it is dead-comment
+cleanup deferred to the maintainer). `mvn -o clean compile` remains green.

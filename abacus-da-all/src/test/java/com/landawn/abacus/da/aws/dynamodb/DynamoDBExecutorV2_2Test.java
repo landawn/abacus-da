@@ -72,7 +72,7 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
  *
  * <p>Two kinds of tests live here:</p>
  * <ul>
- * <li><b>Pure-logic tests</b> for the static converters ({@code attrValueOf}/{@code asKey}/{@code toItem}/
+ * <li><b>Pure-logic tests</b> for the static converters ({@code toAttributeValue}/{@code asKey}/{@code toItem}/
  *     {@code toMap}/{@code toEntity}/{@code toList}/{@code extractData}), the {@code Filters}/
  *     {@code ConditionBuilder} DSL, and argument validation. These never touched the mock and are kept
  *     as-is; they run regardless of whether DynamoDB Local is up.</li>
@@ -206,28 +206,28 @@ public class DynamoDBExecutorV2_2Test extends TestBase {
 
     @Test
     public void testAttrValueOfNull() {
-        AttributeValue result = DynamoDBExecutor.attrValueOf(null);
+        AttributeValue result = DynamoDBExecutor.toAttributeValue(null);
         assertNotNull(result);
         assertTrue(result.nul());
     }
 
     @Test
     public void testAttrValueOfString() {
-        AttributeValue result = DynamoDBExecutor.attrValueOf("test");
+        AttributeValue result = DynamoDBExecutor.toAttributeValue("test");
         assertNotNull(result);
         assertEquals("test", result.s());
     }
 
     @Test
     public void testAttrValueOfNumber() {
-        AttributeValue result = DynamoDBExecutor.attrValueOf(123);
+        AttributeValue result = DynamoDBExecutor.toAttributeValue(123);
         assertNotNull(result);
         assertEquals("123", result.n());
     }
 
     @Test
     public void testAttrValueOfBoolean() {
-        AttributeValue result = DynamoDBExecutor.attrValueOf(true);
+        AttributeValue result = DynamoDBExecutor.toAttributeValue(true);
         assertNotNull(result);
         assertTrue(result.bool());
     }
@@ -235,7 +235,7 @@ public class DynamoDBExecutorV2_2Test extends TestBase {
     @Test
     public void testAttrValueOfByteArray() {
         byte[] bytes = { 1, 2, 3 };
-        AttributeValue result = DynamoDBExecutor.attrValueOf(bytes);
+        AttributeValue result = DynamoDBExecutor.toAttributeValue(bytes);
         assertNotNull(result);
         assertNotNull(result.b());
     }
@@ -243,14 +243,14 @@ public class DynamoDBExecutorV2_2Test extends TestBase {
     @Test
     public void testAttrValueOfByteBuffer() {
         ByteBuffer buffer = ByteBuffer.wrap(new byte[] { 1, 2, 3 });
-        AttributeValue result = DynamoDBExecutor.attrValueOf(buffer);
+        AttributeValue result = DynamoDBExecutor.toAttributeValue(buffer);
         assertNotNull(result);
         assertNotNull(result.b());
     }
 
     @Test
     public void testAttrValueUpdateOf() {
-        AttributeValueUpdate result = DynamoDBExecutor.attrValueUpdateOf("test");
+        AttributeValueUpdate result = DynamoDBExecutor.toAttributeValueUpdate("test");
         assertNotNull(result);
         assertEquals("test", result.value().s());
         assertEquals(AttributeAction.PUT, result.action());
@@ -258,12 +258,12 @@ public class DynamoDBExecutorV2_2Test extends TestBase {
 
     @Test
     public void testAttrValueUpdateOfWithAction() {
-        AttributeValueUpdate result = DynamoDBExecutor.attrValueUpdateOf("test", AttributeAction.DELETE);
+        AttributeValueUpdate result = DynamoDBExecutor.toAttributeValueUpdate("test", AttributeAction.DELETE);
         assertNotNull(result);
         assertEquals("test", result.value().s());
         assertEquals(AttributeAction.DELETE, result.action());
 
-        result = DynamoDBExecutor.attrValueUpdateOf(null, AttributeAction.DELETE);
+        result = DynamoDBExecutor.toAttributeValueUpdate(null, AttributeAction.DELETE);
         assertNotNull(result);
         assertNull(result.value());
         assertEquals(AttributeAction.DELETE, result.action());

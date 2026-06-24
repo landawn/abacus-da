@@ -107,6 +107,8 @@ import java.lang.annotation.Target;
  *
  * @see ElementType#TYPE
  * @see ElementType#FIELD
+ * @see com.landawn.abacus.annotation.Column
+ * @see com.landawn.abacus.da.hbase.HBaseExecutor
  */
 @Retention(RetentionPolicy.RUNTIME)
 @Target({ ElementType.FIELD, ElementType.TYPE })
@@ -128,7 +130,7 @@ public @interface ColumnFamily {
      * 
      * <p><strong>Default behavior (empty string):</strong></p>
      * <ul>
-     *   <li>For primitive fields: field name becomes the column family, qualifier is empty</li>
+     *   <li>For scalar (non-entity) fields: field name becomes the column family, qualifier is empty</li>
      *   <li>For entity fields: field name becomes the column family, nested field names become qualifiers</li>
      * </ul>
      * 

@@ -1,0 +1,44 @@
+API DESIGN REVIEW — cassandra/CassandraExecutor.java  (DataStax driver v4)
+public final class CassandraExecutor extends CassandraExecutorBase<Row,ResultSet,Statement<?>,PreparedStatement,BatchType>
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> DOC-FIX PASS UPDATE (2026-06-23): the execute(Statement) overclaim originally flagged here was
+    WITHDRAWN — re-verification shows v4's Javadoc has NO such sentence (the overclaim was v3-only, now
+    fixed in v3). The UDTCodec naming + serialize/deserialize-shim items are code changes and remain open. <<<
+
+1. OVERALL ASSESSMENT
+The v4 concrete is a thin driver-binding over CassandraExecutorBase. Almost all public API is inherited;
+the class declares only driver-v4 specifics (session() -> CqlSession, codec registration, the UDTCodec
+helper, StatementSettings) plus a handful of override-for-Javadoc terminals. The v3/v4 divergences are
+genuine driver differences (v4 merged Cluster into CqlSession and dropped the runtime object Mapper), NOT
+accidental API drift. Only two minor items.
+
+2. NAMING ISSUES
+- UDTCodec.create(Session,String userType,String,Class) String param named userType | CassandraExecutor.
+  java:2078 | Low | The String 3rd param is a UDT *name*, but sibling create(UserDefinedType userType,...)
+  at :1941 uses userType for the type object — conceptual collision. Rename the String param to
+  userTypeName. (Matches v3 exactly — consistent, so fix both.)
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- [WITHDRAWN — CLAIM INVALID 2026-06-23] execute(Statement) Javadoc overclaim | CassandraExecutor.java:
+  ~1424-1466 | n/a | Re-verified against source during the doc-fix pass: v4's execute(Statement) Javadoc
+  contains NO "StatementSettings are applied before execution" sentence (its @param/@return/@throws and
+  body are accurate). The overclaim was v3-ONLY (now fixed in v3-CassandraExecutor). No edit to v4.
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+None. (No v4-only gap vs v3; cluster()/mapper(Class) absence is driver-mandated, by design.)
+
+6. DEPRECATION / REMOVAL CANDIDATES
+- UDTCodec.serialize(T,ProtocolVersion) / deserialize(ByteBuffer,ProtocolVersion) | CassandraExecutor.
+  java:2103,2129 | Medium | Verified NOT @Override in v4 (driver v4's TypeCodec renamed these to
+  encode/decode). They are pure v3->v4 migration-shim aliases that bloat the public UDTCodec surface.
+  Mark @Deprecated(forRemoval=true) (and steer to encode/decode). Same shim pattern in the package-private
+  StringCodec at :2318,:2333.
+
+CROSS-CLASS NOTES
+- Neither v3 nor v4 exposes static factories (createCassandraExecutor/copy/of); both use telescoping
+  public constructors + async()/sync() accessors. The only true cross-version naming item is the shared
+  userType String param.
+- The execute() Javadoc overclaim was NOT shared — it existed only in v3 (now fixed); v4 was always clean.

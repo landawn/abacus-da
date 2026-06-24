@@ -1,0 +1,235 @@
+API DESIGN REVIEW — Neo4jExecutor (public final class, standalone OGM-Session facade)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/neo4j/Neo4jExecutor.java (~2481 lines)
+Reviewer model: opus-4.8   Date: 2026-06-23
+Scope: ALL public methods (constructor, accessors, run/call, load/loadAll x~50, save/delete,
+queryForObject/query x3, count/countEntitiesOfType, resolveGraphIdFor). No sync/async twin; no
+v1/v2 split. Compared against the library's established executor discipline (hbase/mongo/cassandra:
+get/gett/find/list/query/stream/execute; Optional-vs-null; List vs Stream vs DataSet; @Beta).
+
+=====================================================================
+1. OVERALL ASSESSMENT
+=====================================================================
+Neo4jExecutor is a thin, correct, well-documented pooling facade over the Neo4j OGM Session API.
+Session ownership is handled correctly: eager methods borrow/clear/return in a finally block, and
+the three streaming query() overloads transfer session release to the Stream's onClose handler with
+a try/catch that releases the session if Stream construction throws (lines 2208-2214, 2263-2269,
+2308-2314). The Javadoc is unusually thorough (null/empty/exception edge cases, depth semantics,
+session-leak warnings). The whole public surface is a deliberate 1:1 mirror of org.neo4j.ogm
+Session — that is the explicit design ("a thin executor that wraps the Neo4j OGM Session API"), so
+most method names (load/loadAll/save/queryForObject) are OGM-native pass-throughs and are by-design.
+
+The actionable findings are therefore almost entirely about *divergence from the rest of the
+abacus-da executor family*, not internal correctness. The one concrete cross-class trap worth a
+decision is that query(...) returns a Stream here, whereas every other executor reserves query()
+for DataSet and uses stream() for Stream — a reader coming from CassandraExecutor/MongoCollection-
+Executor will be surprised. The other items are minor (a missing readOnly overload on the typed
+query, the verbose countEntitiesOfType name, the load/get-vs-gett Optional question, and the dead
+commented-out queryDto block). No behavioral bug was found in the public API.
+
+=====================================================================
+2. FUNCTIONALITY / CORRECTNESS
+=====================================================================
+
+2.1  load(Class,ID) / load(Class,ID,int) — returns bare T (null on miss), no Optional variant
+     <T,ID extends Serializable> T load(Class<T>, ID)            | Neo4jExecutor.java:322
+     <T,ID extends Serializable> T load(Class<T>, ID, int depth) | Neo4jExecutor.java:357
+     | Low
+     | Single-by-id lookup returns T-or-null. Every other executor in the family offers BOTH a
+       get(...)->Optional<T> and a gett(...)->T-or-null for single-row-by-id (CassandraExecutorBase
+       :533/:648, MongoCollectionExecutor get/gett families). Neo4j offers only the null-returning
+       shape, under the OGM-native name load(). This is defensible (load() is the OGM verb and the
+       method is a direct Session#load pass-through) but it means a Neo4j user gets neither the
+       Optional ergonomics nor the get/gett naming the rest of the library trains them to expect.
+       Recommendation: KEEP load() as the pass-through, but consider ADDING get(Class,ID)->Optional<T>
+       (and get(Class,ID,int)) as thin wrappers so the single-lookup ergonomics match the family.
+       Do not change load()'s return type (it must stay a faithful Session mirror).
+       Confirming check: Session#load returns the entity or null — null-on-miss is the OGM contract,
+       so load() is correct; the gap is the absence of an Optional sibling, not load()'s behavior.
+
+2.2  queryForObject(Class,String,Map) — returns bare T (null on no rows), no Optional sibling
+     <T> T queryForObject(Class<T>, String cypher, Map<String,?>) | Neo4jExecutor.java:2158
+     | Low
+     | Returns null when the query yields zero rows and throws when it yields >1 row (documented,
+       :2152-2154). The library's single-row-from-query primitive is findFirst(...)->Optional<T>
+       (CassandraExecutorBase:2588, MongoCollectionExecutor findFirst family). queryForObject is the
+       OGM-native name (Session#queryForObject) and is a faithful pass-through, so keep it; but the
+       Optional-returning findFirst ergonomics are absent. Recommendation: KEEP queryForObject as
+       the pass-through; optionally add findFirst(Class,String,Map)->Optional<T> for family parity.
+       Confirming check: Session#queryForObject returns null for no rows / throws for multiple — the
+       behavior is correct; only the Optional sibling is missing.
+
+=====================================================================
+3. NAMING
+=====================================================================
+
+[N1] query(...) returns Stream, but the family reserves query() for DataSet and stream() for Stream
+     Stream<Map<String,Object>> query(String, Map)                | Neo4jExecutor.java:2203
+     Stream<Map<String,Object>> query(String, Map, boolean ro)    | Neo4jExecutor.java:2258
+     <T> Stream<T> query(Class<T>, String, Map)                   | Neo4jExecutor.java:2303
+     | Medium
+     | Across the rest of abacus-da, query(...) returns a DataSet (CassandraExecutorBase:1558/:2653/
+       :2676, and the same Dataset-returning query() in Mongo), while stream(...) returns a
+       com.landawn.abacus.util.stream.Stream (CassandraExecutorBase:2697/:2722, Mongo stream family).
+       Neo4jExecutor inverts that: its query() overloads return Stream. A reader who knows the
+       library will expect query()->DataSet and reach for a (non-existent) stream() to get a Stream.
+       Recommendation (report-only): the lowest-churn option is to RENAME these three to stream(...)
+       (stream(String,Map), stream(String,Map,boolean), stream(Class,String,Map)) to match the
+       family verb→return-type contract; queryForObject can stay (it is the single-row primitive).
+       If the query() names are kept for OGM familiarity, at minimum document the deliberate
+       divergence at the family level. NOTE: this is the single most reader-surprising inconsistency
+       in the class. Backward-compat is not a hard constraint per the ground rules.
+       Confirming check: grep `Dataset query(` / `Stream<...> stream(` in CassandraExecutorBase —
+       query→Dataset, stream→Stream is the consistent family contract; Neo4j is the lone deviation.
+
+[N2] countEntitiesOfType(Class) — verbose OGM-native name beside the terse count(...)
+     long countEntitiesOfType(Class<?> entity) | Neo4jExecutor.java:2398
+     long count(Class<?>, Iterable<Filter>)    | Neo4jExecutor.java:2355
+     | Low
+     | The class exposes two counters: count(Class, Iterable<Filter>) (filtered) and
+       countEntitiesOfType(Class) (count-all). The terse `count` already exists, so the long
+       `countEntitiesOfType` reads as an odd sibling; the natural family shape would be an
+       overloaded count(Class) for the count-all case. countEntitiesOfType is the verbatim
+       Session#countEntitiesOfType name, so keeping it preserves OGM familiarity, but a
+       count(Class) convenience overload (delegating to countEntitiesOfType) would align the
+       count family with the rest of the library (CassandraExecutorBase count(Class,Condition):1410).
+       Recommendation: KEEP countEntitiesOfType as the pass-through; consider ADDING count(Class)
+       as the terse count-all overload. Pure addition, no break.
+       Confirming check: Session#countEntitiesOfType is the OGM method name — pass-through is
+       faithful; the inconsistency is only that the short `count` verb is taken by the filtered form.
+
+[N3] load / loadAll — OGM-native verbs vs the library's get/gett/list/stream
+     load(...) :322/:357 ; loadAll(...) ~50 overloads :398-1966
+     | Low
+     | The whole load/loadAll surface uses OGM verbs rather than the library's get/gett (single) and
+       list/stream (collection) vocabulary. This is an explicit, documented design choice (faithful
+       Session mirror) and renaming would destroy the 1:1 correspondence that makes the wrapper
+       predictable for OGM users. Recommendation: KEEP. Flagged only to record that the naming
+       divergence from get/gett/list/stream was considered and is intentional for this OGM facade.
+       Confirming check: class Javadoc (:37-44) states the design intent — "delegates to the
+       equivalent method on the OGM session" — so OGM names are by-design, not drift.
+
+=====================================================================
+4. RETURN TYPE
+=====================================================================
+
+[R1] loadAll(...) returns java.util.Collection<T> — neither List nor Stream
+     ~50 overloads, e.g. Collection<T> loadAll(Class<T>, Filter, SortOrder, Pagination, int) :1623
+     | Low
+     | The collection-returning shape across the family is List<T> (list(...), CassandraExecutorBase
+       :1507/:2631) for eager and Stream<T> (stream(...)) for lazy. loadAll returns the OGM
+       Session#loadAll type, java.util.Collection<T> (Session#loadAll declares Collection). This is
+       a faithful pass-through, but Collection (a) gives the caller no index/ordering guarantee at
+       the type level even for the sortOrder overloads, and (b) differs from the library's List
+       contract. Recommendation: KEEP Collection<T> to stay a faithful Session mirror (changing it
+       to List would require copying every result and would break the pass-through guarantee). Noted
+       so the List-vs-Collection divergence is explicitly resolved as by-design.
+       Confirming check: org.neo4j.ogm.session.Session#loadAll return type is Collection<T> — the
+       executor cannot narrow it without a copy; the divergence is inherited, not introduced.
+
+[R2] query(...) Stream element type for the untyped overloads is Map<String,Object>
+     Stream<Map<String,Object>> query(String, Map) :2203 / (String,Map,boolean) :2258
+     | Low (negative finding)
+     | Row-as-Map<String,Object> keyed by RETURN alias matches the library's untyped row convention
+       (Cassandra list(String,...)->List<Map<String,Object>>, Mongo). Element type is correct; the
+       only issue is the query-vs-stream verb (see N1). No action on the element type.
+
+=====================================================================
+5. PARAMETERS (ordering / missing overloads)
+=====================================================================
+
+[P1] No readOnly overload for the TYPED query(Class,String,Map)
+     <T> Stream<T> query(Class<T>, String, Map) :2303
+     vs Stream<Map<String,Object>> query(String, Map, boolean readOnly) :2258
+     | Low
+     | The untyped query has a 3-arg readOnly form (:2258) enabling read-replica routing, but the
+       entity-typed query(Class,String,Map) has no readOnly counterpart, so a caller mapping rows to
+       an entity class cannot give the driver the read-only routing hint. Session#query(Class,String,
+       Map) is the only typed signature OGM exposes (OGM has no query(Class,String,Map,boolean)), so
+       this gap is inherited from the driver, not introduced. Recommendation: leave as-is unless the
+       OGM version in use offers a typed readOnly query; if it does, add query(Class,String,Map,
+       boolean) for symmetry with the untyped pair. Report-only.
+       Confirming check: org.neo4j.ogm.session.Session has no query(Class,String,Map,boolean)
+       overload — the missing overload is a driver limitation, so this is informational only.
+
+[P2] Cypher parameter passing — Map<String,?> named params, consistent and safe
+     query/queryForObject all take (String cypher, Map<String,?> parameters) :2158/:2203/:2258/:2303
+     | Info (negative finding)
+     | Parameter ordering (cypher first, params map second, optional readOnly/Class last) is
+       consistent across all four Cypher-executing methods, and named-Map binding ($name) avoids the
+       unsafe Object[] positional-varargs style. This matches the library's "named params" discipline
+       and is a strength. No action.
+
+=====================================================================
+6. CLASS PLACEMENT / MISSING METHODS / DEPRECATION
+=====================================================================
+
+[M1] run(Consumer) / call(Function) are @Beta — appropriate
+     void run(Consumer<? super Session>) :250 (@Beta) ; <T> T call(Function<? super Session,? extends T>) :289 (@Beta)
+     | Info (negative finding)
+     | These two escape-hatches expose the raw pooled Session for multi-statement/transactional work
+       and are correctly marked @Beta (the Session-escape contract — "do not leak entities/Session
+       past the lambda; it is cleared on return" :265-269 — is exactly the kind of sharp-edged helper
+       @Beta is for). Placement on the executor is correct (they need the pool). No action.
+
+[X1] Dead commented-out queryDto(Class,String,Map) block
+     Neo4jExecutor.java:2110-2118 (commented-out method)
+     | Low
+     | A fully commented-out public queryDto(Class type, String cypher, Map parameters) sits between
+       deleteAll and queryForObject. It advertises an API (DTO projection) that was deliberately
+       disabled. Recommendation: DELETE the dead block so the public surface does not imply a
+       planned-but-missing method (mirrors the HBaseExecutor [D2] dead-comment cleanup). Report-only.
+
+[X2] No save(Iterable)/saveAll bulk overload despite a single delete + bulk deleteAll asymmetry
+     save(T) :1994 / save(T,int) :2030 ; delete(T) :2064 ; deleteAll(Class) :2099
+     | Low
+     | save is single-entity only; there is no saveAll(Iterable<T>) even though Session#save can be
+       called per-element and the read side has the full loadAll family. The delete side similarly
+       has single delete(T) + class-wide deleteAll(Class) but no delete(Iterable). This is a minor
+       completeness gap, not a defect — callers can loop, and OGM's Session#save(object) already
+       saves the reachable graph. Recommendation: OPTIONAL — add saveAll(Iterable<T>) /
+       saveAll(Iterable<T>,int) and delete(Iterable<T>) for collection symmetry with loadAll. Low
+       value; only if bulk-write convenience is wanted. Report-only.
+       Confirming check: Session exposes no batch save/delete(Collection) of arbitrary entities —
+       any saveAll would be a convenience loop, so this is an addition, not a missing pass-through.
+
+[D1] No deprecation candidates
+     | High (negative finding)
+     | Nothing in the public surface is obsolete or superseded. The ~50 loadAll overloads are a
+       complete, deliberate mirror of Session#loadAll and none is redundant within the wrapper. No
+       method is a deprecation candidate.
+
+=====================================================================
+CROSS-CLASS NOTES (deviation from library return/naming conventions; cypher param-passing)
+=====================================================================
+- VERB→RETURN-TYPE CONTRACT (the one real divergence): the family contract is
+  query(...)->DataSet, stream(...)->Stream, list(...)->List, get(...)->Optional, gett(...)->T-or-null,
+  findFirst(...)->Optional. Neo4jExecutor instead exposes query(...)->Stream and has no
+  stream/list/get/gett/findFirst at all; single lookups use load()->T-or-null and
+  queryForObject()->T-or-null; collection reads use loadAll()->Collection<T>. This is internally
+  consistent and an intentional OGM-native mirror, but it breaks the cross-executor muscle memory.
+  The highest-value single change is N1 (query→stream rename) because query()->Stream actively
+  conflicts with query()->DataSet everywhere else; the get/gett/list Optional gaps (2.1/2.2/N2) are
+  better addressed by ADDING thin wrappers than by renaming the OGM pass-throughs.
+
+- OPTIONAL-VS-NULL: the library uses Optional on get/findFirst and bare-null on gett. Neo4j returns
+  bare null on both single primitives (load, queryForObject) and exposes no Optional shape anywhere.
+  Faithful to OGM (Session returns null), but the Optional ergonomics the rest of the library
+  guarantees are absent. Resolve by adding get/findFirst Optional wrappers (2.1/2.2) rather than
+  altering the pass-throughs.
+
+- CYPHER PARAM-PASSING (a strength, matches the library): all Cypher methods take
+  (String cypher, Map<String,?> parameters[, boolean readOnly | Class<T> first]) with $name binding —
+  consistent ordering, named-map binding, no unsafe Object[] positional varargs. This mirrors the
+  CqlMapper/ParsedCql named-parameter discipline and needs no change.
+
+- POOL/SESSION OWNERSHIP: correct and clearly documented. Streaming query() overloads transfer
+  release to Stream#onClose with a construct-time try/catch that frees the session on failure
+  (:2208-2214/:2263-2269/:2308-2314); eager methods clear+return in finally. The only caller hazard
+  (leaking a session by not closing a query() Stream) is prominently documented. No action.
+
+- ~50 loadAll OVERLOADS: a complete, faithful 1:1 mirror of Session#loadAll across the
+  {by-ids | by-entities | by-class} x {Filter | Filters} x {SortOrder} x {Pagination} x {depth}
+  matrix. Each is a 4-line borrow/delegate/finally pass-through with accurate edge-case Javadoc
+  (null-in/null-out for the entity-collection forms; empty-collection for the id/class forms;
+  empty-not-throw for unmapped types). Treated as ONE unit per the overload-family rule — no
+  per-overload findings; the family is by-design and correct.

@@ -1,0 +1,125 @@
+API DESIGN REVIEW — AsyncCassandraExecutor (v4 + v3)
+Repo: C:\Users\haiyangl\Landawn\abacus-da  (abacus-da library)
+Date: 2026-06-23   Reviewer model: opus-4.8
+Scope: PUBLIC methods DECLARED in each concrete class only. Inherited API from
+       AsyncCassandraExecutorBase is reviewed separately and NOT re-flagged here.
+
+RELATIONSHIP MAP (verified from source, not names):
+- Both concretes are `public final` and extend
+  AsyncCassandraExecutorBase<RW,RS,ST,PS,BT>.
+  v4: <Row, ResultSet, Statement<?>, PreparedStatement, BatchType>   (DataStax OSS driver 4.x)
+  v3: <Row, ResultSet, Statement,    PreparedStatement, BatchStatement.Type> (driver 3.x; @deprecated)
+- Neither concrete has a static factory. Instances are produced ONLY by the
+  package-private ctor invoked from CassandraExecutor.async() (sync executor
+  field `asyncCassandraExecutor`, eagerly built). The sync concretes
+  (cassandra/CassandraExecutor, cassandra/v3/CassandraExecutor) likewise have NO
+  static `createCassandraExecutor` factory — verified: zero matches.
+- Methods DECLARED in each concrete (the review surface):
+    sync()                                            — @Override (covariant return)
+    stream(String, Object...)                         — @Override (delegates super)
+    stream(String, BiFunction<ColumnDefinitions,Row,T>, Object...) — NEW (no @Override)
+    stream(ST statement, BiFunction<ColumnDefinitions,Row,T>)      — NEW (no @Override)
+    findFirst(Class, String, Object...)               — @Override (delegates super)
+    queryForSingleValue(Class, String, Object...)     — @Override (delegates super)
+    queryForSingleNonNull(Class, String, Object...)   — @Override (delegates super)
+    execute(String)                                   — @Override (implements abstract)
+    execute(String, Object...)                        — @Override (implements abstract)
+    execute(String, Map<String,Object>)               — @Override (implements abstract)
+    execute(ST statement)                             — @Override (implements abstract)
+- The override-and-delegate methods (stream String/Object..., findFirst,
+  queryForSingle*) add ONLY a per-driver Usage-Examples Javadoc block; behavior is
+  100% super(...) . They exist to host driver-specific examples. Not flagged as
+  redundant (intentional doc-surface pattern, consistent across both concretes).
+
+================================================================================
+CLASS 1: com.landawn.abacus.da.cassandra.AsyncCassandraExecutor  (driver v4)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/AsyncCassandraExecutor.java
+================================================================================
+
+1) FUNCTIONALITY
+- execute(...) family (lines 349,386,421,460) correctly bridges driver v4's
+  async API: session().executeAsync(...) returns CompletionStage<AsyncResultSet>,
+  which is wrapped via ResultSets.wrap(...) so callers still receive the
+  synchronous ResultSet interface (RS type param). Verified ResultSets.wrap exists
+  (ResultSets.java:99) and returns ResultSet. Correct and intentional vs v3.
+- The two NEW BiFunction stream overloads (151,192) null-check the mapper then map
+  rows via cassandraExecutor.createRowMapper(BiFunction) (CassandraExecutor.java:1850).
+  Correct.
+- No functional defect found.
+
+2) NAMING — no findings. sync/stream/findFirst/execute names match base + sync concrete.
+
+3) RETURN TYPE
+- sync() overridden to covariantly narrow CassandraExecutorBase -> CassandraExecutor
+  (line 77). Good and matches v3.
+- All execute/stream/find return ContinuableFuture<...> consistent with base. No findings.
+
+4) PARAMETERS / MISSING OVERLOADS
+<sig> stream(String, BiFunction<ColumnDefinitions,Row,T>, Object...)  &  stream(Statement<?>, BiFunction<ColumnDefinitions,Row,T>) | AsyncCassandraExecutor.java:148, 189 | Medium | Asymmetry vs the inherited Class-mapper stream family. Base declares stream(Class,String,Object...) (Base:1687) and stream(Class,ST) (Base:1724) — i.e. the *class-mapper* row-streamers. The concrete adds the *BiFunction-mapper* row-streamers but there is NO BiFunction-mapper variant that also takes named parameters (Map<String,Object>), even though execute(...) and the inherited surface support a Map-param path. Recommend either documenting that BiFunction streaming is positional-only, or adding stream(String, BiFunction, Map<String,Object>) for parity. (Low: confirm by grepping concrete + base for any `stream(... Map<String, Object> ...)` — currently none exists, so this is a genuine missing overload, not a duplicate.)
+
+5) CLASS PLACEMENT
+- The BiFunction stream overloads legitimately live on the concrete (not the base)
+  because ColumnDefinitions/Row are driver-version-specific types. Correct placement.
+  No findings.
+
+6) MISSING METHODS / DEPRECATION
+- No deprecation candidates in this (current/v4) class.
+<sig> stream(String, BiFunction, Object...) @throws tag | AsyncCassandraExecutor.java:146 | Low | v4 Javadoc DOCUMENTS `@throws IllegalArgumentException if rowMapper is null`; v3's identical method omits it (see Class 2). This class is the correct one — flagged only to drive the v3 fix. (Low: both bodies call N.checkArgNotNull(rowMapper,...) -> IllegalArgumentException; confirmed lines 149 & 190.)
+
+================================================================================
+CLASS 2: com.landawn.abacus.da.cassandra.v3.AsyncCassandraExecutor  (driver v3, @deprecated)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/AsyncCassandraExecutor.java
+================================================================================
+
+1) FUNCTIONALITY
+- execute(...) family (lines 350,384,415,451) wraps session().executeAsync(...)
+  directly with ContinuableFuture.wrap(...) and NO ResultSets.wrap — correct,
+  because driver 3.x executeAsync already yields a ListenableFuture<ResultSet>
+  (RS == com.datastax.driver.core.ResultSet). The v4/v3 wrap difference is a real
+  driver artifact, NOT accidental drift.
+- BiFunction stream overloads (155,196) mirror v4 exactly. No functional defect.
+
+2) NAMING — no findings (mirrors v4 / sync concrete).
+
+3) RETURN TYPE
+- sync() covariantly narrowed to v3 CassandraExecutor (line 81). Matches v4. No findings.
+
+4) PARAMETERS / MISSING OVERLOADS
+- Same missing BiFunction+Map stream overload as v4 (see Class 1 §4). Grouped — do
+  not double-count; fix should be applied symmetrically to both concretes.
+
+5) CLASS PLACEMENT — no findings (same rationale as v4).
+
+6) MISSING METHODS / DEPRECATION
+<sig> stream(String, BiFunction<ColumnDefinitions,Row,T>, Object...) | v3/AsyncCassandraExecutor.java:152 | Medium | Javadoc OMITS the `@throws IllegalArgumentException` tag that the body actually produces (N.checkArgNotNull at 153) AND that the v4 twin documents (v4:146). Doc drift between v3/v4. Recommend adding `@throws IllegalArgumentException if rowMapper is null` to match v4. (Low: diff the two Javadoc blocks — v4:148 has the tag, v3:152 does not; bodies identical.)
+<sig> stream(Statement, BiFunction<ColumnDefinitions,Row,T>) | v3/AsyncCassandraExecutor.java:193 | Medium | Same missing `@throws IllegalArgumentException` tag vs the v4 twin (v4:187). Body null-checks at 194. Add the tag for parity. (Low: same diff check as above.)
+- Whole class is correctly @deprecated at type level (lines 40-42) pointing to the
+  v4 AsyncCassandraExecutor. No per-method deprecation needed.
+
+================================================================================
+CROSS-CLASS NOTES
+================================================================================
+A) v3-vs-v4 DIVERGENCE — all INTENTIONAL except Javadoc drift:
+   - execute(...) wrapping (ResultSets.wrap in v4 only) = driver-version requirement,
+     not drift. Verified against ResultSets.wrap (v4) and driver-3 ListenableFuture<ResultSet>.
+   - Generic ST param: Statement<?> (v4) vs raw Statement (v3); BT: BatchType vs
+     BatchStatement.Type — both follow the respective driver type systems. Correct.
+   - REAL DRIFT (only finding pair): v3's two NEW BiFunction `stream` overloads are
+     MISSING the `@throws IllegalArgumentException if rowMapper is null` Javadoc tag
+     that v4 carries (v3:152,193 vs v4:148,189). Bodies are identical
+     (N.checkArgNotNull). Low/Medium — doc-only; fix v3 to match v4.
+
+B) ASYNC-vs-SYNC FACTORY NAMING SYMMETRY:
+   - There is NO `createAsyncCassandraExecutor` / `createCassandraExecutor` static
+     factory anywhere (verified zero matches in all four classes). The async facade
+     is reached exclusively via CassandraExecutor.async() (sync side) and the
+     package-private ctor (async side). So the "createAsyncX vs createX" symmetry
+     question is MOOT — no asymmetry exists because no such factories exist. No action.
+   - Accessor symmetry is clean: sync concrete exposes async() (CassandraExecutor.java:475
+     / v3:504); async concrete exposes sync() (AsyncCassandraExecutor.java:77 / v3:81),
+     each covariantly typed to its own driver-version partner. Good.
+
+C) MISSING-OVERLOAD SYMMETRY (shared, single fix):
+   - Add a named-parameter BiFunction streamer (stream(String, BiFunction, Map<String,Object>))
+     to BOTH concretes, or document the positional-only limitation. Medium confidence;
+     currently no Map-param BiFunction stream exists on either concrete or the base.

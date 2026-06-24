@@ -26,6 +26,7 @@ import com.landawn.abacus.pool.PoolFactory;
 import com.landawn.abacus.pool.Poolable;
 import com.landawn.abacus.pool.PoolableAdapter;
 import com.landawn.abacus.query.SqlParser;
+import com.landawn.abacus.util.ImmutableMap;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.Objectory;
 import com.landawn.abacus.util.SK;
@@ -163,7 +164,7 @@ public final class ParsedCql {
 
     private final String parameterizedCql;
 
-    private final Map<Integer, String> namedParameters;
+    private final ImmutableMap<Integer, String> namedParameters;
 
     private final int parameterCount;
 
@@ -201,7 +202,7 @@ public final class ParsedCql {
      */
     private ParsedCql(final String cql) {
         this.cql = cql.trim();
-        namedParameters = new HashMap<>();
+        Map<Integer, String> localNamedParameters = new HashMap<>();
         hashCode = Objects.hash(this.cql);
 
         final List<String> words = SqlParser.parse(this.cql);
@@ -261,7 +262,7 @@ public final class ParsedCql {
                                         "Invalid named parameter: " + ibatisToken.substring(0, rightBracketIndex + 1) + ". Parameter name cannot be empty.");
                             }
 
-                            namedParameters.put(countOfParameter++, namedParameter);
+                            localNamedParameters.put(countOfParameter++, namedParameter);
                             rebuilt.append(SK.QUESTION_MARK);
                             word = rightBracketIndex + 1 < ibatisToken.length() ? ibatisToken.substring(rightBracketIndex + 1) : Strings.EMPTY;
 
@@ -279,7 +280,7 @@ public final class ParsedCql {
                             if (word.length() == 1) {
                                 throw new IllegalArgumentException("Invalid named parameter: " + word + ". Parameter name cannot be empty.");
                             } else {
-                                namedParameters.put(countOfParameter++, word.substring(1));
+                                localNamedParameters.put(countOfParameter++, word.substring(1));
 
                                 word = SK.QUESTION_MARK;
 
@@ -304,6 +305,8 @@ public final class ParsedCql {
             parameterizedCql = stripTrailingSemicolons(Strings.stripToEmpty(this.cql));
             parameterCount = 0;
         }
+
+        this.namedParameters = ImmutableMap.wrap(localNamedParameters);
     }
 
     private static int updateCurlyDepth(final int currentDepth, final String word) {
@@ -558,7 +561,7 @@ public final class ParsedCql {
      *
      * @return a map from parameter index (0-based) to parameter name, empty if no named parameters
      */
-    public Map<Integer, String> namedParameters() {
+    public ImmutableMap<Integer, String> namedParameters() {
         return namedParameters;
     }
 

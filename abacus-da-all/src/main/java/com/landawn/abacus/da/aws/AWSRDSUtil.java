@@ -23,7 +23,7 @@ package com.landawn.abacus.da.aws;
  *
  * @see AWSS3Util
  */
-public final class AWSRDSUtil { //NOSONAR
+final class AWSRDSUtil { //NOSONAR
 
     // Utility class - prevent instantiation
     private AWSRDSUtil() {

@@ -1,0 +1,55 @@
+API DESIGN REVIEW — mongodb/AsyncMongoCollectionExecutor.java
+public final class AsyncMongoCollectionExecutor
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> CODE-FIX UPDATE (2026-06-24): the @Beta parity gap (section 3) is FIXED in source. See the [RESOLVED]
+    tag. The missing-async-ops (section 5) and the param-name item remain open. mvn -o clean test-compile
+    green. <<<
+
+1. OVERALL ASSESSMENT
+A faithful async twin of MongoCollectionExecutor: every method delegates the blocking call to a backing
+AsyncExecutor and returns ContinuableFuture<T> (ContinuableFuture<Void> for void ops), correctly keeping
+Optional/Nullable/OptionalXxx payloads INSIDE the future rather than collapsing to null. No per-method
+Executor param (held at construction). No mis-typed or mis-ordered wrappers. The only issues are missing
+wrappers (sync ops not mirrored here) and a stability-annotation mismatch.
+
+2. NAMING ISSUES
+None. (Uses targetClass/rowType consistently.)
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- [RESOLVED 2026-06-24 — code-fixed] queryForXxx family lacked @Beta | AsyncMongoCollectionExecutor.java:
+  1078-1409 | Medium | The basic sync queryForXxx(propName,filter) are all @Beta; the async wrappers
+  omitted it. FIXED: added @Beta to the 10 basic async queryForBoolean/Char/Byte/Short/Int/Long/Float/
+  Double/String/Date methods. CORRECTION to the original write-up: the typed queryForDate(...,Class) and
+  queryForSingleValue were EXCLUDED because their sync counterparts are NOT @Beta (only the basic forms
+  are); groupBy/groupByAndCount already carried @Beta. mvn -o clean test-compile green.
+- queryForDate 3rd param named valueType vs sync/reactive rowType | (async queryForDate) | Low | Align
+  param name to rowType. Confirming check: confirm the async queryForDate param spelling.
+
+4. MISPLACED METHODS
+None. (Infra/lifecycle correctly not mirrored.)
+
+5. MISSING METHODS  (all verified against sync source)
+- stream() and stream(Class) no-filter full-collection entry points absent | async stream family starts
+  at stream(Bson) :1807; sync has them at MongoCollectionExecutor.java:2041,2084 | High | Add the two
+  no-filter overloads as ContinuableFuture<Stream<...>>.
+- estimatedDocumentCount() / estimatedDocumentCount(EstimatedDocumentCountOptions) absent | sync at
+  :415,438; async has none (does not even import EstimatedDocumentCountOptions) | Medium | Add both.
+- typed groupBy(String,Class)/groupBy(Collection,Class) absent (async only has Document-typed) | sync at
+  :4255,4304 | Medium | Add typed overloads (mark @Beta).
+- typed groupByAndCount(String,Class)/groupByAndCount(Collection,Class) absent | sync at :4358,4406 |
+  Medium | Add typed overloads (mark @Beta).
+
+6. DEPRECATION / REMOVAL CANDIDATES
+- mapReduce(String,String) / (String,String,Class) | :3693,3721 | (already @Deprecated, mirrored) | No
+  action.
+
+CROSS-CLASS NOTES
+- Async return convention ContinuableFuture<T>/<Void> matches AsyncHBaseExecutor — consistent
+  library-wide async type. Compare against Cassandra/DynamoDB async executors in SUMMARY.
+- The reverse check (async ops absent from sync) is clean; the asymmetry is one-directional (sync richer).
+
+--- DOC-FIX PASS 2026-06-23 ---
+Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its
+findings are code/design (see SUMMARY.txt section 2), or any doc-adjacent item was evaluated and
+intentionally left (documenting it would paper over a behavioral/design issue, or it is dead-comment
+cleanup deferred to the maintainer). `mvn -o clean compile` remains green.

@@ -1,0 +1,161 @@
+API DESIGN REVIEW — small static-util stubs (AWSRDSUtil, AWSS3Util, HadoopUtil, HDFSUtil)
+Reviewer model: opus-4.8 | Date: 2026-06-23 | REPORT-ONLY (no source modified)
+
+Scope of this batch (each is a ~30-line public final class with a private no-arg ctor and
+ZERO public methods/fields). Full files read. Relationship + reference checks performed:
+
+  - No production code anywhere in the repo references any of the four classes
+    (only their own @see cross-links and IDE/review bookkeeping files mention them).
+  - aws package ALSO contains a real, populated `dynamodb` subpackage — so the aws
+    namespace is genuinely in active use by sibling functionality.
+  - hadoop package contains ONLY these two stubs (no other .java files).
+  - Prior repo review note (scripts/review_2026-06-23/state.md) already classifies all
+    four as "Empty stubs (NO logic)".
+
+These are honestly-documented placeholders (Javadoc explicitly says "Placeholder ...
+reserved for a future implementation ... currently exposes no public API"). They are NOT
+broken or mislabeled. Util-class hygiene is correct in all four: final class + private
+ctor + static-only intent. There is therefore very little to flag PER CLASS; the only
+real, actionable question is a CROSS-CLASS / architectural one (carry empty public stubs
+in a shipped artifact at all?), captured at the end.
+
+
+=====================================================================
+CLASS: AWSRDSUtil
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/aws/AWSRDSUtil.java
+public final class AWSRDSUtil  (private AWSRDSUtil() ctor; no public members)
+=====================================================================
+1. FUNCTIONALITY
+   Empty placeholder. No behavior. Javadoc accurately states it exposes no public API and
+   exists only to anchor the namespace / block instantiation.
+2. NAMING
+   Class name fine; no methods to assess.
+3. RETURN TYPE / PARAMETERS
+   N/A — no methods.
+4. CLASS PLACEMENT
+   Correct package (com.landawn.abacus.da.aws), which is alive via the sibling `dynamodb`
+   subpackage. Placement is coherent.
+5. MISSING / COMPANION OPS
+   Whole class is "missing": no RDS helpers exist. This is by design (declared placeholder),
+   not a defect to fix in isolation. See cross-class note CC1.
+6. DEPRECATION / HYGIENE
+   Util hygiene correct (final + private ctor). No deprecation needed.
+
+   FINDING S1 — Empty published placeholder type.
+   | AWSRDSUtil.java:26 | Confidence: Medium
+   Recommendation: this class carries no API surface and is referenced by nothing. Either
+   (a) remove it until there is a concrete RDS implementation, or (b) if it is kept as a
+   roadmap anchor, mark it `@Beta`/`@Internal` (or move out of the published main source
+   set) so it is not mistaken for a usable public utility. Pure design call — no behavioral
+   risk either way.
+   Low -> confirming check: already done — repo-wide grep shows zero external references.
+
+
+=====================================================================
+CLASS: AWSS3Util
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/aws/AWSS3Util.java
+public final class AWSS3Util  (private AWSS3Util() ctor; no public members)
+=====================================================================
+1. FUNCTIONALITY
+   Empty placeholder. No behavior. Javadoc accurate (S3 helpers reserved for the future;
+   no public API today).
+2. NAMING
+   Fine. (Minor: "AWSS3" triple-letter run is slightly awkward but matches AWS naming.)
+3. RETURN TYPE / PARAMETERS
+   N/A — no methods.
+4. CLASS PLACEMENT
+   Correct package; aws namespace is live (dynamodb sibling). Coherent.
+5. MISSING / COMPANION OPS
+   Entire S3 helper surface is absent — by design (declared placeholder). See CC1.
+6. DEPRECATION / HYGIENE
+   Util hygiene correct. No deprecation needed.
+
+   FINDING S2 — Empty published placeholder type (same shape as S1).
+   | AWSS3Util.java:26 | Confidence: Medium
+   Recommendation: same as S1 — remove until implemented, or gate with @Beta/@Internal /
+   move off the main published source set. No behavioral risk.
+   Low -> confirming check: done — zero external references.
+
+
+=====================================================================
+CLASS: HadoopUtil
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/hadoop/HadoopUtil.java
+public final class HadoopUtil  (private HadoopUtil() ctor; no public members)
+=====================================================================
+1. FUNCTIONALITY
+   Empty placeholder. No behavior. Javadoc accurate; correctly points to HDFSUtil for
+   HDFS-specific helpers.
+2. NAMING
+   Fine.
+3. RETURN TYPE / PARAMETERS
+   N/A — no methods.
+4. CLASS PLACEMENT
+   Package com.landawn.abacus.da.hadoop contains ONLY this and HDFSUtil — i.e. the entire
+   `hadoop` package is empty placeholders. Placement of the class within the package is
+   fine, but the package as a whole carries no real functionality today (see CC1/CC2).
+5. MISSING / COMPANION OPS
+   All Hadoop helpers absent — by design (declared placeholder). See CC1.
+6. DEPRECATION / HYGIENE
+   Util hygiene correct. No deprecation needed.
+
+   FINDING S3 — Empty published placeholder type.
+   | HadoopUtil.java:27 | Confidence: Medium
+   Recommendation: same as S1/S2. Stronger case here because the ENTIRE hadoop package is
+   placeholder-only (no live sibling to justify the namespace, unlike aws/dynamodb).
+   Low -> confirming check: done — zero external references; package has no other classes.
+
+
+=====================================================================
+CLASS: HDFSUtil
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/hadoop/HDFSUtil.java
+public final class HDFSUtil  (private HDFSUtil() ctor; no public members)
+=====================================================================
+1. FUNCTIONALITY
+   Empty placeholder. No behavior. Javadoc accurate.
+2. NAMING
+   Fine.
+3. RETURN TYPE / PARAMETERS
+   N/A — no methods.
+4. CLASS PLACEMENT
+   Same empty-`hadoop`-package situation as HadoopUtil.
+5. MISSING / COMPANION OPS
+   All HDFS helpers absent — by design (declared placeholder). See CC1.
+6. DEPRECATION / HYGIENE
+   Util hygiene correct (final + private ctor). NOTE: HDFSUtil is the only one of the four
+   WITHOUT the `//NOSONAR` trailing comment on the class declaration that the other three
+   carry — purely cosmetic, not actionable on its own; flagged only as a consistency
+   observation (CC3).
+
+   FINDING S4 — Empty published placeholder type.
+   | HDFSUtil.java:26 | Confidence: Medium
+   Recommendation: same as S1/S2/S3.
+   Low -> confirming check: done — zero external references.
+
+
+=====================================================================
+CROSS-CLASS NOTES
+=====================================================================
+CC1 (PRIMARY, the only substantive finding) — Four empty public placeholder util classes
+    shipped in the main source set, referenced by nothing.
+    | AWSRDSUtil:26, AWSS3Util:26, HadoopUtil:27, HDFSUtil:26 | Confidence: Medium
+    All four are coherent, correctly-built, honestly-documented STUBS — but they are
+    placeholders, not utilities. They add four empty public types to the published API of
+    a shipped artifact. Recommendation (design call, pick one consistently for all four):
+      (a) Delete them and re-introduce when a concrete implementation lands; OR
+      (b) Keep as roadmap anchors but mark @Beta / @Internal (or relocate out of the
+          published main/java source set, e.g. a non-shipped sketch module) so consumers
+          do not treat them as usable API.
+    No backward-compat constraint here (no callers). No behavioral risk in either option.
+
+CC2 — Asymmetry between the two packages worth noting when deciding CC1:
+    The aws package is NOT purely placeholder — it has a live `dynamodb` subpackage — so
+    AWSRDSUtil/AWSS3Util at least sit in an active namespace. The hadoop package is
+    100% placeholder (HadoopUtil + HDFSUtil only). If pruning, the hadoop pair is the
+    cleaner candidate to drop first.
+
+CC3 — Cosmetic inconsistency: AWSRDSUtil, AWSS3Util and HadoopUtil declare the class with a
+    trailing `//NOSONAR`; HDFSUtil does not. Harmless; align for tidiness if touching these
+    files. Confidence: Low. Not independently actionable.
+
+CC4 — Positive: util-class hygiene (public final + private no-arg ctor, static-only intent)
+    is implemented correctly and identically across all four. No hygiene defects to report.

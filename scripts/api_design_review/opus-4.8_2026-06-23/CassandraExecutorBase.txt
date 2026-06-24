@@ -1,0 +1,55 @@
+API DESIGN REVIEW — cassandra/CassandraExecutorBase.java
+public abstract class CassandraExecutorBase<RW,RS,ST,PS,BT> implements AutoCloseable
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+
+1. OVERALL ASSESSMENT
+The shared Cassandra executor base is large and healthy. It applies the same strong four-way return
+discipline praised in the mongo executor (Optional via get / null via gett / Nullable / empty), uses a
+consistent (String cql, Object... parameters) positional convention with single-special-arg
+(Map/array/Collection/entity) binding, and avoids the raw Object[] varargs footgun. No correctness,
+overlap, or null/empty-contract bugs. Findings are minor: a vestigial type parameter, a @Beta
+inconsistency, and two already-deprecated methods.
+
+2. NAMING ISSUES
+- gett(...) family | CassandraExecutorBase.java:648,679,704,732 | Low | Library-wide get=Optional /
+  gett=null convention, documented and consistent with mongo/hbase. KEEP — noted only for parity.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- query(Class<T>,Condition) / query(Class<T>,Collection<String>,Condition) | CassandraExecutorBase.java:
+  1558,1584 | Low | Vestigial unused <T> — the return is DataSet (not DataSet<T>); should be Class<?> to
+  match the CQL-string query(Class<?>,String,...) at :2676. (findFirst/list/stream <T> IS load-bearing —
+  leave those.) Confirming check: confirm the method body never uses T.
+- queryForString/queryForDate(Condition) marked @Beta but delegate to NON-@Beta queryForSingleValue
+  returning the same Nullable | CassandraExecutorBase.java:1899,1933,1970 vs 2009 | Low | Inconsistent —
+  either drop @Beta from the thin delegates or add it to queryForSingleValue. (See also the sync-vs-async
+  @Beta mismatch in SUMMARY: sync base has 20 @Beta, async base has 0.)
+- queryForSingleNonNull(...) | :2055,2517 | Low | Throws NPE on a matched-but-null value (documented;
+  Optional can't hold null). Same pattern as mongo; acknowledged, no change pressed.
+- primitive queryForXxx family | :1620-1866, :2191-2410 | Low | NULL collapses to the primitive default
+  (present, not empty); documented @Beta. Same as mongo; acknowledged.
+
+4. MISPLACED METHODS
+None. stream(Class,ST) and the static key/condition helpers are correctly on the base.
+
+5. MISSING METHODS
+None actionable. (Raw-CQL projection is written into the SELECT, so a separate findFirst projection
+overload is not a real gap.)
+
+6. DEPRECATION / REMOVAL CANDIDATES
+- count(String,Object...) | :2161 | High (already @Deprecated) | KEEP; replacement queryForLong(String,
+  ...).orElse(0L) or count(Class,Condition). NOTE count(Class,Condition) is correctly NOT deprecated and
+  deliberately omits LIMIT (in-code comment) — preserve that.
+- registerKeys(Class,Collection) | :269 | High (already @Deprecated) | KEEP; replacement @Id annotation.
+
+CROSS-CLASS NOTES
+- Return discipline and gett/queryForSingleNonNull/primitive-default semantics match the mongo executor —
+  good library-wide consistency.
+- The concretes (v3/v4 CassandraExecutor) must NOT re-add the by-id/CQL-string facades defined here; only
+  the abstract terminals + driver-specific API belong on the concretes (verified — they don't).
+- @Beta is applied unevenly: present on sync base, absent on async base (SUMMARY item).
+
+--- DOC-FIX PASS 2026-06-23 ---
+Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its
+findings are code/design (see SUMMARY.txt section 2), or any doc-adjacent item was evaluated and
+intentionally left (documenting it would paper over a behavioral/design issue, or it is dead-comment
+cleanup deferred to the maintainer). `mvn -o clean compile` remains green.

@@ -68,7 +68,7 @@ public class MongoDBExecutorTest extends TestBase {
         Account account = createAccount();
         collectionExecutor.insertOne(account);
 
-        MongoCollection<Document> collection = collectionExecutor.mongoCollection();
+        MongoCollection<Document> collection = collectionExecutor.coll();
 
         Bson filter = new Document("lastName", account.getLastName());
         FindIterable<Document> findIterable = collection.find(filter);
@@ -96,7 +96,7 @@ public class MongoDBExecutorTest extends TestBase {
 
     @Test
     public void test_distinct() {
-        collectionExecutor.mongoCollection().drop();
+        collectionExecutor.coll().drop();
 
         Account account = createAccount();
         collectionExecutor.insertOne(account);
@@ -112,7 +112,7 @@ public class MongoDBExecutorTest extends TestBase {
 
     @Test
     public void test_groupBy() {
-        collectionExecutor.mongoCollection().drop();
+        collectionExecutor.coll().drop();
 
         Account account = createAccount();
         collectionExecutor.insertOne(account);
@@ -140,7 +140,7 @@ public class MongoDBExecutorTest extends TestBase {
 
     @Test
     public void test_aggregate() {
-        collectionExecutor.mongoCollection().drop();
+        collectionExecutor.coll().drop();
 
         Account account = createAccount();
         collectionExecutor.insertOne(account);
@@ -161,7 +161,7 @@ public class MongoDBExecutorTest extends TestBase {
 
     @Test
     public void test_mapReduce() {
-        collectionExecutor.mongoCollection().drop();
+        collectionExecutor.coll().drop();
 
         Account account = createAccount();
         collectionExecutor.insertOne(account);

@@ -1,0 +1,45 @@
+API DESIGN REVIEW — cassandra/v3/CassandraExecutor.java  (DataStax driver v3, LEGACY)
+public final class CassandraExecutor extends CassandraExecutorBase<Row,ResultSet,Statement,PreparedStatement,BatchStatement.Type>
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> DOC-FIX PASS UPDATE (2026-06-23): the execute(Statement) overclaim (section 3) was FIXED (Javadoc-
+    only). CORRECTION: the claim that "the same wrong sentence exists in v4" is INVALID — v4 has no such
+    sentence; only v3 carried it. The @Deprecated-annotation item (section 6) is now ALSO FIXED in source
+    (2026-06-24). See the [RESOLVED] tags. <<<
+
+1. OVERALL ASSESSMENT
+The v3 concrete mirrors the v4 concrete against the older DataStax driver 3.x. Its v3-only members
+(cluster(), mapper(Class)) are correct because driver 4.x merged Cluster into CqlSession and dropped the
+built-in MappingManager. The class documents itself as legacy/superseded but is missing the actual
+@Deprecated annotation. One shared Javadoc overclaim with v4.
+
+2. NAMING ISSUES
+None beyond the shared userType String-param item noted in the v4 report (UDTCodec.create) — fix both.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- [RESOLVED 2026-06-23 — doc-fixed] execute(Statement) Javadoc overclaimed settings application |
+  v3/CassandraExecutor.java:1542-1543 | Medium | Doc said executor StatementSettings are applied before
+  execution, but the body is a raw session.execute(statement) (settings are only applied by the
+  prepareStatement(String...) helpers). The v4 twin (same method, raw pass-through) neither applies nor
+  claims it, confirming raw execution is the intended design. FIXED: removed the false sentence (doc now
+  matches the actual, sibling-confirmed behavior). No code change.
+  CORRECTION to the original finding: v4 does NOT contain this sentence — it was a v3-only error, not
+  "shared doc drift."
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+None. (No v4-only public method is absent here; the override family is base-dictated.)
+
+6. DEPRECATION / REMOVAL CANDIDATES
+- [RESOLVED 2026-06-24 — code-fixed] ENTIRE CLASS | v3/CassandraExecutor.java:239 (javadoc @deprecated at
+  :229) | High | The class Javadoc declared it deprecated in favor of cassandra.CassandraExecutor (v4),
+  but had NO @Deprecated ANNOTATION, so the compiler never warned callers. FIXED: added @Deprecated to the
+  class (and to v3/AsyncCassandraExecutor) — callers now get deprecation warnings, and the v3
+  "deprecated-not-annotated" compiler warnings are cleared. test-compile green.
+
+CROSS-CLASS NOTES
+- The whole cassandra.v3 package is intended to be superseded by the v4 packages; the only thing missing
+  is the machine-readable @Deprecated marker on the public types. Recommend deprecating the v3 public
+  surface wholesale.
+- cluster()/mapper(Class) v3-only members are driver-mandated, NOT drift.

@@ -1,0 +1,128 @@
+API DESIGN REVIEW — reactivestreams/MongoCollectionExecutor (reactive twin of blocking mongodb/MongoCollectionExecutor)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/reactivestreams/MongoCollectionExecutor.java
+Reviewer: opus-4.8  Date: 2026-06-23
+Scope: all PUBLIC methods (incl. @Beta, @Deprecated). Overload family treated as one unit.
+Convention reference: blocking sibling at .../mongodb/MongoCollectionExecutor.java.
+
+Reactive return-type convention observed (and overall sound):
+  single value   -> Mono<T>   (empty Mono == "no match"/"absent")
+  multi value    -> Flux<T>   (cold, server cursor per subscription)
+  raw driver     -> ChangeStreamPublisher<T> for watch() (hot, never completes)
+  Dataset        -> Mono<Dataset> (materialized; emits empty Dataset, never empty-completes)
+This is applied consistently across the class; the great majority of the surface is a faithful reactive mirror.
+
+======================================================================
+SECTION 1 — FUNCTIONALITY (clarity / overlap / reactive correctness)
+======================================================================
+
+1.1  query(Collection, Bson, int, int, Class) name-vs-arg path is fine, BUT the
+     primitive queryForXxx family loses the blocking sibling's documented
+     "missing/null field vs no-match" distinction.
+     Mono<Boolean> queryForBoolean(String, Bson) | MongoCollectionExecutor.java:1163
+     (and queryForChar/Byte/Short/Int/Long/Float/Double/String/Date — :1209/1255/1301/1347/1393/1440/1487/1533/1579)
+     | Confidence: Medium (BY-DESIGN candidate, documented) — report as convention note, not a defect.
+     The blocking sibling returns OptionalBoolean/OptionalInt/... where empty == "no doc matched" and
+     present-with-default == "matched but field missing/null". The reactive twin collapses BOTH cases to
+     an empty Mono (queryForSingleValue -> Mono.justOrEmpty(convert(...))). This is a genuine semantic
+     loss that the Javadoc acknowledges. Recommendation: keep, but the doc already (correctly) tells users
+     to use defaultIfEmpty(...). No code change required; flagged only for the cross-class note.
+
+1.2  toBson(Object) "auto-$set wrap" + empty-update fast-fail is correctly mirrored from blocking.
+     | MongoCollectionExecutor.java:2492 | Confidence: High (NON-ISSUE — verified identical behavior). No action.
+
+======================================================================
+SECTION 2 — NAMING (matches blocking sibling; accurate)
+======================================================================
+
+2.1  Accessor renamed: coll() vs blocking mongoCollection().
+     MongoCollection<Document> coll() | MongoCollectionExecutor.java:216
+     vs blocking MongoCollection<Document> mongoCollection() (blocking :211)
+     | Confidence: High | ACTIONABLE naming drift.
+     Same concept (return wrapped driver collection), two different names across the twins. A user who
+     learned the blocking API cannot guess the reactive name. Recommendation: add a mongoCollection()
+     alias (delegating to coll()) for parity, OR rename to mongoCollection() and keep coll() as a
+     deprecated alias. Prefer adding mongoCollection() so both classes share the documented name.
+
+======================================================================
+SECTION 3 — RETURN TYPE (reactive consistency; single vs stream; vs blocking Optional/List/Stream choices)
+======================================================================
+
+3.1  list(...) family correctly maps blocking List<T> -> Flux<T>; stream(...) family has no reactive
+     counterpart by design (Flux IS the reactive stream). | :889..1112 | Confidence: High (NON-ISSUE).
+
+3.2  query(...) family correctly maps blocking Dataset -> Mono<Dataset>. The "emit empty Dataset, never
+     empty-complete" contract is consistent across all 9 overloads. | :1731..1942 | Confidence: High (NON-ISSUE).
+
+3.3  insertOne/insertMany return Mono<InsertOneResult>/Mono<InsertManyResult> where blocking returns void.
+     | :2166 / :2234 | Confidence: High (NON-ISSUE — IMPROVEMENT). Surfacing the driver result reactively
+     is the right call; do not align downward to void. No action.
+
+======================================================================
+SECTION 4 — PARAMETERS (ordering vs blocking; missing implied overloads; unsafe overloads)
+======================================================================
+
+4.1  Parameter ordering across all mirrored families matches the blocking sibling exactly
+     (selectPropNames, filter, sort, offset, count, rowType). | Confidence: High (NON-ISSUE). No action.
+
+4.2  count(Bson, CountOptions) accepts null options (documented), consistent with blocking. | :421 |
+     Confidence: High (NON-ISSUE).
+
+======================================================================
+SECTION 5 — CLASS PLACEMENT
+======================================================================
+No misplacement. All operations belong on the collection executor. watch()/ChangeStreamPublisher
+correctly surface the reactive-driver type rather than forcing it into Flux at the API boundary
+(callers wrap with Flux.from(...)). | Confidence: High (NON-ISSUE).
+
+======================================================================
+SECTION 6 — MISSING METHODS (present on blocking, absent here) / DEPRECATION CANDIDATES
+======================================================================
+
+6.1  gett(...) family entirely ABSENT in reactive (6 blocking overloads).
+     Blocking: Document gett(String) :612 ; gett(ObjectId) :639 ; <T> gett(String,Class) :667 ;
+     gett(ObjectId,Class) :696 ; gett(String,Collection,Class) :726 ; gett(ObjectId,Collection,Class) :758.
+     | Confidence: High | ACTIONABLE (BY-DESIGN likely, but call it out).
+     In the blocking API, get(...) returns Optional<T> and gett(...) is the "return null instead of empty"
+     variant. In the reactive API, get(...) already returns Mono<T> that completes empty on no-match, and
+     Mono has no "null payload" concept — so gett() has no natural reactive analogue. Recommendation:
+     CONFIRM as intentional omission (no replacement needed). If parity documentation is desired, note in
+     get(...) Javadoc that "there is no gett() twin; an empty Mono is the not-found signal." Low-confidence
+     part -> confirming check: grep the reactive package + tests for any `gett` reference (expected: none).
+
+6.2  queryForSingleNonNull(String, Bson, Class) ABSENT in reactive.
+     Blocking: <V> Optional<V> queryForSingleNonNull(String,Bson,Class) :1656.
+     | Confidence: High | ACTIONABLE (likely BY-DESIGN).
+     Blocking distinguishes queryForSingleValue (Nullable, keeps matched-but-null) from queryForSingleNonNull
+     (Optional, rejects null with NPE). The reactive queryForSingleValue already collapses null -> empty Mono
+     (Mono.justOrEmpty), so a separate "non-null" method would be behaviorally identical to the existing
+     queryForSingleValue. Recommendation: CONFIRM intentional; no reactive counterpart is meaningful. No
+     action beyond noting it. Confirming check: none needed — Mono.justOrEmpty semantics make them equivalent.
+
+6.3  async() correctly absent — the reactive class IS the async surface. | Confidence: High (NON-ISSUE).
+
+6.4  mapReduce(...) deprecation is mirrored faithfully (@Deprecated on both reactive overloads, :4100/:4128).
+     | Confidence: High (NON-ISSUE). Keep as-is; deprecation parity is correct.
+
+6.5  All write/find-and-modify/distinct/aggregate/groupBy/groupByAndCount/watch families are present and
+     1:1 with blocking. No reactive-only orphans, no blocking-only operations besides 6.1/6.2 above.
+     | Confidence: High (NON-ISSUE).
+
+======================================================================
+CROSS-CLASS NOTES (blocking-vs-reactive divergence)
+======================================================================
+A. Accessor name drift coll() (reactive) vs mongoCollection() (blocking) — the ONE concrete naming
+   inconsistency worth fixing (2.1). Recommend a shared mongoCollection() name on both.
+B. The Optional/Nullable -> empty-Mono collapse is the defining and acceptable semantic difference of the
+   reactive twin. It removes three blocking distinctions: (i) primitive queryForXxx "missing-field default"
+   vs "no match" (1.1); (ii) get vs gett (6.1); (iii) queryForSingleValue(Nullable) vs queryForSingleNonNull
+   (6.2). All three are inherent to Mono lacking a present-but-null state and are correctly documented; none
+   is a code defect. Net: NO blocking operation is silently dropped that has a meaningful reactive analogue.
+C. Reactive return-type convention is applied uniformly: Mono for at-most-one, Flux for streams,
+   Mono<Dataset> for materialized tabular, ChangeStreamPublisher for hot watch. No inconsistency found.
+
+SUMMARY OF ACTIONABLE ITEMS:
+  - 2.1  coll() vs mongoCollection() naming drift            (Medium-High; add mongoCollection() alias)
+  - 6.1  gett() family absent                                (confirm BY-DESIGN; no replacement)
+  - 6.2  queryForSingleNonNull absent                        (confirm BY-DESIGN; equivalent to queryForSingleValue)
+  - 1.1  primitive queryForXxx loses missing-vs-no-match     (BY-DESIGN/documented; convention note only)
+Everything else is a faithful, consistent mirror.

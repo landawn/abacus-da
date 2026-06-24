@@ -1,0 +1,62 @@
+API DESIGN REVIEW — hbase/AnyScan.java
+public final class AnyScan extends AnyQuery<AnyScan>
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+
+1. OVERALL ASSESSMENT
+AnyScan is a faithful fluent wrapper over HBase `Scan` and is generally consistent with its AnyQuery
+sibling AnyGet. All findings are consistency/surface-pruning items — there are no correctness bugs. The
+class already carries appropriate @Deprecated markers on its legacy factories. The main themes are: a
+pair of redundant overrides that duplicate base behavior, several already-deprecated factories that can
+be removed, and a minor accessor-naming asymmetry vs AnyGet.
+
+2. NAMING ISSUES
+- setColumnFamilyTimeRange(...) param names minTimestamp/maxTimestamp/family | AnyScan.java:674,708 |
+  Low | Diverge from base AnyQuery vocabulary cf/minStamp/maxStamp (AnyQuery.java:504,545). Moot if the
+  redundant overrides are removed (see §6). Verified: override bodies are byte-identical to the base
+  apart from param names and a toFamilyQualifierBytes call on the String form.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- getFamilies() returns nullable byte[][] | AnyScan.java:509 | Low | Returns null when no families
+  added. Unlike getFamilyMap() (never-null) this can surprise callers, BUT null here is a MEANINGFUL
+  HBase signal ("no family filter -> scan all families"), faithfully mirrored from Scan.getFamilies().
+  Recommendation: KEEP the null semantics but document "null = all families" explicitly; do not convert
+  to empty array (that would lose the all-families signal). Verified: bare delegate to scan.getFamilies().
+- setFamilyMap(Map) Javadoc says "must not be null" but performs no null check | AnyScan.java:631 | Low |
+  Either add a fail-fast null guard or relax the contract wording. Verified: body is a bare delegate.
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+- static toScan(Collection<AnyScan>) : List<Scan> absent | AnyScan.java | Medium | AnyGet has the
+  parallel static toGet(Collection) (AnyGet.java:1120); add toScan for batch-interop symmetry (settle
+  its name jointly with the AnyGet.toGet rename).
+- familySet() absent (present on AnyGet.java:967) | AnyScan.java | Low | Accessor-name asymmetry vs
+  AnyGet; resolve by choosing ONE canonical accessor for both classes (see SUMMARY). getRow() is
+  correctly omitted (a Scan has no single row).
+
+6. DEPRECATION / REMOVAL CANDIDATES
+- setColumnFamilyTimeRange(String,long,long) / (byte[],long,long) | AnyScan.java:673,707 | Medium |
+  REDUNDANT @Override — the base AnyQuery methods (504,545) already return the self-type AnyScan and
+  delegate to the same underlying object. Verified: AnyGet does NOT re-declare them, so AnyScan is the
+  outlier. Remove both overrides and inherit (also resolves the param-name drift in §2).
+- setRowPrefixFilter(Object) | AnyScan.java:1167 | High (already @Deprecated) | Misnomer (installs no
+  Filter) and already deprecated. Remove in favor of setStartStopRowForPrefixScan(byte[]); consider
+  adding an Object overload of the replacement, since the old method accepted Object but the replacement
+  only takes byte[].
+- of(Object) / of(Object,Object) / of(Object,Filter) | AnyScan.java:293,317,339 | High (already
+  @Deprecated) | Remove in next major; fully superseded by
+  create().withStartRow(..)[.withStopRow(..)|.setFilter(..)]. (Backing deprecated ctors at :132,146,161.)
+
+CROSS-CLASS NOTES
+- AnyScan re-overrides base setColumnFamilyTimeRange; AnyGet does not — bases already self-type, so
+  AnyScan's overrides are pure redundancy.
+- getFamilies()(AnyScan) vs familySet()(AnyGet): accessor-name asymmetry between the two AnyQuery
+  subclasses — standardize.
+- readVersions(int) validation divergence vs AnyGet is documented/by-design, NOT flagged.
+
+--- DOC-FIX PASS 2026-06-23 ---
+Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its
+findings are code/design (see SUMMARY.txt section 2), or any doc-adjacent item was evaluated and
+intentionally left (documenting it would paper over a behavioral/design issue, or it is dead-comment
+cleanup deferred to the maintainer). `mvn -o clean compile` remains green.

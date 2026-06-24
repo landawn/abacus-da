@@ -235,6 +235,7 @@ import lombok.experimental.Accessors;
  * @see com.datastax.driver.core.Session
  * @see com.landawn.abacus.query.Filters
  */
+@Deprecated
 public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSet, Statement, PreparedStatement, BatchStatement.Type> {
 
     static {
@@ -1538,9 +1539,6 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * SimpleStatement, BoundStatement, or BatchStatement. This provides maximum
      * flexibility when you need fine-grained control over statement configuration
      * such as consistency levels, timeouts, or retry policies.</p>
-     *
-     * <p>The configured statement settings for this executor are applied to the
-     * statement before execution if not already set on the statement itself.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

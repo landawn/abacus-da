@@ -1,0 +1,54 @@
+API DESIGN REVIEW — gcp/BigQueryExecutor.java
+public class BigQueryExecutor
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+
+1. OVERALL ASSESSMENT
+BigQueryExecutor is a coherent query-mapping executor (query->Dataset, list->List<T>, stream->Stream<T>,
+exists->boolean, queryForSingleValue->Nullable<V>), with targetClass-first parameter ordering that matches
+its closest relative CassandraExecutorBase. Public static converters (toEntity/toMap/toList/extractData)
+are co-located on the executor consistently with the Cassandra/DynamoDB pattern. Findings are a
+null-contract inconsistency, a phantom type parameter, and several family-completeness gaps vs the other
+condition-based executors.
+
+2. NAMING ISSUES
+None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- update(Object) / delete(Object) throw NPE on null while insert(Object) throws IAE | BigQueryExecutor.
+  java:1249,1418 vs 1139 | High | Verified: insert calls N.checkArgNotNull(entity) (IAE); update does
+  update(entity, getKeyNameSet(entity.getClass())) and delete does delete(entity.getClass(), ...) — both
+  NPE on null. Add N.checkArgNotNull(entity) to update/delete to unify on IAE.
+- queryForSingleValue(Class<T> targetClass, Class<V> valueClass, String, Condition) declares unused <T> |
+  BigQueryExecutor.java:1767 | High | <T> is bound only to targetClass and never appears in the return
+  (Nullable<V>); change targetClass to Class<?> (matches Cassandra's equivalent). Recurring phantom-<T>
+  pattern (see SUMMARY).
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS  (gaps vs CassandraExecutorBase / mongo — the condition-based executor family)
+- get(Class,Object... ids) -> Optional<T> / gett -> T absent | BigQueryExecutor.java | Medium | No
+  fetch-by-id; Cassandra and Mongo both provide it, and the building blocks (idsToCondition,
+  list(Class,Condition)) already exist here.
+- queryForSingleNonNull(Class<V>,...) -> Optional<V> absent | Medium | The convention pairs it with
+  queryForSingleValue->Nullable<V> (CassandraExecutorBase:2055, Mongo:1656); only the Nullable form exists.
+- count(Class<?>,Condition) -> long absent | Low | Cassandra/Mongo have it; may be a deliberate
+  BigQuery-bytes-billed cost choice. Confirming check: confirm omission is cost-motivated.
+- findFirst(...) -> Optional<T> absent | Low | Cassandra has it; stream(...).first() is a clean
+  workaround.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+None.
+
+CROSS-CLASS NOTES
+- Return discipline (Dataset/List/Stream/Nullable/boolean) and targetClass-first ordering conform to the
+  Cassandra model — good. The gaps are missing family members (get/gett/queryForSingleNonNull/count/
+  findFirst), not deviations.
+- delete(Class,Object...)/exists(Class,Object...) are declared final to disambiguate the varargs-vs-
+  Condition overloads — intentional, matches Cassandra.
+
+--- DOC-FIX PASS 2026-06-23 ---
+Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its
+findings are code/design (see SUMMARY.txt section 2), or any doc-adjacent item was evaluated and
+intentionally left (documenting it would paper over a behavioral/design issue, or it is dead-comment
+cleanup deferred to the maintainer). `mvn -o clean compile` remains green.

@@ -1,0 +1,44 @@
+API DESIGN REVIEW — hbase/AnyRowMutations.java
+public final class AnyRowMutations implements Row
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> DOC-FIX PASS UPDATE (2026-06-23): the add(Mutation) @throws-IOException finding (section 3) was
+    WITHDRAWN as CLAIM-INVALID after disassembling hbase-client 2.6.0. See the [WITHDRAWN] tag. The
+    missing wrapper-overload item (section 5) is a code change and remains open. <<<
+
+1. OVERALL ASSESSMENT
+AnyRowMutations is a small, faithful fluent wrapper over HBase `RowMutations` (a single-row,
+atomically-applied batch of Put/Delete). It correctly stays OUT of the AnyMutation/AnyOperation
+hierarchy (RowMutations is not a Mutation). add* naming is consistent with the rest of the package. The
+one real gap is ergonomic: the add(...) methods accept only raw HBase Mutation, forcing callers who hold
+Any* wrappers to unwrap with .val() first.
+
+2. NAMING ISSUES
+None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- [WITHDRAWN — CLAIM INVALID 2026-06-23] add(Mutation)/add(List) @throws IOException wording |
+  AnyRowMutations.java:266,271 | Low | The confirming check was performed: disassembling hbase-client
+  2.6.0 shows RowMutations.add constructs a WrongRowIOException (which EXTENDS java.io.IOException) for a
+  row-key mismatch; the IllegalArgumentException only appears in the unrelated of(List) factory. The
+  current @throws IOException and the "// throws IOException" example comments are therefore CORRECT.
+  No edit.
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+- add(AnyPut) / add(AnyDelete) [or add(AnyMutation<?>)] wrapper-accepting overloads absent |
+  AnyRowMutations.java:271 | Medium | Today callers must write rowMutations.add(anyPut.val()). Verified:
+  add takes only Mutation/List<? extends Mutation>, and AnyPut.val()->Put (AnyPut.java:1032) /
+  AnyDelete.val()->Delete (AnyDelete.java:484) exist. Add overloads that internally call val() so callers
+  stay in the Any* world. KEEP the existing add(Mutation) as an escape hatch (do NOT narrow it).
+- Correctly NOT missing: Increment/Append add overloads — the underlying RowMutations supports only
+  Put/Delete; do not add them.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+- compareTo(Row) / hashCode delegating to HBase-deprecated methods | AnyRowMutations.java:369,393 | High
+  | KEEP — required by the Row contract and already disclosed in the Javadoc.
+
+CROSS-CLASS NOTES
+- .val() is the package-wide unwrap convention; the one ergonomic gap is that AnyRowMutations.add does
+  not consume the Any* wrappers. Adding wrapper overloads aligns it with how callers build Put/Delete.

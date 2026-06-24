@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
+import com.landawn.abacus.annotation.Beta;
 import com.landawn.abacus.query.AbstractQueryBuilder.SP;
 import com.landawn.abacus.query.QueryUtil;
 import com.landawn.abacus.query.condition.Condition;
@@ -1256,7 +1257,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param parameters the parameter values to bind
      * @return a future whose payload is the count of matching rows, or {@code 0} if the query
      *         returned no row or a {@code null} value
-     * @deprecated Use {@link #queryForLong(String, Object...)} with {@code COUNT(*)} in the query instead.
+     * @deprecated prefer {@link #queryForLong(String, Object...)} with a {@code COUNT(*)} query, applying
+     *             {@code orElse(0L)} to its {@code OptionalLong} payload for the same behavior. Slated for
+     *             removal in a future release.
      */
     @Deprecated
     public final ContinuableFuture<Long> count(final String query, final Object... parameters) {
@@ -1909,6 +1912,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is a <i>present</i> {@link OptionalBoolean} holding the value
      *         ({@code false} when the column is {@code null}); empty only when no row matches
      */
+    @Beta
     public <T> ContinuableFuture<OptionalBoolean> queryForBoolean(final Class<T> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Boolean.class, propName, whereClause).map(CassandraExecutorBase.boolean_mapper);
     }
@@ -1947,6 +1951,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is a <i>present</i> {@link OptionalChar} holding the value
      *         ({@code (char) 0} when the column is {@code null}); empty only when no row matches
      */
+    @Beta
     public <T> ContinuableFuture<OptionalChar> queryForChar(final Class<T> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Character.class, propName, whereClause).map(CassandraExecutorBase.char_mapper);
     }
@@ -1985,6 +1990,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is a <i>present</i> {@link OptionalByte} holding the value
      *         ({@code (byte) 0} when the column is {@code null}); empty only when no row matches
      */
+    @Beta
     public <T> ContinuableFuture<OptionalByte> queryForByte(final Class<T> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Byte.class, propName, whereClause).map(CassandraExecutorBase.byte_mapper);
     }
@@ -2023,6 +2029,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is a <i>present</i> {@link OptionalShort} holding the value
      *         ({@code (short) 0} when the column is {@code null}); empty only when no row matches
      */
+    @Beta
     public <T> ContinuableFuture<OptionalShort> queryForShort(final Class<T> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Short.class, propName, whereClause).map(CassandraExecutorBase.short_mapper);
     }
@@ -2061,6 +2068,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is a <i>present</i> {@link OptionalInt} holding the value
      *         ({@code 0} when the column is {@code null}); empty only when no row matches
      */
+    @Beta
     public <T> ContinuableFuture<OptionalInt> queryForInt(final Class<T> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Integer.class, propName, whereClause).map(CassandraExecutorBase.int_mapper);
     }
@@ -2099,6 +2107,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is a <i>present</i> {@link OptionalLong} holding the value
      *         ({@code 0L} when the column is {@code null}); empty only when no row matches
      */
+    @Beta
     public <T> ContinuableFuture<OptionalLong> queryForLong(final Class<T> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Long.class, propName, whereClause).map(CassandraExecutorBase.long_mapper);
     }
@@ -2137,6 +2146,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is a <i>present</i> {@link OptionalFloat} holding the value
      *         ({@code 0f} when the column is {@code null}); empty only when no row matches
      */
+    @Beta
     public <T> ContinuableFuture<OptionalFloat> queryForFloat(final Class<T> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Float.class, propName, whereClause).map(CassandraExecutorBase.float_mapper);
     }
@@ -2175,6 +2185,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is a <i>present</i> {@link OptionalDouble} holding the value
      *         ({@code 0d} when the column is {@code null}); empty only when no row matches
      */
+    @Beta
     public <T> ContinuableFuture<OptionalDouble> queryForDouble(final Class<T> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Double.class, propName, whereClause).map(CassandraExecutorBase.double_mapper);
     }
@@ -2213,6 +2224,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is a {@link Nullable} holding the {@code String} value, or
      *         empty if no row matches; the value is {@code null} when the column is SQL NULL
      */
+    @Beta
     public <T> ContinuableFuture<Nullable<String>> queryForString(final Class<T> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, String.class, propName, whereClause);
     }
@@ -2250,6 +2262,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is a {@link Nullable} holding the {@code Date} value, or
      *         empty if no row matches
      */
+    @Beta
     public <T> ContinuableFuture<Nullable<Date>> queryForDate(final Class<T> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Date.class, propName, whereClause);
     }
@@ -2288,6 +2301,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is a {@link Nullable} holding the typed date value, or empty
      *         if no row matches
      */
+    @Beta
     public <T, E extends Date> ContinuableFuture<Nullable<E>> queryForDate(final Class<T> targetClass, final Class<E> valueClass, final String propName,
             final Condition whereClause) {
         return queryForSingleValue(targetClass, valueClass, propName, whereClause);
@@ -2412,6 +2426,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is a <i>present</i> {@link OptionalBoolean} holding the value
      *         ({@code false} when the column is {@code null}); empty only when the query returned no row
      */
+    @Beta
     public final ContinuableFuture<OptionalBoolean> queryForBoolean(final String query, final Object... parameters) {
         return queryForSingleValue(Boolean.class, query, parameters).map(CassandraExecutorBase.boolean_mapper);
     }
@@ -2448,6 +2463,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is a <i>present</i> {@link OptionalChar} holding the value
      *         ({@code (char) 0} when the column is {@code null}); empty only when the query returned no row
      */
+    @Beta
     public final ContinuableFuture<OptionalChar> queryForChar(final String query, final Object... parameters) {
         return queryForSingleValue(Character.class, query, parameters).map(CassandraExecutorBase.char_mapper);
     }
@@ -2484,6 +2500,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is a <i>present</i> {@link OptionalByte} holding the value
      *         ({@code (byte) 0} when the column is {@code null}); empty only when the query returned no row
      */
+    @Beta
     public final ContinuableFuture<OptionalByte> queryForByte(final String query, final Object... parameters) {
         return queryForSingleValue(Byte.class, query, parameters).map(CassandraExecutorBase.byte_mapper);
     }
@@ -2520,6 +2537,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is a <i>present</i> {@link OptionalShort} holding the value
      *         ({@code (short) 0} when the column is {@code null}); empty only when the query returned no row
      */
+    @Beta
     public final ContinuableFuture<OptionalShort> queryForShort(final String query, final Object... parameters) {
         return queryForSingleValue(Short.class, query, parameters).map(CassandraExecutorBase.short_mapper);
     }
@@ -2555,6 +2573,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is a <i>present</i> {@link OptionalInt} holding the value
      *         ({@code 0} when the column is {@code null}); empty only when the query returned no row
      */
+    @Beta
     public final ContinuableFuture<OptionalInt> queryForInt(final String query, final Object... parameters) {
         return queryForSingleValue(Integer.class, query, parameters).map(CassandraExecutorBase.int_mapper);
     }
@@ -2590,6 +2609,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is a <i>present</i> {@link OptionalLong} holding the value
      *         ({@code 0L} when the column is {@code null}); empty only when the query returned no row
      */
+    @Beta
     public final ContinuableFuture<OptionalLong> queryForLong(final String query, final Object... parameters) {
         return queryForSingleValue(Long.class, query, parameters).map(CassandraExecutorBase.long_mapper);
     }
@@ -2626,6 +2646,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is a <i>present</i> {@link OptionalFloat} holding the value
      *         ({@code 0f} when the column is {@code null}); empty only when the query returned no row
      */
+    @Beta
     public final ContinuableFuture<OptionalFloat> queryForFloat(final String query, final Object... parameters) {
         return queryForSingleValue(Float.class, query, parameters).map(CassandraExecutorBase.float_mapper);
     }
@@ -2662,6 +2683,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is a <i>present</i> {@link OptionalDouble} holding the value
      *         ({@code 0d} when the column is {@code null}); empty only when the query returned no row
      */
+    @Beta
     public final ContinuableFuture<OptionalDouble> queryForDouble(final String query, final Object... parameters) {
         return queryForSingleValue(Double.class, query, parameters).map(CassandraExecutorBase.double_mapper);
     }
@@ -2699,6 +2721,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         empty if the query returned no row; the value is {@code null} when the column is
      *         SQL NULL
      */
+    @Beta
     public final ContinuableFuture<Nullable<String>> queryForString(final String query, final Object... parameters) {
         return queryForSingleValue(String.class, query, parameters);
     }

@@ -1,0 +1,39 @@
+API DESIGN REVIEW — mongodb/reactivestreams/MongoDB.java
+public final class MongoDB extends com.landawn.abacus.da.mongodb.MongoDBBase (reactive streams)
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+
+1. OVERALL ASSESSMENT
+A clean, faithful reactive facade, mirror of the blocking mongodb/MongoDB (both extend the same
+MongoDBBase). Factory names, parameter ordering, and overload families line up 1:1 with the blocking
+facade; the only delta is the reactive executor/mapper return types, which is correct. No HIGH/MEDIUM
+defects; the two LOW items are pre-existing validation nits shared with the blocking design.
+
+2. NAMING ISSUES
+None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- collection(String) / collection(String,Class) perform no null-check while collectionExecutor(String) /
+  collectionMapper(String,...) on the same class validate | reactivestreams/MongoDB.java:206,240 | Low |
+  Intra-facade asymmetry; mirrors blocking MongoDB.java:171, so shared/intentional. If tightened, add
+  N.checkArgNotNull to BOTH facades together.
+- collectionMapper(Class) throws NPE on null rowType vs IAE elsewhere | reactivestreams/MongoDB.java:373 |
+  Low | Mirrors blocking MongoDB.java:303; harmonize both siblings together.
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+None. The full factory set (db, collection x2, collectionExecutor x2, collectionMapper x3) is mirrored 1:1.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+None.
+
+CROSS-CLASS NOTES
+- Correctly omits the blocking facade's MongoDatabase+AsyncExecutor constructor (the reactive driver is
+  natively non-blocking; the reactive collection executor takes no AsyncExecutor) — by design, not a gap.
+
+--- DOC-FIX PASS 2026-06-23 ---
+Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its
+findings are code/design (see SUMMARY.txt section 2), or any doc-adjacent item was evaluated and
+intentionally left (documenting it would paper over a behavioral/design issue, or it is dead-comment
+cleanup deferred to the maintainer). `mvn -o clean compile` remains green.

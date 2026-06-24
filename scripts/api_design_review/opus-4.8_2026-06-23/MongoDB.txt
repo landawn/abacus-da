@@ -1,0 +1,41 @@
+API DESIGN REVIEW — mongodb/MongoDB.java
+public final class MongoDB extends MongoDBBase
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+
+1. OVERALL ASSESSMENT
+MongoDB is the blocking factory/facade: db()/collection()/collectionExecutor()/collectionMapper(). Factory
+naming and parameter ordering are clean and mirror the reactive twin 1:1. Only minor validation-symmetry
+nits, all shared with the reactive facade (fix both together).
+
+2. NAMING ISSUES
+None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- collection(String) / collection(String,Class) perform NO null check, while collectionExecutor(String...)
+  and collectionMapper(String,...) on the same class validate their args | MongoDB.java:171,201 vs
+  226,263,303,336,383 | Medium | Intra-facade inconsistency in failure mode. Add
+  N.checkArgNotNull(collectionName) to collection(...) for uniform IllegalArgumentException. (Shared with
+  reactivestreams/MongoDB.java:206,240 — change both.)
+- collectionMapper(Class) throws NPE on null rowType, whereas collectionMapper(String,Class) throws IAE |
+  MongoDB.java:303 | Low | Validate rowType up front so both throw IAE. (Shared with
+  reactivestreams/MongoDB.java:373 — change both.)
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+None.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+None.
+
+CROSS-CLASS NOTES
+- The blocking facade takes an AsyncExecutor (for AsyncMongoCollectionExecutor) that the reactive facade
+  correctly omits (reactive driver is natively non-blocking) — by design, NOT an asymmetry to "fix".
+- Validation nits above are shared with the reactive twin; harmonize as a pair.
+
+--- DOC-FIX PASS 2026-06-23 ---
+Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its
+findings are code/design (see SUMMARY.txt section 2), or any doc-adjacent item was evaluated and
+intentionally left (documenting it would paper over a behavioral/design issue, or it is dead-comment
+cleanup deferred to the maintainer). `mvn -o clean compile` remains green.

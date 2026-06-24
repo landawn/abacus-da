@@ -1,0 +1,153 @@
+API DESIGN REVIEW — AnyScan.java
+Target: abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyScan.java
+public final class AnyScan extends AnyQuery<AnyScan>
+Bases read for context: AnyQuery.java, AnyOperationWithAttributes.java; sibling AnyGet.java.
+
+==================================================================
+1. OVERALL ASSESSMENT
+==================================================================
+AnyScan is a clean, well-documented fluent mirror of org.apache.hadoop.hbase.client.Scan. The
+overwhelming majority of declared methods are by-design 1:1 delegations to Scan, return `this`
+for chaining, and carry accurate, example-rich Javadoc; these are healthy and not re-flagged. The
+factory surface (create / of / createScanFromCursor) is coherent, val()/equals/hashCode/toString
+are consistent with the sibling AnyGet, and the throughput/time-range/row-range families are
+correctly modeled. Actionable findings are modest and concentrated in: (a) a redundant override
+of setColumnFamilyTimeRange that duplicates the AnyQuery base purely to rename parameters and
+restate Javadoc; (b) a small cluster of deprecated constructors/factory overloads plus the
+deprecated setRowPrefixFilter that should be the headline removal candidates; (c) a missing
+batch-conversion helper (toScan) that breaks symmetry with AnyGet.toGet; and (d) a couple of
+return-type / naming consistency notes versus HBase conventions. Nothing here is a correctness
+bug; the items are consistency, symmetry, and surface-pruning improvements.
+
+==================================================================
+2. NAMING ISSUES
+==================================================================
+
+setRowPrefixFilter(Object) | AnyScan.java:1168 | High |
+  The name promises a server-side Filter but the method installs NONE (delegates to
+  Scan.setRowPrefixFilter, which only computes start/stop bounds). The Javadoc itself calls the
+  name "a misnomer". It is already @Deprecated in favor of setStartStopRowForPrefixScan(byte[]).
+  Recommendation: keep deprecation; the correctly-named replacement (setStartStopRowForPrefixScan)
+  already exists — see section 6 for removal.
+
+setColumnFamilyTimeRange(String/byte[], long min, long max) parameter naming | AnyScan.java:674,708 | Low |
+  The override renames the base parameters minStamp/maxStamp (AnyQuery.java:504,545) to
+  minTimestamp/maxTimestamp. Minor inconsistency in a single inheritance chain; the same concept
+  has two names depending on which class you read. Recommendation: if the override is kept at all
+  (see §3), align parameter names with the base (minStamp/maxStamp). Confirming check: diff the two
+  signatures in AnyScan vs AnyQuery — bodies are byte-identical, only param names differ.
+
+getCacheBlocks() / getAllowPartialResults() | AnyScan.java:1545,1799 | Low |
+  Boolean getters use the `get`-prefix rather than the `is`-prefix used by the other boolean
+  getters in this class (isReversed, isRaw, isScanMetricsEnabled, isNeedCursorResult, isGetScan).
+  This mirrors HBase's own Scan method names exactly, so it is by-design mirroring, NOT a defect —
+  noted only so it is not re-raised. No action recommended. Confirming check: both names match
+  org.apache.hadoop.hbase.client.Scan verbatim.
+
+==================================================================
+3. RETURN-TYPE AND PARAMETER ISSUES
+==================================================================
+
+setColumnFamilyTimeRange(String, long, long) + setColumnFamilyTimeRange(byte[], long, long)
+  | AnyScan.java:673-712 | High |
+  Both overloads @Override the identical methods on AnyQuery (AnyQuery.java:504-549). The bodies
+  are functionally identical (String form: toFamilyQualifierBytes(family) then delegate; byte[]
+  form: straight delegate). The override adds nothing but a parameter rename and a restated
+  Javadoc, and risks drift from the base. Recommendation: DELETE both overrides from AnyScan and
+  inherit from AnyQuery (which already returns AQ = AnyScan via the self-type), unless a
+  Scan-specific covariant return or behavior is intended — it is not. If kept for Javadoc reasons,
+  at minimum align param names (§2). Confirming check: AnyQuery's setter already returns the
+  concrete AnyScan through the AQ self-type, so chaining is unaffected by removal.
+
+getFamilies() returns byte[][] and may return null | AnyScan.java:509 | Medium |
+  Returns the raw Scan family array, which is `null` when no families were added (documented).
+  Within this class the parallel accessor getFamilyMap() (line 590) returns a never-null map, and
+  AnyGet exposes families via familySet() (AnyGet.java:967, never-null live keySet). So AnyScan has
+  a null-returning array getter while the rest of the family-introspection surface is non-null.
+  Recommendation: prefer a never-null contract (empty array when none), or add a familySet()
+  accessor mirroring AnyGet for consistency; if the null mirrors Scan and must be preserved, keep
+  but this is the one null-returning collection getter in the family group.
+
+setFamilyMap(Map) null-acceptance | AnyScan.java:631 | Low |
+  Accepts a null map by reference (Javadoc states "@param familyMap ... must not be null" yet the
+  example shows null is accepted with no exception, failing only later on traversal). The contract
+  and behavior contradict each other. Recommendation: either validate non-null up front
+  (N.checkArgNotNull) to fail fast and match the documented contract, or update the @param to admit
+  null. Confirming check: method body is a bare delegate with no null guard (line 632).
+
+==================================================================
+4. MISPLACED METHODS (with target class)
+==================================================================
+
+None. Every public method declared in AnyScan is Scan-specific (row range, caching/batch,
+versions, read type, raw/cursor/metrics, prefix scan) and belongs on AnyScan rather than the
+AnyQuery base. The setColumnFamilyTimeRange overrides are not "misplaced" — they are redundant
+duplicates of base methods (covered in §3), so no relocation is needed, only deletion.
+
+==================================================================
+5. MISSING METHODS (with target class)
+==================================================================
+
+static List<Scan> toScan(Collection<AnyScan>) | target: AnyScan.java | Medium |
+  AnyGet provides static toGet(Collection<AnyGet>) -> List<Get> (AnyGet.java:1120) for batch
+  interop with the native client. AnyScan has no parallel toScan helper, breaking sibling symmetry
+  for callers that build many scans (e.g. multi-range parallel scanning). Recommendation: add
+  `public static List<Scan> toScan(Collection<AnyScan>)` mirroring toGet (null/empty handling, null
+  element rejection). Low urgency since multi-Scan batch APIs are rarer than multi-Get, hence
+  Medium not High.
+
+getRow()/familySet() parity | target: AnyScan.java | Low |
+  AnyGet implements Row and exposes getRow() and familySet(); AnyScan deliberately omits getRow()
+  (a scan has no single row) which is correct. familySet() is the only family accessor present on
+  AnyGet but absent on AnyScan (AnyScan offers getFamilies()/getFamilyMap() instead). Optional:
+  add familySet() for cross-class consistency (see §3 null note). Confirming check: AnyScan has no
+  Row implementation and no single-row concept, so getRow() must stay omitted.
+
+==================================================================
+6. DEPRECATION / REMOVAL CANDIDATES (with replacement APIs)
+==================================================================
+
+of(Object startRow) | AnyScan.java:293 (@Deprecated) | High |
+of(Object startRow, Object stopRow) | AnyScan.java:317 (@Deprecated) | High |
+of(Object startRow, Filter filter) | AnyScan.java:339 (@Deprecated) | High |
+  Already deprecated. Replacements documented and present:
+  create().withStartRow(..)[.withStopRow(..) | .setFilter(..)]. The withStartRow/withStopRow
+  methods correctly model inclusive/exclusive bounds that the old Scan(byte[],byte[]) constructors
+  could not. Recommendation: remove in next major; the create()+with* fluent path fully supersedes
+  them. (Backing package-private deprecated constructors at AnyScan.java:132,146,161 go with them.)
+
+setRowPrefixFilter(Object) | AnyScan.java:1168 (@Deprecated) | High |
+  Misnamed (no Filter installed) and deprecated upstream since HBase 2.5.0. Replacement
+  setStartStopRowForPrefixScan(byte[]) (AnyScan.java:1192) already exists and is correctly named.
+  Recommendation: remove. Note the replacement takes byte[] while the deprecated one took Object;
+  if Object-prefix ergonomics are valued, consider an Object overload of
+  setStartStopRowForPrefixScan when removing (it already routes through toRowKeyBytes).
+
+==================================================================
+CROSS-CLASS NOTES (vs AnyGet / base chain)
+==================================================================
+
+- readVersions(int) divergence is BY DESIGN and correctly documented on both sides: AnyScan.readVersions
+  (AnyScan.java:1280) accepts <1 (mirrors Scan, no validation), AnyGet.readVersions
+  (AnyGet.java:675) rejects <1 (mirrors Get, throws IllegalArgumentException). Each Javadoc
+  explicitly cross-references the other. Not a defect — flagged only so the asymmetry is not
+  mistaken for one.
+
+- setTimeRange(long,long): AnyScan (1830) wraps IOException -> IllegalArgumentException; AnyGet
+  (580) does the same; consistent. Good.
+
+- val()/equals/hashCode/toString: AnyScan delegates equals/hashCode to Scan (reference identity —
+  Scan does not override equals, documented at AnyScan.java:2185), whereas AnyGet delegates to Get
+  whose equals is row-key based. This asymmetry is inherent to the wrapped HBase types (Scan has no
+  value-equals; Get does), is accurately documented on both classes, and is not actionable. Noted
+  for awareness only.
+
+- Family introspection surface differs across siblings: AnyScan exposes getFamilies() (byte[][],
+  nullable) + getFamilyMap() + numFamilies()/hasFamilies(); AnyGet exposes familySet() +
+  getFamilyMap() + numFamilies()/hasFamilies(). Aligning on a common, never-null accessor
+  (familySet) would improve consistency (see §3/§5).
+
+- Redundant override of setColumnFamilyTimeRange: AnyScan re-declares both overloads already
+  present on AnyQuery with identical bodies (only param names differ). AnyGet does NOT re-declare
+  them (inherits from AnyQuery), so AnyScan is the outlier. Removing the AnyScan overrides aligns
+  it with AnyGet and the base (§3, §4).

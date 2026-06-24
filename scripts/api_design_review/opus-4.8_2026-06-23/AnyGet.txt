@@ -1,0 +1,53 @@
+API DESIGN REVIEW — hbase/AnyGet.java
+public final class AnyGet extends AnyQuery<AnyGet> implements Row
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+
+1. OVERALL ASSESSMENT
+AnyGet is a healthy, accurate, by-design fluent wrapper over HBase `Get`. The vast majority of its
+surface faithfully mirrors Get (addColumn/addFamily/readVersions/setTimeRange/etc.), correctly uses the
+self-typed base methods, and is well documented. equals/hashCode are value-based (row-key) here vs
+reference-identity on AnyScan — that difference is inherited from HBase Get vs Scan and faithfully
+documented, not a defect. Findings are minor naming/parity items only; no correctness problems.
+
+2. NAMING ISSUES
+- toGet(Collection<AnyGet>) returns List<Get> | AnyGet.java:1120 | Low | Singular name returns a List;
+  rename to `toGetList` (or `toGets`) for number agreement and to match the List return. Confirming
+  check: scan call sites for the static `toGet(Collection)`; no AnyScan equivalent exists (see AnyScan
+  M-finding) so settle the name on both together.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- AnyGet(Object,int,int) / of(Object,int,int) partial-key slice | AnyGet.java:137 / 229 | Low |
+  An out-of-range offset/length surfaces as a raw ArrayIndexOutOfBoundsException from HBase, inconsistent
+  with the IllegalArgumentException used elsewhere in the class. Recommend an up-front bounds check
+  throwing IAE, or accept as a strict HBase mirror. Confirming check: confirm HBase Get(byte[],int,int)
+  is the source of the AIOOBE.
+- getFamilyMap() / familySet() return live mutable internal views | AnyGet.java:460 / 967 | Low |
+  Intentional and matches AnyScan getFamilyMap; recorded only so any future defensive-immutability
+  decision is applied to both classes. No change now.
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+- getFamilies() : byte[][] absent on AnyGet (present on AnyScan.java:509) | AnyGet.java | Low |
+  AnyGet exposes familySet() instead; AnyScan exposes getFamilies(). This is an accessor-name asymmetry
+  between the two AnyQuery subclasses (see SUMMARY cross-class item), not a hard gap. Resolve by picking
+  ONE canonical accessor name and adding it to both, rather than adding getFamilies to AnyGet in
+  isolation. (Note: HBase Get has no native getFamilies, so it would be implemented via familyMap keys.)
+
+6. DEPRECATION / REMOVAL CANDIDATES
+- compareTo(Row) | AnyGet.java:992 | High (already @Deprecated) | KEEP; mirrors HBase deprecation,
+  replacement Row.COMPARATOR. Unavoidable while AnyGet implements Row.
+
+CROSS-CLASS NOTES
+- readVersions(int) validation differs from AnyScan (AnyGet rejects <1, AnyScan does not) — INTENTIONAL
+  and documented on both (AnyGet.java:667 / AnyScan.java:1273); not a defect.
+- Accessor asymmetry vs AnyScan: AnyGet has familySet(), AnyScan has getFamilies(). Standardize.
+- equals/hashCode value-based (row-key) here vs reference-identity on AnyScan — inherited from HBase
+  Get/Scan; on record only.
+
+--- DOC-FIX PASS 2026-06-23 ---
+Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its
+findings are code/design (see SUMMARY.txt section 2), or any doc-adjacent item was evaluated and
+intentionally left (documenting it would paper over a behavioral/design issue, or it is dead-comment
+cleanup deferred to the maintainer). `mvn -o clean compile` remains green.

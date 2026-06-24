@@ -1,0 +1,68 @@
+API DESIGN REVIEW — mongodb/MongoCollectionExecutor.java
+public final class MongoCollectionExecutor
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> CODE-FIX UPDATE (2026-06-24): the accessor-name drift (section 2) is RESOLVED — mongoCollection() was
+    HARD-RENAMED to coll() (matching the reactive twin; no alias). See the [RESOLVED] tag. Other findings
+    remain open. mvn -o clean test-compile green. <<<
+
+1. OVERALL ASSESSMENT
+The blocking per-collection executor is large but well-organized, with a genuinely strong return-type
+discipline: a clean four-way split of Optional / Nullable / null (gett) / empty and a List vs DataSet vs
+Stream split that reads clearly. The query/insert/update/delete/aggregate families wrap the driver's
+MongoCollection faithfully. The actionable items are a dual-meaning update overload, a small
+insert-family return inconsistency, and one accessor-name drift vs the reactive twin.
+
+2. NAMING ISSUES
+- [RESOLVED 2026-06-24 — code-fixed] mongoCollection() | MongoCollectionExecutor.java:211 | Medium | Drift
+  vs the reactive twin's coll() (reactivestreams/...:216). FIXED: hard-renamed mongoCollection() -> coll()
+  (no deprecated alias) so the blocking + reactive accessors match. (Note: the maintainer chose coll() as
+  canonical; this report had recommended the reverse — mongoCollection().) Call-sites + tests updated;
+  test-compile green.
+- gett(...) family | :612-758 | Low | The double-t gett name is an established library-wide convention
+  for "return null instead of empty Optional"; KEEP, noted only.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- updateOne/updateMany/findOneAndUpdate (Bson, Object) vs (Bson, Collection<?>) | :2932/2992, :3171/3248,
+  :3687/3799 | Medium | The 2nd parameter has two incompatible meanings dispatched on static type: a
+  single update spec (Bson/Document/Map/entity) vs a "collection of update operations". A List passed as
+  the update silently binds to the Collection overload. Verified both overload families exist with these
+  differing Javadoc contracts. Recommend giving the multi-operation form a distinct name (e.g.
+  updateOneWithPipeline / applyUpdates) so the dispatch cannot be silently wrong. Confirming check:
+  confirm whether the Collection<?> form is an aggregation pipeline or a sequence of update docs, and name
+  accordingly.
+- insertOne -> void, insertMany -> void, bulkInsert -> int | :2665/2735/3558 | Low-Medium | Inconsistent
+  insert-family returns; the reactive twin returns driver results (Mono<InsertOneResult/InsertManyResult>)
+  for all three. Consider returning the result/inserted-count from insertOne/insertMany for parity and to
+  expose generated ids.
+- queryForSingleNonNull(String,Bson,Class) | :1656 | Low | Throws NPE on a matched-but-null value
+  (documented) despite the "NonNull" name implying null-safety. Either return Optional.empty() via
+  ofNullable, or rename. Confirming check: confirm the NPE path on null stored value.
+- queryForBoolean/.../Double primitive family | :1214-1456 | Low | Returns an OptionalXxx holding the
+  primitive default when the field is missing/null (empty only when no doc matched), conflating a 0/false
+  value with absence. Documented + @Beta; acceptable — recorded, not pressed.
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+- list(Class) / query(Class) no-filter convenience absent | :933/1701 vs stream() :2041 | Low | stream()
+  and stream(Class) can scan the whole collection, but list/query require a non-null filter. Add no-filter
+  list/query for symmetry with stream().
+
+6. DEPRECATION / REMOVAL CANDIDATES
+- mapReduce(...) | :4493/4519 | High (already @Deprecated) | KEEP; replacement aggregate(List[,Class]).
+
+CROSS-CLASS NOTES
+- Async twin is near-1:1 but MISSING no-filter stream()/stream(Class), estimatedDocumentCount, and the
+  typed groupBy*/groupByAndCount* overloads (see AsyncMongoCollectionExecutor report).
+- Reactive twin uses coll() — the blocking accessor is now also coll() (hard-renamed 2026-06-24). Reactive
+  also drops gett (Mono subsumes it — justified) and returns insert results (a model this class should
+  follow for insertOne/insertMany).
+- The four-way Optional/Nullable/null/empty discipline here is a library strength worth holding other
+  executors to in the SUMMARY.
+
+--- DOC-FIX PASS 2026-06-23 ---
+Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its
+findings are code/design (see SUMMARY.txt section 2), or any doc-adjacent item was evaluated and
+intentionally left (documenting it would paper over a behavioral/design issue, or it is dead-comment
+cleanup deferred to the maintainer). `mvn -o clean compile` remains green.

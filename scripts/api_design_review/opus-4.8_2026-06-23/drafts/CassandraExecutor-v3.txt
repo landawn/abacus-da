@@ -1,0 +1,134 @@
+API DESIGN REVIEW — CassandraExecutor (v3, DataStax driver 3.x)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java
+Twin compared: abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java (v4, DataStax driver 4.x)
+Base (reviewed separately, not re-flagged): com/landawn/abacus/da/cassandra/CassandraExecutorBase.java
+Reviewer: opus-4.8  Date: 2026-06-23
+Scope: PUBLIC methods DECLARED in this class only (factories, connect helpers, overrides, public inner classes). Inherited methods excluded.
+
+=====================================================================
+SECTION 1 — FUNCTIONALITY / CORRECTNESS
+=====================================================================
+
+1.1  execute(Statement) — Javadoc overclaims that executor StatementSettings are applied
+     public ResultSet execute(final Statement statement)
+     | CassandraExecutor.java(v3):1582-1585 (Javadoc 1542-1543)
+     | Medium
+     | The Javadoc states: "The configured statement settings for this executor are applied to
+       the statement before execution if not already set on the statement itself." The body is
+       just `return session.execute(statement);` — it never calls the private applySettings
+       path (lines 2090-2114), which is only reached via the prepareStatement(String...) helpers
+       used by the execute(String...) overloads. So a user-supplied pre-built Statement is run
+       WITHOUT the executor's settings being applied. Either (a) apply settings in this method
+       to honor the doc, or (b) delete the false sentence. NOTE: the v4 twin
+       (CassandraExecutor.java:1467-1469) has the identical bare body and the same misleading
+       doc — this is shared, accidental doc drift, not a v3-only defect. Fix both, but flagged
+       here per v3 scope.
+
+=====================================================================
+SECTION 2 — NAMING
+=====================================================================
+
+(No actionable findings. Factory/accessor names — cluster(), session(), async(), mapper(),
+registerTypeCodec, extractData, toList, toEntity, toMap — match the v4 twin where the method
+exists, and the v3-only names cluster()/mapper() are accurate for what they return.)
+
+=====================================================================
+SECTION 3 — RETURN TYPE
+=====================================================================
+
+(No actionable findings. Return types are driver-appropriate: cluster()->Cluster and
+session()->Session are v3 driver types; mapper()->com.datastax.driver.mapping.Mapper is the
+v3 object mapper. All conversion helpers return the same types as the v4 twin.)
+
+=====================================================================
+SECTION 4 — PARAMETERS (ordering / missing overloads)
+=====================================================================
+
+(No actionable findings. Constructor family (Session / +StatementSettings / +CqlMapper /
++NamingPolicy) mirrors v4 one-for-one with only the session type differing
+(Session vs CqlSession). registerTypeCodec / extractData / toList / toMap / stream / execute
+overload families match the v4 twin in count and parameter order. The registry-typed static
+overload differs only by the driver's registry type — v3 CodecRegistry vs v4
+MutableCodecRegistry — which is mandated by the driver and intentional.)
+
+=====================================================================
+SECTION 5 — CLASS PLACEMENT / MISSING METHODS (vs v4 twin)
+=====================================================================
+
+5.1  Class is @deprecated in Javadoc but MISSING the @Deprecated annotation
+     public final class CassandraExecutor
+     | CassandraExecutor.java(v3):238 (Javadoc @deprecated tag at 229-231)
+     | High
+     | The class Javadoc carries `@deprecated Use {@link ...cassandra.CassandraExecutor} ...`
+       (line 229) and the whole class is described as "legacy ... driver 3.x". But there is NO
+       `@Deprecated` annotation on the class declaration at line 238 (line 237 is `*/`,
+       line 238 is the class). Without the annotation the compiler emits no deprecation warning
+       to callers, so the documented deprecation is not enforced. Add `@Deprecated` (optionally
+       `@Deprecated(forRemoval = false)`) immediately above line 238. This is the single most
+       actionable item: the intent ("migrate to v4") is clear and already documented, but the
+       machine-readable signal is absent.
+
+5.2  v3-only methods cluster() and mapper() — intentional driver divergence (NOT a defect)
+     public Cluster cluster()              | CassandraExecutor.java(v3):459
+     public <T> Mapper<T> mapper(Class<T>) | CassandraExecutor.java(v3):536
+     | High (that the divergence is intentional)
+     | Both are absent from the v4 twin. This is correct, not drift:
+         - cluster(): driver 4.x merged Cluster into CqlSession, so there is no Cluster to
+           expose in v4. v3 legitimately exposes session.getCluster().
+         - mapper(): the built-in object mapper (com.datastax.driver.mapping.MappingManager/
+           Mapper) was removed/redesigned in driver 4.x (separate java-driver-mapper artifact
+           with annotation processing), so v4 cannot offer the same one-liner. v3 wraps the v3
+           MappingManager by design.
+       Neither method is abstract in the base (base declares neither cluster() nor session()),
+       so each subclass declares its own. No action; recorded so it is not mistaken for an
+       accidental missing-override on v4.
+
+5.3  No methods present on v4 twin but absent here
+     | Info
+     | Direct signature diff of declared public methods: v4 declares exactly the same set
+       MINUS cluster() and mapper(), with session() returning CqlSession and the
+       Statement<?> / BatchType generics. There is no v4-only public method that v3 lacks.
+       The override family (gett, queryForSingleValue, queryForSingleNonNull, findFirst,
+       execute x4, close) is identical in both and dictated by the base contract — excluded
+       from re-flagging per ground rules.
+
+=====================================================================
+SECTION 6 — DEPRECATION CANDIDATES
+=====================================================================
+
+6.1  Whole-class deprecation — already intended, just not annotated
+     | High
+     | See 5.1. The entire v3 package/class is the legacy driver-3.x path superseded by the
+       v4 twin; the codebase already documents this (class @deprecated tag, "legacy"
+       wording throughout, MEMORY notes the v3 package as the older driver). The only gap is
+       the missing `@Deprecated` annotation on the class (and, for full coverage, the public
+       inner types UDTCodec / StatementSettings could inherit deprecation, but annotating the
+       top-level class is sufficient and the priority). No individual method here is a
+       *separate* deprecation candidate beyond the wholesale class deprecation.
+
+=====================================================================
+CROSS-CLASS NOTES (v3 vs v4 divergence)
+=====================================================================
+
+INTENTIONAL (driver-mandated, do NOT "fix"):
+  - session() return type: Session (v3) vs CqlSession (v4).
+  - cluster() exists only in v3 (driver 4.x folded Cluster into CqlSession).
+  - mapper() exists only in v3 (driver 4.x dropped the built-in MappingManager mapper).
+  - registerTypeCodec(registry,...) registry type: CodecRegistry (v3) vs MutableCodecRegistry (v4).
+  - Statement raw (v3) vs Statement<?> (v4) and BatchStatement.Type (v3) vs BatchType (v4) generics.
+  - StatementSettings fields: v3 has retryPolicy + readTimeoutMillis (int millis); v4 has
+    timeout (java.time.Duration) and no retryPolicy. Both are correct mappings of the
+    respective driver configuration models — NOT accidental drift.
+
+ACCIDENTAL (shared bug/doc drift, fix in BOTH):
+  - execute(Statement) Javadoc claims settings are applied; neither v3 nor v4 applies them
+    on this path (Section 1.1). Same wrong sentence copied to both.
+
+SHOULD THE v3 PACKAGE BE @Deprecated WHOLESALE?
+  - YES — and it is already documented as such. The class Javadoc says so; the only missing
+    piece is the `@Deprecated` annotation on the v3 class (Section 5.1 / 6.1). Recommend adding
+    it. The v4 twin is the modern, actively-developed path; v3 exists solely for driver-3.x
+    compatibility.
+
+NET: Only ONE real code defect that is v3-relevant — the missing @Deprecated annotation (5.1).
+One shared doc overclaim (1.1). Everything else is intentional driver divergence.

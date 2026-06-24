@@ -1,0 +1,51 @@
+API DESIGN REVIEW — mongodb/MongoDBBase.java
+public abstract class MongoDBBase
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> DOC-FIX PASS UPDATE (2026-06-23): the documentation item in the "OTHER" section was FIXED in source
+    (Javadoc/comment-only). See the [RESOLVED] tag. All code/design findings below remain open. <<<
+
+1. OVERALL ASSESSMENT
+MongoDBBase is the shared base for both the blocking and reactive MongoDB facades and holds the static
+BSON/extract/stream helper surface. It is broadly healthy: the fromJson/toJson, toList/toEntity/readRow,
+extractData (x6), and stream (x4) families have consistent return conventions (mutable List, abacus
+Stream). The actionable items are an unsafe Object-vs-varargs overload family and a few doc/parity nits.
+
+2. NAMING ISSUES
+None actionable.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- toBson / toDocument / toBSONObject / toDBObject each have a (Object obj) AND a (Object... a) overload |
+  MongoDBBase.java:447/480, 515/551, 656/718, 761/826 | Medium | Classic unsafe varargs-over-Object: a
+  single Object[] argument binds to the (Object...) "name/value pairs" overload, never the single-value
+  overload — and the two have incompatible meaning (one entity/map vs alternating key/value pairs).
+  Verified all four pairs exist. Recommend: give the pairs form a distinct, explicit name (e.g.
+  toBsonFromPairs(Object...)) or require a Map, so the dispatch can't be silently wrong.
+- toMap(Document) / toMap(Document, IntFunction) | MongoDBBase.java:864,900 | Low | Shallow conversion —
+  nested Documents remain Document instances, though the name implies full materialization. Documented;
+  consider a deepToMap sibling. Confirming check: confirm nested values are not recursively converted.
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+- objectId2Filter(...) has no Collection / $in companion | MongoDBBase.java:236,265 | Low | A bulk
+  "_id $in [...]" filter builder would round out the single-id helpers. Confirming check: confirm no
+  existing helper already builds an $in id filter.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+- registerIdProperty(...) | MongoDBBase.java:193 | High (already @Deprecated) | KEEP; replacement @Id is
+  documented and consistent with the rest of the library.
+- toBSONObject / toDBObject legacy-type families | MongoDBBase.java:656,761 | Low | These return legacy
+  driver types (BasicBSONObject/BasicDBObject); steer callers to toDocument unless legacy interop is
+  required. Soft-deprecate or document as legacy.
+
+OTHER (documentation)
+- [RESOLVED 2026-06-23 — doc-fixed] objectId2Filter(String/ObjectId) Javadoc example showed {$oid:...}
+  but the impl returns new Document("_id", objectId) | MongoDBBase.java:236,265 | Low | FIXED: both
+  example comments now read {"_id": ObjectId("507f...")} and add a note that the {"$oid":...} form is the
+  Extended-JSON serialization, not the in-memory Document value. No code/behavior change.
+
+CROSS-CLASS NOTES
+- This base is shared by mongodb/MongoDB and reactivestreams/MongoDB (correct reuse, not duplication).
+- The Object-vs-varargs ambiguity recurs anywhere the library offers "single value" + "key/value pairs"
+  on the same method name; flag as a convention to settle library-wide.

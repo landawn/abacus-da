@@ -219,7 +219,8 @@ public abstract class MongoDBBase {
      * <pre>{@code
      * // Build an _id filter from a 24-char hex string:
      * Bson filter = MongoDB.objectId2Filter("507f1f77bcf86cd799439011");
-     * // filter is a Document: {"_id": {"$oid": "507f1f77bcf86cd799439011"}}
+     * // filter is a Document holding the ObjectId as the _id value: {"_id": ObjectId("507f1f77bcf86cd799439011")}
+     * // (the {"$oid": "..."} form is the Extended-JSON serialization of that ObjectId, not the in-memory value)
      * Document doc = collection.find(filter).first();
      *
      * MongoDB.objectId2Filter((String) null);            // throws IllegalArgumentException
@@ -250,7 +251,8 @@ public abstract class MongoDBBase {
      * <pre>{@code
      * ObjectId oid = new ObjectId("507f1f77bcf86cd799439011");
      * Bson filter = MongoDB.objectId2Filter(oid);
-     * // filter is a Document: {"_id": {"$oid": "507f1f77bcf86cd799439011"}}
+     * // filter is a Document holding the ObjectId as the _id value: {"_id": ObjectId("507f1f77bcf86cd799439011")}
+     * // (the {"$oid": "..."} form is the Extended-JSON serialization of that ObjectId, not the in-memory value)
      * collection.deleteOne(filter);
      *
      * MongoDB.objectId2Filter((ObjectId) null);          // throws IllegalArgumentException

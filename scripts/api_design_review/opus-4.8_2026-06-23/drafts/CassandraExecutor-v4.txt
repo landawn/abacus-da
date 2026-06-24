@@ -1,0 +1,111 @@
+API DESIGN REVIEW — CassandraExecutor (DataStax driver v4)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java
+Reviewer: opus-4.8  Date: 2026-06-23
+Scope: PUBLIC methods DECLARED in this class (incl. nested public types UDTCodec, StatementSettings).
+       Inherited CassandraExecutorBase API reviewed separately — NOT re-flagged here.
+       v3 twin: cassandra/v3/CassandraExecutor.java (DataStax driver v3) used as divergence baseline.
+
+================================================================================
+SUMMARY
+================================================================================
+The class is a thin, by-design wrapper over the v4 CqlSession plus a small set of
+static result-mapping helpers and two nested public types (UDTCodec, StatementSettings).
+The public surface is well aligned with its v3 twin; the structural differences that
+exist (no cluster(), no mapper(), different session() return type, UdtValue vs UDTValue,
+CqlSession vs Cluster/Session) are forced by the DataStax v4 driver and are intentional,
+NOT accidental drift. Findings are minor: a small deprecation-candidate group and two
+naming/return-type observations. No functionality, placement, or missing-overload defects
+that warrant action.
+
+================================================================================
+1. FUNCTIONALITY
+================================================================================
+None actionable. Static helpers (extractData/toList/toEntity/toMap), the execute(...)
+family, gett/queryForSingleValue/queryForSingleNonNull/findFirst overrides, and the
+stream(...) overloads all behave consistently with the v3 twin and the base contract.
+
+================================================================================
+2. NAMING
+================================================================================
+[N1] UDTCodec.create(Session, String keySpace, String userType, Class) | CassandraExecutor.java:2078 | Low
+  The 3rd parameter `userType` is a String (the UDT *name*), while the sibling factory
+  create(UserDefinedType userType, Class) at :1941 uses the identical name `userType`
+  for the actual type OBJECT. Two factories in the same class bind the name `userType`
+  to two different concepts (name-String vs type-object). Mildly confusing.
+  - This mirrors the v3 twin exactly (create(Cluster, keySpace, userType, javaClazz)
+    at v3:2456), so it is consistent cross-version, not drift.
+  - Recommendation: consider renaming the String param to `userTypeName` (and keysSpace
+    spelling is fine). Low priority; backward-source-compatible (param name only).
+  - Low -> confirming check: grep both create() overloads; confirm one param is
+    String name, the other a UserDefinedType/UserType instance — already verified.
+
+================================================================================
+3. RETURN TYPE
+================================================================================
+[R1] session() : CqlSession | CassandraExecutor.java:452 | Info (no action)
+  v4 returns CqlSession; v3 returns Session and additionally exposes cluster():Cluster.
+  Driver v4 unified Cluster+Session into CqlSession, so the single-accessor shape and the
+  return-type change are correct and intentional. Listed only for the cross-class notes.
+
+================================================================================
+4. PARAMETERS
+================================================================================
+[P1] StatementSettings all-args constructor | CassandraExecutor.java:2500 | Info (no action)
+  v4: (ConsistencyLevel, ConsistencyLevel, Integer fetchSize, Duration timeout, Boolean traceQuery)
+  v3: (ConsistencyLevel, ConsistencyLevel, RetryPolicy, Integer fetchSize, Integer readTimeoutMillis, Boolean)
+  Divergence is driver-forced: v4 dropped per-statement RetryPolicy and models timeout as
+  Duration (not int millis). Field set and constructor are internally consistent (the
+  executor's defensive copy at :426-430 copies exactly these 5 fields). No action.
+
+================================================================================
+5. CLASS PLACEMENT
+================================================================================
+None actionable. Static mappers, UDTCodec, and StatementSettings are appropriately
+co-located with the executor, matching the v3 twin's layout.
+
+================================================================================
+6. DEPRECATION CANDIDATES
+================================================================================
+[D1] UDTCodec.serialize(T, ProtocolVersion) / UDTCodec.deserialize(ByteBuffer, ProtocolVersion)
+     | CassandraExecutor.java:2103, 2129 | Medium
+  Also: StringCodec.serialize/deserialize(…, ProtocolVersion) at :2318, :2333 (package-private
+  class, lower impact but same pattern).
+  These are already @Deprecated and simply forward to encode()/decode(). Unlike v3 (where
+  serialize/deserialize are real @Override of the driver's TypeCodec), the v4 driver's
+  TypeCodec interface no longer declares serialize/deserialize (renamed to encode/decode).
+  So in v4 these are NEW public methods that exist ONLY as a v3->v4 migration shim — they
+  are NOT overrides and add public surface the driver itself does not require.
+  - Confirmed: no @Override on :2103/:2129 (vs v3:2479/:2503 which ARE @Override).
+  - Recommendation: keep @Deprecated (good migration aid) but mark forRemoval = true and
+    plan removal in the next major; they bloat the codec's public API with redundant aliases
+    of encode/decode. If a clean break is acceptable, delete them — encode/decode fully
+    cover the behavior.
+
+No other deprecation candidates. The 4 telescoping CassandraExecutor(CqlSession, …)
+constructors form one coherent overload family and should all be retained.
+
+================================================================================
+CROSS-CLASS NOTES (v3 vs v4 divergence)
+================================================================================
+INTENTIONAL driver-version differences (NOT API drift — do not "fix"):
+  * No cluster()         — v4 has no Cluster type (CqlSession absorbed it). v3:459 only.
+  * No mapper(Class)     — v4 removed the driver's runtime object Mapper/MappingManager
+                           (replaced by a compile-time annotation processor). v3:536 only.
+  * session() returns CqlSession (v4) vs Session (v3).
+  * Constructor/accessor types: CqlSession vs Cluster+Session; MutableCodecRegistry vs
+    CodecRegistry; UdtValue/UserDefinedType vs UDTValue/UserType; BatchType vs
+    BatchStatement.Type; TypeCodecs.udtOf vs TypeCodec.userType.
+  * StatementSettings: v4 drops RetryPolicy + uses Duration timeout; v3 keeps RetryPolicy +
+    int readTimeoutMillis (see [P1]).
+  All of the above are correct adaptations to the v4 driver model.
+
+POTENTIAL drift / cleanup (actionable, minor):
+  * [D1] Deprecated serialize/deserialize aliases are real overrides in v3 but plain
+    migration-shim methods in v4 — the v4 ones are pure surface bloat; mark forRemoval.
+
+FACTORY NAMING:
+  Neither version exposes static factories (createCassandraExecutor / copy / of); both rely
+  exclusively on the public telescoping constructors. Naming is therefore consistent and the
+  prompt's hypothetical createCassandraExecutor/copy/of helpers do not exist in either twin —
+  nothing to reconcile. The only "create" factories are UDTCodec.create(...), which match
+  between v3 and v4 (modulo driver types) and are appropriately named.

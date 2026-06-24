@@ -1,0 +1,40 @@
+API DESIGN REVIEW — cassandra/v3/AsyncCassandraExecutor.java  (DataStax driver v3, LEGACY)
+public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row,ResultSet,Statement,PreparedStatement,BatchStatement.Type>
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> DOC-FIX PASS UPDATE (2026-06-23): both missing-@throws doc-parity items (section 3) were FIXED
+    (Javadoc-only). The @Deprecated-annotation item (section 6) is now ALSO FIXED in source (2026-06-24).
+    See the [RESOLVED] tags. The missing named-param overload remains open. mvn -o clean test-compile
+    green. <<<
+
+1. OVERALL ASSESSMENT
+The v3 async concrete mirrors the v4 async concrete against driver 3.x. Nearly all API is inherited. The
+only differences from v4 are driver-mandated (no ResultSets.wrap). Findings are a doc-parity gap and the
+shared missing named-param stream overload. As with v3/CassandraExecutor, this whole v3 package should be
+@Deprecated wholesale (see that report).
+
+2. NAMING ISSUES
+None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- [RESOLVED 2026-06-23 — doc-fixed] stream(String,BiFunction,Object...) Javadoc omitted @throws
+  IllegalArgumentException (body null-checks rowMapper; v4 twin documented it) | v3/AsyncCassandraExecutor.
+  java:~150 | Medium | FIXED: added "@throws IllegalArgumentException if rowMapper is null". No code change.
+- [RESOLVED 2026-06-23 — doc-fixed] stream(Statement,BiFunction) Javadoc omitted the same @throws tag |
+  v3/AsyncCassandraExecutor.java:~191 | Medium | FIXED: added the @throws tag. No code change.
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+- stream(String,BiFunction,Map<String,Object>) named-param variant absent | v3/AsyncCassandraExecutor.
+  java:152,193 (same gap as v4) | Medium | Add the Map-accepting overload for parity with execute()'s
+  named-param path; apply symmetrically v3/v4.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+- [RESOLVED 2026-06-24 — code-fixed] ENTIRE CLASS | Medium | For consistency with v3/CassandraExecutor,
+  add a class-level @Deprecated annotation. FIXED: @Deprecated added to this class (and v3/CassandraExecutor)
+  — the whole v3 public surface is now machine-readable deprecated. test-compile green.
+
+CROSS-CLASS NOTES
+- The only true v3-vs-v4 divergences are driver-mandated (ResultSets.wrap) plus the doc-parity @throws gap;
+  no accidental API drift.

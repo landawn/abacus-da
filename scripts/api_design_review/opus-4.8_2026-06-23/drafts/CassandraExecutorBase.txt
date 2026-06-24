@@ -1,0 +1,182 @@
+API DESIGN REVIEW — CassandraExecutorBase (driver-agnostic Cassandra executor base)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java
+Reviewer model: opus-4.8   Date: 2026-06-23
+
+Class: public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS, BT>
+       implements AutoCloseable  (~3333 lines)
+Concrete subclasses: cassandra/CassandraExecutor (DataStax v4), cassandra/v3/CassandraExecutor (v3).
+The public methods here ARE the public API of both concretes.
+
+=====================================================================
+1. OVERALL ASSESSMENT
+=====================================================================
+This base is in very good shape and closely mirrors the strong mongo discipline. The read families
+(get/gett/findFirst/list/query/stream/queryForXxx/count/exists) apply the four-way return contract
+deliberately and consistently: Optional on get/findFirst (empty only on no-row, present payload must
+be non-null), null on gett (with DuplicateResultException on >1 row), Nullable on
+queryForSingleValue / queryForString / queryForDate (preserves matched-but-null), OptionalXxx on the
+primitive queryForXxx (collapses NULL to the primitive default — documented per-method), and
+Optional<V> on queryForSingleNonNull (throws NPE on matched-but-null — documented). The CQL-string
+overloads and the Condition overloads are layered symmetrically (each query-by-Condition delegates to
+the matching query-by-CQL-string terminal), projection (Collection<String> selectPropNames) and the
+hidden LIMIT 1 for single-row reads are applied uniformly, and the write families
+(insert/update/delete/batch*) faithfully wrap CqlBuilder + the subclass statement builders by design.
+The static key-registration / condition-derivation helpers are protected and well-contained.
+
+Actionable findings are minor and cosmetic-to-moderate: a vestigial unused <T> on the Condition-based
+query/findFirst/list/stream overloads (return type is not parameterized by T), an inconsistent @Beta
+marking inside the single-value query family (boxed Nullable variants are @Beta but the more general
+queryForSingleValue/queryForSingleNonNull they delegate to are not), an asymmetric @Deprecated on the
+CQL-string count() but not the Condition count(), and a couple of small parameter/return notes. No
+correctness or overlap bugs found.
+
+=====================================================================
+2. NAMING ISSUES
+=====================================================================
+
+[N1] gett(...) family | CassandraExecutorBase.java:648,679,704,732 | Low
+  The "gett" (double-t = "get, return null instead of Optional") name is non-obvious to a first-time
+  reader but is an established library-wide convention (mirrors the SQL/Dao and mongo executors'
+  get/gett pair) and is documented. Keep as-is; flagged only for completeness / cross-class parity.
+  Confirming check: get(...) returns Optional<T>, gett(...) returns T-or-null; the pairing is
+  consistent within this class and matches MongoCollectionExecutor.
+
+=====================================================================
+3. RETURN-TYPE AND PARAMETER ISSUES
+=====================================================================
+
+[R1] query/findFirst/list/stream(Class<T>, [Collection<String>,] Condition) — vestigial unused <T>
+  | CassandraExecutorBase.java:1558,1584 (query) ; 1447,1482 (findFirst) ; 1507,1532 (list) ;
+    2082,2106 (stream) | Low
+  query(Class<T> targetClass, Condition) returns Dataset (NOT Dataset<T>), so the method-level <T> is
+  never used in the signature — it exists only to bind the Class<T> argument. The CQL-string twin
+  query(Class<?> targetClass, String, Object...):2676 correctly declares Class<?> with no <T>. Same
+  vestigial <T> on the findFirst/list/stream Condition overloads is fine there (their return IS
+  Optional<T>/List<T>/Stream<T>, so <T> is load-bearing) — the issue is ONLY the two query(...)
+  Condition overloads, which should be Class<?> to match the CQL-string query overload and avoid an
+  unused type variable. Recommendation: change query(Class<T>,Condition) and
+  query(Class<T>,Collection<String>,Condition) to query(Class<?> targetClass, ...). Confirming check:
+  return type is `Dataset` not `Dataset<T>` at :1558/:1584; compare :2676 which already uses Class<?>.
+
+[R2] @Beta marking is inconsistent inside the single-value query family
+  | CassandraExecutorBase.java:1898/1899 (queryForString), 1932/1933 & 1969/1970 (queryForDate)
+    vs 2009 (queryForSingleValue), 2055 (queryForSingleNonNull) | Low
+  queryForString(Class,String,Condition) and both queryForDate(...) overloads return Nullable<…> and
+  are marked @Beta, but they are thin one-line delegations to queryForSingleValue(...), which returns
+  the same Nullable<V> and is NOT @Beta. So the specific boxed convenience wrappers are flagged
+  unstable while the general method they call is stable. The primitive queryForXxx (1620-1866) being
+  @Beta is defensible (the UNBOX/NULL-collapse semantics are the genuinely beta part), but tagging the
+  Nullable-returning string/date wrappers @Beta while their queryForSingleValue delegate is stable is
+  contradictory. Recommendation: drop @Beta from queryForString/queryForDate (they inherit
+  queryForSingleValue's stable Nullable contract), or add @Beta to queryForSingleValue for
+  consistency. Confirming check: :1899 returns queryForSingleValue(...,String.class,...);
+  :1933 returns queryForSingleValue(...,Date.class,...); neither adds behavior beyond the
+  non-@Beta delegate.
+
+[R3] queryForSingleNonNull throws NullPointerException on matched-but-null
+  | CassandraExecutorBase.java:2055 (Condition), 2517 (CQL-string abstract) | Low
+  When a row matches but the column value (or its conversion) is null, queryForSingleNonNull returns
+  Optional.of(null) → NPE, rather than Optional.empty(). This is thoroughly documented and is the
+  deliberate Optional-cannot-hold-null contract, with queryForSingleValue (Nullable) named as the
+  escape hatch — identical to the mongo finding [R3] there. Listed for cross-class parity / so the
+  family is acknowledged rather than silently passed (ground rule 5). Acceptable as-is given the
+  documentation and the named alternative; no change required unless aligning with a library-wide
+  decision to collapse matched-but-null to empty(). Confirming check: Javadoc at :2024-2030 and
+  :2488-2494 explicitly states the NPE; delegates to the abstract queryForSingleNonNull(Class,String,
+  Object...).
+
+[R4] primitive queryForXxx collapse NULL to the primitive default | CassandraExecutorBase.java:1620-1866
+  (Condition) and 2191-2410 (CQL-string) | Low
+  queryForBoolean/Char/Byte/Short/Int/Long/Float/Double return a PRESENT OptionalXxx holding the
+  primitive default (false/0/0.0) when a row matched but the column is NULL, returning empty() only
+  when NO row matched — conflating "present and 0" with "present but NULL". Deliberate UNBOX
+  consequence, documented per-method with queryForSingleValue(boxed) named as the precise-NULL escape
+  hatch. Mirrors mongo [R4]. Acceptable as-is under @Beta + documentation; listed for acknowledgement.
+  Confirming check: each delegates to queryForSingleValue(...).mapToXxx(ToXxxFunction.UNBOX).
+
+=====================================================================
+4. MISPLACED METHODS (target class)
+=====================================================================
+None. Every public method is an entity/CQL operation that legitimately belongs on the shared executor
+base: the get/gett/findFirst/list/query/stream/queryForXxx/exists/count read façades, the
+insert/update/delete/batch* write façades, and the execute(...) driver entry points. stream(Class,ST
+statement):2745 (run a pre-built driver statement and map rows) is correctly on the base since it only
+needs execute(ST) + createRowMapper, both already part of the base contract. The protected static
+key/condition helpers (registerKeys/getKeyNames/idsToCondition/entityToCondition) are shared
+machinery and correctly placed.
+
+=====================================================================
+5. MISSING METHODS (target class)
+=====================================================================
+
+[M1] No findFirst(Class, Collection<String>, String, Object...) projection overload on the CQL-string
+  side | n/a (CassandraExecutorBase.java:2588) | Low (non-actionable)
+  The CQL-string findFirst only has findFirst(String,Object...) and findFirst(Class,String,Object...);
+  projection on the CQL-string path is expressed by writing the SELECT column list into the CQL
+  itself, so a selectPropNames overload would be redundant there (unlike the Condition path, where
+  selectPropNames is the only way to project). Not a real gap; the asymmetry is inherent to
+  raw-CQL vs Condition-built CQL. No action.
+
+[M2] No Condition-based count without the @Deprecated string twin's signature collision | n/a | Low
+  count(Class,Condition):1410 (the live API) has no @Deprecated mark and is the right entry point;
+  the missing piece is purely that the CQL-string count(String,Object...) is deprecated (see [D1]).
+  No new method needed. Noting only to confirm the Condition count is the supported replacement.
+
+=====================================================================
+6. DEPRECATION / REMOVAL CANDIDATES (replacement APIs)
+=====================================================================
+
+[D1] count(String query, Object... parameters) | CassandraExecutorBase.java:2160/2161 | High
+  (already @Deprecated)
+  Already @Deprecated with correct guidance: prefer queryForLong(String,Object...) with a COUNT(*)
+  query + .orElse(0L) (which is literally what its body does). Asymmetric with the NON-deprecated
+  count(Class,Condition):1410 — that one is the supported entity-level API and is fine. No further
+  action beyond confirming the deprecation note names queryForLong as the replacement; it does
+  (:2154-2158). Replacement API: queryForLong(String,Object...).orElse(0L) or count(Class,Condition).
+
+[D2] registerKeys(Class, Collection<String>) | CassandraExecutorBase.java:268/269 | High
+  (already @Deprecated)
+  Already @Deprecated with correct guidance to annotate the id field with @Id instead of manual
+  registration. Public static, retained for legacy entities without @Id. No action; replacement is
+  the @Id / javax.persistence.Id annotation path consumed by QueryUtil.getIdPropNames(...).
+
+=====================================================================
+CROSS-CLASS NOTES
+=====================================================================
+- Return conventions vs mongo/hbase: This base applies the SAME four-way discipline mongo uses and
+  the review praised — Optional on get/findFirst, null on gett, Nullable on queryForSingleValue/
+  queryForString/queryForDate (matched-but-null preserved), OptionalXxx on primitive queryForXxx
+  (NULL→default, @Beta), Optional<V> on queryForSingleNonNull (NPE-on-null, documented). list→List,
+  query→Dataset, stream→Stream(/Stream<Object[]> for the column-array CQL overload). This is a
+  strength; the only intra-family wrinkles are [R1] (vestigial <T> on query-by-Condition) and [R2]
+  (@Beta only on the Nullable wrappers, not their stable delegate). The matched-but-null contracts
+  [R3]/[R4] are identical to mongo's [R3]/[R4] — same design, same trade-off, applied consistently.
+
+- CQL param-passing convention: the CQL-string overloads take (String query, Object... parameters)
+  with positional ? binding; the abstract execute(String, Object...) also accepts a single Map (named
+  :param binding), a single array/Collection (unpacked positionally), or a single entity/bean (named
+  binding by property) — documented on execute(...) at :2776-2860. This Object... + "single special
+  arg" convention is consistent across update/list/query/stream/findFirst/queryFor* CQL overloads and
+  matches the documented Parameter-Binding section of the class Javadoc. No unsafe raw Object[] vs
+  varargs mismatch found — every public CQL overload uses Object... varargs.
+
+- What the concretes should NOT re-add (already final or fully implemented on the base, override would
+  be redundant/incorrect):
+    * All by-ids and by-Condition façades that are `public final`: get(Class,Object...),
+      get(Class,Collection,Object...), gett(Class,Object...), gett(Class,Collection,Object...),
+      delete(Class,Object...), delete(Class,Collection,Object...), exists(Class,Object...),
+      exists(String,Object...), count(String,Object...), and the entire CQL-string queryForXxx +
+      findFirst(String,...)/list(...)/query(...)/stream(...) family (lines 2131-2724) — these are
+      final on the base and delegate to the abstract terminals. Concretes implement ONLY the abstract
+      terminals: gett(Class,Collection,Condition), queryForSingleValue(Class,String,Object...),
+      queryForSingleNonNull(Class,String,Object...), findFirst(Class,String,Object...), the execute(…)
+      quartet, prepareStatement/prepare/bind, toList/extractData/fetchOnlyOne/createRowMapper/
+      readFirstColumn, and the prepareBatch*Statement builders.
+    * Concretes legitimately ADD driver-specific public API NOT present on the base (do not push these
+      down): session()/async()/registerTypeCodec(...)/extractData(ResultSet[,Class])/toList(ResultSet,
+      Class)/toEntity/toMap, the stream(...) BiFunction<ColumnDefinitions,Row,T> rowMapper overloads,
+      and the UDTCodec / StatementSettings nested types (CassandraExecutor.java). These are reviewed
+      with the concrete class, not here.
+    * count(Class,Condition) deliberately does NOT apply LIMIT (see the in-code comment at :1411-1412:
+      "SELECT count(*) ... LIMIT 1" would cap the aggregate itself). Subclasses must preserve this; do
+      not "optimize" by adding LIMIT 1 to the count path.

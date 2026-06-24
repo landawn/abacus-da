@@ -1550,12 +1550,11 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * Dataset all = executor.query(User.class, (Condition) null); // returns a Dataset of every row in the table
      * }</pre>
      *
-     * @param <T> the entity type
      * @param targetClass the entity class with getter/setter methods matching column names
      * @param whereClause the WHERE condition (may be {@code null} to select every row)
      * @return a Dataset containing all matching entities; empty Dataset if no row matches
      */
-    public <T> Dataset query(final Class<T> targetClass, final Condition whereClause) {
+    public Dataset query(final Class<?> targetClass, final Condition whereClause) {
         return query(targetClass, null, whereClause);
     }
 
@@ -1574,14 +1573,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *                              Filters.eq("status", "active"));     // returns a Dataset with all columns
      * }</pre>
      *
-     * @param <T> the entity type
      * @param targetClass the entity class with getter/setter methods matching column names
      * @param selectPropNames the property names to select; pass {@code null} for all properties
      * @param whereClause the WHERE condition (may be {@code null} to select every row)
      * @return a Dataset containing the selected properties of matching entities; empty Dataset
      *         if no row matches
      */
-    public <T> Dataset query(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
+    public Dataset query(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
         final SP cp = prepareQuery(targetClass, selectPropNames, whereClause);
 
         return query(targetClass, cp.query(), cp.parameters().toArray());

@@ -1748,7 +1748,6 @@ public class BigQueryExecutor {
      * none.isPresent();           // returns false
      * }</pre>
      *
-     * @param <T> the target table entity type
      * @param <V> the expected value type
      * @param targetClass the class representing the target BigQuery table
      * @param valueClass the expected class of the returned value, used for type conversion
@@ -1764,7 +1763,7 @@ public class BigQueryExecutor {
      * @see #queryForSingleValue(Class, String, Object...)
      * @see #execute(String, Object...)
      */
-    public <T, V> Nullable<V> queryForSingleValue(final Class<T> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause) {
+    public <V> Nullable<V> queryForSingleValue(final Class<?> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause) {
         final SP sp = prepareQuery(targetClass, N.asList(propName), whereClause);
 
         return queryForSingleValue(valueClass, sp.query(), sp.parameters().toArray());
@@ -1854,7 +1853,6 @@ public class BigQueryExecutor {
      * Dataset all = executor.query(Customer.class, (Condition) null);   // returns every row in the table
      * }</pre>
      *
-     * @param <T> the target table entity type
      * @param targetClass the class representing the target table
      * @param whereClause the condition to filter records, or {@code null} to select all rows
      * @return a Dataset containing all matching records in columnar format
@@ -1862,7 +1860,7 @@ public class BigQueryExecutor {
      * @see #query(Class, Collection, Condition)
      * @see Dataset
      */
-    public <T> Dataset query(final Class<T> targetClass, final Condition whereClause) {
+    public Dataset query(final Class<?> targetClass, final Condition whereClause) {
         return query(targetClass, null, whereClause);
     }
 
@@ -1890,7 +1888,6 @@ public class BigQueryExecutor {
      * Dataset full = executor.query(Customer.class, (Collection<String>) null, condition);
      * }</pre>
      *
-     * @param <T> the target table entity type
      * @param targetClass the class representing the target table
      * @param selectPropNames the collection of property/column names to select, or null for all columns
      * @param whereClause the condition to filter records, or {@code null} to select all rows
@@ -1898,7 +1895,7 @@ public class BigQueryExecutor {
      * @throws IllegalArgumentException if targetClass is null
      * @see #query(Class, String, Object...)
      */
-    public <T> Dataset query(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
+    public Dataset query(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
         final SP sp = prepareQuery(targetClass, selectPropNames, whereClause);
 
         return query(targetClass, sp.query(), sp.parameters().toArray());
@@ -2372,11 +2369,11 @@ public class BigQueryExecutor {
         }
     }
 
-    private <T> SP prepareQuery(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
+    private SP prepareQuery(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
         return prepareQuery(targetClass, selectPropNames, whereClause, 0);
     }
 
-    private <T> SP prepareQuery(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause, final int count) {
+    private SP prepareQuery(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause, final int count) {
         final boolean isNonNullCond = whereClause != null;
         SqlBuilder sqlBuilder = null;
 

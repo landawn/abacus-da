@@ -1,0 +1,55 @@
+API DESIGN REVIEW — mongodb/MongoCollectionMapper.java
+public final class MongoCollectionMapper<T>
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> CODE-FIX UPDATE (2026-06-24): accessor mongoCollectionExecutor() was HARD-RENAMED to
+    collectionExecutor() (matching the reactive twin; no alias). Separately, the reactive twin's distinct()
+    now mirrors this mapper's pipeline workaround (see CROSS-CLASS NOTES). mvn -o clean test-compile green. <<<
+
+1. OVERALL ASSESSMENT
+A clean, faithful typed projection of MongoCollectionExecutor (binds entity type T + collection). Read/
+write/aggregate ops all have correct typed return shapes. No high-confidence defects. The one genuinely
+actionable gap is the absence of no-filter "whole collection" convenience overloads; the rest are
+intentional conventions. NOTE: this mapper's distinct() routes through a $group/$project pipeline (private
+distinctPipeline, :3118) specifically because the driver's native distinct throws
+BsonInvalidOperationException on scalar fields — the reactive twin now mirrors this too (fixed 2026-06-24;
+see its report).
+
+2. NAMING ISSUES
+None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- findOneAndUpdate/Replace/Delete return nullable T while get/findFirst return Optional<T> |
+  MongoCollectionMapper.java:2865-3083 | Low | Intentional split (mirrors driver + gett convention;
+  reactive collapses to Mono<T>). Documented; recorded, no change recommended.
+- bulkWrite accepts driver WriteModel<? extends Document> (untyped) unlike typed bulkInsert | :2806,2835
+  vs :2747,2776 | Low | The one write method not projected through T; acceptable as a raw passthrough,
+  flagged so the typed-vs-raw split is a conscious choice.
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+- No-arg whole-collection list() / stream() / query() overloads absent | MongoCollectionMapper.java (cf.
+  executor stream() at MongoCollectionExecutor.java:2041) | Medium | Every list/stream/query overload
+  requires a filter; add no-arg all-entity overloads (delegate empty filter). NOTE: the reactive twin
+  also lacks them — fix both or neither.
+- findFirst(Bson filter, Bson sort) overload absent | :629-731 | Low | Sort-without-projection currently
+  needs a null projection arg; symmetric with executor + reactive twin, so low priority.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+None.
+
+CROSS-CLASS NOTES
+- distinct() pipeline workaround here is the CORRECT behavior; the reactive twin's distinct() formerly
+  delegated to native distinct and threw on scalar fields — a real behavioral divergence. [RESOLVED
+  2026-06-24]: the reactive MAPPER now mirrors this same $group/$project workaround (distinctPipeline ->
+  collectionExecutor.aggregate). Correction to the original note: the fix belongs in the reactive MAPPER,
+  not reactivestreams/MongoCollectionExecutor.distinct (that executor method is the native scalar
+  escape-hatch and was correctly left unchanged).
+- query(...) is entity-bound (rowType) but returns an untyped DataSet — mirrors the executor; by design.
+
+--- DOC-FIX PASS 2026-06-23 ---
+Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its
+findings are code/design (see SUMMARY.txt section 2), or any doc-adjacent item was evaluated and
+intentionally left (documenting it would paper over a behavioral/design issue, or it is dead-comment
+cleanup deferred to the maintainer). `mvn -o clean compile` remains green.

@@ -1,0 +1,172 @@
+API DESIGN REVIEW — CosmosContainerExecutor
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java (~1880 lines)
+Reviewer: opus-4.8  Date: 2026-06-23
+Scope: all public methods (incl. constructors); overload family = one unit.
+
+RELATIONSHIP CONTEXT
+Standalone executor wrapping a single Azure Cosmos DB CosmosContainer. No sync/async twin, no v1/v2
+split, no sibling Cosmos class. Closest library analog = mongodb/MongoCollectionExecutor (document-DB
+collection wrapper). The whole class is @Beta.
+Two distinct surfaces coexist:
+  (a) Thin SDK delegations — createItem/upsertItem/replaceItem/patchItem/deleteItem/
+      deleteAllItemsByPartitionKey/readItem/readMany/readAllItems/queryItems(String|SqlQuerySpec).
+      These mirror the Cosmos SDK 1:1 (by-design per the prompt) and return SDK types
+      (CosmosItemResponse / FeedResponse / CosmosPagedIterable). Naming/returns here are SDK-driven,
+      not library-driven, and are deliberately NOT held to the get/gett/find/list/query discipline.
+  (b) Library-integrated query path — streamItems(...) over String / SqlQuerySpec / Condition,
+      plus streamAllItems(...). This is where library return/naming discipline applies, and where
+      the findings below concentrate.
+
+Established library discipline (from MongoCollectionExecutor): for one filter the executor exposes a
+FULL accessor set — exists→boolean, count→long, get→Optional, gett→nullable, findFirst→Optional,
+list→List, query→Dataset, stream→Stream, plus queryForXxx scalars. Cosmos's library path exposes
+ONLY streamItems→Stream (plus the SDK-native queryItems→CosmosPagedIterable for raw SQL).
+
+================================================================================
+1. FUNCTIONALITY (clarity / overlap / null-empty-exception)
+================================================================================
+
+1.1  Condition path is stream-ONLY; no eager / paged / first-result counterpart
+     streamItems(Condition, [opts], Class) | CosmosContainerExecutor.java:1596,1637
+     streamItems(Collection<String>, Condition, [opts], Class) | :1683,1746
+     Confidence: High (design gap, not a bug)
+     The integrated SqlBuilder/Condition path materializes a query only through streamItems.
+     There is no queryItems(Condition,...) returning a CosmosPagedIterable, no list(Condition)→List,
+     no query(Condition)→Dataset, and no findFirst(Condition)→Optional. By contrast BOTH raw-SQL
+     surfaces (String, SqlQuerySpec) have a queryItems (paged) AND a streamItems (stream) form — so
+     the Condition path is the odd one out even within this class. Recommendation: at minimum add
+     queryItems(Condition, [opts], Class)→CosmosPagedIterable for symmetry with the String/SqlQuerySpec
+     overloads; optionally a findFirst(Condition,...)→Optional<T> for the common single-row case.
+
+1.2  No point-read convenience that returns absence instead of throwing 404
+     readItem(String,PartitionKey,[opts],Class) → CosmosItemResponse<T> | :864,911
+     Confidence: High
+     A miss throws CosmosException(404). Library discipline models "fetch by key, may be absent" with
+     get→Optional / gett→nullable (MongoCollectionExecutor:462/612). Callers here must catch a 404
+     exception to express "not found," which is the anti-pattern the get/gett split exists to avoid.
+     Recommendation: add get(id,partitionKey,Class)→Optional<T> (and/or gett→nullable T) that wraps
+     readItem and maps 404→empty/null. Keep readItem as the SDK-faithful, metadata-returning form.
+
+1.3  No exists / count helpers
+     (absent) | n/a
+     Confidence: High
+     exists(id,partitionKey)→boolean and count(Condition)→long are core library-discipline methods on
+     every other executor (Mongo exists:262/count:334). Both are trivially expressible over Cosmos
+     ("SELECT VALUE COUNT(1) ..." / a point-read 404 check) and are conspicuously missing on a
+     document-store wrapper. Recommendation: add exists(String,PartitionKey)→boolean and
+     count([Condition])→long.
+
+================================================================================
+2. NAMING (query / find / get / gett / list / stream / exists)
+================================================================================
+
+2.1  "streamItems" is the only verb on the library path; reads as Cosmos-ish, not library-ish
+     streamItems(...) family | :1418–1751
+     Confidence: Low  (naming is internally consistent; flag is about library alignment)
+     The rest of the library uses bare stream/list/query/find. The Items suffix matches the SDK
+     (queryItems/readItems) and the SDK-delegation half of this class, so it is defensible here.
+     Not recommending a rename. Confirming check: if a future Cosmos sibling or a shared interface is
+     introduced, reconcile streamItems↔stream then. Recorded for the cross-class note only.
+
+2.2  No naming finding on the SDK-delegation half
+     createItem/upsertItem/replaceItem/patchItem/deleteItem/readItem/readMany/readAllItems/queryItems
+     Confidence: High (intentional)
+     These names track the CosmosContainer SDK exactly and should NOT be renamed to get/find/list —
+     doing so would obscure the 1:1 SDK mapping. No action.
+
+================================================================================
+3. RETURN TYPE (Optional vs null; List vs Stream vs DataSet)
+================================================================================
+
+3.1  Library path returns Stream only — no List / Dataset / Optional variants
+     streamItems(...) | :1418–1751
+     Confidence: High
+     See 1.1. Relative to Mongo's stream/list/query(Dataset)/findFirst quartet over one filter, the
+     Cosmos Condition path collapses to a single Stream return. The paged List-like access
+     (CosmosPagedIterable) exists for raw SQL via queryItems but NOT for Condition. Recommendation:
+     add the paged queryItems(Condition,...) (3.1≡1.1); a Dataset variant is optional and lower value.
+
+3.2  deleteItem(T item, options) returns CosmosItemResponse<Object> while the <T> param is input-only
+     deleteItem(T,CosmosItemRequestOptions) | :739
+     Confidence: Low (matches SDK; cosmetic)
+     The method is generic in <T> purely for the input item; the response is <Object>. This is exactly
+     the SDK signature, so it's faithful — but the <T> buys nothing and can read as if the response is
+     typed. Confirming check: confirm cosmosContainer.deleteItem(T,opts) returns
+     CosmosItemResponse<Object> (it does). Acceptable as-is; could drop <T> to deleteItem(Object,opts).
+
+================================================================================
+4. PARAMETERS (id / partitionKey ordering; missing / unsafe overloads)
+================================================================================
+
+4.1  (Positive) id/partitionKey ordering is consistent and deliberately diverges from the SDK
+     replaceItem(oldItemId,partitionKey,newItem,options) | :582  →  SDK is replaceItem(newItem,id,pk,opts)
+     readItem/patchItem/deleteItem all lead with (id, partitionKey)
+     Confidence: High — NO ACTION
+     The executor intentionally reorders replaceItem so every keyed op leads with (id, partitionKey),
+     which is the right call for intra-class consistency. Noting as a verified non-issue.
+
+4.2  Condition-path overload uses positional-? params under the hood; placeholder-count mismatch throws IAE
+     toSqlQuerySpec/rewritePositionalParameters | :1753,1769 (private)
+     Confidence: Low (implementation detail, not public surface)
+     The SqlBuilder SP is rewritten ? → @p0.. and a count mismatch throws IAE. Public behavior is fine;
+     noted only because it's the one place the Condition path can throw IAE rather than CosmosException.
+     No action.
+
+================================================================================
+5. CLASS PLACEMENT / STATIC HELPERS / DEAD CODE
+================================================================================
+
+5.1  Dead limit branch in prepareQuery (count is always 0)
+     prepareQuery(Class,Collection,Condition,int) | :1811 (private; reached only via :1808 with count=0)
+     Confidence: High (already noted in prior review memory; confirmed still present)
+     `if (count > 0) sqlBuilder.limit(count);` (:1855) is unreachable — the sole caller passes 0. This
+     is private, so not an API finding per se, but it signals an INTENDED-BUT-MISSING public overload:
+     a top-N form (e.g. streamItems(selectPropNames, whereClause, limit, options, Class)) that the
+     plumbing was already built for. Recommendation: either expose a limit/top-N overload (wiring the
+     existing count param) or delete the dead branch. Low: grep callers of the 4-arg prepareQuery — only
+     :1808 exists.
+
+5.2  Private static helpers are correctly placed
+     toSqlQuerySpec / rewritePositionalParameters | :1753,1769
+     Confidence: High — NO ACTION. Cosmos-SqlQuerySpec-specific; no reuse value outside this class.
+
+================================================================================
+6. MISSING METHODS / DEPRECATION CANDIDATES
+================================================================================
+
+6.1  Missing (consolidated): get/gett→Optional|nullable point-read (1.2); exists/count (1.3);
+     queryItems(Condition)→CosmosPagedIterable + optional findFirst(Condition)→Optional (1.1);
+     optional top-N/limit overload for the Condition path (5.1).
+     Confidence: High that these are the library-discipline gaps; the value/priority is a judgment call
+     given the class is @Beta and intentionally thin.
+
+6.2  Deprecation candidates: NONE.
+     No redundant or superseded overloads. The three createItem / three upsertItem forms map to distinct
+     SDK overloads (auto-pk, explicit-pk+opts, opts-only) and don't overlap.
+
+6.3  @Beta granularity (minor): streamAllItems(...) carries a method-level @Beta (:1146,1186) but the
+     newer Condition-based streamItems(...) overloads do not, even though the SqlBuilder integration is
+     the more experimental surface. Harmless because the class is @Beta, but the per-method annotation is
+     inconsistent. Confidence: Low. Recommendation: either drop the redundant method-level @Beta on
+     streamAllItems or add it to the Condition streamItems overloads, for consistency.
+
+================================================================================
+CROSS-CLASS NOTES
+================================================================================
+- Return/naming deviation from library discipline: the library-integrated query path exposes ONLY
+  streamItems→Stream. Versus MongoCollectionExecutor's full per-filter set (exists/count/get/gett/
+  findFirst/list/query(Dataset)/stream + queryForXxx), Cosmos offers no Optional point-read, no
+  exists/count, and — for the Condition path specifically — no paged/List/first-result variant. This is
+  the single biggest discipline gap. Mitigating: the class is @Beta and the SDK-delegation half is
+  intentionally a faithful 1:1 SDK wrap (queryItems/readItem/readMany/readAllItems return SDK
+  CosmosPagedIterable/FeedResponse/CosmosItemResponse by design — correctly NOT renamed to library
+  verbs).
+- partitionKey handling: GOOD. Every keyed operation (readItem/replaceItem/patchItem/deleteItem) leads
+  with (id, partitionKey) and the executor deliberately reorders replaceItem away from the SDK's
+  (item,id,pk) to preserve that order (4.1). partitionKey is consistently a required leading key arg;
+  cross-partition vs single-partition is steered via CosmosQueryRequestOptions, matching the SDK model.
+  No partitionKey ordering or safety issue found.
+- Known-context (do NOT re-flag as bugs — design-review only): the prepareQuery alias-qualification fix
+  (COSMOS_ALIAS "c") and the count-branch deadness are already recorded in prior bug-review memory; the
+  Cosmos SDK-delegated null-arg convention is NPE-by-design (not IAE). These are noted here only insofar
+  as 5.1 (dead branch ⇒ latent top-N overload) is an API-shape observation, not a correctness claim.

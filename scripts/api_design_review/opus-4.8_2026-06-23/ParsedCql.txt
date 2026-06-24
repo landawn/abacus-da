@@ -1,0 +1,42 @@
+API DESIGN REVIEW — cassandra/ParsedCql.java
+public final class ParsedCql
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+
+1. OVERALL ASSESSMENT
+ParsedCql is the parsed, POOLED/CACHED form of a CQL statement (originalCql / parameterizedCql /
+namedParameters / parameterCount), built via the static factory parse(String) and backed by a
+KeyedObjectPool. It is the CQL analogue of the core ParsedSql. The design is sound; the one real issue is
+that its only collection accessor leaks the live internal map of a shared, pooled instance.
+
+2. NAMING ISSUES
+None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- namedParameters() returns the live mutable internal Map<Integer,String> | ParsedCql.java:561-565 |
+  Medium | Verified: the body is `return namedParameters;` (the internal field), and ParsedCql instances
+  are POOLED/CACHED (parse() is backed by KeyedObjectPool). A caller that mutates the returned map
+  corrupts the cached instance for every other holder. The Javadoc only "asks" for read-only. Return an
+  ImmutableMap / Collections.unmodifiableMap — consistent with CqlMapper.getAttributes() which already
+  returns ImmutableMap. (Map<Integer,String> shape itself is an intentional ParsedSql mirror; only the
+  mutability is actionable.)
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+None.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+None.
+
+CROSS-CLASS NOTES
+- Mutable-internal-collection leak is the same class of issue seen in HBase (AnyMutation.getFamilyCellMap)
+  and MongoDBBase — promote a SUMMARY item: audit all accessors that return internal collections of
+  shared/cached objects for defensive immutability.
+- ParsedCql (parser output) + CqlMapper (registry) + CqlBuilder (generator) form a coherent pipeline.
+
+--- DOC-FIX PASS 2026-06-23 ---
+Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its
+findings are code/design (see SUMMARY.txt section 2), or any doc-adjacent item was evaluated and
+intentionally left (documenting it would paper over a behavioral/design issue, or it is dead-comment
+cleanup deferred to the maintainer). `mvn -o clean compile` remains green.

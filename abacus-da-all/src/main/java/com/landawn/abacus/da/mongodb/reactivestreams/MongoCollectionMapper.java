@@ -14,6 +14,7 @@
 
 package com.landawn.abacus.da.mongodb.reactivestreams;
 
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
 import java.util.List;
@@ -24,7 +25,9 @@ import org.bson.types.ObjectId;
 
 import com.landawn.abacus.annotation.Beta;
 import com.landawn.abacus.util.Dataset;
+import com.landawn.abacus.util.N;
 import com.mongodb.bulk.BulkWriteResult;
+import com.mongodb.client.model.Aggregates;
 import com.mongodb.client.model.BulkWriteOptions;
 import com.mongodb.client.model.CountOptions;
 import com.mongodb.client.model.DeleteOptions;
@@ -2972,24 +2975,25 @@ public final class MongoCollectionMapper<T> {
     }
 
     /**
-     * Returns distinct values for a specified field across the collection, decoded as the mapper's
-     * entity type {@code T}.
+     * Returns distinct values of the specified field across the whole collection, each surfaced on
+     * an entity of the mapper's row type {@code T}.
      *
-     * <p>Retrieves all unique values of the specified field from all documents in the collection.
-     * The driver decodes each raw BSON value to the mapper's row type {@code T}; this only makes
-     * sense when {@code T} is a scalar type that matches the field's BSON type (for example,
-     * a mapper of {@code String.class} reading a {@code String} field). For typical entity-mapper
-     * use (where {@code T} is a POJO), prefer {@link MongoCollectionExecutor#distinct(String, Class)}
-     * to specify the actual value type of the field.</p>
+     * <p>Each distinct value is surfaced under {@code fieldName} on an entity of the mapped type, and
+     * is only readable if the entity declares a matching property. Internally this runs a
+     * {@code $group}/{@code $project} aggregation pipeline (the same approach as {@link #groupBy(String)}),
+     * so scalar field values decode cleanly into {@code T} — unlike the driver's native
+     * {@code distinct(field, T.class)}, which throws {@code BsonInvalidOperationException} when
+     * {@code T} is a POJO and the field is scalar. To obtain raw scalar values instead, use
+     * {@link MongoCollectionExecutor#distinct(String, Class)} with an explicit value class.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // This (mapper) method decodes each distinct value as the mapper's row type T:
+     * // Distinct "country" values across the whole collection, each surfaced on a T:
      * userMapper.distinct("country")
      *     .collectList()
      *     .subscribe(countries -> System.out.println("Countries: " + countries));
      *
-     * // For typed scalar values, use the executor directly:
+     * // For raw scalar values, use the executor directly with an explicit value class:
      * userMapper.collectionExecutor().distinct("country", String.class)
      *     .collectList()
      *     .subscribe(countries -> System.out.println("Countries: " + countries));
@@ -3005,36 +3009,57 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param fieldName the name of the field to get distinct values for
-     * @return a {@code Flux} that, on subscription, emits each distinct value of the field decoded
-     *         as {@code T}, then completes; completes empty when no distinct values are found (no
-     *         matching documents, or the field is absent from all of them)
+     * @return a cold {@code Flux} that, on subscription, emits each distinct value of the field
+     *         surfaced on an entity of type {@code T}, then completes; completes empty when no
+     *         distinct values are found (no documents, or the field is absent from all of them)
      * @throws IllegalArgumentException if fieldName is null or empty (thrown synchronously at the call site)
-     * @throws org.bson.codecs.configuration.CodecConfigurationException if the BSON value cannot be
-     *         decoded as {@code T} (signalled via {@code Flux} error)
+     * @see #distinct(String, Bson)
+     * @see #groupBy(String)
      * @see MongoCollectionExecutor#distinct(String, Class)
      */
     public Flux<T> distinct(final String fieldName) {
-        return collectionExecutor.distinct(fieldName, rowType);
+        N.checkArgNotEmpty(fieldName, "fieldName");
+
+        return collectionExecutor.aggregate(distinctPipeline(fieldName, null), rowType);
+    }
+
+    // Routes distinct through a $group/$project pipeline (like groupBy) so each distinct scalar value
+    // comes back as a {fieldName: value} document decodable into the mapped entity type, as documented.
+    // The driver's native distinct(fieldName, entityClass) decodes each raw VALUE with the entity codec
+    // and throws BsonInvalidOperationException for any scalar field. Mirrors the blocking
+    // MongoCollectionMapper.distinct(...) so both layers behave identically.
+    private static List<Bson> distinctPipeline(final String fieldName, final Bson filter) {
+        final List<Bson> pipeline = new ArrayList<>(3);
+
+        if (filter != null) {
+            pipeline.add(Aggregates.match(filter));
+        }
+
+        pipeline.add(new Document("$group", new Document("_id", "$" + fieldName)));
+        pipeline.add(new Document("$project", new Document("_id", 0).append(fieldName, "$_id")));
+
+        return pipeline;
     }
 
     /**
-     * Returns distinct values for a field among documents matching the filter, decoded as the
-     * mapper's entity type {@code T}.
+     * Returns distinct values of the specified field among documents matching the filter, each
+     * surfaced on an entity of the mapper's row type {@code T}.
      *
-     * <p>Retrieves unique values of the specified field from documents matching the filter. The
-     * same decoding caveat as {@link #distinct(String)} applies: the BSON value of each distinct
-     * field is decoded as {@code T}, so this is only appropriate when {@code T} is a scalar type
-     * matching the field's BSON type.</p>
+     * <p>Like {@link #distinct(String)} but only considers documents matching {@code filter}. Each
+     * distinct value is surfaced under {@code fieldName} on an entity of the mapped type via a
+     * {@code $group}/{@code $project} pipeline, so scalar values decode cleanly into {@code T}. To
+     * obtain raw scalar values instead, use {@link MongoCollectionExecutor#distinct(String, Bson, Class)}
+     * with an explicit value class.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson filter = Filters.eq("status", "active");
-     * // This (mapper) method decodes each distinct value as the mapper's row type T:
+     * // Distinct "department" values among active users, each surfaced on a T:
      * userMapper.distinct("department", filter)
      *     .collectList()
      *     .subscribe(depts -> System.out.println("Active departments: " + depts));
      *
-     * // For typed scalar values, use the executor directly:
+     * // For raw scalar values, use the executor directly with an explicit value class:
      * userMapper.collectionExecutor().distinct("department", filter, String.class)
      *     .collectList()
      *     .subscribe(depts -> System.out.println("Active departments: " + depts));
@@ -3042,16 +3067,18 @@ public final class MongoCollectionMapper<T> {
      *
      * @param fieldName the name of the field to get distinct values for
      * @param filter the query filter to apply before extracting distinct values (must not be null)
-     * @return a {@code Flux} that, on subscription, emits each distinct value of the field decoded
-     *         as {@code T}, then completes; completes empty when no distinct values are found (no
-     *         matching documents, or the field is absent from all of them)
-     * @throws IllegalArgumentException if fieldName is null or empty (thrown synchronously at the call site), or if filter is null
-     * @throws org.bson.codecs.configuration.CodecConfigurationException if the BSON value cannot be
-     *         decoded as {@code T} (signalled via {@code Flux} error)
+     * @return a cold {@code Flux} that, on subscription, emits each distinct value of the field
+     *         (among matching documents) surfaced on an entity of type {@code T}, then completes;
+     *         completes empty when no distinct values are found
+     * @throws IllegalArgumentException if fieldName is null or empty, or if filter is null (thrown synchronously at the call site)
+     * @see #distinct(String)
      * @see MongoCollectionExecutor#distinct(String, Bson, Class)
      */
     public Flux<T> distinct(final String fieldName, final Bson filter) {
-        return collectionExecutor.distinct(fieldName, filter, rowType);
+        N.checkArgNotEmpty(fieldName, "fieldName");
+        N.checkArgNotNull(filter, "filter");
+
+        return collectionExecutor.aggregate(distinctPipeline(fieldName, filter), rowType);
     }
 
     /**

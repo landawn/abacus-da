@@ -1,0 +1,234 @@
+API DESIGN REVIEW — AsyncCassandraExecutorBase
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/AsyncCassandraExecutorBase.java
+      (public abstract class AsyncCassandraExecutorBase<RW,RS,ST,PS,BT>, ~2934 lines)
+Sync sibling: abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java
+Concrete subclass (v4): abacus-da-all/.../cassandra/AsyncCassandraExecutor.java
+Reviewer: opus-4.8  Date: 2026-06-23
+Scope: all PUBLIC methods (incl. deprecated). REPORT-ONLY (no source modified).
+
+================================================================================
+1. OVERALL ASSESSMENT
+================================================================================
+AsyncCassandraExecutorBase is a disciplined async mirror of CassandraExecutorBase.
+Every data-plane public operation of the sync base has exactly one async
+counterpart with the same name, same overload family, same parameter order and
+generics, and a return type that wraps the sync return in ContinuableFuture
+(get/gett -> CF<Optional<T>> / CF<T>; insert/update/delete/batch* -> CF<RS>;
+exists -> CF<Boolean>; count -> CF<Long>; list/query/stream/findFirst ->
+CF<List>/CF<Dataset>/CF<Stream>/CF<Optional>; the full queryForXxx family ->
+CF<OptionalXxx>/CF<Nullable>/CF<Optional>; execute -> CF<RS>). The
+ContinuableFuture choice is consistent with the sibling AsyncHBaseExecutor, which
+also returns ContinuableFuture. The Optional-inside-future / null-inside-future /
+Nullable-inside-future distinctions are preserved exactly from the sync base, and
+the Javadoc is unusually thorough (typical + edge cases, including the subtle
+"future completes exceptionally vs. get() throws inline" distinctions for the
+queryForSingleNonNull / findFirst-mapping NPE cases).
+
+The class is healthy. Findings are minor and mostly about annotation parity, not
+shape: (a) the entire queryForXxx "Beta" family is marked @Beta on the sync base
+but carries NO @Beta on the async base — an actionable annotation-consistency gap;
+(b) the deprecated count(String,...) is correctly mirrored as @Deprecated but its
+@deprecated javadoc tag points at a different replacement than the sync sibling's
+wording; (c) the static deprecated registerKeys(...) is (correctly) not mirrored;
+(d) a couple of by-design return-type observations (CF<T> nullable-payload gett,
+exists/count not accepting null Condition the way the sync base documents) worth
+recording. No naming defects, no misplaced methods, no missing data-plane
+operations.
+
+================================================================================
+2. NAMING ISSUES
+================================================================================
+None. Every method name matches its CassandraExecutorBase counterpart exactly
+(get/gett/insert/batchInsert/update/batchUpdate/delete/batchDelete/exists/count/
+list/query/stream/findFirst/queryForBoolean..Double/queryForString/queryForDate/
+queryForSingleValue/queryForSingleNonNull/execute). sync() is an accurate,
+conventional unwrap accessor (AsyncCassandraExecutorBase.java:106) and is the
+mirror of CassandraExecutor.async(). Generic parameters <RW,RS,ST,PS,BT> mirror
+the sync base verbatim.
+
+================================================================================
+3. RETURN-TYPE AND PARAMETER ISSUES
+================================================================================
+
+[R1] queryForXxx async family is missing @Beta although the sync siblings are all @Beta
+     queryForBoolean/Char/Byte/Short/Int/Long/Float/Double (Class,String,Condition)
+        | AsyncCassandraExecutorBase.java:1912,1950,1988,2026,2064,2102,2140,2178
+     queryForString/queryForDate(Class,String,Cond), queryForDate(Class,Class,String,Cond)
+        | AsyncCassandraExecutorBase.java:2216,2253,2291
+     queryForBoolean/Char/Byte/Short/Int/Long/Float/Double (String,params)
+        | AsyncCassandraExecutorBase.java:2415,2451,2487,2523,2558,2593,2629,2665
+     queryForString(String,params)
+        | AsyncCassandraExecutorBase.java:2702
+     | Confidence: High
+     | Observation: On CassandraExecutorBase every one of these is annotated @Beta
+       (sync: 1620,1654,1689,1724,1759,1794,1829,1864 for the Class-overloads;
+       1898,1932,1969 for string/date; 2191,2221,2252,2283,2315,2346,2377,2408,2438
+       for the (String,params) family). The async base carries NO @Beta anywhere
+       (grep: the only annotation in the whole file is the single @Deprecated at
+       line 1261). So the SAME API is signalled "experimental/unstable" on the sync
+       surface but "stable" on the async surface — an inconsistent stability
+       contract for what is meant to be a 1:1 mirror.
+     | Recommendation: add @Beta to the async queryForXxx overloads listed above so
+       the stability signal matches the sync base (import
+       com.landawn.abacus.annotation.Beta). Alternatively, if these are in fact
+       considered stable, drop @Beta from the sync base — but pick one and apply it
+       to both. (Note: queryForSingleValue/queryForSingleNonNull are NOT @Beta on
+       the sync base, so leave those un-annotated on both sides; that pair is
+       already consistent.)
+
+[R2] count(String,Object...) @deprecated tag names a different replacement than the sync sibling
+     count(String query, Object... parameters)
+        | AsyncCassandraExecutorBase.java:1262 (@Deprecated, async)
+        | CassandraExecutorBase.java:2161 (@Deprecated, sync)
+     | Confidence: Medium
+     | Observation: Both are correctly @Deprecated and both steer callers to
+       queryForLong. The async @deprecated tag says: "Use queryForLong(String,
+       Object...) with COUNT(*) in the query instead." The sync @deprecated tag is
+       worded differently ("prefer queryForLong(String, Object...) with a COUNT(*)
+       query and .orElse(0L) for the same behavior. Slated for removal in a future
+       release."). The async wording omits the ".orElse(0L)" equivalence note and
+       the "slated for removal" statement. Minor, but for a mirror the deprecation
+       guidance should read identically.
+     | Recommendation: align the async @deprecated javadoc text with the sync
+       sibling's (include the .orElse(0L) equivalence and the removal note).
+
+[R3] count(Class,Condition) returns CF<Long>; underlying value path differs slightly from sync — verify NPE-safety
+     count(final Class<?> targetClass, final Condition whereClause)
+        | AsyncCassandraExecutorBase.java:1224
+        | sync: CassandraExecutorBase.java:1410
+     | Confidence: Low
+     | Observation: The async overload builds the COUNT(*) SP and delegates to the
+       deprecated async count(String,...) (line 1227 -> 1262), which maps via
+       long_secondMapper (Nullable<Long> -> long, NULL->0). The sync overload
+       instead calls queryForSingleValue(long.class,...).orElse(0L) directly
+       (sync:1415). Net behavior (0L on no-row/NULL) is the same, but the async
+       path routes through a @Deprecated method internally. Functionally fine;
+       purely an internal-coupling nit.
+     | Recommendation: optionally route async count(Class,Condition) through
+       queryForLong(...).map(...).orElse-equivalent so it does not depend on the
+       deprecated count(String,...) it will outlive. No external API change.
+     | Confirming check (Low): confirm long_secondMapper coerces a present-but-null
+       Nullable<Long> to 0L (CassandraExecutorBase.java:197) — it does
+       (mapToLong(...).orElse(0)), so behavior is correct; this is style only.
+
+[R4] gett(...) returns CF<T> whose payload may be null — by-design, recorded for completeness
+     gett (4 overloads) | AsyncCassandraExecutorBase.java:293,329,363,399
+     | Confidence: High (that this is correct)
+     | Observation: gett mirrors the sync nullable variant (sync gett returns raw T
+       or null). The async wraps it as ContinuableFuture<T> where the resolved
+       payload can be null (line 402 returns the raw fetchOnlyOne result). This is
+       the intended "nullable" counterpart to get(...) -> CF<Optional<T>> and is
+       documented accurately (Javadoc: "payload is the entity instance, or null").
+       Consistent with the sync base and with the get/gett split. NOT a defect.
+
+No other return-type or parameter issues. Specifically verified as CONSISTENT
+(not findings):
+ - Parameter ordering of every overload matches the sync base exactly
+   (targetClass, [selectPropNames|props|propNames], [whereClause|ids|type|params]).
+ - No per-call Executor parameter on any method, and none is expected: the concrete
+   AsyncCassandraExecutor performs true non-blocking I/O via the driver's
+   session().executeAsync(...) (AsyncCassandraExecutor.java:350,387,422,461), NOT a
+   thread pool. So unlike AsyncHBaseExecutor (which needs an AsyncExecutor because
+   HBase has no native async), no Executor/AsyncExecutor param belongs here. The
+   sync base likewise has no Executor param. Consistent and correct.
+ - Optional-vs-Nullable-vs-null inside the future is preserved verbatim from the
+   sync base: get/findFirst/queryForSingleNonNull -> CF<Optional> (no null payload);
+   queryForSingleValue/queryForString/queryForDate -> CF<Nullable> (present-but-null
+   allowed); gett -> CF<T> (nullable). Primitive queryForXxx -> CF<OptionalXxx>
+   (empty only on no-row; NULL collapses to primitive default). All match sync.
+ - execute(...) async abstract family (String / String+params / String+Map /
+   ST) mirrors the sync abstract execute(...) family 1:1
+   (AsyncCassandraExecutorBase.java:2822,2852,2888,2923 vs sync 2776,2822,2860,2904),
+   and the protected execute(SP) convenience exists on both (async:2931, sync:2917).
+
+================================================================================
+4. MISPLACED METHODS (with target class)
+================================================================================
+None. Every public method belongs on the async facade. sync() is correctly placed
+here (it is the unwrap accessor; its mirror is CassandraExecutor.async(), and the
+concrete AsyncCassandraExecutor overrides it to covariantly return CassandraExecutor
+— AsyncCassandraExecutor.java:77).
+
+================================================================================
+5. MISSING METHODS (operations on CassandraExecutorBase absent here, or vice versa)
+================================================================================
+
+[M1] registerKeys(Class, Collection) — static deprecated key-registration NOT mirrored
+     CassandraExecutorBase.registerKeys | CassandraExecutorBase.java:269 (static, @Deprecated)
+     | Confidence: High (that omission is correct)
+     | Observation: The sync base exposes a static, @Deprecated registerKeys(...)
+       for legacy manual @Id registration. The async base does not (and should not)
+       expose it: it is a static, class-level, deprecated configuration concern, not
+       a data-plane operation, and the registry it mutates (entityKeyNamesMap) is
+       shared static state already reachable via CassandraExecutorBase. Wrapping it
+       in a future would be meaningless. Correct omission. No action.
+
+[M2] No async-only operations leak in — verified
+     | Confidence: High
+     | Observation: The async base adds no data-plane operation that the sync base
+       lacks; the only async-only member is sync() (the unwrap accessor), which is
+       expected. (The concrete AsyncCassandraExecutor adds two rowMapper-based
+       stream(...) overloads — AsyncCassandraExecutor.java:148,189 — but those are
+       concrete-class additions mirroring CassandraExecutor's driver-specific
+       rowMapper stream overloads, out of scope for the base and by-design.)
+
+All sync data-plane operations are present on the async base. Full coverage
+confirmed by inventory diff: get(4)/gett(4)/insert(2)/batchInsert(2)/update(4)/
+batchUpdate(4)/delete(6)/batchDelete(2)/exists(3)/count(2)/findFirst(4)/list(4)/
+query(4)/stream(5)/queryForBoolean..Double(2 each)/queryForString(2)/
+queryForDate(2)/queryForSingleValue(2)/queryForSingleNonNull(2)/execute(4) — each
+has a 1:1 async counterpart.
+
+================================================================================
+6. DEPRECATION / REMOVAL CANDIDATES (with replacement APIs)
+================================================================================
+[D1] count(String, Object...) — already @Deprecated, correctly mirrored
+     | AsyncCassandraExecutorBase.java:1262
+     | Confidence: High
+     | The async base correctly carries @Deprecated on count(String,...) (mirroring
+       sync:2161) and steers to queryForLong(String,...). The only nit is the
+       javadoc-text mismatch flagged in [R2]. No new deprecation candidates: nothing
+       else here should be deprecated that is not already.
+
+================================================================================
+CROSS-CLASS NOTES (symmetry with CassandraExecutorBase; async return convention vs HBase/Mongo)
+================================================================================
+- 1:1 operational symmetry: every data-plane public method of CassandraExecutorBase
+  has exactly one async counterpart with identical name, overload shape, parameter
+  order, and generics. The only deliberate asymmetries are sync() (async-only
+  unwrap) and the non-mirroring of the static deprecated registerKeys(...) — both
+  acceptable.
+- Async return-type convention is applied uniformly:
+    sync T               -> ContinuableFuture<T>            (gett, execute->RS,
+                                                             insert/update/delete/batch*->RS,
+                                                             count->Long, exists->Boolean)
+    sync Optional<T>     -> ContinuableFuture<Optional<T>>  (get, findFirst,
+                                                             queryForSingleNonNull)
+    sync Nullable<T>     -> ContinuableFuture<Nullable<T>>  (queryForSingleValue,
+                                                             queryForString, queryForDate)
+    sync OptionalXxx     -> ContinuableFuture<OptionalXxx>  (primitive queryForXxx)
+    sync List/Dataset/Stream -> ContinuableFuture<List|Dataset|Stream>
+  This matches the ContinuableFuture convention used by AsyncHBaseExecutor (which
+  also returns ContinuableFuture, AsyncHBaseExecutor.java:191+). There is no
+  AsyncMongo* class in the repo (Mongo async is the reactivestreams-* surface,
+  reviewed separately), so the relevant async sibling for convention parity is
+  HBase — and Cassandra is consistent with it.
+- Threading model differs from HBase but is the right choice: Cassandra async uses
+  the driver's native executeAsync (true non-blocking), so no AsyncExecutor field
+  and no per-call Executor parameter — whereas AsyncHBaseExecutor must thread a
+  constructor-supplied AsyncExecutor because HBase has no native async. Both are
+  internally consistent; neither should grow a per-call Executor overload.
+
+OVERALL: clean, consistent, no must-fix shape defects. The one substantive item is
+[R1] (restore @Beta parity on the queryForXxx family); [R2]/[R3] are low-effort
+polish; [R4]/[M1]/[M2] are confirmations of correct by-design choices.
+
+--------------------------------------------------------------------------------
+TIGHT BULLET LIST (for verification)
+--------------------------------------------------------------------------------
+- queryForBoolean/Char/Byte/Short/Int/Long/Float/Double + queryForString/queryForDate (Class & String families) | AsyncCassandraExecutorBase.java:1912,1950,1988,2026,2064,2102,2140,2178,2216,2253,2291,2415,2451,2487,2523,2558,2593,2629,2665,2702 | High | add @Beta to match sync base (sync marks all these @Beta; async marks none)
+- count(String,Object...) | AsyncCassandraExecutorBase.java:1262 | Medium | @Deprecated mirrored correctly, but align @deprecated javadoc text with sync sibling (CassandraExecutorBase.java:2161): add ".orElse(0L)" equivalence + "slated for removal"
+- count(Class,Condition) | AsyncCassandraExecutorBase.java:1224 | Low | internally routes through the @Deprecated async count(String,...); optionally re-route to queryForLong path (sync does, sync:1415). Behavior already correct (0L on no-row/NULL)
+- gett (4 overloads) | AsyncCassandraExecutorBase.java:293,329,363,399 | High (correct) | CF<T> nullable-payload is the intended nullable mirror of get->CF<Optional<T>>; NOT a defect, recorded
+- registerKeys(Class,Collection) static @Deprecated | CassandraExecutorBase.java:269 | High (correct) | not mirrored on async base — correct omission (static deprecated config, not data-plane)
+- Executor param / threading | AsyncCassandraExecutorBase.java (whole) | High (correct) | no per-call Executor param; native driver executeAsync used (AsyncCassandraExecutor.java:350,387,422,461) — correct, unlike HBase which needs AsyncExecutor

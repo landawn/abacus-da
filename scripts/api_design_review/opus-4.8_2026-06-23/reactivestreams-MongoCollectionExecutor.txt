@@ -1,0 +1,51 @@
+API DESIGN REVIEW — mongodb/reactivestreams/MongoCollectionExecutor.java
+public final class MongoCollectionExecutor (reactive streams)
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> CODE-FIX UPDATE (2026-06-24): the accessor-name drift (section 2) is RESOLVED — the BLOCKING twin was
+    hard-renamed mongoCollection() -> coll() to match this class (no alias). See the [RESOLVED] tag. mvn -o
+    clean test-compile green. <<<
+
+1. OVERALL ASSESSMENT
+A faithful reactive mirror of the blocking mongodb/MongoCollectionExecutor: list->Flux, query->Mono<DataSet>,
+findFirst->Mono, and all write/find-and-modify/distinct/aggregate/groupBy/watch families are 1:1 with the
+blocking class, parameter ordering matches exactly, and insertOne/insertMany correctly return
+Mono<InsertOneResult/InsertManyResult> (an improvement over the blocking void). The only concrete defect is
+an accessor name drift; the other deltas are by-design consequences of Mono lacking a present-but-null state.
+
+2. NAMING ISSUES
+- [RESOLVED 2026-06-24 — code-fixed] coll() | reactivestreams/MongoCollectionExecutor.java:216 | Medium |
+  Drift vs the blocking twin's mongoCollection(). FIXED: the BLOCKING executor was hard-renamed
+  mongoCollection() -> coll() to match this reactive accessor (no alias); this reactive method is
+  unchanged. Both now use coll(). test-compile green.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- primitive queryForXxx family returns Mono<Boxed>, losing the blocking OptionalXxx "missing/null field vs
+  no-match" distinction | reactivestreams/MongoCollectionExecutor.java:1163 (+ :1209..:1579) | Low |
+  Inherent to Mono (no present-but-null state); Javadoc already steers users to defaultIfEmpty. By design,
+  recorded only.
+
+4. MISPLACED METHODS
+None. async() correctly absent (the reactive class IS the async surface).
+
+5. MISSING METHODS
+- gett(...) family absent | (blocking sibling :612-758) | Low (by design) | Mono empty unifies
+  Optional.empty()/null, so a reactive gett would be behaviorally identical to get(). CONFIRM intentional;
+  optionally note in get() Javadoc.
+- queryForSingleNonNull(String,Bson,Class) absent | (blocking :1656) | Low (by design) | Reactive
+  queryForSingleValue already collapses null -> empty Mono; a "non-null" variant would be identical.
+  CONFIRM intentional.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+- mapReduce(...) | (already @Deprecated, mirrored) | No action.
+
+CROSS-CLASS NOTES
+- insertOne/insertMany returning driver results here is the model the blocking executor should adopt
+  (blocking currently returns void) — see MongoCollectionExecutor report.
+- Reactive return convention: single->Mono<T>, multi->Flux<T>, scalar->Mono<Boxed>, query->Mono<DataSet>,
+  writes->Mono<Result>. Compare against any other reactive surfaces in SUMMARY (none others in scope).
+
+--- DOC-FIX PASS 2026-06-23 ---
+Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its
+findings are code/design (see SUMMARY.txt section 2), or any doc-adjacent item was evaluated and
+intentionally left (documenting it would paper over a behavioral/design issue, or it is dead-comment
+cleanup deferred to the maintainer). `mvn -o clean compile` remains green.

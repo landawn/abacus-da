@@ -1,0 +1,18 @@
+API DESIGN REVIEW — aws/AWSS3Util.java
+public final class AWSS3Util
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+
+1. OVERALL ASSESSMENT
+Empty PUBLIC placeholder: final class, private no-arg constructor, ZERO public methods/fields; Javadoc
+states it is reserved for a future implementation. Util-class hygiene correct. No per-method API to review.
+
+ACTIONABLE (architectural, shared with AWSRDSUtil/HadoopUtil/HDFSUtil)
+- [RESOLVED 2026-06-24 — code-fixed] public final class AWSS3Util (no public members) | AWSS3Util.java:26 |
+  Medium | Empty published placeholder with zero repo references. FIXED: made package-private
+  (`public final class` -> `final class AWSS3Util`). test-compile green.
+
+--- DOC-FIX PASS 2026-06-23 ---
+Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its
+findings are code/design (see SUMMARY.txt section 2), or any doc-adjacent item was evaluated and
+intentionally left (documenting it would paper over a behavioral/design issue, or it is dead-comment
+cleanup deferred to the maintainer). `mvn -o clean compile` remains green.

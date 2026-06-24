@@ -121,7 +121,7 @@ import com.mongodb.client.result.UpdateResult;
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * MongoCollectionExecutor executor = mongoDB.collectionExecutor("users");
- * 
+ *
  * // Basic CRUD operations:
  * Document user = new Document("name", "John").append("age", 30);
  * executor.insertOne(user);
@@ -129,14 +129,14 @@ import com.mongodb.client.result.UpdateResult;
  * List<Document> results = executor.stream(Filters.gte("age", 18)).toList();
  * executor.updateMany(Filters.eq("active", false), Updates.set("status", "inactive"));
  * executor.deleteOne("507f1f77bcf86cd799439011");
- * 
+ *
  * // Aggregation pipeline:
  * List<Document> aggregated = executor.aggregate(Arrays.asList(
  *     Aggregates.match(Filters.eq("status", "active")),
  *     Aggregates.group("$department", Accumulators.sum("count", 1)),
  *     Aggregates.sort(Sorts.descending("count"))
  * )).toList();
- * 
+ *
  * // Bulk operations:
  * List<WriteModel<Document>> operations = Arrays.asList(
  *     new InsertOneModel<>(doc1),
@@ -201,14 +201,14 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * MongoCollection<Document> collection = executor.mongoCollection();      // never null; same instance every call
+     * MongoCollection<Document> collection = executor.coll();      // never null; same instance every call
      * collection.withWriteConcern(WriteConcern.MAJORITY).insertOne(document); // document inserted with majority write concern
      * }</pre>
      *
      * @return the underlying MongoCollection instance
      * @see MongoCollection
      */
-    public MongoCollection<Document> mongoCollection() {
+    public MongoCollection<Document> coll() {
         return coll;
     }
 
@@ -874,7 +874,7 @@ public final class MongoCollectionExecutor {
     /**
      * Finds the first document matching the filter with BSON projection, sorting, and type conversion.
      *
-     * <p>This method provides comprehensive document finding with BSON-based projection, sorting, and 
+     * <p>This method provides comprehensive document finding with BSON-based projection, sorting, and
      * automatic type conversion. BSON projection allows for more advanced field selection including
      * computed fields and array operations.</p>
      *
@@ -1674,7 +1674,7 @@ public final class MongoCollectionExecutor {
      * structure with each MongoDB document represented as a row. This provides a convenient
      * way to work with query results in a tabular format, useful for reporting, data analysis,
      * or integration with other data processing frameworks.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Get all active users as a Dataset:
@@ -1682,10 +1682,10 @@ public final class MongoCollectionExecutor {
      *
      * // Export to CSV:
      * activeUsers.toCsv("active_users.csv");
-     * 
+     *
      * // Print tabular format:
      * activeUsers.println();
-     * 
+     *
      * // Access column data:
      * List<String> userNames = activeUsers.getColumn("name");
      * }</pre>
@@ -1709,7 +1709,7 @@ public final class MongoCollectionExecutor {
      * each document converted to the specified row type. This provides type safety and enables
      * working with strongly-typed data in a tabular format, combining the benefits of object
      * mapping with tabular data operations.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Get active users as a Dataset of User objects:
@@ -1718,7 +1718,7 @@ public final class MongoCollectionExecutor {
      * // Access typed data:
      * List<User> users = userDataset.toList(User.class);
      * User firstUser = userDataset.getRow(0, User.class);
-     * 
+     *
      * // Get data as Maps for flexible processing:
      * Dataset mapDataset = executor.query(Filters.eq("category", "electronics"), Map.class); // non-null Dataset of Map rows; 0 rows if none match
      *
@@ -1726,7 +1726,6 @@ public final class MongoCollectionExecutor {
      * userDataset.toCsv("typed_users.csv");
      * }</pre>
      *
-     * @param <T> the target type for each row in the Dataset
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the query results with typed rows
@@ -1736,7 +1735,7 @@ public final class MongoCollectionExecutor {
      * @see #query(Bson)
      * @see #query(Collection, Bson, Class)
      */
-    public <T> Dataset query(final Bson filter, final Class<T> rowType) {
+    public Dataset query(final Bson filter, final Class<?> rowType) {
         return query(null, filter, rowType);
     }
 
@@ -1746,7 +1745,7 @@ public final class MongoCollectionExecutor {
      * <p>This method performs a find operation with pagination support, converting the results
      * into a Dataset with each document converted to the specified row type. This is useful
      * for implementing paginated data views while maintaining type safety and tabular data operations.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Get page 2 of products (20 per page) as a Dataset:
@@ -1754,13 +1753,12 @@ public final class MongoCollectionExecutor {
      *
      * // Export paginated results:
      * productPage.toCsv("products_page2.csv");
-     * 
+     *
      * // Process paginated User objects:
      * Dataset userPage = executor.query(Filters.eq("type", "user"), 0, 50, User.class); // first 50 matching documents
      * List<User> firstUsers = userPage.toList(User.class);
      * }</pre>
      *
-     * @param <T> the target type for each row in the Dataset
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param offset number of documents to skip from the beginning (0 for first page)
      * @param count maximum number of documents to return
@@ -1771,7 +1769,7 @@ public final class MongoCollectionExecutor {
      * @see Dataset
      * @see #query(Bson, Class)
      */
-    public <T> Dataset query(final Bson filter, final int offset, final int count, final Class<T> rowType) {
+    public Dataset query(final Bson filter, final int offset, final int count, final Class<?> rowType) {
         return query(null, filter, offset, count, rowType);
     }
 
@@ -1781,7 +1779,7 @@ public final class MongoCollectionExecutor {
      * <p>This method performs a find operation with field projection, converting the results
      * into a Dataset with only the selected fields populated in each typed row. This combination
      * provides both bandwidth optimization through projection and type safety through row conversion.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Get active users with selected fields as a Dataset:
@@ -1790,12 +1788,11 @@ public final class MongoCollectionExecutor {
      *
      * // Export projected data:
      * userData.toCsv("user_contact_info.csv");
-     * 
+     *
      * // Access specific columns:
      * List<String> departments = userData.getColumn("department");
      * }</pre>
      *
-     * @param <T> the target type for each row in the Dataset
      * @param selectPropNames collection of field names to include in projection (null for all fields)
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param rowType the target type for conversion of each document
@@ -1805,7 +1802,7 @@ public final class MongoCollectionExecutor {
      * @see Dataset
      * @see #query(Collection, Bson, int, int, Class)
      */
-    public <T> Dataset query(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) {
+    public Dataset query(final Collection<String> selectPropNames, final Bson filter, final Class<?> rowType) {
         return query(selectPropNames, filter, 0, Integer.MAX_VALUE, rowType);
     }
 
@@ -1815,7 +1812,7 @@ public final class MongoCollectionExecutor {
      * <p>This method combines field projection, filtering, and pagination to efficiently retrieve
      * a specific subset of documents with only selected fields. The results are converted to the
      * specified row type and organized in a Dataset for tabular operations.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Get page 1 of orders with selected fields:
@@ -1827,14 +1824,13 @@ public final class MongoCollectionExecutor {
      *
      * // Export paginated projected data:
      * orderPage.toCsv("pending_orders_page1.csv");
-     * 
+     *
      * // Calculate totals from projected data:
      * double totalAmount = orderPage.getColumn("total", Double.class).stream()
      *                                .mapToDouble(Double::doubleValue)
      *                                .sum();
      * }</pre>
      *
-     * @param <T> the target type for each row in the Dataset
      * @param selectPropNames collection of field names to include in projection (null for all fields)
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param offset number of documents to skip from the beginning (0 for first page)
@@ -1846,7 +1842,7 @@ public final class MongoCollectionExecutor {
      * @see Dataset
      * @see #query(Collection, Bson, Class)
      */
-    public <T> Dataset query(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count, final Class<T> rowType) {
+    public Dataset query(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count, final Class<?> rowType) {
         return query(selectPropNames, filter, null, offset, count, rowType);
     }
 
@@ -1856,7 +1852,7 @@ public final class MongoCollectionExecutor {
      * <p>This method performs a find operation with field projection and sorting, converting all
      * matching results into a Dataset with predictable ordering. The combination of projection,
      * sorting, and type conversion provides optimized data retrieval with consistent ordering.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Get all products sorted by price with selected fields:
@@ -1867,13 +1863,12 @@ public final class MongoCollectionExecutor {
      *
      * // Export sorted projected data:
      * productData.toCsv("high_rated_products_by_price.csv");
-     * 
+     *
      * // Analyze sorted data:
      * List<Double> prices = productData.getColumn("price", Double.class);
      * // Prices are guaranteed to be in ascending order
      * }</pre>
      *
-     * @param <T> the target type for each row in the Dataset
      * @param selectPropNames collection of field names to include in projection (null for all fields)
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort specification for result ordering (null for natural order)
@@ -1885,7 +1880,7 @@ public final class MongoCollectionExecutor {
      * @see #query(Collection, Bson, Bson, int, int, Class)
      * @see com.mongodb.client.model.Sorts
      */
-    public <T> Dataset query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
+    public Dataset query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<?> rowType) {
         return query(selectPropNames, filter, sort, 0, Integer.MAX_VALUE, rowType);
     }
 
@@ -1895,7 +1890,7 @@ public final class MongoCollectionExecutor {
      * <p>This method combines field projection, filtering, sorting, and pagination to efficiently retrieve
      * a specific subset of documents with only selected fields, ordered by the specified criteria. The results
      * are converted to the specified row type and organized in a Dataset for tabular operations.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Get page 1 of active users sorted by last login date:
@@ -1906,12 +1901,11 @@ public final class MongoCollectionExecutor {
      *
      * // Export paginated sorted projected data:
      * userPage.toCsv("active_users_page1_sorted.csv");
-     * 
+     *
      * // Process sorted data:
      * List<Date> lastLogins = userPage.getColumn("lastLogin", Date.class);
      * }</pre>
      *
-     * @param <T> the target type for each row in the Dataset
      * @param selectPropNames collection of field names to include in projection (null for all fields)
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort specification for result ordering (null for natural order)
@@ -1922,8 +1916,8 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported, or if offset or count is negative
      * @throws com.mongodb.MongoException if the database operation fails
      */
-    public <T> Dataset query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
-            final Class<T> rowType) {
+    public Dataset query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
+            final Class<?> rowType) {
         final FindIterable<Document> findIterable = query(selectPropNames, filter, sort, offset, count);
 
         if (N.isEmpty(selectPropNames)) {
@@ -1955,7 +1949,6 @@ public final class MongoCollectionExecutor {
      * List<String> emails = users.getColumn("email", String.class);
      * }</pre>
      *
-     * @param <T> the target type for each row in the Dataset
      * @param projection BSON projection specification for field selection (null for all fields)
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort specification for result ordering (null for natural order)
@@ -1963,7 +1956,7 @@ public final class MongoCollectionExecutor {
      * @return a Dataset containing all matching query results with projected fields and typed rows
      * @throws IllegalArgumentException if filter is null
      */
-    public <T> Dataset query(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
+    public Dataset query(final Bson projection, final Bson filter, final Bson sort, final Class<?> rowType) {
         return query(projection, filter, sort, 0, Integer.MAX_VALUE, rowType);
     }
 
@@ -1973,7 +1966,7 @@ public final class MongoCollectionExecutor {
      * <p>This method combines field projection, filtering, sorting, and pagination to efficiently retrieve
      * a specific subset of documents with only selected fields. The results are converted to the specified row type
      * and organized in a Dataset for tabular operations.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Get page 1 of active users with selected fields:
@@ -1984,12 +1977,11 @@ public final class MongoCollectionExecutor {
      *
      * // Export paginated sorted projected data:
      * userPage.toCsv("active_users_page1.csv");
-     * 
+     *
      * // Process paginated data:
      * List<String> emails = userPage.getColumn("email", String.class);
      * }</pre>
      *
-     * @param <T> the target type for each row in the Dataset
      * @param projection BSON projection specification for field selection (null for all fields)
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort specification for result ordering (null for natural order)
@@ -1999,7 +1991,7 @@ public final class MongoCollectionExecutor {
      * @return a Dataset containing the paginated query results with projected fields and typed rows
      * @throws IllegalArgumentException if filter is null
      */
-    public <T> Dataset query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType) {
+    public Dataset query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<?> rowType) {
         final FindIterable<Document> findIterable = executeQuery(projection, filter, sort, offset, count);
 
         return MongoDBBase.extractData(findIterable, rowType);
@@ -2011,7 +2003,7 @@ public final class MongoCollectionExecutor {
      * <p>This method returns a lazy stream of all documents in the collection without any filtering.
      * The stream provides functional programming capabilities for processing large result sets
      * efficiently with automatic cursor management and resource cleanup.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Process all documents in the collection:
@@ -2019,12 +2011,12 @@ public final class MongoCollectionExecutor {
      *         .filter(doc -> doc.getInteger("age", 0) > 18)
      *         .limit(100)
      *         .forEach(doc -> processAdultDocument(doc));
-     * 
+     *
      * // Count documents with functional operations:
      * long activeCount = executor.stream()
      *                           .filter(doc -> "active".equals(doc.getString("status")))
      *                           .count();
-     * 
+     *
      * // Transform and collect:
      * List<String> names = executor.stream()
      *                              .map(doc -> doc.getString("name"))
@@ -2048,7 +2040,7 @@ public final class MongoCollectionExecutor {
      * <p>This method returns a lazy stream of all documents in the collection, with each document
      * automatically converted to the specified type. This provides type safety and eliminates
      * the need for manual conversion in stream operations while maintaining efficient lazy evaluation.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Process all users with type safety:
@@ -2059,13 +2051,13 @@ public final class MongoCollectionExecutor {
      *         .forEach(email -> sendNotification(email));
      *
      * executor.stream((Class<User>) null); // throws IllegalArgumentException (rowType must not be null; no cursor opened)
-     * 
+     *
      * // Collect typed results:
      * List<User> activeAdults = executor.stream(User.class)
      *                                  .filter(user -> user.getAge() > 18)
      *                                  .filter(User::isActive)
      *                                  .collect(Collectors.toList());
-     * 
+     *
      * // Use with Maps for flexible processing:
      * executor.stream(Map.class)
      *         .filter(map -> "premium".equals(map.get("tier")))
@@ -2099,7 +2091,7 @@ public final class MongoCollectionExecutor {
      * <p>This method returns a lazy stream of documents matching the specified filter criteria.
      * The stream provides efficient processing of filtered result sets with automatic cursor
      * management and resource cleanup. This is ideal for functional processing of query results.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Process active users:
@@ -2107,13 +2099,13 @@ public final class MongoCollectionExecutor {
      * executor.stream(activeFilter) // returns a lazy Stream of the matching documents
      *         .filter(doc -> doc.getDate("lastLogin").after(thirtyDaysAgo))
      *         .forEach(doc -> updateActivityScore(doc));
-     * 
+     *
      * // Find and process premium accounts:
      * Bson premiumFilter = Filters.eq("accountType", "premium");
      * Optional<Document> firstExpired = executor.stream(premiumFilter)
      *                                          .filter(doc -> doc.getDate("expiresAt").before(new Date()))
      *                                          .findFirst();
-     * 
+     *
      * // Aggregate data with streams:
      * double avgAge = executor.stream(Filters.exists("age"))
      *                        .mapToInt(doc -> doc.getInteger("age", 0))
@@ -2139,7 +2131,7 @@ public final class MongoCollectionExecutor {
      * <p>This method combines filtering and type conversion to return a lazy stream of documents
      * matching the specified criteria, with each document automatically converted to the target type.
      * This provides both query filtering and type safety in a single operation.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Process active users with type safety:
@@ -2148,13 +2140,13 @@ public final class MongoCollectionExecutor {
      *         .filter(user -> user.getLastLoginDate().after(recentDate))
      *         .map(User::getEmail)
      *         .forEach(this::sendWelcomeBackEmail);
-     * 
+     *
      * // Find high-value orders:
      * Bson highValueFilter = Filters.gte("total", 1000.0);
      * List<Order> highValueOrders = executor.stream(highValueFilter, Order.class)
      *                                      .filter(order -> order.getStatus() == OrderStatus.PENDING)
      *                                      .collect(Collectors.toList());
-     * 
+     *
      * // Process as Maps for flexible handling:
      * executor.stream(Filters.eq("category", "electronics"), Map.class)
      *         .filter(map -> (Double) map.get("rating") > 4.0)
@@ -2178,18 +2170,18 @@ public final class MongoCollectionExecutor {
 
     /**
      * Creates a paginated stream of filtered documents with type conversion.
-     * 
+     *
      * <p>This method provides pagination support for large result sets by specifying
      * an offset and count. Useful for implementing pagination in web applications
      * or processing large datasets in chunks.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Get page 3 with 20 items per page
      * executor.stream(filter, 40, 20, Product.class)
      *         .forEach(this::displayProduct);
      * }</pre>
-     * 
+     *
      * @param <T> the target type for each document
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param offset number of documents to skip (must be >= 0)
@@ -2205,11 +2197,11 @@ public final class MongoCollectionExecutor {
 
     /**
      * Creates a stream with projection and filtering.
-     * 
+     *
      * <p>This method allows specifying which fields to include in the results,
      * reducing network traffic and improving performance when only specific
      * fields are needed.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Get only name and email fields
@@ -2217,7 +2209,7 @@ public final class MongoCollectionExecutor {
      * executor.stream(fields, filter, User.class)
      *         .forEach(this::processUser);
      * }</pre>
-     * 
+     *
      * @param <T> the target type for each document
      * @param selectPropNames collection of property names to include in results (null for all fields)
      * @param filter BSON filter criteria to match documents (must not be null)
@@ -2232,10 +2224,10 @@ public final class MongoCollectionExecutor {
 
     /**
      * Creates a paginated stream with projection and filtering.
-     * 
+     *
      * <p>Combines projection, filtering, and pagination for maximum control over
      * query results. This is the most flexible streaming method for basic queries.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Get specific fields with pagination
@@ -2243,7 +2235,7 @@ public final class MongoCollectionExecutor {
      * executor.stream(fields, filter, 0, 100, User.class)
      *         .collect(Collectors.toList());
      * }</pre>
-     * 
+     *
      * @param <T> the target type for each document
      * @param selectPropNames collection of property names to include
      * @param filter BSON filter criteria (must not be null)
@@ -2260,10 +2252,10 @@ public final class MongoCollectionExecutor {
 
     /**
      * Creates a sorted stream with projection and filtering.
-     * 
+     *
      * <p>Adds sorting capability to the stream, allowing results to be ordered
      * by one or more fields before processing.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Get users sorted by creation date
@@ -2272,7 +2264,7 @@ public final class MongoCollectionExecutor {
      *         .limit(10)
      *         .forEach(this::displayRecentUser);
      * }</pre>
-     * 
+     *
      * @param <T> the target type for each document
      * @param selectPropNames collection of property names to include
      * @param filter BSON filter criteria (must not be null)
@@ -2288,10 +2280,10 @@ public final class MongoCollectionExecutor {
 
     /**
      * Creates a fully-featured stream with projection, filtering, sorting, and pagination.
-     * 
+     *
      * <p>This is the most comprehensive streaming method using collection-based projection,
      * providing all query features in a single operation.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Complex query with all features
@@ -2301,7 +2293,7 @@ public final class MongoCollectionExecutor {
      * executor.stream(fields, filter, sort, 0, 50, Student.class)
      *         .forEach(this::awardHonor);
      * }</pre>
-     * 
+     *
      * @param <T> the target type for each document
      * @param selectPropNames collection of property names to include
      * @param filter BSON filter criteria (must not be null)
@@ -2328,10 +2320,10 @@ public final class MongoCollectionExecutor {
 
     /**
      * Creates a stream with BSON projection, filtering, and sorting.
-     * 
+     *
      * <p>Uses BSON projection for more complex field selection scenarios,
      * such as including/excluding nested fields or using projection operators.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Complex projection with nested fields
@@ -2342,7 +2334,7 @@ public final class MongoCollectionExecutor {
      * executor.stream(projection, filter, sort, User.class)
      *         .forEach(this::processUser);
      * }</pre>
-     * 
+     *
      * @param <T> the target type for each document
      * @param projection BSON projection document (null for all fields)
      * @param filter BSON filter criteria (must not be null)
@@ -2358,10 +2350,10 @@ public final class MongoCollectionExecutor {
 
     /**
      * Creates a fully-featured stream with BSON projection.
-     * 
+     *
      * <p>The most flexible streaming method, supporting BSON projection for
      * complex field selection along with all other query features.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Advanced query with all features
@@ -2372,7 +2364,7 @@ public final class MongoCollectionExecutor {
      * executor.stream(projection, filter, sort, 0, 10, Student.class)
      *         .forEach(this::processTopScorer);
      * }</pre>
-     * 
+     *
      * @param <T> the target type for each document
      * @param projection BSON projection document (null for all fields)
      * @param filter BSON filter criteria (must not be null)
@@ -2398,10 +2390,10 @@ public final class MongoCollectionExecutor {
 
     /**
      * Converts a FindIterable result to an entity of the specified type.
-     * 
+     *
      * <p>Internal helper method that retrieves the first document from a FindIterable
      * and converts it to the target type. Returns null if no document is found.</p>
-     * 
+     *
      * @param <T> the target type
      * @param findIterable the MongoDB find result
      * @param rowType the target class for conversion
@@ -2419,10 +2411,10 @@ public final class MongoCollectionExecutor {
 
     /**
      * Converts a Document to an entity of the specified type.
-     * 
+     *
      * <p>Internal helper method for converting a single Document to the target type.
      * Returns null if the document is null or empty.</p>
-     * 
+     *
      * @param <T> the target type
      * @param doc the document to convert
      * @param rowType the target class for conversion
@@ -2434,10 +2426,10 @@ public final class MongoCollectionExecutor {
 
     /**
      * Creates a function that converts Documents to entities.
-     * 
+     *
      * <p>Internal helper that returns a reusable function for converting
      * Documents to the specified entity type within stream operations.</p>
-     * 
+     *
      * @param <T> the target type
      * @param rowType the target class for conversion
      * @return a Function that converts Documents to entities
@@ -2463,10 +2455,10 @@ public final class MongoCollectionExecutor {
 
     /**
      * Executes a query with field projection.
-     * 
+     *
      * <p>Internal method that constructs and executes a MongoDB query with
      * the specified field projection, filter, sort, and pagination.</p>
-     * 
+     *
      * @param selectPropNames property names to include in projection
      * @param filter query filter
      * @param sort sort criteria
@@ -2486,10 +2478,10 @@ public final class MongoCollectionExecutor {
 
     /**
      * Executes a MongoDB query with all options.
-     * 
+     *
      * <p>Core internal method that executes the actual MongoDB query with
      * projection, filtering, sorting, and pagination options.</p>
-     * 
+     *
      * @param projection BSON projection
      * @param filter query filter
      * @param sort sort criteria
@@ -2537,17 +2529,17 @@ public final class MongoCollectionExecutor {
 
     /**
      * Creates a change stream to monitor all changes in the collection.
-     * 
+     *
      * <p>Change streams allow applications to access real-time data changes
      * without the complexity and risk of tailing the oplog. Returns a change
      * stream that monitors all changes in the collection.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * executor.watch() // returns a ChangeStreamIterable; iterating it (e.g. forEach) blocks and yields change events as they occur
      *     .forEach(change -> System.out.println("Change: " + change));
      * }</pre>
-     * 
+     *
      * @return a ChangeStreamIterable for monitoring collection changes
      * @throws com.mongodb.MongoException if the database operation fails
      * @see ChangeStreamIterable
@@ -2558,16 +2550,16 @@ public final class MongoCollectionExecutor {
 
     /**
      * Creates a typed change stream to monitor collection changes.
-     * 
+     *
      * <p>Similar to watch() but returns change documents converted to the
      * specified type for type-safe change processing.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * executor.watch(UserChange.class) // returns a ChangeStreamIterable whose fullDocument is decoded as UserChange
      *     .forEach(change -> processUserChange(change));
      * }</pre>
-     * 
+     *
      * @param <T> the target type for change documents
      * @param rowType the class to convert change documents to
      * @return a typed ChangeStreamIterable
@@ -2580,10 +2572,10 @@ public final class MongoCollectionExecutor {
 
     /**
      * Creates a change stream with an aggregation pipeline.
-     * 
+     *
      * <p>Allows filtering and transforming change events using an aggregation
      * pipeline. Useful for monitoring specific types of changes.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<Bson> pipeline = Arrays.asList(
@@ -2592,7 +2584,7 @@ public final class MongoCollectionExecutor {
      * executor.watch(pipeline) // returns a ChangeStreamIterable emitting only insert/update change events
      *     .forEach(change -> processChange(change));
      * }</pre>
-     * 
+     *
      * @param pipeline aggregation pipeline to apply to change events
      * @return a filtered ChangeStreamIterable
      * @throws IllegalArgumentException if pipeline is null
@@ -2604,10 +2596,10 @@ public final class MongoCollectionExecutor {
 
     /**
      * Creates a typed change stream with an aggregation pipeline.
-     * 
+     *
      * <p>Combines pipeline filtering with type conversion for maximum
      * flexibility in change stream processing.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<Bson> pipeline = Arrays.asList(
@@ -2616,7 +2608,7 @@ public final class MongoCollectionExecutor {
      * executor.watch(pipeline, Alert.class) // returns a ChangeStreamIterable of critical-status changes decoded as Alert
      *     .forEach(alert -> sendNotification(alert));
      * }</pre>
-     * 
+     *
      * @param <T> the target type for change documents
      * @param pipeline aggregation pipeline to apply
      * @param rowType the class to convert change documents to
@@ -2674,11 +2666,11 @@ public final class MongoCollectionExecutor {
      * <p>This method provides fine-grained control over the insert operation through InsertOneOptions,
      * allowing specification of write concerns, bypass document validation, and other insert-specific settings.
      * The object is automatically converted to a BSON document.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * User user = new User("Alice", "alice@example.com", 28);
-     * 
+     *
      * // Insert with custom options:
      * InsertOneOptions options = new InsertOneOptions().bypassDocumentValidation(true);
      * executor.insertOne(user, options); // returns void; document inserted bypassing schema validation
@@ -2742,14 +2734,14 @@ public final class MongoCollectionExecutor {
      * <p>This method provides fine-grained control over the bulk insert operation through InsertManyOptions,
      * allowing specification of ordered/unordered inserts, write concerns, and document validation settings.
      * All objects are automatically converted to BSON documents before insertion.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<User> users = Arrays.asList(
      *     new User("John", "john@example.com", 30),
      *     new User("Jane", "jane@example.com", 25)
      * );
-     * 
+     *
      * // Insert with unordered execution (faster for large batches):
      * InsertManyOptions options = new InsertManyOptions().ordered(false);
      * executor.insertMany(users, options); // returns void; users inserted unordered (continues past individual failures)
@@ -2777,11 +2769,11 @@ public final class MongoCollectionExecutor {
 
     /**
      * Converts an object to a MongoDB Document.
-     * 
+     *
      * <p>Internal helper method that converts various object types to Documents.
      * If the object is already a Document, it's returned as-is. Otherwise,
      * it's converted using the MongoDB utility.</p>
-     * 
+     *
      * @param obj the object to convert
      * @return a Document representation of the object
      */
@@ -2791,11 +2783,11 @@ public final class MongoCollectionExecutor {
 
     /**
      * Converts a collection of objects to Documents.
-     * 
+     *
      * <p>Internal helper that efficiently converts a collection of objects
      * to a list of Documents, optimizing for the case where objects are
      * already Documents.</p>
-     * 
+     *
      * @param objList the collection of objects to convert
      * @return a List of Documents
      */
@@ -2940,7 +2932,7 @@ public final class MongoCollectionExecutor {
      *
      * <p>Provides full control over the update operation including upsert behavior,
      * write concern, and array filters.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * UpdateOptions options = new UpdateOptions().upsert(true);
@@ -2966,7 +2958,7 @@ public final class MongoCollectionExecutor {
 
     /**
      * Updates a single document using multiple update operations.
-     * 
+     *
      * <p>Applies a collection of update operations to the first matching document.
      * Useful for complex updates requiring multiple operations.</p>
      *
@@ -2982,7 +2974,7 @@ public final class MongoCollectionExecutor {
      * );
      * executor.updateOne(filter, updates); // returns UpdateResult; applies the aggregation-pipeline updates to the first match
      * }</pre>
-     * 
+     *
      * @param filter BSON filter to identify the document
      * @param objList collection of update operations
      * @return UpdateResult containing update operation details
@@ -2997,16 +2989,16 @@ public final class MongoCollectionExecutor {
 
     /**
      * Updates a single document using multiple update operations with options.
-     * 
+     *
      * <p>Applies a collection of update operations to the first matching document
      * with additional control through UpdateOptions.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * UpdateOptions options = new UpdateOptions().upsert(true);
      * executor.updateOne(filter, updatesList, options); // returns UpdateResult; upsert creates a doc when no match exists
      * }</pre>
-     * 
+     *
      * @param filter BSON filter to identify the document
      * @param objList collection of update operations
      * @param updateOptions additional update options
@@ -3028,10 +3020,10 @@ public final class MongoCollectionExecutor {
 
     /**
      * Creates an ObjectId from a string representation.
-     * 
+     *
      * <p>Internal helper method that validates and creates an ObjectId
      * from its string representation.</p>
-     * 
+     *
      * @param objectId the string representation of the ObjectId
      * @return the created ObjectId
      * @throws IllegalArgumentException if objectId is null or empty
@@ -3044,11 +3036,11 @@ public final class MongoCollectionExecutor {
 
     /**
      * Converts an update object to BSON format.
-     * 
+     *
      * <p>Internal helper that converts various update formats to BSON.
      * If the update doesn't contain MongoDB operators (starting with $),
      * it's automatically wrapped in a $set operation.</p>
-     * 
+     *
      * @param update the update object to convert
      * @return BSON representation of the update
      */
@@ -3096,11 +3088,11 @@ public final class MongoCollectionExecutor {
 
     /**
      * Converts a collection of update objects to BSON format.
-     * 
+     *
      * <p>Internal helper that efficiently converts a collection of update
      * objects to BSON format, optimizing for the case where objects are
      * already BSON.</p>
-     * 
+     *
      * @param objList the collection of update objects
      * @return a List of BSON updates
      */
@@ -3182,7 +3174,7 @@ public final class MongoCollectionExecutor {
      * bypass document validation, and array filters for advanced update scenarios. The update payload
      * undergoes the same {@code $set}-wrapping conversion described in {@link #updateOne(String, Object)}.
      * As with all multi-document writes, the operation is not atomic across documents.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Update with upsert and array filters:
@@ -3332,7 +3324,7 @@ public final class MongoCollectionExecutor {
      * <p>Completely replaces the document with the specified ObjectId. The {@code _id} of the matched
      * document is retained; see {@link #replaceOne(String, Object)} for the full {@code _id}-handling
      * rules and the prohibition on update operators in the replacement.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ObjectId id = new ObjectId("507f1f77bcf86cd799439011");
@@ -3356,7 +3348,7 @@ public final class MongoCollectionExecutor {
      * <p>Replaces the first document that matches the filter criteria with the replacement document.
      * The matched document's {@code _id} is retained; see {@link #replaceOne(String, Object)} for the
      * full {@code _id}-handling rules and the prohibition on update operators in the replacement.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson filter = Filters.eq("email", "old@example.com");
@@ -3376,10 +3368,10 @@ public final class MongoCollectionExecutor {
 
     /**
      * Replaces a single document with additional options.
-     * 
+     *
      * <p>Provides full control over the replace operation including upsert
      * behavior and write concern through ReplaceOptions.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ReplaceOptions options = new ReplaceOptions().upsert(true);
@@ -3429,13 +3421,13 @@ public final class MongoCollectionExecutor {
 
     /**
      * Deletes the document with the specified ObjectId from the collection.
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ObjectId id = new ObjectId("507f1f77bcf86cd799439011");
      * DeleteResult result = executor.deleteOne(id); // returns DeleteResult; getDeletedCount() 1 if a document with _id == id existed, else 0
      * }</pre>
-     * 
+     *
      * @param objectId the ObjectId of the document to delete
      * @return DeleteResult containing deletion details
      * @throws IllegalArgumentException if objectId is null
@@ -3447,13 +3439,13 @@ public final class MongoCollectionExecutor {
 
     /**
      * Deletes the first document that matches the filter criteria.
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson filter = Filters.eq("status", "expired");
      * DeleteResult result = executor.deleteOne(filter); // returns DeleteResult; deletes the FIRST matching document only (getDeletedCount() 0 or 1)
      * }</pre>
-     * 
+     *
      * @param filter BSON filter to identify the document
      * @return DeleteResult containing deletion details
      * @throws IllegalArgumentException if filter is null
@@ -3467,13 +3459,13 @@ public final class MongoCollectionExecutor {
 
     /**
      * Deletes a single document with additional options, including collation and hint specifications.
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * DeleteOptions options = new DeleteOptions().collation(collation);
      * executor.deleteOne(filter, options); // returns DeleteResult; deletes the first match using the supplied collation
      * }</pre>
-     * 
+     *
      * @param filter BSON filter to identify the document
      * @param options additional delete options (null uses defaults)
      * @return DeleteResult containing deletion details
@@ -3497,7 +3489,7 @@ public final class MongoCollectionExecutor {
      * DeleteResult result = executor.deleteMany(filter); // returns DeleteResult; getDeletedCount() is the number of ALL matches removed (0 if none)
      * System.out.println("Deleted " + result.getDeletedCount() + " documents");
      * }</pre>
-     * 
+     *
      * @param filter BSON filter to identify documents to delete
      * @return DeleteResult containing deletion details
      * @throws IllegalArgumentException if filter is null
@@ -3511,13 +3503,13 @@ public final class MongoCollectionExecutor {
 
     /**
      * Deletes all matching documents with additional control through DeleteOptions.
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * DeleteOptions options = new DeleteOptions().collation(collation);
      * DeleteResult result = executor.deleteMany(filter, options); // returns DeleteResult; deletes every match using the supplied collation
      * }</pre>
-     * 
+     *
      * @param filter BSON filter to identify documents to delete
      * @param options additional delete options (null uses defaults)
      * @return DeleteResult containing deletion details
@@ -3561,16 +3553,16 @@ public final class MongoCollectionExecutor {
 
     /**
      * Performs bulk insert with additional options.
-     * 
+     *
      * <p>Provides control over bulk insert behavior including ordered/unordered
      * execution and write concern through BulkWriteOptions.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * BulkWriteOptions options = new BulkWriteOptions().ordered(false);
      * int inserted = executor.bulkInsert(entities, options); // returns the inserted count; unordered keeps going past individual failures
      * }</pre>
-     * 
+     *
      * @param entities collection of entities to insert
      * @param options additional bulk write options (null uses defaults)
      * @return number of documents inserted
@@ -3690,14 +3682,14 @@ public final class MongoCollectionExecutor {
 
     /**
      * Finds and updates a single document atomically with type conversion.
-     * 
+     *
      * <p>Atomically finds and updates a document, returning the result as the specified type.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * User original = executor.findOneAndUpdate(filter, update, User.class); // PRE-update doc converted to User (default BEFORE), or null if no match
      * }</pre>
-     * 
+     *
      * @param <T> the target type for the result
      * @param filter BSON filter to identify the document
      * @param update update operations to apply
@@ -3712,10 +3704,10 @@ public final class MongoCollectionExecutor {
 
     /**
      * Finds and updates a single document atomically with options.
-     * 
+     *
      * <p>Provides full control over the find-and-update operation including
      * projection, sort, upsert, and whether to return the original or updated document.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * FindOneAndUpdateOptions options = new FindOneAndUpdateOptions()
@@ -3723,7 +3715,7 @@ public final class MongoCollectionExecutor {
      *     .upsert(true);
      * Document updated = executor.findOneAndUpdate(filter, update, options); // returns the POST-update document (AFTER); upsert creates one if no match
      * }</pre>
-     * 
+     *
      * @param filter BSON filter to identify the document
      * @param update update operations to apply
      * @param options additional options (null uses defaults)
@@ -3743,16 +3735,16 @@ public final class MongoCollectionExecutor {
 
     /**
      * Finds and updates a single document atomically with options and type conversion.
-     * 
+     *
      * <p>Combines atomic find-and-update with type conversion and full option control.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * FindOneAndUpdateOptions options = new FindOneAndUpdateOptions()
      *     .returnDocument(ReturnDocument.AFTER);
      * User updated = executor.findOneAndUpdate(filter, update, options, User.class); // POST-update doc converted to User (AFTER), or null if no match
      * }</pre>
-     * 
+     *
      * @param <T> the target type for the result
      * @param filter BSON filter to identify the document
      * @param update update operations to apply
@@ -3774,7 +3766,7 @@ public final class MongoCollectionExecutor {
 
     /**
      * Finds and updates a document using multiple update operations.
-     * 
+     *
      * <p>Atomically applies multiple update operations to a single document.</p>
      *
      * <p><b>Note:</b> The collection is executed as an aggregation-pipeline update, which only allows
@@ -3789,7 +3781,7 @@ public final class MongoCollectionExecutor {
      * );
      * Document result = executor.findOneAndUpdate(filter, updates); // returns the PRE-update document (default BEFORE), or null if no match
      * }</pre>
-     * 
+     *
      * @param filter BSON filter to identify the document
      * @param objList collection of update operations
      * @return the original document before update, or null if not found
@@ -3802,14 +3794,14 @@ public final class MongoCollectionExecutor {
 
     /**
      * Finds and updates a document using multiple operations with type conversion.
-     * 
+     *
      * <p>Atomically applies multiple updates and returns the result as the specified type.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Order original = executor.findOneAndUpdate(filter, updatesList, Order.class); // PRE-update doc converted to Order (default BEFORE), or null if no match
      * }</pre>
-     * 
+     *
      * @param <T> the target type for the result
      * @param filter BSON filter to identify the document
      * @param objList collection of update operations
@@ -3824,16 +3816,16 @@ public final class MongoCollectionExecutor {
 
     /**
      * Finds and updates a document using multiple operations with options.
-     * 
+     *
      * <p>Provides full control over atomic update with multiple operations.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * FindOneAndUpdateOptions options = new FindOneAndUpdateOptions()
      *     .returnDocument(ReturnDocument.AFTER);
      * Document updated = executor.findOneAndUpdate(filter, updatesList, options); // returns the POST-update document (AFTER), or null if no match
      * }</pre>
-     * 
+     *
      * @param filter BSON filter to identify the document
      * @param objList collection of update operations
      * @param options additional options (null uses defaults)
@@ -3855,16 +3847,16 @@ public final class MongoCollectionExecutor {
 
     /**
      * Finds and updates using multiple operations with options and type conversion.
-     * 
+     *
      * <p>The most flexible find-and-update method with multiple operations.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * FindOneAndUpdateOptions options = new FindOneAndUpdateOptions()
      *     .projection(Projections.include("name", "status"));
      * User result = executor.findOneAndUpdate(filter, updatesList, options, User.class); // matched doc (projected) as User, or null if no match
      * }</pre>
-     * 
+     *
      * @param <T> the target type for the result
      * @param filter BSON filter to identify the document
      * @param objList collection of update operations
@@ -3916,14 +3908,14 @@ public final class MongoCollectionExecutor {
 
     /**
      * Finds and replaces a document atomically with type conversion.
-     * 
+     *
      * <p>Atomically replaces a document and returns the result as the specified type.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * User original = executor.findOneAndReplace(filter, newUser, User.class); // PRE-replacement doc converted to User (default BEFORE), or null if no match
      * }</pre>
-     * 
+     *
      * @param <T> the target type for the result
      * @param filter BSON filter to identify the document
      * @param replacement the replacement document
@@ -3938,10 +3930,10 @@ public final class MongoCollectionExecutor {
 
     /**
      * Finds and replaces a document atomically with options.
-     * 
+     *
      * <p>Provides full control over the find-and-replace operation including
      * projection, sort, upsert, and whether to return the original or new document.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * FindOneAndReplaceOptions options = new FindOneAndReplaceOptions()
@@ -3949,7 +3941,7 @@ public final class MongoCollectionExecutor {
      *     .upsert(true);
      * Document newDoc = executor.findOneAndReplace(filter, replacement, options); // returns the POST-replacement document (AFTER); upsert inserts if no match
      * }</pre>
-     * 
+     *
      * @param filter BSON filter to identify the document
      * @param replacement the replacement document
      * @param options additional options (null uses defaults)
@@ -3971,16 +3963,16 @@ public final class MongoCollectionExecutor {
 
     /**
      * Finds and replaces with options and type conversion.
-     * 
+     *
      * <p>The most flexible find-and-replace method with full option control and type conversion.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * FindOneAndReplaceOptions options = new FindOneAndReplaceOptions()
      *     .projection(Projections.exclude("_id"));
      * User result = executor.findOneAndReplace(filter, newUser, options, User.class); // matched doc (projected) as User, or null if no match
      * }</pre>
-     * 
+     *
      * @param <T> the target type for the result
      * @param filter BSON filter to identify the document
      * @param replacement the replacement document
@@ -4004,15 +3996,15 @@ public final class MongoCollectionExecutor {
 
     /**
      * Finds and deletes a single document atomically.
-     * 
+     *
      * <p>Atomically finds and deletes a document, returning the deleted document.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson filter = Filters.eq("status", "expired");
      * Document deleted = executor.findOneAndDelete(filter); // returns the deleted document, or null if no document matched
      * }</pre>
-     * 
+     *
      * @param filter BSON filter to identify the document
      * @return the deleted document, or null if not found
      * @throws IllegalArgumentException if filter is null
@@ -4024,14 +4016,14 @@ public final class MongoCollectionExecutor {
 
     /**
      * Finds and deletes a document atomically with type conversion.
-     * 
+     *
      * <p>Atomically deletes a document and returns it as the specified type.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * User deleted = executor.findOneAndDelete(filter, User.class); // deleted document converted to User, or null if none matched
      * }</pre>
-     * 
+     *
      * @param <T> the target type for the result
      * @param filter BSON filter to identify the document
      * @param rowType class to convert the result to
@@ -4045,17 +4037,17 @@ public final class MongoCollectionExecutor {
 
     /**
      * Finds and deletes a document atomically with options.
-     * 
+     *
      * <p>Provides control over the find-and-delete operation including
      * projection, sort, and collation.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * FindOneAndDeleteOptions options = new FindOneAndDeleteOptions()
      *     .sort(Sorts.ascending("priority"));
      * Document deleted = executor.findOneAndDelete(filter, options); // deletes (and returns) the lowest-priority match, or null if none
      * }</pre>
-     * 
+     *
      * @param filter BSON filter to identify the document
      * @param options additional options (null uses defaults)
      * @return the deleted document, or null if not found
@@ -4074,16 +4066,16 @@ public final class MongoCollectionExecutor {
 
     /**
      * Finds and deletes with options and type conversion.
-     * 
+     *
      * <p>The most flexible find-and-delete method with full option control and type conversion.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * FindOneAndDeleteOptions options = new FindOneAndDeleteOptions()
      *     .projection(Projections.include("name", "email"));
      * User deleted = executor.findOneAndDelete(filter, options, User.class); // deleted doc (only name/email) as User, or null if none matched
      * }</pre>
-     * 
+     *
      * @param <T> the target type for the result
      * @param filter BSON filter to identify the document
      * @param options additional options (null uses defaults)
@@ -4104,15 +4096,15 @@ public final class MongoCollectionExecutor {
 
     /**
      * Returns a stream of distinct values for the specified field.
-     * 
+     *
      * <p>Retrieves all unique values for a field across the collection.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * executor.distinct("category", String.class) // returns a lazy Stream of the unique non-null "category" values
      *     .forEach(category -> System.out.println("Category: " + category));
      * }</pre>
-     * 
+     *
      * @param <T> the type of the distinct values
      * @param fieldName the field to get distinct values for
      * @param rowType the class of the field values
@@ -4130,16 +4122,16 @@ public final class MongoCollectionExecutor {
 
     /**
      * Returns a stream of distinct values with filtering.
-     * 
+     *
      * <p>Retrieves unique values for a field from documents matching the filter.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Bson filter = Filters.gte("price", 100);
      * executor.distinct("brand", filter, String.class) // returns a lazy Stream of unique "brand" values among matching docs
      *     .forEach(brand -> System.out.println("Premium brand: " + brand));
      * }</pre>
-     * 
+     *
      * @param <T> the type of the distinct values
      * @param fieldName the field to get distinct values for
      * @param filter BSON filter to apply before getting distinct values (must not be null)
@@ -4159,9 +4151,9 @@ public final class MongoCollectionExecutor {
 
     /**
      * Executes an aggregation pipeline on the collection.
-     * 
+     *
      * <p>Processes documents through a series of stages to transform and analyze data.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<Bson> pipeline = Arrays.asList(
@@ -4171,7 +4163,7 @@ public final class MongoCollectionExecutor {
      * executor.aggregate(pipeline) // returns a lazy Stream of the pipeline's output documents
      *     .forEach(doc -> System.out.println(doc));
      * }</pre>
-     * 
+     *
      * @param pipeline the aggregation pipeline stages
      * @return a Stream of aggregation results as Documents
      * @throws IllegalArgumentException if pipeline is null
@@ -4183,9 +4175,9 @@ public final class MongoCollectionExecutor {
 
     /**
      * Executes an aggregation pipeline with type conversion.
-     * 
+     *
      * <p>Processes documents through an aggregation pipeline and converts results to the specified type.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<Bson> pipeline = Arrays.asList(
@@ -4195,7 +4187,7 @@ public final class MongoCollectionExecutor {
      * executor.aggregate(pipeline, StudentScore.class) // returns a lazy Stream of pipeline outputs converted to StudentScore
      *     .forEach(score -> processScore(score));
      * }</pre>
-     * 
+     *
      * @param <T> the target type for results
      * @param pipeline the aggregation pipeline stages
      * @param rowType the class to convert results to
@@ -4213,16 +4205,16 @@ public final class MongoCollectionExecutor {
 
     /**
      * Groups documents by a single field.
-     * 
+     *
      * <p>A convenience method for simple grouping operations. Creates an aggregation
      * pipeline that groups documents by the specified field.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * executor.groupBy("category") // returns a lazy Stream of {_id: <category value>} group documents
      *     .forEach(group -> System.out.println(group));
      * }</pre>
-     * 
+     *
      * @param fieldName the field to group by
      * @return a Stream of grouped documents
      * @throws IllegalArgumentException if fieldName is null or empty
@@ -4235,15 +4227,15 @@ public final class MongoCollectionExecutor {
 
     /**
      * Groups documents by a single field with type conversion.
-     * 
+     *
      * <p>Groups documents and converts results to the specified type.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * executor.groupBy("department", DepartmentGroup.class) // returns a lazy Stream of group documents converted to DepartmentGroup
      *     .forEach(group -> processDepartment(group));
      * }</pre>
-     * 
+     *
      * @param <T> the target type for results
      * @param fieldName the field to group by
      * @param rowType the class to convert results to
@@ -4261,16 +4253,16 @@ public final class MongoCollectionExecutor {
 
     /**
      * Groups documents by multiple fields.
-     * 
+     *
      * <p>Creates an aggregation pipeline that groups documents by multiple fields.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<String> fields = Arrays.asList("category", "status");
      * executor.groupBy(fields) // returns a lazy Stream of {_id: {category, status}} group documents
      *     .forEach(group -> System.out.println(group));
      * }</pre>
-     * 
+     *
      * @param fieldNames collection of fields to group by
      * @return a Stream of grouped documents
      * @throws IllegalArgumentException if fieldNames is null or empty
@@ -4283,16 +4275,16 @@ public final class MongoCollectionExecutor {
 
     /**
      * Groups documents by multiple fields with type conversion.
-     * 
+     *
      * <p>Groups by multiple fields and converts results to the specified type.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<String> fields = Arrays.asList("year", "month");
      * executor.groupBy(fields, MonthlyGroup.class) // returns a lazy Stream of year/month group documents converted to MonthlyGroup
      *     .forEach(group -> processMonthly(group));
      * }</pre>
-     * 
+     *
      * @param <T> the target type for results
      * @param fieldNames collection of fields to group by
      * @param rowType the class to convert results to
@@ -4316,16 +4308,16 @@ public final class MongoCollectionExecutor {
 
     /**
      * Groups documents by a field and counts frequency.
-     * 
+     *
      * <p>A convenience method that groups documents and includes a count of documents in each group.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * executor.groupByAndCount("status") // returns a lazy Stream of {_id: <status>, count: <n>} documents
      *     .forEach(group -> System.out.println(
      *         "Status: " + group.get("_id") + ", Count: " + group.get("count")));
      * }</pre>
-     * 
+     *
      * @param fieldName the field to group by
      * @return a Stream of documents with group id and count
      * @throws IllegalArgumentException if fieldName is null or empty
@@ -4338,15 +4330,15 @@ public final class MongoCollectionExecutor {
 
     /**
      * Groups and counts with type conversion.
-     * 
+     *
      * <p>Groups documents, counts frequency, and converts results to the specified type.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * executor.groupByAndCount("category", CategoryCount.class) // returns a lazy Stream of per-category count documents converted to CategoryCount
      *     .forEach(count -> processCount(count));
      * }</pre>
-     * 
+     *
      * @param <T> the target type for results
      * @param fieldName the field to group by
      * @param rowType the class to convert results to
@@ -4363,16 +4355,16 @@ public final class MongoCollectionExecutor {
 
     /**
      * Groups documents by multiple fields and counts frequency.
-     * 
+     *
      * <p>Groups by multiple fields and includes a count of documents in each group.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<String> fields = Arrays.asList("category", "status");
      * executor.groupByAndCount(fields) // returns a lazy Stream of {_id: {category, status}, count: <n>} documents
      *     .forEach(group -> processGroupCount(group));
      * }</pre>
-     * 
+     *
      * @param fieldNames collection of fields to group by
      * @return a Stream of documents with group ids and counts
      * @throws IllegalArgumentException if fieldNames is null or empty
@@ -4385,16 +4377,16 @@ public final class MongoCollectionExecutor {
 
     /**
      * Groups by multiple fields, counts, and converts to type.
-     * 
+     *
      * <p>The most flexible grouping and counting method with type conversion.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<String> fields = Arrays.asList("year", "quarter");
      * executor.groupByAndCount(fields, QuarterlyCount.class) // returns a lazy Stream of year/quarter count documents converted to QuarterlyCount
      *     .forEach(count -> processQuarterly(count));
      * }</pre>
-     * 
+     *
      * @param <T> the target type for results
      * @param fieldNames collection of fields to group by
      * @param rowType the class to convert results to
@@ -4470,10 +4462,10 @@ public final class MongoCollectionExecutor {
 
     /**
      * Executes a map-reduce operation on the collection.
-     * 
+     *
      * <p>Performs server-side JavaScript processing using map and reduce functions.
      * Note: Map-reduce is deprecated in MongoDB 5.0+. Use aggregation pipeline instead.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * String mapFunction = "function() { emit(this.category, 1); }";
@@ -4481,7 +4473,7 @@ public final class MongoCollectionExecutor {
      * executor.mapReduce(mapFunction, reduceFunction) // returns a lazy Stream of the map-reduce output documents
      *     .forEach(result -> System.out.println(result));
      * }</pre>
-     * 
+     *
      * @param mapFunction JavaScript map function as string
      * @param reduceFunction JavaScript reduce function as string
      * @return a Stream of map-reduce results
@@ -4496,16 +4488,16 @@ public final class MongoCollectionExecutor {
 
     /**
      * Executes map-reduce with type conversion.
-     * 
+     *
      * <p>Performs map-reduce and converts results to the specified type.
      * Note: Map-reduce is deprecated in MongoDB 5.0+. Use aggregation pipeline instead.</p>
-     * 
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * executor.mapReduce(mapFunction, reduceFunction, CategoryTotal.class) // returns a lazy Stream of map-reduce outputs converted to CategoryTotal
      *     .forEach(total -> processTotal(total));
      * }</pre>
-     * 
+     *
      * @param <T> the target type for results
      * @param mapFunction JavaScript map function as string
      * @param reduceFunction JavaScript reduce function as string
@@ -4553,6 +4545,6 @@ public final class MongoCollectionExecutor {
     //        }
     //
     //        return objectId;
-    //    } 
+    //    }
 
 }

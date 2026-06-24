@@ -1,0 +1,49 @@
+API DESIGN REVIEW — aws/dynamodb/v2/AsyncDynamoDBExecutor.java  (AWS SDK v2, async)
+public final class AsyncDynamoDBExecutor implements AutoCloseable
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+
+1. OVERALL ASSESSMENT
+The v2 async executor wraps the natively-async AWS SDK v2 DynamoDbAsyncClient. Naming, parameter ordering,
+overload families, placement, and @Beta/@Deprecated parity are clean. There are two notable items: a
+library-wide async-type deviation (CompletableFuture vs ContinuableFuture) and blocking auto-pagination
+that the Javadoc under-discloses on two methods.
+
+2. NAMING ISSUES
+None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- WHOLE CLASS returns native java.util.concurrent.CompletableFuture, not the library-standard
+  ContinuableFuture | v2/AsyncDynamoDBExecutor.java (class-wide; Javadoc :78-167) | Medium (design
+  decision) | Verified: 193 CompletableFuture, 0 ContinuableFuture, whereas every other async executor
+  (AsyncHBaseExecutor, AsyncMongoCollectionExecutor, AsyncCassandraExecutorBase, AND the v1 dynamo async
+  cousin) uses ContinuableFuture. Deliberate and documented (the v2 client is natively non-blocking), but
+  it is the single biggest cross-class convention break. DECISION NEEDED (SUMMARY P2): either standardize
+  by wrapping to ContinuableFuture, or adopt CompletableFuture library-wide and document it as the
+  forward direction.
+- list/query/stream/scan auto-pagination blocks on .get() for pages 2..N | v2/AsyncDynamoDBExecutor.java:
+  1677(list, loop :1691), 1795(query, loop :1812), 1934(stream iter :1951), 2283(scan iter :2300) |
+  Medium | Faithful port of the sync loop; documented for stream/scan but list()/query() Javadoc omits the
+  blocking-warning. Add the warning to list/query (or re-implement via thenCompose chaining for true
+  non-blocking paging).
+- Mapper.query(QueryRequest) -> CompletableFuture<Dataset> uses Class<?> | :3195 | Low | Internally
+  consistent with v2 sync (Dataset isn't parameterized by T); NOT a sync/async mismatch. Recorded only.
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+None.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+None.
+
+CROSS-CLASS NOTES
+- CompletableFuture vs ContinuableFuture is THE headline cross-class inconsistency of the whole review —
+  promote to SUMMARY P2.
+- Unlike v1 async (phantom <T> on query), v2 async query uses Class<?> correctly.
+
+--- DOC-FIX PASS 2026-06-23 ---
+Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its
+findings are code/design (see SUMMARY.txt section 2), or any doc-adjacent item was evaluated and
+intentionally left (documenting it would paper over a behavioral/design issue, or it is dead-comment
+cleanup deferred to the maintainer). `mvn -o clean compile` remains green.

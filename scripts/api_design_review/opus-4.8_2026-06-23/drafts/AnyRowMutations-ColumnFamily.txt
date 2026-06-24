@@ -1,0 +1,152 @@
+API DESIGN REVIEW — AnyRowMutations & ColumnFamily
+Repo: C:\Users\haiyangl\Landawn\abacus-da
+Reviewer: opus-4.8  Date: 2026-06-23  (REPORT-ONLY — no source modified)
+
+Files reviewed:
+  - abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyRowMutations.java
+  - abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/annotation/ColumnFamily.java
+Context read for consistency:
+  - AnyPut.java, AnyDelete.java, AnyMutation.java, AnyOperation.java (add*/val() naming)
+  - HBaseExecutor.java:439-545 (how ColumnFamily.value() is consumed)
+
+================================================================================
+ITEM 1 — public final class AnyRowMutations implements Row
+================================================================================
+
+1. OVERALL ASSESSMENT
+AnyRowMutations is a clean, deliberately-thin adapter over HBase RowMutations.
+The four of(...) factory overloads (Object/byte[] x with/without initialCapacity)
+mirror the underlying RowMutations constructors faithfully and are documented with
+accurate, edge-case-aware Usage Examples. val(), getRow(), compareTo(), hashCode(),
+equals(), and toString() all delegate correctly and their javadoc honestly discloses
+the surprising delegate behaviors (RowMutations.equals compares row key only;
+compareTo/hashCode ride deprecated HBase methods). The class is correctly placed and
+correctly NOT part of the AnyMutation/AnyOperation chain since it aggregates rather
+than is-a mutation. The only real gap is ergonomic: the add(...) family speaks the
+native HBase Mutation type only, so callers holding the sibling wrapper types
+(AnyPut/AnyDelete) must manually unwrap via .val() before adding, which breaks the
+otherwise-uniform "stay in the Any* world" experience of this package.
+
+2. NAMING ISSUES
+- add(Mutation) / add(List<? extends Mutation>) | AnyRowMutations.java:271,318 | High |
+  Names are CONSISTENT with the sibling Any* classes (AnyPut/AnyDelete use add(Cell),
+  addColumn, addFamily, etc.) and with the underlying RowMutations.add. No rename
+  warranted. (Logged as healthy, not a defect.)
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- add(Mutation) | AnyRowMutations.java:271 | Medium |
+  Parameter is the broad type org.apache.hadoop.hbase.client.Mutation, but the class
+  javadoc and this method's javadoc both state only Put and Delete are supported
+  (Increment/Append must not be added). The wide static type makes Increment/Append
+  a compile-time-legal but runtime-rejected argument (RowMutations.add throws
+  IllegalArgumentException at add time). This is faithful mirroring of HBase's own
+  signature, so it is acceptable AS-IS; if tightening is desired, the cleanest fix is
+  to add typed convenience overloads add(Put)/add(Delete) (see Missing methods) and
+  leave add(Mutation) as the escape hatch. Recommendation: keep add(Mutation); do NOT
+  narrow it (would break the List<? extends Mutation> sibling and the escape-hatch use).
+- add(Mutation) throws IOException javadoc wording | AnyRowMutations.java:266 | Low |
+  Javadoc says a mismatched row key throws IOException; HBase RowMutations.add actually
+  throws IllegalArgumentException for a row-key mismatch (IOException is on the throws
+  clause but the row-key check is an IAE). Low confidence — depends on the bundled HBase
+  version. Confirming check: inspect org.apache.hadoop.hbase.client.RowMutations#add in
+  the resolved hbase-client jar; if it throws IllegalArgumentException for row mismatch,
+  correct the @throws text (and the Usage-Example "throws IOException" comments at
+  lines 261 and 308) to name IllegalArgumentException.
+
+4. MISPLACED METHODS
+- None. All eight public methods belong on this class; val()/getRow()/compareTo are
+  required by the Row contract and the adapter role. | AnyRowMutations.java:64 | High |
+
+5. MISSING METHODS  (target class: AnyRowMutations)
+- add(AnyPut) / add(AnyDelete) [+ optionally add(AnyMutation<?>)] | AnyRowMutations.java:271 | High |
+  The package's whole premise is fluent Any* wrappers; AnyPut.val() returns Put
+  (AnyPut.java:1032) and AnyDelete.val() returns Delete. Today a caller with an AnyPut
+  must write rm.add(anyPut.val()), leaking the native type. Add overloads that accept
+  the sibling wrappers and unwrap internally (rowMutations.add(anyPut.val())) returning
+  this. The task's own relationship context describes add(AnyPut)/add(AnyDelete) as the
+  expected surface — it does not currently exist. Recommendation: add public
+  AnyRowMutations add(AnyPut) and add(AnyDelete) (and a List<? extends AnyMutation<?>>
+  overload to match the existing add(List)).
+- of(AnyRowMutations) copy / constructor from existing RowMutations | AnyRowMutations.java:132 | Low |
+  No factory wraps an already-built org.apache.hadoop.hbase.client.RowMutations. Minor;
+  callers can drive a fresh instance. Confirming check: grep HBaseExecutor + tests for a
+  need to adopt a pre-existing RowMutations — if none, skip. Low priority.
+- Deliberately NOT missing: add overloads for Increment/Append. The underlying
+  RowMutations only supports Put/Delete, so AnyAppend/AnyIncrement add* overloads would
+  be incorrect here. | AnyRowMutations.java:48 | High | Do not add.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+- None on AnyRowMutations itself. compareTo(Row)/hashCode() delegate to HBase methods
+  that HBase has deprecated (in favor of Row.COMPARATOR), but the wrapper must implement
+  Row.compareTo, and the javadoc already discloses this. | AnyRowMutations.java:369,393 |
+  High | Keep; no action.
+
+================================================================================
+ITEM 2 — public @interface ColumnFamily
+================================================================================
+
+1. OVERALL ASSESSMENT
+ColumnFamily is a small, well-formed annotation: single String value() element with an
+empty-string default, @Retention(RUNTIME) and @Target({FIELD, TYPE}) — both correct for
+its runtime reflection use and its documented dual class/field application. The body
+javadoc is unusually thorough (default behavior, class-level, field-level, naming
+conventions) and matches how HBaseExecutor consumes it (HBaseExecutor.java:439-545:
+empty value() => no override; class anno is default, field anno overrides). The only
+actionable items are minor doc-completeness gaps, not structural problems.
+
+2. NAMING ISSUES
+- value() | ColumnFamily.java:145 | High |
+  Using value() (not name()) is the CORRECT choice: it enables the shorthand
+  @ColumnFamily("cf") used throughout the javadoc and in HBaseExecutor examples. A
+  name() element would forbid that shorthand. No change. (Healthy.)
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- value() default "" | ColumnFamily.java:145 | High |
+  Default of empty string is sane and is exactly what HBaseExecutor.hasColumnFamilyValue
+  treats as "unset" (HBaseExecutor.java:539-540). No change.
+
+4. MISPLACED METHODS
+- N/A (annotation).
+
+5. MISSING METHODS / ELEMENTS
+- None warranted. A second element is unnecessary; qualifier customization is handled by
+  the separate @Column annotation. | ColumnFamily.java:113 | High |
+
+6. DEPRECATION / REMOVAL CANDIDATES
+- None.
+
+DOC-CLARITY (non-blocking, ColumnFamily):
+- @see block omits the two types the body relies on | ColumnFamily.java:108-109 | Medium |
+  The class javadoc body references @Column (e.g. lines 67-68, 83-84, 95) and
+  HBaseExecutor (line 26) repeatedly, but the @see list only links ElementType.TYPE/FIELD.
+  Add @see com.landawn.abacus.annotation.Column and
+  @see com.landawn.abacus.da.hbase.HBaseExecutor so the referenced contracts are
+  navigable. (Confirmed: @Column resolves to the core lib com.landawn.abacus.annotation,
+  not this package — grep found no @Column annotation under the da tree.)
+- Default-behavior wording "primitive fields" vs "entity fields" | ColumnFamily.java:130-132 | Low |
+  value() javadoc says "For primitive fields: field name becomes the column family"; the
+  class-level examples (lines 45-57) show the same default applies to String/non-primitive
+  scalar fields too, so "primitive" is narrower than the real rule (scalar/non-bean).
+  Confirming check: re-read HBaseExecutor mapping at :439-512 — if the family-vs-qualifier
+  split keys on isBean() (it does at :509), reword "primitive" to "scalar (non-entity)".
+
+================================================================================
+CROSS-CLASS NOTES
+================================================================================
+- add* naming is uniform across the package: AnyRowMutations.add(Mutation)/add(List),
+  AnyPut.add(Cell)/addColumn/..., AnyDelete.add(Cell)/addFamily/addColumn/addColumns.
+  No duplication or inconsistency — AnyRowMutations.add is NOT a duplicate of the
+  AnyPut/AnyDelete add* families (different receiver, different semantics: it aggregates
+  whole mutations vs. building cells inside one mutation). Verified against source.
+- val() is the package-wide unwrap convention: AnyRowMutations.val()->RowMutations
+  (line 231), AnyPut.val()->Put (AnyPut.java:1032), AnyDelete.val()->Delete. The single
+  ergonomic gap (Item 1 §5) is that AnyRowMutations.add does NOT consume these wrappers,
+  forcing manual .val() — the only place the package leaks the native type into a
+  fluent call.
+- AnyRowMutations correctly stays OUT of the AnyMutation/AnyOperation hierarchy
+  (AnyMutation.java:90 extends AnyOperationWithAttributes; AnyRowMutations.java:64 only
+  implements Row). It aggregates mutations rather than being one; the class javadoc
+  (lines 43-46) states this explicitly. Not a misplacement.
+- ColumnFamily + @Column form the family/qualifier pair; ColumnFamily owns the family,
+  @Column (core lib) owns the qualifier. The split is consistent with HBaseExecutor's
+  consumption and is the reason no qualifier element is needed on ColumnFamily.

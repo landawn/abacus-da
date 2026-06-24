@@ -1,0 +1,90 @@
+API DESIGN REVIEW — com.landawn.abacus.da.mongodb.reactivestreams.MongoDB
+Target: abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/reactivestreams/MongoDB.java (public final class, extends mongodb/MongoDBBase)
+Reviewer model: opus-4.8   Date: 2026-06-23
+Scope: PUBLIC methods declared in this reactive facade (incl. the protected static readRow bridge). Inherited MongoDBBase API NOT re-flagged.
+Sibling reference: com.landawn.abacus.da.mongodb.MongoDB (blocking facade), shared base MongoDBBase.
+
+RELATIONSHIP NOTES (established first):
+- Reactive MongoDB and blocking MongoDB are SIBLINGS; both extend the SAME MongoDBBase. They are mirrors, not duplicates.
+- Public factory surface declared here (excluding inherited statics):
+    MongoDB(MongoDatabase)                                  [ctor]            line 147
+    MongoDatabase db()                                                        line 175
+    MongoCollection<Document> collection(String)                             line 206
+    <T> MongoCollection<T> collection(String, Class<T>)                      line 240
+    MongoCollectionExecutor collectionExecutor(String)                       line 279
+    MongoCollectionExecutor collectionExecutor(MongoCollection<Document>)    line 326
+    <T> MongoCollectionMapper<T> collectionMapper(Class<T>)                  line 373
+    <T> MongoCollectionMapper<T> collectionMapper(String, Class<T>)          line 415
+    <T> MongoCollectionMapper<T> collectionMapper(MongoCollection<Document>, Class<T>)  line 470
+    protected static <T> T readRow(Document, Class<T>)                       line 502
+- Factory-method names, parameter ordering, and return shapes line up 1:1 with the blocking facade (the only delta is the reactive executor/mapper return TYPES, which is correct and expected). Verified against blocking MongoDB.java lines 145-398.
+- Reactive MongoCollectionExecutor ctor takes ONLY MongoCollection<Document> (no AsyncExecutor) — confirmed at reactivestreams/MongoCollectionExecutor.java:181. Accessors referenced in Javadoc verified to exist: coll() (MongoCollectionExecutor.java:216), collectionExecutor() (MongoCollectionMapper.java:220).
+
+================================================================================
+1. CRITICAL — none.
+
+================================================================================
+2. HIGH — none.
+
+================================================================================
+3. MEDIUM
+--------------------------------------------------------------------------------
+None rising to MEDIUM. (The constructor-asymmetry item below is intentional by design — see section 5/6 — and is therefore not flagged as a defect.)
+
+================================================================================
+4. LOW
+--------------------------------------------------------------------------------
+[L1] collection(String) / collection(String, Class<T>) — null-validation asymmetry vs the other factory overloads
+   Signature: public MongoCollection<Document> collection(final String collectionName)            | MongoDB.java:206
+              public <T> MongoCollection<T> collection(final String collectionName, Class<T>)      | MongoDB.java:240
+   Confidence: Low
+   Detail: collection(...) performs NO argument validation (delegates straight to mongoDatabase.getCollection),
+           while the sibling collectionExecutor(String)/collectionMapper(String,...) overloads on THIS class
+           do call N.checkArgNotNull(collectionName,...). So within one facade a null name is rejected with a
+           framework IllegalArgumentException by some factories and with a raw driver exception (or NPE) by
+           others. This exactly mirrors the blocking facade (blocking collection(String) is also unvalidated —
+           blocking MongoDB.java:171), so it is a pre-existing intentional pattern, NOT a reactive-specific regression.
+   Recommendation: Leave as-is for sibling symmetry, OR (if tightening) add N.checkArgNotNull to BOTH facades' collection(...) overloads together so the two siblings stay identical. Do not change only the reactive side.
+   Low -> confirming check: diff the validation prologue of collection(String) here vs blocking MongoDB.java:171 — both are bare getCollection delegations; confirms this is shared-by-design, not a reactive divergence.
+
+--------------------------------------------------------------------------------
+[L2] collectionMapper(Class<T>) — documented/declared exception is NullPointerException while every other factory uses IllegalArgumentException
+   Signature: public <T> MongoCollectionMapper<T> collectionMapper(final Class<T> rowType)         | MongoDB.java:373 (@throws NPE at 364/370)
+   Confidence: Low
+   Detail: A null rowType throws NPE (ClassUtil.getSimpleClassName dereferences it before the
+           N.checkArgNotNull(rowType,...) guard in the 2-arg overload can run). Every other null-arg on this
+           facade surfaces as IllegalArgumentException. Mirrors blocking MongoDB.java:303 exactly, so intentional/shared.
+   Recommendation: Accept (sibling-consistent). If ever harmonized, add an explicit N.checkArgNotNull(rowType,"rowType") at the top of collectionMapper(Class) in BOTH facades simultaneously.
+   Low -> confirming check: confirm blocking collectionMapper(Class) (MongoDB.java:303) has the identical NPE-before-guard shape — it does.
+
+================================================================================
+5. NON-ISSUES VERIFIED (explicitly checked, deliberately NOT flagged)
+--------------------------------------------------------------------------------
+- Missing MongoDB(MongoDatabase, AsyncExecutor) constructor: the blocking facade has a 2-arg ctor (MongoDB.java:118)
+  because its blocking MongoCollectionExecutor wraps sync driver calls in an AsyncExecutor. The reactive driver is
+  natively non-blocking, the reactive MongoCollectionExecutor ctor takes NO AsyncExecutor (MongoCollectionExecutor.java:181),
+  and this class holds no asyncExecutor field. The single-arg ctor is therefore CORRECT, not a missing overload.
+- collectionExecutor / collectionMapper accessor naming (coll(), collectionExecutor()) referenced in Javadoc:
+  verified to exist on the reactive collaborators (MongoCollectionExecutor.java:216, MongoCollectionMapper.java:220).
+- protected static readRow(Document, Class<T>) bridge (line 502): mirrors the package-bridge pattern; the blocking
+  facade does not declare it but the blocking package has its own collaborators — not an asymmetry worth flagging.
+- No factory method present on the blocking MongoDB is absent here: the full {db, collection x2, collectionExecutor x2,
+  collectionMapper x3} set is mirrored 1:1.
+- Javadoc "Reactive Streams Publisher, not abacus Stream" disclaimers are accurate and helpful; no over-claim of abacus Stream return types.
+
+================================================================================
+6. CROSS-CLASS NOTES (symmetry with blocking MongoDB; shared base usage)
+--------------------------------------------------------------------------------
+- Factory symmetry is EXCELLENT: identical method names, identical parameter ordering, identical overload families
+  (String / MongoCollection<Document> / Class) versus the blocking facade. Return types differ only by reactive vs
+  blocking executor/mapper, which is the intended contract difference.
+- The ONLY intentional structural delta is the AsyncExecutor constructor + field, correctly absent here (reactive
+  driver is natively async). This is a feature, not a gap.
+- Both siblings share MongoDBBase statics/protected helpers and call the same readRow/toEntity bridge for ID handling,
+  keeping _id mapping consistent across blocking and reactive paths. No inherited-base re-flag warranted.
+- The two LOW items (L1 validation asymmetry on collection(...), L2 NPE-vs-IAE on collectionMapper(Class)) are
+  PRE-EXISTING and SHARED with the blocking facade. If addressed, fix both siblings together to preserve symmetry;
+  fixing only the reactive side would INTRODUCE a cross-sibling inconsistency.
+
+OVERALL: This reactive facade is a clean, faithful mirror of the blocking MongoDB. No actionable reactive-specific
+defects; the two LOW findings are shared cosmetic/consistency nits inherited from the blocking design.

@@ -87,7 +87,7 @@ public class MongoCollectionExecutorTest extends TestBase {
 
     @Test
     public void testColl() {
-        MongoCollection<Document> result = executor.mongoCollection();
+        MongoCollection<Document> result = executor.coll();
         Assertions.assertSame(mockCollection, result);
     }
 

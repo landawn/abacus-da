@@ -23,7 +23,7 @@ package com.landawn.abacus.da.hadoop;
  *
  * @see HadoopUtil
  */
-public final class HDFSUtil {
+final class HDFSUtil {
 
     // Utility class - prevent instantiation
     private HDFSUtil() {

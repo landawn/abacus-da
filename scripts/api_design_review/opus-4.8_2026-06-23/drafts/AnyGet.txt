@@ -1,0 +1,159 @@
+API DESIGN REVIEW — AnyGet
+Target: abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyGet.java
+Class: public final class AnyGet extends AnyQuery<AnyGet> implements Row
+Reviewed against: AnyQuery (base), AnyOperationWithAttributes (base), AnyOperation (base), AnyScan (sibling).
+Scope: PUBLIC methods DECLARED in AnyGet.java only. Inherited base methods are NOT re-flagged.
+
+=====================================================================
+1. OVERALL ASSESSMENT
+=====================================================================
+AnyGet is a clean, well-documented fluent mirror of org.apache.hadoop.hbase.client.Get.
+The factory family (of(Object) / of(Object,int,int) / of(ByteBuffer) / of(Get)), the
+column-selection family (addFamily / addColumn in String and byte[] forms), the
+versioning family (readVersions / readAllVersions / getMaxVersions), the time-range
+family (setTimeRange / setTimestamp / getTimeRange), the per-CF limit/offset family, the
+cache-blocks pair, the existence-only pair, and the introspection group (getFamilyMap /
+familySet / hasFamilies / numFamilies / getRow) are all by-design HBase mirrors and read
+correctly against their implementations and Javadoc. Fluent setters correctly return
+`this`/AnyGet; null/empty/exception edges are accurately documented (e.g. of((Object)null)
+throwing IAE, setTimeRange wrapping IOException as IAE). Almost everything here is healthy.
+The only actionable items are minor cross-class consistency / completeness nits: a
+plausibly-missing getFamilies() accessor that the sibling AnyScan exposes, a singular
+`toGet` factory name that returns a List, the Object[]-style unsafe-slice constructor
+documentation, and one deprecated-by-HBase override (compareTo) already correctly marked.
+
+=====================================================================
+2. NAMING ISSUES
+=====================================================================
+
+N1. toGet(Collection<AnyGet>)  ->  List<Get>
+    | AnyGet.java:1120 | Confidence: Low
+    The static converter is named `toGet` (singular) yet accepts a Collection and returns
+    a List<Get> (plural). A reader scanning the API may expect `toGet` to convert one
+    AnyGet. Recommend renaming to `toGets` (or `toGetList`) for number agreement; keep the
+    old name only if call-site churn is a concern.
+    Confirming check: grep for `AnyGet.toGet(` call sites; if few, rename. There is no
+    sibling on AnyScan (AnyScan has no `toScan(Collection)`), so this is a self-consistency
+    /readability nit rather than a cross-class mismatch.
+
+(No other naming defects. val(), addFamily/addColumn, readVersions/readAllVersions,
+setCheckExistenceOnly/isCheckExistenceOnly, setTimeRange/setTimestamp, the per-CF
+limit/offset names, and getCacheBlocks/setCacheBlocks all match HBase Get naming and are
+consistent with AnyScan.)
+
+=====================================================================
+3. RETURN-TYPE AND PARAMETER ISSUES
+=====================================================================
+
+R1. AnyGet(Object rowKey, int rowOffset, int rowLength)  /  of(Object,int,int)
+    | AnyGet.java:137 / AnyGet.java:229 | Confidence: Low
+    The partial-row-key slice exposes raw (offset,length) ints over the *converted* byte
+    array, and the Javadoc itself documents that a bad offset/length surfaces as a raw
+    ArrayIndexOutOfBoundsException (AnyGet.java:216,224) rather than the IllegalArgumentException
+    used everywhere else in this class. The parameters are necessary (HBase Get has the same
+    constructor), so this is a by-design mirror, but the exception type is inconsistent with
+    the rest of AnyGet's validation style.
+    Recommend: either validate offset/length up front and throw IllegalArgumentException for
+    symmetry with of(Object) / setTimeRange, or leave as-is and treat as accepted mirror.
+    Confirming check: decide whether AnyGet wants a uniform IAE contract; if yes, add a
+    bounds check before `new Get(bytes, offset, length)`.
+
+R2. getFamilyMap() / familySet() return live, mutable, internal views
+    | AnyGet.java:460 / AnyGet.java:967 | Confidence: Low
+    Both return the underlying Get's live structures (the Javadoc is explicit that mutating
+    the returned map/set mutates the Get). This matches HBase Get semantics and matches
+    AnyScan.getFamilyMap (AnyScan.java:590), so it is intentional and consistent. Flagged
+    only for visibility: if the library ever wants defensive immutability it should be done
+    on both AnyGet and AnyScan together, not one. No change recommended now.
+
+(getRow() returning byte[] (R/O by contract), getTimeRange() never-null, the int/boolean
+getters, and the String/byte[] addColumn-addFamily parameter pairs are all correct and
+consistently ordered.)
+
+=====================================================================
+4. MISPLACED METHODS (with target class)
+=====================================================================
+None. Every declared method is Get-specific (or a Row-interface obligation: getRow,
+compareTo) and belongs on AnyGet. Query-level controls (setFilter, setConsistency, ACL,
+column-family time range, replica/isolation) are correctly inherited from AnyQuery and are
+NOT redeclared here.
+
+=====================================================================
+5. MISSING METHODS (with target class)
+=====================================================================
+
+M1. getFamilies() : byte[][]   — target class: AnyGet
+    | (absent in AnyGet) vs AnyScan.java:509 | Confidence: Medium
+    AnyScan exposes `byte[][] getFamilies()` but AnyGet does not, even though both wrap a
+    family map and both already expose getFamilyMap()/numFamilies()/hasFamilies(). For a
+    user enumerating selected families, AnyScan offers a direct array accessor while AnyGet
+    forces `getFamilyMap().keySet()`. Recommend adding `public byte[][] getFamilies()` to
+    AnyGet for parity (HBase Get does not expose getFamilies(), so the implementation would
+    be `get.getFamilyMap().keySet().toArray(new byte[0][])`; alternatively, accept the gap
+    as "Get mirrors Get, Scan mirrors Scan" and instead add getFamilies() to neither).
+    Confirming check: confirm Get has no native getFamilies() (it does not in HBase 2.x);
+    decide whether AnyGet parity with AnyScan outweighs strict HBase-mirror fidelity.
+
+M2. setFamilyMap(Map<byte[],NavigableSet<byte[]>>)   — target class: AnyGet
+    | (absent in AnyGet) vs AnyScan.java:631 | Confidence: Low
+    AnyScan has a fluent setFamilyMap setter; AnyGet has only the getter (getFamilyMap,
+    AnyGet.java:460). HBase Get also lacks a public setFamilyMap, so this is a genuine
+    mirror gap rather than an oversight. Recommend leaving AnyGet as-is unless a concrete
+    bulk-configuration use case appears; noting only for AnyGet/AnyScan symmetry awareness.
+    Confirming check: verify Get exposes no setFamilyMap (it does not); if parity is desired
+    it would have to be emulated by iterating addColumn/addFamily.
+
+=====================================================================
+6. DEPRECATION / REMOVAL CANDIDATES (with replacement APIs)
+=====================================================================
+
+D1. compareTo(Row other)
+    | AnyGet.java:992 | Confidence: High (already marked)
+    Correctly carries @Deprecated mirroring HBase's own deprecation ("As of HBase 2.0.0;
+    will be removed in HBase 3.0.0. Use Row.COMPARATOR"). It is an unavoidable obligation of
+    `implements Row`, so it cannot simply be deleted while the class implements Row. No
+    action beyond what is already done; listed for completeness. If AnyGet ever drops
+    `implements Row`, this method (and the Row import) can be removed.
+
+(No other deprecation candidates. Unlike AnyScan — which carries several deprecated
+constructors/factories (AnyScan.java:131,146,161,293,317,339) and a deprecated
+setRowPrefixFilter (AnyScan.java:1168) — AnyGet's public surface has no stale/legacy
+factory overloads to retire.)
+
+=====================================================================
+CROSS-CLASS NOTES (vs AnyScan / base chain)
+=====================================================================
+
+C1. readVersions(int) divergence is INTENTIONAL and documented on BOTH sides.
+    AnyGet.readVersions (AnyGet.java:675) rejects versions < 1 (throws IAE), while
+    AnyScan.readVersions (AnyScan.java:1280) stores non-positive values without validation.
+    Each Javadoc explicitly calls out the other (AnyGet.java:667, AnyScan.java:1273) and the
+    behavior mirrors the respective HBase Get/Scan clients. NOT a defect — by-design mirror.
+    Worth keeping the cross-reference comments exactly as they are.
+
+C2. setColumnFamilyTimeRange return type — consistent via generics.
+    AnyScan @Override-s setColumnFamilyTimeRange to return AnyScan (AnyScan.java:673,707).
+    AnyGet does NOT override it and inherits AnyQuery's version (AnyQuery.java:504,545),
+    which already returns AQ == AnyGet through the self-type parameter. So a caller gets an
+    AnyGet back without AnyGet needing the override. Consistent; no action. (The AnyScan
+    overrides appear to exist only to re-document scan-flavored examples, not to change the
+    return type.)
+
+C3. equals/hashCode semantics differ between siblings — by underlying HBase design.
+    AnyGet.equals (AnyGet.java:1051) is value-based on the row key (Get.equals compares row
+    key only), whereas AnyScan.equals (AnyScan.java:2212) is reference-identity (Scan does
+    not override equals). Both Javadocs document this honestly. This divergence is inherited
+    from HBase and is not something AnyGet should "fix" unilaterally; flagged only so the
+    inconsistency is on record. AnyGet's equals comparing row-key-ONLY (ignoring columns/
+    time range) is a known HBase footgun but faithfully mirrored and documented (AnyGet.java:1028).
+
+C4. addFamily/addColumn null/empty documentation asymmetry.
+    AnyScan's addFamily/addColumn Javadoc explicitly states "an empty or null family/qualifier
+    is tolerated" (AnyScan.java:529,556,732,762). AnyGet's equivalents (AnyGet.java:344,370,
+    400,427) do not document null/empty handling at all. Behavior is the same (both delegate
+    through toFamilyQualifierBytes). Low-value doc-consistency nit: align AnyGet's wording
+    with AnyScan's, or vice versa. Not an API-shape defect.
+
+C5. Factory-entry-point naming differs by design: AnyGet uses `of(...)` exclusively (no
+    no-arg create()), while AnyScan adds `create()` because a Scan is valid with no row key
+    but a Get always requires a row key. Consistent with each type's semantics; no action.

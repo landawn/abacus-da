@@ -1,0 +1,179 @@
+API DESIGN REVIEW — BigQueryExecutor
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java
+Reviewer: opus-4.8  Date: 2026-06-23
+Relationship: standalone executor wrapping Google BigQuery. No sync/async twin, no v1/v2 split.
+Closest library relative = CassandraExecutor(Base): same Condition + custom-SQL dual surface, same
+targetClass-FIRST parameter ordering, same public-static result-converter helpers on the executor.
+Public read surface read in full; DML helpers wrapping the BigQuery query-job API are by-design.
+
+==================================================================================================
+1. FUNCTIONALITY (clarity / overlap / null-empty-exception)
+==================================================================================================
+
+[F1] queryForSingleValue(Class<T> targetClass, Class<V> valueClass, String propName, Condition) — UNUSED type param <T>
+    | BigQueryExecutor.java:1767 | High
+    The <T> type variable is bound only to targetClass and never appears in the return type
+    (Nullable<V>) or elsewhere; it exists purely so the caller passes a Class for table resolution.
+    Cassandra's equivalent uses Class<?> (non-generic) for the same role. The phantom <T> adds no
+    type safety and forces an explicit witness at some call sites.
+    Recommendation: change signature to queryForSingleValue(Class<?> targetClass, Class<V> valueClass,
+    String propName, Condition whereClause). Behaviour unchanged.
+
+[F2] update(Object) / delete(Object) — inconsistent null-handling vs the rest of the class
+    | update: BigQueryExecutor.java:1249 ; delete: BigQueryExecutor.java:1418 | High
+    insert(Object) (1139) does N.checkArgNotNull(entity) and throws IllegalArgumentException.
+    update(Object) and delete(Object) instead dereference entity.getClass() immediately
+    (update -> getKeyNameSet(entity.getClass()); delete -> delete(entity.getClass(), ...)), so a
+    null entity throws NullPointerException — and the Javadoc documents @throws NullPointerException
+    to match. Three sibling single-entity DML methods, two different null contracts/exception types.
+    Per ground rule 5, documenting the NPE does not excuse the inconsistency.
+    Recommendation: add N.checkArgNotNull(entity, "entity") at the top of update(Object) and
+    delete(Object) so all three throw IllegalArgumentException, then fix their @throws tags.
+
+[F3] queryForSingleValue duplicates a present-but-null contract that the rest of the read API lacks
+    | BigQueryExecutor.java:1767, 1818 | Low
+    Both overloads correctly return Nullable<V> and document the empty-vs-present-but-null
+    distinction. No twin queryForSingleNonNull (Optional<V>) exists, which the library convention
+    (Cassandra, Mongo) pairs with queryForSingleValue. See M2.
+    Low: confirming check — grep Cassandra/Mongo for queryForSingleNonNull returning Optional<V>;
+    confirmed present in CassandraExecutorBase:2055 and MongoCollectionExecutor:1656.
+
+==================================================================================================
+2. NAMING (query / find / list / stream / extractData; accurate; consistent)
+==================================================================================================
+
+[N1] Names are accurate and consistent with library discipline — no actionable rename.
+    query(...) -> Dataset, list(...) -> List<T>, stream(...) -> Stream<T>, extractData(...) -> Dataset,
+    toList/toEntity/toMap converters, exists(...) -> boolean, queryForSingleValue -> Nullable<V>.
+    All match Cassandra/Mongo naming. execute(...) for the raw passthrough matches Cassandra. No
+    misnomers found (no list() that returns a Stream, no query() that returns a List, etc.).
+
+==================================================================================================
+3. RETURN TYPE (Optional vs null; List vs Stream vs Dataset; consistency vs library)
+==================================================================================================
+
+[R1] Static toEntity / toMap / readRow-family may return null silently for a null row — but the
+    PUBLIC toEntity overloads guard fieldValueList not-null, so this is internal only. No finding.
+
+[R2] query(...) -> Dataset, list -> List<T>, stream -> Stream<T> all conform. No finding.
+    (Return types are consistent with the established executor discipline across the board.)
+
+==================================================================================================
+4. PARAMETERS (ordering; missing overloads; unsafe Object[] vs varargs)
+==================================================================================================
+
+[P1] Parameter ordering is internally consistent and matches the closest relative (Cassandra):
+    targetClass FIRST in the custom-SQL family — query/list/stream(Class, String query, Object...)
+    — and (Class, Collection<String> selectPropNames, Condition) in the condition family. No finding.
+    (Note: Mongo/DynamoDB/Cosmos put Class LAST, but Cassandra — the dual Condition+SQL relative —
+    puts it first, and BigQueryExecutor matches Cassandra. Treat as conformant, not deviation.)
+
+[P2] insert(Class, Map) vs update(Class, Map, Condition) — props-Map ordering consistent. No finding.
+
+[P3] delete(Class, Object... ids) and exists(Class, Object... ids) are declared `final`
+    | delete: BigQueryExecutor.java:1456 ; exists: BigQueryExecutor.java:1548 | Low
+    These two varargs methods are `final` while their Condition-taking siblings (delete(Class,
+    Condition):1492, exists(Class, Condition):1715) are not. The `final` here mirrors Cassandra's
+    pattern of locking the varargs-id overload to avoid an override changing dispatch between the
+    ambiguous (Class, Object...) vs (Class, Condition) overloads. Intentional; documenting only.
+    Low: confirming check — a Condition is itself an Object, so delete(cls, someCondition) could bind
+    to the varargs overload; the `final` + separate Condition overload is the disambiguation guard.
+    No change recommended.
+
+==================================================================================================
+5. CLASS PLACEMENT (static mappers / result converters that belong on a util)
+==================================================================================================
+
+[C1] Public static result converters on the executor — CONFORMANT, not misplaced.
+    | toEntity x3 (336,383,505), toMap x5 (541,576,615,680,712), toList (964), extractData (1035)
+    These 10 public static helpers convert BigQuery FieldValueList/TableResult into entities/maps/
+    Dataset. The same placement (public static converters directly on the executor) is the
+    established convention: CassandraExecutor exposes static extractData/toList/toEntity/toMap, and
+    both DynamoDBExecutors expose static toEntity/toMap/toList/extractData. Mongo/Cosmos keep them
+    private, but the SQL-family relatives (Cassandra) expose them. No finding — they belong here.
+
+[C2] toMap overload count (5) is large relative to toEntity (3) — minor surface asymmetry, not a bug.
+    | BigQueryExecutor.java:541-716 | Low
+    toMap has {Schema}, {FieldList}, {FieldList,supplier}, {FieldValueList}, {FieldValueList,supplier}
+    = 5 overloads; toEntity has {Schema}, {FieldList}, {FieldValueList} = 3 (no supplier variants
+    because an entity has no map-impl choice). The asymmetry is justified by the supplier parameter
+    only making sense for Map targets. No change; noted for completeness.
+
+==================================================================================================
+6. MISSING METHODS / DEPRECATION CANDIDATES
+==================================================================================================
+
+[M1] No single-record fetch-by-id (get/gett) — primary convention gap vs the closest relative.
+    | (absent) | Medium
+    CassandraExecutorBase — the dual Condition+custom-SQL executor BigQueryExecutor most resembles —
+    offers get(Class, Object... ids) -> Optional<T> and gett(Class, Object... ids) -> T (raw), plus
+    Condition/selectPropNames overloads. BigQueryExecutor already has the building blocks
+    (idsToCondition, list(Class, Condition)) and an exists(Class, Object... ids), but no fetch-one.
+    Callers must hand-roll list(Class, idsToCondition(...)).get(0). Mongo also provides get/gett.
+    Recommendation: add get(Class<T>, Object... ids) -> Optional<T> (and a gett -> T twin) built on
+    the existing idsToCondition + list path, mirroring Cassandra. Optional given BigQuery's analytic
+    (non-key-lookup) workload, hence Medium not High.
+    Low: confirming check — grep this file for "get(" / "gett(" public methods: none exist (only the
+    private getKeyNames/getSchema). Confirmed.
+
+[M2] No queryForSingleNonNull(Class<V>, ...) -> Optional<V> twin for queryForSingleValue.
+    | (absent) | Medium
+    Library convention pairs queryForSingleValue -> Nullable<V> with queryForSingleNonNull ->
+    Optional<V> (CassandraExecutorBase:2055, MongoCollectionExecutor:1656). BigQueryExecutor has only
+    the Nullable form (1767, 1818). The pair lets callers that never expect NULL get a cleaner
+    Optional contract.
+    Recommendation: add queryForSingleNonNull(Class<V> valueClass, String query, Object... params)
+    -> Optional<V> and the Condition-based overload, delegating to the existing read path.
+
+[M3] No count(Class<?>, Condition) / count(String, Object...) -> long.
+    | (absent) | Low
+    Cassandra (count(Class,Condition):1410, count(String,Object...):2161) and Mongo expose count.
+    BigQueryExecutor has exists(...) but no count(...). A caller wanting a row count must write
+    queryForSingleValue(Long.class, "SELECT COUNT(*) ...") by hand. count on BigQuery bills bytes
+    processed, so its absence may be a deliberate cost-safety choice (mirrors the cost warnings in
+    the class Javadoc).
+    Recommendation: consider adding count(Class<?>, Condition) -> long built on a SELECT COUNT(*)
+    query; if intentionally omitted for cost reasons, leave as-is — Low because the analytic-cost
+    rationale is plausible and the class Javadoc already steers users toward explicit COUNT SQL.
+
+[M4] No findFirst(...) -> Optional<T>.
+    | (absent) | Low
+    Cassandra exposes findFirst(Class, Condition)/(Class, String, Object...) -> Optional<T>.
+    BigQueryExecutor has no first-row convenience; callers use list(...).get(0) or stream(...).first().
+    Recommendation: optional — add findFirst(Class<T>, Condition) -> Optional<T> for parity. Low
+    because stream(...).first() is a clean idiom and BigQuery has no cheap LIMIT-1 lookup semantics.
+
+[M5] No deprecation candidates.
+    | High
+    Every public method is reachable and non-redundant; the Condition overloads and the custom-SQL
+    overloads serve genuinely different call styles (one builds SQL, one accepts raw SQL). No
+    overlapping pair where one should be deprecated.
+
+==================================================================================================
+CROSS-CLASS NOTES (deviation from library return/naming conventions)
+==================================================================================================
+
+* CONFORMS strongly to the Cassandra (SQL+Condition) executor family:
+  - query -> Dataset, list -> List<T>, stream -> Stream<T>, exists -> boolean,
+    queryForSingleValue -> Nullable<V> — all match.
+  - targetClass-FIRST parameter ordering in both the custom-SQL and Condition families matches
+    Cassandra (the relevant relative); Mongo/DynamoDB/Cosmos put Class last, but those are the
+    native-request executors, not the SQL family. NOT a deviation.
+  - Public static toEntity/toMap/toList/extractData on the executor matches Cassandra/DynamoDB. NOT
+    a misplacement.
+
+* GAPS vs the Cassandra convention surface (the actionable cross-class deltas):
+  - Missing get/gett fetch-by-id -> Optional<T>/T  (M1, Medium)
+  - Missing queryForSingleNonNull -> Optional<V>   (M2, Medium)
+  - Missing count(...) -> long                     (M3, Low — possibly deliberate cost choice)
+  - Missing findFirst -> Optional<T>               (M4, Low)
+  - No typed queryForInt/queryForBoolean/... (Cassandra has them, @Beta). Their absence is arguably
+    cleaner; not flagged as a gap given they are @Beta even in Cassandra.
+
+* LOCAL inconsistencies (independent of cross-class):
+  - insert(Object) throws IAE on null but update(Object)/delete(Object) throw NPE on null (F2, High).
+  - queryForSingleValue carries a phantom unused <T> type param (F1, High).
+
+* @Beta: BigQueryExecutor uses no @Beta. Cassandra marks its scalar queryForX @Beta; Cosmos marks
+  the whole class @Beta. Since BigQueryExecutor omits the experimental scalar queryForX entirely,
+  no @Beta is warranted. No finding.

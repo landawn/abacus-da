@@ -186,7 +186,7 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> userMapper = mongoDB.collectionMapper(User.class);
-     * MongoCollectionExecutor executor = userMapper.mongoCollectionExecutor(); // never null; same instance on each call
+     * MongoCollectionExecutor executor = userMapper.collectionExecutor(); // never null; same instance on each call
      * // Use raw executor for operations not exposed by the mapper, e.g. an untyped aggregate:
      * Document complexResult = executor.aggregate(complexPipeline).first(); // raw Document, not the mapped entity
      * }</pre>
@@ -194,7 +194,7 @@ public final class MongoCollectionMapper<T> {
      * @return the underlying MongoCollectionExecutor instance
      * @see MongoCollectionExecutor
      */
-    public MongoCollectionExecutor mongoCollectionExecutor() {
+    public MongoCollectionExecutor collectionExecutor() {
         return collectionExecutor;
     }
 
@@ -280,11 +280,11 @@ public final class MongoCollectionMapper<T> {
      * Returns the total number of entities in the collection (blocking operation).
      *
      * <p>This method counts all entities of the mapped type in the collection.
-     * For large collections, consider using {@link #mongoCollectionExecutor()}.{@code estimatedDocumentCount()} for better performance
+     * For large collections, consider using {@link #collectionExecutor()}.{@code estimatedDocumentCount()} for better performance
      * when exact counts are not required.</p>
      *
      * <p><b>Note:</b> This method performs a blocking operation. For non-blocking operations, use
-     * {@link #mongoCollectionExecutor()}.{@code async()}.</p>
+     * {@link #collectionExecutor()}.{@code async()}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -297,7 +297,7 @@ public final class MongoCollectionMapper<T> {
      * @return the total number of entities in the collection
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #count(Bson)
-     * @see #mongoCollectionExecutor()
+     * @see #collectionExecutor()
      */
     public long count() {
         return collectionExecutor.count();
@@ -1990,7 +1990,7 @@ public final class MongoCollectionMapper<T> {
      * ID field mapping and type conversions transparently.</p>
      *
      * <p><b>Note:</b> This method performs a blocking operation. For non-blocking operations, use
-     * the underlying executor's async methods via {@link #mongoCollectionExecutor()}.{@code async()}.</p>
+     * the underlying executor's async methods via {@link #collectionExecutor()}.{@code async()}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2009,7 +2009,7 @@ public final class MongoCollectionMapper<T> {
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #insertOne(Object, InsertOneOptions)
      * @see #insertMany(Collection)
-     * @see #mongoCollectionExecutor()
+     * @see #collectionExecutor()
      */
     public void insertOne(final T obj) {
         collectionExecutor.insertOne(obj);
@@ -2308,7 +2308,7 @@ public final class MongoCollectionMapper<T> {
      * filters that may match large numbers of documents.</p>
      *
      * <p><b>Note:</b> This method performs a blocking operation. For non-blocking operations, use
-     * {@link #mongoCollectionExecutor()}.{@code async()}.</p>
+     * {@link #collectionExecutor()}.{@code async()}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2328,7 +2328,7 @@ public final class MongoCollectionMapper<T> {
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #updateOne(Bson, Object)
      * @see UpdateResult
-     * @see #mongoCollectionExecutor()
+     * @see #collectionExecutor()
      */
     public UpdateResult updateMany(final Bson filter, final T update) {
         return collectionExecutor.updateMany(filter, update);
@@ -2665,7 +2665,7 @@ public final class MongoCollectionMapper<T> {
      * Consider using deleteOne for single deletions or adding specific filters to limit scope.</p>
      *
      * <p><b>Note:</b> This method performs a blocking operation. For non-blocking operations, use
-     * {@link #mongoCollectionExecutor()}.{@code async()}.</p>
+     * {@link #collectionExecutor()}.{@code async()}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2683,7 +2683,7 @@ public final class MongoCollectionMapper<T> {
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #deleteOne(Bson)
      * @see DeleteResult
-     * @see #mongoCollectionExecutor()
+     * @see #collectionExecutor()
      */
     public DeleteResult deleteMany(final Bson filter) {
         return collectionExecutor.deleteMany(filter);

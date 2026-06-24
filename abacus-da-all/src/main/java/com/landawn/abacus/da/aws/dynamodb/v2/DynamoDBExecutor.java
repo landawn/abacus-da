@@ -402,168 +402,6 @@ public final class DynamoDBExecutor implements AutoCloseable {
     }
 
     /**
-     * Converts a Java object to a DynamoDB AttributeValue using AWS SDK v2 with automatic type detection.
-     *
-     * <p>This method performs intelligent type mapping to convert Java objects into appropriate DynamoDB
-     * AttributeValue instances using AWS SDK v2's builder patterns. The conversion rules are:</p>
-     *
-     * <ul>
-     * <li><b>null</b> → AttributeValue with NULL=true using fromNul(true)</li>
-     * <li><b>Number types</b> (Integer, Long, Double, BigDecimal, etc.) → N (Number) using fromN()</li>
-     * <li><b>Boolean</b> → BOOL using fromBool()</li>
-     * <li><b>byte[]</b> → B (Binary) using fromB() with SdkBytes</li>
-     * <li><b>ByteBuffer</b> → B (Binary) using fromB() with SdkBytes</li>
-     * <li><b>All other types</b> → S (String) using fromS() with string conversion</li>
-     * </ul>
-     *
-     * <p><b>SDK v2 Improvements:</b></p>
-     * <ul>
-     * <li>Immutable AttributeValue objects for better thread safety</li>
-     * <li>Type-safe factory methods (fromS, fromN, fromBool, etc.)</li>
-     * <li>Enhanced binary data handling with SdkBytes</li>
-     * <li>Better null value representation</li>
-     * </ul>
-     *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * AttributeValue stringAttr = attrValueOf("Hello World");       // S: "Hello World"
-     * AttributeValue numberAttr = attrValueOf(42);                  // N: "42"
-     * AttributeValue boolAttr = attrValueOf(true);                  // BOOL: true
-     * AttributeValue nullAttr = attrValueOf(null);                  // NULL: true
-     * AttributeValue binaryAttr = attrValueOf("data".getBytes());   // B: binary data
-     * }</pre>
-     *
-     * <p><b>Important:</b> This method does NOT handle complex types like Lists, Maps, or Sets.
-     * For complex AttributeValue creation, use AWS SDK v2's AttributeValue builder methods directly.</p>
-     *
-     * @param value the Java object to convert, can be null
-     * @return an AttributeValue representing the input value with appropriate type mapping, never null
-     */
-    public static AttributeValue attrValueOf(final Object value) {
-        if (value == null) {
-            return AttributeValue.fromNul(true);
-        } else {
-            final Type<Object> type = N.typeOf(value.getClass());
-
-            if (type.isNumber()) {
-                return AttributeValue.fromN(type.stringOf(value));
-            } else if (type.isBoolean()) {
-                return AttributeValue.fromBool((Boolean) value);
-            } else if (value instanceof byte[]) {
-                return AttributeValue.fromB(SdkBytes.fromByteArray((byte[]) value));
-            } else if (type.isByteBuffer()) {
-                return AttributeValue.fromB(SdkBytes.fromByteBuffer((ByteBuffer) value));
-            } else {
-                return AttributeValue.fromS(type.stringOf(value));
-            }
-        }
-    }
-
-    /**
-     * Creates an AttributeValueUpdate with PUT action for the specified value using AWS SDK v2.
-     *
-     * <p>This convenience method creates an AttributeValueUpdate using the default PUT action,
-     * which replaces the existing attribute value with the new value. The input value is automatically
-     * converted to an AttributeValue using SDK v2's type-safe conversion methods.</p>
-     *
-     * <p>This is equivalent to calling {@code attrValueUpdateOf(value, AttributeAction.PUT)}.</p>
-     *
-     * <p><b>SDK v2 Benefits:</b></p>
-     * <ul>
-     * <li>Immutable AttributeValueUpdate objects for thread safety</li>
-     * <li>Builder patterns for complex update operations</li>
-     * <li>Enhanced type safety with enum-based actions</li>
-     * <li>Better integration with expression-based updates</li>
-     * </ul>
-     *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * Map<String, AttributeValueUpdate> updates = new HashMap<>();
-     * updates.put("name", attrValueUpdateOf("John Doe"));                      // PUT action
-     * updates.put("age", attrValueUpdateOf(30));                               // PUT action
-     * updates.put("lastLogin", attrValueUpdateOf(Instant.now().toString()));   // PUT action
-     *
-     * UpdateItemRequest request = UpdateItemRequest.builder()
-     *     .tableName("Users")
-     *     .key(asKey("userId", "123"))
-     *     .attributeUpdates(updates)
-     *     .build();
-     * }</pre>
-     *
-     * @param value the value to create AttributeValueUpdate for, can be null
-     * @return an AttributeValueUpdate with PUT action containing the converted value, never null
-     * @see #attrValueUpdateOf(Object, AttributeAction)
-     * @see #attrValueOf(Object)
-     */
-    public static AttributeValueUpdate attrValueUpdateOf(final Object value) {
-        return attrValueUpdateOf(value, AttributeAction.PUT);
-    }
-
-    /**
-     * Creates an AttributeValueUpdate with the specified action and value using AWS SDK v2.
-     *
-     * <p>This method provides full control over AttributeValueUpdate creation by allowing specification
-     * of both the value and the update action using AWS SDK v2's builder patterns. The method supports
-     * all DynamoDB update actions with enhanced type safety and immutable objects.</p>
-     *
-     * <p><b>Available Actions:</b></p>
-     * <ul>
-     * <li><b>PUT</b> - Replace the attribute value completely (default behavior)</li>
-     * <li><b>ADD</b> - Add to numeric values, or add elements to sets</li>
-     * <li><b>DELETE</b> - Remove the attribute entirely, or remove elements from sets</li>
-     * </ul>
-     *
-     * <p><b>SDK v2 Improvements:</b></p>
-     * <ul>
-     * <li>Immutable AttributeValueUpdate objects for better thread safety</li>
-     * <li>Builder patterns for complex update operations</li>
-     * <li>Enhanced type safety with enum-based actions</li>
-     * <li>Better integration with expression-based updates</li>
-     * </ul>
-     *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * // Replace attribute value
-     * AttributeValueUpdate put = attrValueUpdateOf("updated name", AttributeAction.PUT);
-     *
-     * // Increment a numeric counter
-     * AttributeValueUpdate increment = attrValueUpdateOf(1, AttributeAction.ADD);
-     *
-     * // Decrement a numeric value
-     * AttributeValueUpdate decrement = attrValueUpdateOf(-5, AttributeAction.ADD);
-     *
-     * // Delete an attribute entirely
-     * AttributeValueUpdate delete = attrValueUpdateOf(null, AttributeAction.DELETE);
-     *
-     * // Use in UpdateItem operation
-     * Map<String, AttributeValueUpdate> updates = new HashMap<>();
-     * updates.put("loginCount", increment);
-     * updates.put("lastLogin", attrValueUpdateOf(Instant.now().toString()));
-     *
-     * UpdateItemRequest request = UpdateItemRequest.builder()
-     *     .tableName("Users")
-     *     .key(asKey("userId", "user123"))
-     *     .attributeUpdates(updates)
-     *     .build();
-     * }</pre>
-     *
-     * @param value the value for the update operation, can be null for DELETE actions
-     * @param action the update action to perform using AWS SDK v2 AttributeAction enum
-     * @return an AttributeValueUpdate with the specified action and converted value, never null
-     * @see #attrValueOf(Object)
-     * @see #attrValueUpdateOf(Object)
-     */
-    public static AttributeValueUpdate attrValueUpdateOf(final Object value, final AttributeAction action) {
-        final AttributeValueUpdate.Builder builder = AttributeValueUpdate.builder().action(action);
-
-        if (value != null || AttributeAction.DELETE.equals(action) == false) {
-            builder.value(attrValueOf(value));
-        }
-
-        return builder.build();
-    }
-
-    /**
      * Creates a single-attribute key map for DynamoDB operations using AWS SDK v2.
      *
      * <p>This convenience method creates a key map with a single partition key, commonly used
@@ -734,7 +572,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @throws IllegalArgumentException if attrName is null
      */
     public static Map<String, AttributeValue> asItem(final String attrName, final Object value) {
-        return N.asMap(attrName, attrValueOf(value));
+        return N.asMap(attrName, toAttributeValue(value));
     }
 
     /**
@@ -742,7 +580,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *
      * <p>This method allows creating a map with two attributes, where each attribute
      * name is paired with its corresponding value. The values are automatically converted
-     * to DynamoDB `AttributeValue` objects using the `attrValueOf` method.</p>
+     * to DynamoDB `AttributeValue` objects using the `toAttributeValue` method.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -758,7 +596,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @throws IllegalArgumentException if any attribute name is null.
      */
     public static Map<String, AttributeValue> asItem(final String attrName, final Object value, final String attrName2, final Object value2) {
-        return N.asMap(attrName, attrValueOf(value), attrName2, attrValueOf(value2));
+        return N.asMap(attrName, toAttributeValue(value), attrName2, toAttributeValue(value2));
     }
 
     /**
@@ -766,7 +604,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *
      * <p>This method allows creating a map with three attributes, where each attribute
      * name is paired with its corresponding value. The values are automatically converted
-     * to DynamoDB `AttributeValue` objects using the `attrValueOf` method.</p>
+     * to DynamoDB `AttributeValue` objects using the `toAttributeValue` method.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -785,7 +623,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      */
     public static Map<String, AttributeValue> asItem(final String attrName, final Object value, final String attrName2, final Object value2,
             final String attrName3, final Object value3) {
-        return N.asMap(attrName, attrValueOf(value), attrName2, attrValueOf(value2), attrName3, attrValueOf(value3));
+        return N.asMap(attrName, toAttributeValue(value), attrName2, toAttributeValue(value2), attrName3, toAttributeValue(value3));
     }
 
     /**
@@ -793,7 +631,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *
      * <p>This method allows creating a map with an arbitrary number of attributes, where each attribute
      * name is paired with its corresponding value. The values are automatically converted to DynamoDB
-     * `AttributeValue` objects using the `attrValueOf` method.</p>
+     * `AttributeValue` objects using the `toAttributeValue` method.</p>
      *
      * <p><b>Note:</b> This convenience method may be confused with entity conversion.
      * Use {@link #toItem(Object)} or {@link #toItem(Object, NamingPolicy)} for POJO/Map conversion.</p>
@@ -817,7 +655,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
         final Map<String, AttributeValue> item = N.newLinkedHashMap(a.length / 2);
 
         for (int i = 0; i < a.length; i++) {
-            item.put((String) a[i], attrValueOf(a[++i]));
+            item.put((String) a[i], toAttributeValue(a[++i]));
         }
 
         return item;
@@ -828,7 +666,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *
      * <p>This method creates a Map with a single AttributeValueUpdate, which is commonly used
      * for updating a single attribute in DynamoDB items. The value is automatically converted
-     * to an AttributeValueUpdate using the `attrValueUpdateOf` method.</p>
+     * to an AttributeValueUpdate using the `toAttributeValueUpdate` method.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -849,7 +687,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @throws IllegalArgumentException if attrName is null
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final String attrName, final Object value) {
-        return N.asMap(attrName, attrValueUpdateOf(value));
+        return N.asMap(attrName, toAttributeValueUpdate(value));
     }
 
     /**
@@ -857,7 +695,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *
      * <p>This method allows creating a map with two attributes, where each attribute
      * name is paired with its corresponding AttributeValueUpdate. The values are automatically converted
-     * to AttributeValueUpdates using the `attrValueUpdateOf` method.</p>
+     * to AttributeValueUpdates using the `toAttributeValueUpdate` method.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -874,7 +712,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @throws IllegalArgumentException if any attribute name is null.
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final String attrName, final Object value, final String attrName2, final Object value2) {
-        return N.asMap(attrName, attrValueUpdateOf(value), attrName2, attrValueUpdateOf(value2));
+        return N.asMap(attrName, toAttributeValueUpdate(value), attrName2, toAttributeValueUpdate(value2));
     }
 
     /**
@@ -882,7 +720,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *
      * <p>This method allows creating a map with three attributes, where each attribute
      * name is paired with its corresponding AttributeValueUpdate. The values are automatically converted
-     * to AttributeValueUpdates using the `attrValueUpdateOf` method.</p>
+     * to AttributeValueUpdates using the `toAttributeValueUpdate` method.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -903,7 +741,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final String attrName, final Object value, final String attrName2, final Object value2,
             final String attrName3, final Object value3) {
-        return N.asMap(attrName, attrValueUpdateOf(value), attrName2, attrValueUpdateOf(value2), attrName3, attrValueUpdateOf(value3));
+        return N.asMap(attrName, toAttributeValueUpdate(value), attrName2, toAttributeValueUpdate(value2), attrName3, toAttributeValueUpdate(value3));
     }
 
     /**
@@ -911,7 +749,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *
      * <p>This method allows creating a map with an arbitrary number of attributes, where each attribute
      * name is paired with its corresponding AttributeValueUpdate. The values are automatically converted
-     * to AttributeValueUpdates using the `attrValueUpdateOf` method.</p>
+     * to AttributeValueUpdates using the `toAttributeValueUpdate` method.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -937,10 +775,172 @@ public final class DynamoDBExecutor implements AutoCloseable {
         final Map<String, AttributeValueUpdate> item = N.newLinkedHashMap(a.length / 2);
 
         for (int i = 0; i < a.length; i++) {
-            item.put((String) a[i], attrValueUpdateOf(a[++i]));
+            item.put((String) a[i], toAttributeValueUpdate(a[++i]));
         }
 
         return item;
+    }
+
+    /**
+     * Converts a Java object to a DynamoDB AttributeValue using AWS SDK v2 with automatic type detection.
+     *
+     * <p>This method performs intelligent type mapping to convert Java objects into appropriate DynamoDB
+     * AttributeValue instances using AWS SDK v2's builder patterns. The conversion rules are:</p>
+     *
+     * <ul>
+     * <li><b>null</b> → AttributeValue with NULL=true using fromNul(true)</li>
+     * <li><b>Number types</b> (Integer, Long, Double, BigDecimal, etc.) → N (Number) using fromN()</li>
+     * <li><b>Boolean</b> → BOOL using fromBool()</li>
+     * <li><b>byte[]</b> → B (Binary) using fromB() with SdkBytes</li>
+     * <li><b>ByteBuffer</b> → B (Binary) using fromB() with SdkBytes</li>
+     * <li><b>All other types</b> → S (String) using fromS() with string conversion</li>
+     * </ul>
+     *
+     * <p><b>SDK v2 Improvements:</b></p>
+     * <ul>
+     * <li>Immutable AttributeValue objects for better thread safety</li>
+     * <li>Type-safe factory methods (fromS, fromN, fromBool, etc.)</li>
+     * <li>Enhanced binary data handling with SdkBytes</li>
+     * <li>Better null value representation</li>
+     * </ul>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AttributeValue stringAttr = toAttributeValue("Hello World");       // S: "Hello World"
+     * AttributeValue numberAttr = toAttributeValue(42);                  // N: "42"
+     * AttributeValue boolAttr = toAttributeValue(true);                  // BOOL: true
+     * AttributeValue nullAttr = toAttributeValue(null);                  // NULL: true
+     * AttributeValue binaryAttr = toAttributeValue("data".getBytes());   // B: binary data
+     * }</pre>
+     *
+     * <p><b>Important:</b> This method does NOT handle complex types like Lists, Maps, or Sets.
+     * For complex AttributeValue creation, use AWS SDK v2's AttributeValue builder methods directly.</p>
+     *
+     * @param value the Java object to convert, can be null
+     * @return an AttributeValue representing the input value with appropriate type mapping, never null
+     */
+    public static AttributeValue toAttributeValue(final Object value) {
+        if (value == null) {
+            return AttributeValue.fromNul(true);
+        } else {
+            final Type<Object> type = N.typeOf(value.getClass());
+
+            if (type.isNumber()) {
+                return AttributeValue.fromN(type.stringOf(value));
+            } else if (type.isBoolean()) {
+                return AttributeValue.fromBool((Boolean) value);
+            } else if (value instanceof byte[]) {
+                return AttributeValue.fromB(SdkBytes.fromByteArray((byte[]) value));
+            } else if (type.isByteBuffer()) {
+                return AttributeValue.fromB(SdkBytes.fromByteBuffer((ByteBuffer) value));
+            } else {
+                return AttributeValue.fromS(type.stringOf(value));
+            }
+        }
+    }
+
+    /**
+     * Creates an AttributeValueUpdate with PUT action for the specified value using AWS SDK v2.
+     *
+     * <p>This convenience method creates an AttributeValueUpdate using the default PUT action,
+     * which replaces the existing attribute value with the new value. The input value is automatically
+     * converted to an AttributeValue using SDK v2's type-safe conversion methods.</p>
+     *
+     * <p>This is equivalent to calling {@code toAttributeValueUpdate(value, AttributeAction.PUT)}.</p>
+     *
+     * <p><b>SDK v2 Benefits:</b></p>
+     * <ul>
+     * <li>Immutable AttributeValueUpdate objects for thread safety</li>
+     * <li>Builder patterns for complex update operations</li>
+     * <li>Enhanced type safety with enum-based actions</li>
+     * <li>Better integration with expression-based updates</li>
+     * </ul>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Map<String, AttributeValueUpdate> updates = new HashMap<>();
+     * updates.put("name", toAttributeValueUpdate("John Doe"));                      // PUT action
+     * updates.put("age", toAttributeValueUpdate(30));                               // PUT action
+     * updates.put("lastLogin", toAttributeValueUpdate(Instant.now().toString()));   // PUT action
+     *
+     * UpdateItemRequest request = UpdateItemRequest.builder()
+     *     .tableName("Users")
+     *     .key(asKey("userId", "123"))
+     *     .attributeUpdates(updates)
+     *     .build();
+     * }</pre>
+     *
+     * @param value the value to create AttributeValueUpdate for, can be null
+     * @return an AttributeValueUpdate with PUT action containing the converted value, never null
+     * @see #toAttributeValueUpdate(Object, AttributeAction)
+     * @see #toAttributeValue(Object)
+     */
+    public static AttributeValueUpdate toAttributeValueUpdate(final Object value) {
+        return toAttributeValueUpdate(value, AttributeAction.PUT);
+    }
+
+    /**
+     * Creates an AttributeValueUpdate with the specified action and value using AWS SDK v2.
+     *
+     * <p>This method provides full control over AttributeValueUpdate creation by allowing specification
+     * of both the value and the update action using AWS SDK v2's builder patterns. The method supports
+     * all DynamoDB update actions with enhanced type safety and immutable objects.</p>
+     *
+     * <p><b>Available Actions:</b></p>
+     * <ul>
+     * <li><b>PUT</b> - Replace the attribute value completely (default behavior)</li>
+     * <li><b>ADD</b> - Add to numeric values, or add elements to sets</li>
+     * <li><b>DELETE</b> - Remove the attribute entirely, or remove elements from sets</li>
+     * </ul>
+     *
+     * <p><b>SDK v2 Improvements:</b></p>
+     * <ul>
+     * <li>Immutable AttributeValueUpdate objects for better thread safety</li>
+     * <li>Builder patterns for complex update operations</li>
+     * <li>Enhanced type safety with enum-based actions</li>
+     * <li>Better integration with expression-based updates</li>
+     * </ul>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * // Replace attribute value
+     * AttributeValueUpdate put = toAttributeValueUpdate("updated name", AttributeAction.PUT);
+     *
+     * // Increment a numeric counter
+     * AttributeValueUpdate increment = toAttributeValueUpdate(1, AttributeAction.ADD);
+     *
+     * // Decrement a numeric value
+     * AttributeValueUpdate decrement = toAttributeValueUpdate(-5, AttributeAction.ADD);
+     *
+     * // Delete an attribute entirely
+     * AttributeValueUpdate delete = toAttributeValueUpdate(null, AttributeAction.DELETE);
+     *
+     * // Use in UpdateItem operation
+     * Map<String, AttributeValueUpdate> updates = new HashMap<>();
+     * updates.put("loginCount", increment);
+     * updates.put("lastLogin", toAttributeValueUpdate(Instant.now().toString()));
+     *
+     * UpdateItemRequest request = UpdateItemRequest.builder()
+     *     .tableName("Users")
+     *     .key(asKey("userId", "user123"))
+     *     .attributeUpdates(updates)
+     *     .build();
+     * }</pre>
+     *
+     * @param value the value for the update operation, can be null for DELETE actions
+     * @param action the update action to perform using AWS SDK v2 AttributeAction enum
+     * @return an AttributeValueUpdate with the specified action and converted value, never null
+     * @see #toAttributeValue(Object)
+     * @see #toAttributeValueUpdate(Object)
+     */
+    public static AttributeValueUpdate toAttributeValueUpdate(final Object value, final AttributeAction action) {
+        final AttributeValueUpdate.Builder builder = AttributeValueUpdate.builder().action(action);
+
+        if (value != null || AttributeAction.DELETE.equals(action) == false) {
+            builder.value(toAttributeValue(value));
+        }
+
+        return builder.build();
     }
 
     /**
@@ -1003,18 +1003,18 @@ public final class DynamoDBExecutor implements AutoCloseable {
                     continue;
                 }
 
-                attrs.put(getAttrName(propInfo, namingPolicy), attrValueOf(propValue));
+                attrs.put(getAttrName(propInfo, namingPolicy), toAttributeValue(propValue));
             }
         } else if (Map.class.isAssignableFrom(cls)) {
             final Map<String, Object> map = (Map<String, Object>) entity;
 
             if (isCamelCase) {
                 for (final Map.Entry<String, Object> entry : map.entrySet()) {
-                    attrs.put(entry.getKey(), attrValueOf(entry.getValue()));
+                    attrs.put(entry.getKey(), toAttributeValue(entry.getValue()));
                 }
             } else {
                 for (final Map.Entry<String, Object> entry : map.entrySet()) {
-                    attrs.put(namingPolicy.convert(entry.getKey()), attrValueOf(entry.getValue()));
+                    attrs.put(namingPolicy.convert(entry.getKey()), toAttributeValue(entry.getValue()));
                 }
             }
         } else if (entity instanceof Object[]) {
@@ -1087,18 +1087,18 @@ public final class DynamoDBExecutor implements AutoCloseable {
                     continue;
                 }
 
-                attrs.put(getAttrName(propInfo, namingPolicy), attrValueUpdateOf(propValue));
+                attrs.put(getAttrName(propInfo, namingPolicy), toAttributeValueUpdate(propValue));
             }
         } else if (Map.class.isAssignableFrom(cls)) {
             final Map<String, Object> map = (Map<String, Object>) entity;
 
             if (isCamelCase) {
                 for (final Map.Entry<String, Object> entry : map.entrySet()) {
-                    attrs.put(entry.getKey(), attrValueUpdateOf(entry.getValue()));
+                    attrs.put(entry.getKey(), toAttributeValueUpdate(entry.getValue()));
                 }
             } else {
                 for (final Map.Entry<String, Object> entry : map.entrySet()) {
-                    attrs.put(namingPolicy.convert(entry.getKey()), attrValueUpdateOf(entry.getValue()));
+                    attrs.put(namingPolicy.convert(entry.getKey()), toAttributeValueUpdate(entry.getValue()));
                 }
             }
         } else if (entity instanceof Object[]) {
@@ -2682,10 +2682,10 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * Map<String, AttributeValue> key = asKey("userId", "user123");
      *
      * Map<String, AttributeValueUpdate> updates = new HashMap<>();
-     * updates.put("lastLogin", attrValueUpdateOf(Instant.now().toString()));
+     * updates.put("lastLogin", toAttributeValueUpdate(Instant.now().toString()));
      * updates.put("loginCount", AttributeValueUpdate.builder()
      *     .action(AttributeAction.ADD)
-     *     .value(attrValueOf(1))
+     *     .value(toAttributeValue(1))
      *     .build());
      * updates.put("tempToken", AttributeValueUpdate.builder()
      *     .action(AttributeAction.DELETE)
@@ -2784,9 +2784,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *         "#c", "counter"
      *     ))
      *     .expressionAttributeValues(Map.of(
-     *         ":name", attrValueOf("New Name"),
-     *         ":inc", attrValueOf(1),
-     *         ":old", attrValueOf("Old Name")
+     *         ":name", toAttributeValue("New Name"),
+     *         ":inc", toAttributeValue(1),
+     *         ":old", toAttributeValue("Old Name")
      *     ))
      *     .conditionExpression("#n = :old")
      *     .returnValues(ReturnValue.ALL_NEW)
@@ -4279,7 +4279,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
             final Map<String, AttributeValue> key = new HashMap<>(keyPropNames.size());
 
             for (int i = 0, len = keyPropNames.size(); i < len; i++) {
-                key.put(keyPropNames.get(i), attrValueOf(keyPropInfos.get(i).getPropValue(entity)));
+                key.put(keyPropNames.get(i), toAttributeValue(keyPropInfos.get(i).getPropValue(entity)));
             }
 
             return key;
@@ -4463,7 +4463,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return a map containing the equality condition
          */
         public static Map<String, Condition> eq(final String attrName, final Object attrValue) {
-            return N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.EQ).attributeValueList(attrValueOf(attrValue)).build());
+            return N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.EQ).attributeValueList(toAttributeValue(attrValue)).build());
         }
 
         /**
@@ -4481,7 +4481,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return a map containing the not-equal condition
          */
         public static Map<String, Condition> ne(final String attrName, final Object attrValue) {
-            return N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.NE).attributeValueList(attrValueOf(attrValue)).build());
+            return N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.NE).attributeValueList(toAttributeValue(attrValue)).build());
         }
 
         /**
@@ -4499,7 +4499,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return a map containing the greater-than condition
          */
         public static Map<String, Condition> gt(final String attrName, final Object attrValue) {
-            return N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.GT).attributeValueList(attrValueOf(attrValue)).build());
+            return N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.GT).attributeValueList(toAttributeValue(attrValue)).build());
         }
 
         /**
@@ -4517,7 +4517,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return a map containing the greater-than-or-equal condition
          */
         public static Map<String, Condition> ge(final String attrName, final Object attrValue) {
-            return N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.GE).attributeValueList(attrValueOf(attrValue)).build());
+            return N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.GE).attributeValueList(toAttributeValue(attrValue)).build());
         }
 
         /**
@@ -4535,7 +4535,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return a map containing the less-than condition
          */
         public static Map<String, Condition> lt(final String attrName, final Object attrValue) {
-            return N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.LT).attributeValueList(attrValueOf(attrValue)).build());
+            return N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.LT).attributeValueList(toAttributeValue(attrValue)).build());
         }
 
         /**
@@ -4553,7 +4553,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return a map containing the less-than-or-equal condition
          */
         public static Map<String, Condition> le(final String attrName, final Object attrValue) {
-            return N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.LE).attributeValueList(attrValueOf(attrValue)).build());
+            return N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.LE).attributeValueList(toAttributeValue(attrValue)).build());
         }
 
         /**
@@ -4575,7 +4575,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
             return N.asMap(attrName,
                     Condition.builder()
                             .comparisonOperator(ComparisonOperator.BETWEEN)
-                            .attributeValueList(attrValueOf(minAttrValue), attrValueOf(maxAttrValue))
+                            .attributeValueList(toAttributeValue(minAttrValue), toAttributeValue(maxAttrValue))
                             .build());
         }
 
@@ -4629,7 +4629,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return a map containing the contains condition
          */
         public static Map<String, Condition> contains(final String attrName, final Object attrValue) {
-            return N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.CONTAINS).attributeValueList(attrValueOf(attrValue)).build());
+            return N.asMap(attrName,
+                    Condition.builder().comparisonOperator(ComparisonOperator.CONTAINS).attributeValueList(toAttributeValue(attrValue)).build());
         }
 
         /**
@@ -4648,7 +4649,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          */
         public static Map<String, Condition> notContains(final String attrName, final Object attrValue) {
             return N.asMap(attrName,
-                    Condition.builder().comparisonOperator(ComparisonOperator.NOT_CONTAINS).attributeValueList(attrValueOf(attrValue)).build());
+                    Condition.builder().comparisonOperator(ComparisonOperator.NOT_CONTAINS).attributeValueList(toAttributeValue(attrValue)).build());
         }
 
         /**
@@ -4666,7 +4667,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return a map containing the begins-with condition
          */
         public static Map<String, Condition> beginsWith(final String attrName, final Object attrValue) {
-            return N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.BEGINS_WITH).attributeValueList(attrValueOf(attrValue)).build());
+            return N.asMap(attrName,
+                    Condition.builder().comparisonOperator(ComparisonOperator.BEGINS_WITH).attributeValueList(toAttributeValue(attrValue)).build());
         }
 
         /**
@@ -4720,7 +4722,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
             final AttributeValue[] attributeValueList = new AttributeValue[attrValues.length];
 
             for (int i = 0, len = attrValues.length; i < len; i++) {
-                attributeValueList[i] = attrValueOf(attrValues[i]);
+                attributeValueList[i] = toAttributeValue(attrValues[i]);
             }
 
             final Condition cond = Condition.builder().comparisonOperator(ComparisonOperator.IN).attributeValueList(attributeValueList).build();
@@ -4733,7 +4735,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
 
             int i = 0;
             for (final Object attrValue : attrValues) {
-                attributeValueList[i++] = attrValueOf(attrValue);
+                attributeValueList[i++] = toAttributeValue(attrValue);
             }
 
             final Condition cond = Condition.builder().comparisonOperator(ComparisonOperator.IN).attributeValueList(attributeValueList).build();
@@ -4847,7 +4849,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return this builder instance for method chaining
          */
         public ConditionBuilder eq(final String attrName, final Object attrValue) {
-            condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.EQ).attributeValueList(attrValueOf(attrValue)).build());
+            condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.EQ).attributeValueList(toAttributeValue(attrValue)).build());
 
             return this;
         }
@@ -4867,7 +4869,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return this builder instance for method chaining
          */
         public ConditionBuilder ne(final String attrName, final Object attrValue) {
-            condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.NE).attributeValueList(attrValueOf(attrValue)).build());
+            condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.NE).attributeValueList(toAttributeValue(attrValue)).build());
 
             return this;
         }
@@ -4887,7 +4889,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return this builder instance for method chaining
          */
         public ConditionBuilder gt(final String attrName, final Object attrValue) {
-            condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.GT).attributeValueList(attrValueOf(attrValue)).build());
+            condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.GT).attributeValueList(toAttributeValue(attrValue)).build());
 
             return this;
         }
@@ -4907,7 +4909,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return this builder instance for method chaining
          */
         public ConditionBuilder ge(final String attrName, final Object attrValue) {
-            condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.GE).attributeValueList(attrValueOf(attrValue)).build());
+            condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.GE).attributeValueList(toAttributeValue(attrValue)).build());
 
             return this;
         }
@@ -4927,7 +4929,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return this builder instance for method chaining
          */
         public ConditionBuilder lt(final String attrName, final Object attrValue) {
-            condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.LT).attributeValueList(attrValueOf(attrValue)).build());
+            condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.LT).attributeValueList(toAttributeValue(attrValue)).build());
 
             return this;
         }
@@ -4947,7 +4949,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return this builder instance for method chaining
          */
         public ConditionBuilder le(final String attrName, final Object attrValue) {
-            condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.LE).attributeValueList(attrValueOf(attrValue)).build());
+            condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.LE).attributeValueList(toAttributeValue(attrValue)).build());
 
             return this;
         }
@@ -4972,7 +4974,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
             condMap.put(attrName,
                     Condition.builder()
                             .comparisonOperator(ComparisonOperator.BETWEEN)
-                            .attributeValueList(attrValueOf(minAttrValue), attrValueOf(maxAttrValue))
+                            .attributeValueList(toAttributeValue(minAttrValue), toAttributeValue(maxAttrValue))
                             .build());
 
             return this;
@@ -5032,7 +5034,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return this builder instance for method chaining
          */
         public ConditionBuilder contains(final String attrName, final Object attrValue) {
-            condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.CONTAINS).attributeValueList(attrValueOf(attrValue)).build());
+            condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.CONTAINS).attributeValueList(toAttributeValue(attrValue)).build());
 
             return this;
         }
@@ -5052,7 +5054,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return this builder instance for method chaining
          */
         public ConditionBuilder notContains(final String attrName, final Object attrValue) {
-            condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.NOT_CONTAINS).attributeValueList(attrValueOf(attrValue)).build());
+            condMap.put(attrName,
+                    Condition.builder().comparisonOperator(ComparisonOperator.NOT_CONTAINS).attributeValueList(toAttributeValue(attrValue)).build());
 
             return this;
         }
@@ -5072,7 +5075,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * @return this builder instance for method chaining
          */
         public ConditionBuilder beginsWith(final String attrName, final Object attrValue) {
-            condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.BEGINS_WITH).attributeValueList(attrValueOf(attrValue)).build());
+            condMap.put(attrName,
+                    Condition.builder().comparisonOperator(ComparisonOperator.BEGINS_WITH).attributeValueList(toAttributeValue(attrValue)).build());
 
             return this;
         }

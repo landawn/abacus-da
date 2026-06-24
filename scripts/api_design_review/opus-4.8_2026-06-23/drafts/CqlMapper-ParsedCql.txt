@@ -1,0 +1,179 @@
+API DESIGN REVIEW — CqlMapper & ParsedCql (abacus-da, cassandra package)
+Reviewer model: opus-4.8    Date: 2026-06-23
+Scope: PUBLIC methods (incl. deprecated). Report-only; no source modified.
+
+RELATIONSHIP (established from source)
+--------------------------------------
+CqlMapper is a registry: id -> ParsedCql, plus a parallel id -> ImmutableMap<String,String> attrs map.
+  - cqlMap : LinkedHashMap<String, ParsedCql>   (insertion-ordered)
+  - attrsMap : HashMap<String, ImmutableMap<String,String>>
+CqlMapper.add(id, String[, attrs]) calls ParsedCql.parse(cql) and stores the result; add(id, ParsedCql[, attrs])
+stores a pre-parsed instance. saveTo() round-trips originalCql() + attrs back to XML. So CqlMapper *holds* ParsedCql,
+parses on the String overloads, and owns the statement-level attributes that ParsedCql deliberately does NOT carry
+(confirmed by ParsedCql class Javadoc lines 42-46 and CqlMapper.getAttributes Javadoc).
+ParsedCql is a self-contained, cached, immutable parsed form (parse(String) factory + KeyedObjectPool cache).
+Both are the CQL analogues of upstream SqlMapper / ParsedSql and are designed to mirror their public shape
+(Map<Integer,String> namedParameters accessor; attrs owned by the mapper). Consumers: CassandraExecutor and
+v3.CassandraExecutor read parameterizedCql()/namedParameters()/parameterCount() only (read-only use confirmed).
+
+
+================================================================================
+CLASS: CqlMapper   (abacus-da-all/.../cassandra/CqlMapper.java)
+================================================================================
+
+1. FUNCTIONALITY
+----------------
+F-1  add(...) overload FAMILY has split, contradictory duplicate-id + return-type semantics | CqlMapper.java:420,446,469,506 | HIGH
+     - add(String, ParsedCql)            : returns add(id, parsedCql, null)
+     - add(String, ParsedCql, Map)       : line 446-450 -> attrsMap.put(...); return cqlMap.put(id, parsedCql);
+       => REPLACES any existing entry silently, returns the previous ParsedCql (Map.put semantics).
+     - add(String, String)               : returns void; delegates to add(id, cql, null)
+     - add(String, String, Map)          : line 506-513 -> if (cqlMap.containsKey(id)) throw IllegalArgumentException;
+       => REJECTS duplicates, returns void.
+     Within ONE method name `add`, the ParsedCql overloads upsert-and-return-previous while the String overloads
+     reject-duplicates-and-return-void. A caller cannot reason about `add` uniformly: same id, different behaviour
+     and signature depending solely on whether the value is pre-parsed or a String. This is the single most
+     significant inconsistency in either class.
+     Recommendation: pick ONE contract for the family. Most internally consistent: make all four reject duplicates
+     (or all four upsert). If upsert is desired keep a returning form; if reject is desired, the ParsedCql overloads
+     should also `containsKey`-check and return void. At minimum align the String overloads with the ParsedCql ones
+     or vice-versa, and document a single rule. Note loadStream() (line 304) depends on the *reject-duplicate*
+     behaviour of add(id, String, attrs) to surface duplicate XML ids, so the reject contract is the load-bearing one.
+
+F-2  add(String, ParsedCql, Map) does not null-check id/parsedCql and Javadoc says id "not validated" | CqlMapper.java:446 | LOW
+     A null id is accepted (HashMap/LinkedHashMap allow one null key); a null ParsedCql is accepted and later
+     NPEs only in saveTo() via parsedCql.originalCql() (line 717). The String overloads route through
+     ParsedCql.parse which rejects null cql. Asymmetric validation across the family.
+     Confirming check: does upstream SqlMapper.add(...) validate id / value non-null? If SqlMapper rejects nulls,
+     this is a deviation; if it also stores as-is, this is intentional mirroring (downgrade to non-finding).
+
+2. NAMING
+---------
+N-1  containsId / keySet / get / add / remove / getAttributes / size / isEmpty are clear and accurate. No issue.
+     (keySet() returning the *ID* set is map-idiomatic; matches Map.keySet naming.)
+
+3. RETURN TYPE
+--------------
+R-1  Return-type inconsistency inside add family — see F-1 (ParsedCql vs void). HIGH (same finding).
+
+R-2  get(String) returns ParsedCql or null (not Optional). | CqlMapper.java:370 | LOW
+     containsId() exists as the presence test, and getAttributes() also returns null for absent id, so null-return
+     is internally consistent here. Flag only if the project's convention (and SqlMapper.get) returns Optional.
+     Confirming check: SqlMapper.get(String) return type — if it is Optional<ParsedSql>, align; otherwise keep null.
+
+R-3  getAttributes(String) returns null for an unknown id but an empty ImmutableMap for a known id with no attrs.
+     | CqlMapper.java:541 | LOW
+     This is the documented two-state contract (null = absent id, empty = present-but-no-attrs) and lets callers
+     distinguish the two without a separate containsId() call — internally consistent and intentional. No change
+     unless SqlMapper's analogous accessor never returns null (then prefer empty + containsId()).
+
+4. PARAMETERS
+-------------
+P-1  add parameter ordering is consistent (id, value[, attrs]) across all four overloads. No issue.
+
+P-2  Missing overload symmetry vs ParsedCql variant: add(String, ParsedCql) returns previous value but there is no
+     returning String overload, and no add(String, ParsedCql) that rejects duplicates. Resolve together with F-1.
+
+5. CLASS PLACEMENT
+------------------
+C-1  No misplacement. CQL_MAPPER / CQL / ID public String constants belong here (XML schema names). Fine.
+
+6. MISSING METHODS / DEPRECATION
+--------------------------------
+M-1  No clear() method despite remove(id), size(), isEmpty(), copy(). | CqlMapper.java | LOW
+     Minor; bulk reset must be done id-by-id. Add only if SqlMapper exposes one.
+     Confirming check: does SqlMapper expose clear()/values()/entrySet()? If yes, mirror for parity.
+
+M-2  No deprecation candidates. equals/hashCode/toString/copy are coherent (toString delegates to cqlMap only,
+     omitting attrs — acceptable for a debug string, and documented).
+
+
+================================================================================
+CLASS: ParsedCql   (abacus-da-all/.../cassandra/ParsedCql.java)
+================================================================================
+
+1. FUNCTIONALITY
+----------------
+F-1  namedParameters() exposes the live, MUTABLE internal HashMap (no defensive copy / no unmodifiable wrapper)
+     | ParsedCql.java:561-563 (field 166, populated 204/264/282) | MEDIUM
+     The field is `private final Map<Integer,String> namedParameters = new HashMap<>()` and the accessor returns it
+     directly. ParsedCql instances are cached and shared across threads (parse() pool, class Javadoc lines 127-130
+     advertise immutability/shareability). A caller doing namedParameters().put(...)/clear() mutates the SHARED
+     cached instance, corrupting every other holder and the executor's binding logic (CassandraExecutor.java:1693+
+     reads it by .get(i)). The Javadoc (lines 539-540) only *asks* callers to "treat it as read-only" — ground rule
+     5: documenting the hazard does not excuse it. Contrast with the rest of these two classes, which DO enforce
+     immutability: CqlMapper.keySet() returns Collections.unmodifiableSet (line 342) and CqlMapper.getAttributes()
+     returns ImmutableMap. namedParameters() is the lone mutable escape hatch.
+     Recommendation: wrap once at construction (Collections.unmodifiableMap, or ImmutableMap, or N's immutable map)
+     and return that; or return ImmutableMap<Integer,String> to match getAttributes()'s style. Empty case can be a
+     shared empty immutable map.
+     Confirming check (mirroring): inspect upstream ParsedSql.namedParameters/getNamedParameters() — if ParsedSql
+     also returns a raw mutable Map, this is a deliberately-mirrored quirk (the prompt flags Map-based accessor as
+     intentional) and should be downgraded to LOW *for the Map vs List shape*, BUT the mutability (unmodifiable vs
+     raw) is a separate axis: even if ParsedSql returns a Map, check whether ParsedSql wraps it unmodifiable. If
+     ParsedSql wraps and ParsedCql does not, this remains an actionable deviation.
+
+2. NAMING
+---------
+N-1  parse / originalCql / parameterizedCql / namedParameters / parameterCount are clear and accurate. No issue.
+     parse() (static factory) vs CqlMapper.add()'s use of parse() is consistent. Good.
+
+3. RETURN TYPE
+--------------
+R-1  See F-1 — return the parameter map as an immutable type for consistency with getAttributes()/keySet(). MEDIUM.
+
+R-2  namedParameters() returns Map<Integer,String> (index -> name). | ParsedCql.java:561 | LOW
+     This is the documented mirror of ParsedSql. Internally consistent with executor usage (.get(i)). No change to
+     the Map<Integer,String> SHAPE; only the mutability (R-1) is actionable. Confirming check: ParsedSql's
+     analogous accessor return type/key direction.
+
+4. PARAMETERS
+-------------
+P-1  parse(String) — single param, null-checked (N.checkArgNotNull, line 444). Consistent. No issue.
+
+5. CLASS PLACEMENT
+------------------
+C-1  No misplacement. Private static parsing helpers (updateCurlyDepth, isOpSqlPrefix, extractIbatisNamedParameter,
+     stripTrailingSemicolons) are correctly private and out of the public surface.
+
+6. MISSING METHODS / DEPRECATION
+--------------------------------
+M-1  No public constructor (only private ParsedCql(String) + static parse()). Intentional (cached factory). Good —
+     mirrors ParsedSql.parse pattern.
+
+M-2  No deprecation candidates. equals/hashCode are CQL-text-only (documented, required for the cache key) and
+     consistent with each other. toString format documented and matches examples.
+
+M-3  Asymmetry vs CqlMapper: ParsedCql has no accessor for the per-id attributes (by design — attrs live on the
+     mapper, lines 42-46). Not a defect; noted for completeness.
+
+
+================================================================================
+CROSS-CLASS NOTES
+================================================================================
+X-1  MIRRORING OF SqlMapper / ParsedSql: The Map<Integer,String> namedParameters accessor and the attrs-on-the-mapper
+     split are intentional mirroring (corroborated by class Javadoc and the prompt). Do NOT treat the Map shape or
+     the attrs ownership as defects. The actionable items below are NOT explained away by mirroring unless the
+     upstream check confirms the same *quirk*:
+       (a) CqlMapper.add family split contract (CqlMapper F-1, HIGH) — confirm against SqlMapper.add overloads:
+           does SqlMapper return previous value for one value-type and void+reject for another? If SqlMapper is
+           uniform, abacus-da has diverged from its own model.
+       (b) ParsedCql.namedParameters() mutable exposure (ParsedCql F-1, MEDIUM) — confirm whether ParsedSql wraps
+           its returned map unmodifiable.
+
+X-2  MUTABLE / IMMUTABLE PARAMETER EXPOSURE — the two classes are INTERNALLY INCONSISTENT about read-only views:
+       - CqlMapper.keySet()      -> Collections.unmodifiableSet  (enforced read-only)
+       - CqlMapper.getAttributes -> ImmutableMap                 (enforced read-only)
+       - ParsedCql.namedParameters() -> raw mutable HashMap      (NOT enforced; only documented)
+     Aligning namedParameters() to an immutable view would make all collection-returning accessors across both
+     classes uniformly read-only. This is the strongest internal-consistency argument and is independent of the
+     SqlMapper comparison.
+
+X-3  RELATION TO CqlBuilder: CqlBuilder (CqlBuilder.java:158, extends AbstractQueryBuilder) is the *generator* of CQL
+     text; ParsedCql is the *parser/normalizer* of CQL text; CqlMapper is the *registry*. CqlBuilder exposes
+     repeatQM(int) (line 334) for positional placeholders, consistent with ParsedCql normalizing every style down to
+     '?'. No naming or contract conflict found between CqlBuilder and these two classes; the pipeline
+     (CqlBuilder -> String -> ParsedCql.parse / CqlMapper.add) is coherent. No action.
+
+X-4  Severity summary: 1 HIGH (CqlMapper.add family split contract), 1 MEDIUM (ParsedCql.namedParameters mutable
+     exposure). Remaining items are LOW and gated on an upstream SqlMapper/ParsedSql comparison.

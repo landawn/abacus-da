@@ -14,7 +14,7 @@
 
 package com.landawn.abacus.da.aws.dynamodb.v2;
 
-import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.attrValueOf;
+import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toAttributeValue;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.createRowMapper;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.extractData;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.getAttrName;
@@ -3354,7 +3354,7 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
             final Map<String, AttributeValue> key = new HashMap<>(keyPropNames.size());
 
             for (int i = 0, len = keyPropNames.size(); i < len; i++) {
-                key.put(keyPropNames.get(i), attrValueOf(keyPropInfos.get(i).getPropValue(entity)));
+                key.put(keyPropNames.get(i), toAttributeValue(keyPropInfos.get(i).getPropValue(entity)));
             }
 
             return key;

@@ -1,0 +1,45 @@
+API DESIGN REVIEW — hbase/AnyIncrement.java
+public final class AnyIncrement extends AnyMutation<AnyIncrement>
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+
+1. OVERALL ASSESSMENT
+AnyIncrement is a faithful fluent wrapper over HBase `Increment`. No correctness defects. Findings are a
+redundant attribute overload, a surprising-but-mirrored equality contract, and cross-class factory parity.
+
+2. NAMING ISSUES
+- of(byte[],int,int) slice params named offset/length | AnyIncrement.java:225 | Low | Diverge from
+  AnyPut/AnyDelete rowOffset/rowLength. Converge across the four subclasses (see SUMMARY).
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- equals(Object) / hashCode() | AnyIncrement.java:761-774 / 728-732 | Low | Delegate to HBase
+  Increment's row-key-ONLY equality, so two semantically different increments on the same row compare
+  equal. Verified: faithfully mirrors HBase and is documented in the Javadoc. KEEP, but the row-key-only
+  semantics are a footgun worth a prominent class-level warning (or a deliberate content-aware override).
+  Confirming check: confirm HBase Increment.equals is row-key-only in the resolved hbase-client jar.
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+- of(Object,long) / of(Object,int,int) (Object-keyed timestamp/slice factories) absent | AnyIncrement.java
+  | Low | Only byte[]-keyed slice/familyMap factories exist. Cosmetic given key-bytes identity; resolve
+  via the unified factory set (SUMMARY). Confirming check: confirm a caller actually needs an
+  Object-keyed timestamped increment.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+- setAttribute(String,byte[]) | AnyIncrement.java:700 | Medium | REDUNDANT — observationally equivalent
+  to the inherited base setAttribute(String,Object) (AnyOperationWithAttributes.java:143), because
+  toValueBytes returns (byte[])value unchanged for a byte[] (HBaseExecutor.java:3029-3030). Either remove
+  it (callers use the inherited Object overload, same result) or — if a documented raw-bytes fast path is
+  desired — add it symmetrically to all four subclasses. Recommend remove, for a smaller, uniform surface.
+
+CROSS-CLASS NOTES
+- setAttribute(String,byte[]) appears only on AnyIncrement+AnyAppend and is redundant with the base
+  Object overload — a four-subclass uniformity issue (SUMMARY).
+- Factory param naming offset/length here vs rowOffset/rowLength on AnyPut/AnyDelete — unify.
+
+--- DOC-FIX PASS 2026-06-23 ---
+Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its
+findings are code/design (see SUMMARY.txt section 2), or any doc-adjacent item was evaluated and
+intentionally left (documenting it would paper over a behavioral/design issue, or it is dead-comment
+cleanup deferred to the maintainer). `mvn -o clean compile` remains green.

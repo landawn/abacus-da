@@ -1,0 +1,61 @@
+API DESIGN REVIEW — hbase/AnyPut.java
+public final class AnyPut extends AnyMutation<AnyPut>
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+
+1. OVERALL ASSESSMENT
+AnyPut is a solid, thoroughly documented fluent wrapper over HBase `Put`, with the richest factory
+surface of the four AnyMutation subclasses (Object/ByteBuffer keys, immutability and timestamp variants,
+plus entity-based create(...) overloads). No correctness defects and no live deprecation candidates
+(legacy addImmutable/setFamilyCellMap are already commented out). addColumn value semantics (overwrite
+by type) are correct and well documented; the two adjacent byte[] family/qualifier params are inherent
+to mirroring Put and shared by all siblings. Findings are cross-class consistency/parity items.
+
+2. NAMING ISSUES
+- of(Object,int,int) / of(Object,int,int,long) slice params named rowOffset/rowLength | AnyPut.java:370,
+  411 | Medium | AnyAppend/AnyIncrement name the same concept offset/length (AnyAppend.java:269,
+  AnyIncrement.java:225). Converge on ONE vocabulary across the four subclasses (recommend
+  rowOffset/rowLength as the more descriptive). Verified by listing factories across all four classes.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- addColumn(byte[],ByteBuffer,long,ByteBuffer) | AnyPut.java:1234 | Medium | The only ByteBuffer
+  addColumn overload, and only in the explicit-timestamp form, with an odd byte[]-family/ByteBuffer-
+  qualifier mix and no no-timestamp counterpart. Add the no-ts parity overload, or drop this overload in
+  favor of the byte[]/Object forms. Confirming check: grep call sites before removing.
+- create(Object,Collection) / create(Object,Collection,NamingPolicy) with null selectPropNames meaning
+  "all props" | AnyPut.java:773,804 | Low | Documented convenience that overlaps create(Object[,
+  NamingPolicy]); mild footgun but intentional — KEEP. Verified: null branch at 808 delegates to the
+  all-props path.
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+- of(byte[]) and of(byte[],int,int) absent on AnyPut | AnyPut.java | Low | AnyAppend/AnyIncrement expose
+  direct byte[] row-key factories (AnyAppend.java:237,269; AnyIncrement.java:188,225); AnyPut routes
+  byte[] keys through of(Object). NOTE (verified): toRowKeyBytes(byte[]) is identity, so of((Object)bytes)
+  is observationally equivalent — this is a cosmetic convenience gap, not a functional one. Resolve as
+  part of a unified factory set across the four subclasses (see SUMMARY), not in isolation.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+- setAttribute: AnyPut correctly has NO setAttribute(String,byte[]) override and inherits the base
+  setAttribute(String,Object) (AnyOperationWithAttributes.java:143) | AnyPut.java | Low | This is the
+  CORRECT design. Verified: base converts via HBaseExecutor.toValueBytes(value), and toValueBytes returns
+  (byte[])value unchanged for a byte[] (HBaseExecutor.java:3029-3030). The byte[] overrides on
+  AnyIncrement/AnyAppend are therefore the redundant ones (see those reports / SUMMARY), not a gap here.
+- addColumn(byte[],ByteBuffer,long,ByteBuffer) | AnyPut.java:1234 | Low | Removal candidate (same as §3)
+  if call-site scan shows no usage.
+
+CROSS-CLASS NOTES
+- Row-key factory surfaces are uneven across the four AnyMutation subclasses: AnyPut(rich Object/
+  ByteBuffer/immutable/timestamp) vs AnyDelete(Object + familyMap) vs AnyIncrement/AnyAppend(byte[] +
+  familyMap). Because toRowKeyBytes/toValueBytes treat byte[] as identity, the differences are largely
+  cosmetic. Recommend a common minimum factory set with unified param names.
+- add(Cell): AnyPut/AnyDelete/AnyIncrement declare `throws IOException`, AnyAppend does not — faithful
+  mirror of HBase's own Mutation-subclass differences, NOT an AnyPut defect.
+- equals/hashCode identity-based on the wrapped Put — consistent with AnyPut's documentation.
+
+--- DOC-FIX PASS 2026-06-23 ---
+Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its
+findings are code/design (see SUMMARY.txt section 2), or any doc-adjacent item was evaluated and
+intentionally left (documenting it would paper over a behavioral/design issue, or it is dead-comment
+cleanup deferred to the maintainer). `mvn -o clean compile` remains green.

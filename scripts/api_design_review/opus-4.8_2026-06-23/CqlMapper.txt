@@ -1,0 +1,52 @@
+API DESIGN REVIEW — cassandra/CqlMapper.java
+public final class CqlMapper
+Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+
+1. OVERALL ASSESSMENT
+CqlMapper is a registry mapping id -> ParsedCql (+ id -> ImmutableMap attrs), the CQL analogue of the core
+SqlMapper. String add(...) overloads parse via ParsedCql.parse; ParsedCql add(...) overloads store
+pre-parsed instances. Attrs are owned by the mapper (deliberately NOT by ParsedCql) and exposed immutably.
+The design is sound; the one real issue is a split contract within the add(...) overload family.
+
+2. NAMING ISSUES
+None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+- add(...) overload family has a SPLIT contract | CqlMapper.java:419,445 (ParsedCql forms) vs 468,505
+  (String forms) | High | Verified: add(id,ParsedCql[,attrs]) returns ParsedCql and upserts (returns the
+  previous value, Map.put semantics), while add(id,String[,attrs]) returns void and REJECTS duplicates
+  (throws IllegalArgumentException if the id already exists, :506-508). Same method name, two opposite
+  duplicate-handling policies and two different return types. Unify: pick one duplicate policy and one
+  return type for the whole family (recommend: reject-duplicate + return void for all, or upsert +
+  return-previous for all).
+- add(String id,ParsedCql,Map) | CqlMapper.java:445 | Low | No null-check on id/parsedCql (NPEs later in
+  saveTo) while the String overloads reject null cql. Add up-front validation. Confirming check: compare
+  to SqlMapper.add validation.
+- get(String) returns null (not Optional) | CqlMapper.java:370 | Low | Internally consistent (containsId
+  exists); recorded for the SUMMARY null-vs-Optional convention. Confirming check: SqlMapper.get return
+  type.
+- getAttributes(String) returns null for an absent id but empty map for present-no-attrs | CqlMapper.java:
+  541 | Low | A deliberate two-state contract (verified in Javadoc). Flag only if SqlMapper never returns
+  null here. Confirming check: SqlMapper.getAttributes.
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+- clear() / values() / entrySet() | CqlMapper.java | Low | Add only if SqlMapper exposes them (registry
+  completeness). Confirming check: SqlMapper public surface.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+None.
+
+CROSS-CLASS NOTES
+- Pipeline is coherent: CqlBuilder (generator) -> String -> ParsedCql.parse (parser) -> CqlMapper
+  (registry). No naming/contract conflict across the three.
+- The add() split contract is NOT excused by SqlMapper mirroring unless upstream has the identical quirk
+  (confirming check noted).
+
+--- DOC-FIX PASS 2026-06-23 ---
+Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its
+findings are code/design (see SUMMARY.txt section 2), or any doc-adjacent item was evaluated and
+intentionally left (documenting it would paper over a behavioral/design issue, or it is dead-comment
+cleanup deferred to the maintainer). `mvn -o clean compile` remains green.

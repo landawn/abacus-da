@@ -62,7 +62,7 @@ public class MongoCollectionMapperTest extends TestBase {
 
     @Test
     public void testCollExecutor() {
-        MongoCollectionExecutor result = mapper.mongoCollectionExecutor();
+        MongoCollectionExecutor result = mapper.collectionExecutor();
         Assertions.assertSame(mockCollExecutor, result);
     }
 
