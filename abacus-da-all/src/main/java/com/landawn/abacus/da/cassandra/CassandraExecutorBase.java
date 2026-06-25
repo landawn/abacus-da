@@ -85,7 +85,7 @@ import com.landawn.abacus.util.stream.Stream;
  *     repeated calls with the same CQL string reuse a single prepared statement.</li>
  * <li><strong>ParsedCql cache:</strong> {@link #parseCql(String)} consults the optional
  *     {@link CqlMapper} first (allowing pre-registered, named CQL fragments) and falls back to
- *     {@link ParsedCql#parse(String, java.util.Map)} for ad-hoc CQL. Subclasses should reuse the
+ *     {@link ParsedCql#parse(String)} for ad-hoc CQL. Subclasses should reuse the
  *     resulting {@link ParsedCql} where possible to avoid re-parsing.</li>
  * <li><strong>Codec registry:</strong> subclasses install the driver's codec registry so that
  *     entity properties and bound parameters round-trip through the configured codecs (including any

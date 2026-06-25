@@ -65,14 +65,15 @@ H1 | v2-AsyncDynamoDBExecutor | whole class returns native CompletableFuture, no
    ACTION: decide once — wrap to ContinuableFuture for library consistency, OR adopt CompletableFuture
    library-wide and document it as the forward direction. (Headline cross-class deviation.)
 
-H2 | v2-DynamoDBExecutor | [NEW] query(QueryRequest,Class<?>) now calls N.checkArgNotNull(targetClass)
-   (:3097) but KEEPS the now-unreachable `if (targetClass == null || Map...)` branch (:3099) AND the
-   Javadoc still advertises that targetClass may be null (:3073,3090-3091). A caller following the docs
-   passing null now hits IAE. The v2 ASYNC twin was NOT given the check and still genuinely accepts null
-   (AsyncDynamoDBExecutor.java:1795) -> sync/async divergence.
-   | aws/dynamodb/v2/DynamoDBExecutor.java:3095-3121 (+ async :1795) | STILL-VALID/NEW
-   ACTION: remove the dead `targetClass == null ||` arm + the null-allowed Javadoc (or drop the check to
-   restore null acceptance); then make sync and async agree.
+H2 | v2-DynamoDBExecutor | [NEW] query(QueryRequest,Class<?>) had a dead `targetClass == null` branch +
+   Javadoc that still said null was allowed, while the async twin had no check and still accepted null.
+   | aws/dynamodb/v2/DynamoDBExecutor.java:3140 (+ async :1796)
+   >>> RE-VERIFIED 2026-06-24 (this turn): ALREADY-FIXED in commit c67160a (committed alongside the LOW-fix
+   pass; NOT done by the reviewer). Sync: dead arm removed -> `if (Map.class.isAssignableFrom(targetClass))`
+   (:3144); Javadoc now "targetClass ... must not be null" + @throws IAE. Async (:1796): now also
+   checkArgNotNull(queryRequest)/(targetClass), dead arm removed -> sync/async aligned, both reject null.
+   The 2 remaining `targetClass == null` in the file are in toEntity(Map,Class) (:1538/:1594), legitimate &
+   unrelated. NO ACTION. (Note: the prior summary listed this as open — that was a stale carry-forward.) <<<
 
 ------------------------------- MEDIUM -------------------------------
 M1 | AsyncMongoCollectionExecutor | no-filter stream()/stream(Class) absent; estimatedDocumentCount()/

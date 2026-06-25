@@ -1,7 +1,7 @@
 API DESIGN REVIEW — aws/dynamodb/v2/DynamoDBExecutor.java  (AWS SDK v2)
 public final class DynamoDBExecutor implements AutoCloseable
 Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
->>> RE-REVIEW-2 2026-06-24: toMap(Object[]) parity overload ADDED (mirrors v1) -> ALREADY-FIXED. STILL OPEN (High): query() dead null-branch + contradictory Javadoc (H2); async() bridge absent (M). <<<
+>>> RE-REVIEW-2 2026-06-24: toMap(Object[]) parity overload ADDED (mirrors v1) -> ALREADY-FIXED. H2 ALREADY-FIXED (committed c67160a, NOT by me): query() dead null-branch removed (now `if (Map.class.isAssignableFrom(targetClass))` at :3144), Javadoc corrected (targetClass "must not be null" + @throws IAE), and async twin now also checkArgNotNull(targetClass) (AsyncDynamoDBExecutor.java:1796) -> sync/async aligned. Still open: async() bridge absent (M). <<<
 >>> CODE-FIX UPDATE (2026-06-24): the converter naming drift (section 2) is RESOLVED — attrValueOf/
     attrValueUpdateOf were hard-renamed to v1's toAttributeValue/toAttributeValueUpdate (no alias). See the
     [RESOLVED] tag. Other findings remain open. mvn -o clean test-compile green. <<<
@@ -85,18 +85,19 @@ CROSS-CLASS NOTES
 - *Result->*Response is the expected SDK-v2 rename, not drift.
 
 NEW ISSUES (2026-06-24 re-review)
-- Dead null branch + contradictory Javadoc in query(QueryRequest,Class<?>) | v2/DynamoDBExecutor.java:
-  3095-3121 | Medium | The method now calls N.checkArgNotNull(targetClass) at :3097, so the
-  `if (targetClass == null || Map.class.isAssignableFrom(targetClass))` test at :3099 can never be true via
-  the null arm (a null targetClass throws before reaching it). Meanwhile the Javadoc still advertises that
-  targetClass "may be null/a Map type" (:3073, :3090-3091, @return note). Fix: either drop the now-dead
-  `targetClass == null ||` from :3099 and remove the null-allowed language from the Javadoc, OR remove the
-  :3097 check to genuinely restore null-acceptance (matching the async twin). As written the code and doc
-  disagree.
-- Sync/async null-acceptance divergence (re)introduced | v2/DynamoDBExecutor.java:3097 vs
-  v2/AsyncDynamoDBExecutor.java:1795-1796 | Low | Sync query() now rejects null targetClass; the async twin
-  still accepts it (live `targetClass == null` branch). The two query(QueryRequest,Class<?>) signatures now
-  behave differently for null. Pick one policy and apply to both.
+- [RE-REVIEW-2 2026-06-24: ALREADY-FIXED in commit c67160a] Dead null branch + contradictory Javadoc in
+  query(QueryRequest,Class<?>) | v2/DynamoDBExecutor.java:3140-3160 | (was Medium) | FIXED: the dead
+  `targetClass == null ||` arm was removed (the branch is now `if (Map.class.isAssignableFrom(targetClass))`
+  at :3144), and the Javadoc now states `@param targetClass ... must not be null` + `@throws
+  IllegalArgumentException if queryRequest or targetClass is null`. checkArgNotNull(targetClass) retained.
+  Code and doc now agree. (The 2 remaining `targetClass == null` occurrences in the file are in the
+  static toEntity(Map,Class) converter at :1538/:1594, which legitimately accepts a null target to return
+  raw/default values — unrelated to this finding.)
+- [RE-REVIEW-2 2026-06-24: ALREADY-FIXED in commit c67160a] Sync/async null-acceptance divergence |
+  v2/DynamoDBExecutor.java vs v2/AsyncDynamoDBExecutor.java:1796 | (was Low) | FIXED: the async twin now
+  also calls N.checkArgNotNull(queryRequest)/checkArgNotNull(targetClass) and dropped its `targetClass ==
+  null` branch — both query(QueryRequest,Class<?>) signatures now reject null uniformly (0 `targetClass ==
+  null` occurrences remain in the async file).
 
 --- DOC-FIX PASS 2026-06-23 ---
 Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its
