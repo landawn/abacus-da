@@ -45,6 +45,7 @@ import com.amazonaws.services.dynamodbv2.model.DeleteItemRequest;
 import com.amazonaws.services.dynamodbv2.model.DeleteItemResult;
 import com.amazonaws.services.dynamodbv2.model.DeleteRequest;
 import com.amazonaws.services.dynamodbv2.model.GetItemRequest;
+import com.amazonaws.services.dynamodbv2.model.GetItemResult;
 import com.amazonaws.services.dynamodbv2.model.KeysAndAttributes;
 import com.amazonaws.services.dynamodbv2.model.PutItemRequest;
 import com.amazonaws.services.dynamodbv2.model.PutItemResult;
@@ -1282,6 +1283,40 @@ public final class DynamoDBExecutor implements AutoCloseable {
         }
 
         return map;
+    }
+
+    /**
+     * Converts a DynamoDB {@link GetItemResult} to a Java entity of the specified class.
+     *
+     * <p>This method extracts the item from the {@code GetItemResult} and converts it to an entity via
+     * {@link #toEntity(Map, Class)}. If the result is {@code null} or contains no item (the key was not
+     * found), this method returns {@code null}.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * GetItemResult result = dynamoDBClient.getItem(tableName, key);
+     * User user = DynamoDBExecutor.toEntity(result, User.class);            // user populated from the item
+     *
+     * // Key not found -> getItem() is null -> returns null
+     * User none = DynamoDBExecutor.toEntity(new GetItemResult(), User.class); // returns null
+     *
+     * User n = DynamoDBExecutor.toEntity((GetItemResult) null, User.class);   // returns null
+     * }</pre>
+     *
+     * @param <T> the target entity type
+     * @param getItemResult the {@code GetItemResult} containing the item to convert; may be {@code null}
+     * @param targetClass the class to convert the item to; must be a bean class with getter/setter methods
+     *                    and must not be {@code null}
+     * @return the converted entity instance, or {@code null} if {@code getItemResult} is {@code null} or contains no item
+     * @throws IllegalArgumentException if {@code targetClass} is not a valid bean class
+     * @see #toEntity(Map, Class)
+     */
+    public static <T> T toEntity(final GetItemResult getItemResult, final Class<T> targetClass) {
+        if (getItemResult == null) {
+            return null;
+        }
+
+        return toEntity(getItemResult.getItem(), targetClass);
     }
 
     /**

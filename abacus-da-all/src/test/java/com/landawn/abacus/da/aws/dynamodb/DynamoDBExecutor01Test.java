@@ -1814,6 +1814,31 @@ public class DynamoDBExecutor01Test extends TestBase {
         assertNull(result);
     }
 
+    // toEntity(GetItemResult, Class): mirrors the v2 GetItemResponse overload
+    @Test
+    public void testToEntity_GetItemResult() {
+        Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("id", new AttributeValue().withS("123"));
+        item.put("name", new AttributeValue().withS("test"));
+
+        TestEntity result = DynamoDBExecutor.toEntity(new GetItemResult().withItem(item), TestEntity.class);
+
+        assertNotNull(result);
+        assertEquals("123", result.getId());
+        assertEquals("test", result.getName());
+    }
+
+    @Test
+    public void testToEntity_GetItemResultNoItemReturnsNull() {
+        // No item set -> getItem() is null -> null entity (key-not-found case)
+        assertNull(DynamoDBExecutor.toEntity(new GetItemResult(), TestEntity.class));
+    }
+
+    @Test
+    public void testToEntity_NullGetItemResultReturnsNull() {
+        assertNull(DynamoDBExecutor.toEntity((GetItemResult) null, TestEntity.class));
+    }
+
     // readRow / createRowMapper branches: Object[], Collection, Map, single-value
     @Test
     public void testToList_AsObjectArrayClass() {

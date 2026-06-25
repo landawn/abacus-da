@@ -1,11 +1,13 @@
 package com.landawn.abacus.da.azure;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -21,6 +23,7 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import com.azure.cosmos.CosmosContainer;
+import com.azure.cosmos.CosmosException;
 import com.azure.cosmos.models.CosmosItemIdentity;
 import com.azure.cosmos.models.CosmosItemRequestOptions;
 import com.azure.cosmos.models.CosmosItemResponse;
@@ -36,6 +39,7 @@ import com.landawn.abacus.da.azure.CosmosContainerExecutor;
 import com.landawn.abacus.query.Filters;
 import com.landawn.abacus.util.NamingPolicy;
 import com.landawn.abacus.util.stream.Stream;
+import com.landawn.abacus.util.u.Optional;
 
 public class CosmosContainerExecutorTest extends TestBase {
 
@@ -237,6 +241,64 @@ public class CosmosContainerExecutorTest extends TestBase {
 
         assertEquals(mockItemResponse, response);
         verify(mockCosmosContainer).readItem(itemId, partitionKey, itemRequestOptions, TestItem.class);
+    }
+
+    @Test
+    public void testGetWithoutOptions_Found() {
+        String itemId = "itemId";
+        when(mockItemResponse.getItem()).thenReturn(testItem);
+        when(mockCosmosContainer.readItem(itemId, partitionKey, TestItem.class)).thenReturn(mockItemResponse);
+
+        Optional<TestItem> result = executor.get(itemId, partitionKey, TestItem.class);
+
+        assertTrue(result.isPresent());
+        assertEquals(testItem, result.get());
+    }
+
+    @Test
+    public void testGetWithoutOptions_NotFoundReturnsEmpty() {
+        String itemId = "missing";
+        CosmosException notFound = mock(CosmosException.class);
+        when(notFound.getStatusCode()).thenReturn(404);
+        when(mockCosmosContainer.readItem(itemId, partitionKey, TestItem.class)).thenThrow(notFound);
+
+        Optional<TestItem> result = executor.get(itemId, partitionKey, TestItem.class);
+
+        assertFalse(result.isPresent());
+    }
+
+    @Test
+    public void testGetWithoutOptions_Non404Propagates() {
+        String itemId = "itemId";
+        CosmosException throttled = mock(CosmosException.class);
+        when(throttled.getStatusCode()).thenReturn(429); // Too Many Requests -> not absence, must propagate
+        when(mockCosmosContainer.readItem(itemId, partitionKey, TestItem.class)).thenThrow(throttled);
+
+        assertThrows(CosmosException.class, () -> executor.get(itemId, partitionKey, TestItem.class));
+    }
+
+    @Test
+    public void testGetWithOptions_Found() {
+        String itemId = "itemId";
+        when(mockItemResponse.getItem()).thenReturn(testItem);
+        when(mockCosmosContainer.readItem(itemId, partitionKey, itemRequestOptions, TestItem.class)).thenReturn(mockItemResponse);
+
+        Optional<TestItem> result = executor.get(itemId, partitionKey, itemRequestOptions, TestItem.class);
+
+        assertTrue(result.isPresent());
+        assertEquals(testItem, result.get());
+    }
+
+    @Test
+    public void testGetWithOptions_NotFoundReturnsEmpty() {
+        String itemId = "missing";
+        CosmosException notFound = mock(CosmosException.class);
+        when(notFound.getStatusCode()).thenReturn(404);
+        when(mockCosmosContainer.readItem(itemId, partitionKey, itemRequestOptions, TestItem.class)).thenThrow(notFound);
+
+        Optional<TestItem> result = executor.get(itemId, partitionKey, itemRequestOptions, TestItem.class);
+
+        assertFalse(result.isPresent());
     }
 
     @Test

@@ -45,6 +45,8 @@ import com.mongodb.client.model.ReplaceOptions;
 import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.model.WriteModel;
 import com.mongodb.client.result.DeleteResult;
+import com.mongodb.client.result.InsertManyResult;
+import com.mongodb.client.result.InsertOneResult;
 import com.mongodb.client.result.UpdateResult;
 
 public class MongoCollectionMapperTest extends TestBase {
@@ -352,35 +354,47 @@ public class MongoCollectionMapperTest extends TestBase {
     @Test
     public void testInsertOne() {
         TestEntity entity = new TestEntity();
+        InsertOneResult insertResult = mock(InsertOneResult.class);
+        when(mockCollExecutor.insertOne(entity)).thenReturn(insertResult);
 
-        mapper.insertOne(entity);
+        InsertOneResult result = mapper.insertOne(entity);
         verify(mockCollExecutor).insertOne(entity);
+        Assertions.assertSame(insertResult, result);
     }
 
     @Test
     public void testInsertOneWithOptions() {
         TestEntity entity = new TestEntity();
         InsertOneOptions options = new InsertOneOptions();
+        InsertOneResult insertResult = mock(InsertOneResult.class);
+        when(mockCollExecutor.insertOne(entity, options)).thenReturn(insertResult);
 
-        mapper.insertOne(entity, options);
+        InsertOneResult result = mapper.insertOne(entity, options);
         verify(mockCollExecutor).insertOne(entity, options);
+        Assertions.assertSame(insertResult, result);
     }
 
     @Test
     public void testInsertMany() {
         Collection<TestEntity> entities = Arrays.asList(new TestEntity(), new TestEntity());
+        InsertManyResult insertResult = mock(InsertManyResult.class);
+        when(mockCollExecutor.insertMany(entities)).thenReturn(insertResult);
 
-        mapper.insertMany(entities);
+        InsertManyResult result = mapper.insertMany(entities);
         verify(mockCollExecutor).insertMany(entities);
+        Assertions.assertSame(insertResult, result);
     }
 
     @Test
     public void testInsertManyWithOptions() {
         Collection<TestEntity> entities = Arrays.asList(new TestEntity(), new TestEntity());
         InsertManyOptions options = new InsertManyOptions();
+        InsertManyResult insertResult = mock(InsertManyResult.class);
+        when(mockCollExecutor.insertMany(entities, options)).thenReturn(insertResult);
 
-        mapper.insertMany(entities, options);
+        InsertManyResult result = mapper.insertMany(entities, options);
         verify(mockCollExecutor).insertMany(entities, options);
+        Assertions.assertSame(insertResult, result);
     }
 
     @Test
@@ -553,10 +567,11 @@ public class MongoCollectionMapperTest extends TestBase {
     @Test
     public void testBulkInsert() {
         Collection<TestEntity> entities = Arrays.asList(new TestEntity(), new TestEntity());
-        when(mockCollExecutor.bulkInsert(entities)).thenReturn(2);
+        BulkWriteResult bulkWriteResult = mock(BulkWriteResult.class);
+        when(mockCollExecutor.bulkInsert(entities)).thenReturn(bulkWriteResult);
 
-        int result = mapper.bulkInsert(entities);
-        Assertions.assertEquals(2, result);
+        BulkWriteResult result = mapper.bulkInsert(entities);
+        Assertions.assertSame(bulkWriteResult, result);
         verify(mockCollExecutor).bulkInsert(entities);
     }
 
@@ -564,10 +579,11 @@ public class MongoCollectionMapperTest extends TestBase {
     public void testBulkInsertWithOptions() {
         Collection<TestEntity> entities = Arrays.asList(new TestEntity(), new TestEntity());
         BulkWriteOptions options = new BulkWriteOptions();
-        when(mockCollExecutor.bulkInsert(entities, options)).thenReturn(2);
+        BulkWriteResult bulkWriteResult = mock(BulkWriteResult.class);
+        when(mockCollExecutor.bulkInsert(entities, options)).thenReturn(bulkWriteResult);
 
-        int result = mapper.bulkInsert(entities, options);
-        Assertions.assertEquals(2, result);
+        BulkWriteResult result = mapper.bulkInsert(entities, options);
+        Assertions.assertSame(bulkWriteResult, result);
         verify(mockCollExecutor).bulkInsert(entities, options);
     }
 

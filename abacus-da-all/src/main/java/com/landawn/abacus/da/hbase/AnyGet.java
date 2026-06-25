@@ -232,7 +232,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
 
     /**
      * Creates a new AnyGet instance for the specified ByteBuffer row key.
-     * 
+     *
      * <p>This factory method creates a get operation using a ByteBuffer as the row key.
      * This is useful when working with NIO operations or when the row key is already
      * in ByteBuffer format. The ByteBuffer's current position and limit determine
@@ -899,7 +899,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * <pre>{@code
      * AnyGet get1 = AnyGet.of("user123");
      * boolean has1 = get1.hasFamilies();   // returns false
-     * 
+     *
      * AnyGet get2 = AnyGet.of("user123").addFamily("info");
      * boolean has2 = get2.hasFamilies();   // returns true
      * }</pre>

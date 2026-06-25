@@ -2508,7 +2508,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *     Filters.like("email", "%@example.com")
          * );
          *
-         * String cql = PSC.parse(cond, Account.class).build().query();
+         * String cql = PSC.renderCondition(cond, Account.class).build().query();
          * // Output: (first_name = ?) AND (email LIKE ?)
          * }</pre>
          *
@@ -2517,7 +2517,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new CqlBuilder instance containing the parsed condition
          * @throws IllegalArgumentException if cond is null
          */
-        public CqlBuilder parse(final Condition cond, final Class<?> entityClass) {
+        public CqlBuilder renderCondition(final Condition cond, final Class<?> entityClass) {
             N.checkArgNotNull(cond, "cond");
 
             final CqlBuilder instance = createCqlBuilderInstance();

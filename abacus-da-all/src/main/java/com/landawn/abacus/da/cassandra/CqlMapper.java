@@ -442,37 +442,38 @@ public final class CqlMapper {
      * <p>This method allows you to add a ParsedCql object directly to the mapper,
      * which is useful when you have already parsed CQL statements or want to add
      * statements programmatically. If a statement with the same ID already exists,
-     * it will be replaced (along with its attributes) and the previous ParsedCql object
-     * will be returned. This is a convenience overload of {@link #add(String, ParsedCql, Map)}
-     * with an empty attribute map.</p>
+     * an {@link IllegalArgumentException} is thrown — use {@link #remove(String)} first to
+     * replace an existing mapping. This is a convenience overload of
+     * {@link #add(String, ParsedCql, Map)} with an empty attribute map.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * CqlMapper mapper = new CqlMapper();
      * ParsedCql p1 = ParsedCql.parse("SELECT * FROM users WHERE id = ?");
-     * mapper.add("findUserById", p1);                  // returns null (no previous mapping)
+     * mapper.add("findUserById", p1);                  // stored (no previous mapping)
      *
      * ParsedCql p2 = ParsedCql.parse("SELECT name FROM users WHERE id = ?");
-     * mapper.add("findUserById", p2);                  // returns p1 (id reused; previous value replaced)
-     * mapper.get("findUserById");                      // returns p2 (the new mapping)
+     * mapper.add("findUserById", p2);                  // throws IllegalArgumentException (id already exists)
+     *
+     * mapper.add("other", (ParsedCql) null);           // throws IllegalArgumentException (parsedCql is null)
      * }</pre>
      *
      * @param id the unique identifier for this CQL statement; used as the map key as-is; not validated
-     * @param parsedCql the pre-parsed CQL statement object
-     * @return the previous ParsedCql associated with the ID, or null if none existed
+     * @param parsedCql the pre-parsed CQL statement object (must not be null)
+     * @throws IllegalArgumentException if the id already exists, or if {@code parsedCql} is null
      * @see ParsedCql
      * @see #add(String, ParsedCql, Map)
      */
-    public ParsedCql add(final String id, final ParsedCql parsedCql) {
-        return add(id, parsedCql, null);
+    public void add(final String id, final ParsedCql parsedCql) {
+        add(id, parsedCql, null);
     }
 
     /**
      * Adds a pre-parsed CQL statement together with its metadata attributes to this mapper.
      *
-     * <p>If a statement with the same ID already exists, it will be replaced (along with its
-     * attributes) and the previous ParsedCql object will be returned. The attributes are stored
-     * on the mapper, keyed by id, and are retrievable via {@link #getAttributes(String)}.</p>
+     * <p>If a statement with the same ID already exists, an {@link IllegalArgumentException} is
+     * thrown — use {@link #remove(String)} first to replace an existing mapping. The attributes are
+     * stored on the mapper, keyed by id, and are retrievable via {@link #getAttributes(String)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -481,18 +482,26 @@ public final class CqlMapper {
      * attrs.put("timeout", "5000");
      * mapper.add("findUserById", ParsedCql.parse("SELECT * FROM users WHERE id = ?"), attrs);
      * mapper.getAttributes("findUserById").get("timeout");   // returns "5000"
+     *
+     * // re-using an existing id is rejected
+     * mapper.add("findUserById", ParsedCql.parse("SELECT 1 FROM users"), null); // throws IllegalArgumentException
+     *
+     * // a null statement is rejected
+     * mapper.add("bad", (ParsedCql) null, null);             // throws IllegalArgumentException
      * }</pre>
      *
      * @param id the unique identifier for this CQL statement; used as the map key as-is; not validated
-     * @param parsedCql the pre-parsed CQL statement object
+     * @param parsedCql the pre-parsed CQL statement object (must not be null)
      * @param attrs optional attributes map for statement metadata (may be null or empty)
-     * @return the previous ParsedCql associated with the ID, or null if none existed
+     * @throws IllegalArgumentException if the id already exists, or if {@code parsedCql} is null
      * @see ParsedCql
      */
-    public ParsedCql add(final String id, final ParsedCql parsedCql, final Map<String, String> attrs) {
-        attrsMap.put(id, N.isEmpty(attrs) ? ImmutableMap.empty() : ImmutableMap.copyOf(attrs));
+    public void add(final String id, final ParsedCql parsedCql, final Map<String, String> attrs) {
+        N.checkArgNotNull(parsedCql, "parsedCql");
+        checkDuplicateId(id);
 
-        return cqlMap.put(id, parsedCql);
+        cqlMap.put(id, parsedCql);
+        attrsMap.put(id, N.isEmpty(attrs) ? ImmutableMap.empty() : ImmutableMap.copyOf(attrs));
     }
 
     /**
@@ -550,12 +559,25 @@ public final class CqlMapper {
      *         or if the CQL is invalid
      */
     public void add(final String id, final String cql, final Map<String, String> attrs) {
-        if (cqlMap.containsKey(id)) {
-            throw new IllegalArgumentException(id + " already exists with cql: " + cqlMap.get(id));
-        }
+        checkDuplicateId(id);
 
         cqlMap.put(id, ParsedCql.parse(cql));
         attrsMap.put(id, N.isEmpty(attrs) ? ImmutableMap.empty() : ImmutableMap.copyOf(attrs));
+    }
+
+    /**
+     * Throws {@link IllegalArgumentException} if a CQL statement is already registered under {@code id}.
+     *
+     * <p>All {@code add} overloads reject duplicate ids; call {@link #remove(String)} first to replace
+     * an existing mapping.</p>
+     *
+     * @param id the identifier to test
+     * @throws IllegalArgumentException if {@code id} is already present in this mapper
+     */
+    private void checkDuplicateId(final String id) {
+        if (cqlMap.containsKey(id)) {
+            throw new IllegalArgumentException(id + " already exists with cql: " + cqlMap.get(id));
+        }
     }
 
     /**

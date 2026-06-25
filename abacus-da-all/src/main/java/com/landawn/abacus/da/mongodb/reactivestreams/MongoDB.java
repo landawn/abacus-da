@@ -196,14 +196,20 @@ public final class MongoDB extends MongoDBBase {
      *
      * // The name need not pre-exist: MongoDB creates the collection lazily on first write.
      * MongoCollection<Document> brandNew = reactiveMongoDB.collection("not_yet_created");  // returns a handle; no server round-trip here
+     *
+     * // The collection name is validated up front, consistent with collectionExecutor(String):
+     * reactiveMongoDB.collection((String) null);                                       // throws IllegalArgumentException ("collectionName")
      * }</pre>
      *
      * @param collectionName the name of the MongoDB collection to retrieve
      * @return a reactive MongoCollection configured for Document operations
+     * @throws IllegalArgumentException if collectionName is null
      * @see Document
      * @see com.mongodb.reactivestreams.client.MongoCollection
      */
     public MongoCollection<Document> collection(final String collectionName) {
+        N.checkArgNotNull(collectionName, "collectionName");
+
         return mongoDatabase.getCollection(collectionName);
     }
 
@@ -229,15 +235,23 @@ public final class MongoDB extends MongoDBBase {
      *
      * // Document.class is also valid and yields the same untyped view as collection(name):
      * MongoCollection<Document> raw = reactiveMongoDB.collection("users", Document.class);     // returns a Document-typed reactive collection
+     *
+     * // Both arguments are validated up front, consistent with collectionMapper(String, Class):
+     * reactiveMongoDB.collection(null, User.class);                                           // throws IllegalArgumentException ("collectionName")
+     * reactiveMongoDB.collection("users", (Class<User>) null);                                // throws IllegalArgumentException ("rowType")
      * }</pre>
      *
      * @param <T> the Java type for documents in this reactive collection
      * @param collectionName the name of the MongoDB collection to retrieve
      * @param rowType the Class object representing the document type
      * @return a reactive MongoCollection configured for the specified type
+     * @throws IllegalArgumentException if collectionName or rowType is null
      * @see com.mongodb.reactivestreams.client.MongoCollection
      */
     public <T> MongoCollection<T> collection(final String collectionName, final Class<T> rowType) {
+        N.checkArgNotNull(collectionName, "collectionName");
+        N.checkArgNotNull(rowType, "rowType");
+
         return mongoDatabase.getCollection(collectionName, rowType);
     }
 
@@ -360,17 +374,19 @@ public final class MongoDB extends MongoDBBase {
      * // The collection name is derived from the SIMPLE class name, not the fully-qualified name:
      * MongoCollectionMapper<Order> orderMapper = reactiveMongoDB.collectionMapper(Order.class);  // uses "Order", not "com.example.Order"
      *
-     * // Edge case - null rowType is rejected eagerly (the simple-name lookup dereferences it first):
-     * reactiveMongoDB.collectionMapper((Class<User>) null);                                  // throws NullPointerException
+     * // Edge case - null rowType is rejected eagerly, consistent with collectionMapper(String, Class):
+     * reactiveMongoDB.collectionMapper((Class<User>) null);                                  // throws IllegalArgumentException ("rowType")
      * }</pre>
      *
      * @param <T> the entity type for reactive mapping
      * @param rowType the Class object representing the entity type
      * @return a reactive MongoCollectionMapper for the specified entity type
-     * @throws NullPointerException if rowType is null (the simple-name lookup dereferences it first)
+     * @throws IllegalArgumentException if rowType is null
      * @see org.reactivestreams.Publisher
      */
     public <T> MongoCollectionMapper<T> collectionMapper(final Class<T> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         return collectionMapper(ClassUtil.getSimpleClassName(rowType), rowType);
     }
 

@@ -14,6 +14,7 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 import com.landawn.abacus.da.TestBase;
+import com.landawn.abacus.da.aws.AnyUtil;
 
 /**
  * Tests for the AnyUtil utility class.

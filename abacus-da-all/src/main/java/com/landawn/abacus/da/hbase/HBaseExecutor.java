@@ -406,22 +406,22 @@ public final class HBaseExecutor implements AutoCloseable {
     }
 
     @SuppressWarnings("deprecation")
-    static Method getRowKeySetMethod(final Class<?> targetClass) {
-        Method rowKeySetMethod = classRowKeySetMethodPool.get(targetClass);
+    static Method getRowKeySetMethod(final Class<?> targetType) {
+        Method rowKeySetMethod = classRowKeySetMethodPool.get(targetType);
 
         if (rowKeySetMethod == null) {
-            final List<String> ids = QueryUtil.getIdPropNames(targetClass);
+            final List<String> ids = QueryUtil.getIdPropNames(targetType);
 
             if (ids.size() > 1) {
-                throw new IllegalArgumentException("Multiple ids: " + ids + " defined/annotated in class: " + ClassUtil.getCanonicalClassName(targetClass));
+                throw new IllegalArgumentException("Multiple ids: " + ids + " defined/annotated in class: " + ClassUtil.getCanonicalClassName(targetType));
             } else if (ids.size() == 1) {
-                registerRowKeyProperty(targetClass, ids.get(0));
-                rowKeySetMethod = classRowKeySetMethodPool.get(targetClass);
+                registerRowKeyProperty(targetType, ids.get(0));
+                rowKeySetMethod = classRowKeySetMethodPool.get(targetType);
             }
 
             if (rowKeySetMethod == null) {
                 rowKeySetMethod = ClassUtil.SENTINEL_METHOD;
-                classRowKeySetMethodPool.put(targetClass, rowKeySetMethod);
+                classRowKeySetMethodPool.put(targetType, rowKeySetMethod);
             }
         }
 
@@ -546,9 +546,9 @@ public final class HBaseExecutor implements AutoCloseable {
 
     /**
      * Reads every {@link Result} from {@code resultScanner}, converts each into
-     * {@code targetClass}, and returns them as a {@link List}.
+     * {@code targetType}, and returns them as a {@link List}.
      *
-     * <p>Equivalent to {@code toList(resultScanner, 0, Integer.MAX_VALUE, targetClass)}.
+     * <p>Equivalent to {@code toList(resultScanner, 0, Integer.MAX_VALUE, targetType)}.
      * The scanner is always closed (via {@link IOUtil#closeQuietly(java.io.Closeable)})
      * before this method returns, even on exception.</p>
      *
@@ -565,22 +565,22 @@ public final class HBaseExecutor implements AutoCloseable {
      *
      * @param <T> the target type for conversion
      * @param resultScanner the HBase result scanner to drain
-     * @param targetClass the target class — a JavaBean class or a single-value type
+     * @param targetType the target class — a JavaBean class or a single-value type
      *                    (e.g. {@code String}, {@code Integer}, {@code Date})
      * @return a list of converted objects (no rows are skipped)
      * @throws UncheckedIOException if reading from {@code resultScanner} fails with an {@link IOException}
      * @see #toList(ResultScanner, int, int, Class)
      */
-    public static <T> List<T> toList(final ResultScanner resultScanner, final Class<T> targetClass) {
-        return toList(resultScanner, 0, Integer.MAX_VALUE, targetClass);
+    public static <T> List<T> toList(final ResultScanner resultScanner, final Class<T> targetType) {
+        return toList(resultScanner, 0, Integer.MAX_VALUE, targetType);
     }
 
     /**
      * Reads a windowed range of results from {@code resultScanner}, converts each into
-     * {@code targetClass}, and returns them as a {@link List}.
+     * {@code targetType}, and returns them as a {@link List}.
      *
      * <p>The first {@code offset} results are read and discarded; up to {@code count}
-     * subsequent results are converted via the per-row mapping for {@code targetClass}.
+     * subsequent results are converted via the per-row mapping for {@code targetType}.
      * The scanner is always closed (via {@link IOUtil#closeQuietly(java.io.Closeable)})
      * before this method returns, even on exception.</p>
      *
@@ -601,21 +601,21 @@ public final class HBaseExecutor implements AutoCloseable {
      * @param resultScanner the HBase result scanner to process
      * @param offset the number of results to skip from the beginning; must be non-negative
      * @param count the maximum number of results to convert; must be non-negative
-     * @param targetClass the target class — a JavaBean class or a single-value type
+     * @param targetType the target class — a JavaBean class or a single-value type
      *                    (e.g. {@code String}, {@code Integer}, {@code Date})
      * @return a list of converted objects from the requested window
      * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
      * @throws UncheckedIOException if reading from {@code resultScanner} fails with an {@link IOException}
      */
-    public static <T> List<T> toList(final ResultScanner resultScanner, int offset, int count, final Class<T> targetClass) {
+    public static <T> List<T> toList(final ResultScanner resultScanner, int offset, int count, final Class<T> targetType) {
         N.checkArgument(offset >= 0 && count >= 0, "Offset and count can't be negative");
 
-        final Type<T> targetType = N.typeOf(targetClass);
+        final Type<T> type = N.typeOf(targetType);
 
-        final BeanInfo entityInfo = targetType.isBean() ? ParserUtil.getBeanInfo(targetClass) : null;
-        final Method rowKeySetMethod = targetType.isBean() ? getRowKeySetMethod(targetClass) : null;
+        final BeanInfo entityInfo = type.isBean() ? ParserUtil.getBeanInfo(targetType) : null;
+        final Method rowKeySetMethod = type.isBean() ? getRowKeySetMethod(targetType) : null;
         final Type<?> rowKeyType = rowKeySetMethod == null ? null : N.typeOf(rowKeySetMethod.getParameterTypes()[0]);
-        final Map<String, Map<String, Tuple2<String, Boolean>>> familyFieldNameMap = targetType.isBean() ? getFamilyColumnFieldNameMap(targetClass)._1 : null;
+        final Map<String, Map<String, Tuple2<String, Boolean>>> familyFieldNameMap = type.isBean() ? getFamilyColumnFieldNameMap(targetType)._1 : null;
 
         final List<T> resultList = new ArrayList<>();
 
@@ -626,7 +626,7 @@ public final class HBaseExecutor implements AutoCloseable {
             Result result = null;
 
             while (count-- > 0 && (result = resultScanner.next()) != null) {
-                resultList.add(toValue(targetType, entityInfo, rowKeySetMethod, rowKeyType, familyFieldNameMap, result));
+                resultList.add(toValue(type, entityInfo, rowKeySetMethod, rowKeyType, familyFieldNameMap, result));
             }
 
         } catch (final IOException e) {
@@ -639,7 +639,7 @@ public final class HBaseExecutor implements AutoCloseable {
     }
 
     /**
-     * Converts an in-memory list of HBase {@link Result}s into entities of {@code targetClass}.
+     * Converts an in-memory list of HBase {@link Result}s into entities of {@code targetType}.
      *
      * <p>Each element of {@code results} is converted using the same per-row mapping as
      * {@link #toEntity(Result, Class)}. Elements for which {@link Result#isEmpty()} is
@@ -648,18 +648,18 @@ public final class HBaseExecutor implements AutoCloseable {
      *
      * @param <T> the target type for conversion
      * @param results the HBase results to convert
-     * @param targetClass the target class — a JavaBean class or a single-value type
+     * @param targetType the target class — a JavaBean class or a single-value type
      *                    (e.g. {@code String}, {@code Integer}, {@code Date})
      * @return a list of converted entities; empty results are skipped
      * @throws UncheckedIOException if reading cells from any result fails with an {@link IOException}
      */
-    static <T> List<T> toList(final List<Result> results, final Class<T> targetClass) {
-        final Type<T> targetType = N.typeOf(targetClass);
+    static <T> List<T> toList(final List<Result> results, final Class<T> targetType) {
+        final Type<T> type = N.typeOf(targetType);
 
-        final BeanInfo entityInfo = targetType.isBean() ? ParserUtil.getBeanInfo(targetClass) : null;
-        final Method rowKeySetMethod = targetType.isBean() ? getRowKeySetMethod(targetClass) : null;
+        final BeanInfo entityInfo = type.isBean() ? ParserUtil.getBeanInfo(targetType) : null;
+        final Method rowKeySetMethod = type.isBean() ? getRowKeySetMethod(targetType) : null;
         final Type<?> rowKeyType = rowKeySetMethod == null ? null : N.typeOf(rowKeySetMethod.getParameterTypes()[0]);
-        final Map<String, Map<String, Tuple2<String, Boolean>>> familyFieldNameMap = targetType.isBean() ? getFamilyColumnFieldNameMap(targetClass)._1 : null;
+        final Map<String, Map<String, Tuple2<String, Boolean>>> familyFieldNameMap = type.isBean() ? getFamilyColumnFieldNameMap(targetType)._1 : null;
 
         final List<T> resultList = new ArrayList<>(results.size());
 
@@ -669,7 +669,7 @@ public final class HBaseExecutor implements AutoCloseable {
                     continue;
                 }
 
-                resultList.add(toValue(targetType, entityInfo, rowKeySetMethod, rowKeyType, familyFieldNameMap, result));
+                resultList.add(toValue(type, entityInfo, rowKeySetMethod, rowKeyType, familyFieldNameMap, result));
             }
         } catch (final IOException e) {
             throw new UncheckedIOException(e);
@@ -679,7 +679,7 @@ public final class HBaseExecutor implements AutoCloseable {
     }
 
     /**
-     * Converts a single HBase {@link Result} into an instance of {@code targetClass}.
+     * Converts a single HBase {@link Result} into an instance of {@code targetType}.
      *
      * <p>For JavaBean target classes this performs full object-relational mapping: the
      * row-key cell (if a row-key setter is registered or discovered via {@code @Id})
@@ -719,17 +719,17 @@ public final class HBaseExecutor implements AutoCloseable {
      *
      * @param <T> the target type
      * @param result the HBase Result to convert
-     * @param targetClass the target class — a JavaBean class with getter/setter methods or a
+     * @param targetType the target class — a JavaBean class with getter/setter methods or a
      *                    single-value type (e.g. {@code String}, {@code Integer}, {@code Date}).
      *                    {@link Map} types are not supported.
      * @return the converted entity, or the type's default value if the result is empty
-     * @throws IllegalArgumentException if {@code targetClass} is a {@link Map} type, or if the
-     *         result has more than one cell when {@code targetClass} is a single-value type
+     * @throws IllegalArgumentException if {@code targetType} is a {@link Map} type, or if the
+     *         result has more than one cell when {@code targetType} is a single-value type
      * @throws UncheckedIOException if reading cells from {@code result} fails with an {@link IOException}
      * @see Result
      */
-    public static <T> T toEntity(final Result result, final Class<T> targetClass) {
-        return toValue(result, targetClass);
+    public static <T> T toEntity(final Result result, final Class<T> targetType) {
+        return toValue(result, targetType);
     }
 
     //    public static Map<String, Object> toMap(final Result result) {
@@ -742,7 +742,7 @@ public final class HBaseExecutor implements AutoCloseable {
 
     /**
      * Package-private entry point that converts a single HBase {@link Result} to
-     * {@code targetClass}, returning the {@link Type#defaultValue()} for empty results.
+     * {@code targetType}, returning the {@link Type#defaultValue()} for empty results.
      *
      * <p>Used internally by {@link #toEntity(Result, Class)} and the per-table {@code get}
      * overloads. Wraps any {@link IOException} from the result's cell scanner in
@@ -750,10 +750,10 @@ public final class HBaseExecutor implements AutoCloseable {
      *
      * @param <T> the target type for conversion
      * @param result the HBase Result to convert
-     * @param targetClass the target class — a JavaBean class or a single-value type
+     * @param targetType the target class — a JavaBean class or a single-value type
      *                    (e.g. {@code String}, {@code Integer}, {@code Date})
      * @return the converted entity, or the type's default value if the result is empty
-     * @throws IllegalArgumentException if {@code targetClass} is a {@link Map} type
+     * @throws IllegalArgumentException if {@code targetType} is a {@link Map} type
      * @throws UncheckedIOException if reading cells from {@code result} fails with an {@link IOException}
      */
     static <T> T toValue(final Result result, final Class<T> targetClass) {

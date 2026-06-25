@@ -158,17 +158,19 @@ public final class MongoDB extends MongoDBBase {
      * MongoCollection<Document> users = mongoDB.collection("users");  // never null; a handle even if the collection does not yet exist
      * users.insertOne(new Document("name", "John").append("age", 30));
      *
-     * // Note: this method performs no argument validation; the name is
-     * // passed straight to the driver, which throws on a null name.
-     * mongoDB.collection(null);                               // throws IllegalArgumentException (from the MongoDB driver, not this wrapper)
+     * // The collection name is validated up front, consistent with collectionExecutor(String):
+     * mongoDB.collection(null);                               // throws IllegalArgumentException ("collectionName")
      * }</pre>
      *
      * @param collectionName the name of the MongoDB collection to retrieve
      * @return a MongoCollection configured for Document operations
+     * @throws IllegalArgumentException if collectionName is null
      * @see Document
      * @see MongoCollection
      */
     public MongoCollection<Document> collection(final String collectionName) {
+        N.checkArgNotNull(collectionName, "collectionName");
+
         return mongoDatabase.getCollection(collectionName);
     }
 
@@ -187,18 +189,22 @@ public final class MongoDB extends MongoDBBase {
      * // Document is just the special case where rowType is Document.class.
      * MongoCollection<Document> raw = mongoDB.collection("users", Document.class); // equivalent to collection("users")
      *
-     * // Like collection(String), this method does not validate its arguments itself;
-     * // a null name reaches the driver, which rejects it.
-     * mongoDB.collection(null, User.class);                  // throws IllegalArgumentException (from the MongoDB driver)
+     * // Both arguments are validated up front, consistent with collectionMapper(String, Class):
+     * mongoDB.collection(null, User.class);                  // throws IllegalArgumentException ("collectionName")
+     * mongoDB.collection("users", (Class<User>) null);       // throws IllegalArgumentException ("rowType")
      * }</pre>
      *
      * @param <T> the Java type for documents in this collection
      * @param collectionName the name of the MongoDB collection to retrieve
      * @param rowType the Class object representing the document type
      * @return a MongoCollection configured for the specified type
+     * @throws IllegalArgumentException if collectionName or rowType is null
      * @see MongoCollection
      */
     public <T> MongoCollection<T> collection(final String collectionName, final Class<T> rowType) {
+        N.checkArgNotNull(collectionName, "collectionName");
+        N.checkArgNotNull(rowType, "rowType");
+
         return mongoDatabase.getCollection(collectionName, rowType);
     }
 
@@ -290,17 +296,19 @@ public final class MongoDB extends MongoDBBase {
      * // Equivalent explicit-name form:
      * mongoDB.collectionMapper(User.class);                  // same as mongoDB.collectionMapper("User", User.class)
      *
-     * // Edge case: a null type cannot be named.
-     * mongoDB.collectionMapper((Class<User>) null);          // throws NullPointerException (null rowType is dereferenced while computing the collection name)
+     * // Edge case: a null type is rejected eagerly, consistent with collectionMapper(String, Class):
+     * mongoDB.collectionMapper((Class<User>) null);          // throws IllegalArgumentException ("rowType")
      * }</pre>
      *
      * @param <T> the entity type for mapping
      * @param rowType the Class object representing the entity type
      * @return a MongoCollectionMapper for the specified entity type
-     * @throws NullPointerException if rowType is null (the simple-name lookup dereferences it first)
+     * @throws IllegalArgumentException if rowType is null
      * @see MongoCollectionMapper
      */
     public <T> MongoCollectionMapper<T> collectionMapper(final Class<T> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         return collectionMapper(ClassUtil.getSimpleClassName(rowType), rowType);
     }
 

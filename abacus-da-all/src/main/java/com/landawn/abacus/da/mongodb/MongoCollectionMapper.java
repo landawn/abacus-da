@@ -51,6 +51,8 @@ import com.mongodb.client.model.ReplaceOptions;
 import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.model.WriteModel;
 import com.mongodb.client.result.DeleteResult;
+import com.mongodb.client.result.InsertManyResult;
+import com.mongodb.client.result.InsertOneResult;
 import com.mongodb.client.result.UpdateResult;
 
 /**
@@ -1997,13 +1999,14 @@ public final class MongoCollectionMapper<T> {
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      *
      * User newUser = new User("John Doe", "john@example.com", 30);
-     * mapper.insertOne(newUser);            // void; the server-assigned _id is NOT written back into the entity
+     * InsertOneResult result = mapper.insertOne(newUser); // the server-assigned _id is NOT written back into the entity, but result.getInsertedId() exposes it
      * String assignedId = newUser.getId();  // post-state: still null — the generated _id exists only in the database
      *
      * mapper.insertOne((User) null);        // throws IllegalArgumentException
      * }</pre>
      *
      * @param obj the entity to insert
+     * @return the {@link InsertOneResult} reported by the server (e.g. the generated {@code _id} via {@link InsertOneResult#getInsertedId()})
      * @throws IllegalArgumentException if obj is null
      * @throws com.mongodb.MongoWriteException if the insert operation fails
      * @throws com.mongodb.MongoException if the database operation fails
@@ -2011,8 +2014,8 @@ public final class MongoCollectionMapper<T> {
      * @see #insertMany(Collection)
      * @see #collectionExecutor()
      */
-    public void insertOne(final T obj) {
-        collectionExecutor.insertOne(obj);
+    public InsertOneResult insertOne(final T obj) {
+        return collectionExecutor.insertOne(obj);
     }
 
     /**
@@ -2029,20 +2032,21 @@ public final class MongoCollectionMapper<T> {
      *
      * InsertOneOptions options = new InsertOneOptions()
      *     .bypassDocumentValidation(false);
-     * mapper.insertOne(newUser, options);  // void; the server-assigned _id is NOT written back into the entity
+     * InsertOneResult result = mapper.insertOne(newUser, options); // the server-assigned _id is NOT written back into the entity, but result.getInsertedId() exposes it
      * String assignedId = newUser.getId(); // post-state: still null — the generated _id exists only in the database
      * }</pre>
      *
      * @param obj the entity to insert
      * @param options additional options for the insert operation (null uses defaults)
+     * @return the {@link InsertOneResult} reported by the server (e.g. the generated {@code _id} via {@link InsertOneResult#getInsertedId()})
      * @throws IllegalArgumentException if obj is null
      * @throws com.mongodb.MongoWriteException if the insert operation fails
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #insertOne(Object)
      * @see InsertOneOptions
      */
-    public void insertOne(final T obj, final InsertOneOptions options) {
-        collectionExecutor.insertOne(obj, options);
+    public InsertOneResult insertOne(final T obj, final InsertOneOptions options) {
+        return collectionExecutor.insertOne(obj, options);
     }
 
     /**
@@ -2063,21 +2067,22 @@ public final class MongoCollectionMapper<T> {
      *     new User("Bob", "bob@example.com", 35)
      * );
      *
-     * mapper.insertMany(users);                                             // void; server-assigned _ids are NOT written back into the entities
+     * InsertManyResult result = mapper.insertMany(users);                  // server-assigned _ids are NOT written back into the entities, but result.getInsertedIds() exposes them
      * boolean anyHasId = users.stream().anyMatch(u -> u.getId() != null);   // post-state: anyHasId == false — generated _ids exist only in the database
      *
      * mapper.insertMany(Collections.emptyList()); // throws IllegalArgumentException: empty list
      * }</pre>
      *
      * @param objList collection of entities to insert
+     * @return the {@link InsertManyResult} reported by the server (e.g. the generated {@code _id}s via {@link InsertManyResult#getInsertedIds()})
      * @throws IllegalArgumentException if objList is null or empty
      * @throws com.mongodb.MongoBulkWriteException if one or more insert operations fail
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #insertMany(Collection, InsertManyOptions)
      * @see #insertOne(Object)
      */
-    public void insertMany(final Collection<? extends T> objList) {
-        collectionExecutor.insertMany(objList);
+    public InsertManyResult insertMany(final Collection<? extends T> objList) {
+        return collectionExecutor.insertMany(objList);
     }
 
     /**
@@ -2093,19 +2098,20 @@ public final class MongoCollectionMapper<T> {
      * InsertManyOptions options = new InsertManyOptions()
      *     .ordered(false)  // unordered: attempt every insert, report errors at the end
      *     .bypassDocumentValidation(true);
-     * mapper.insertMany(products, options); // void; generated _ids exist only in the database, not in the entities
+     * InsertManyResult result = mapper.insertMany(products, options); // generated _ids exist only in the database, not in the entities, but result.getInsertedIds() exposes them
      * }</pre>
      *
      * @param objList collection of entities to insert
      * @param options additional options for the insert operation (null uses defaults)
+     * @return the {@link InsertManyResult} reported by the server (e.g. the generated {@code _id}s via {@link InsertManyResult#getInsertedIds()})
      * @throws IllegalArgumentException if objList is null or empty
      * @throws com.mongodb.MongoBulkWriteException if one or more insert operations fail
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #insertMany(Collection)
      * @see InsertManyOptions
      */
-    public void insertMany(final Collection<? extends T> objList, final InsertManyOptions options) {
-        collectionExecutor.insertMany(objList, options);
+    public InsertManyResult insertMany(final Collection<? extends T> objList, final InsertManyOptions options) {
+        return collectionExecutor.insertMany(objList, options);
     }
 
     /**
@@ -2722,29 +2728,29 @@ public final class MongoCollectionMapper<T> {
 
     /**
      * Inserts the supplied entities as a single MongoDB bulk-write of {@code InsertOneModel} entries
-     * and returns the inserted count reported by the server.
+     * and returns the {@link BulkWriteResult} reported by the server.
      *
-     * <p>Unlike {@link #insertMany(Collection)} (which returns {@code void}), this overload returns
-     * the inserted count and reuses the bulk-write pathway. Per-document atomicity applies; the bulk
-     * as a whole is not atomic across documents.</p>
+     * <p>This overload reuses the bulk-write pathway and exposes the full {@link BulkWriteResult}
+     * (use {@link BulkWriteResult#getInsertedCount()} for the inserted count). Per-document atomicity
+     * applies; the bulk as a whole is not atomic across documents.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<Product> products = loadLargeProductCatalog(); // e.g. 5000 products
-     * int insertedCount = mapper.bulkInsert(products);    // returns the inserted count, e.g. 5000
+     * BulkWriteResult result = mapper.bulkInsert(products); // result.getInsertedCount() is e.g. 5000
      *
      * mapper.bulkInsert(Collections.emptyList());         // throws IllegalArgumentException: empty collection
      * }</pre>
      *
      * @param entities collection of entities to insert in bulk
-     * @return the number of entities reported as inserted by the server
+     * @return the {@link BulkWriteResult} reported by the server (use {@link BulkWriteResult#getInsertedCount()} for the inserted count)
      * @throws IllegalArgumentException if entities is null or empty
      * @throws com.mongodb.MongoBulkWriteException if one or more operations fail
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #bulkInsert(Collection, BulkWriteOptions)
      * @see #insertMany(Collection)
      */
-    public int bulkInsert(final Collection<? extends T> entities) {
+    public BulkWriteResult bulkInsert(final Collection<? extends T> entities) {
         return collectionExecutor.bulkInsert(entities);
     }
 
@@ -2761,19 +2767,19 @@ public final class MongoCollectionMapper<T> {
      *     .ordered(false)  // unordered: attempt every insert even if some fail
      *     .bypassDocumentValidation(true);
      * List<LogEntry> logs = collectLogEntries();
-     * int count = mapper.bulkInsert(logs, options); // returns the inserted count
+     * BulkWriteResult result = mapper.bulkInsert(logs, options); // result.getInsertedCount() is the inserted count
      * }</pre>
      *
      * @param entities collection of entities to insert in bulk
      * @param options additional options for the bulk write operation (null uses defaults)
-     * @return the number of entities reported as inserted by the server
+     * @return the {@link BulkWriteResult} reported by the server (use {@link BulkWriteResult#getInsertedCount()} for the inserted count)
      * @throws IllegalArgumentException if entities is null or empty
      * @throws com.mongodb.MongoBulkWriteException if one or more operations fail
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #bulkInsert(Collection)
      * @see BulkWriteOptions
      */
-    public int bulkInsert(final Collection<? extends T> entities, final BulkWriteOptions options) {
+    public BulkWriteResult bulkInsert(final Collection<? extends T> entities, final BulkWriteOptions options) {
         return collectionExecutor.bulkInsert(entities, options);
     }
 

@@ -52,6 +52,8 @@ import com.mongodb.client.model.ReplaceOptions;
 import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.model.WriteModel;
 import com.mongodb.client.result.DeleteResult;
+import com.mongodb.client.result.InsertManyResult;
+import com.mongodb.client.result.InsertOneResult;
 import com.mongodb.client.result.UpdateResult;
 
 /**
@@ -2155,30 +2157,27 @@ public final class AsyncMongoCollectionExecutor {
      *                      .append("age", 30);
      *
      * async.insertOne(userDoc)
-     *      .thenRunAsync(() -> {
+     *      .thenAcceptAsync(result -> {
      *          System.out.println("User inserted successfully");
-     *          // The document's _id field is now populated
-     *          ObjectId userId = userDoc.getObjectId("_id");
+     *          // The server-assigned _id is exposed via the result
+     *          BsonValue userId = result.getInsertedId();
      *      });
      *
      * // Insert an entity and wait for completion:
      * User user = new User("Jane", "jane@example.com", 25);
-     * async.insertOne(user).get();
+     * InsertOneResult result = async.insertOne(user).get();
      * }</pre>
      *
      * @param obj the object to insert - can be Document, {@code Map<String, Object>}, or entity class with getter/setter methods
-     * @return a ContinuableFuture that completes when the insert operation finishes
+     * @return a ContinuableFuture that completes with the {@link InsertOneResult} reported by the server
      * @throws IllegalArgumentException if obj is null (propagated through future)
      * @throws com.mongodb.MongoWriteException if the insert operation fails (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #insertOne(Object, InsertOneOptions)
      * @see #insertMany(Collection)
      */
-    public ContinuableFuture<Void> insertOne(final Object obj) {
-        return asyncExecutor.execute(() -> {
-            collectionExecutor.insertOne(obj);
-            return null;
-        });
+    public ContinuableFuture<InsertOneResult> insertOne(final Object obj) {
+        return asyncExecutor.execute(() -> collectionExecutor.insertOne(obj));
     }
 
     /**
@@ -2194,22 +2193,19 @@ public final class AsyncMongoCollectionExecutor {
      * InsertOneOptions options = new InsertOneOptions().bypassDocumentValidation(true);
      *
      * async.insertOne(newUser, options)
-     *      .thenRunAsync(() -> System.out.println("User inserted with validation bypass"));
+     *      .thenAcceptAsync(result -> System.out.println("User inserted with validation bypass: " + result.getInsertedId()));
      * }</pre>
      *
      * @param obj the object to insert, which will be converted to a Document
      * @param options the options to apply to the insert operation
-     * @return a ContinuableFuture that completes when the insertion finishes
+     * @return a ContinuableFuture that completes with the {@link InsertOneResult} reported by the server
      * @throws IllegalArgumentException if obj is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see InsertOneOptions
      * @see #insertOne(Object)
      */
-    public ContinuableFuture<Void> insertOne(final Object obj, final InsertOneOptions options) {
-        return asyncExecutor.execute(() -> {
-            collectionExecutor.insertOne(obj, options);
-            return null;
-        });
+    public ContinuableFuture<InsertOneResult> insertOne(final Object obj, final InsertOneOptions options) {
+        return asyncExecutor.execute(() -> collectionExecutor.insertOne(obj, options));
     }
 
     /**
@@ -2228,21 +2224,18 @@ public final class AsyncMongoCollectionExecutor {
      * );
      *
      * async.insertMany(users)
-     *      .thenRunAsync(() -> System.out.println("All users inserted successfully"));
+     *      .thenAcceptAsync(result -> System.out.println("All users inserted successfully: " + result.getInsertedIds()));
      * }</pre>
      *
      * @param objList the collection of objects to insert, each will be converted to a Document
-     * @return a ContinuableFuture that completes when all insertions finish
+     * @return a ContinuableFuture that completes with the {@link InsertManyResult} reported by the server
      * @throws IllegalArgumentException if objList is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if any database operation fails (propagated through future)
      * @see #insertMany(Collection, InsertManyOptions)
      * @see #insertOne(Object)
      */
-    public ContinuableFuture<Void> insertMany(final Collection<?> objList) {
-        return asyncExecutor.execute(() -> {
-            collectionExecutor.insertMany(objList);
-            return null;
-        });
+    public ContinuableFuture<InsertManyResult> insertMany(final Collection<?> objList) {
+        return asyncExecutor.execute(() -> collectionExecutor.insertMany(objList));
     }
 
     /**
@@ -2260,22 +2253,19 @@ public final class AsyncMongoCollectionExecutor {
      *     .bypassDocumentValidation(true);
      *
      * async.insertMany(products, options)
-     *      .thenRunAsync(() -> System.out.println("Bulk product import completed"));
+     *      .thenAcceptAsync(result -> System.out.println("Bulk product import completed: " + result.getInsertedIds()));
      * }</pre>
      *
      * @param objList the collection of objects to insert, each will be converted to a Document
      * @param options the options to apply to the insert operation
-     * @return a ContinuableFuture that completes when all insertions finish
+     * @return a ContinuableFuture that completes with the {@link InsertManyResult} reported by the server
      * @throws IllegalArgumentException if objList is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if any database operation fails (propagated through future)
      * @see InsertManyOptions
      * @see #insertMany(Collection)
      */
-    public ContinuableFuture<Void> insertMany(final Collection<?> objList, final InsertManyOptions options) {
-        return asyncExecutor.execute(() -> {
-            collectionExecutor.insertMany(objList, options);
-            return null;
-        });
+    public ContinuableFuture<InsertManyResult> insertMany(final Collection<?> objList, final InsertManyOptions options) {
+        return asyncExecutor.execute(() -> collectionExecutor.insertMany(objList, options));
     }
 
     /**
@@ -2896,18 +2886,18 @@ public final class AsyncMongoCollectionExecutor {
      * <pre>{@code
      * List<User> users = Arrays.asList(new User("Alice"), new User("Bob"), new User("Charlie"));
      * async.bulkInsert(users)
-     *      .thenRunAsync(count -> System.out.println("Inserted " + count + " users"));
+     *      .thenAcceptAsync(result -> System.out.println("Inserted " + result.getInsertedCount() + " users"));
      * }</pre>
      *
      * @param entities the collection of documents to insert
-     * @return a ContinuableFuture that completes with the number of documents inserted
+     * @return a ContinuableFuture that completes with the {@link BulkWriteResult} reported by the server (use {@link BulkWriteResult#getInsertedCount()} for the inserted count)
      * @throws IllegalArgumentException if entities is null or empty (propagated through future)
      * @throws com.mongodb.MongoBulkWriteException if the bulk operation fails (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #bulkInsert(Collection, BulkWriteOptions)
      * @see #bulkWrite(List)
      */
-    public ContinuableFuture<Integer> bulkInsert(final Collection<?> entities) {
+    public ContinuableFuture<BulkWriteResult> bulkInsert(final Collection<?> entities) {
         return asyncExecutor.execute(() -> collectionExecutor.bulkInsert(entities));
     }
 
@@ -2922,19 +2912,19 @@ public final class AsyncMongoCollectionExecutor {
      * <pre>{@code
      * BulkWriteOptions options = new BulkWriteOptions().ordered(false).bypassDocumentValidation(true);
      * async.bulkInsert(documents, options)
-     *      .thenRunAsync(count -> System.out.println("Inserted " + count + " documents (unordered)"));
+     *      .thenAcceptAsync(result -> System.out.println("Inserted " + result.getInsertedCount() + " documents (unordered)"));
      * }</pre>
      *
      * @param entities the collection of documents to insert
      * @param options the options to apply to the bulk insert operation (null uses defaults)
-     * @return a ContinuableFuture that completes with the number of documents inserted
+     * @return a ContinuableFuture that completes with the {@link BulkWriteResult} reported by the server (use {@link BulkWriteResult#getInsertedCount()} for the inserted count)
      * @throws IllegalArgumentException if entities is null or empty (propagated through future)
      * @throws com.mongodb.MongoBulkWriteException if the bulk operation fails (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see BulkWriteOptions
      * @see #bulkInsert(Collection)
      */
-    public ContinuableFuture<Integer> bulkInsert(final Collection<?> entities, final BulkWriteOptions options) {
+    public ContinuableFuture<BulkWriteResult> bulkInsert(final Collection<?> entities, final BulkWriteOptions options) {
         return asyncExecutor.execute(() -> collectionExecutor.bulkInsert(entities, options));
     }
 

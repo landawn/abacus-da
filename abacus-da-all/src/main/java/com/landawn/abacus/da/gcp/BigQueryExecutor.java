@@ -1236,17 +1236,18 @@ public class BigQueryExecutor {
      *
      * TableResult result = executor.update(customer);   // returns a TableResult; getTotalRows() is the affected-row count
      *
-     * // Edge: a null entity fails fast (entity.getClass() is dereferenced)
-     * executor.update((Object) null);                   // throws NullPointerException
+     * // Edge: a null entity is rejected before any query is built
+     * executor.update((Object) null);                   // throws IllegalArgumentException
      * }</pre>
      *
      * @param entity the entity instance containing updated values and primary key values
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws NullPointerException if entity is null
-     * @throws IllegalArgumentException if no primary key fields are found for the entity class
+     * @throws IllegalArgumentException if entity is null, or if no primary key fields are found for the entity class
      * @see #update(Object, Set)
      */
     public TableResult update(final Object entity) {
+        N.checkArgNotNull(entity, "entity");
+
         return update(entity, getKeyNameSet(entity.getClass()));
     }
 
@@ -1401,8 +1402,8 @@ public class BigQueryExecutor {
      *     "SELECT * FROM customers WHERE customer_id = ?", "CUST456").get(0);
      * executor.delete(existing);                         // returns a TableResult
      *
-     * // Edge: a null entity fails fast (entity.getClass() is dereferenced)
-     * executor.delete((Object) null);                    // throws NullPointerException
+     * // Edge: a null entity is rejected before any query is built
+     * executor.delete((Object) null);                    // throws IllegalArgumentException
      *
      * // Edge: an entity whose only key is blank/null has no usable WHERE value
      * Customer blank = new Customer();                   // customerId left null
@@ -1411,11 +1412,12 @@ public class BigQueryExecutor {
      *
      * @param entity the entity instance containing primary key values for deletion
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws NullPointerException if entity is null
-     * @throws IllegalArgumentException if no primary key fields are defined or no key value is set on the entity
+     * @throws IllegalArgumentException if entity is null, if no primary key fields are defined, or if no key value is set on the entity
      * @see #delete(Class, Object...)
      */
     public TableResult delete(final Object entity) {
+        N.checkArgNotNull(entity, "entity");
+
         return delete(entity.getClass(), entityToCondition(entity));
     }
 

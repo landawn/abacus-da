@@ -52,6 +52,8 @@ import com.mongodb.client.model.ReplaceOptions;
 import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.model.WriteModel;
 import com.mongodb.client.result.DeleteResult;
+import com.mongodb.client.result.InsertManyResult;
+import com.mongodb.client.result.InsertOneResult;
 import com.mongodb.client.result.UpdateResult;
 
 public class AsyncMongoCollectionExecutorTest extends TestBase {
@@ -232,19 +234,21 @@ public class AsyncMongoCollectionExecutorTest extends TestBase {
     @Test
     public void testInsertOne() throws Exception {
         TestEntity entity = new TestEntity();
-        when(mockAsyncExecutor.execute(any(Callable.class))).thenReturn(ContinuableFuture.completed(null));
+        InsertOneResult insertResult = mock(InsertOneResult.class);
+        when(mockAsyncExecutor.execute(any(Callable.class))).thenReturn(ContinuableFuture.completed(insertResult));
 
-        ContinuableFuture<Void> result = asyncExecutor.insertOne(entity);
-        result.get(); // Should complete without exception
+        ContinuableFuture<InsertOneResult> result = asyncExecutor.insertOne(entity);
+        Assertions.assertSame(insertResult, result.get());
     }
 
     @Test
     public void testInsertMany() throws Exception {
         List<TestEntity> entities = Arrays.asList(new TestEntity(), new TestEntity());
-        when(mockAsyncExecutor.execute(any(Callable.class))).thenReturn(ContinuableFuture.completed(null));
+        InsertManyResult insertResult = mock(InsertManyResult.class);
+        when(mockAsyncExecutor.execute(any(Callable.class))).thenReturn(ContinuableFuture.completed(insertResult));
 
-        ContinuableFuture<Void> result = asyncExecutor.insertMany(entities);
-        result.get(); // Should complete without exception
+        ContinuableFuture<InsertManyResult> result = asyncExecutor.insertMany(entities);
+        Assertions.assertSame(insertResult, result.get());
     }
 
     @Test
@@ -303,10 +307,11 @@ public class AsyncMongoCollectionExecutorTest extends TestBase {
     @Test
     public void testBulkInsert() throws Exception {
         List<Document> documents = Arrays.asList(new Document("id", 1), new Document("id", 2));
-        when(mockAsyncExecutor.execute(any(Callable.class))).thenReturn(ContinuableFuture.completed(2));
+        BulkWriteResult bulkWriteResult = mock(BulkWriteResult.class);
+        when(mockAsyncExecutor.execute(any(Callable.class))).thenReturn(ContinuableFuture.completed(bulkWriteResult));
 
-        ContinuableFuture<Integer> result = asyncExecutor.bulkInsert(documents);
-        Assertions.assertEquals(2, result.get());
+        ContinuableFuture<BulkWriteResult> result = asyncExecutor.bulkInsert(documents);
+        Assertions.assertSame(bulkWriteResult, result.get());
     }
 
     @Test
@@ -758,20 +763,22 @@ public class AsyncMongoCollectionExecutorTest extends TestBase {
     public void testInsertOneWithOptions() throws Exception {
         TestEntity entity = new TestEntity();
         InsertOneOptions options = new InsertOneOptions();
-        when(mockAsyncExecutor.execute(any(Callable.class))).thenReturn(ContinuableFuture.completed(null));
+        InsertOneResult insertResult = mock(InsertOneResult.class);
+        when(mockAsyncExecutor.execute(any(Callable.class))).thenReturn(ContinuableFuture.completed(insertResult));
 
-        ContinuableFuture<Void> result = asyncExecutor.insertOne(entity, options);
-        Assertions.assertNull(result.get());
+        ContinuableFuture<InsertOneResult> result = asyncExecutor.insertOne(entity, options);
+        Assertions.assertSame(insertResult, result.get());
     }
 
     @Test
     public void testInsertManyWithOptions() throws Exception {
         List<TestEntity> entities = Arrays.asList(new TestEntity());
         InsertManyOptions options = new InsertManyOptions();
-        when(mockAsyncExecutor.execute(any(Callable.class))).thenReturn(ContinuableFuture.completed(null));
+        InsertManyResult insertResult = mock(InsertManyResult.class);
+        when(mockAsyncExecutor.execute(any(Callable.class))).thenReturn(ContinuableFuture.completed(insertResult));
 
-        ContinuableFuture<Void> result = asyncExecutor.insertMany(entities, options);
-        Assertions.assertNull(result.get());
+        ContinuableFuture<InsertManyResult> result = asyncExecutor.insertMany(entities, options);
+        Assertions.assertSame(insertResult, result.get());
     }
 
     @Test
@@ -893,10 +900,11 @@ public class AsyncMongoCollectionExecutorTest extends TestBase {
     public void testBulkInsertWithOptions() throws Exception {
         List<TestEntity> entities = Arrays.asList(new TestEntity());
         BulkWriteOptions options = new BulkWriteOptions();
-        when(mockAsyncExecutor.execute(any(Callable.class))).thenReturn(ContinuableFuture.completed(1));
+        BulkWriteResult bulkWriteResult = mock(BulkWriteResult.class);
+        when(mockAsyncExecutor.execute(any(Callable.class))).thenReturn(ContinuableFuture.completed(bulkWriteResult));
 
-        ContinuableFuture<Integer> result = asyncExecutor.bulkInsert(entities, options);
-        Assertions.assertEquals(1, result.get());
+        ContinuableFuture<BulkWriteResult> result = asyncExecutor.bulkInsert(entities, options);
+        Assertions.assertSame(bulkWriteResult, result.get());
     }
 
     @Test
@@ -1528,7 +1536,7 @@ public class AsyncMongoCollectionExecutorTest extends TestBase {
         stubRunCallable();
         TestEntity entity = new TestEntity();
 
-        ContinuableFuture<Void> result = asyncExecutor.insertOne(entity);
+        ContinuableFuture<InsertOneResult> result = asyncExecutor.insertOne(entity);
         result.get();
         verify(mockCollExecutor).insertOne(entity);
     }
@@ -1539,7 +1547,7 @@ public class AsyncMongoCollectionExecutorTest extends TestBase {
         TestEntity entity = new TestEntity();
         InsertOneOptions opts = new InsertOneOptions();
 
-        ContinuableFuture<Void> result = asyncExecutor.insertOne(entity, opts);
+        ContinuableFuture<InsertOneResult> result = asyncExecutor.insertOne(entity, opts);
         result.get();
         verify(mockCollExecutor).insertOne(entity, opts);
     }
@@ -1549,7 +1557,7 @@ public class AsyncMongoCollectionExecutorTest extends TestBase {
         stubRunCallable();
         List<TestEntity> entities = Arrays.asList(new TestEntity());
 
-        ContinuableFuture<Void> result = asyncExecutor.insertMany(entities);
+        ContinuableFuture<InsertManyResult> result = asyncExecutor.insertMany(entities);
         result.get();
         verify(mockCollExecutor).insertMany(entities);
     }
@@ -1560,7 +1568,7 @@ public class AsyncMongoCollectionExecutorTest extends TestBase {
         List<TestEntity> entities = Arrays.asList(new TestEntity());
         InsertManyOptions opts = new InsertManyOptions();
 
-        ContinuableFuture<Void> result = asyncExecutor.insertMany(entities, opts);
+        ContinuableFuture<InsertManyResult> result = asyncExecutor.insertMany(entities, opts);
         result.get();
         verify(mockCollExecutor).insertMany(entities, opts);
     }
@@ -2138,8 +2146,9 @@ public class AsyncMongoCollectionExecutorTest extends TestBase {
     public void testBulkInsert_LambdaRuns() throws Exception {
         stubRunCallable();
         List<TestEntity> entities = Arrays.asList(new TestEntity());
-        when(mockCollExecutor.bulkInsert(entities)).thenReturn(5);
-        Assertions.assertEquals(5, asyncExecutor.bulkInsert(entities).get());
+        BulkWriteResult bulkWriteResult = mock(BulkWriteResult.class);
+        when(mockCollExecutor.bulkInsert(entities)).thenReturn(bulkWriteResult);
+        Assertions.assertSame(bulkWriteResult, asyncExecutor.bulkInsert(entities).get());
     }
 
     @Test
@@ -2147,8 +2156,9 @@ public class AsyncMongoCollectionExecutorTest extends TestBase {
         stubRunCallable();
         List<TestEntity> entities = Arrays.asList(new TestEntity());
         com.mongodb.client.model.BulkWriteOptions opts = new com.mongodb.client.model.BulkWriteOptions();
-        when(mockCollExecutor.bulkInsert(entities, opts)).thenReturn(5);
-        Assertions.assertEquals(5, asyncExecutor.bulkInsert(entities, opts).get());
+        BulkWriteResult bulkWriteResult = mock(BulkWriteResult.class);
+        when(mockCollExecutor.bulkInsert(entities, opts)).thenReturn(bulkWriteResult);
+        Assertions.assertSame(bulkWriteResult, asyncExecutor.bulkInsert(entities, opts).get());
     }
 
     @Test

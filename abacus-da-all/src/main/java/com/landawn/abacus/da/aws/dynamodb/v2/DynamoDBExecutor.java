@@ -28,7 +28,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
 import java.util.function.IntFunction;
 
-import com.landawn.abacus.da.mongodb.AnyUtil;
+import com.landawn.abacus.da.aws.AnyUtil;
 import com.landawn.abacus.logging.Logger;
 import com.landawn.abacus.logging.LoggerFactory;
 import com.landawn.abacus.parser.ParserUtil;
@@ -2970,6 +2970,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @throws IllegalArgumentException if queryRequest or targetClass is null
      */
     public <T> List<T> list(final QueryRequest queryRequest, final Class<T> targetClass) {
+        N.checkArgNotNull(queryRequest, "queryRequest");
+        N.checkArgNotNull(targetClass, "targetClass");
+
         final QueryResponse queryResult = dynamoDBClient.query(queryRequest);
         final List<T> res = toList(queryResult, targetClass);
 
@@ -3090,6 +3093,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @throws IllegalArgumentException if queryRequest is null
      */
     public Dataset query(final QueryRequest queryRequest, final Class<?> targetClass) {
+        N.checkArgNotNull(queryRequest, "queryRequest");
+        N.checkArgNotNull(targetClass, "targetClass");
+
         if (targetClass == null || Map.class.isAssignableFrom(targetClass)) {
             final QueryResponse queryResult = dynamoDBClient.query(queryRequest);
             List<Map<String, AttributeValue>> items = queryResult.items();
@@ -3204,6 +3210,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @throws IllegalArgumentException if queryRequest or targetClass is null
      */
     public <T> Stream<T> stream(final QueryRequest queryRequest, final Class<T> targetClass) {
+        N.checkArgNotNull(queryRequest, "queryRequest");
+        N.checkArgNotNull(targetClass, "targetClass");
 
         final Iterator<List<Map<String, AttributeValue>>> iterator = new ObjIterator<>() {
             private QueryRequest newQueryRequest = queryRequest;

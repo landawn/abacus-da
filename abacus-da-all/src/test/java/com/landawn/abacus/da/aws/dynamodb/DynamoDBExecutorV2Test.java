@@ -25,10 +25,10 @@ import org.mockito.Mock;
 import org.mockito.MockitoAnnotations;
 
 import com.landawn.abacus.da.TestBase;
+import com.landawn.abacus.da.aws.AnyUtil;
 import com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor;
 import com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.ConditionBuilder;
 import com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.Filters;
-import com.landawn.abacus.da.mongodb.AnyUtil;
 import com.landawn.abacus.util.Clazz;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.NamingPolicy;
@@ -529,6 +529,14 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
         assertNotNull(result);
         assertEquals(1, result.size());
+    }
+
+    @Test
+    public void testQuery_NullQueryRequestThrows() {
+        // query(QueryRequest, Class) eagerly rejects a null request (matches its documented @throws IAE).
+        assertThrows(IllegalArgumentException.class, () -> executor.query(null, TestEntity.class));
+        // The no-class overload delegates to the same path.
+        assertThrows(IllegalArgumentException.class, () -> executor.query((QueryRequest) null));
     }
 
     @Test

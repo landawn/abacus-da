@@ -503,14 +503,14 @@ public final class AsyncHBaseExecutor {
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to retrieve from
      * @param get the Get operation specifying the row to retrieve
-     * @param targetClass the class to convert the result to
+     * @param targetType the class to convert the result to
      * @return a {@link ContinuableFuture} containing the converted object. Wraps
      *         {@link HBaseExecutor#get(String, Get, Class)}.
      * @see HBaseExecutor#get(String, Get, Class)
      * @see Get
      */
-    public <T> ContinuableFuture<T> get(final String tableName, final Get get, final Class<T> targetClass) {
-        return asyncExecutor.execute(() -> hbaseExecutor.get(tableName, get, targetClass));
+    public <T> ContinuableFuture<T> get(final String tableName, final Get get, final Class<T> targetType) {
+        return asyncExecutor.execute(() -> hbaseExecutor.get(tableName, get, targetType));
     }
 
     /**
@@ -541,14 +541,14 @@ public final class AsyncHBaseExecutor {
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to retrieve from
      * @param gets the list of Get operations specifying the rows to retrieve
-     * @param targetClass the class to convert each non-empty result to
+     * @param targetType the class to convert each non-empty result to
      * @return a ContinuableFuture whose value is a {@code List<T>} of converted objects,
      *         with empty/missing rows skipped. Wraps {@link HBaseExecutor#get(String, List, Class)}.
      * @see HBaseExecutor#get(String, List, Class)
      * @see Get
      */
-    public <T> ContinuableFuture<List<T>> get(final String tableName, final List<Get> gets, final Class<T> targetClass) {
-        return asyncExecutor.execute(() -> hbaseExecutor.get(tableName, gets, targetClass));
+    public <T> ContinuableFuture<List<T>> get(final String tableName, final List<Get> gets, final Class<T> targetType) {
+        return asyncExecutor.execute(() -> hbaseExecutor.get(tableName, gets, targetType));
     }
 
     /**
@@ -577,14 +577,14 @@ public final class AsyncHBaseExecutor {
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to retrieve from
      * @param anyGet the AnyGet operation builder specifying the row
-     * @param targetClass the class to convert the result to
+     * @param targetType the class to convert the result to
      * @return a {@link ContinuableFuture} containing the converted object. Wraps
      *         {@link HBaseExecutor#get(String, AnyGet, Class)}.
      * @see HBaseExecutor#get(String, AnyGet, Class)
      * @see AnyGet
      */
-    public <T> ContinuableFuture<T> get(final String tableName, final AnyGet anyGet, final Class<T> targetClass) {
-        return asyncExecutor.execute(() -> hbaseExecutor.get(tableName, anyGet, targetClass));
+    public <T> ContinuableFuture<T> get(final String tableName, final AnyGet anyGet, final Class<T> targetType) {
+        return asyncExecutor.execute(() -> hbaseExecutor.get(tableName, anyGet, targetType));
     }
 
     /**
@@ -615,14 +615,14 @@ public final class AsyncHBaseExecutor {
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to retrieve from
      * @param anyGets the collection of AnyGet builders specifying the rows
-     * @param targetClass the class to convert each non-empty result to
+     * @param targetType the class to convert each non-empty result to
      * @return a ContinuableFuture whose value is a {@code List<T>} of converted objects,
      *         with empty/missing rows skipped. Wraps {@link HBaseExecutor#get(String, Collection, Class)}.
      * @see HBaseExecutor#get(String, Collection, Class)
      * @see AnyGet
      */
-    public <T> ContinuableFuture<List<T>> get(final String tableName, final Collection<AnyGet> anyGets, final Class<T> targetClass) {
-        return asyncExecutor.execute(() -> hbaseExecutor.get(tableName, anyGets, targetClass));
+    public <T> ContinuableFuture<List<T>> get(final String tableName, final Collection<AnyGet> anyGets, final Class<T> targetType) {
+        return asyncExecutor.execute(() -> hbaseExecutor.get(tableName, anyGets, targetType));
     }
 
     /**
@@ -911,14 +911,14 @@ public final class AsyncHBaseExecutor {
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to scan
      * @param family the column family name (as String)
-     * @param targetClass the class to convert each result to
+     * @param targetType the class to convert each result to
      * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
      *         Wraps {@link HBaseExecutor#scan(String, String, Class)}.
      * @see HBaseExecutor#scan(String, String, Class)
      * @see Scan
      */
-    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final String family, final Class<T> targetClass) {
-        return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family, targetClass));
+    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final String family, final Class<T> targetType) {
+        return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family, targetType));
     }
 
     /**
@@ -957,14 +957,14 @@ public final class AsyncHBaseExecutor {
      * @param tableName the name of the HBase table to scan
      * @param family the column family name (as String)
      * @param qualifier the column qualifier name (as String)
-     * @param targetClass the class to convert each result to
+     * @param targetType the class to convert each result to
      * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
      *         Wraps {@link HBaseExecutor#scan(String, String, String, Class)}.
      * @see HBaseExecutor#scan(String, String, String, Class)
      * @see Scan
      */
-    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final String family, final String qualifier, final Class<T> targetClass) {
-        return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family, qualifier, targetClass));
+    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final String family, final String qualifier, final Class<T> targetType) {
+        return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family, qualifier, targetType));
     }
 
     /**
@@ -1002,14 +1002,14 @@ public final class AsyncHBaseExecutor {
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to scan
      * @param family the column family name as a byte array
-     * @param targetClass the class to convert each result to
+     * @param targetType the class to convert each result to
      * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
      *         Wraps {@link HBaseExecutor#scan(String, byte[], Class)}.
      * @see HBaseExecutor#scan(String, byte[], Class)
      * @see Scan
      */
-    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final byte[] family, final Class<T> targetClass) {
-        return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family, targetClass));
+    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final byte[] family, final Class<T> targetType) {
+        return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family, targetType));
     }
 
     /**
@@ -1049,14 +1049,14 @@ public final class AsyncHBaseExecutor {
      * @param tableName the name of the HBase table to scan
      * @param family the column family name as a byte array
      * @param qualifier the column qualifier name as a byte array
-     * @param targetClass the class to convert each result to
+     * @param targetType the class to convert each result to
      * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
      *         Wraps {@link HBaseExecutor#scan(String, byte[], byte[], Class)}.
      * @see HBaseExecutor#scan(String, byte[], byte[], Class)
      * @see Scan
      */
-    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final byte[] family, final byte[] qualifier, final Class<T> targetClass) {
-        return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family, qualifier, targetClass));
+    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final byte[] family, final byte[] qualifier, final Class<T> targetType) {
+        return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family, qualifier, targetType));
     }
 
     /**
@@ -1092,14 +1092,14 @@ public final class AsyncHBaseExecutor {
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to scan
      * @param anyScan the AnyScan builder specifying scan criteria
-     * @param targetClass the class to convert each result to
+     * @param targetType the class to convert each result to
      * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
      *         Wraps {@link HBaseExecutor#scan(String, AnyScan, Class)}.
      * @see HBaseExecutor#scan(String, AnyScan, Class)
      * @see AnyScan
      */
-    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final AnyScan anyScan, final Class<T> targetClass) {
-        return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, anyScan, targetClass));
+    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final AnyScan anyScan, final Class<T> targetType) {
+        return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, anyScan, targetType));
     }
 
     /**
@@ -1136,14 +1136,14 @@ public final class AsyncHBaseExecutor {
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to scan
      * @param scan the HBase Scan object specifying scan criteria
-     * @param targetClass the class to convert each result to
+     * @param targetType the class to convert each result to
      * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
      *         Wraps {@link HBaseExecutor#scan(String, Scan, Class)}.
      * @see HBaseExecutor#scan(String, Scan, Class)
      * @see Scan
      */
-    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final Scan scan, final Class<T> targetClass) {
-        return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, scan, targetClass));
+    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final Scan scan, final Class<T> targetType) {
+        return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, scan, targetType));
     }
 
     /**

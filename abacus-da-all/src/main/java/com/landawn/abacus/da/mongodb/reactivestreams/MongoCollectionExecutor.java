@@ -1614,7 +1614,7 @@ public final class MongoCollectionExecutor {
      * @param <T> the specific Date subtype to return
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against (must not be null)
-     * @param rowType the specific Date subclass to convert to
+     * @param valueType the specific Date subclass to convert to
      * @return a {@code Mono} that emits the typed {@code Date} value on subscription, or completes
      *         empty when no document matches or the field is missing/null
      * @throws IllegalArgumentException if {@code propName} is null or empty, if {@code filter} is null, or if {@code rowType} is null (thrown synchronously at the call site)
@@ -1623,8 +1623,8 @@ public final class MongoCollectionExecutor {
      * @see #queryForSingleValue(String, Bson, Class)
      * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#queryForDate(String, Bson, Class)
      */
-    public <T extends Date> Mono<T> queryForDate(final String propName, final Bson filter, final Class<T> rowType) {
-        return queryForSingleValue(propName, filter, rowType);
+    public <T extends Date> Mono<T> queryForDate(final String propName, final Bson filter, final Class<T> valueType) {
+        return queryForSingleValue(propName, filter, valueType);
     }
 
     /**

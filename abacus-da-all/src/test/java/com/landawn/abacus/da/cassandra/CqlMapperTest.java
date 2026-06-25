@@ -40,8 +40,7 @@ public class CqlMapperTest extends TestBase {
     public void testAddParsedCql_StoresAndRetrieves() {
         final CqlMapper m = new CqlMapper();
         final ParsedCql parsed = ParsedCql.parse("SELECT * FROM mapper_test_add_parsed WHERE id = ?");
-        final ParsedCql previous = m.add("findById", parsed);
-        assertNull(previous);
+        m.add("findById", parsed);
         assertEquals(parsed, m.get("findById"));
         assertFalse(m.isEmpty());
         // No attributes supplied => empty (never null for a present id).
@@ -49,15 +48,24 @@ public class CqlMapperTest extends TestBase {
     }
 
     @Test
-    public void testAddParsedCql_ReplacesExisting() {
+    public void testAddParsedCql_DuplicateIdThrows() {
         final CqlMapper m = new CqlMapper();
         final ParsedCql p1 = ParsedCql.parse("SELECT * FROM mapper_test_replace_a WHERE id = ?");
         final ParsedCql p2 = ParsedCql.parse("SELECT * FROM mapper_test_replace_b WHERE id = ?");
         m.add("dup", p1);
-        // add(String, ParsedCql) returns prior mapping when the ID is reused.
-        final ParsedCql prior = m.add("dup", p2);
-        assertEquals(p1, prior);
-        assertEquals(p2, m.get("dup"));
+        // add(String, ParsedCql) rejects a reused id (consistent with the String overloads + SqlMapper).
+        assertThrows(IllegalArgumentException.class, () -> m.add("dup", p2));
+        // The original mapping is left intact.
+        assertEquals(p1, m.get("dup"));
+    }
+
+    @Test
+    public void testAddParsedCql_NullParsedCqlThrows() {
+        final CqlMapper m = new CqlMapper();
+        assertThrows(IllegalArgumentException.class, () -> m.add("findById", (ParsedCql) null));
+        assertThrows(IllegalArgumentException.class, () -> m.add("findById", (ParsedCql) null, new HashMap<>()));
+        // Nothing was stored.
+        assertTrue(m.isEmpty());
     }
 
     @Test
@@ -66,7 +74,7 @@ public class CqlMapperTest extends TestBase {
         final ParsedCql parsed = ParsedCql.parse("SELECT * FROM mapper_test_add_parsed_attrs WHERE id = ?");
         final Map<String, String> attrs = new HashMap<>();
         attrs.put("consistency", "QUORUM");
-        assertNull(m.add("findById", parsed, attrs));
+        m.add("findById", parsed, attrs);
         assertEquals(parsed, m.get("findById"));
         assertEquals("QUORUM", m.getAttributes("findById").get("consistency"));
     }

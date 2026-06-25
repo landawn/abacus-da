@@ -73,6 +73,8 @@ import com.mongodb.client.model.ReplaceOptions;
 import com.mongodb.client.model.UpdateOptions;
 import com.mongodb.client.model.WriteModel;
 import com.mongodb.client.result.DeleteResult;
+import com.mongodb.client.result.InsertManyResult;
+import com.mongodb.client.result.InsertOneResult;
 import com.mongodb.client.result.UpdateResult;
 
 /**
@@ -1546,7 +1548,7 @@ public final class MongoCollectionExecutor {
      * @param <T> the specific Date subtype to retrieve
      * @param propName the name of the field to retrieve the Date value from
      * @param filter BSON filter criteria to match documents (must not be null)
-     * @param rowType the specific Date class to convert the value to
+     * @param valueType the specific Date class to convert the value to
      * @return a <i>present</i> {@code Nullable<T>} holding the converted field value (possibly
      *         {@code null} for a missing/null field) when a document is matched; {@code Nullable.empty()}
      *         when no document matches the filter
@@ -1555,8 +1557,8 @@ public final class MongoCollectionExecutor {
      * @see #queryForDate(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
      */
-    public <T extends Date> Nullable<T> queryForDate(final String propName, final Bson filter, final Class<T> rowType) {
-        return queryForSingleValue(propName, filter, rowType);
+    public <T extends Date> Nullable<T> queryForDate(final String propName, final Bson filter, final Class<T> valueType) {
+        return queryForSingleValue(propName, filter, valueType);
     }
 
     /**
@@ -2638,14 +2640,15 @@ public final class MongoCollectionExecutor {
      * Document userDoc = new Document("name", "John")
      *                      .append("email", "john@example.com")
      *                      .append("age", 30);
-     * executor.insertOne(userDoc); // returns void; userDoc is inserted (an _id is generated if absent)
+     * InsertOneResult result = executor.insertOne(userDoc); // userDoc is inserted (an _id is generated if absent); result.getInsertedId() exposes it
      *
      * // Insert an entity:
      * User user = new User("Jane", "jane@example.com", 25);
-     * executor.insertOne(user); // returns void; entity is converted to a Document and inserted (null properties dropped)
+     * executor.insertOne(user); // entity is converted to a Document and inserted (null properties dropped)
      * }</pre>
      *
      * @param obj the object to insert - can be Document, {@code Map<String, Object>}, or entity class with getter/setter methods
+     * @return the {@link InsertOneResult} reported by the server (e.g. the generated {@code _id} via {@link InsertOneResult#getInsertedId()})
      * @throws IllegalArgumentException if obj is null
      * @throws IllegalArgumentException if obj is not a Document, Map, or bean class with getter/setter methods
      * @throws com.mongodb.MongoWriteException if the insert operation fails
@@ -2654,10 +2657,10 @@ public final class MongoCollectionExecutor {
      * @see #insertMany(Collection)
      * @see #async()
      */
-    public void insertOne(final Object obj) {
+    public InsertOneResult insertOne(final Object obj) {
         N.checkArgNotNull(obj, "obj");
 
-        insertOne(obj, null);
+        return insertOne(obj, null);
     }
 
     /**
@@ -2673,11 +2676,12 @@ public final class MongoCollectionExecutor {
      *
      * // Insert with custom options:
      * InsertOneOptions options = new InsertOneOptions().bypassDocumentValidation(true);
-     * executor.insertOne(user, options); // returns void; document inserted bypassing schema validation
+     * InsertOneResult result = executor.insertOne(user, options); // document inserted bypassing schema validation
      * }</pre>
      *
      * @param obj the object to insert - can be Document, {@code Map<String, Object>}, or entity class with getter/setter methods
      * @param options additional options for the insert operation (null uses defaults)
+     * @return the {@link InsertOneResult} reported by the server (e.g. the generated {@code _id} via {@link InsertOneResult#getInsertedId()})
      * @throws IllegalArgumentException if obj is null
      * @throws IllegalArgumentException if obj is not a Document, Map, or bean class with getter/setter methods
      * @throws com.mongodb.MongoWriteException if the insert operation fails
@@ -2685,13 +2689,13 @@ public final class MongoCollectionExecutor {
      * @see InsertOneOptions
      * @see #insertOne(Object)
      */
-    public void insertOne(final Object obj, final InsertOneOptions options) {
+    public InsertOneResult insertOne(final Object obj, final InsertOneOptions options) {
         N.checkArgNotNull(obj, "obj");
 
         if (options == null) {
-            coll.insertOne(toDocument(obj));
+            return coll.insertOne(toDocument(obj));
         } else {
-            coll.insertOne(toDocument(obj), options);
+            return coll.insertOne(toDocument(obj), options);
         }
     }
 
@@ -2712,11 +2716,12 @@ public final class MongoCollectionExecutor {
      *     new User("Jane", "jane@example.com", 25),
      *     new User("Bob", "bob@example.com", 35)
      * );
-     * executor.insertMany(users);     // returns void; all 3 users inserted in one batch
+     * InsertManyResult result = executor.insertMany(users); // all 3 users inserted in one batch; result.getInsertedIds() exposes the generated _ids
      * executor.insertMany(List.of()); // throws IllegalArgumentException (objList must not be empty)
      * }</pre>
      *
      * @param objList collection of objects to insert - each can be Document, {@code Map<String, Object>}, or entity class with getter/setter methods
+     * @return the {@link InsertManyResult} reported by the server (e.g. the generated {@code _id}s via {@link InsertManyResult#getInsertedIds()})
      * @throws IllegalArgumentException if objList is null or empty
      * @throws com.mongodb.MongoBulkWriteException if one or more insert operations fail
      * @throws com.mongodb.MongoException if the database operation fails
@@ -2724,8 +2729,8 @@ public final class MongoCollectionExecutor {
      * @see #insertOne(Object)
      * @see #async()
      */
-    public void insertMany(final Collection<?> objList) {
-        insertMany(objList, null);
+    public InsertManyResult insertMany(final Collection<?> objList) {
+        return insertMany(objList, null);
     }
 
     /**
@@ -2744,26 +2749,27 @@ public final class MongoCollectionExecutor {
      *
      * // Insert with unordered execution (faster for large batches):
      * InsertManyOptions options = new InsertManyOptions().ordered(false);
-     * executor.insertMany(users, options); // returns void; users inserted unordered (continues past individual failures)
+     * InsertManyResult result = executor.insertMany(users, options); // users inserted unordered (continues past individual failures)
      * }</pre>
      *
      * @param objList collection of objects to insert - each can be Document, {@code Map<String, Object>}, or entity class with getter/setter methods
      * @param options additional options for the insert operation (null uses defaults)
+     * @return the {@link InsertManyResult} reported by the server (e.g. the generated {@code _id}s via {@link InsertManyResult#getInsertedIds()})
      * @throws IllegalArgumentException if objList is null or empty
      * @throws com.mongodb.MongoBulkWriteException if one or more insert operations fail
      * @throws com.mongodb.MongoException if the database operation fails
      * @see InsertManyOptions
      * @see #insertMany(Collection)
      */
-    public void insertMany(final Collection<?> objList, final InsertManyOptions options) {
+    public InsertManyResult insertMany(final Collection<?> objList, final InsertManyOptions options) {
         N.checkArgNotEmpty(objList, "objList");
 
         final List<Document> docs = toDocument(objList);
 
         if (options == null) {
-            coll.insertMany(docs);
+            return coll.insertMany(docs);
         } else {
-            coll.insertMany(docs, options);
+            return coll.insertMany(docs, options);
         }
     }
 
@@ -3537,17 +3543,17 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<User> users = generateUsers(1000);
-     * int inserted = executor.bulkInsert(users); // returns the inserted count, e.g. 1000
-     * System.out.println("Inserted " + inserted + " users");
+     * BulkWriteResult result = executor.bulkInsert(users); // result.getInsertedCount() is e.g. 1000
+     * System.out.println("Inserted " + result.getInsertedCount() + " users");
      * executor.bulkInsert(List.of()); // throws IllegalArgumentException (entities must not be empty)
      * }</pre>
      *
      * @param entities collection of entities to insert
-     * @return the {@link BulkWriteResult#getInsertedCount() inserted count} reported by the server
+     * @return the {@link BulkWriteResult} reported by the server (use {@link BulkWriteResult#getInsertedCount()} for the inserted count)
      * @throws IllegalArgumentException if entities is null or empty
      * @throws com.mongodb.MongoBulkWriteException if bulk write fails
      */
-    public int bulkInsert(final Collection<?> entities) {
+    public BulkWriteResult bulkInsert(final Collection<?> entities) {
         return bulkInsert(entities, null);
     }
 
@@ -3560,16 +3566,16 @@ public final class MongoCollectionExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * BulkWriteOptions options = new BulkWriteOptions().ordered(false);
-     * int inserted = executor.bulkInsert(entities, options); // returns the inserted count; unordered keeps going past individual failures
+     * BulkWriteResult result = executor.bulkInsert(entities, options); // unordered keeps going past individual failures
      * }</pre>
      *
      * @param entities collection of entities to insert
      * @param options additional bulk write options (null uses defaults)
-     * @return number of documents inserted
+     * @return the {@link BulkWriteResult} reported by the server (use {@link BulkWriteResult#getInsertedCount()} for the inserted count)
      * @throws IllegalArgumentException if entities is null or empty
      * @throws com.mongodb.MongoBulkWriteException if bulk write fails
      */
-    public int bulkInsert(final Collection<?> entities, final BulkWriteOptions options) {
+    public BulkWriteResult bulkInsert(final Collection<?> entities, final BulkWriteOptions options) {
         N.checkArgNotEmpty(entities, "entities");
 
         final List<InsertOneModel<Document>> list = new ArrayList<>(entities.size());
@@ -3582,7 +3588,7 @@ public final class MongoCollectionExecutor {
             }
         }
 
-        return bulkWrite(list, options).getInsertedCount();
+        return bulkWrite(list, options);
     }
 
     /**

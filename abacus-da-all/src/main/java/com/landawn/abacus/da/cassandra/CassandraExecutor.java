@@ -2071,12 +2071,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @param <T> the type of the Java class to map the UDT to
          * @param session the Cassandra Session to use for metadata retrieval
          * @param keySpace the keyspace containing the UDT
-         * @param userType the name of the User Defined Type (UDT)
+         * @param userTypeName the name of the User Defined Type (UDT)
          * @param javaClazz the Java class to map the UDT to
          * @return a new instance of {@link UDTCodec} for the specified UDT and Java class
          */
-        public static <T> UDTCodec<T> create(final Session session, final String keySpace, final String userType, final Class<T> javaClazz) {
-            return create(session.getMetadata().getKeyspace(keySpace).orElseThrow().getUserDefinedType(userType).orElseThrow(), javaClazz);
+        public static <T> UDTCodec<T> create(final Session session, final String keySpace, final String userTypeName, final Class<T> javaClazz) {
+            return create(session.getMetadata().getKeyspace(keySpace).orElseThrow().getUserDefinedType(userTypeName).orElseThrow(), javaClazz);
         }
 
         /**

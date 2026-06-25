@@ -13,6 +13,7 @@
  */
 package com.landawn.abacus.da.azure;
 
+import java.net.HttpURLConnection;
 import java.util.Collection;
 import java.util.List;
 
@@ -39,6 +40,7 @@ import com.landawn.abacus.query.condition.Condition;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.NamingPolicy;
 import com.landawn.abacus.util.stream.Stream;
+import com.landawn.abacus.util.u.Optional;
 
 /**
  * Comprehensive executor for Azure Cosmos DB container operations providing a high-level, simplified interface 
@@ -910,6 +912,86 @@ public class CosmosContainerExecutor {
     public <T> CosmosItemResponse<T> readItem(final String itemId, final PartitionKey partitionKey, final CosmosItemRequestOptions options,
             final Class<T> itemType) {
         return cosmosContainer.readItem(itemId, partitionKey, options, itemType);
+    }
+
+    /**
+     * Reads a single item by id and partition key, returning an empty {@link Optional} when the item does not exist.
+     *
+     * <p>This is the absence-tolerant counterpart to {@link #readItem(String, PartitionKey, Class)}: instead of
+     * letting a {@link CosmosException} with a {@code 404 Not Found} status propagate when the document is missing,
+     * this method returns {@link Optional#empty()}. All other failures (throttling, ETag conflicts, connectivity, etc.)
+     * still propagate as a {@code CosmosException}. Like {@code readItem}, this is executed as an efficient point read
+     * (typically 1 RU for items up to 1KB).</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Optional<Product> product = executor.get("prod123", new PartitionKey("Electronics"), Product.class);
+     *
+     * product.ifPresentOrElse(
+     *     p -> System.out.println("Found: " + p.getName()),
+     *     () -> System.out.println("No such product"));    // taken when the id/partition-key has no item (404)
+     * }</pre>
+     *
+     * @param <T> the type of the item to read
+     * @param itemId the id of the item to read (must not be null)
+     * @param partitionKey the partition key of the item (must not be null)
+     * @param itemType the class type for deserializing the response (must not be null)
+     * @return an {@code Optional} holding the item if it exists, or {@link Optional#empty()} if no item exists for the given id/partition key (404)
+     * @throws CosmosException if the operation fails for any reason other than the item being absent
+     * @throws NullPointerException if itemId, partitionKey, or itemType is null
+     * @see #readItem(String, PartitionKey, Class)
+     * @see #get(String, PartitionKey, CosmosItemRequestOptions, Class)
+     */
+    public <T> Optional<T> get(final String itemId, final PartitionKey partitionKey, final Class<T> itemType) {
+        try {
+            return Optional.ofNullable(readItem(itemId, partitionKey, itemType).getItem());
+        } catch (final CosmosException e) {
+            if (e.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+                return Optional.empty();
+            }
+
+            throw e;
+        }
+    }
+
+    /**
+     * Reads a single item with additional options, returning an empty {@link Optional} when the item does not exist.
+     *
+     * <p>This is the absence-tolerant counterpart to
+     * {@link #readItem(String, PartitionKey, CosmosItemRequestOptions, Class)}: a {@link CosmosException} with a
+     * {@code 404 Not Found} status is translated into {@link Optional#empty()} rather than propagated. All other
+     * failures still propagate as a {@code CosmosException}. The {@code options} argument allows specifying
+     * consistency level, session token, and other point-read settings.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * CosmosItemRequestOptions options = new CosmosItemRequestOptions();
+     * options.setConsistencyLevel(ConsistencyLevel.STRONG);
+     *
+     * Optional<Product> product = executor.get("prod456", new PartitionKey("Electronics"), options, Product.class);
+     * }</pre>
+     *
+     * @param <T> the type of the item to read
+     * @param itemId the id of the item to read (must not be null)
+     * @param partitionKey the partition key of the item (must not be null)
+     * @param options additional options for the read operation (can be null for default behavior)
+     * @param itemType the class type for deserializing the response (must not be null)
+     * @return an {@code Optional} holding the item if it exists, or {@link Optional#empty()} if no item exists for the given id/partition key (404)
+     * @throws CosmosException if the operation fails for any reason other than the item being absent
+     * @throws NullPointerException if itemId, partitionKey, or itemType is null
+     * @see #readItem(String, PartitionKey, CosmosItemRequestOptions, Class)
+     * @see #get(String, PartitionKey, Class)
+     */
+    public <T> Optional<T> get(final String itemId, final PartitionKey partitionKey, final CosmosItemRequestOptions options, final Class<T> itemType) {
+        try {
+            return Optional.ofNullable(readItem(itemId, partitionKey, options, itemType).getItem());
+        } catch (final CosmosException e) {
+            if (e.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+                return Optional.empty();
+            }
+
+            throw e;
+        }
     }
 
     /**

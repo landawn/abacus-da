@@ -1873,11 +1873,15 @@ public class BigQueryExecutorTest extends TestBase {
         assertEquals(1, ds.size());
     }
 
-    // entityToCondition: null entity throws (NPE because delete dereferences before reaching entityToCondition)
+    // delete(Object)/update(Object): a null entity is rejected eagerly with IAE (matches insert(Object)).
     @Test
-    public void testEntityToCondition_NullEntityThrows() {
-        // delete(null).getClass() triggers NPE before entityToCondition is invoked.
-        assertThrows(NullPointerException.class, () -> executor.delete((Object) null));
+    public void testDeleteObject_NullEntityThrows() {
+        assertThrows(IllegalArgumentException.class, () -> executor.delete((Object) null));
+    }
+
+    @Test
+    public void testUpdateObject_NullEntityThrows() {
+        assertThrows(IllegalArgumentException.class, () -> executor.update((Object) null));
     }
 
     // entityToCondition: empty key throws

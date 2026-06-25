@@ -51,6 +51,8 @@ import com.mongodb.client.model.InsertManyOptions;
 import com.mongodb.client.model.InsertOneOptions;
 import com.mongodb.client.model.WriteModel;
 import com.mongodb.client.result.DeleteResult;
+import com.mongodb.client.result.InsertManyResult;
+import com.mongodb.client.result.InsertOneResult;
 import com.mongodb.client.result.UpdateResult;
 
 public class MongoCollectionExecutorTest extends TestBase {
@@ -508,35 +510,47 @@ public class MongoCollectionExecutorTest extends TestBase {
     @Test
     public void testInsertOne() {
         Document doc = new Document("name", "test");
+        InsertOneResult insertResult = mock(InsertOneResult.class);
+        when(mockCollection.insertOne(doc)).thenReturn(insertResult);
 
-        executor.insertOne(doc);
+        InsertOneResult result = executor.insertOne(doc);
         verify(mockCollection).insertOne(doc);
+        Assertions.assertSame(insertResult, result);
     }
 
     @Test
     public void testInsertOneWithOptions() {
         Document doc = new Document("name", "test");
         InsertOneOptions options = new InsertOneOptions();
+        InsertOneResult insertResult = mock(InsertOneResult.class);
+        when(mockCollection.insertOne(doc, options)).thenReturn(insertResult);
 
-        executor.insertOne(doc, options);
+        InsertOneResult result = executor.insertOne(doc, options);
         verify(mockCollection).insertOne(doc, options);
+        Assertions.assertSame(insertResult, result);
     }
 
     @Test
     public void testInsertMany() {
         List<Document> docs = Arrays.asList(new Document("id", 1), new Document("id", 2));
+        InsertManyResult insertResult = mock(InsertManyResult.class);
+        when(mockCollection.insertMany(anyList())).thenReturn(insertResult);
 
-        executor.insertMany(docs);
+        InsertManyResult result = executor.insertMany(docs);
         verify(mockCollection).insertMany(docs);
+        Assertions.assertSame(insertResult, result);
     }
 
     @Test
     public void testInsertManyWithOptions() {
         List<Document> docs = Arrays.asList(new Document("id", 1), new Document("id", 2));
         InsertManyOptions options = new InsertManyOptions();
+        InsertManyResult insertResult = mock(InsertManyResult.class);
+        when(mockCollection.insertMany(anyList(), eq(options))).thenReturn(insertResult);
 
-        executor.insertMany(docs, options);
+        InsertManyResult result = executor.insertMany(docs, options);
         verify(mockCollection).insertMany(docs, options);
+        Assertions.assertSame(insertResult, result);
     }
 
     @Test
@@ -599,8 +613,9 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(bulkWriteResult.getInsertedCount()).thenReturn(2);
         when(mockCollection.bulkWrite(anyList())).thenReturn(bulkWriteResult);
 
-        int result = executor.bulkInsert(docs);
-        Assertions.assertEquals(2, result);
+        BulkWriteResult result = executor.bulkInsert(docs);
+        Assertions.assertSame(bulkWriteResult, result);
+        Assertions.assertEquals(2, result.getInsertedCount());
     }
 
     @Test
@@ -1543,8 +1558,9 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(bwr.getInsertedCount()).thenReturn(2);
         com.mongodb.client.model.BulkWriteOptions opts = new com.mongodb.client.model.BulkWriteOptions();
         when(mockCollection.bulkWrite(anyList(), any(com.mongodb.client.model.BulkWriteOptions.class))).thenReturn(bwr);
-        int n = executor.bulkInsert(docs, opts);
-        Assertions.assertEquals(2, n);
+        BulkWriteResult result = executor.bulkInsert(docs, opts);
+        Assertions.assertSame(bwr, result);
+        Assertions.assertEquals(2, result.getInsertedCount());
     }
 
     @Test
@@ -1629,8 +1645,9 @@ public class MongoCollectionExecutorTest extends TestBase {
         com.mongodb.bulk.BulkWriteResult bwr = mock(com.mongodb.bulk.BulkWriteResult.class);
         when(bwr.getInsertedCount()).thenReturn(1);
         when(mockCollection.bulkWrite(anyList())).thenReturn(bwr);
-        int n = executor.bulkInsert(Arrays.asList(e1));
-        Assertions.assertEquals(1, n);
+        BulkWriteResult result = executor.bulkInsert(Arrays.asList(e1));
+        Assertions.assertSame(bwr, result);
+        Assertions.assertEquals(1, result.getInsertedCount());
     }
 
     @Test
