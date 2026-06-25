@@ -1,6 +1,7 @@
 API DESIGN REVIEW — cassandra/CassandraExecutorBase.java
 public abstract class CassandraExecutorBase<RW,RS,ST,PS,BT> implements AutoCloseable
 Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> RE-REVIEW-3 2026-06-24: stale {@link ParsedCql#parse(String,Map)} -> {@link ParsedCql#parse(String)} (working-tree doc fix). All prior findings re-verified unchanged vs HEAD. <<<
 
 1. OVERALL ASSESSMENT
 The shared Cassandra executor base is large and healthy. It applies the same strong four-way return

@@ -24,6 +24,15 @@ and every NEW issue orchestrator-verified by reading current source (file:line c
       L18/L19/L24/L26/L29 by-design/documented; L14/L28-async()/L30-count-findFirst/L32-additive = optional
       new methods (not added). Items below retain their original text for the record. <<<
 
+>>> RE-REVIEW-3 (2026-06-24, vs HEAD 0a2c42d + 1 uncommitted doc edit): every open High/Medium finding
+    re-verified against LIVE source by signature grep (lesson learned from the H2 stale carry-forward).
+    STATUS FLIPS this pass: H2 (v2 query null-handling) CONFIRMED ALREADY-FIXED (c67160a); M16 (Neo4j
+    query()->Stream) ALREADY-FIXED -> all three renamed to stream() (c67160a), zero public query() remain.
+    New code deltas since last pass are benign (no new issues): BigQuery update(Object,Set) gained
+    checkArgNotNull; Mongo queryForSingleValue @throws doc tweak; CassandraExecutorBase stale @link fixed.
+    ALL OTHER High/Medium re-confirmed STILL-OPEN. mvn -o clean test-compile GREEN.
+    Open Highs now: H1 (v2 async CompletableFuture 193/0), H3 (Cosmos no exists/count, Condition path thin). <<<
+
 CONTEXT
 A large amount of code changed since the 2026-06-23 reports ("Naming convention improvements",
 "bug fixes and improve javadoc", plus the approved rename/@Beta/@Deprecated/distinct work). Many
@@ -128,9 +137,11 @@ M14 | CosmosContainerExecutor | prepareQuery has a dead `if (count>0) limit(coun
 M15 | BigQueryExecutor | get/gett by-id absent and queryForSingleNonNull(Class<V>,…)->Optional<V> absent
    (the convention pairs it with queryForSingleValue->Nullable) | gcp/BigQueryExecutor.java | STILL-VALID
    ACTION: add fetch-by-id (building blocks idsToCondition:1600, list:1983 exist) and the NonNull sibling.
-M16 | Neo4jExecutor | query(String,Map)/(…,boolean)/(Class,String,Map) return Stream, colliding with the
-   family convention query->DataSet / stream->Stream | neo4j/Neo4jExecutor.java:2197,2252,2297 | STILL-VALID
-   (NOT renamed) | ACTION: rename these to stream(...) (or add DataSet-returning query()).
+M16 | Neo4jExecutor | query(String,Map)/(…,boolean)/(Class,String,Map) returned Stream, colliding with the
+   family convention query->DataSet / stream->Stream
+   >>> RE-VERIFIED 2026-06-24 (this refresh): ALREADY-FIXED (commit c67160a). All three were RENAMED to
+   stream(...) (Neo4jExecutor.java:2187,2242,2287); ZERO public query(...) methods remain. Exactly the
+   recommended action. Build green, no dangling refs. NO ACTION. <<<
 
 ------------------------------- LOW -------------------------------
 HBase value objects

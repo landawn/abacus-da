@@ -1,6 +1,7 @@
 API DESIGN REVIEW — gcp/BigQueryExecutor.java
 public class BigQueryExecutor
 Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> RE-REVIEW-3 2026-06-24 (vs HEAD 0a2c42d): update(Object,Set) now also checkArgNotNull(entity) (NPE->IAE) — null-handling now fully consistent across insert/update/delete. Still open(M): get/gett by-id + queryForSingleNonNull absent. <<<
 >>> RE-REVIEW-2 2026-06-24: dead commented-out main() DELETED -> ALREADY-FIXED. get/gett by-id + queryForSingleNonNull absent remain open (M). <<<
 
 1. OVERALL ASSESSMENT

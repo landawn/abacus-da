@@ -1,6 +1,7 @@
 API DESIGN REVIEW — mongodb/MongoCollectionExecutor.java
 public final class MongoCollectionExecutor
 Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> RE-REVIEW-3 2026-06-24: re-verified vs HEAD 0a2c42d (queryForSingleValue @throws doc tweaked). Open items unchanged: updateOne/updateMany/findOneAndUpdate (Bson,Object)-vs-(Bson,Collection<?>) dual-meaning still present (both overloads exist). <<<
 >>> CODE-FIX UPDATE (2026-06-24): the accessor-name drift (section 2) is RESOLVED — mongoCollection() was
     HARD-RENAMED to coll() (matching the reactive twin; no alias). See the [RESOLVED] tag. Other findings
     remain open. mvn -o clean test-compile green. <<<
