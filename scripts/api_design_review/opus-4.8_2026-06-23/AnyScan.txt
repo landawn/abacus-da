@@ -1,6 +1,7 @@
 API DESIGN REVIEW — hbase/AnyScan.java
 public final class AnyScan extends AnyQuery<AnyScan>
 Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> RE-REVIEW-2 2026-06-24: setFamilyMap null-guard ADDED -> ALREADY-FIXED. Deprecated of()/setRowPrefixFilter intentionally KEPT @Deprecated. Open(M): redundant setColumnFamilyTimeRange overrides, toScan absent. <<<
 
 1. OVERALL ASSESSMENT
 AnyScan is a faithful fluent wrapper over HBase `Scan` and is generally consistent with its AnyQuery

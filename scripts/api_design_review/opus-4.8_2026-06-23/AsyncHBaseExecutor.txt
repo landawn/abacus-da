@@ -1,6 +1,7 @@
 API DESIGN REVIEW — hbase/AsyncHBaseExecutor.java
 public final class AsyncHBaseExecutor
 Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> RE-REVIEW-2 2026-06-24: class Javadoc corrected (no async-mapping claim; mapping is sync-only via sync().mapper) -> ALREADY-FIXED. Open(M): no async mapper() facade. <<<
 
 1. OVERALL ASSESSMENT
 [RE-REVIEW 2026-06-24: Re-verified against current source (AsyncHBaseExecutor.java is now 2084 lines;

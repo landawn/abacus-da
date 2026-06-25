@@ -1,6 +1,7 @@
 API DESIGN REVIEW — hbase/AnyIncrement.java
 public final class AnyIncrement extends AnyMutation<AnyIncrement>
 Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> RE-REVIEW-2 2026-06-24: slice params unified to rowOffset/rowLength -> ALREADY-FIXED. setAttribute(byte[]) + equals/hashCode remain documented-by-design. <<<
 
 1. OVERALL ASSESSMENT
 AnyIncrement is a faithful fluent wrapper over HBase `Increment`. No correctness defects. Findings are a

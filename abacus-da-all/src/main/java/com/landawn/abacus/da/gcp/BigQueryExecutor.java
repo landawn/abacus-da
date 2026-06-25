@@ -1286,11 +1286,12 @@ public class BigQueryExecutor {
      * @param entity the entity instance containing updated values and primary key values
      * @param primaryKeyNames the set of property names to use as primary key fields in the WHERE clause
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws NullPointerException if entity is null
-     * @throws IllegalArgumentException if primaryKeyNames is null or empty
+     * @throws IllegalArgumentException if entity is null, or if primaryKeyNames is null or empty
      * @see #update(Class, Map, Condition)
      */
     public TableResult update(final Object entity, final Set<String> primaryKeyNames) {
+        N.checkArgNotNull(entity, "entity");
+
         final SP sp = prepareUpdate(entity, primaryKeyNames);
 
         return execute(sp);

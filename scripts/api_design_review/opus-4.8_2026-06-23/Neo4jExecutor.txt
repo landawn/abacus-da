@@ -1,6 +1,7 @@
 API DESIGN REVIEW — neo4j/Neo4jExecutor.java
 public final class Neo4jExecutor
 Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> RE-REVIEW-2 2026-06-24: dead commented-out queryDto block DELETED -> ALREADY-FIXED. query()->Stream naming collision remains open (M). <<<
 
 1. OVERALL ASSESSMENT
 Neo4jExecutor faithfully mirrors the Neo4j OGM Session (load/loadAll/save/delete/count) plus a Cypher

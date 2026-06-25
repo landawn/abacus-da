@@ -1884,6 +1884,12 @@ public class BigQueryExecutorTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> executor.update((Object) null));
     }
 
+    @Test
+    public void testUpdateObjectWithKeys_NullEntityThrows() {
+        // The 2-arg update(Object, Set) overload must reject a null entity the same way (IAE), not NPE.
+        assertThrows(IllegalArgumentException.class, () -> executor.update((Object) null, N.asSet("id")));
+    }
+
     // entityToCondition: empty key throws
     @Test
     public void testEntityToCondition_EmptyKeyThrows() {

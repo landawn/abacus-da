@@ -3,6 +3,7 @@ Classes: AnyOperation, AnyOperationWithAttributes, AnyQuery, AnyMutation
 (package-private abstract bases; their PUBLIC methods form part of the public API of the
 public final subclasses AnyGet/AnyScan/AnyPut/AnyDelete/AnyIncrement/AnyAppend, so they are in scope)
 Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> RE-REVIEW-2 2026-06-24: L4 dead commented-out blocks DELETED + L1 checked-exception now DOCUMENTED on getAuthorizations/getCellVisibility -> ALREADY-FIXED / PARTIALLY-ADDRESSED. Open(Low): getFamilyCellMap live map, get->List<Cell>. <<<
 
 1. OVERALL ASSESSMENT
 The base chain is a faithful, well-documented fluent wrapper over the Apache HBase client class

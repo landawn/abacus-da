@@ -1,6 +1,7 @@
 API DESIGN REVIEW — aws/dynamodb/v2/DynamoDBExecutor.java  (AWS SDK v2)
 public final class DynamoDBExecutor implements AutoCloseable
 Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> RE-REVIEW-2 2026-06-24: toMap(Object[]) parity overload ADDED (mirrors v1) -> ALREADY-FIXED. STILL OPEN (High): query() dead null-branch + contradictory Javadoc (H2); async() bridge absent (M). <<<
 >>> CODE-FIX UPDATE (2026-06-24): the converter naming drift (section 2) is RESOLVED — attrValueOf/
     attrValueUpdateOf were hard-renamed to v1's toAttributeValue/toAttributeValueUpdate (no alias). See the
     [RESOLVED] tag. Other findings remain open. mvn -o clean test-compile green. <<<

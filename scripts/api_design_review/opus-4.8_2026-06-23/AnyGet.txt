@@ -1,6 +1,7 @@
 API DESIGN REVIEW — hbase/AnyGet.java
 public final class AnyGet extends AnyQuery<AnyGet> implements Row
 Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> RE-REVIEW-2 2026-06-24: toGet(Collection)->toGetList -> ALREADY-FIXED. Open(Low): AIOOBE(documented), getFamilies/familySet accessor asymmetry. <<<
 
 1. OVERALL ASSESSMENT
 AnyGet is a healthy, accurate, by-design fluent wrapper over HBase `Get`. The vast majority of its

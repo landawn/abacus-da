@@ -1,6 +1,7 @@
 API DESIGN REVIEW — cassandra/AsyncCassandraExecutorBase.java
 public abstract class AsyncCassandraExecutorBase<RW,RS,ST,PS,BT>
 Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> RE-REVIEW-2 2026-06-24: count(Class,Condition) re-pointed off the @Deprecated count(String,...) to queryForSingleValue(...).map(...) (identical behavior; @SuppressWarnings removed) -> ALREADY-FIXED. <<<
 >>> DOC-FIX PASS UPDATE (2026-06-23): the count() @deprecated-text divergence (section 6) was FIXED
     (Javadoc-only). The @Beta gap (section 3) is now ALSO FIXED in source (2026-06-24). See the [RESOLVED]
     tags. Other code findings remain open. mvn -o clean test-compile green. <<<

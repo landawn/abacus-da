@@ -1,6 +1,7 @@
 API DESIGN REVIEW — hbase/AnyDelete.java
 public final class AnyDelete extends AnyMutation<AnyDelete>
 Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> RE-REVIEW-2 2026-06-24: toRowBytes->toRowKeyBytes -> ALREADY-FIXED. Open(Low): of(byte[]) parity gap. <<<
 
 1. OVERALL ASSESSMENT
 AnyDelete is a faithful fluent wrapper over HBase `Delete`. No correctness defects in declared methods.

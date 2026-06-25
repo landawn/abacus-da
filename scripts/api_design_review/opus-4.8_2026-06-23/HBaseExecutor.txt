@@ -1,6 +1,7 @@
 API DESIGN REVIEW — hbase/HBaseExecutor.java
 public final class HBaseExecutor implements AutoCloseable
 Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> RE-REVIEW-2 2026-06-24: dead commented members (existsAll x2/toMap/toBytes) DELETED + toGet->toGetList callers updated -> ALREADY-FIXED. Open: typed-batch-get cardinality (M, PARTIAL); mapper(Class,String) overload (Low). <<<
 
 1. OVERALL ASSESSMENT
 [RE-REVIEW 2026-06-24 (opus-4.8): Re-verified all findings against current source after the "improve javadoc / bug fixes" commits. The headline targetType-vs-targetClass naming issue is now ALREADY-FIXED (orchestrator-corrected): ALL public get/scan/toList/toEntity signatures use targetType consistently (HBaseExecutor 13x, AsyncHBaseExecutor 10x, 0 targetClass in either, by signature grep) — the prior sync/async inconsistency is GONE; only the private toValue helper still uses targetClass (759-763, internal). All other code-design findings remain STILL-VALID. One finding moved to PARTIALLY-ADDRESSED: the typed/raw batch-get cardinality divergence is now documented on the individual @return tags (1603-1604, 1736-1738, 1794-1796) though the recommended class-level family note is still absent. Dead-comment blocks, the missing mapper(Class,String) overload, the deprecated registerRowKeyProperty, and static-mapper placement are all unchanged. No NEW issues found. Line numbers below corrected for drift.]

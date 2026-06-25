@@ -1,6 +1,7 @@
 API DESIGN REVIEW — cassandra/CqlBuilder.java
 public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder>
 Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> RE-REVIEW-2 2026-06-24: renderCondition Javadoc reworded Parses/parsed -> Renders/rendered -> ALREADY-FIXED. usingTimestamp/insert-select-Map/CQL-invalid-verbs remain by-design/open-low. <<<
 >>> DOC-FIX PASS UPDATE (2026-06-23): the usingTimestamp(String) micros item (section 3) was evaluated
     and found ALREADY-CORRECT (documented in 3 places) — no edit. See the [NO-ACTION] tag. All other
     findings are code/design and remain open. <<<

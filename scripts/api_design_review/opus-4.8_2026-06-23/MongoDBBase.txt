@@ -1,6 +1,7 @@
 API DESIGN REVIEW — mongodb/MongoDBBase.java
 public abstract class MongoDBBase
 Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> RE-REVIEW-2 2026-06-24: the NEW non-String-name reject-vs-coerce asymmetry vs AnyUtil is RESOLVED (AnyUtil now rejects too) -> ALREADY-FIXED. Object-vs-varargs overload family remains open (M). <<<
 >>> DOC-FIX PASS UPDATE (2026-06-23): the documentation item in the "OTHER" section was FIXED in source
     (Javadoc/comment-only). See the [RESOLVED] tag. All code/design findings below remain open. <<<
 

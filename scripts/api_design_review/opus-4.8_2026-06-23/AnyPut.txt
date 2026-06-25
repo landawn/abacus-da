@@ -1,6 +1,7 @@
 API DESIGN REVIEW — hbase/AnyPut.java
 public final class AnyPut extends AnyMutation<AnyPut>
 Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> RE-REVIEW-2 2026-06-24: slice-param naming inconsistency now RESOLVED — AnyIncrement/AnyAppend were renamed to rowOffset/rowLength (which AnyPut/AnyDelete already used), so all four AnyMutation subclasses now match -> ALREADY-FIXED. Open(M): addColumn(byte[],ByteBuffer,long,ByteBuffer) lone/asymmetric ByteBuffer overload. <<<
 
 1. OVERALL ASSESSMENT
 AnyPut is a solid, thoroughly documented fluent wrapper over HBase `Put`, with the richest factory

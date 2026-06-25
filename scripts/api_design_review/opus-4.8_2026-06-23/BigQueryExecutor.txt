@@ -1,6 +1,7 @@
 API DESIGN REVIEW — gcp/BigQueryExecutor.java
 public class BigQueryExecutor
 Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> RE-REVIEW-2 2026-06-24: dead commented-out main() DELETED -> ALREADY-FIXED. get/gett by-id + queryForSingleNonNull absent remain open (M). <<<
 
 1. OVERALL ASSESSMENT
 BigQueryExecutor is a coherent query-mapping executor (query->Dataset, list->List<T>, stream->Stream<T>,

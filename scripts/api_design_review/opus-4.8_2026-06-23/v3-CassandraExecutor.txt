@@ -1,6 +1,7 @@
 API DESIGN REVIEW — cassandra/v3/CassandraExecutor.java  (DataStax driver v3, LEGACY)
 public final class CassandraExecutor extends CassandraExecutorBase<Row,ResultSet,Statement,PreparedStatement,BatchStatement.Type>
 Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> RE-REVIEW-2 2026-06-24: UDTCodec.create String param userType->userTypeName (matches v4) -> ALREADY-FIXED (the NEW v3-only naming item). <<<
 >>> DOC-FIX PASS UPDATE (2026-06-23): the execute(Statement) overclaim (section 3) was FIXED (Javadoc-
     only). CORRECTION: the claim that "the same wrong sentence exists in v4" is INVALID — v4 has no such
     sentence; only v3 carried it. The @Deprecated-annotation item (section 6) is now ALSO FIXED in source

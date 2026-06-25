@@ -1,6 +1,7 @@
 API DESIGN REVIEW — azure/CosmosContainerExecutor.java
 public class CosmosContainerExecutor   (class is @Beta)
 Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> RE-REVIEW-2 2026-06-24: @Beta added to the Condition streamItems overloads -> ALREADY-FIXED (@Beta granularity). Condition-path thinness (exists/count/paged absent) + dead limit branch remain open (H/M). <<<
 
 1. OVERALL ASSESSMENT
 CosmosContainerExecutor has two halves: a faithful 1:1 wrap of the Azure Cosmos SDK CosmosContainer

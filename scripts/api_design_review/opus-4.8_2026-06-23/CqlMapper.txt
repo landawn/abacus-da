@@ -1,6 +1,7 @@
 API DESIGN REVIEW — cassandra/CqlMapper.java
 public final class CqlMapper
 Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> RE-REVIEW-2 2026-06-24: stale Javadoc fixed (loadFrom/CqlMapper(String)/keySet -> real load(...)/add(...)/cqlIds()) -> ALREADY-FIXED. get/getAttributes/clear-values-entrySet remain by-design. <<<
 
 1. OVERALL ASSESSMENT
 CqlMapper is a registry mapping id -> ParsedCql (+ id -> ImmutableMap attrs), the CQL analogue of the core

@@ -1,6 +1,7 @@
 API DESIGN REVIEW — hbase/AnyAppend.java
 public final class AnyAppend extends AnyMutation<AnyAppend>
 Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> RE-REVIEW-2 2026-06-24: slice params unified to rowOffset/rowLength (factory matches ctor) -> ALREADY-FIXED (resolves the intra-class NEW item). setAttribute(byte[]) documented-by-design. <<<
 >>> DOC-FIX PASS UPDATE (2026-06-23): no edit needed here, but add(Cell)'s Javadoc claim was VERIFIED
     ACCURATE against hbase-client 2.6.0 bytecode — see the refined note below. The remaining items are
     code changes and remain open. <<<

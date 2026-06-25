@@ -1,6 +1,7 @@
 API DESIGN REVIEW — aws/AnyUtil.java  (was: mongodb/AnyUtil.java — class RELOCATED to package com.landawn.abacus.da.aws)
 public final class AnyUtil
 Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
+>>> RE-REVIEW-2 2026-06-24: array2Props now REJECTS non-String names with IAE (aligned with MongoDBBase) -> ALREADY-FIXED. Open(M): class name 'AnyUtil' non-descriptive. <<<
 >>> RE-REVIEW 2026-06-24 PATH UPDATE: the class no longer lives in mongodb/. It now resides at
     abacus-da-all/src/main/java/com/landawn/abacus/da/aws/AnyUtil.java with package declaration
     `package com.landawn.abacus.da.aws;` (AnyUtil.java:1). mongodb/AnyUtil.java NO LONGER EXISTS
