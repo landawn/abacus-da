@@ -2,6 +2,11 @@ API DESIGN REVIEW — cassandra/AsyncCassandraExecutor.java  (DataStax driver v4
 public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row,ResultSet,Statement<?>,PreparedStatement,BatchType>
 Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
 
+>>> RE-REVIEW 2026-06-24: re-verified against current source. Only open finding (missing named-param
+    stream overload) is STILL-VALID: stream(String,BiFunction,Object...) at :148 and stream(Statement<?>,
+    BiFunction) at :189 both present with @throws + null-check, but no Map-accepting variant; execute()
+    DOES expose a Map named-param path (:421), confirming the asymmetry. No new issues. <<<
+
 1. OVERALL ASSESSMENT
 A thin v4 driver-binding concrete; nearly all public API is inherited from AsyncCassandraExecutorBase. The
 methods declared here are driver-specific stream(BiFunction,...) overloads plus override-and-delegate
@@ -19,11 +24,13 @@ None specific to this class (the @Beta gap is on the base; see AsyncCassandraExe
 None.
 
 5. MISSING METHODS
+- [RE-REVIEW 2026-06-24: STILL-VALID — stream(String,BiFunction,Object...) at :148 and stream(Statement<?>,
+  BiFunction) at :189 are positional-only; no Map-accepting overload exists. execute(String,Map<String,
+  Object>) named-param path confirmed present at :421, so the asymmetry is real.]
 - stream(String, BiFunction<ColumnDefinitions,Row,T>, Map<String,Object>) named-param variant absent |
   AsyncCassandraExecutor.java:148,189 (and v3 twin) | Medium | execute(...) supports a Map (named-param)
-  path, but the BiFunction stream family is positional-only. Add a Map-accepting overload to both
-  concretes for parity, or document positional-only. Apply symmetrically across v3/v4. Confirming check:
-  confirm execute() exposes a Map named-param path that stream lacks.
+  path (:421), but the BiFunction stream family is positional-only. Add a Map-accepting overload to both
+  concretes for parity, or document positional-only. Apply symmetrically across v3/v4.
 
 6. DEPRECATION / REMOVAL CANDIDATES
 None.

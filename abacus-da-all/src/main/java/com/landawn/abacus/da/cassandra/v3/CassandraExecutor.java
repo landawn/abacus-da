@@ -2434,7 +2434,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * Creates a UDT codec by looking up the user type from the cluster's metadata.
          *
          * <p>Delegates to {@link #create(UserType, Class)} after resolving the UDT named
-         * {@code userType} in keyspace {@code keySpace} from {@code cluster}'s metadata.</p>
+         * {@code userTypeName} in keyspace {@code keySpace} from {@code cluster}'s metadata.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -2446,13 +2446,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @param <T> the Java type
          * @param cluster the Cassandra cluster whose metadata is queried
          * @param keySpace the keyspace containing the UDT
-         * @param userType the name of the user type within {@code keySpace}
+         * @param userTypeName the name of the user type within {@code keySpace}
          * @param javaClazz the Java class to map to (a {@link Collection}, {@link Map}, or bean class)
          * @return a new UDT codec instance
          * @throws NullPointerException if the keyspace or user type cannot be found in the metadata
          */
-        public static <T> UDTCodec<T> create(final Cluster cluster, final String keySpace, final String userType, final Class<T> javaClazz) {
-            return create(cluster.getMetadata().getKeyspace(keySpace).getUserType(userType), javaClazz);
+        public static <T> UDTCodec<T> create(final Cluster cluster, final String keySpace, final String userTypeName, final Class<T> javaClazz) {
+            return create(cluster.getMetadata().getKeyspace(keySpace).getUserType(userTypeName), javaClazz);
         }
 
         /**

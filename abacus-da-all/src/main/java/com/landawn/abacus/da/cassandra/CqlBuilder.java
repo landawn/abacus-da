@@ -2495,7 +2495,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         }
 
         /**
-         * Parses a condition into CQL with entity class mapping.
+         * Renders a condition into CQL with entity class mapping.
          *
          * <p>This method is useful for generating just the WHERE clause portion of a query
          * with proper property-to-column name mapping. The resulting builder is condition-only:
@@ -2512,9 +2512,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * // Output: (first_name = ?) AND (email LIKE ?)
          * }</pre>
          *
-         * @param cond the condition to parse
+         * @param cond the condition to render
          * @param entityClass the entity class for property mapping
-         * @return a new CqlBuilder instance containing the parsed condition
+         * @return a new CqlBuilder instance containing the rendered condition
          * @throws IllegalArgumentException if cond is null
          */
         public CqlBuilder renderCondition(final Condition cond, final Class<?> entityClass) {

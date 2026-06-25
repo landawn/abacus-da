@@ -257,17 +257,17 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * }</pre>
      *
      * @param rowKey the source byte array containing the row key
-     * @param offset the starting position within the byte array (0-based)
-     * @param length the number of bytes to use for the row key
+     * @param rowOffset the starting position within the byte array (0-based)
+     * @param rowLength the number of bytes to use for the row key
      * @return a new AnyAppend instance configured for the specified row key portion
      * @throws IllegalArgumentException if {@code rowKey} is {@code null} (validated by the underlying
      *         {@link Append} constructor via {@code checkRow})
-     * @throws ArrayIndexOutOfBoundsException if {@code offset} is negative or {@code offset + length}
+     * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or {@code rowOffset + rowLength}
      *         exceeds the array length (the slice copy goes out of bounds)
      * @see #of(byte[])
      */
-    public static AnyAppend of(final byte[] rowKey, final int offset, final int length) {
-        return new AnyAppend(rowKey, offset, length);
+    public static AnyAppend of(final byte[] rowKey, final int rowOffset, final int rowLength) {
+        return new AnyAppend(rowKey, rowOffset, rowLength);
     }
 
     /**

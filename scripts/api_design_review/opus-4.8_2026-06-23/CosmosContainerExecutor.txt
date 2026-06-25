@@ -10,46 +10,79 @@ the other condition-based executors (mongo/cassandra): it exposes only streamIte
 no Optional point-read, no exists/count, and no paged/first-result variants. This is mitigated by the
 class being @Beta and intentionally thin, but the gaps are real. id/partitionKey ordering is clean
 throughout.
+[RE-REVIEW 2026-06-24: Two findings now FIXED — get(...)->Optional point-reads added (lines 945, 985)
+and the deleteItem <T> phantom param dropped to (Object). Still-valid gaps: no exists/count, the
+Condition path is Stream-only (no queryItems/findFirst/List over Condition), the dead prepareQuery
+limit branch (line 1936), and @Beta granularity. Line numbers below refreshed to current source.]
 
 2. NAMING ISSUES
 None. (replaceItem deliberately reorders to lead with (id,partitionKey) vs the SDK's (item,id,pk) — a
 reasonable library-ergonomics choice.)
 
 3. RETURN-TYPE AND PARAMETER ISSUES
-- readItem(String,PartitionKey,[opts],Class) -> CosmosItemResponse<T> | CosmosContainerExecutor.java:864,
-  911 | High | No absence-returning point-read: a miss throws CosmosException(404). The library discipline
+[RE-REVIEW 2026-06-24: ALREADY-FIXED — get(id,partitionKey,[opts],Class)->Optional<T> now exists,
+wrapping readItem and mapping 404 (HTTP_NOT_FOUND) -> Optional.empty() (CosmosContainerExecutor.java:945,
+985). readItem overloads remain CosmosItemResponse<T> as intended (raw SDK passthrough at lines 865, 912).]
+- readItem(String,PartitionKey,[opts],Class) -> CosmosItemResponse<T> | CosmosContainerExecutor.java:865,
+  912 | High | No absence-returning point-read: a miss throws CosmosException(404). The library discipline
   is get->Optional / gett->nullable. Add get(id,partitionKey,Class)->Optional<T> wrapping readItem and
-  mapping 404 -> empty.
-- streamItems(Condition,...) family returns Stream only | :1418-1751 | High | No List/DataSet/Optional
+  mapping 404 -> empty. [NOW ADDED — get(...) at lines 945 and 985.]
+[RE-REVIEW 2026-06-24: STILL-VALID — Condition path (streamItems at lines 1677, 1718, 1764, 1827) returns
+Stream only; no queryItems(Condition)/findFirst(Condition)/List/DataSet variant. Raw-SQL surfaces (String:
+1310,1364 / SqlQuerySpec: 1406,1451) still have BOTH queryItems and streamItems, so the Condition path is
+the lone asymmetry. (CosmosContainerExecutor.java:1677-1832)]
+- streamItems(Condition,...) family returns Stream only | :1677-1832 | High | No List/DataSet/Optional
   variants over a Condition (vs mongo's stream/list/query(DataSet)/findFirst quartet). Add at least a
   paged queryItems(Condition)->CosmosPagedIterable and a findFirst(Condition)->Optional. (Both raw-SQL
   surfaces — String and SqlQuerySpec — already have BOTH queryItems and streamItems, so the Condition path
   is the lone asymmetry.)
-- deleteItem(T item, options) -> CosmosItemResponse<Object> | :739 | Low | <T> is input-only while the
-  response is <Object>; the type param buys nothing. Cosmetic; could drop <T>.
+[RE-REVIEW 2026-06-24: ALREADY-FIXED — signature is now deleteItem(Object item, options) ->
+CosmosItemResponse<Object>; the phantom <T> type parameter was removed (CosmosContainerExecutor.java:740).]
+- deleteItem(T item, options) -> CosmosItemResponse<Object> | :740 | Low | <T> is input-only while the
+  response is <Object>; the type param buys nothing. Cosmetic; could drop <T>. [DONE — now (Object).]
 
 4. MISPLACED METHODS
 None.
 
 5. MISSING METHODS
+[RE-REVIEW 2026-06-24: STILL-VALID — grep of all public methods confirms no exists(...) and no count(...)
+on the class; the only public query/read surfaces are queryItems/streamItems/readItem/readMany/readAllItems.
+(CosmosContainerExecutor.java — absent.)]
 - exists(id,partitionKey) -> boolean and count([Condition]) -> long absent | CosmosContainerExecutor.java
   | High | Verified absent. Both are core library-discipline methods present on every other executor
   (mongo:262/334) and trivially expressible over Cosmos. Add them.
+[RE-REVIEW 2026-06-24: STILL-VALID — `if (count > 0) sqlBuilder.limit(count);` still present at line 1937;
+the only caller is prepareQuery(targetClass, selectPropNames, whereClause) which passes 0 (line 1889). No
+public overload reaches the count>0 path. (CosmosContainerExecutor.java:1888-1889, 1936-1938.)]
 - prepareQuery(...,int count) has a dead `if (count>0) limit(count)` branch (only caller passes 0) |
-  :1808,1811,1855 | Medium | The plumbing for a top-N/limit on the Condition path exists but no public
+  :1889,1936-1938 | Medium | The plumbing for a top-N/limit on the Condition path exists but no public
   overload reaches it. Expose a limit/top-N overload, or delete the dead branch.
 
 6. DEPRECATION / REMOVAL CANDIDATES
 None.
 
 OTHER (annotation hygiene)
-- @Beta granularity | streamAllItems carries method-level @Beta (:1146,1186) but the more-experimental
-  Condition streamItems overloads (:1596+) do not (class is already @Beta) | Low | Make consistent.
+[RE-REVIEW 2026-06-24: STILL-VALID — streamAllItems still carries method-level @Beta (lines 1227, 1267);
+the Condition streamItems overloads (1677, 1718, 1764, 1827) carry no method-level @Beta. (Class-level
+@Beta remains at line 181.) (CosmosContainerExecutor.java:1227,1267 vs 1677+.)]
+- @Beta granularity | streamAllItems carries method-level @Beta (:1227,1267) but the more-experimental
+  Condition streamItems overloads (:1677+) do not (class is already @Beta) | Low | Make consistent.
 
 CROSS-CLASS NOTES
 - Biggest deviation: the library-integrated query path is far thinner than mongo/cassandra (no Optional
   point-read, no exists/count, no paged/first for the Condition path). Acceptable while @Beta, but this is
-  the class to round out before GA.
+  the class to round out before GA. [RE-REVIEW 2026-06-24: the Optional point-read gap is now closed
+  (get(...) at lines 945/985); remaining gaps are exists/count and the Condition-path paged/first variants.]
+
+NEW ISSUES (2026-06-24 re-review)
+- Condition projection overloads streamItems(Collection<String> selectPropNames, Condition, ...) have no
+  paged queryItems counterpart | CosmosContainerExecutor.java:1764,1827 | Low | Sub-asymmetry of the
+  existing Condition-path finding: the raw-SQL surfaces expose paged queryItems, but neither the plain
+  Condition nor the projection Condition overloads do. Folds into "round out the Condition path before GA";
+  no separate action beyond that.
+- No genuinely new defects found. The two prior-cycle additions (get->Optional, deleteItem(Object)) are
+  correct: get(...) maps only HttpURLConnection.HTTP_NOT_FOUND (404) to Optional.empty() and rethrows all
+  other CosmosExceptions (lines 945-955, 985-995), which matches the documented contract.
 
 --- DOC-FIX PASS 2026-06-23 ---
 Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its

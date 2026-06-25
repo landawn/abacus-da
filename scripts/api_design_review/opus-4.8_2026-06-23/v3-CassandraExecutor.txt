@@ -5,15 +5,29 @@ Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
     only). CORRECTION: the claim that "the same wrong sentence exists in v4" is INVALID — v4 has no such
     sentence; only v3 carried it. The @Deprecated-annotation item (section 6) is now ALSO FIXED in source
     (2026-06-24). See the [RESOLVED] tags. <<<
+>>> RE-REVIEW 2026-06-24 (against current source): execute(Statement) overclaim RESOLVED re-confirmed
+    (clean javadoc + raw session.execute at :1580-1582). @Deprecated annotation RESOLVED re-confirmed
+    (class @Deprecated at :238; v3/AsyncCassandraExecutor @Deprecated at :46). NEW: the UDTCodec.create
+    String-param naming collision (userType) is now a v3-ONLY defect — v4 renamed its twin to userTypeName
+    but v3 was left as userType (v3/CassandraExecutor.java:2454). See NEW ISSUES. <<<
 
 1. OVERALL ASSESSMENT
 The v3 concrete mirrors the v4 concrete against the older DataStax driver 3.x. Its v3-only members
 (cluster(), mapper(Class)) are correct because driver 4.x merged Cluster into CqlSession and dropped the
 built-in MappingManager. The class documents itself as legacy/superseded but is missing the actual
 @Deprecated annotation. One shared Javadoc overclaim with v4.
+[RE-REVIEW 2026-06-24] Both prior items are now RESOLVED in source: @Deprecated annotation present on the
+class (:238) and on v3/AsyncCassandraExecutor (:46); execute(Statement) overclaim removed. ONE new v3-only
+item surfaced: the UDTCodec.create String UDT-name param is still `userType` (v4 was renamed to
+userTypeName) — Low-severity naming inconsistency (see NEW ISSUES).
 
 2. NAMING ISSUES
 None beyond the shared userType String-param item noted in the v4 report (UDTCodec.create) — fix both.
+[RE-REVIEW 2026-06-24: STILL-VALID and now v3-ONLY — v3/CassandraExecutor.java:2454
+`create(final Cluster cluster, final String keySpace, final String userType, final Class<T> javaClazz)`
+still names the UDT-NAME String param `userType`, colliding with the UserType-OBJECT param `userType` on
+the sibling create(UserType userType,...) at :2321. v4's twin was renamed to userTypeName; v3 was not, so
+the "fix both" is now half-done. Rename v3's String param to userTypeName. See NEW ISSUES.]
 
 3. RETURN-TYPE AND PARAMETER ISSUES
 - [RESOLVED 2026-06-23 — doc-fixed] execute(Statement) Javadoc overclaimed settings application |
@@ -24,6 +38,9 @@ None beyond the shared userType String-param item noted in the v4 report (UDTCod
   matches the actual, sibling-confirmed behavior). No code change.
   CORRECTION to the original finding: v4 does NOT contain this sentence — it was a v3-only error, not
   "shared doc drift."
+  [RE-REVIEW 2026-06-24: ALREADY-FIXED (RESOLVED re-confirmed) — execute(Statement) javadoc at :1537-1579
+  has no settings-application claim; body is raw `session.execute(statement)` at :1580-1582.
+  (v3/CassandraExecutor.java:1581.)]
 
 4. MISPLACED METHODS
 None.
@@ -37,9 +54,21 @@ None. (No v4-only public method is absent here; the override family is base-dict
   but had NO @Deprecated ANNOTATION, so the compiler never warned callers. FIXED: added @Deprecated to the
   class (and to v3/AsyncCassandraExecutor) — callers now get deprecation warnings, and the v3
   "deprecated-not-annotated" compiler warnings are cleared. test-compile green.
+  [RE-REVIEW 2026-06-24: ALREADY-FIXED (RESOLVED re-confirmed) — class @Deprecated at
+  v3/CassandraExecutor.java:238 (decl at :239); v3/AsyncCassandraExecutor.java @Deprecated at :46.
+  (v3/CassandraExecutor.java:238.)]
 
 CROSS-CLASS NOTES
 - The whole cassandra.v3 package is intended to be superseded by the v4 packages; the only thing missing
   is the machine-readable @Deprecated marker on the public types. Recommend deprecating the v3 public
   surface wholesale.
+  [RE-REVIEW 2026-06-24: the @Deprecated marker is now present on v3/CassandraExecutor (:238) and
+  v3/AsyncCassandraExecutor (:46); this note is satisfied for these two public types.]
 - cluster()/mapper(Class) v3-only members are driver-mandated, NOT drift.
+
+NEW ISSUES (2026-06-24 re-review)
+- UDTCodec.create(Cluster,String keySpace,String userType,Class) String param named userType |
+  v3/CassandraExecutor.java:2454 | Low | The String UDT-name param is named `userType`, colliding with the
+  UserType-object param `userType` on the sibling create(UserType userType,...) at :2321. v4's equivalent
+  was renamed to userTypeName (cassandra/CassandraExecutor.java:2078) but v3 was left unchanged, so the
+  formerly-"shared, fix both" naming item is now a v3-only inconsistency. Rename to userTypeName for parity.

@@ -192,33 +192,6 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
         return mutation.getFamilyCellMap();
     }
 
-    //    /**
-    //     * Method for setting the mutation's familyMap.
-    //     *
-    //     * @param map
-    //     * @return
-    //     * @deprecated As of release 2.0.0, this will be removed in HBase 3.0.0.
-    //     *             Use {@link Mutation#Mutation(byte[], long, NavigableMap)} instead
-    //     */
-    //    @Deprecated
-    //    public AM setFamilyCellMap(NavigableMap<byte[], List<Cell>> map) {
-    //        mutation.setFamilyCellMap(map);
-    //
-    //        return (AM) this;
-    //    }
-
-    //    /**
-    //     * Method for retrieving the timestamp.
-    //     *
-    //     * @return timestamp
-    //     * @deprecated As of release 2.0.0, this will be removed in HBase 3.0.0.
-    //     *             Use {@code getTimestamp()} instead
-    //     */
-    //    @Deprecated
-    //    public long getTimeStamp() {
-    //        return mutation.getTimeStamp();
-    //    }
-
     /**
      * Returns the timestamp set on this mutation. The timestamp becomes the version of every
      * cell written by the mutation. When no timestamp has been set explicitly, HBase returns
@@ -282,6 +255,12 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * Returns the cell visibility expression attached to this mutation. The expression is the
      * label-algebra string evaluated by HBase's visibility-label subsystem to gate cell-level read
      * access (e.g. {@code "SECRET&DEPT_A"}).
+     *
+     * <p>Unlike {@link #toJson()} — which wraps HBase's {@link java.io.IOException} as an
+     * {@link java.io.UncheckedIOException} because a JSON serialization failure is non-recoverable —
+     * this method intentionally surfaces the checked {@link DeserializationException}. The exception
+     * signals a corrupt or undecodable stored visibility expression, a condition the caller may
+     * legitimately want to detect and handle, so it is propagated rather than hidden.</p>
      *
      * @return the {@link CellVisibility} previously set, or {@code null} if none has been set
      * @throws DeserializationException if the stored visibility expression cannot be deserialized

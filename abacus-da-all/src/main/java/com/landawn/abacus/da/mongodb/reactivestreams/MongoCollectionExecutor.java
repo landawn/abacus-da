@@ -2985,25 +2985,25 @@ public final class MongoCollectionExecutor {
     /**
      * Performs a bulk insert of multiple documents in a reactive manner.
      *
-     * <p>Inserts each entity as an {@link InsertOneModel} via {@link #bulkWrite(List)} and emits
-     * only the {@code getInsertedCount()} from the underlying {@link BulkWriteResult}. The
-     * operation is atomic at the document level but not for the entire batch — by default
-     * (ordered=true) the driver stops at the first failing document; pass an unordered
+     * <p>Inserts each entity as an {@link InsertOneModel} via {@link #bulkWrite(List)} and emits the
+     * resulting {@link BulkWriteResult} (use {@link BulkWriteResult#getInsertedCount()} for the
+     * inserted count). The operation is atomic at the document level but not for the entire batch —
+     * by default (ordered=true) the driver stops at the first failing document; pass an unordered
      * {@link BulkWriteOptions} via {@link #bulkInsert(Collection, BulkWriteOptions)} to continue
      * after errors.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Typical: emits just the inserted-document count.
+     * // Typical: emits the BulkWriteResult.
      * List<Document> documents = Arrays.asList(
      *     new Document("name", "Alice").append("age", 25),
      *     new Document("name", "Bob").append("age", 30)
      * );
-     * Mono<Integer> insertedCount = executor.bulkInsert(documents);      // cold; runs on subscription
-     * insertedCount.subscribe(n -> System.out.println("inserted " + n)); // "inserted 2"
+     * Mono<BulkWriteResult> result = executor.bulkInsert(documents);                 // cold; runs on subscription
+     * result.subscribe(r -> System.out.println("inserted " + r.getInsertedCount())); // "inserted 2"
      *
-     * // Typical: block for the count directly.
-     * int n = executor.bulkInsert(documents).block();            // 2
+     * // Typical: block for the result directly.
+     * BulkWriteResult r = executor.bulkInsert(documents).block();   // r.getInsertedCount() == 2
      *
      * // Edge/Negative: a null collection is rejected synchronously (at call time).
      * executor.bulkInsert(null);                                 // throws IllegalArgumentException
@@ -3013,15 +3013,15 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param entities collection of documents or entities to insert; must not be null or empty
-     * @return a {@code Mono} that, on subscription, emits exactly one {@code Integer} with the
-     *         count of successfully inserted documents, then completes
+     * @return a {@code Mono} that, on subscription, emits exactly one {@link BulkWriteResult}
+     *         (use {@link BulkWriteResult#getInsertedCount()} for the inserted count), then completes
      * @throws IllegalArgumentException if entities is null or empty
      * @throws com.mongodb.MongoBulkWriteException if the bulk write reports any per-document
      *         failures (signalled via {@code Mono})
      * @see #bulkInsert(Collection, BulkWriteOptions)
      * @see #bulkWrite(List)
      */
-    public Mono<Integer> bulkInsert(final Collection<?> entities) {
+    public Mono<BulkWriteResult> bulkInsert(final Collection<?> entities) {
         return bulkInsert(entities, null);
     }
 
@@ -3039,16 +3039,17 @@ public final class MongoCollectionExecutor {
      *     .ordered(false)
      *     .bypassDocumentValidation(true);
      * List<MyEntity> entities = loadEntities();
-     * Mono<Integer> insertedCount = executor.bulkInsert(entities, options);
+     * Mono<BulkWriteResult> result = executor.bulkInsert(entities, options);
      * }</pre>
      *
      * @param entities collection of documents or entities to insert; must not be null or empty
      * @param options the options to apply to the bulk write operation such as ordered execution
      *                or validation bypass; may be null to use default options
-     * @return a Mono that emits the count of successfully inserted documents
+     * @return a Mono that emits the {@link BulkWriteResult} (use {@link BulkWriteResult#getInsertedCount()}
+     *         for the inserted count)
      * @throws IllegalArgumentException if entities is null or empty
      */
-    public Mono<Integer> bulkInsert(final Collection<?> entities, final BulkWriteOptions options) {
+    public Mono<BulkWriteResult> bulkInsert(final Collection<?> entities, final BulkWriteOptions options) {
         N.checkArgNotEmpty(entities, "entities");
 
         final List<InsertOneModel<Document>> list = new ArrayList<>(entities.size());
@@ -3061,7 +3062,7 @@ public final class MongoCollectionExecutor {
             }
         }
 
-        return bulkWrite(list, options).map(BulkWriteResult::getInsertedCount);
+        return bulkWrite(list, options);
     }
 
     /**

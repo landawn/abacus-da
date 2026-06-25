@@ -15,7 +15,6 @@
 package com.landawn.abacus.da.hbase;
 
 import static com.landawn.abacus.da.hbase.HBaseExecutor.toFamilyQualifierBytes;
-import static com.landawn.abacus.da.hbase.HBaseExecutor.toRowBytes;
 import static com.landawn.abacus.da.hbase.HBaseExecutor.toRowKeyBytes;
 
 import java.io.IOException;
@@ -216,7 +215,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param familyMap a pre-populated NavigableMap of column families to their respective Cell lists
      */
     AnyDelete(final Object rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap) {
-        super(new Delete(toRowBytes(rowKey), timestamp, familyMap));
+        super(new Delete(toRowKeyBytes(rowKey), timestamp, familyMap));
         delete = (Delete) mutation;
     }
 

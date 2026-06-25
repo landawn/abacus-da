@@ -1221,11 +1221,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition to evaluate
      * @return a future whose payload is the number of matching rows
      */
-    @SuppressWarnings("deprecation")
     public ContinuableFuture<Long> count(final Class<?> targetClass, final Condition whereClause) {
         final SP cp = cassandraExecutor.prepareQuery(targetClass, CassandraExecutorBase.COUNT_SELECT_PROP_NAMES, whereClause, 0);
 
-        return count(cp.query(), cp.parameters().toArray());
+        return queryForSingleValue(Long.class, cp.query(), cp.parameters().toArray()).map(CassandraExecutorBase.long_secondMapper);
     }
 
     /**

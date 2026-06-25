@@ -29,6 +29,7 @@ import org.apache.hadoop.hbase.filter.Filter;
 import org.apache.hadoop.hbase.io.TimeRange;
 
 import com.landawn.abacus.annotation.SuppressFBWarnings;
+import com.landawn.abacus.util.N;
 
 /**
  * A comprehensive wrapper around HBase's {@link Scan} class that provides simplified scanning
@@ -616,19 +617,21 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * AnyScan scan = AnyScan.create().setFamilyMap(familyMap);   // returns this scan
      * int count = scan.numFamilies();                            // returns 2 ("info" and "data")
      *
-     * // A null map is accepted here (stored by reference); a later traversal would fail.
-     * AnyScan nullMap = AnyScan.create().setFamilyMap((Map<byte[], NavigableSet<byte[]>>) null);   // no exception
+     * // A null map is rejected fast.
+     * AnyScan.create().setFamilyMap((Map<byte[], NavigableSet<byte[]>>) null);   // throws IllegalArgumentException
      * }</pre>
      *
-     * <p>This method delegates directly to {@link Scan#setFamilyMap(Map)}; the underlying HBase
-     * call simply stores the supplied reference, so any later traversal of a {@code null} map
-     * will fail with a {@link NullPointerException}.</p>
+     * <p>The supplied map is validated to be non-{@code null} before being passed to
+     * {@link Scan#setFamilyMap(Map)}, which simply stores the reference.</p>
      *
      * @param familyMap the complete family-to-qualifiers mapping; must not be {@code null}
      * @return this {@link AnyScan} instance for method chaining
+     * @throws IllegalArgumentException if {@code familyMap} is {@code null}
      * @see #getFamilyMap()
      */
     public AnyScan setFamilyMap(final Map<byte[], NavigableSet<byte[]>> familyMap) {
+        N.checkArgNotNull(familyMap, "familyMap");
+
         scan.setFamilyMap(familyMap);
 
         return this;

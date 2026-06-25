@@ -3,8 +3,6 @@ package com.landawn.abacus.da.aws;
 import java.util.LinkedHashMap;
 import java.util.Map;
 
-import com.landawn.abacus.util.N;
-
 /**
  * Utility class providing general-purpose helper methods used across the data-access layer.
  *
@@ -23,9 +21,10 @@ public final class AnyUtil {
      * {@link Map} suitable for use as a property bag.
      *
      * <p>The input array is interpreted as alternating key-value pairs in the form
-     * {@code [name1, value1, name2, value2, ...]}. Each name element is coerced to
-     * a {@link String} via {@link N#stringOf(Object)}, and the corresponding value
-     * is stored as-is. The returned map is a {@link LinkedHashMap}, so iteration
+     * {@code [name1, value1, name2, value2, ...]}. Each name element must be a
+     * {@link String}; a non-String (or {@code null}) name causes an
+     * {@link IllegalArgumentException} to be thrown. The corresponding value is
+     * stored as-is. The returned map is a {@link LinkedHashMap}, so iteration
      * order matches the order of the pairs in the input array. If a name occurs
      * more than once, the later value overwrites the earlier one (but the original
      * insertion position is retained).</p>
@@ -36,9 +35,9 @@ public final class AnyUtil {
      * Map<String, Object> p = AnyUtil.array2Props(new Object[] { "name", "Alice", "age", 30 });
      * // returns {name=Alice, age=30} (a LinkedHashMap)
      *
-     * // Typical: non-String names are coerced via N.stringOf.
-     * Map<String, Object> q = AnyUtil.array2Props(new Object[] { 100, "hundred", true, "yes" });
-     * // returns {100=hundred, true=yes}
+     * // Negative: a non-String name is rejected.
+     * AnyUtil.array2Props(new Object[] { 100, "hundred" });
+     * // throws IllegalArgumentException
      *
      * // Duplicate name: later value overwrites, original position retained.
      * Map<String, Object> r = AnyUtil.array2Props(new Object[] { "z", 1, "a", 2, "z", 3 });
@@ -65,7 +64,8 @@ public final class AnyUtil {
      *                          and values; may be {@code null}
      * @return a new {@link LinkedHashMap} containing the supplied pairs in order;
      *         an empty map if {@code propNameAndValues} is {@code null}
-     * @throws IllegalArgumentException if {@code propNameAndValues} has an odd length
+     * @throws IllegalArgumentException if {@code propNameAndValues} has an odd length,
+     *         or if any property name is not a {@link String}
      */
     public static Map<String, Object> array2Props(final Object[] propNameAndValues) {
         if (propNameAndValues == null) {
@@ -79,7 +79,12 @@ public final class AnyUtil {
         final Map<String, Object> props = new LinkedHashMap<>(propNameAndValues.length / 2);
 
         for (int i = 0, len = propNameAndValues.length; i < len; i += 2) {
-            props.put(N.stringOf(propNameAndValues[i]), propNameAndValues[i + 1]);
+            if (!(propNameAndValues[i] instanceof String)) {
+                throw new IllegalArgumentException("Parameters must be property name-value pairs whose names are Strings, but found "
+                        + (propNameAndValues[i] == null ? "null" : propNameAndValues[i].getClass().getName()) + " at index " + i);
+            }
+
+            props.put((String) propNameAndValues[i], propNameAndValues[i + 1]);
         }
 
         return props;

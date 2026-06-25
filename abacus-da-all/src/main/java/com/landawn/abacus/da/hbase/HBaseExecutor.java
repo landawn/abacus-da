@@ -732,14 +732,6 @@ public final class HBaseExecutor implements AutoCloseable {
         return toValue(result, targetType);
     }
 
-    //    public static Map<String, Object> toMap(final Result result) {
-    //        return toEntityOrMap(Clazz.PROPS_MAP, result);
-    //    }
-    //
-    //    public static Map<String, Object> toMap(final Result result, final IntFunction<Map<String, Object>> mapSupplier) {
-    //        return toEntityOrMap(Clazz.PROPS_MAP, result, mapSupplier);
-    //    }
-
     /**
      * Package-private entry point that converts a single HBase {@link Result} to
      * {@code targetType}, returning the {@link Type#defaultValue()} for empty results.
@@ -1459,33 +1451,6 @@ public final class HBaseExecutor implements AutoCloseable {
         }
     }
 
-    //    /**
-    //     * Test for the existence of columns in the table, as specified by the Gets.
-    //     * This will return an array of booleans. Each value will be true if the related Get matches
-    //     * one or more keys, {@code false} if not.
-    //     * This is a server-side call so it prevents any data from being transferred to
-    //     * the client.
-    //     *
-    //     * @param tableName
-    //     * @param gets
-    //     * @return Array of boolean.  True if the specified Get matches one or more keys, {@code false} if not.
-    //     * @throws UncheckedIOException the unchecked IO exception
-    //     * @deprecated since 2.0 version and will be removed in 3.0 version.
-    //     *             use {@code exists(List)}
-    //     */
-    //    @Deprecated
-    //    public List<Boolean> existsAll(final String tableName, final List<Get> gets) throws UncheckedIOException {
-    //        final Table table = getTable(tableName);
-    //
-    //        try {
-    //            return BooleanList.of(table.existsAll(gets)).toList();
-    //        } catch (IOException e) {
-    //            throw new UncheckedIOException(e);
-    //        } finally {
-    //            closeQuietly(table);
-    //        }
-    //    }
-
     /**
      * Tests whether the specified AnyGet operation would return any results.
      *
@@ -1535,13 +1500,8 @@ public final class HBaseExecutor implements AutoCloseable {
      * @see #exists(String, List)
      */
     public List<Boolean> exists(final String tableName, final Collection<AnyGet> anyGets) throws UncheckedIOException {
-        return exists(tableName, AnyGet.toGet(anyGets));
+        return exists(tableName, AnyGet.toGetList(anyGets));
     }
-
-    //    @Deprecated
-    //    public List<Boolean> existsAll(final String tableName, final Collection<AnyGet> anyGets) throws UncheckedIOException {
-    //        return existsAll(tableName, AnyGet.toGet(anyGets));
-    //    }
 
     // There is no too much benefit to add method for "Object rowKey"
     // And it may cause error because the "Object" is ambiguous to any type.
@@ -1671,7 +1631,7 @@ public final class HBaseExecutor implements AutoCloseable {
      * @see #get(String, List)
      */
     public List<Result> get(final String tableName, final Collection<AnyGet> anyGets) throws UncheckedIOException {
-        return get(tableName, AnyGet.toGet(anyGets));
+        return get(tableName, AnyGet.toGetList(anyGets));
     }
 
     // There is no too much benefit to add method for "Object rowKey"
@@ -3040,15 +3000,6 @@ public final class HBaseExecutor implements AutoCloseable {
         }
     }
 
-    //
-    //    static byte[] toBytes(final String str) {
-    //        return str == null ? null : Bytes.toBytes(str);
-    //    }
-    //
-    //    static byte[] toBytes(final Object obj) {
-    //        return obj == null ? null : (obj instanceof byte[] ? (byte[]) obj : toBytes(N.stringOf(obj)));
-    //    }
-
     static String toRowKeyString(final byte[] bytes, final int offset, final int len) {
         return Bytes.toString(bytes, offset, len);
     }
@@ -3390,7 +3341,7 @@ public final class HBaseExecutor implements AutoCloseable {
          * @see AnyGet
          */
         public List<Boolean> exists(final List<AnyGet> anyGets) throws UncheckedIOException {
-            return hbaseExecutor.exists(tableName, AnyGet.toGet(anyGets));
+            return hbaseExecutor.exists(tableName, AnyGet.toGetList(anyGets));
         }
 
         /**

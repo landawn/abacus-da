@@ -89,11 +89,11 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * {@link Increment} that uses a slice of {@code rowKey} as its row key.
      *
      * @param rowKey the byte array containing the row key data
-     * @param offset the starting position within {@code rowKey} (0-based)
-     * @param length the number of bytes to use from {@code rowKey}
+     * @param rowOffset the starting position within {@code rowKey} (0-based)
+     * @param rowLength the number of bytes to use from {@code rowKey}
      */
-    AnyIncrement(final byte[] rowKey, final int offset, final int length) {
-        super(new Increment(rowKey, offset, length));
+    AnyIncrement(final byte[] rowKey, final int rowOffset, final int rowLength) {
+        super(new Increment(rowKey, rowOffset, rowLength));
         increment = (Increment) mutation;
     }
 
@@ -213,17 +213,17 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * }</pre>
      *
      * @param rowKey the byte array containing the row key data
-     * @param offset the starting position within the rowKey array (0-based)
-     * @param length the number of bytes to use from the rowKey array
+     * @param rowOffset the starting position within the rowKey array (0-based)
+     * @param rowLength the number of bytes to use from the rowKey array
      * @return a new AnyIncrement instance configured for the partial row key
      * @throws IllegalArgumentException if {@code rowKey} is {@code null}, or if the resulting
      *         slice is empty or exceeds HBase's maximum row-key length
-     * @throws ArrayIndexOutOfBoundsException if {@code offset} or {@code length} addresses bytes
-     *         outside {@code rowKey} (for example a negative {@code offset})
+     * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} or {@code rowLength} addresses bytes
+     *         outside {@code rowKey} (for example a negative {@code rowOffset})
      * @see #of(byte[])
      */
-    public static AnyIncrement of(final byte[] rowKey, final int offset, final int length) {
-        return new AnyIncrement(rowKey, offset, length);
+    public static AnyIncrement of(final byte[] rowKey, final int rowOffset, final int rowLength) {
+        return new AnyIncrement(rowKey, rowOffset, rowLength);
     }
 
     /**

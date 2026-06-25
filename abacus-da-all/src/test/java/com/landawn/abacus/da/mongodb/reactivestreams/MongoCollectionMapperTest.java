@@ -903,10 +903,11 @@ public class MongoCollectionMapperTest extends TestBase {
     @Test
     public void testBulkInsert() {
         Collection<TestEntity> entities = Arrays.asList(new TestEntity(), new TestEntity());
+        BulkWriteResult bulkResult = mock(BulkWriteResult.class);
 
-        when(mockExecutor.bulkInsert(entities)).thenReturn(Mono.just(2));
+        when(mockExecutor.bulkInsert(entities)).thenReturn(Mono.just(bulkResult));
 
-        StepVerifier.create(mapper.bulkInsert(entities)).expectNext(2).verifyComplete();
+        StepVerifier.create(mapper.bulkInsert(entities)).expectNext(bulkResult).verifyComplete();
 
         verify(mockExecutor).bulkInsert(entities);
     }
@@ -915,10 +916,11 @@ public class MongoCollectionMapperTest extends TestBase {
     public void testBulkInsertWithOptions() {
         Collection<TestEntity> entities = Arrays.asList(new TestEntity(), new TestEntity());
         BulkWriteOptions options = new BulkWriteOptions().ordered(false);
+        BulkWriteResult bulkResult = mock(BulkWriteResult.class);
 
-        when(mockExecutor.bulkInsert(entities, options)).thenReturn(Mono.just(2));
+        when(mockExecutor.bulkInsert(entities, options)).thenReturn(Mono.just(bulkResult));
 
-        StepVerifier.create(mapper.bulkInsert(entities, options)).expectNext(2).verifyComplete();
+        StepVerifier.create(mapper.bulkInsert(entities, options)).expectNext(bulkResult).verifyComplete();
 
         verify(mockExecutor).bulkInsert(entities, options);
     }

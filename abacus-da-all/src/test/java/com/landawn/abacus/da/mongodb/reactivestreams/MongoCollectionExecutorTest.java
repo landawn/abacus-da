@@ -1116,13 +1116,12 @@ public class MongoCollectionExecutorTest extends TestBase {
     public void testBulkInsert() {
         List<Document> entities = Arrays.asList(new Document("name", "doc1"), new Document("name", "doc2"));
         BulkWriteResult bulkResult = mock(BulkWriteResult.class);
-        when(bulkResult.getInsertedCount()).thenReturn(2);
         Publisher<BulkWriteResult> publisher = Mono.just(bulkResult);
         when(mockCollection.bulkWrite(anyList())).thenReturn(publisher);
 
-        Mono<Integer> result = executor.bulkInsert(entities);
+        Mono<BulkWriteResult> result = executor.bulkInsert(entities);
 
-        StepVerifier.create(result).expectNext(2).verifyComplete();
+        StepVerifier.create(result).expectNext(bulkResult).verifyComplete();
     }
 
     @Test
@@ -1130,13 +1129,12 @@ public class MongoCollectionExecutorTest extends TestBase {
         List<Document> entities = Arrays.asList(new Document("name", "doc1"), new Document("name", "doc2"));
         BulkWriteOptions options = new BulkWriteOptions();
         BulkWriteResult bulkResult = mock(BulkWriteResult.class);
-        when(bulkResult.getInsertedCount()).thenReturn(2);
         Publisher<BulkWriteResult> publisher = Mono.just(bulkResult);
         when(mockCollection.bulkWrite(anyList(), eq(options))).thenReturn(publisher);
 
-        Mono<Integer> result = executor.bulkInsert(entities, options);
+        Mono<BulkWriteResult> result = executor.bulkInsert(entities, options);
 
-        StepVerifier.create(result).expectNext(2).verifyComplete();
+        StepVerifier.create(result).expectNext(bulkResult).verifyComplete();
     }
 
     @Test
@@ -1760,13 +1758,12 @@ public class MongoCollectionExecutorTest extends TestBase {
         entities.add(entity2);
 
         BulkWriteResult bulkResult = mock(BulkWriteResult.class);
-        when(bulkResult.getInsertedCount()).thenReturn(2);
         Publisher<BulkWriteResult> publisher = Mono.just(bulkResult);
         when(mockCollection.bulkWrite(anyList())).thenReturn(publisher);
 
-        Mono<Integer> result = executor.bulkInsert(entities);
+        Mono<BulkWriteResult> result = executor.bulkInsert(entities);
 
-        StepVerifier.create(result).expectNext(2).verifyComplete();
+        StepVerifier.create(result).expectNext(bulkResult).verifyComplete();
     }
 
     @Test

@@ -106,7 +106,7 @@ import com.landawn.abacus.util.XmlUtil;
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * // Initialize mapper with XML file
- * CqlMapper mapper = new CqlMapper("classpath:cql-config.xml");
+ * CqlMapper mapper = CqlMapper.load("classpath:cql-config.xml");
  *
  * // Get parsed CQL statement
  * ParsedCql parsedCql = mapper.get("findAccountById");
@@ -163,11 +163,11 @@ public final class CqlMapper {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * CqlMapper mapper = new CqlMapper();
-     * mapper.loadFrom("classpath:user-queries.xml");
-     * mapper.loadFrom("classpath:product-queries.xml");
+     * mapper.add("findUserById", "SELECT * FROM users WHERE id = ?");
+     * mapper.add("findProductById", "SELECT * FROM products WHERE id = ?");
      * }</pre>
      *
-     * @see #CqlMapper(String)
+     * @see #load(String)
      */
     public CqlMapper() {
     }
@@ -196,7 +196,7 @@ public final class CqlMapper {
      * @throws UncheckedIOException if a file cannot be read
      * @throws ParsingException if any XML file is malformed
      * @throws RuntimeException if a file is not found, or the required {@code <cqlMapper>} root element is missing
-     * @see #loadFrom(String)
+     * @see #load(File...)
      */
     public static CqlMapper load(final String filePath) {
         N.checkArgNotEmpty(filePath, "filePath");
@@ -676,7 +676,7 @@ public final class CqlMapper {
      * added CQL statements or creating configuration backups. The generated XML will
      * include all statements with their IDs and attributes.</p>
      *
-     * <p>The output format matches the input format expected by {@link #loadFrom(String)}:</p>
+     * <p>The output format matches the input format expected by {@link #load(String)}:</p>
      * <pre>{@code
      * <?xml version="1.0" encoding="UTF-8"?>
      * <cqlMapper>
@@ -702,9 +702,9 @@ public final class CqlMapper {
      * m.add("findUserById", "SELECT * FROM users WHERE id = ?", null);
      * m.saveTo(new File("target/cql/config.xml")); // writes the XML; missing parent dir "target/cql" is created
      *
-     * // round-trips through loadFrom:
-     * CqlMapper reloaded = new CqlMapper("target/cql/config.xml");
-     * reloaded.keySet();                            // contains "findUserById"
+     * // round-trips through load:
+     * CqlMapper reloaded = CqlMapper.load("target/cql/config.xml");
+     * reloaded.cqlIds();                            // contains "findUserById"
      *
      * // an unwritable target surfaces as an UncheckedIOException:
      * m.saveTo(new File("/")); // throws UncheckedIOException (cannot write to a directory path)
@@ -714,7 +714,7 @@ public final class CqlMapper {
      * @throws UncheckedIOException if the parent directory cannot be created, or if the file
      *         cannot be written
      * @see #saveTo(OutputStream)
-     * @see #loadFrom(String)
+     * @see #load(String)
      */
     public void saveTo(final File file) throws UncheckedIOException {
         final File parentFile = file.getParentFile();
@@ -733,7 +733,7 @@ public final class CqlMapper {
     /**
      * Writes all CQL statements in this mapper to the supplied output stream as XML.
      *
-     * <p>The output format matches the input format expected by {@link #loadFrom(String)}. The stream is
+     * <p>The output format matches the input format expected by {@link #load(String)}. The stream is
      * flushed but <i>not</i> closed by this method; the caller retains ownership and is responsible for
      * closing it.</p>
      *
@@ -753,7 +753,7 @@ public final class CqlMapper {
      * @param os the output stream to write to (not closed by this method)
      * @throws UncheckedIOException if an I/O error occurs while writing to the stream
      * @see #saveTo(File)
-     * @see #loadFrom(String)
+     * @see #load(String)
      */
     public void saveTo(final OutputStream os) throws UncheckedIOException {
         try {

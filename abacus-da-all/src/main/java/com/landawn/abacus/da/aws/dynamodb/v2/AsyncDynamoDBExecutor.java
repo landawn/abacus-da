@@ -1787,13 +1787,17 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * only the single page returned by DynamoDB is materialized.</p>
      *
      * @param queryRequest the QueryRequest with query parameters. Must not be null.
-     * @param targetClass the row type for the Dataset, or {@code null} / a {@link Map} subtype to
-     *                    keep rows as raw maps of attribute name → value
+     * @param targetClass the row type for the Dataset; must not be null. Pass a {@link Map} subtype
+     *                    (e.g. {@code Map.class}) to keep rows as raw maps of attribute name → value.
      * @return a CompletableFuture that completes with a {@link Dataset} containing the query
      *         results (possibly empty)
+     * @throws IllegalArgumentException if queryRequest or targetClass is null
      */
     public CompletableFuture<Dataset> query(final QueryRequest queryRequest, final Class<?> targetClass) {
-        if (targetClass == null || Map.class.isAssignableFrom(targetClass)) {
+        N.checkArgNotNull(queryRequest, "queryRequest");
+        N.checkArgNotNull(targetClass, "targetClass");
+
+        if (Map.class.isAssignableFrom(targetClass)) {
             final CompletableFuture<QueryResponse> queryResultFuture = dynamoDBClient.query(queryRequest);
 
             return queryResultFuture.thenApplyAsync(queryResult -> {

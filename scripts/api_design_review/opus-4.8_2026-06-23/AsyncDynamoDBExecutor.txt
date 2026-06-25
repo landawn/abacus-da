@@ -8,6 +8,9 @@ asyncExecutor.execute(() -> dbExecutor.<same>(...)) delegation returning Continu
 Symmetry is strong and matches the library async convention (verified: 126 ContinuableFuture, 0
 CompletableFuture — consistent with AsyncHBaseExecutor/AsyncCassandraExecutor). sync() accessor + fixed
 AsyncExecutor (no per-call Executor overloads — also absent in siblings, so not a gap). Only one item.
+[RE-REVIEW 2026-06-24: re-verified against current source (now 2157 lines). The single finding (section 3,
+ query's unused <T>) is ALREADY-FIXED — the signature is now Class<?>. ContinuableFuture convention still
+ upheld (re-counted: 126 ContinuableFuture, 0 CompletableFuture). No NEW issues. This class is now clean.]
 
 2. NAMING ISSUES
 None.
@@ -18,6 +21,13 @@ None.
   result. The sync sibling correctly uses Class<?> (DynamoDBExecutor.java:2815). Change to
   ContinuableFuture<Dataset> query(QueryRequest, Class<?> targetClass). (All other Class<T> async methods —
   getItem/list/stream/scan/batchGetItem — genuinely thread T and are fine.)
+  [RE-REVIEW 2026-06-24: ALREADY-FIXED — signature is now
+   public ContinuableFuture<Dataset> query(final QueryRequest queryRequest, final Class<?> targetClass)
+   (AsyncDynamoDBExecutor.java:1673); no method-level <T> remains. Javadoc updated to describe targetClass
+   correctly ("if null or a Map type, results are extracted as raw attribute maps", :1665-1666). Sync
+   sibling also Class<?> (DynamoDBExecutor.java:2850). Re-confirmed the other Class<T> async methods
+   (getItem :338/:387/:441, list :1558, stream :1785, scan :2037/:2077/:2154, batchGetItem
+   :677/:732/:773) genuinely thread T — all fine.]
 
 4. MISPLACED METHODS
 None. Static helpers/config accessors/close() are correctly NOT mirrored async (consistent with siblings).
@@ -30,8 +40,15 @@ None. (The lone sync @Deprecated is on nested ConditionBuilder.create(), not par
 
 CROSS-CLASS NOTES
 - ContinuableFuture async convention upheld here — contrast with the v2 async twin (CompletableFuture).
+  [RE-REVIEW 2026-06-24: still upheld — 126 ContinuableFuture / 0 CompletableFuture.]
 - The phantom-<T> on query is part of a recurring micro-pattern (also BigQuery queryForSingleValue,
   Cassandra query(Class<T>,Condition)); consolidate in SUMMARY.
+  [RE-REVIEW 2026-06-24: the instance in THIS class is now fixed (Class<?>). The cross-class micro-pattern
+   note remains a SUMMARY concern for the other classes (BigQuery/Cassandra), out of scope for this file.]
+
+NEW ISSUES (2026-06-24 re-review)
+- None. Every public method is still a single-line delegation to dbExecutor; signatures, generics, and
+  ContinuableFuture payloads all check out. No new API-design issues.
 
 --- DOC-FIX PASS 2026-06-23 ---
 Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its

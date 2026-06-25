@@ -4,6 +4,11 @@ Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
 >>> DOC-FIX PASS UPDATE (2026-06-23): the execute(Statement) overclaim originally flagged here was
     WITHDRAWN — re-verification shows v4's Javadoc has NO such sentence (the overclaim was v3-only, now
     fixed in v3). The UDTCodec naming + serialize/deserialize-shim items are code changes and remain open. <<<
+>>> RE-REVIEW 2026-06-24 (against current source): the UDTCodec.create String-param naming item is now
+    ALREADY-FIXED IN V4 (param renamed to userTypeName at :2078) but is STILL-VALID IN V3 (v3 still names
+    it userType) — so the "fix both" recommendation is now half-done; see v3 report. The serialize/
+    deserialize UDTCodec + StringCodec shims are now PARTIALLY-ADDRESSED (@Deprecated added, but NOT
+    forRemoval=true). execute(Statement) WITHDRAWN status re-confirmed (still no overclaim in v4). <<<
 
 1. OVERALL ASSESSMENT
 The v4 concrete is a thin driver-binding over CassandraExecutorBase. Almost all public API is inherited;
@@ -17,12 +22,20 @@ accidental API drift. Only two minor items.
   java:2078 | Low | The String 3rd param is a UDT *name*, but sibling create(UserDefinedType userType,...)
   at :1941 uses userType for the type object — conceptual collision. Rename the String param to
   userTypeName. (Matches v3 exactly — consistent, so fix both.)
+  [RE-REVIEW 2026-06-24: ALREADY-FIXED IN V4 — the String param is now named userTypeName at
+  CassandraExecutor.java:2078 (`create(final Session session, final String keySpace, final String
+  userTypeName, final Class<T> javaClazz)`); the UserDefinedType sibling at :1941 keeps userType. NOTE:
+  v3's twin create(Cluster,String,String userType,Class) was NOT renamed (still userType) — the "fix
+  both" is now only half-done; STILL-VALID for v3 (see v3 report, v3/CassandraExecutor.java:2454).]
 
 3. RETURN-TYPE AND PARAMETER ISSUES
 - [WITHDRAWN — CLAIM INVALID 2026-06-23] execute(Statement) Javadoc overclaim | CassandraExecutor.java:
   ~1424-1466 | n/a | Re-verified against source during the doc-fix pass: v4's execute(Statement) Javadoc
   contains NO "StatementSettings are applied before execution" sentence (its @param/@return/@throws and
   body are accurate). The overclaim was v3-ONLY (now fixed in v3-CassandraExecutor). No edit to v4.
+  [RE-REVIEW 2026-06-24: NO-LONGER-APPLIES (WITHDRAWN re-confirmed) — current execute(Statement) at
+  CassandraExecutor.java:1466-1469 is a clean @Override returning session.execute(statement); javadoc
+  (:1461-1465) has no settings-application claim. (CassandraExecutor.java:1467.)]
 
 4. MISPLACED METHODS
 None.
@@ -36,9 +49,20 @@ None. (No v4-only gap vs v3; cluster()/mapper(Class) absence is driver-mandated,
   encode/decode). They are pure v3->v4 migration-shim aliases that bloat the public UDTCodec surface.
   Mark @Deprecated(forRemoval=true) (and steer to encode/decode). Same shim pattern in the package-private
   StringCodec at :2318,:2333.
+  [RE-REVIEW 2026-06-24: PARTIALLY-ADDRESSED — both UDTCodec shims are now @Deprecated with javadoc
+  steering to encode/decode: serialize(T,ProtocolVersion) @Deprecated at :2102/:2103, deserialize
+  (ByteBuffer,ProtocolVersion) @Deprecated at :2128/:2129; still NOT @Override (correct). The StringCodec
+  shims are ALSO now @Deprecated: serialize @ :2317/:2318, deserialize @ :2332/:2333. REMAINING: none use
+  forRemoval=true, so the recommended forRemoval signal is not yet present. (CassandraExecutor.java:2103.)]
 
 CROSS-CLASS NOTES
 - Neither v3 nor v4 exposes static factories (createCassandraExecutor/copy/of); both use telescoping
   public constructors + async()/sync() accessors. The only true cross-version naming item is the shared
   userType String param.
+  [RE-REVIEW 2026-06-24: the userType String-param item is no longer "shared/consistent" — v4 was renamed
+  to userTypeName, v3 was not. It is now a v3-only naming defect.]
 - The execute() Javadoc overclaim was NOT shared — it existed only in v3 (now fixed); v4 was always clean.
+
+NEW ISSUES (2026-06-24 re-review)
+- None for v4. (All open v4 items either ALREADY-FIXED — userTypeName rename — or PARTIALLY-ADDRESSED —
+  shims now @Deprecated but not forRemoval=true.)

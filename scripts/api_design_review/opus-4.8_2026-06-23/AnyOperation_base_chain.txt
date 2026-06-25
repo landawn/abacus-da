@@ -12,8 +12,15 @@ appearing on both AnyQuery and AnyMutation is NOT duplication — HBase declares
 and Mutation, so hoisting them up would be wrong. Deprecations (compareTo(Row) -> Row.COMPARATOR) are
 applied consistently. The only actionable items are a checked-exception policy inconsistency and two
 minor mutable/immutable + naming nits; there are no misplaced or missing methods.
+[RE-REVIEW 2026-06-24: A line-by-line re-verification against current source was performed. All five
+findings remain present in code; line numbers re-confirmed (no drift in this chain). The mutable/immutable
+nits are now PARTIALLY-ADDRESSED — getFamilyCellMap's live-mutability and getAttributesMap's read-only
+nature are now explicitly documented in Javadoc (the recommended "document it" path). No new code issues
+introduced. See per-finding RE-REVIEW tags below.]
 
 2. NAMING ISSUES
+[RE-REVIEW 2026-06-24: STILL-VALID — get(String,String) at AnyMutation.java:439, get(byte[],byte[]) at
+AnyMutation.java:453, both return List<Cell> as described; no `cells()`/`getCellList()` alias exists. Design KEEP stands.]
 - get(String,String) / get(byte[],byte[]) returning List<Cell> | AnyMutation.java:439,453 | Low |
   A method named `get` returning List<Cell> reads ambiguously in a library that otherwise leans on
   Optional/Stream. Faithful mirror of HBase Mutation.get; recommend KEEP but consider an alias
@@ -21,6 +28,11 @@ minor mutable/immutable + naming nits; there are no misplaced or missing methods
   that this should match (none found in the Any* family).
 
 3. RETURN-TYPE AND PARAMETER ISSUES
+[RE-REVIEW 2026-06-24: STILL-VALID — toJson() at AnyOperation.java:128, toJson(int) at AnyOperation.java:147
+both try/catch IOException->UncheckedIOException; getAuthorizations() at AnyQuery.java:175 and
+getCellVisibility() at AnyMutation.java:292 still declare `throws DeserializationException` with bare
+delegation. The wrap-vs-leak inconsistency persists unchanged; both getters now Javadoc the checked throw
+but do NOT wrap it, so the policy itself is still unresolved.]
 - Checked-exception policy inconsistency: toJson()/toJson(int) wrap HBase IOException as
   UncheckedIOException (AnyOperation.java:128,147) while getAuthorizations() (AnyQuery.java:175) and
   getCellVisibility() (AnyMutation.java:292) LEAK HBase's checked DeserializationException |
@@ -29,6 +41,13 @@ minor mutable/immutable + naming nits; there are no misplaced or missing methods
   consistency with toJson (the wrapper's stated goal is a "simpler API"), or, if the checked leak is
   intentional, document why these two differ. Verified: toJson try/catch->UncheckedIOException present;
   the two getters declare `throws DeserializationException` with bare delegation.
+[RE-REVIEW 2026-06-24: PARTIALLY-ADDRESSED — getFamilyCellMap() at AnyMutation.java:191 still returns the
+LIVE backing NavigableMap (bare delegate at line 192), and getAttributesMap() at
+AnyOperationWithAttributes.java:115 still returns HBase's unmodifiable view (bare delegate at line 116) —
+the mutable/immutable asymmetry is unchanged. HOWEVER the recommended "document the live-mutability" path
+was taken: getFamilyCellMap Javadoc now explicitly states "The returned map is the live map held by the
+wrapped Mutation, so mutating it changes the mutation" (AnyMutation.java:178-193), and getAttributesMap
+Javadoc now states "The returned map is a read-only view" (AnyOperationWithAttributes.java:104-117).]
 - getFamilyCellMap() returns the LIVE mutable backing map | AnyMutation.java:191 | Low |
   Sibling getAttributesMap() (AnyOperationWithAttributes.java:115) returns an unmodifiable view;
   mutable/immutable inconsistency. Mirrors HBase, so likely KEEP — but document the live-mutability, or
@@ -42,6 +61,10 @@ None.
 None. (getACL/setACL split across Query/Mutation is correct per HBase; do not hoist.)
 
 6. DEPRECATION / REMOVAL CANDIDATES
+[RE-REVIEW 2026-06-24: STILL-VALID — compareTo(Row) @Deprecated at AnyMutation.java:695-699 (mirrored
+@Deprecated at AnyGet.java:991-994); Javadoc cites Row.COMPARATOR. Dead commented-out blocks still present
+at AnyOperation.java:155-176 (old toJSON/toJSON(int)) and AnyMutation.java:195-220 (old setFamilyCellMap /
+getTimeStamp). Line numbers unchanged.]
 - compareTo(Row) | AnyMutation.java:697 (mirrored on AnyGet.java:992) | High (already @Deprecated) |
   KEEP deprecated; replacement Row.COMPARATOR is documented and consistent. Unavoidable while the
   subclasses `implement Row`.
@@ -54,6 +77,12 @@ CROSS-CLASS NOTES
   library-wide convention to settle.
 - Self-typed base methods make subclass re-overrides unnecessary; AnyScan violates this for
   setColumnFamilyTimeRange (see AnyScan report) — bases are the correct model.
+
+NEW ISSUES (2026-06-24 re-review)
+None. No methods were renamed, added, or behaviorally changed in this base chain since the original
+review; the constructors now uniformly reject null (AnyOperation.java:66-71 throws IAE on null op),
+which is consistent and introduces no new surface concern. All recent edits in this chain were
+Javadoc-only and are reflected in the PARTIALLY-ADDRESSED note on §3 above.
 
 --- DOC-FIX PASS 2026-06-23 ---
 Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its

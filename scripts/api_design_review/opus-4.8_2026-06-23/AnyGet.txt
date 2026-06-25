@@ -8,19 +8,37 @@ surface faithfully mirrors Get (addColumn/addFamily/readVersions/setTimeRange/et
 self-typed base methods, and is well documented. equals/hashCode are value-based (row-key) here vs
 reference-identity on AnyScan — that difference is inherited from HBase Get vs Scan and faithfully
 documented, not a defect. Findings are minor naming/parity items only; no correctness problems.
+[RE-REVIEW 2026-06-24: Re-verified every finding against current source. Line numbers re-confirmed (no
+drift). toGet still at AnyGet.java:1120; the partial-key-slice AIOOBE finding is now PARTIALLY-ADDRESSED
+(the AIOOBE is now documented via @throws on both ctor and factory). getFamilies-absent and familySet/
+toGet-naming items remain STILL-VALID. No new code issues. See per-finding RE-REVIEW tags.]
 
 2. NAMING ISSUES
+[RE-REVIEW 2026-06-24: STILL-VALID — public static List<Get> toGet(Collection<AnyGet>) at
+AnyGet.java:1120 (signature unchanged; returns ArrayList<Get>). Still no toGetList/toGets alias; still no
+AnyScan.toScan parallel. Name unsettled on both classes.]
 - toGet(Collection<AnyGet>) returns List<Get> | AnyGet.java:1120 | Low | Singular name returns a List;
   rename to `toGetList` (or `toGets`) for number agreement and to match the List return. Confirming
   check: scan call sites for the static `toGet(Collection)`; no AnyScan equivalent exists (see AnyScan
   M-finding) so settle the name on both together.
 
 3. RETURN-TYPE AND PARAMETER ISSUES
+[RE-REVIEW 2026-06-24: PARTIALLY-ADDRESSED — ctor AnyGet(Object,int,int) at AnyGet.java:137 and factory
+of(Object,int,int) at AnyGet.java:229 are unchanged (no up-front bounds check; AIOOBE still surfaces from
+the underlying Get(byte[],int,int)). The inconsistency with IAE persists in code, BUT the behavior is now
+explicitly documented: of(...)Javadoc declares "@throws ArrayIndexOutOfBoundsException if rowOffset is
+negative, or rowOffset + rowLength exceeds the length of the converted row-key bytes" (AnyGet.java:224-225)
+and a usage-example edge note (AnyGet.java:216). So the "accept as strict HBase mirror + document" path
+was taken; the IAE-vs-AIOOBE divergence itself is not eliminated.]
 - AnyGet(Object,int,int) / of(Object,int,int) partial-key slice | AnyGet.java:137 / 229 | Low |
   An out-of-range offset/length surfaces as a raw ArrayIndexOutOfBoundsException from HBase, inconsistent
   with the IllegalArgumentException used elsewhere in the class. Recommend an up-front bounds check
   throwing IAE, or accept as a strict HBase mirror. Confirming check: confirm HBase Get(byte[],int,int)
   is the source of the AIOOBE.
+[RE-REVIEW 2026-06-24: STILL-VALID — getFamilyMap() at AnyGet.java:460 (bare delegate to
+get.getFamilyMap()) and familySet() at AnyGet.java:967 (bare delegate to get.familySet()) both still
+return live views; Javadoc now explicitly documents the live-view semantics (AnyGet.java:436-441,
+945-949). Matches AnyScan.getFamilyMap (AnyScan.java:590). No change recommended.]
 - getFamilyMap() / familySet() return live mutable internal views | AnyGet.java:460 / 967 | Low |
   Intentional and matches AnyScan getFamilyMap; recorded only so any future defensive-immutability
   decision is applied to both classes. No change now.
@@ -29,6 +47,9 @@ documented, not a defect. Findings are minor naming/parity items only; no correc
 None.
 
 5. MISSING METHODS
+[RE-REVIEW 2026-06-24: STILL-VALID — getFamilies() is still absent on AnyGet (grep over AnyGet.java finds
+only familySet() at AnyGet.java:967); AnyScan still exposes getFamilies() at AnyScan.java:509. Accessor-name
+asymmetry unchanged.]
 - getFamilies() : byte[][] absent on AnyGet (present on AnyScan.java:509) | AnyGet.java | Low |
   AnyGet exposes familySet() instead; AnyScan exposes getFamilies(). This is an accessor-name asymmetry
   between the two AnyQuery subclasses (see SUMMARY cross-class item), not a hard gap. Resolve by picking
@@ -36,6 +57,8 @@ None.
   isolation. (Note: HBase Get has no native getFamilies, so it would be implemented via familyMap keys.)
 
 6. DEPRECATION / REMOVAL CANDIDATES
+[RE-REVIEW 2026-06-24: STILL-VALID — compareTo(Row) @Deprecated at AnyGet.java:991-994 (Javadoc cites
+Row.COMPARATOR; param renamed to `other`). Line unchanged.]
 - compareTo(Row) | AnyGet.java:992 | High (already @Deprecated) | KEEP; mirrors HBase deprecation,
   replacement Row.COMPARATOR. Unavoidable while AnyGet implements Row.
 
@@ -45,6 +68,12 @@ CROSS-CLASS NOTES
 - Accessor asymmetry vs AnyScan: AnyGet has familySet(), AnyScan has getFamilies(). Standardize.
 - equals/hashCode value-based (row-key) here vs reference-identity on AnyScan — inherited from HBase
   Get/Scan; on record only.
+
+NEW ISSUES (2026-06-24 re-review)
+None. No methods on AnyGet were renamed, added, or behaviorally changed since the original review; the
+only edits were Javadoc additions (live-view notes, AIOOBE @throws, value-based equals/hashCode notes),
+which are folded into the PARTIALLY-ADDRESSED/STILL-VALID tags above. equals (AnyGet.java:1051) /
+hashCode (AnyGet.java:1018) remain value-based via the wrapped Get and are correctly documented.
 
 --- DOC-FIX PASS 2026-06-23 ---
 Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its

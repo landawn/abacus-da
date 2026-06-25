@@ -1172,6 +1172,51 @@ public final class DynamoDBExecutor implements AutoCloseable {
     }
 
     /**
+     * Converts an object array of key-value pairs to a map.
+     *
+     * <p>The input array is interpreted as alternating key-value pairs:
+     * {@code [key1, value1, key2, value2, ...]}. Keys are coerced to {@code String} via
+     * {@link String#valueOf(Object)}, so non-String keys are accepted (unlike {@link #asItem(Object...)}).
+     * The result preserves insertion order.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Map<String, Object> map = toMap(new Object[] {"name", "John", "age", 30});
+     * // returns a LinkedHashMap: {"name"=John, "age"=30}
+     *
+     * Map<String, Object> empty = toMap(new Object[0]);
+     * // returns an empty map
+     *
+     * Map<String, Object> none = toMap((Object[]) null);
+     * // returns null
+     *
+     * toMap(new Object[] {"name", "John", "age"});
+     * // throws IllegalArgumentException (odd array length)
+     * }</pre>
+     *
+     * @param propNameAndValues the alternating property name and value pairs
+     * @return a map containing the key-value pairs, or {@code null} if input is {@code null}
+     * @throws IllegalArgumentException if the array length is odd
+     */
+    public static Map<String, Object> toMap(final Object[] propNameAndValues) {
+        if (propNameAndValues == null) {
+            return null; // NOSONAR
+        }
+
+        if ((propNameAndValues.length % 2) != 0) {
+            throw new IllegalArgumentException("The length of property name/value array must be even: " + propNameAndValues.length);
+        }
+
+        final Map<String, Object> props = new LinkedHashMap<>(propNameAndValues.length / 2);
+
+        for (int i = 0, len = propNameAndValues.length; i < len; i += 2) {
+            props.put(String.valueOf(propNameAndValues[i]), propNameAndValues[i + 1]);
+        }
+
+        return props;
+    }
+
+    /**
      * Converts a DynamoDB item map to a standard Java map using a default {@code HashMap} supplier.
      *
      * <p><b>Usage Examples:</b></p>
@@ -3070,7 +3115,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * Queries items from the specified DynamoDB table using a QueryRequest and converts the results to a Dataset.
      *
      * <p>This method performs a query operation using AWS SDK v2 and returns the results as a Dataset
-     * containing entities of the specified target class. If {@code targetClass} is {@code null} or a Map type,
+     * containing entities of the specified target class. If {@code targetClass} is a {@link Map} type,
      * the Dataset is built directly from the raw item attributes. If the query result is paginated and no
      * exclusive start key was set on the request, this method automatically fetches and aggregates all
      * remaining pages. Note that a {@code limit} set on the request acts as a page size only —
@@ -3087,16 +3132,16 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * }</pre>
      *
      * @param queryRequest the QueryRequest containing the table name and query parameters. Must not be null.
-     * @param targetClass the class of the entities to convert to, or {@code null}/a Map type to build the
-     *                     Dataset from raw item attributes
+     * @param targetClass the row type to convert each item to; must not be null. Pass a {@link Map} subtype
+     *                     (e.g. {@code Map.class}) to keep rows as raw attribute maps instead of mapped entities.
      * @return a Dataset built from the query results. Never null.
-     * @throws IllegalArgumentException if queryRequest is null
+     * @throws IllegalArgumentException if queryRequest or targetClass is null
      */
     public Dataset query(final QueryRequest queryRequest, final Class<?> targetClass) {
         N.checkArgNotNull(queryRequest, "queryRequest");
         N.checkArgNotNull(targetClass, "targetClass");
 
-        if (targetClass == null || Map.class.isAssignableFrom(targetClass)) {
+        if (Map.class.isAssignableFrom(targetClass)) {
             final QueryResponse queryResult = dynamoDBClient.query(queryRequest);
             List<Map<String, AttributeValue>> items = queryResult.items();
 

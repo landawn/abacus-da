@@ -40,7 +40,7 @@ import com.landawn.abacus.util.stream.Stream;
  * on top of it. Each public operation borrows a {@link Session} from an internal pool, delegates to
  * the equivalent method on the OGM session, and either returns the session immediately (for eager
  * methods) or transfers ownership of session release to the returned {@link Stream}'s
- * {@code onClose} handler (for the streaming {@code query} overloads).
+ * {@code onClose} handler (for the streaming {@code stream} overloads).
  *
  * <h2>Session and Transaction Semantics</h2>
  * <ul>
@@ -55,7 +55,7 @@ import com.landawn.abacus.util.stream.Stream;
  *       use {@link #run(Consumer)} or {@link #call(Function)} to open a multi-statement transaction
  *       explicitly via {@link Session#beginTransaction()}. Read/write routing is the OGM/driver's
  *       responsibility; the {@code readOnly} flag accepted by
- *       {@link #query(String, Map, boolean)} is forwarded to the underlying driver as a routing
+ *       {@link #stream(String, Map, boolean)} is forwarded to the underlying driver as a routing
  *       hint.</li>
  *   <li><b>Threading:</b> All methods are blocking and synchronous. The executor itself is
  *       thread-safe (the session pool is concurrent), but individual {@link Session} instances
@@ -70,8 +70,8 @@ import com.landawn.abacus.util.stream.Stream;
  * standard OGM type system.</p>
  *
  * <h2>Result Streaming</h2>
- * <p>The {@link #query(String, Map)}, {@link #query(String, Map, boolean)}, and
- * {@link #query(Class, String, Map)} overloads return lazily-consumed {@link Stream}s that own a
+ * <p>The {@link #stream(String, Map)}, {@link #stream(String, Map, boolean)}, and
+ * {@link #stream(Class, String, Map)} overloads return lazily-consumed {@link Stream}s that own a
  * pooled session for their lifetime. The session is returned to the pool when the stream is closed
  * (either explicitly via {@link Stream#close()} or via try-with-resources). Failing to close such a
  * stream will leak a session from the pool.</p>
@@ -96,7 +96,7 @@ import com.landawn.abacus.util.stream.Stream;
  *
  * // Cypher queries
  * Map<String, Object> params = Map.of("age", 25);
- * try (Stream<Person> adults = executor.query(Person.class,
+ * try (Stream<Person> adults = executor.stream(Person.class,
  *         "MATCH (p:Person) WHERE p.age > $age RETURN p", params)) {
  *     adults.forEach(System.out::println);
  * }
@@ -2101,16 +2101,6 @@ public final class Neo4jExecutor {
 
     }
 
-    //    public <T> List<T> queryDto(final Class<T> type, final String cypher, final Map<String, ?> parameters) {
-    //        final Session session = getSession();
-    //
-    //        try {
-    //            return session.queryDto(cypher, parameters, type);
-    //        } finally {
-    //            closeSession(session);
-    //        }
-    //    }
-
     /**
      * Executes a Cypher query and maps the single result row to an instance of {@code objectType}.
      * <p>
@@ -2146,8 +2136,8 @@ public final class Neo4jExecutor {
      * @return the single mapped result, or {@code null} if the query returns no rows
      * @throws RuntimeException if the query returns more than one row or the underlying OGM session
      *                          rejects the query
-     * @see #query(Class, String, Map)
-     * @see #query(String, Map)
+     * @see #stream(Class, String, Map)
+     * @see #stream(String, Map)
      */
     public <T> T queryForObject(final Class<T> objectType, final String cypher, final Map<String, ?> parameters) {
         if (logger.isDebugEnabled()) {
@@ -2179,7 +2169,7 @@ public final class Neo4jExecutor {
      *                 "RETURN p.name as personName, c.name as companyName";
      * Map<String, Object> params = Map.of("companyName", "Tech Corp");
      *
-     * try (Stream<Map<String, Object>> rows = executor.query(cypher, params)) {
+     * try (Stream<Map<String, Object>> rows = executor.stream(cypher, params)) {
      *     rows.forEach(row -> System.out.println(
      *             row.get("personName") + " works at " + row.get("companyName")));
      * }
@@ -2190,11 +2180,11 @@ public final class Neo4jExecutor {
      * @return a lazily-evaluated {@link Stream} of result rows, each row a {@code Map} keyed by the
      *         {@code RETURN}-clause aliases; close the stream to release the underlying session
      * @throws RuntimeException if the underlying OGM session rejects the query
-     * @see #query(Class, String, Map)
-     * @see #query(String, Map, boolean)
+     * @see #stream(Class, String, Map)
+     * @see #stream(String, Map, boolean)
      * @see #queryForObject(Class, String, Map)
      */
-    public Stream<Map<String, Object>> query(final String cypher, final Map<String, ?> parameters) {
+    public Stream<Map<String, Object>> stream(final String cypher, final Map<String, ?> parameters) {
         if (logger.isDebugEnabled()) {
             logger.debug("Executing Cypher: {}", cypher);
         }
@@ -2225,13 +2215,13 @@ public final class Neo4jExecutor {
      * // Read-only query: eligible for read-replica routing in a cluster
      * Map<String, Object> params = Map.of("minAge", 25);
      * try (Stream<Map<String, Object>> rows =
-     *         executor.query("MATCH (p:Person) WHERE p.age > $minAge RETURN p.name AS name", params, true)) {
+     *         executor.stream("MATCH (p:Person) WHERE p.age > $minAge RETURN p.name AS name", params, true)) {
      *     rows.forEach(row -> System.out.println(row.get("name")));
      * }
      *
      * // Mutating query MUST pass readOnly = false
      * try (Stream<Map<String, Object>> created =
-     *         executor.query("CREATE (p:Person {name: $name}) RETURN id(p) AS id",
+     *         executor.stream("CREATE (p:Person {name: $name}) RETURN id(p) AS id",
      *                 Map.of("name", "John"), false)) {
      *     created.forEach(row -> System.out.println("new id: " + row.get("id")));
      * }
@@ -2246,10 +2236,10 @@ public final class Neo4jExecutor {
      * @return a lazily-evaluated {@link Stream} of result rows; close the stream to release the
      *         underlying session
      * @throws RuntimeException if the underlying OGM session rejects the query
-     * @see #query(String, Map)
-     * @see #query(Class, String, Map)
+     * @see #stream(String, Map)
+     * @see #stream(Class, String, Map)
      */
-    public Stream<Map<String, Object>> query(final String cypher, final Map<String, ?> parameters, final boolean readOnly) {
+    public Stream<Map<String, Object>> stream(final String cypher, final Map<String, ?> parameters, final boolean readOnly) {
         if (logger.isDebugEnabled()) {
             logger.debug("Executing Cypher: {}", cypher);
         }
@@ -2278,7 +2268,7 @@ public final class Neo4jExecutor {
      * String cypher = "MATCH (p:Person) WHERE p.age > $minAge RETURN p";
      * Map<String, Object> params = Map.of("minAge", 25);
      *
-     * try (Stream<Person> adults = executor.query(Person.class, cypher, params)) {
+     * try (Stream<Person> adults = executor.stream(Person.class, cypher, params)) {
      *     adults.filter(p -> p.getName().startsWith("A"))
      *           .forEach(p -> System.out.println(p.getName()));
      * }
@@ -2292,9 +2282,9 @@ public final class Neo4jExecutor {
      *         stream to release the underlying session
      * @throws RuntimeException if the underlying OGM session rejects the query
      * @see #queryForObject(Class, String, Map)
-     * @see #query(String, Map)
+     * @see #stream(String, Map)
      */
-    public <T> Stream<T> query(final Class<T> objectType, final String cypher, final Map<String, ?> parameters) {
+    public <T> Stream<T> stream(final Class<T> objectType, final String cypher, final Map<String, ?> parameters) {
         if (logger.isDebugEnabled()) {
             logger.debug("Executing Cypher: {}", cypher);
         }

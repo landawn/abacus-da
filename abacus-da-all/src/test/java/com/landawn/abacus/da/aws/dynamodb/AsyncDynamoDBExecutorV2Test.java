@@ -737,6 +737,15 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
         assertEquals(3, result.size());
     }
 
+    @Test
+    public void testQuery_NullArgsThrowEagerly() {
+        // Aligned with the sync twin: both queryRequest and targetClass are validated at the call site
+        // (before any CompletableFuture is built), so these throw IAE synchronously rather than completing exceptionally.
+        QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.query(queryRequest, (Class<?>) null));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.query(null, Map.class));
+    }
+
     /**
      * Regression test: {@code stream(QueryRequest, Class)} must not terminate prematurely when an
      * intermediate page returns zero items but a non-empty LastEvaluatedKey. AWS SDK v2's

@@ -4,6 +4,11 @@ Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
 >>> DOC-FIX PASS UPDATE (2026-06-23): the count() @deprecated-text divergence (section 6) was FIXED
     (Javadoc-only). The @Beta gap (section 3) is now ALSO FIXED in source (2026-06-24). See the [RESOLVED]
     tags. Other code findings remain open. mvn -o clean test-compile green. <<<
+>>> RE-REVIEW 2026-06-24: re-verified all findings against current source. @Beta now present on all 20
+    async queryForXxx overloads (lines 1912-2291 Class family + 2414-2709 String family), import present
+    (:25) — full parity with sync base's 20 @Beta; queryForSingleValue/NonNull correctly NOT @Beta.
+    count() @deprecated text aligned (:1260-1262 vs sync :2141-2143). count(Class,Condition) STILL routes
+    through deprecated async count (:1228) — the one remaining open finding. No new issues. <<<
 
 1. OVERALL ASSESSMENT
 A clean, complete 1:1 async mirror of CassandraExecutorBase: identical names, overload shapes, parameter
@@ -16,15 +21,24 @@ missing stability annotation across a large family.
 None.
 
 3. RETURN-TYPE AND PARAMETER ISSUES
-- [RESOLVED 2026-06-24 — code-fixed] queryForBoolean/Char/Byte/Short/Int/Long/Float/Double +
+- [RE-REVIEW 2026-06-24: ALREADY-FIXED — @Beta confirmed on all 20 async queryForXxx overloads, full
+  parity with sync base's 20; import present at :25 (AsyncCassandraExecutorBase.java:1912,1950,1988,2026,
+  2064,2102,2140,2178,2216,2253,2291 Class family + 2414,2451,2488,2525,2561,2597,2634,2671,2709 String
+  family)]
+  [RESOLVED 2026-06-24 — code-fixed] queryForBoolean/Char/Byte/Short/Int/Long/Float/Double +
   queryForString/queryForDate (Class & String families) lacked @Beta | AsyncCassandraExecutorBase.java:
-  ~1914-2293, 2417-2706 | High | The sync base marks every one of these @Beta (sync 20 / async was 0).
-  FIXED: added @Beta to all 20 async queryForXxx overloads + added the missing
-  `import com.landawn.abacus.annotation.Beta`. queryForSingleValue correctly left non-@Beta (its sync
-  counterpart is not @Beta). mvn -o clean test-compile green.
-- count(Class,Condition) routes through the @Deprecated async count(String,...) whereas the sync sibling
-  routes through queryForLong | AsyncCassandraExecutorBase.java:1224 vs CassandraExecutorBase.java:1415 |
-  Low | Behavior is already correct (0L on no-row/NULL); style-only — re-point to a non-deprecated path.
+  1912-2291 (Class fam), 2414-2709 (String fam) | High | The sync base marks every one of these @Beta
+  (sync 20 / async was 0). FIXED: added @Beta to all 20 async queryForXxx overloads + added the missing
+  `import com.landawn.abacus.annotation.Beta` (:25). queryForSingleValue (:2332) / queryForSingleNonNull
+  correctly left non-@Beta (their sync counterparts are not @Beta). mvn -o clean test-compile green.
+- [RE-REVIEW 2026-06-24: STILL-VALID — count(Class,Condition) at :1225-1228 still calls deprecated
+  count(cp.query(),...) under @SuppressWarnings("deprecation") (:1224); sync sibling at
+  CassandraExecutorBase.java:1410-1415 routes through queryForSingleValue(...).orElse(0L). Style-only,
+  behavior identical (0L on no-row/NULL).]
+  count(Class,Condition) routes through the @Deprecated async count(String,...) whereas the sync sibling
+  routes through queryForSingleValue | AsyncCassandraExecutorBase.java:1228 vs CassandraExecutorBase.java:
+  1415 | Low | Behavior is already correct (0L on no-row/NULL); style-only — re-point to a non-deprecated
+  path (call queryForLong(query,params).orElse(0L) directly).
 
 4. MISPLACED METHODS
 None.
@@ -33,8 +47,11 @@ None.
 None (data-plane is a complete mirror of the sync base; reverse check clean).
 
 6. DEPRECATION / REMOVAL CANDIDATES
-- [RESOLVED 2026-06-23 — doc-fixed] count(String,Object...) @deprecated text diverged from the sync
-  sibling | :1259 (was :1262) vs CassandraExecutorBase.java:2161 | Medium | FIXED: async @deprecated text
+- [RE-REVIEW 2026-06-24: ALREADY-FIXED — async @deprecated text at :1260-1262 mirrors sync wording
+  (CassandraExecutorBase.java:2141-2143), adapted to the future payload. registerKeys static @Deprecated
+  still correctly NOT mirrored on async base.]
+  [RESOLVED 2026-06-23 — doc-fixed] count(String,Object...) @deprecated text diverged from the sync
+  sibling | :1260-1262 vs CassandraExecutorBase.java:2141-2143 | Medium | FIXED: async @deprecated text
   now mirrors the sync wording, adapted to the future payload ("prefer queryForLong(...) with a COUNT(*)
   query, applying orElse(0L) to its OptionalLong payload ... Slated for removal in a future release.").
   No code/behavior change. (registerKeys static @Deprecated is correctly NOT mirrored on the async base.)

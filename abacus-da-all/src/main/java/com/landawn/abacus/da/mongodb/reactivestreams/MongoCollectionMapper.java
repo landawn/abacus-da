@@ -2605,36 +2605,36 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>Each entity is wrapped in an {@link com.mongodb.client.model.InsertOneModel} and
      * submitted as a single bulk write. Delegates to
-     * {@link MongoCollectionExecutor#bulkInsert(Collection)}, which extracts the inserted-count
-     * from the underlying {@link BulkWriteResult}.</p>
+     * {@link MongoCollectionExecutor#bulkInsert(Collection)}, which emits the underlying
+     * {@link BulkWriteResult}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Typical: emits the inserted-document count (one per entity on success).
+     * // Typical: emits the BulkWriteResult (one inserted document per entity on success).
      * List<User> newUsers = Arrays.asList(user1, user2, user3);
      * userMapper.bulkInsert(newUsers)
-     *     .subscribe(count -> System.out.println("Inserted " + count + " users"));   // emits 3
+     *     .subscribe(result -> System.out.println("Inserted " + result.getInsertedCount() + " users"));   // inserted 3
      *
      * // Edge: cold publisher — building it inserts nothing until subscribed.
-     * Mono<Integer> pending = userMapper.bulkInsert(newUsers);   // nothing written yet
+     * Mono<BulkWriteResult> pending = userMapper.bulkInsert(newUsers);   // nothing written yet
      *
      * // Negative: a null or empty collection -> IllegalArgumentException.
      * userMapper.bulkInsert(Collections.emptyList());   // throws IllegalArgumentException
      *
      * // Negative: a per-document failure (e.g. duplicate _id) -> onError(MongoBulkWriteException).
      * userMapper.bulkInsert(usersWithDuplicate)
-     *     .subscribe(c -> {}, err -> System.err.println("Bulk insert failed: " + err));   // onError(MongoBulkWriteException)
+     *     .subscribe(r -> {}, err -> System.err.println("Bulk insert failed: " + err));   // onError(MongoBulkWriteException)
      * }</pre>
      *
      * @param entities the collection of entities to insert (must not be null or empty)
-     * @return a {@code Mono} that, on subscription, emits exactly one {@code Integer} with the
-     *         count of successfully inserted documents, then completes
+     * @return a {@code Mono} that, on subscription, emits exactly one {@link BulkWriteResult}
+     *         (use {@link BulkWriteResult#getInsertedCount()} for the inserted count), then completes
      * @throws IllegalArgumentException if entities is null or empty
      * @throws com.mongodb.MongoBulkWriteException if the bulk write reports any per-document
      *         failures (signalled via {@code Mono})
      * @see MongoCollectionExecutor#bulkInsert(Collection)
      */
-    public Mono<Integer> bulkInsert(final Collection<? extends T> entities) {
+    public Mono<BulkWriteResult> bulkInsert(final Collection<? extends T> entities) {
         return collectionExecutor.bulkInsert(entities);
     }
 
@@ -2649,15 +2649,16 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * BulkWriteOptions options = new BulkWriteOptions().ordered(false);
      * userMapper.bulkInsert(userList, options)
-     *     .subscribe(count -> System.out.println("Bulk inserted: " + count));
+     *     .subscribe(result -> System.out.println("Bulk inserted: " + result.getInsertedCount()));
      * }</pre>
      *
      * @param entities the collection of entities to insert
      * @param options configuration options for the bulk write operation (may be null to use defaults)
-     * @return a Mono emitting the count of successfully inserted documents
+     * @return a Mono emitting the {@link BulkWriteResult} (use {@link BulkWriteResult#getInsertedCount()}
+     *         for the inserted count)
      * @throws IllegalArgumentException if entities is null or empty
      */
-    public Mono<Integer> bulkInsert(final Collection<? extends T> entities, final BulkWriteOptions options) {
+    public Mono<BulkWriteResult> bulkInsert(final Collection<? extends T> entities, final BulkWriteOptions options) {
         return collectionExecutor.bulkInsert(entities, options);
     }
 

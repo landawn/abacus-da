@@ -8,15 +8,23 @@ Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
 1. OVERALL ASSESSMENT
 ColumnFamily is a clean, correctly-designed mapping annotation. The single value() element with an empty
 default enables the `@ColumnFamily("cf")` shorthand, and HBaseExecutor treats "" as "unset"
-(HBaseExecutor.java:~539-540). Together with @Column it forms a tidy family/qualifier split. Only minor
-Javadoc-accuracy items.
+(via hasColumnFamilyValue, HBaseExecutor.java:449-451). Together with @Column it forms a tidy
+family/qualifier split. Only minor Javadoc-accuracy items.
+>>> RE-REVIEW 2026-06-24: BOTH doc items re-verified ALREADY-FIXED in live source — the "primitive"
+    wording is now "scalar (non-entity) fields" (ColumnFamily.java:133) and the @see block now links
+    @Column (ColumnFamily.java:110) and HBaseExecutor (ColumnFamily.java:111). Cross-ref to the
+    executor's isBean split confirmed at HBaseExecutor.java:509. No open items. (Note: prior assessment
+    cited HBaseExecutor.java:~539-540 for the "" handling; live source has this logic at 449-451.) <<<
 
 2. NAMING ISSUES
 None — value() (not name()) is the correct element name for the single-value shorthand.
 
 3. RETURN-TYPE AND PARAMETER ISSUES
-- [RESOLVED 2026-06-23 — doc-fixed] value() Javadoc said the default applies to "primitive fields" |
-  ColumnFamily.java:131 | Low | The unset/default applies to all scalar (non-bean) fields, not only
+- [RE-REVIEW 2026-06-24: ALREADY-FIXED — live source ColumnFamily.java:133 reads "For scalar
+  (non-entity) fields: field name becomes the column family, qualifier is empty"; the word "primitive"
+  is gone. isBean split confirmed at HBaseExecutor.java:509. Stale line ref 131 -> 133.]
+  [RESOLVED 2026-06-23 — doc-fixed] value() Javadoc said the default applies to "primitive fields" |
+  ColumnFamily.java:133 | Low | The unset/default applies to all scalar (non-bean) fields, not only
   primitives (verified: HBaseExecutor:509 splits on isBean(); the class's own `String guid -> "guid:"`
   example confirms it). FIXED: wording is now "scalar (non-entity) fields". No code/behavior change.
 
@@ -30,7 +38,10 @@ None.
 None.
 
 OTHER (documentation)
-- [RESOLVED 2026-06-23 — doc-fixed] @see block omitted the types the doc references | ColumnFamily.java:
+- [RE-REVIEW 2026-06-24: ALREADY-FIXED — live source ColumnFamily.java:108-111 now has all four @see
+  links: ElementType.TYPE (108), ElementType.FIELD (109), com.landawn.abacus.annotation.Column (110),
+  com.landawn.abacus.da.hbase.HBaseExecutor (111). Line ref 108-111 still accurate.]
+  [RESOLVED 2026-06-23 — doc-fixed] @see block omitted the types the doc references | ColumnFamily.java:
   108-111 | Low-Medium | The class doc references @Column and HBaseExecutor but @see only linked
   ElementType.TYPE/FIELD. Verified com.landawn.abacus.annotation.Column exists (abacus-common jar). FIXED:
   added @see com.landawn.abacus.annotation.Column and @see com.landawn.abacus.da.hbase.HBaseExecutor.

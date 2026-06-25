@@ -540,6 +540,13 @@ public class DynamoDBExecutorV2Test extends TestBase {
     }
 
     @Test
+    public void testQuery_NullTargetClassThrows() {
+        // targetClass must not be null; pass a Map subtype for raw-attribute rows (matches list/stream + async twin).
+        QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
+        assertThrows(IllegalArgumentException.class, () -> executor.query(queryRequest, (Class<?>) null));
+    }
+
+    @Test
     public void testStream() {
         QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
 

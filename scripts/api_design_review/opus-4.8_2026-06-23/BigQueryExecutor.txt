@@ -9,36 +9,62 @@ its closest relative CassandraExecutorBase. Public static converters (toEntity/t
 are co-located on the executor consistently with the Cassandra/DynamoDB pattern. Findings are a
 null-contract inconsistency, a phantom type parameter, and several family-completeness gaps vs the other
 condition-based executors.
+[RE-REVIEW 2026-06-24: Both High-severity findings are now ALREADY-FIXED in current source —
+update(Object)/delete(Object) call N.checkArgNotNull (IAE, unified with insert), and queryForSingleValue's
+phantom <T> is gone (targetClass is now Class<?>). The four family-completeness gaps (get/gett,
+queryForSingleNonNull, count, findFirst) remain STILL-VALID. No new design issues found.]
 
 2. NAMING ISSUES
 None.
 
 3. RETURN-TYPE AND PARAMETER ISSUES
-- update(Object) / delete(Object) throw NPE on null while insert(Object) throws IAE | BigQueryExecutor.
-  java:1249,1418 vs 1139 | High | Verified: insert calls N.checkArgNotNull(entity) (IAE); update does
-  update(entity, getKeyNameSet(entity.getClass())) and delete does delete(entity.getClass(), ...) — both
-  NPE on null. Add N.checkArgNotNull(entity) to update/delete to unify on IAE.
-- queryForSingleValue(Class<T> targetClass, Class<V> valueClass, String, Condition) declares unused <T> |
-  BigQueryExecutor.java:1767 | High | <T> is bound only to targetClass and never appears in the return
-  (Nullable<V>); change targetClass to Class<?> (matches Cassandra's equivalent). Recurring phantom-<T>
-  pattern (see SUMMARY).
+[RE-REVIEW 2026-06-24: ALREADY-FIXED — update(Object) at BigQueryExecutor.java:1249 and delete(Object) at
+:1419 now BOTH call N.checkArgNotNull(entity, "entity") as their first statement (IAE), matching insert
+(Object) at :1140. The NPE-vs-IAE inconsistency no longer exists.]
+- update(Object) / delete(Object) threw NPE on null while insert(Object) throws IAE | BigQueryExecutor.
+  java:1249,1419 vs 1140 | High | ORIGINAL: insert calls N.checkArgNotNull(entity) (IAE); update did
+  update(entity, getKeyNameSet(entity.getClass())) and delete did delete(entity.getClass(), ...) — both
+  NPE on null. FIX: update/delete now lead with N.checkArgNotNull(entity, "entity"); all three DML
+  by-entity methods now throw IAE on null. RESOLVED.
+[RE-REVIEW 2026-06-24: ALREADY-FIXED — signature at BigQueryExecutor.java:1768 is now
+`public <V> Nullable<V> queryForSingleValue(final Class<?> targetClass, final Class<V> valueClass, ...)`;
+targetClass is Class<?>, the phantom <T> is gone, and the sole type var <V> appears in the return.]
+- queryForSingleValue(Class<T> targetClass, Class<V> valueClass, String, Condition) declared unused <T> |
+  BigQueryExecutor.java:1768 | High | ORIGINAL: <T> was bound only to targetClass and never appeared in
+  the return (Nullable<V>). FIX: targetClass changed to Class<?> (matches Cassandra's equivalent);
+  phantom-<T> removed. RESOLVED.
 
 4. MISPLACED METHODS
 None.
 
 5. MISSING METHODS  (gaps vs CassandraExecutorBase / mongo — the condition-based executor family)
-- get(Class,Object... ids) -> Optional<T> / gett -> T absent | BigQueryExecutor.java | Medium | No
-  fetch-by-id; Cassandra and Mongo both provide it, and the building blocks (idsToCondition,
-  list(Class,Condition)) already exist here.
-- queryForSingleNonNull(Class<V>,...) -> Optional<V> absent | Medium | The convention pairs it with
-  queryForSingleValue->Nullable<V> (CassandraExecutorBase:2055, Mongo:1656); only the Nullable form exists.
-- count(Class<?>,Condition) -> long absent | Low | Cassandra/Mongo have it; may be a deliberate
-  BigQuery-bytes-billed cost choice. Confirming check: confirm omission is cost-motivated.
-- findFirst(...) -> Optional<T> absent | Low | Cassandra has it; stream(...).first() is a clean
-  workaround.
+[RE-REVIEW 2026-06-24: All four gaps STILL-VALID — grep for get(/gett/findFirst/count(/queryForSingleNonNull
+returns no matches in current source; none of these methods exists.]
+- get(Class,Object... ids) -> Optional<T> / gett -> T absent | BigQueryExecutor.java (no such method) |
+  Medium | STILL-VALID. No fetch-by-id; Cassandra and Mongo both provide it, and the building blocks
+  (idsToCondition at :1600, list(Class,Condition) at :1983) already exist here.
+- queryForSingleNonNull(Class<V>,...) -> Optional<V> absent | BigQueryExecutor.java (no such method) |
+  Medium | STILL-VALID. The convention pairs it with queryForSingleValue->Nullable<V> (present at :1768/:1819);
+  only the Nullable form exists.
+- count(Class<?>,Condition) -> long absent | BigQueryExecutor.java (no such method) | Low | STILL-VALID.
+  Cassandra/Mongo have it; may be a deliberate BigQuery-bytes-billed cost choice. Confirming check: confirm
+  omission is cost-motivated.
+- findFirst(...) -> Optional<T> absent | BigQueryExecutor.java (no such method) | Low | STILL-VALID.
+  Cassandra has it; stream(...).first() is a clean workaround.
 
 6. DEPRECATION / REMOVAL CANDIDATES
 None.
+
+NEW ISSUES (2026-06-24 re-review)
+- Dead commented-out main(String[]) block | BigQueryExecutor.java:2574-2587 | Info | A fully
+  commented-out main() demo using the now-private getSchema reflection path lingers at end of file;
+  the live getSchema(FieldValueList) at :2559 supersedes it. Cosmetic dead-code cleanup, not an API issue.
+- getKeyNames / getKeyNameSet duplicate the same lazy-cache body | BigQueryExecutor.java:1556,1568 | Info |
+  Both private helpers run an identical compute-and-cache against entityKeyNamesMap, differing only in
+  returning tp._1 (ImmutableList) vs tp._2 (ImmutableSet); the list form could delegate to the set form's
+  cache lookup. Internal-only, no public-API impact.
+- No genuinely new public-API design defects found; the two prior High findings are resolved (see sections
+  1 and 3) and the four family-completeness gaps in section 5 remain the only open design items.
 
 CROSS-CLASS NOTES
 - Return discipline (Dataset/List/Stream/Nullable/boolean) and targetClass-first ordering conform to the

@@ -4,6 +4,11 @@ Reviewer: opus-4.8  Date: 2026-06-23  (orchestrator-verified against source)
 >>> CODE-FIX UPDATE (2026-06-24): the accessor-name drift (section 2) is RESOLVED — mongoCollection() was
     HARD-RENAMED to coll() (matching the reactive twin; no alias). See the [RESOLVED] tag. Other findings
     remain open. mvn -o clean test-compile green. <<<
+>>> RE-REVIEW (2026-06-24): re-verified every finding against the CURRENT source (file changed since the
+    original review: coll() rename done; insert-family now returns driver results; null-filter IAE on
+    list/query/findFirst confirmed; updateOne/findOneAndUpdate Collection-overload javadoc now states the
+    pipeline semantics). Per-finding [RE-REVIEW] tags + corrected line numbers below. Prior inline tags
+    were NOT trusted. See NEW ISSUES + updated OVERALL ASSESSMENT. <<<
 
 1. OVERALL ASSESSMENT
 The blocking per-collection executor is large but well-organized, with a genuinely strong return-type
@@ -12,52 +17,117 @@ Stream split that reads clearly. The query/insert/update/delete/aggregate famili
 MongoCollection faithfully. The actionable items are a dual-meaning update overload, a small
 insert-family return inconsistency, and one accessor-name drift vs the reactive twin.
 
+[RE-REVIEW 2026-06-24] Net of the re-review: the source has materially improved since 2026-06-23. The
+accessor rename (coll()) is DONE, the insert-family return inconsistency is ALREADY-FIXED (insertOne ->
+InsertOneResult, insertMany -> InsertManyResult, bulkInsert -> BulkWriteResult), and the
+updateOne/findOneAndUpdate Collection<?> overloads now document their aggregation-pipeline semantics. The
+ONLY remaining design-level item is the dual-meaning (Bson,Object) vs (Bson,Collection<?>) overload
+family, which is now well-documented but still dispatched on static type (STILL-VALID, downgraded by the
+new javadoc). queryForSingleNonNull's NPE-on-null is STILL-VALID but is now exhaustively documented. The
+list(Class)/query(Class) "no-filter convenience absent" item NO-LONGER-APPLIES as written: null filter is
+now a deliberate IAE (executeQuery:2496), so the symmetry-with-stream() recommendation is moot.
+
 2. NAMING ISSUES
-- [RESOLVED 2026-06-24 — code-fixed] mongoCollection() | MongoCollectionExecutor.java:211 | Medium | Drift
+- [RE-REVIEW 2026-06-24: ALREADY-FIXED — accessor is coll() at MongoCollectionExecutor.java:213; no
+  mongoCollection() remains (grep). (MongoCollectionExecutor.java:213)]
+  [RESOLVED 2026-06-24 — code-fixed] mongoCollection() | (orig :211; now :213) | Medium | Drift
   vs the reactive twin's coll() (reactivestreams/...:216). FIXED: hard-renamed mongoCollection() -> coll()
   (no deprecated alias) so the blocking + reactive accessors match. (Note: the maintainer chose coll() as
   canonical; this report had recommended the reverse — mongoCollection().) Call-sites + tests updated;
   test-compile green.
-- gett(...) family | :612-758 | Low | The double-t gett name is an established library-wide convention
+- [RE-REVIEW 2026-06-24: STILL-VALID (KEEP, noted-only) — gett-family present and unchanged; double-t is
+  the library-wide convention. (MongoCollectionExecutor.java:~612-758)]
+  gett(...) family | :~612-758 | Low | The double-t gett name is an established library-wide convention
   for "return null instead of empty Optional"; KEEP, noted only.
 
 3. RETURN-TYPE AND PARAMETER ISSUES
-- updateOne/updateMany/findOneAndUpdate (Bson, Object) vs (Bson, Collection<?>) | :2932/2992, :3171/3248,
-  :3687/3799 | Medium | The 2nd parameter has two incompatible meanings dispatched on static type: a
-  single update spec (Bson/Document/Map/entity) vs a "collection of update operations". A List passed as
-  the update silently binds to the Collection overload. Verified both overload families exist with these
-  differing Javadoc contracts. Recommend giving the multi-operation form a distinct name (e.g.
-  updateOneWithPipeline / applyUpdates) so the dispatch cannot be silently wrong. Confirming check:
-  confirm whether the Collection<?> form is an aggregation pipeline or a sequence of update docs, and name
-  accordingly.
-- insertOne -> void, insertMany -> void, bulkInsert -> int | :2665/2735/3558 | Low-Medium | Inconsistent
-  insert-family returns; the reactive twin returns driver results (Mono<InsertOneResult/InsertManyResult>)
-  for all three. Consider returning the result/inserted-count from insertOne/insertMany for parity and to
-  expose generated ids.
-- queryForSingleNonNull(String,Bson,Class) | :1656 | Low | Throws NPE on a matched-but-null value
-  (documented) despite the "NonNull" name implying null-safety. Either return Optional.empty() via
-  ofNullable, or rename. Confirming check: confirm the NPE path on null stored value.
-- queryForBoolean/.../Double primitive family | :1214-1456 | Low | Returns an OptionalXxx holding the
+- [RE-REVIEW 2026-06-24: STILL-VALID (downgraded by new javadoc) — both overload families still exist and
+  still dispatch on static type, so a List passed as "the update" silently binds to the Collection<?>
+  (pipeline) overload. The original "confirming check" is now ANSWERED in-source: the Collection<?> form
+  IS an aggregation-pipeline update (updateOne javadoc :2971-2973; findOneAndUpdate javadoc :3780). The
+  naming-collision risk remains. Current lines: updateOne (Bson,Object):2930 / (Bson,Collection<?>):2990;
+  updateMany (Bson,Object):3169 / (Bson,Collection<?>):3246; findOneAndUpdate (Bson,Object):3685 /
+  (Bson,Collection<?>):3797. (MongoCollectionExecutor.java:2990)]
+  updateOne/updateMany/findOneAndUpdate (Bson, Object) vs (Bson, Collection<?>) | updateOne :2930/:2990,
+  updateMany :3169/:3246, findOneAndUpdate :3685/:3797 | Medium | The 2nd parameter has two incompatible
+  meanings dispatched on static type: a single update spec (Bson/Document/Map/entity) vs a "collection of
+  update operations" executed as an AGGREGATION PIPELINE (now confirmed by javadoc). A List passed as the
+  update silently binds to the Collection overload. Recommend giving the multi-operation form a distinct
+  name (e.g. updateOneWithPipeline / applyUpdatePipeline) so the dispatch cannot be silently wrong.
+  [Confirming check RESOLVED: the Collection<?> form is an aggregation pipeline, not a sequence of update
+  docs — see updateOne javadoc :2971 and findOneAndUpdate javadoc :3780.]
+- [RE-REVIEW 2026-06-24: ALREADY-FIXED — insertOne returns InsertOneResult (:2660), insertMany returns
+  InsertManyResult (:2732), bulkInsert returns BulkWriteResult (:3556). The void-return inconsistency the
+  finding described is gone; the insert family now returns driver results and exposes generated ids
+  (javadoc cites getInsertedId()/getInsertedIds()). (MongoCollectionExecutor.java:2660/2732/3556)]
+  insertOne -> void, insertMany -> void, bulkInsert -> int | (orig :2665/2735/3558; now :2660/2732/3556) |
+  Low-Medium | Inconsistent insert-family returns; the reactive twin returns driver results
+  (Mono<InsertOneResult/InsertManyResult>). RESOLVED in blocking class: insertOne now returns
+  InsertOneResult, insertMany returns InsertManyResult, bulkInsert returns BulkWriteResult (note: not int;
+  the original "int" description was already stale). Parity with the reactive twin achieved.
+- [RE-REVIEW 2026-06-24: STILL-VALID (now fully documented) — Optional.of(N.convert(...)) at :1669 still
+  throws NPE when a matched doc has the field absent/null or conversion yields null. The javadoc now
+  states this explicitly (@throws NullPointerException :1651-1653; "Optional.of(null) rejects it" example
+  :1639-1640) and points to queryForSingleValue (Nullable). Behavior unchanged; rename/return-empty not
+  adopted. Confirming check CONFIRMED. (MongoCollectionExecutor.java:1669)]
+  queryForSingleNonNull(String,Bson,Class) | (orig :1656; now :1658, NPE site :1669) | Low | Throws NPE on
+  a matched-but-null value (now thoroughly documented) despite the "NonNull" name implying null-safety.
+  Either return Optional.empty() via ofNullable, or rename. The maintainer chose to document rather than
+  change behavior.
+- [RE-REVIEW 2026-06-24: STILL-VALID (recorded, not pressed) — queryForBoolean/.../Double family unchanged;
+  primitive-default-on-missing semantics still apply, documented + @Beta. Line range still approximately
+  :1214-1456. (MongoCollectionExecutor.java:~1214-1456)]
+  queryForBoolean/.../Double primitive family | :~1214-1456 | Low | Returns an OptionalXxx holding the
   primitive default when the field is missing/null (empty only when no doc matched), conflating a 0/false
   value with absence. Documented + @Beta; acceptable — recorded, not pressed.
 
 4. MISPLACED METHODS
-None.
+None. [RE-REVIEW 2026-06-24: re-confirmed — no misplaced methods.]
 
 5. MISSING METHODS
-- list(Class) / query(Class) no-filter convenience absent | :933/1701 vs stream() :2041 | Low | stream()
-  and stream(Class) can scan the whole collection, but list/query require a non-null filter. Add no-filter
-  list/query for symmetry with stream().
+- [RE-REVIEW 2026-06-24: NO-LONGER-APPLIES (as written) — the source now DELIBERATELY rejects a null
+  filter on list/query/findFirst: executeQuery does N.checkArgNotNull(filter,"filter") (:2496) and the
+  list(Bson):935 / query(Bson):1703 javadoc declares "@throws IllegalArgumentException if filter is null".
+  This is an intentional design choice (per the change context), so "add no-filter list/query for symmetry
+  with stream()" conflicts with the new contract. If whole-collection list/query is wanted, the supported
+  path is stream()/stream(Class) (:2035/:2078) collected to a List, or pass an explicit match-all filter
+  (new Document()). Downgrade to a documentation/discoverability note, not a missing-method defect.
+  (executeQuery:2496; list(Bson):935; query(Bson):1703; stream():2035)]
+  list(Class) / query(Class) no-filter convenience absent | list(Bson) :935 / query(Bson) :1703 vs
+  stream() :2035 | Low | stream() and stream(Class) can scan the whole collection, but list/query now
+  REJECT a null filter by design (IAE). The original "add no-filter list/query for symmetry" recommendation
+  is superseded by the explicit non-null-filter contract; left as a note only.
 
 6. DEPRECATION / REMOVAL CANDIDATES
-- mapReduce(...) | :4493/4519 | High (already @Deprecated) | KEEP; replacement aggregate(List[,Class]).
+- [RE-REVIEW 2026-06-24: STILL-VALID (KEEP) — both mapReduce overloads still carry @Deprecated
+  (:4490, :4516) and javadoc directs callers to aggregate(). No change needed. (MongoCollectionExecutor.java:4490/4516)]
+  mapReduce(...) | (orig :4493/4519; now :4491/4517, @Deprecated at :4490/:4516) | High (already
+  @Deprecated) | KEEP; replacement aggregate(List[,Class]).
+
+NEW ISSUES (2026-06-24 re-review)
+- NEW | findFirst(...) null filter binds to executeQuery's non-null-filter contract: findFirst(Bson,...)
+  calls executeQuery (:907) which throws IAE on null filter (:2496), but several findFirst overloads do
+  NOT declare @throws IllegalArgumentException for null filter the way list/query do — minor javadoc
+  inconsistency (contract enforced but under-documented on findFirst). | findFirst:906-911, executeQuery:2496 |
+  Low | Doc-completeness gap only; behavior is correct (IAE thrown).
+- NEW | executeQuery count==0 special-case (returns an always-false filter via new Document(_$EXPR,false),
+  :2505-2508) silently DISCARDS the caller-supplied filter/projection/sort and issues coll.find(always-false)
+  to guarantee zero rows. Correct for "return zero docs", but the discarded filter means a count==0 call is
+  not a no-op query against the same predicate; acceptable but worth a one-line internal comment that the
+  caller filter is intentionally dropped. | MongoCollectionExecutor.java:2505-2508 | Info | Behavior is
+  intentional and already partly commented; no action required.
+- NEW | The dual-meaning overload risk (section 3) is the only design item that a distinct method name
+  would eliminate; flagged again here only to keep it visible after the insert-family and rename items
+  were resolved. | updateOne:2990 / updateMany:3246 / findOneAndUpdate:3797 | Medium (dup of section 3) |
+  Tracking note, not a separate defect.
 
 CROSS-CLASS NOTES
 - Async twin is near-1:1 but MISSING no-filter stream()/stream(Class), estimatedDocumentCount, and the
   typed groupBy*/groupByAndCount* overloads (see AsyncMongoCollectionExecutor report).
 - Reactive twin uses coll() — the blocking accessor is now also coll() (hard-renamed 2026-06-24). Reactive
-  also drops gett (Mono subsumes it — justified) and returns insert results (a model this class should
-  follow for insertOne/insertMany).
+  also drops gett (Mono subsumes it — justified) and returns insert results.
+  [RE-REVIEW 2026-06-24: the blocking class now ALSO returns insert results (InsertOneResult/
+  InsertManyResult/BulkWriteResult), so the insert-result-parity note is satisfied for the blocking twin.]
 - The four-way Optional/Nullable/null/empty discipline here is a library strength worth holding other
   executors to in the SUMMARY.
 
@@ -66,3 +136,13 @@ Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applie
 findings are code/design (see SUMMARY.txt section 2), or any doc-adjacent item was evaluated and
 intentionally left (documenting it would paper over a behavioral/design issue, or it is dead-comment
 cleanup deferred to the maintainer). `mvn -o clean compile` remains green.
+
+--- RE-REVIEW PASS 2026-06-24 ---
+Re-verified all six original findings against the current source (read in segments). Status summary:
+ALREADY-FIXED: accessor rename (coll() :213); insert-family returns driver results (:2660/2732/3556).
+STILL-VALID: dual-meaning (Bson,Object)/(Bson,Collection<?>) overloads (:2930/2990, :3169/3246,
+:3685/3797), now with pipeline semantics documented; queryForSingleNonNull NPE-on-null (:1669), now fully
+documented; mapReduce @Deprecated (:4490/4516, KEEP); primitive query family (:~1214-1456, recorded).
+NO-LONGER-APPLIES: list(Class)/query(Class) no-filter convenience — null filter is now a deliberate IAE
+(executeQuery:2496). Line numbers above corrected to current source. No .java files were modified in this
+pass (report-only).

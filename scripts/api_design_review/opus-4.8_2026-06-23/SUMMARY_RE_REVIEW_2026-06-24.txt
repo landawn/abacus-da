@@ -1,0 +1,232 @@
+==================================================================================================
+API DESIGN REVIEW — RE-REVIEW AGAINST CURRENT SOURCE
+Date: 2026-06-24   |   Package: com.landawn.abacus.da   |   Model: opus-4.8
+Method: every per-class report re-verified against HEAD by sub-agents; every STILL-VALID High/Medium
+and every NEW issue orchestrator-verified by reading current source (file:line cited).
+==================================================================================================
+
+>>> LOW-FIX PASS (2026-06-24, approved code changes) — mvn -o clean test-compile GREEN; HBase value-object
+    unit tests 352/0, CqlBuilderTest 513/0.
+    FIXED: L4 dead commented-out blocks deleted (AnyOperation, AnyMutation, HBaseExecutor existsAll×2/toMap/
+      toBytes, Neo4j queryDto, BigQuery main); L5 AnyGet.toGet->toGetList (+HBaseExecutor×3 + tests);
+      L8 AnyScan.setFamilyMap null-guard added; L9 AnyDelete toRowBytes->toRowKeyBytes; L10 slice params
+      unified on rowOffset/rowLength (AnyIncrement, AnyAppend); L12 AsyncHBaseExecutor class-doc corrected;
+      L15/L20 AnyUtil now rejects non-String names (IAE, matching MongoDBBase); L22 AsyncCassandraExecutorBase
+      count(Class,Condition) re-pointed off the deprecated path (@SuppressWarnings removed); L23 v3 UDTCodec
+      param userType->userTypeName; L25 CqlBuilder renderCondition Javadoc reworded; L27 CqlMapper stale
+      Javadoc fixed to real API (load/cqlIds/add); L28 v2 toMap(Object[]) parity overload added; L31 Cosmos
+      @Beta added to Condition streamItems.
+      L1 (checked-exception asymmetry): DOCUMENTED the rationale on getAuthorizations/getCellVisibility
+      (per the finding's own "or document why they differ"); checked exception kept to avoid API/test breakage.
+    INTENTIONALLY DEFERRED: L7 AnyScan deprecated of()/setRowPrefixFilter — KEPT @Deprecated (removal is an
+      API break + test rewrites = a major-version action, not a LOW sweep). L17 findFirst @throws doc (minor);
+      L21 Cassandra internal @Beta (a @Beta convenience over a stable primitive is normal); L2/L3/L6/L11/L16/
+      L18/L19/L24/L26/L29 by-design/documented; L14/L28-async()/L30-count-findFirst/L32-additive = optional
+      new methods (not added). Items below retain their original text for the record. <<<
+
+CONTEXT
+A large amount of code changed since the 2026-06-23 reports ("Naming convention improvements",
+"bug fixes and improve javadoc", plus the approved rename/@Beta/@Deprecated/distinct work). Many
+original findings are now ALREADY-FIXED. Line numbers below are CURRENT (HEAD).
+
+--------------------------------------------------------------------------------------------------
+RESOLVED SINCE ORIGINAL REVIEW (ALREADY-FIXED / NO-LONGER-APPLIES) — highlights
+--------------------------------------------------------------------------------------------------
+- HBaseExecutor/AsyncHBaseExecutor targetType naming: now CONSISTENT — all public sigs use targetType
+  (HBase 13x, Async 10x, 0 targetClass); the sync/async inconsistency is gone (standardized, not renamed).
+- AnyUtil RELOCATED mongodb -> aws/AnyUtil.java (package com.landawn.abacus.da.aws); cross-package
+  dynamodb->mongodb dependency removed.
+- MongoDB/reactive collection()+collectionMapper() null-checks added (NPE->IAE, uniform).
+- MongoCollectionExecutor insertOne/insertMany/bulkInsert now return InsertOneResult/InsertManyResult/
+  BulkWriteResult (were void/int).
+- CassandraExecutorBase query(Class<?>,Condition) — phantom <T> removed (now Class<?>).
+- CqlBuilder parse(Condition,Class) -> renderCondition (clean rename to canonical SQLBuilder name).
+- CqlMapper add(...) — all 4 overloads now return void + reject duplicates (split contract unified);
+  add(String,ParsedCql,Map) now null-checks parsedCql.
+- ParsedCql.namedParameters() — now backed by ImmutableMap (mutable-pooled-map leak fixed).
+- CassandraExecutor v4 UDTCodec.create param renamed userType->userTypeName; serialize/deserialize shims
+  now @Deprecated. AsyncCassandraExecutorBase + v3 classes @Deprecated; async @Beta parity reached (20).
+- AsyncMongo/AsyncCassandra @Beta parity (added); reactive distinct() pipeline fix; v2 attrValueOf->
+  toAttributeValue rename; ColumnFamily doc fixes; v3 execute() overclaim removed.
+- BigQuery update/delete now N.checkArgNotNull(entity) (NPE->IAE); queryForSingleValue phantom <T> -> Class<?>.
+- Cosmos get(...)->Optional<T> added (404->empty); deleteItem phantom <T> removed (now Object).
+- AsyncDynamoDBExecutor(v1) query(QueryRequest,Class<?>) — phantom <T> removed.
+- DynamoDBExecutor(v1) toEntity(GetItemResult,Class) parity overload added.
+
+==================================================================================================
+REMAINING-OPEN + NEWLY-FOUND ISSUES — sorted by severity
+(severity = impact/priority; [NEW] = surfaced by this re-review)
+==================================================================================================
+
+------------------------------- HIGH -------------------------------
+H1 | v2-AsyncDynamoDBExecutor | whole class returns native CompletableFuture, not the library-standard
+   ContinuableFuture (193 CF / 0 ContinuableFuture; every other async executor uses ContinuableFuture)
+   | aws/dynamodb/v2/AsyncDynamoDBExecutor.java (class-wide) | STILL-VALID
+   ACTION: decide once — wrap to ContinuableFuture for library consistency, OR adopt CompletableFuture
+   library-wide and document it as the forward direction. (Headline cross-class deviation.)
+
+H2 | v2-DynamoDBExecutor | [NEW] query(QueryRequest,Class<?>) now calls N.checkArgNotNull(targetClass)
+   (:3097) but KEEPS the now-unreachable `if (targetClass == null || Map...)` branch (:3099) AND the
+   Javadoc still advertises that targetClass may be null (:3073,3090-3091). A caller following the docs
+   passing null now hits IAE. The v2 ASYNC twin was NOT given the check and still genuinely accepts null
+   (AsyncDynamoDBExecutor.java:1795) -> sync/async divergence.
+   | aws/dynamodb/v2/DynamoDBExecutor.java:3095-3121 (+ async :1795) | STILL-VALID/NEW
+   ACTION: remove the dead `targetClass == null ||` arm + the null-allowed Javadoc (or drop the check to
+   restore null acceptance); then make sync and async agree.
+
+------------------------------- MEDIUM -------------------------------
+M1 | AsyncMongoCollectionExecutor | no-filter stream()/stream(Class) absent; estimatedDocumentCount()/
+   (Options) absent; typed groupBy(…,Class)/groupByAndCount(…,Class) absent (only Document-typed)
+   | mongodb/AsyncMongoCollectionExecutor.java (sync has them: MongoCollectionExecutor.java:2035,2078,
+   417,440,4253,4302,4356,4404) | STILL-VALID | ACTION: add the missing async wrappers (mark @Beta).
+M2 | MongoCollectionExecutor | updateOne/updateMany/findOneAndUpdate (Bson,Object) vs (Bson,Collection<?>)
+   — 2nd param has two incompatible meanings (single update spec vs aggregation pipeline) dispatched on
+   static type | mongodb/MongoCollectionExecutor.java:2930/2990, 3169/3246, 3685/3797 | STILL-VALID
+   ACTION: give the pipeline/multi-op form a distinct name (e.g. updateOneWithPipeline).
+M3 | MongoCollectionMapper + reactivestreams-MongoCollectionMapper | no-arg whole-collection list()/
+   stream()/query() overloads absent (every overload requires a Bson filter; null filter is now rejected)
+   | mongodb/MongoCollectionMapper.java:759,1476,1714 ; reactivestreams/…:789 | STILL-VALID
+   ACTION: add no-arg overloads delegating an explicit empty Bson (fix both twins).
+M4 | AnyRowMutations | add(AnyPut)/add(AnyDelete)/add(AnyMutation<?>) wrapper overloads absent — callers
+   must .val()-unwrap | hbase/AnyRowMutations.java:271,318 | STILL-VALID | ACTION: add wrapper overloads
+   that call val() internally; keep add(Mutation) as escape hatch.
+M5 | AsyncHBaseExecutor | no async mapper()/AsyncHBaseMapper (async entity CRUD requires sync().mapper())
+   | hbase/AsyncHBaseExecutor.java (none); sync HBaseExecutor.java:1327,1379 | STILL-VALID
+   ACTION: add AsyncHBaseExecutor.mapper(...) or document the sync-only mapping on the class Javadoc.
+M6 | HBaseExecutor | typed batch-get (List<Get>/Collection<AnyGet>,Class) DROPS not-found rows while raw
+   get(List<Get>) is positionally aligned | hbase/HBaseExecutor.java:1743,1801 vs 1609 (drop at 668-670)
+   | PARTIALLY-ADDRESSED (per-method @return tags now document it; class-level family note still absent)
+   ACTION: add a family-level note in the class Javadoc contrasting the two cardinalities.
+M7 | AnyScan | redundant @Override setColumnFamilyTimeRange(String/byte[],long,long) (base self-types) +
+   static toScan(Collection) absent (AnyGet has toGet) | hbase/AnyScan.java:674,708 ; (toScan absent)
+   | STILL-VALID | ACTION: delete the redundant overrides (inherit base); add toScan for batch parity.
+M8 | AnyPut | of(Object,int,int) slice params rowOffset/rowLength diverge from siblings' offset/length;
+   addColumn(byte[],ByteBuffer,long,ByteBuffer) is the lone/asymmetric ByteBuffer overload (ts-only)
+   | hbase/AnyPut.java:370,411,1234 | STILL-VALID | ACTION: unify slice param names across the 4 subclasses;
+   add the no-ts ByteBuffer parity overload or drop it.
+M9 | AnyIncrement / AnyAppend | setAttribute(String,byte[]) redundant with inherited (String,Object)
+   (toValueBytes is identity for byte[]) | AnyIncrement.java:700 ; AnyAppend.java:635 | PARTIALLY-ADDRESSED
+   (now documented as an intentional raw-bytes fast path) | ACTION: either remove for a uniform surface,
+   or add to all four subclasses (current 2-of-4 split persists).
+M10 | MongoDBBase | toBson/toDocument/toBSONObject/toDBObject each have (Object) AND (Object...) — a
+   single Object[] silently binds to the "name/value pairs" overload | mongodb/MongoDBBase.java:449/482,
+   517/553, 658/720, 763/828 | STILL-VALID (partial hardening: pair-parsers now reject non-String names
+   with IAE) | ACTION: give the pairs form a distinct name or require a Map.
+M11 | CassandraExecutor (v4) | UDTCodec.serialize/deserialize are non-@Override v3-migration shims; now
+   @Deprecated but without forRemoval | cassandra/CassandraExecutor.java:2103,2129 | PARTIALLY-ADDRESSED
+   ACTION: add @Deprecated(forRemoval=true) and steer to encode/decode.
+M12 | AsyncCassandraExecutor (v4) + v3/AsyncCassandraExecutor | stream(String,BiFunction,Map<String,Object>)
+   named-param variant absent (execute() has the Map path) | cassandra/AsyncCassandraExecutor.java:148,189
+   ; v3/…:154,196 | STILL-VALID | ACTION: add the Map-accepting overload to both concretes.
+M13 | AnyUtil | class name "AnyUtil" non-descriptive for a single name/value-pair-to-Map helper
+   | aws/AnyUtil.java:13 | STILL-VALID | ACTION: rename (e.g. PropsUtil) or fold into a shared util.
+M14 | CosmosContainerExecutor | prepareQuery has a dead `if (count>0) limit(count)` branch (sole caller
+   passes 0) -> a public top-N/limit overload for the Condition path is missing | azure/
+   CosmosContainerExecutor.java:1936-1938 (caller 1889) | STILL-VALID | ACTION: expose a top-N overload or
+   delete the dead branch.
+M15 | BigQueryExecutor | get/gett by-id absent and queryForSingleNonNull(Class<V>,…)->Optional<V> absent
+   (the convention pairs it with queryForSingleValue->Nullable) | gcp/BigQueryExecutor.java | STILL-VALID
+   ACTION: add fetch-by-id (building blocks idsToCondition:1600, list:1983 exist) and the NonNull sibling.
+M16 | Neo4jExecutor | query(String,Map)/(…,boolean)/(Class,String,Map) return Stream, colliding with the
+   family convention query->DataSet / stream->Stream | neo4j/Neo4jExecutor.java:2197,2252,2297 | STILL-VALID
+   (NOT renamed) | ACTION: rename these to stream(...) (or add DataSet-returning query()).
+
+------------------------------- LOW -------------------------------
+HBase value objects
+L1  | AnyOperation base chain | checked-exception policy inconsistent: toJson wraps IOException->
+      UncheckedIOException but getAuthorizations/getCellVisibility leak checked DeserializationException
+      | AnyOperation.java:128,147; AnyQuery.java:175; AnyMutation.java:292 | STILL-VALID | wrap or document.
+L2  | AnyOperation base chain | getFamilyCellMap() returns live mutable map (vs getAttributesMap()
+      unmodifiable) | AnyMutation.java:191 | PARTIALLY-ADDRESSED (now documented) | optional: return view.
+L3  | AnyOperation base chain | get(String,String)/(byte[],byte[]) return List<Cell> (ambiguous `get`)
+      | AnyMutation.java:439,453 | STILL-VALID | optional cells()/getCellList alias.
+L4  | AnyOperation base chain + Neo4j + HBaseExecutor + BigQuery | dead commented-out code blocks
+      | AnyOperation.java:155-176, AnyMutation.java:195-220; Neo4jExecutor.java:2104-2112; HBaseExecutor.java
+      735-741,1462-1487,3044-3050; BigQueryExecutor.java:2574-2587 | STILL-VALID | delete.
+L5  | AnyGet | toGet(Collection) returns List but singular name | AnyGet.java:1120 | STILL-VALID | rename
+      toGetList; AnyGet.getFamilies()/AnyScan.familySet() accessor asymmetry — unify one name.
+L6  | AnyGet | of(Object,int,int) raw AIOOBE vs IAE | AnyGet.java:137/229 | PARTIALLY-ADDRESSED (documented).
+L7  | AnyScan | of(Object)/of(Object,Object)/of(Object,Filter) + setRowPrefixFilter(Object) already
+      @Deprecated | AnyScan.java:293,317,339,1168 | STILL-VALID | remove in next major (replacements exist).
+L8  | AnyScan | getFamilies() nullable byte[][] (documented null=all-families); setFamilyMap "must not be
+      null" but no guard | AnyScan.java:509,631 | PARTIALLY-ADDRESSED | optional fail-fast guard.
+L9  | AnyDelete | toRowBytes vs toRowKeyBytes mixed (behaviorally identical) | AnyDelete.java:219 | STILL-VALID.
+L10 | AnyPut/AnyDelete/AnyIncrement/AnyAppend | byte[]/Object factory `of(...)` parity gaps + slice param
+      naming (offset/length vs rowOffset/rowLength); [NEW] AnyAppend intra-class: ctor(rowOffset/rowLength,
+      :159) vs factory(offset/length, :269) | hbase/Any*.java | STILL-VALID/NEW | unify (cosmetic).
+L11 | AnyIncrement | equals/hashCode row-key-only (two distinct increments compare equal) | AnyIncrement.java
+      :761-774 | STILL-VALID (documented) | warn prominently or override.
+L12 | AsyncHBaseExecutor | [NEW] class Javadoc overstates async mapping ("Entity Mapping … async support")
+      | AsyncHBaseExecutor.java:67 | NEW | doc-only; align with the missing-async-mapper reality (M5).
+HBase exec
+L13 | HBaseExecutor | mapper(Class,String) CAMEL_CASE-default overload absent | HBaseExecutor.java:1327,1379
+      | STILL-VALID | optional convenience overload.
+MongoDB
+L14 | MongoDBBase | toMap(Document[,IntFunction]) shallow (documented); objectId2Filter no $in/Collection
+      companion; toBSONObject/toDBObject legacy types not @Deprecated | MongoDBBase.java:866/902,237/267,
+      658/763 | STILL-VALID/PARTIAL | optional deepToMap/$in helper/soft-deprecate.
+L15 | MongoDBBase | [NEW] non-String name validation asymmetric: MongoDBBase pair-parsers reject (IAE) but
+      aws/AnyUtil.array2Props coerces via N.stringOf | MongoDBBase.java:610-613,673-676,778-781 vs
+      aws/AnyUtil.java:82 | NEW | settle reject-vs-coerce library-wide.
+L16 | MongoCollectionExecutor | queryForSingleNonNull throws NPE on matched-but-null despite name (now
+      fully documented) | MongoCollectionExecutor.java:1658 | STILL-VALID | Optional.empty() or rename.
+L17 | MongoCollectionExecutor | [NEW] findFirst overloads enforce the non-null-filter IAE but don't all
+      declare @throws IllegalArgumentException like list/query | MongoCollectionExecutor.java:906-911 | NEW
+      | doc-completeness only.
+L18 | MongoCollectionMapper | [NEW] distinct(String,Bson) rejects null filter though distinctPipeline
+      supports null and distinct(String) passes null | MongoCollectionMapper.java:3169 | NEW | borderline;
+      consistent with the null-filter convention, documented — low priority.
+L19 | MongoCollectionMapper | findFirst(Bson,Bson sort) overload absent; bulkWrite untyped (WriteModel)
+      | MongoCollectionMapper.java:695/731, 2812/2841 | STILL-VALID | minor.
+L20 | AnyUtil | array2Props silently coerces non-String names (diverges from MongoDBBase) | aws/AnyUtil.java:82
+      | STILL-VALID | align with L15.
+Cassandra
+L21 | CassandraExecutorBase | queryForString/queryForDate(Condition) carry @Beta but delegate to the
+      non-@Beta queryForSingleValue | CassandraExecutorBase.java:1887,1920,1956 vs 1995 | STILL-VALID |
+      settle @Beta consistently (internal).
+L22 | AsyncCassandraExecutorBase | count(Class,Condition) routes through the @Deprecated async count(String,
+      …) (sync routes via queryForSingleValue) | AsyncCassandraExecutorBase.java:1225-1228 | STILL-VALID |
+      re-point to a non-deprecated path (style-only).
+L23 | v3-CassandraExecutor | [NEW] UDTCodec.create(Cluster,String,String userType,Class) String UDT-name
+      param still named userType (v4 renamed to userTypeName); now a v3-only naming inconsistency
+      | v3/CassandraExecutor.java:2454 | NEW | rename to userTypeName for parity.
+L24 | CqlBuilder | usingTimestamp(String) micros-vs-millis (documented 3x); insert(Map) vs select(Map)
+      opposite shape; inherited CQL-invalid verbs groupBy/having/join/union/offset silently emit invalid
+      CQL | CqlBuilder.java:496,1421/2124,(inherited) | STILL-VALID | optional guard/awareness.
+L25 | CqlBuilder | [NEW] renderCondition Javadoc still says "Parses"/"parsed" after the parse->
+      renderCondition rename | CqlBuilder.java:2498,2515,2517 | NEW | reword to renders/rendered.
+L26 | CqlMapper | get(String) returns null (not Optional); getAttributes two-state null/empty; clear()/
+      values()/entrySet() absent | CqlMapper.java:416,609 | STILL-VALID (by design) | optional.
+L27 | CqlMapper | [NEW] stale Javadoc examples reference non-existent API: `new CqlMapper("…xml")`
+      (:109), instance `mapper.loadFrom(...)` + @see #loadFrom (:166,167,199), `reloaded.keySet()` (:707)
+      — the real API is no-arg ctor + static load(...) + cqlIds(). | CqlMapper.java:109,166-167,199,707 |
+      NEW | doc-only (copy-paste examples won't compile); reword to load(...)/cqlIds(). (NOTE: @see #loadFrom
+      yields a javadoc-tool warning, not a javac error.)
+Cloud
+L28 | v2-DynamoDBExecutor | async() bridge absent on v2 sync (v1 has one); toMap(Object[]) absent (v1 has
+      it); asKey verbatim alias of asItem; AnyUtil now in aws/ (used only by dynamodb) | v2/DynamoDBExecutor
+      .java:(none),1197/1224,430-546,31 | STILL-VALID/PARTIAL | add async()/toMap parity; nit.
+L29 | DynamoDBExecutor (v1) | batchGetItem drops UnprocessedKeys; getItem bare null; static converters on
+      executor | v1/DynamoDBExecutor.java:2094+,1900+,527+ | STILL-VALID (by design/KEEP) | documented.
+L30 | BigQueryExecutor | count(Class,Condition) absent; findFirst absent; [NEW] dead main() block (2574-
+      2587); getKeyNames/getKeyNameSet duplicate lazy-cache body (1556/1568) | gcp/BigQueryExecutor.java |
+      STILL-VALID/NEW (Info) | minor.
+L31 | CosmosContainerExecutor | @Beta granularity (streamAllItems @Beta but Condition streamItems not);
+      [NEW] Condition projection streamItems lack a paged queryItems counterpart | azure/CosmosContainer
+      Executor.java:1227/1267 vs 1677+,1764/1827 | STILL-VALID/NEW | make @Beta consistent; sub-item of M-gap.
+L32 | Neo4jExecutor | load/queryForObject return T-or-null (no Optional get/findFirst); count(Class)
+      count-all absent; saveAll(Iterable)/delete(Iterable) absent | neo4j/Neo4jExecutor.java:322,2152,2349,
+      1991,2059 | STILL-VALID | optional additive wrappers.
+
+==================================================================================================
+CROSS-CLASS THEMES STILL OPEN
+- Async future type: v2 DynamoDB async = CompletableFuture; all others ContinuableFuture (H1).
+- SDK-mirror vs library-Optional return discipline (HBase/Dynamo bare-null vs Mongo/Cassandra Optional) —
+  undocumented design split; decide or document.
+- Dual-meaning overloads (Mongo update*, MongoDBBase varargs) — footgun pattern (M2, M10).
+- @Beta granularity within Cassandra base + Cosmos (L21, L31).
+- Mutable internal-collection leaks: ParsedCql FIXED (ImmutableMap); HBase AnyMutation.getFamilyCellMap
+  remains a live map (L2) — last instance of the pattern.
+- A recurring NEW pattern from recent "add a null-check" fixes: dead null branch + stale "null allowed"
+  Javadoc, and sync/async checks not applied in lockstep (H2; also watch elsewhere).
+==================================================================================================

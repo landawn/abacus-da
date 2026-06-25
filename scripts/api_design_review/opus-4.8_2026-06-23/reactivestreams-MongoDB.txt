@@ -7,6 +7,12 @@ A clean, faithful reactive facade, mirror of the blocking mongodb/MongoDB (both 
 MongoDBBase). Factory names, parameter ordering, and overload families line up 1:1 with the blocking
 facade; the only delta is the reactive executor/mapper return types, which is correct. No HIGH/MEDIUM
 defects; the two LOW items are pre-existing validation nits shared with the blocking design.
+[RE-REVIEW 2026-06-24: both section-3 LOW validation nits are now ALREADY-FIXED in BOTH facades —
+N.checkArgNotNull was added to collection(String)/collection(String,Class)/collectionMapper(Class) on
+the reactive (collection :211, :252-253; collectionMapper :388) and blocking (MongoDB.java :172,
+:205-206, :310) sides together. No HIGH/MEDIUM defects; no NEW issues. MongoDB(null) constructor
+null-check confirmed present (reactivestreams/MongoDB.java:148). Section 5 factory set still mirrored
+1:1.]
 
 2. NAMING ISSUES
 None.
@@ -16,8 +22,16 @@ None.
   collectionMapper(String,...) on the same class validate | reactivestreams/MongoDB.java:206,240 | Low |
   Intra-facade asymmetry; mirrors blocking MongoDB.java:171, so shared/intentional. If tightened, add
   N.checkArgNotNull to BOTH facades together.
+  [RE-REVIEW 2026-06-24: ALREADY-FIXED — the recommendation was applied to BOTH facades together.
+  collection(String) now calls N.checkArgNotNull(collectionName,"collectionName")
+  (reactivestreams/MongoDB.java:211); collection(String,Class) validates both args
+  (reactivestreams/MongoDB.java:252-253). Blocking twin matched: MongoDB.java:172 and :205-206. The
+  intra-facade asymmetry no longer exists.]
 - collectionMapper(Class) throws NPE on null rowType vs IAE elsewhere | reactivestreams/MongoDB.java:373 |
   Low | Mirrors blocking MongoDB.java:303; harmonize both siblings together.
+  [RE-REVIEW 2026-06-24: ALREADY-FIXED — collectionMapper(Class) now calls
+  N.checkArgNotNull(rowType,"rowType") -> IAE before deriving the name (reactivestreams/MongoDB.java:388);
+  blocking twin matched (MongoDB.java:310). NPE-vs-IAE inconsistency resolved on both siblings.]
 
 4. MISPLACED METHODS
 None.

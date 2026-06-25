@@ -11,29 +11,48 @@ findFirst->Mono, and all write/find-and-modify/distinct/aggregate/groupBy/watch 
 blocking class, parameter ordering matches exactly, and insertOne/insertMany correctly return
 Mono<InsertOneResult/InsertManyResult> (an improvement over the blocking void). The only concrete defect is
 an accessor name drift; the other deltas are by-design consequences of Mono lacking a present-but-null state.
+[RE-REVIEW 2026-06-24: the sole concrete defect (coll() drift, section 2) is confirmed RESOLVED on both
+sides. All remaining findings re-verified as STILL-VALID-by-design; line refs refreshed. The reactive
+executor distinct(field,Class) :3686 / distinct(field,filter,Class) :3713 were CONFIRMED left native
+(coll.distinct), which is correct — the $group/$project workaround belongs in the mapper, not here (see
+MongoCollectionMapper report). No NEW issues.]
 
 2. NAMING ISSUES
 - [RESOLVED 2026-06-24 — code-fixed] coll() | reactivestreams/MongoCollectionExecutor.java:216 | Medium |
   Drift vs the blocking twin's mongoCollection(). FIXED: the BLOCKING executor was hard-renamed
   mongoCollection() -> coll() to match this reactive accessor (no alias); this reactive method is
   unchanged. Both now use coll(). test-compile green.
+  [RE-REVIEW 2026-06-24: CONFIRMED ALREADY-FIXED — reactive coll() at
+  reactivestreams/MongoCollectionExecutor.java:216; blocking twin coll() at
+  mongodb/MongoCollectionExecutor.java:213. Both accessors are named coll() (no mongoCollection() alias
+  survives). Drift gone.]
 
 3. RETURN-TYPE AND PARAMETER ISSUES
 - primitive queryForXxx family returns Mono<Boxed>, losing the blocking OptionalXxx "missing/null field vs
   no-match" distinction | reactivestreams/MongoCollectionExecutor.java:1163 (+ :1209..:1579) | Low |
   Inherent to Mono (no present-but-null state); Javadoc already steers users to defaultIfEmpty. By design,
   recorded only.
+  [RE-REVIEW 2026-06-24: STILL-VALID (by design) — family confirmed: queryForBoolean :1163,
+  queryForInt :1347, queryForLong :1393, queryForDouble :1487, queryForString :1533, queryForDate :1579,
+  queryForSingleValue :1677, all Mono<Boxed>/Mono<V>. Line range refreshed (was :1209..:1579, now spans
+  :1163..:1677). Unchanged; recorded only.]
 
 4. MISPLACED METHODS
 None. async() correctly absent (the reactive class IS the async surface).
 
 5. MISSING METHODS
-- gett(...) family absent | (blocking sibling :612-758) | Low (by design) | Mono empty unifies
+- gett(...) family absent | (blocking sibling :614-758) | Low (by design) | Mono empty unifies
   Optional.empty()/null, so a reactive gett would be behaviorally identical to get(). CONFIRM intentional;
   optionally note in get() Javadoc.
-- queryForSingleNonNull(String,Bson,Class) absent | (blocking :1656) | Low (by design) | Reactive
+  [RE-REVIEW 2026-06-24: STILL-VALID (by design) — no gett(...) in the reactive executor; gett() exists
+  only on blocking mongodb/MongoCollectionExecutor.java:614-760 and AsyncMongoCollectionExecutor. Blocking
+  line ref corrected :612 -> :614. Still by design.]
+- queryForSingleNonNull(String,Bson,Class) absent | (blocking :1658) | Low (by design) | Reactive
   queryForSingleValue already collapses null -> empty Mono; a "non-null" variant would be identical.
   CONFIRM intentional.
+  [RE-REVIEW 2026-06-24: STILL-VALID (by design) — absent from reactive executor; present only on blocking
+  mongodb/MongoCollectionExecutor.java:1658 (ref corrected :1656 -> :1658) and Async sibling. Still by
+  design.]
 
 6. DEPRECATION / REMOVAL CANDIDATES
 - mapReduce(...) | (already @Deprecated, mirrored) | No action.

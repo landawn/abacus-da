@@ -167,6 +167,12 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * Returns the visibility {@link Authorizations} attached to this query. Cells whose
      * visibility expression is not satisfied by this set are filtered out by the server.
      *
+     * <p>Unlike {@link #toJson()} — which wraps HBase's {@link java.io.IOException} as an
+     * {@link java.io.UncheckedIOException} because a JSON serialization failure is non-recoverable —
+     * this method intentionally surfaces the checked {@link DeserializationException}. The exception
+     * signals a corrupt or undecodable stored authorizations expression, a condition the caller may
+     * legitimately want to detect and handle, so it is propagated rather than hidden.</p>
+     *
      * @return the {@link Authorizations} previously set, or {@code null} if none has been set
      * @throws DeserializationException if the stored authorizations cannot be deserialized by HBase
      * @see #setAuthorizations(Authorizations)

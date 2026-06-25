@@ -563,7 +563,7 @@ public class Neo4jExecutorTest extends TestBase {
     }
 
     @Test
-    public void testQuery_Stream() {
+    public void testStream() {
         // Build a Result that returns a single-row iterator.
         Result mockResult = mock(Result.class);
         Map<String, Object> row = Collections.singletonMap("p", "x");
@@ -571,23 +571,23 @@ public class Neo4jExecutorTest extends TestBase {
         when(mockResult.iterator()).thenReturn(rowIter);
         when(mockSession.query("MATCH (n) RETURN n", Collections.emptyMap())).thenReturn(mockResult);
 
-        long count = executor.query("MATCH (n) RETURN n", Collections.emptyMap()).count();
+        long count = executor.stream("MATCH (n) RETURN n", Collections.emptyMap()).count();
         assertEquals(1L, count);
     }
 
     @Test
-    public void testQuery_StreamWithReadOnly() {
+    public void testStreamWithReadOnly() {
         Result mockResult = mock(Result.class);
         Iterator<Map<String, Object>> rowIter = Collections.<Map<String, Object>> emptyList().iterator();
         when(mockResult.iterator()).thenReturn(rowIter);
         when(mockSession.query("MATCH (n) RETURN n", Collections.emptyMap(), true)).thenReturn(mockResult);
 
-        long count = executor.query("MATCH (n) RETURN n", Collections.emptyMap(), true).count();
+        long count = executor.stream("MATCH (n) RETURN n", Collections.emptyMap(), true).count();
         assertEquals(0L, count);
     }
 
     @Test
-    public void testQuery_StreamWithType() {
+    public void testStreamWithType() {
         // session.query(Class, String, Map) returns Iterable<T>.
         @SuppressWarnings("unchecked")
         Iterable<Person> iterable = mock(Iterable.class);
@@ -595,16 +595,16 @@ public class Neo4jExecutorTest extends TestBase {
         when(iterable.iterator()).thenReturn(people.iterator());
         when(mockSession.query(Person.class, "MATCH (p:Person) RETURN p", Collections.emptyMap())).thenReturn(iterable);
 
-        long count = executor.query(Person.class, "MATCH (p:Person) RETURN p", Collections.emptyMap()).count();
+        long count = executor.stream(Person.class, "MATCH (p:Person) RETURN p", Collections.emptyMap()).count();
         assertEquals(2L, count);
     }
 
     @Test
-    public void testQuery_StreamClosesSessionOnException() {
+    public void testStreamClosesSessionOnException() {
         // When session.query throws, the session must still be returned to the pool.
         when(mockSession.query(eq("BAD CYPHER"), eq(Collections.emptyMap()))).thenThrow(new RuntimeException("syntax"));
 
-        assertThrows(RuntimeException.class, () -> executor.query("BAD CYPHER", Collections.emptyMap()));
+        assertThrows(RuntimeException.class, () -> executor.stream("BAD CYPHER", Collections.emptyMap()));
         verify(mockSession).clear();
     }
 

@@ -89,14 +89,10 @@ public class AnyUtilTest extends TestBase {
     }
 
     @Test
-    public void testArray2PropsWithNonStringKeyConvertedToString() {
-        // Non-string keys are converted via N.stringOf
+    public void testArray2PropsWithNonStringKeyThrows() {
+        // Property names must be Strings; a non-String name (here an Integer at index 0) is rejected.
         Object[] input = new Object[] { 100, "hundred", true, "yes" };
-        Map<String, Object> props = AnyUtil.array2Props(input);
-
-        assertEquals(2, props.size());
-        assertEquals("hundred", props.get("100"));
-        assertEquals("yes", props.get("true"));
+        assertThrows(IllegalArgumentException.class, () -> AnyUtil.array2Props(input));
     }
 
     @Test

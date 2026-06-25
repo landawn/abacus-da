@@ -9,22 +9,38 @@ plus entity-based create(...) overloads). No correctness defects and no live dep
 (legacy addImmutable/setFamilyCellMap are already commented out). addColumn value semantics (overwrite
 by type) are correct and well documented; the two adjacent byte[] family/qualifier params are inherent
 to mirroring Put and shared by all siblings. Findings are cross-class consistency/parity items.
+[RE-REVIEW 2026-06-24: Re-verified the full file (1556 lines) against live source. All findings below
+re-confirmed; the only material code drift is that AnyPut's constructors now convert row keys via
+HBaseExecutor.toRowBytes(...) (import AnyPut.java:18; e.g. ctor AnyPut.java:176) rather than
+toRowKeyBytes — but toRowBytes/toRowKeyBytes/toValueBytes are still a single identity-delegating chain
+(HBaseExecutor.java:2991-3007 -> toValueBytes 3026-3041, byte[] returned as-is at 3029-3030), so all
+"byte[] is identity / cosmetic" reasoning still holds. The slice-param naming and factory-surface
+findings are unchanged. No new correctness defects found.]
 
 2. NAMING ISSUES
 - of(Object,int,int) / of(Object,int,int,long) slice params named rowOffset/rowLength | AnyPut.java:370,
   411 | Medium | AnyAppend/AnyIncrement name the same concept offset/length (AnyAppend.java:269,
   AnyIncrement.java:225). Converge on ONE vocabulary across the four subclasses (recommend
   rowOffset/rowLength as the more descriptive). Verified by listing factories across all four classes.
+  [RE-REVIEW 2026-06-24: STILL-VALID — AnyPut factories AnyPut.java:370,411 and ctors AnyPut.java:198,
+  211 use rowOffset/rowLength; AnyIncrement.java:225 and AnyAppend.java:269 still use offset/length.
+  Divergence unchanged.]
 
 3. RETURN-TYPE AND PARAMETER ISSUES
 - addColumn(byte[],ByteBuffer,long,ByteBuffer) | AnyPut.java:1234 | Medium | The only ByteBuffer
   addColumn overload, and only in the explicit-timestamp form, with an odd byte[]-family/ByteBuffer-
   qualifier mix and no no-timestamp counterpart. Add the no-ts parity overload, or drop this overload in
   favor of the byte[]/Object forms. Confirming check: grep call sites before removing.
+  [RE-REVIEW 2026-06-24: STILL-VALID — method unchanged at AnyPut.java:1234; signature
+  addColumn(byte[] family, ByteBuffer qualifier, long ts, ByteBuffer value), still the sole ByteBuffer
+  overload and still timestamp-only.]
 - create(Object,Collection) / create(Object,Collection,NamingPolicy) with null selectPropNames meaning
   "all props" | AnyPut.java:773,804 | Low | Documented convenience that overlaps create(Object[,
   NamingPolicy]); mild footgun but intentional — KEEP. Verified: null branch at 808 delegates to the
   all-props path.
+  [RE-REVIEW 2026-06-24: STILL-VALID (KEEP) — create(Object,Collection) at AnyPut.java:773,
+  create(Object,Collection,NamingPolicy) at 804, null selectPropNames -> create(entity,namingPolicy)
+  branch at AnyPut.java:808-810. Behavior and line numbers exact.]
 
 4. MISPLACED METHODS
 None.
@@ -35,6 +51,10 @@ None.
   byte[] keys through of(Object). NOTE (verified): toRowKeyBytes(byte[]) is identity, so of((Object)bytes)
   is observationally equivalent — this is a cosmetic convenience gap, not a functional one. Resolve as
   part of a unified factory set across the four subclasses (see SUMMARY), not in isolation.
+  [RE-REVIEW 2026-06-24: STILL-VALID — AnyPut public of(...) factories (AnyPut.java:301-579) still expose
+  only Object/ByteBuffer/Put keys, no byte[] overload. AnyAppend byte[] factories at AnyAppend.java:237,269;
+  AnyIncrement at AnyIncrement.java:188,225. Identity reasoning now via toRowBytes(byte[]) (AnyPut uses
+  toRowBytes), still identity per HBaseExecutor.java:3029-3030. Cosmetic gap unchanged.]
 
 6. DEPRECATION / REMOVAL CANDIDATES
 - setAttribute: AnyPut correctly has NO setAttribute(String,byte[]) override and inherits the base
@@ -42,17 +62,29 @@ None.
   CORRECT design. Verified: base converts via HBaseExecutor.toValueBytes(value), and toValueBytes returns
   (byte[])value unchanged for a byte[] (HBaseExecutor.java:3029-3030). The byte[] overrides on
   AnyIncrement/AnyAppend are therefore the redundant ones (see those reports / SUMMARY), not a gap here.
+  [RE-REVIEW 2026-06-24: STILL-VALID (CORRECT design) — AnyPut declares no setAttribute(String,byte[])
+  (none found in AnyPut.java); base setAttribute(String,Object) at AnyOperationWithAttributes.java:143-147
+  converts via toValueBytes (line 144). toValueBytes byte[] identity at HBaseExecutor.java:3029-3030.]
 - addColumn(byte[],ByteBuffer,long,ByteBuffer) | AnyPut.java:1234 | Low | Removal candidate (same as §3)
   if call-site scan shows no usage.
+  [RE-REVIEW 2026-06-24: STILL-VALID — unchanged at AnyPut.java:1234.]
 
 CROSS-CLASS NOTES
 - Row-key factory surfaces are uneven across the four AnyMutation subclasses: AnyPut(rich Object/
   ByteBuffer/immutable/timestamp) vs AnyDelete(Object + familyMap) vs AnyIncrement/AnyAppend(byte[] +
   familyMap). Because toRowKeyBytes/toValueBytes treat byte[] as identity, the differences are largely
   cosmetic. Recommend a common minimum factory set with unified param names.
+  [RE-REVIEW 2026-06-24: STILL-VALID. Helper-name note: AnyPut/AnyIncrement/AnyAppend now convert row
+  keys via toRowBytes; AnyDelete via toRowKeyBytes (its familyMap ctor still via toRowBytes). All three
+  helpers delegate to toValueBytes (HBaseExecutor.java:2991-3007), so the byte[]-identity argument is
+  unaffected by the rename.]
 - add(Cell): AnyPut/AnyDelete/AnyIncrement declare `throws IOException`, AnyAppend does not — faithful
   mirror of HBase's own Mutation-subclass differences, NOT an AnyPut defect.
+  [RE-REVIEW 2026-06-24: STILL-VALID — AnyPut.add(Cell) throws IOException at AnyPut.java:1369;
+  AnyAppend.add(Cell) declares no checked exception at AnyAppend.java:604.]
 - equals/hashCode identity-based on the wrapped Put — consistent with AnyPut's documentation.
+  [RE-REVIEW 2026-06-24: STILL-VALID — hashCode AnyPut.java:1395-1398, equals AnyPut.java:1429-1441
+  delegate to Put.equals/hashCode; Javadoc documents identity semantics.]
 
 --- DOC-FIX PASS 2026-06-23 ---
 Reviewed during the Javadoc/comment-only fix pass. No doc-only edits were applied to this class: its

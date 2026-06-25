@@ -152,29 +152,6 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
         }
     }
 
-    //    /**
-    //     * Converts this operation to a JSON string representation.
-    //     *
-    //     * @return a JSON string representation of this operation
-    //     * @deprecated Use {@link #toJson()} instead.
-    //     */
-    //    @Deprecated
-    //    public String toJSON() {
-    //        return toJson();
-    //    }
-    //
-    //    /**
-    //     * Converts this operation to a JSON string representation with a column limit.
-    //     *
-    //     * @param maxCols the maximum number of columns to include in the JSON output
-    //     * @return a JSON string representation of this operation
-    //     * @deprecated Use {@link #toJson(int)} instead.
-    //     */
-    //    @Deprecated
-    //    public String toJSON(final int maxCols) {
-    //        return toJson(maxCols);
-    //    }
-
     /**
      * Returns a human-readable string representation of this operation. The exact format is
      * delegated to the underlying HBase {@link Operation#toString()} implementation.

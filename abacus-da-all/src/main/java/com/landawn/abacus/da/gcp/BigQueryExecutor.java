@@ -2571,19 +2571,4 @@ public class BigQueryExecutor {
         return fields;
     }
 
-    //    public static void main(String[] args) {
-    //        FieldValueList fieldValueList = FieldValueList.of(N.asList(FieldValue.of(Attribute.PRIMITIVE, 2)),
-    //                FieldList.of(Field.of("order", StandardSQLTypeName.INT64)));
-    //        FieldList fields = null;
-    //
-    //        try {
-    //            fields = (FieldList) schemaFieldOfFieldList.get(fieldValueList);
-    //        } catch (IllegalAccessException e) {
-    //            schemaFieldOfFieldList = null;
-    //            throw ExceptionUtil.toRuntimeException(e, true);
-    //        }
-    //
-    //        N.println(fields);
-    //    }
-
 }
