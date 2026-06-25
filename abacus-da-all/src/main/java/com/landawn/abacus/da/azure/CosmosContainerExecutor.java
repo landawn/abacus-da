@@ -729,14 +729,13 @@ public class CosmosContainerExecutor {
      * }
      * }</pre>
      *
-     * @param <T> the type of the item to delete
      * @param item the item object containing id and partition key information (must not be null)
      * @param options additional options for the delete operation (can be null for default behavior)
      * @return a CosmosItemResponse with metadata about the delete operation
      * @throws CosmosException if the operation fails or the item doesn't exist
      * @throws NullPointerException if item is null
      */
-    public <T> CosmosItemResponse<Object> deleteItem(final T item, final CosmosItemRequestOptions options) {
+    public CosmosItemResponse<Object> deleteItem(final Object item, final CosmosItemRequestOptions options) {
         return cosmosContainer.deleteItem(item, options);
     }
 
@@ -1804,11 +1803,11 @@ public class CosmosContainerExecutor {
         return sb.toString();
     }
 
-    private <T> SP prepareQuery(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
+    private SP prepareQuery(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
         return prepareQuery(targetClass, selectPropNames, whereClause, 0);
     }
 
-    private <T> SP prepareQuery(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause, final int count) {
+    private SP prepareQuery(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause, final int count) {
         final boolean isNonNullCond = whereClause != null;
         SqlBuilder sqlBuilder = null;
 

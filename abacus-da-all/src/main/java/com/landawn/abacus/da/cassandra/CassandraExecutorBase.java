@@ -1603,7 +1603,6 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *     CF.eq("id", userId)); // returns present OptionalBoolean (false when the column is NULL); empty when no row matches
      * }</pre>
      *
-     * @param <T> the entity type
      * @param targetClass the entity class used to derive the table/column mapping
      * @param propName the property name (column) whose value is returned
      * @param whereClause the WHERE condition used to build the CQL query
@@ -1616,7 +1615,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
     @Beta
-    public <T> OptionalBoolean queryForBoolean(final Class<T> targetClass, final String propName, final Condition whereClause) {
+    public OptionalBoolean queryForBoolean(final Class<?> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Boolean.class, propName, whereClause).mapToBoolean(ToBooleanFunction.UNBOX);
     }
 
@@ -1638,7 +1637,6 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *     CF.eq("student_id", studentId)); // returns present OptionalChar ((char) 0 when NULL); empty when no row matches
      * }</pre>
      *
-     * @param <T> the entity type
      * @param targetClass the entity class used to derive the table/column mapping
      * @param propName the property name (column) whose value is returned
      * @param whereClause the WHERE condition used to build the CQL query
@@ -1650,7 +1648,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
     @Beta
-    public <T> OptionalChar queryForChar(final Class<T> targetClass, final String propName, final Condition whereClause) {
+    public OptionalChar queryForChar(final Class<?> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Character.class, propName, whereClause).mapToChar(ToCharFunction.UNBOX);
     }
 
@@ -1672,7 +1670,6 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *     CF.eq("request_id", requestId)); // returns present OptionalByte (0 when NULL); empty when no row matches
      * }</pre>
      *
-     * @param <T> the entity type
      * @param targetClass the entity class used to derive the table/column mapping
      * @param propName the property name (column) whose value is returned
      * @param whereClause the WHERE condition used to build the CQL query
@@ -1685,7 +1682,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
     @Beta
-    public <T> OptionalByte queryForByte(final Class<T> targetClass, final String propName, final Condition whereClause) {
+    public OptionalByte queryForByte(final Class<?> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Byte.class, propName, whereClause).mapToByte(ToByteFunction.UNBOX);
     }
 
@@ -1707,7 +1704,6 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *     CF.eq("server_name", "web-01")); // returns present OptionalShort (0 when NULL); empty when no row matches
      * }</pre>
      *
-     * @param <T> the entity type
      * @param targetClass the entity class used to derive the table/column mapping
      * @param propName the property name (column) whose value is returned
      * @param whereClause the WHERE condition used to build the CQL query
@@ -1720,7 +1716,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
     @Beta
-    public <T> OptionalShort queryForShort(final Class<T> targetClass, final String propName, final Condition whereClause) {
+    public OptionalShort queryForShort(final Class<?> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Short.class, propName, whereClause).mapToShort(ToShortFunction.UNBOX);
     }
 
@@ -1742,7 +1738,6 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *     CF.eq("product_id", productId)); // returns present OptionalInt (0 when NULL); empty when no row matches
      * }</pre>
      *
-     * @param <T> the entity type
      * @param targetClass the entity class used to derive the table/column mapping
      * @param propName the property name (column) whose value is returned
      * @param whereClause the WHERE condition used to build the CQL query
@@ -1755,7 +1750,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
     @Beta
-    public <T> OptionalInt queryForInt(final Class<T> targetClass, final String propName, final Condition whereClause) {
+    public OptionalInt queryForInt(final Class<?> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Integer.class, propName, whereClause).mapToInt(ToIntFunction.UNBOX);
     }
 
@@ -1777,7 +1772,6 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *     CF.eq("event_id", eventId)); // returns present OptionalLong (0L when NULL); empty when no row matches
      * }</pre>
      *
-     * @param <T> the entity type
      * @param targetClass the entity class used to derive the table/column mapping
      * @param propName the property name (column) whose value is returned
      * @param whereClause the WHERE condition used to build the CQL query
@@ -1790,7 +1784,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
     @Beta
-    public <T> OptionalLong queryForLong(final Class<T> targetClass, final String propName, final Condition whereClause) {
+    public OptionalLong queryForLong(final Class<?> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Long.class, propName, whereClause).mapToLong(ToLongFunction.UNBOX);
     }
 
@@ -1812,7 +1806,6 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *     CF.eq("product_id", productId)); // returns present OptionalFloat (0.0f when NULL); empty when no row matches
      * }</pre>
      *
-     * @param <T> the entity type
      * @param targetClass the entity class used to derive the table/column mapping
      * @param propName the property name (column) whose value is returned
      * @param whereClause the WHERE condition used to build the CQL query
@@ -1825,7 +1818,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
     @Beta
-    public <T> OptionalFloat queryForFloat(final Class<T> targetClass, final String propName, final Condition whereClause) {
+    public OptionalFloat queryForFloat(final Class<?> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Float.class, propName, whereClause).mapToFloat(ToFloatFunction.UNBOX);
     }
 
@@ -1847,7 +1840,6 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *     CF.eq("product_id", productId)); // returns present OptionalDouble (0.0d when NULL); empty when no row matches
      * }</pre>
      *
-     * @param <T> the entity type
      * @param targetClass the entity class used to derive the table/column mapping
      * @param propName the property name (column) whose value is returned
      * @param whereClause the WHERE condition used to build the CQL query
@@ -1860,7 +1852,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
     @Beta
-    public <T> OptionalDouble queryForDouble(final Class<T> targetClass, final String propName, final Condition whereClause) {
+    public OptionalDouble queryForDouble(final Class<?> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Double.class, propName, whereClause).mapToDouble(ToDoubleFunction.UNBOX);
     }
 
@@ -1881,7 +1873,6 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *     CF.eq("username", "john")); // returns present Nullable (may hold null when the column is NULL); empty when no row matches
      * }</pre>
      *
-     * @param <T> the entity type
      * @param targetClass the entity class used to derive the table/column mapping
      * @param propName the property name (column) whose value is returned
      * @param whereClause the WHERE condition used to build the CQL query
@@ -1894,7 +1885,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
     @Beta
-    public <T> Nullable<String> queryForString(final Class<T> targetClass, final String propName, final Condition whereClause) {
+    public Nullable<String> queryForString(final Class<?> targetClass, final String propName, final Condition whereClause) {
         return this.queryForSingleValue(targetClass, String.class, propName, whereClause);
     }
 
@@ -1915,7 +1906,6 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *     CF.eq("user_id", userId)); // returns present Nullable (may hold null when the column is NULL); empty when no row matches
      * }</pre>
      *
-     * @param <T> the entity type
      * @param targetClass the entity class used to derive the table/column mapping
      * @param propName the property name (column) whose value is returned
      * @param whereClause the WHERE condition used to build the CQL query
@@ -1928,7 +1918,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
     @Beta
-    public <T> Nullable<Date> queryForDate(final Class<T> targetClass, final String propName, final Condition whereClause) {
+    public Nullable<Date> queryForDate(final Class<?> targetClass, final String propName, final Condition whereClause) {
         return this.queryForSingleValue(targetClass, Date.class, propName, whereClause);
     }
 
@@ -1950,7 +1940,6 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *     CF.eq("user_id", userId)); // returns present Nullable (may hold null when the column is NULL); empty when no row matches
      * }</pre>
      *
-     * @param <T> the entity type
      * @param <E> the specific {@link Date} subtype to return (for example, {@link java.sql.Timestamp})
      * @param targetClass the entity class used to derive the table/column mapping
      * @param valueClass the specific {@link Date} class the column value is converted to
@@ -1965,7 +1954,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, Class, String, Condition)
      */
     @Beta
-    public <T, E extends Date> Nullable<E> queryForDate(final Class<T> targetClass, final Class<E> valueClass, final String propName,
+    public <E extends Date> Nullable<E> queryForDate(final Class<?> targetClass, final Class<E> valueClass, final String propName,
             final Condition whereClause) {
         return this.queryForSingleValue(targetClass, valueClass, propName, whereClause);
     }
@@ -1990,7 +1979,6 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *     CF.eq("id", productId)); // returns present Nullable (may hold null when the column is NULL); empty when no row matches
      * }</pre>
      *
-     * @param <T> the entity type
      * @param <V> the value type to return
      * @param targetClass the entity class used to derive the table/column mapping
      * @param valueClass the Java class the column value is converted to
@@ -2004,7 +1992,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleNonNull(Class, Class, String, Condition)
      * @see #queryForSingleValue(Class, String, Object...)
      */
-    public <T, V> Nullable<V> queryForSingleValue(final Class<T> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause) {
+    public <V> Nullable<V> queryForSingleValue(final Class<?> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause) {
         N.checkArgNotEmpty(propName, "propName");
 
         final SP cp = prepareQuery(targetClass, List.of(propName), whereClause, 1);
@@ -2034,7 +2022,6 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *     CF.eq("username", "john")); // returns present Optional with the value; empty when no row matches; throws NullPointerException if the matched value is NULL
      * }</pre>
      *
-     * @param <T> the entity type
      * @param <V> the value type to return
      * @param targetClass the entity class used to derive the table/column mapping
      * @param valueClass the Java class the column value is converted to
@@ -2050,7 +2037,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, Class, String, Condition)
      * @see #queryForSingleNonNull(Class, String, Object...)
      */
-    public <T, V> Optional<V> queryForSingleNonNull(final Class<T> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause) {
+    public <V> Optional<V> queryForSingleNonNull(final Class<?> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause) {
         N.checkArgNotEmpty(propName, "propName");
 
         final SP cp = prepareQuery(targetClass, List.of(propName), whereClause, 1);
@@ -3116,13 +3103,12 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
     /**
      * Prepares a SELECT query for the specified entity class and conditions.
      *
-     * @param <T> the entity type
      * @param targetClass the entity class
      * @param selectPropNames the property names to select (null for all properties)
      * @param whereClause the WHERE condition
      * @return the prepared statement with parameters
      */
-    protected <T> SP prepareQuery(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
+    protected SP prepareQuery(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
         return prepareQuery(targetClass, selectPropNames, whereClause, 0);
     }
 
@@ -3152,14 +3138,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * SP statement = prepareQuery(User.class, null, null, 0);
      * }</pre>
      *
-     * @param <T> the target entity type
      * @param targetClass the entity class
      * @param selectPropNames the property names to select (null for all properties)
      * @param whereClause the WHERE condition
      * @param count the maximum number of results to return (0 for no limit)
      * @return an SP (Statement/Parameters) pair ready for execution
      */
-    protected <T> SP prepareQuery(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause, final int count) {
+    protected SP prepareQuery(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause, final int count) {
         final boolean isNonNullCond = whereClause != null;
         CqlBuilder cqlBuilder = null;
 

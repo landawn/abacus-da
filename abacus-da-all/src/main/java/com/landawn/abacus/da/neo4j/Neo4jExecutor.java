@@ -319,7 +319,7 @@ public final class Neo4jExecutor {
      * @see #load(Class, Serializable, int)
      * @see #loadAll(Class, Collection)
      */
-    public <T, ID extends Serializable> T load(final Class<T> targetClass, final ID id) {
+    public <T> T load(final Class<T> targetClass, final Serializable id) {
         final Session session = getSession();
 
         try {
@@ -354,7 +354,7 @@ public final class Neo4jExecutor {
      * @see #load(Class, Serializable)
      * @see #loadAll(Class, Collection, int)
      */
-    public <T, ID extends Serializable> T load(final Class<T> targetClass, final ID id, final int depth) {
+    public <T> T load(final Class<T> targetClass, final Serializable id, final int depth) {
         final Session session = getSession();
 
         try {
@@ -395,7 +395,7 @@ public final class Neo4jExecutor {
      * @see #loadAll(Class, Collection, int)
      * @see #load(Class, Serializable)
      */
-    public <T, ID extends Serializable> Collection<T> loadAll(final Class<T> targetClass, final Collection<ID> ids) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids) {
         final Session session = getSession();
 
         try {
@@ -433,7 +433,7 @@ public final class Neo4jExecutor {
      * @see #loadAll(Class, Collection)
      * @see #load(Class, Serializable, int)
      */
-    public <T, ID extends Serializable> Collection<T> loadAll(final Class<T> targetClass, final Collection<ID> ids, final int depth) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final int depth) {
         final Session session = getSession();
 
         try {
@@ -474,7 +474,7 @@ public final class Neo4jExecutor {
      * @see #loadAll(Class, Collection, SortOrder, int)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
-    public <T, ID extends Serializable> Collection<T> loadAll(final Class<T> targetClass, final Collection<ID> ids, final SortOrder sortOrder) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final SortOrder sortOrder) {
         final Session session = getSession();
 
         try {
@@ -513,8 +513,7 @@ public final class Neo4jExecutor {
      * @see #loadAll(Class, Collection, SortOrder)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
-    public <T, ID extends Serializable> Collection<T> loadAll(final Class<T> targetClass, final Collection<ID> ids, final SortOrder sortOrder,
-            final int depth) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final SortOrder sortOrder, final int depth) {
         final Session session = getSession();
 
         try {
@@ -553,7 +552,7 @@ public final class Neo4jExecutor {
      * @see #loadAll(Class, Collection, Pagination, int)
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T, ID extends Serializable> Collection<T> loadAll(final Class<T> targetClass, final Collection<ID> ids, final Pagination pagination) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final Pagination pagination) {
         final Session session = getSession();
 
         try {
@@ -592,8 +591,7 @@ public final class Neo4jExecutor {
      * @see #loadAll(Class, Collection, Pagination)
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T, ID extends Serializable> Collection<T> loadAll(final Class<T> targetClass, final Collection<ID> ids, final Pagination pagination,
-            final int depth) {
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final Pagination pagination, final int depth) {
         final Session session = getSession();
 
         try {
@@ -634,7 +632,7 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T, ID extends Serializable> Collection<T> loadAll(final Class<T> targetClass, final Collection<ID> ids, final SortOrder sortOrder,
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final SortOrder sortOrder,
             final Pagination pagination) {
         final Session session = getSession();
 
@@ -679,7 +677,7 @@ public final class Neo4jExecutor {
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
-    public <T, ID extends Serializable> Collection<T> loadAll(final Class<T> targetClass, final Collection<ID> ids, final SortOrder sortOrder,
+    public <T> Collection<T> loadAll(final Class<T> targetClass, final Collection<? extends Serializable> ids, final SortOrder sortOrder,
             final Pagination pagination, final int depth) {
         final Session session = getSession();
 
@@ -1987,11 +1985,10 @@ public final class Neo4jExecutor {
      * executor.save(existing); // post-state: the matching node is updated in place
      * }</pre>
      *
-     * @param <T> the entity type mapped by OGM
      * @param object the entity to save; must be an instance of an OGM-mapped class
      * @see #save(Object, int)
      */
-    public <T> void save(final T object) {
+    public void save(final Object object) {
         final Session session = getSession();
 
         try {
@@ -2021,13 +2018,12 @@ public final class Neo4jExecutor {
      * executor.save(rootNode, -1); // entire reachable sub-graph (use with care)
      * }</pre>
      *
-     * @param <T> the entity type mapped by OGM
      * @param object the entity to save
      * @param depth the depth of related entities to traverse and persist: {@code 0} for the node
      *              only, a positive integer for that many hops, or {@code -1} for unlimited
      * @see #save(Object)
      */
-    public <T> void save(final T object, final int depth) {
+    public void save(final Object object, final int depth) {
         final Session session = getSession();
 
         try {
@@ -2057,11 +2053,10 @@ public final class Neo4jExecutor {
      * inactive.forEach(executor::delete);   // post-state: every inactive Person node is removed
      * }</pre>
      *
-     * @param <T> the entity type mapped by OGM
      * @param object the entity to delete
      * @see #deleteAll(Class)
      */
-    public <T> void delete(final T object) {
+    public void delete(final Object object) {
         final Session session = getSession();
 
         try {
@@ -2092,11 +2087,10 @@ public final class Neo4jExecutor {
      * executor.deleteAll(Person.class); // nothing left to delete
      * }</pre>
      *
-     * @param <T> the entity type mapped by OGM
      * @param targetClass the OGM-mapped class whose nodes are to be deleted
      * @see #delete(Object)
      */
-    public <T> void deleteAll(final Class<T> targetClass) {
+    public void deleteAll(final Class<?> targetClass) {
         final Session session = getSession();
 
         try {

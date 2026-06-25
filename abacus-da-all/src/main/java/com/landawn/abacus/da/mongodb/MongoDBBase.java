@@ -1554,7 +1554,7 @@ public abstract class MongoDBBase {
     }
 
     @SuppressWarnings("deprecation")
-    private static <T> Method getObjectIdSetMethod(final Class<T> rowType) {
+    private static Method getObjectIdSetMethod(final Class<?> rowType) {
         Method idSetMethod = classIdSetMethodPool.get(rowType);
 
         if (idSetMethod == null) {
@@ -1630,7 +1630,7 @@ public abstract class MongoDBBase {
         }
     }
 
-    private static <T> void checkResultClass(final Class<T> rowType) {
+    private static void checkResultClass(final Class<?> rowType) {
         if (!(Beans.isBeanClass(rowType) || Map.class.isAssignableFrom(rowType))) {
             throw new IllegalArgumentException("The target class must be an entity class with getter/setter methods or Map.class/Document.class. But it is: "
                     + ClassUtil.getCanonicalClassName(rowType));

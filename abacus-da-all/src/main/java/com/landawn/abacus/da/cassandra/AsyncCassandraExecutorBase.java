@@ -1434,12 +1434,11 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }
      * }</pre>
      *
-     * @param <T> the entity type used to resolve column/property names
      * @param targetClass the entity class identifying the target table and column mappings
      * @param whereClause the WHERE condition selecting rows
      * @return a future whose payload is a {@link Dataset} containing the result rows
      */
-    public <T> ContinuableFuture<Dataset> query(final Class<T> targetClass, final Condition whereClause) {
+    public ContinuableFuture<Dataset> query(final Class<?> targetClass, final Condition whereClause) {
         return query(targetClass, null, whereClause);
     }
 
@@ -1468,14 +1467,13 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }
      * }</pre>
      *
-     * @param <T> the entity type used to resolve column/property names
      * @param targetClass the entity class identifying the target table and column mappings
      * @param selectPropNames the property names to include in the SELECT clause, or {@code null}
      *                       to select all mapped properties
      * @param whereClause the WHERE condition selecting rows
      * @return a future whose payload is a {@link Dataset} containing the result rows
      */
-    public <T> ContinuableFuture<Dataset> query(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
+    public ContinuableFuture<Dataset> query(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
         final SP cp = cassandraExecutor.prepareQuery(targetClass, selectPropNames, whereClause);
 
         return query(targetClass, cp.query(), cp.parameters().toArray());
@@ -1905,7 +1903,6 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }
      * }</pre>
      *
-     * @param <T> the entity type
      * @param targetClass the entity class identifying the target table
      * @param propName the property whose value is selected
      * @param whereClause the WHERE condition selecting at most one row
@@ -1913,7 +1910,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         ({@code false} when the column is {@code null}); empty only when no row matches
      */
     @Beta
-    public <T> ContinuableFuture<OptionalBoolean> queryForBoolean(final Class<T> targetClass, final String propName, final Condition whereClause) {
+    public ContinuableFuture<OptionalBoolean> queryForBoolean(final Class<?> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Boolean.class, propName, whereClause).map(CassandraExecutorBase.boolean_mapper);
     }
 
@@ -1944,7 +1941,6 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }
      * }</pre>
      *
-     * @param <T> the entity type
      * @param targetClass the entity class identifying the target table
      * @param propName the property whose value is selected
      * @param whereClause the WHERE condition selecting at most one row
@@ -1952,7 +1948,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         ({@code (char) 0} when the column is {@code null}); empty only when no row matches
      */
     @Beta
-    public <T> ContinuableFuture<OptionalChar> queryForChar(final Class<T> targetClass, final String propName, final Condition whereClause) {
+    public ContinuableFuture<OptionalChar> queryForChar(final Class<?> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Character.class, propName, whereClause).map(CassandraExecutorBase.char_mapper);
     }
 
@@ -1983,7 +1979,6 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }
      * }</pre>
      *
-     * @param <T> the entity type
      * @param targetClass the entity class identifying the target table
      * @param propName the property whose value is selected
      * @param whereClause the WHERE condition selecting at most one row
@@ -1991,7 +1986,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         ({@code (byte) 0} when the column is {@code null}); empty only when no row matches
      */
     @Beta
-    public <T> ContinuableFuture<OptionalByte> queryForByte(final Class<T> targetClass, final String propName, final Condition whereClause) {
+    public ContinuableFuture<OptionalByte> queryForByte(final Class<?> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Byte.class, propName, whereClause).map(CassandraExecutorBase.byte_mapper);
     }
 
@@ -2022,7 +2017,6 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }
      * }</pre>
      *
-     * @param <T> the entity type
      * @param targetClass the entity class identifying the target table
      * @param propName the property whose value is selected
      * @param whereClause the WHERE condition selecting at most one row
@@ -2030,7 +2024,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         ({@code (short) 0} when the column is {@code null}); empty only when no row matches
      */
     @Beta
-    public <T> ContinuableFuture<OptionalShort> queryForShort(final Class<T> targetClass, final String propName, final Condition whereClause) {
+    public ContinuableFuture<OptionalShort> queryForShort(final Class<?> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Short.class, propName, whereClause).map(CassandraExecutorBase.short_mapper);
     }
 
@@ -2061,7 +2055,6 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }
      * }</pre>
      *
-     * @param <T> the entity type
      * @param targetClass the entity class identifying the target table
      * @param propName the property whose value is selected
      * @param whereClause the WHERE condition selecting at most one row
@@ -2069,7 +2062,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         ({@code 0} when the column is {@code null}); empty only when no row matches
      */
     @Beta
-    public <T> ContinuableFuture<OptionalInt> queryForInt(final Class<T> targetClass, final String propName, final Condition whereClause) {
+    public ContinuableFuture<OptionalInt> queryForInt(final Class<?> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Integer.class, propName, whereClause).map(CassandraExecutorBase.int_mapper);
     }
 
@@ -2100,7 +2093,6 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }
      * }</pre>
      *
-     * @param <T> the entity type
      * @param targetClass the entity class identifying the target table
      * @param propName the property whose value is selected
      * @param whereClause the WHERE condition selecting at most one row
@@ -2108,7 +2100,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         ({@code 0L} when the column is {@code null}); empty only when no row matches
      */
     @Beta
-    public <T> ContinuableFuture<OptionalLong> queryForLong(final Class<T> targetClass, final String propName, final Condition whereClause) {
+    public ContinuableFuture<OptionalLong> queryForLong(final Class<?> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Long.class, propName, whereClause).map(CassandraExecutorBase.long_mapper);
     }
 
@@ -2139,7 +2131,6 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }
      * }</pre>
      *
-     * @param <T> the entity type
      * @param targetClass the entity class identifying the target table
      * @param propName the property whose value is selected
      * @param whereClause the WHERE condition selecting at most one row
@@ -2147,7 +2138,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         ({@code 0f} when the column is {@code null}); empty only when no row matches
      */
     @Beta
-    public <T> ContinuableFuture<OptionalFloat> queryForFloat(final Class<T> targetClass, final String propName, final Condition whereClause) {
+    public ContinuableFuture<OptionalFloat> queryForFloat(final Class<?> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Float.class, propName, whereClause).map(CassandraExecutorBase.float_mapper);
     }
 
@@ -2178,7 +2169,6 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }
      * }</pre>
      *
-     * @param <T> the entity type
      * @param targetClass the entity class identifying the target table
      * @param propName the property whose value is selected
      * @param whereClause the WHERE condition selecting at most one row
@@ -2186,7 +2176,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         ({@code 0d} when the column is {@code null}); empty only when no row matches
      */
     @Beta
-    public <T> ContinuableFuture<OptionalDouble> queryForDouble(final Class<T> targetClass, final String propName, final Condition whereClause) {
+    public ContinuableFuture<OptionalDouble> queryForDouble(final Class<?> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Double.class, propName, whereClause).map(CassandraExecutorBase.double_mapper);
     }
 
@@ -2217,7 +2207,6 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }
      * }</pre>
      *
-     * @param <T> the entity type
      * @param targetClass the entity class identifying the target table
      * @param propName the property whose value is selected
      * @param whereClause the WHERE condition selecting at most one row
@@ -2225,7 +2214,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         empty if no row matches; the value is {@code null} when the column is SQL NULL
      */
     @Beta
-    public <T> ContinuableFuture<Nullable<String>> queryForString(final Class<T> targetClass, final String propName, final Condition whereClause) {
+    public ContinuableFuture<Nullable<String>> queryForString(final Class<?> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, String.class, propName, whereClause);
     }
 
@@ -2255,7 +2244,6 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }
      * }</pre>
      *
-     * @param <T> the entity type
      * @param targetClass the entity class identifying the target table
      * @param propName the property whose value is selected
      * @param whereClause the WHERE condition selecting at most one row
@@ -2263,7 +2251,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         empty if no row matches
      */
     @Beta
-    public <T> ContinuableFuture<Nullable<Date>> queryForDate(final Class<T> targetClass, final String propName, final Condition whereClause) {
+    public ContinuableFuture<Nullable<Date>> queryForDate(final Class<?> targetClass, final String propName, final Condition whereClause) {
         return queryForSingleValue(targetClass, Date.class, propName, whereClause);
     }
 
@@ -2292,7 +2280,6 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }
      * }</pre>
      *
-     * @param <T> the entity type
      * @param <E> the concrete {@link Date} subtype to return (e.g. {@code java.sql.Timestamp})
      * @param targetClass the entity class identifying the target table
      * @param valueClass the {@code Date} subtype to convert the column value to
@@ -2302,7 +2289,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         if no row matches
      */
     @Beta
-    public <T, E extends Date> ContinuableFuture<Nullable<E>> queryForDate(final Class<T> targetClass, final Class<E> valueClass, final String propName,
+    public <E extends Date> ContinuableFuture<Nullable<E>> queryForDate(final Class<?> targetClass, final Class<E> valueClass, final String propName,
             final Condition whereClause) {
         return queryForSingleValue(targetClass, valueClass, propName, whereClause);
     }
@@ -2334,7 +2321,6 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }
      * }</pre>
      *
-     * @param <T> the entity type
      * @param <V> the column-value type
      * @param targetClass the entity class identifying the target table
      * @param valueClass the type to convert the column value to
@@ -2343,7 +2329,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is a {@link Nullable} holding the value, or empty if no row
      *         matches; the value is {@code null} when the column is SQL NULL
      */
-    public <T, V> ContinuableFuture<Nullable<V>> queryForSingleValue(final Class<T> targetClass, final Class<V> valueClass, final String propName,
+    public <V> ContinuableFuture<Nullable<V>> queryForSingleValue(final Class<?> targetClass, final Class<V> valueClass, final String propName,
             final Condition whereClause) {
         final SP cp = cassandraExecutor.prepareQuery(targetClass, List.of(propName), whereClause, 1);
 
@@ -2377,7 +2363,6 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }
      * }</pre>
      *
-     * @param <T> the entity type
      * @param <V> the column-value type
      * @param targetClass the entity class identifying the target table
      * @param valueClass the type to convert the column value to
@@ -2387,7 +2372,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         matches; the future completes exceptionally with a {@link NullPointerException} if
      *         a row was returned but the column value is {@code null}
      */
-    public <T, V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final Class<T> targetClass, final Class<V> valueClass, final String propName,
+    public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final Class<?> targetClass, final Class<V> valueClass, final String propName,
             final Condition whereClause) {
         final SP cp = cassandraExecutor.prepareQuery(targetClass, List.of(propName), whereClause, 1);
 

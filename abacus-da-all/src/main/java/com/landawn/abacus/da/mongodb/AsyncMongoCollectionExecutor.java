@@ -1579,7 +1579,6 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(dataset -> dataset.forEach(product -> processProduct(product)));
      * }</pre>
      *
-     * @param <T> the type to map each document row to
      * @param filter the query filter to match documents (must not be null)
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing the query results
@@ -1588,7 +1587,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see Dataset
      * @see #query(Bson)
      */
-    public <T> ContinuableFuture<Dataset> query(final Bson filter, final Class<T> rowType) {
+    public ContinuableFuture<Dataset> query(final Bson filter, final Class<?> rowType) {
         return asyncExecutor.execute(() -> collectionExecutor.query(filter, rowType));
     }
 
@@ -1604,7 +1603,6 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(dataset -> displayPage(dataset));   // Shows articles 21-30
      * }</pre>
      *
-     * @param <T> the type to map each document row to
      * @param filter the query filter to match documents (must not be null)
      * @param offset the number of documents to skip
      * @param count the maximum number of documents to return
@@ -1615,7 +1613,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see Dataset
      * @see #query(Bson, Class)
      */
-    public <T> ContinuableFuture<Dataset> query(final Bson filter, final int offset, final int count, final Class<T> rowType) {
+    public ContinuableFuture<Dataset> query(final Bson filter, final int offset, final int count, final Class<?> rowType) {
         return asyncExecutor.execute(() -> collectionExecutor.query(filter, offset, count, rowType));
     }
 
@@ -1631,7 +1629,6 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(dataset -> exportToCSV(dataset));
      * }</pre>
      *
-     * @param <T> the type to map each document row to
      * @param selectPropNames the collection of property names to include in the projection
      * @param filter the query filter to match documents (must not be null)
      * @param rowType the Class object representing the row type
@@ -1641,7 +1638,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see Dataset
      * @see com.mongodb.client.model.Projections
      */
-    public <T> ContinuableFuture<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) {
+    public ContinuableFuture<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Class<?> rowType) {
         return asyncExecutor.execute(() -> collectionExecutor.query(selectPropNames, filter, rowType));
     }
 
@@ -1657,7 +1654,6 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(dataset -> displayBookList(dataset));
      * }</pre>
      *
-     * @param <T> the type to map each document row to
      * @param selectPropNames the collection of property names to include in the projection
      * @param filter the query filter to match documents (must not be null)
      * @param offset the number of documents to skip
@@ -1668,8 +1664,8 @@ public final class AsyncMongoCollectionExecutor {
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Dataset
      */
-    public <T> ContinuableFuture<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count,
-            final Class<T> rowType) {
+    public ContinuableFuture<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count,
+            final Class<?> rowType) {
         return asyncExecutor.execute(() -> collectionExecutor.query(selectPropNames, filter, offset, count, rowType));
     }
 
@@ -1686,7 +1682,6 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(dataset -> displayTopStudents(dataset));
      * }</pre>
      *
-     * @param <T> the type to map each document row to
      * @param selectPropNames the collection of property names to include in the projection
      * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification
@@ -1697,7 +1692,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see Dataset
      * @see com.mongodb.client.model.Sorts
      */
-    public <T> ContinuableFuture<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
+    public ContinuableFuture<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<?> rowType) {
         return asyncExecutor.execute(() -> collectionExecutor.query(selectPropNames, filter, sort, rowType));
     }
 
@@ -1714,7 +1709,6 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(dataset -> displayProductCatalog(dataset));
      * }</pre>
      *
-     * @param <T> the type to map each document row to
      * @param selectPropNames the collection of property names to include in the projection
      * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification
@@ -1726,8 +1720,8 @@ public final class AsyncMongoCollectionExecutor {
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Dataset
      */
-    public <T> ContinuableFuture<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
-            final Class<T> rowType) {
+    public ContinuableFuture<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
+            final Class<?> rowType) {
         return asyncExecutor.execute(() -> collectionExecutor.query(selectPropNames, filter, sort, offset, count, rowType));
     }
 
@@ -1747,7 +1741,6 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(dataset -> renderBlogPosts(dataset));
      * }</pre>
      *
-     * @param <T> the type to map each document row to
      * @param projection the BSON projection specification
      * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification
@@ -1758,7 +1751,7 @@ public final class AsyncMongoCollectionExecutor {
      * @see Dataset
      * @see com.mongodb.client.model.Projections
      */
-    public <T> ContinuableFuture<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
+    public ContinuableFuture<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final Class<?> rowType) {
         return asyncExecutor.execute(() -> collectionExecutor.query(projection, filter, sort, rowType));
     }
 
@@ -1776,7 +1769,6 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(dataset -> updateTaskBoard(dataset));
      * }</pre>
      *
-     * @param <T> the type to map each document row to
      * @param projection the BSON projection specification
      * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification
@@ -1789,8 +1781,8 @@ public final class AsyncMongoCollectionExecutor {
      * @see Dataset
      * @see com.mongodb.client.model.Projections
      */
-    public <T> ContinuableFuture<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count,
-            final Class<T> rowType) {
+    public ContinuableFuture<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count,
+            final Class<?> rowType) {
         return asyncExecutor.execute(() -> collectionExecutor.query(projection, filter, sort, offset, count, rowType));
     }
 
