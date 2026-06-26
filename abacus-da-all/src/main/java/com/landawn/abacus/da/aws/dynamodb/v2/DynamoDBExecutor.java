@@ -1878,6 +1878,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param offset the starting index within the single response page (0-based)
      * @param count the maximum number of items to take from {@code offset}
      * @return a Dataset containing the sliced page, never null
+     * @throws NullPointerException if {@code queryResult} is {@code null}
      * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
      */
     public static Dataset extractData(final QueryResponse queryResult, final int offset, final int count) {
@@ -1936,6 +1937,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * @param offset the starting index within the single response page (0-based)
      * @param count the maximum number of items to take from {@code offset}
      * @return a Dataset containing the sliced page, never null
+     * @throws NullPointerException if {@code scanResult} is {@code null}
      * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
      */
     public static Dataset extractData(final ScanResponse scanResult, final int offset, final int count) {
