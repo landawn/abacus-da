@@ -14,9 +14,9 @@
 
 package com.landawn.abacus.da.cassandra;
 
-import static com.landawn.abacus.da.cassandra.CqlBuilder.NAC;
-import static com.landawn.abacus.da.cassandra.CqlBuilder.NLC;
-import static com.landawn.abacus.da.cassandra.CqlBuilder.NSC;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.NAC;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.NLC;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.NSC;
 
 import java.util.ArrayList;
 import java.util.Collection;

@@ -27,6 +27,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import com.landawn.abacus.annotation.Beta;
 import com.landawn.abacus.logging.Logger;
@@ -86,14 +87,14 @@ import com.landawn.abacus.util.u.Optional;
  * a fresh {@link CqlBuilder}.</p>
  * <ul>
  *   <li><b>Un-parameterized / raw CQL (values embedded directly):</b>
- *       {@link #SCCB} (snake_case columns), {@link #ACCB} (SCREAMING_SNAKE_CASE columns),
- *       {@link #LCCB} (camelCase columns). These are deprecated due to CQL-injection risk.</li>
+ *       {@link Dsl#SCCB} (snake_case columns), {@link Dsl#ACCB} (SCREAMING_SNAKE_CASE columns),
+ *       {@link Dsl#LCCB} (camelCase columns). These are deprecated due to CQL-injection risk.</li>
  *   <li><b>Question-mark / positional parameters ({@code ?}):</b>
- *       {@link #PSB} (no name change), {@link #PSC} (snake_case columns),
- *       {@link #PAC} (SCREAMING_SNAKE_CASE columns), {@link #PLC} (camelCase columns).</li>
+ *       {@link Dsl#PSB} (no name change), {@link Dsl#PSC} (snake_case columns),
+ *       {@link Dsl#PAC} (SCREAMING_SNAKE_CASE columns), {@link Dsl#PLC} (camelCase columns).</li>
  *   <li><b>Named parameters ({@code :name}):</b>
- *       {@link #NSB} (no name change), {@link #NSC} (snake_case columns),
- *       {@link #NAC} (SCREAMING_SNAKE_CASE columns), {@link #NLC} (camelCase columns).</li>
+ *       {@link Dsl#NSB} (no name change), {@link Dsl#NSC} (snake_case columns),
+ *       {@link Dsl#NAC} (SCREAMING_SNAKE_CASE columns), {@link Dsl#NLC} (camelCase columns).</li>
  * </ul>
  *
  * <h2>Usage Examples</h2>
@@ -156,79 +157,6 @@ import com.landawn.abacus.util.u.Optional;
  * @see ParsedCql
  */
 public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
-
-    /**
-     * Raw-CQL DSL with {@code snake_case} naming; values are inlined as CQL literals rather than parameterized.
-     *
-     * @deprecated {@link #PSC} or {@link #NSC} is preferred for better security and performance.
-     *             Un-parameterized CQL is vulnerable to CQL injection attacks.
-     */
-    @Deprecated
-    public static final CqlBuilder.Dsl SCCB = Dsl.forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SNAKE_CASE).sqlPolicy(SqlPolicy.RAW_SQL).build());
-
-    /**
-     * Raw-CQL DSL with {@code UPPER_CASE_WITH_UNDERSCORE} naming; values are inlined as CQL literals rather than parameterized.
-     *
-     * @deprecated {@link #PAC} or {@link #NAC} is preferred for better security and performance.
-     *             Un-parameterized CQL is vulnerable to CQL injection attacks.
-     */
-    @Deprecated
-    public static final CqlBuilder.Dsl ACCB = Dsl
-            .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SCREAMING_SNAKE_CASE).sqlPolicy(SqlPolicy.RAW_SQL).build());
-
-    /**
-     * Raw-CQL DSL with {@code lowerCamelCase} naming; values are inlined as CQL literals rather than parameterized.
-     *
-     * @deprecated {@link #PLC} or {@link #NLC} is preferred for better security and performance.
-     *             Un-parameterized CQL is vulnerable to CQL injection attacks.
-     */
-    @Deprecated
-    public static final CqlBuilder.Dsl LCCB = Dsl.forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.CAMEL_CASE).sqlPolicy(SqlPolicy.RAW_SQL).build());
-
-    /**
-     * Parameterized-CQL DSL ({@code ?} placeholders) that leaves property/column names unchanged.
-     */
-    public static final CqlBuilder.Dsl PSB = Dsl
-            .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.NO_CHANGE).sqlPolicy(SqlPolicy.PARAMETERIZED_SQL).build());
-
-    /**
-     * Parameterized-CQL DSL ({@code ?} placeholders) with {@code snake_case} naming.
-     */
-    public static final CqlBuilder.Dsl PSC = Dsl
-            .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SNAKE_CASE).sqlPolicy(SqlPolicy.PARAMETERIZED_SQL).build());
-
-    /**
-     * Parameterized-CQL DSL ({@code ?} placeholders) with {@code UPPER_CASE_WITH_UNDERSCORE} naming.
-     */
-    public static final CqlBuilder.Dsl PAC = Dsl
-            .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SCREAMING_SNAKE_CASE).sqlPolicy(SqlPolicy.PARAMETERIZED_SQL).build());
-
-    /**
-     * Parameterized-CQL DSL ({@code ?} placeholders) with {@code lowerCamelCase} naming.
-     */
-    public static final CqlBuilder.Dsl PLC = Dsl
-            .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.CAMEL_CASE).sqlPolicy(SqlPolicy.PARAMETERIZED_SQL).build());
-
-    /**
-     * Named-CQL DSL ({@code :name} placeholders) that leaves property/column names unchanged.
-     */
-    public static final CqlBuilder.Dsl NSB = Dsl.forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.NO_CHANGE).sqlPolicy(SqlPolicy.NAMED_SQL).build());
-
-    /**
-     * Named-CQL DSL ({@code :name} placeholders) with {@code snake_case} naming.
-     */
-    public static final CqlBuilder.Dsl NSC = Dsl.forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SNAKE_CASE).sqlPolicy(SqlPolicy.NAMED_SQL).build());
-
-    /**
-     * Named-CQL DSL ({@code :name} placeholders) with {@code UPPER_CASE_WITH_UNDERSCORE} naming.
-     */
-    public static final CqlBuilder.Dsl NAC = Dsl
-            .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SCREAMING_SNAKE_CASE).sqlPolicy(SqlPolicy.NAMED_SQL).build());
-
-    /**
-     * Named-CQL DSL ({@code :name} placeholders) with {@code lowerCamelCase} naming.
-     */
-    public static final CqlBuilder.Dsl NLC = Dsl.forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.CAMEL_CASE).sqlPolicy(SqlPolicy.NAMED_SQL).build());
 
     // TODO performance goal: 80% cases (or maybe CQL.length < 1024?) can be composed in 0.1 millisecond. 0.01 millisecond will be fantastic if possible.
 
@@ -1276,17 +1204,107 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * DSL = a specialized language/API for expressing one kind of task clearly
      * </p>
      *
-     * <p>Each predefined constant on {@link CqlBuilder} (e.g. {@link CqlBuilder#PSC}, {@link CqlBuilder#NSC},
-     * {@link CqlBuilder#SCCB}) is a {@code Dsl} bound to a specific dialect. Call one of the statement methods
+     * <p>Each predefined constant on {@code Dsl} (e.g. {@link #PSC}, {@link #NSC},
+     * {@link #SCCB}) is a {@code Dsl} bound to a specific dialect. Call one of the statement methods
      * &mdash; {@code insert}, {@code select}, {@code update}, {@code delete}, {@code deleteFrom}, {@code count},
      * etc. &mdash; to obtain a fresh {@link CqlBuilder} configured for that operation. Dsl instances are
      * immutable and thread-safe; the {@link CqlBuilder} instances they produce are not.</p>
      */
     public static final class Dsl {
-        private final SqlDialect sqlDialect;
+
+        // Declared before the predefined constants so it is non-null when their initializers call forDialect(...);
+        // the canonical instances are registered into it by the static block that follows the constants.
+        private static final Map<SqlDialect, Dsl> dslCache = new ConcurrentHashMap<>();
+
+        /**
+         * Raw-CQL DSL with {@code snake_case} naming; values are inlined as CQL literals rather than parameterized.
+         *
+         * @deprecated {@link #PSC} or {@link #NSC} is preferred for better security and performance.
+         *             Un-parameterized CQL is vulnerable to CQL injection attacks.
+         */
+        @Deprecated
+        public static final CqlBuilder.Dsl SCCB = Dsl
+                .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SNAKE_CASE).sqlPolicy(SqlPolicy.RAW_SQL).build());
+        /**
+         * Raw-CQL DSL with {@code UPPER_CASE_WITH_UNDERSCORE} naming; values are inlined as CQL literals rather than parameterized.
+         *
+         * @deprecated {@link #PAC} or {@link #NAC} is preferred for better security and performance.
+         *             Un-parameterized CQL is vulnerable to CQL injection attacks.
+         */
+        @Deprecated
+        public static final CqlBuilder.Dsl ACCB = Dsl
+                .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SCREAMING_SNAKE_CASE).sqlPolicy(SqlPolicy.RAW_SQL).build());
+        /**
+         * Raw-CQL DSL with {@code lowerCamelCase} naming; values are inlined as CQL literals rather than parameterized.
+         *
+         * @deprecated {@link #PLC} or {@link #NLC} is preferred for better security and performance.
+         *             Un-parameterized CQL is vulnerable to CQL injection attacks.
+         */
+        @Deprecated
+        public static final CqlBuilder.Dsl LCCB = Dsl
+                .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.CAMEL_CASE).sqlPolicy(SqlPolicy.RAW_SQL).build());
+        /**
+         * Parameterized-CQL DSL ({@code ?} placeholders) that leaves property/column names unchanged.
+         */
+        public static final CqlBuilder.Dsl PSB = Dsl
+                .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.NO_CHANGE).sqlPolicy(SqlPolicy.PARAMETERIZED_SQL).build());
+        /**
+         * Parameterized-CQL DSL ({@code ?} placeholders) with {@code snake_case} naming.
+         */
+        public static final CqlBuilder.Dsl PSC = Dsl
+                .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SNAKE_CASE).sqlPolicy(SqlPolicy.PARAMETERIZED_SQL).build());
+        /**
+         * Parameterized-CQL DSL ({@code ?} placeholders) with {@code UPPER_CASE_WITH_UNDERSCORE} naming.
+         */
+        public static final CqlBuilder.Dsl PAC = Dsl
+                .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SCREAMING_SNAKE_CASE).sqlPolicy(SqlPolicy.PARAMETERIZED_SQL).build());
+        /**
+         * Parameterized-CQL DSL ({@code ?} placeholders) with {@code lowerCamelCase} naming.
+         */
+        public static final CqlBuilder.Dsl PLC = Dsl
+                .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.CAMEL_CASE).sqlPolicy(SqlPolicy.PARAMETERIZED_SQL).build());
+        /**
+         * Named-CQL DSL ({@code :name} placeholders) that leaves property/column names unchanged.
+         */
+        public static final CqlBuilder.Dsl NSB = Dsl
+                .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.NO_CHANGE).sqlPolicy(SqlPolicy.NAMED_SQL).build());
+        /**
+         * Named-CQL DSL ({@code :name} placeholders) with {@code snake_case} naming.
+         */
+        public static final CqlBuilder.Dsl NSC = Dsl
+                .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SNAKE_CASE).sqlPolicy(SqlPolicy.NAMED_SQL).build());
+        /**
+         * Named-CQL DSL ({@code :name} placeholders) with {@code UPPER_CASE_WITH_UNDERSCORE} naming.
+         */
+        public static final CqlBuilder.Dsl NAC = Dsl
+                .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SCREAMING_SNAKE_CASE).sqlPolicy(SqlPolicy.NAMED_SQL).build());
+        /**
+         * Named-CQL DSL ({@code :name} placeholders) with {@code lowerCamelCase} naming.
+         */
+        public static final CqlBuilder.Dsl NLC = Dsl
+                .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.CAMEL_CASE).sqlPolicy(SqlPolicy.NAMED_SQL).build());
+
+        static {
+            dslCache.put(Dsl.PSB.sqlDialect, Dsl.PSB);
+            dslCache.put(Dsl.PSC.sqlDialect, Dsl.PSC);
+            dslCache.put(Dsl.PAC.sqlDialect, Dsl.PAC);
+            dslCache.put(Dsl.PLC.sqlDialect, Dsl.PLC);
+            dslCache.put(Dsl.NSB.sqlDialect, Dsl.NSB);
+            dslCache.put(Dsl.NSC.sqlDialect, Dsl.NSC);
+            dslCache.put(Dsl.NAC.sqlDialect, Dsl.NAC);
+            dslCache.put(Dsl.NLC.sqlDialect, Dsl.NLC);
+            dslCache.put(Dsl.SCCB.sqlDialect, Dsl.SCCB);
+            dslCache.put(Dsl.ACCB.sqlDialect, Dsl.ACCB);
+            dslCache.put(Dsl.LCCB.sqlDialect, Dsl.LCCB);
+        }
+
+        final SqlDialect sqlDialect;
+
+        final NamingPolicy namingPolicy;
 
         Dsl(final SqlDialect sqlDialect) {
             this.sqlDialect = sqlDialect;
+            namingPolicy = sqlDialect.namingPolicy() == null ? NamingPolicy.SNAKE_CASE : sqlDialect.namingPolicy();
         }
 
         /**
@@ -1294,26 +1312,28 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * parameter style of every {@link CqlBuilder} it produces.
          *
          * <p>The common dialect combinations are already exposed as predefined constants on
-         * {@link CqlBuilder} (for example {@link CqlBuilder#PSC} or {@link CqlBuilder#NSC}); use this
+         * {@code Dsl} (for example {@link #PSC} or {@link #NSC}); use this
          * factory to obtain a DSL for a combination that is not predefined. The returned {@code Dsl} is
          * immutable and thread-safe, so it is typically stored in a {@code static final} field and reused.</p>
          *
-         * @param sqlDialect the dialect (naming policy + parameter style) the new DSL is bound to
-         * @return a new {@code Dsl} that produces {@link CqlBuilder} instances using the given dialect
+         * @param sqlDialect the dialect (naming policy + parameter style) the DSL is bound to
+         * @return a {@code Dsl} that produces {@link CqlBuilder} instances using the given dialect
          * @throws IllegalArgumentException if {@code sqlDialect} is {@code null}
          */
         public static Dsl forDialect(final SqlDialect sqlDialect) {
             N.checkArgNotNull(sqlDialect, "sqlDialect");
+
+            final Dsl dsl = dslCache.get(sqlDialect);
+
+            if (dsl != null) {
+                return dsl;
+            }
 
             return new Dsl(sqlDialect);
         }
 
         private CqlBuilder createCqlBuilderInstance() {
             return new CqlBuilder(sqlDialect);
-        }
-
-        private NamingPolicy namingPolicy() {
-            return sqlDialect.namingPolicy() == null ? NamingPolicy.SNAKE_CASE : sqlDialect.namingPolicy();
         }
 
         /**
@@ -2438,7 +2458,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             N.checkArgNotNull(entityClass, SELECTION_PART_MSG);
 
             if (hasSubEntityToInclude(entityClass, includeSubEntityProperties)) {
-                final List<String> selectTableNames = getSelectTableNames(entityClass, alias, excludedPropNames, namingPolicy());
+                final List<String> selectTableNames = getSelectTableNames(entityClass, alias, excludedPropNames, namingPolicy);
                 return select(entityClass, includeSubEntityProperties, excludedPropNames).from(entityClass, selectTableNames);
             }
 
@@ -2530,4 +2550,5 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             return instance;
         }
     }
+
 }

@@ -4,6 +4,17 @@
 
 package com.landawn.abacus.da.cassandra;
 
+import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.ACCB;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.LCCB;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.NAC;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.NLC;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.NSB;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.NSC;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.PAC;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.PLC;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.PSB;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.PSC;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.SCCB;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -16,17 +27,6 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 import com.landawn.abacus.da.TestBase;
-import static com.landawn.abacus.da.cassandra.CqlBuilder.ACCB;
-import static com.landawn.abacus.da.cassandra.CqlBuilder.LCCB;
-import static com.landawn.abacus.da.cassandra.CqlBuilder.NAC;
-import static com.landawn.abacus.da.cassandra.CqlBuilder.NLC;
-import static com.landawn.abacus.da.cassandra.CqlBuilder.NSB;
-import static com.landawn.abacus.da.cassandra.CqlBuilder.NSC;
-import static com.landawn.abacus.da.cassandra.CqlBuilder.PAC;
-import static com.landawn.abacus.da.cassandra.CqlBuilder.PLC;
-import static com.landawn.abacus.da.cassandra.CqlBuilder.PSB;
-import static com.landawn.abacus.da.cassandra.CqlBuilder.PSC;
-import static com.landawn.abacus.da.cassandra.CqlBuilder.SCCB;
 import com.landawn.abacus.da.entity.Account;
 import com.landawn.abacus.da.entity.Users;
 import com.landawn.abacus.query.AbstractQueryBuilder.SP;

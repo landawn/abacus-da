@@ -1,6 +1,7 @@
 package com.landawn.abacus.da;
 
-import static com.landawn.abacus.da.cassandra.CqlBuilder.NSC;
+import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.NSC;
+
 import com.landawn.abacus.da.entity.Users;
 import com.landawn.abacus.query.Filters;
 import com.landawn.abacus.query.condition.In;
@@ -15,9 +16,9 @@ public class HelloA {
     private NamingPolicy namingPolicy = NamingPolicy.CAMEL_CASE;
 
     /**
-     * 
      *
-     * @param args 
+     *
+     * @param args
      */
     public static void main(String[] args) {
         In cond = Filters.in("id", N.asList("a", "b"));
