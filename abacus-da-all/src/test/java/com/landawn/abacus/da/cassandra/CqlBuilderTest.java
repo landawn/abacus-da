@@ -401,7 +401,7 @@ public class CqlBuilderTest extends TestBase {
     }
 
     /**
-     * Verifies the (NamingPolicy, SQLPolicy) pairing and createInstance() return type implied by each
+     * Verifies the (NamingPolicy, SqlPolicy) pairing and createInstance() return type implied by each
      * dialect class name, exercised through the generated CQL string.
      *
      * <ul>

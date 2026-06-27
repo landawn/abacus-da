@@ -13,9 +13,9 @@
  */
 package com.landawn.abacus.da.azure;
 
-import static com.landawn.abacus.query.SqlBuilder.ACSB;
-import static com.landawn.abacus.query.SqlBuilder.LCSB;
-import static com.landawn.abacus.query.SqlBuilder.SCSB;
+import static com.landawn.abacus.query.Dsl.ACSB;
+import static com.landawn.abacus.query.Dsl.LCSB;
+import static com.landawn.abacus.query.Dsl.SCSB;
 
 import java.net.HttpURLConnection;
 import java.util.Collection;

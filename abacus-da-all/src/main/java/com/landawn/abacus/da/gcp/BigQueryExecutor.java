@@ -14,9 +14,9 @@
 
 package com.landawn.abacus.da.gcp;
 
-import static com.landawn.abacus.query.SqlBuilder.PAC;
-import static com.landawn.abacus.query.SqlBuilder.PLC;
-import static com.landawn.abacus.query.SqlBuilder.PSC;
+import static com.landawn.abacus.query.Dsl.PAC;
+import static com.landawn.abacus.query.Dsl.PLC;
+import static com.landawn.abacus.query.Dsl.PSC;
 
 import java.math.BigDecimal;
 import java.util.ArrayList;

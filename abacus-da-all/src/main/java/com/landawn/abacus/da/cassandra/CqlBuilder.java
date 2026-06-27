@@ -34,7 +34,7 @@ import com.landawn.abacus.logging.LoggerFactory;
 import com.landawn.abacus.query.AbstractQueryBuilder;
 import com.landawn.abacus.query.QueryUtil;
 import com.landawn.abacus.query.SqlDialect;
-import com.landawn.abacus.query.SqlDialect.SQLPolicy;
+import com.landawn.abacus.query.SqlDialect.SqlPolicy;
 import com.landawn.abacus.query.condition.Between;
 import com.landawn.abacus.query.condition.Binary;
 import com.landawn.abacus.query.condition.Cell;
@@ -164,7 +164,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      *             Un-parameterized CQL is vulnerable to CQL injection attacks.
      */
     @Deprecated
-    public static final CqlBuilder.Dsl SCCB = Dsl.forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SNAKE_CASE).sqlPolicy(SQLPolicy.RAW_SQL).build());
+    public static final CqlBuilder.Dsl SCCB = Dsl.forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SNAKE_CASE).sqlPolicy(SqlPolicy.RAW_SQL).build());
 
     /**
      * Raw-CQL DSL with {@code UPPER_CASE_WITH_UNDERSCORE} naming; values are inlined as CQL literals rather than parameterized.
@@ -174,7 +174,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      */
     @Deprecated
     public static final CqlBuilder.Dsl ACCB = Dsl
-            .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SCREAMING_SNAKE_CASE).sqlPolicy(SQLPolicy.RAW_SQL).build());
+            .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SCREAMING_SNAKE_CASE).sqlPolicy(SqlPolicy.RAW_SQL).build());
 
     /**
      * Raw-CQL DSL with {@code lowerCamelCase} naming; values are inlined as CQL literals rather than parameterized.
@@ -183,52 +183,52 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      *             Un-parameterized CQL is vulnerable to CQL injection attacks.
      */
     @Deprecated
-    public static final CqlBuilder.Dsl LCCB = Dsl.forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.CAMEL_CASE).sqlPolicy(SQLPolicy.RAW_SQL).build());
+    public static final CqlBuilder.Dsl LCCB = Dsl.forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.CAMEL_CASE).sqlPolicy(SqlPolicy.RAW_SQL).build());
 
     /**
      * Parameterized-CQL DSL ({@code ?} placeholders) that leaves property/column names unchanged.
      */
     public static final CqlBuilder.Dsl PSB = Dsl
-            .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.NO_CHANGE).sqlPolicy(SQLPolicy.PARAMETERIZED_SQL).build());
+            .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.NO_CHANGE).sqlPolicy(SqlPolicy.PARAMETERIZED_SQL).build());
 
     /**
      * Parameterized-CQL DSL ({@code ?} placeholders) with {@code snake_case} naming.
      */
     public static final CqlBuilder.Dsl PSC = Dsl
-            .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SNAKE_CASE).sqlPolicy(SQLPolicy.PARAMETERIZED_SQL).build());
+            .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SNAKE_CASE).sqlPolicy(SqlPolicy.PARAMETERIZED_SQL).build());
 
     /**
      * Parameterized-CQL DSL ({@code ?} placeholders) with {@code UPPER_CASE_WITH_UNDERSCORE} naming.
      */
     public static final CqlBuilder.Dsl PAC = Dsl
-            .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SCREAMING_SNAKE_CASE).sqlPolicy(SQLPolicy.PARAMETERIZED_SQL).build());
+            .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SCREAMING_SNAKE_CASE).sqlPolicy(SqlPolicy.PARAMETERIZED_SQL).build());
 
     /**
      * Parameterized-CQL DSL ({@code ?} placeholders) with {@code lowerCamelCase} naming.
      */
     public static final CqlBuilder.Dsl PLC = Dsl
-            .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.CAMEL_CASE).sqlPolicy(SQLPolicy.PARAMETERIZED_SQL).build());
+            .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.CAMEL_CASE).sqlPolicy(SqlPolicy.PARAMETERIZED_SQL).build());
 
     /**
      * Named-CQL DSL ({@code :name} placeholders) that leaves property/column names unchanged.
      */
-    public static final CqlBuilder.Dsl NSB = Dsl.forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.NO_CHANGE).sqlPolicy(SQLPolicy.NAMED_SQL).build());
+    public static final CqlBuilder.Dsl NSB = Dsl.forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.NO_CHANGE).sqlPolicy(SqlPolicy.NAMED_SQL).build());
 
     /**
      * Named-CQL DSL ({@code :name} placeholders) with {@code snake_case} naming.
      */
-    public static final CqlBuilder.Dsl NSC = Dsl.forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SNAKE_CASE).sqlPolicy(SQLPolicy.NAMED_SQL).build());
+    public static final CqlBuilder.Dsl NSC = Dsl.forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SNAKE_CASE).sqlPolicy(SqlPolicy.NAMED_SQL).build());
 
     /**
      * Named-CQL DSL ({@code :name} placeholders) with {@code UPPER_CASE_WITH_UNDERSCORE} naming.
      */
     public static final CqlBuilder.Dsl NAC = Dsl
-            .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SCREAMING_SNAKE_CASE).sqlPolicy(SQLPolicy.NAMED_SQL).build());
+            .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SCREAMING_SNAKE_CASE).sqlPolicy(SqlPolicy.NAMED_SQL).build());
 
     /**
      * Named-CQL DSL ({@code :name} placeholders) with {@code lowerCamelCase} naming.
      */
-    public static final CqlBuilder.Dsl NLC = Dsl.forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.CAMEL_CASE).sqlPolicy(SQLPolicy.NAMED_SQL).build());
+    public static final CqlBuilder.Dsl NLC = Dsl.forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.CAMEL_CASE).sqlPolicy(SqlPolicy.NAMED_SQL).build());
 
     // TODO performance goal: 80% cases (or maybe CQL.length < 1024?) can be composed in 0.1 millisecond. 0.01 millisecond will be fantastic if possible.
 
@@ -972,7 +972,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             _sb.append(_SPACE);
 
             final Object minValue = bt.getMinValue();
-            if (_sqlPolicy == SQLPolicy.NAMED_SQL || _sqlPolicy == SQLPolicy.IBATIS_SQL) {
+            if (_sqlPolicy == SqlPolicy.NAMED_SQL || _sqlPolicy == SqlPolicy.IBATIS_SQL) {
                 setParameter("min" + Strings.capitalize(sanitizeNamedParameterName(propName)), minValue);
             } else {
                 setParameter(propName, minValue);
@@ -983,7 +983,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             _sb.append(_SPACE);
 
             final Object maxValue = bt.getMaxValue();
-            if (_sqlPolicy == SQLPolicy.NAMED_SQL || _sqlPolicy == SQLPolicy.IBATIS_SQL) {
+            if (_sqlPolicy == SqlPolicy.NAMED_SQL || _sqlPolicy == SqlPolicy.IBATIS_SQL) {
                 setParameter("max" + Strings.capitalize(sanitizeNamedParameterName(propName)), maxValue);
             } else {
                 setParameter(propName, maxValue);
@@ -998,7 +998,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             _sb.append(_SPACE);
 
             final Object minValue = nbt.getMinValue();
-            if (_sqlPolicy == SQLPolicy.NAMED_SQL || _sqlPolicy == SQLPolicy.IBATIS_SQL) {
+            if (_sqlPolicy == SqlPolicy.NAMED_SQL || _sqlPolicy == SqlPolicy.IBATIS_SQL) {
                 setParameter("min" + Strings.capitalize(sanitizeNamedParameterName(propName)), minValue);
             } else {
                 setParameter(propName, minValue);
@@ -1009,7 +1009,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             _sb.append(_SPACE);
 
             final Object maxValue = nbt.getMaxValue();
-            if (_sqlPolicy == SQLPolicy.NAMED_SQL || _sqlPolicy == SQLPolicy.IBATIS_SQL) {
+            if (_sqlPolicy == SqlPolicy.NAMED_SQL || _sqlPolicy == SqlPolicy.IBATIS_SQL) {
                 setParameter("max" + Strings.capitalize(sanitizeNamedParameterName(propName)), maxValue);
             } else {
                 setParameter(propName, maxValue);
@@ -1031,7 +1031,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
                     _sb.append(SK.COMMA_SPACE);
                 }
 
-                if (_sqlPolicy == SQLPolicy.NAMED_SQL || _sqlPolicy == SQLPolicy.IBATIS_SQL) {
+                if (_sqlPolicy == SqlPolicy.NAMED_SQL || _sqlPolicy == SqlPolicy.IBATIS_SQL) {
                     setParameter(propName + (i + 1), params.get(i));
                 } else {
                     setParameter(propName, params.get(i));
@@ -1084,7 +1084,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
                     _sb.append(SK.COMMA_SPACE);
                 }
 
-                if (_sqlPolicy == SQLPolicy.NAMED_SQL || _sqlPolicy == SQLPolicy.IBATIS_SQL) {
+                if (_sqlPolicy == SqlPolicy.NAMED_SQL || _sqlPolicy == SqlPolicy.IBATIS_SQL) {
                     setParameter(propName + (i + 1), params.get(i));
                 } else {
                     setParameter(propName, params.get(i));
