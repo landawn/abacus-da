@@ -127,11 +127,11 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching row -> the future completes with an empty Optional.
      * boolean none = async.get(User.class, -1L).get().isEmpty(); // returns true
      *
-     * // Edge: more than one row matches -> the future completes exceptionally; get() rethrows it wrapped.
+     * // Edge: more than one row matches -> get() throws DuplicateResultException directly (not wrapped in ExecutionException).
      * try {
-     *     async.get(User.class, ambiguousKey).get(); // throws ExecutionException (cause DuplicateResultException)
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is a DuplicateResultException
+     *     async.get(User.class, ambiguousKey).get(); // throws DuplicateResultException
+     * } catch (DuplicateResultException ex) {
+     *     // more than one row matched
      * }
      * }</pre>
      *
@@ -139,8 +139,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the entity class to fetch
      * @param ids the primary key value(s) identifying the row
      * @return a future whose payload is an {@link Optional} containing the entity, or empty if no
-     *         row matches; if more than one row matches the future completes exceptionally with
-     *         {@link com.landawn.abacus.exception.DuplicateResultException}
+     *         row matches; if more than one row matches, {@code get()} throws
+     *         {@link com.landawn.abacus.exception.DuplicateResultException} directly (not wrapped in
+     *         an {@code ExecutionException})
      */
     public final <T> ContinuableFuture<Optional<T>> get(final Class<T> targetClass, final Object... ids) {
         return get(targetClass, null, ids);
@@ -163,11 +164,11 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching row -> the future completes with an empty Optional.
      * boolean none = async.get(User.class, Arrays.asList("id"), -1L).get().isEmpty(); // returns true
      *
-     * // Edge: more than one row matches -> the future completes exceptionally; get() rethrows it wrapped.
+     * // Edge: more than one row matches -> get() throws DuplicateResultException directly (not wrapped in ExecutionException).
      * try {
-     *     async.get(User.class, Arrays.asList("id"), ambiguousKey).get(); // throws ExecutionException (cause DuplicateResultException)
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is a DuplicateResultException
+     *     async.get(User.class, Arrays.asList("id"), ambiguousKey).get(); // throws DuplicateResultException
+     * } catch (DuplicateResultException ex) {
+     *     // more than one row matched
      * }
      * }</pre>
      *
@@ -200,11 +201,11 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching row -> the future completes with an empty Optional.
      * boolean none = async.get(User.class, Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
-     * // Edge: more than one row matches -> the future completes exceptionally; get() rethrows it wrapped.
+     * // Edge: more than one row matches -> get() throws DuplicateResultException directly (not wrapped in ExecutionException).
      * try {
-     *     async.get(User.class, Filters.eq("status", "active")).get(); // throws ExecutionException (cause DuplicateResultException)
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is a DuplicateResultException
+     *     async.get(User.class, Filters.eq("status", "active")).get(); // throws DuplicateResultException
+     * } catch (DuplicateResultException ex) {
+     *     // more than one row matched
      * }
      * }</pre>
      *
@@ -238,11 +239,11 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching row -> the future completes with an empty Optional.
      * boolean none = async.get(User.class, Arrays.asList("id"), Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
-     * // Edge: more than one row matches -> the future completes exceptionally; get() rethrows it wrapped.
+     * // Edge: more than one row matches -> get() throws DuplicateResultException directly (not wrapped in ExecutionException).
      * try {
-     *     async.get(User.class, Arrays.asList("id"), Filters.eq("status", "active")).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is a DuplicateResultException
+     *     async.get(User.class, Arrays.asList("id"), Filters.eq("status", "active")).get(); // throws DuplicateResultException
+     * } catch (DuplicateResultException ex) {
+     *     // more than one row matched
      * }
      * }</pre>
      *
@@ -278,11 +279,11 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching row -> the future completes with null.
      * User missing = async.gett(User.class, -1L).get(); // missing == null
      *
-     * // Edge: more than one row matches -> the future completes exceptionally; get() rethrows it wrapped.
+     * // Edge: more than one row matches -> get() throws DuplicateResultException directly (not wrapped in ExecutionException).
      * try {
-     *     async.gett(User.class, ambiguousKey).get(); // throws ExecutionException (cause DuplicateResultException)
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is a DuplicateResultException
+     *     async.gett(User.class, ambiguousKey).get(); // throws DuplicateResultException
+     * } catch (DuplicateResultException ex) {
+     *     // more than one row matched
      * }
      * }</pre>
      *
@@ -312,11 +313,11 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching row -> the future completes with null.
      * User missing = async.gett(User.class, Arrays.asList("id"), -1L).get(); // missing == null
      *
-     * // Edge: more than one row matches -> the future completes exceptionally; get() rethrows it wrapped.
+     * // Edge: more than one row matches -> get() throws DuplicateResultException directly (not wrapped in ExecutionException).
      * try {
-     *     async.gett(User.class, Arrays.asList("id"), ambiguousKey).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is a DuplicateResultException
+     *     async.gett(User.class, Arrays.asList("id"), ambiguousKey).get(); // throws DuplicateResultException
+     * } catch (DuplicateResultException ex) {
+     *     // more than one row matched
      * }
      * }</pre>
      *
@@ -348,11 +349,11 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching row -> the future completes with null.
      * User missing = async.gett(User.class, Filters.eq("id", -1L)).get(); // missing == null
      *
-     * // Edge: more than one row matches -> the future completes exceptionally; get() rethrows it wrapped.
+     * // Edge: more than one row matches -> get() throws DuplicateResultException directly (not wrapped in ExecutionException).
      * try {
-     *     async.gett(User.class, Filters.eq("status", "active")).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is a DuplicateResultException
+     *     async.gett(User.class, Filters.eq("status", "active")).get(); // throws DuplicateResultException
+     * } catch (DuplicateResultException ex) {
+     *     // more than one row matched
      * }
      * }</pre>
      *
@@ -382,11 +383,11 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching row -> the future completes with null.
      * User missing = async.gett(User.class, Arrays.asList("id"), Filters.eq("id", -1L)).get(); // missing == null
      *
-     * // Edge: more than one row matches -> the future completes exceptionally; get() rethrows it wrapped.
+     * // Edge: more than one row matches -> get() throws DuplicateResultException directly (not wrapped in ExecutionException).
      * try {
-     *     async.gett(User.class, Arrays.asList("id"), Filters.eq("status", "active")).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is a DuplicateResultException
+     *     async.gett(User.class, Arrays.asList("id"), Filters.eq("status", "active")).get(); // throws DuplicateResultException
+     * } catch (DuplicateResultException ex) {
+     *     // more than one row matched
      * }
      * }</pre>
      *
@@ -2368,8 +2369,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param propName the property whose value is selected
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is an {@link Optional} holding the value, or empty if no row
-     *         matches; the future completes exceptionally with a {@link NullPointerException} if
-     *         a row was returned but the column value is {@code null}
+     *         matches; if a row was returned but the column value is {@code null}, {@code get()}
+     *         throws a {@link NullPointerException} directly (not wrapped in an {@code ExecutionException}),
+     *         since {@link Optional} cannot hold {@code null}
      */
     public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final Class<?> targetClass, final Class<V> valueClass, final String propName,
             final Condition whereClause) {
@@ -2783,9 +2785,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
      * @return a future whose payload is an {@link Optional} holding the value, or empty if the
-     *         query returned no row; the future completes exceptionally with a
-     *         {@link NullPointerException} if a row was returned but the column value is
-     *         {@code null} (since {@link Optional} cannot hold {@code null})
+     *         query returned no row; if a row was returned but the column value is {@code null},
+     *         {@code get()} throws a {@link NullPointerException} directly (not wrapped in an
+     *         {@code ExecutionException}), since {@link Optional} cannot hold {@code null}
      */
     public <T> ContinuableFuture<Optional<T>> queryForSingleNonNull(final Class<T> valueClass, final String query, final Object... parameters) {
         return execute(query, parameters).map(resultSet -> {

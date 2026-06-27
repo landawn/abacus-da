@@ -445,11 +445,11 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * AnyGet get = AnyGet.of("user123")
      *                    .addColumn("info", "name")
      *                    .addFamily("stats");
-     * Map&lt;byte[], NavigableSet&lt;byte[]&gt;&gt; familyMap = get.getFamilyMap();
+     * Map<byte[], NavigableSet<byte[]>> familyMap = get.getFamilyMap();
      * int size = familyMap.size();   // 2 — "info" (explicit qualifiers) and "stats" (null = all)
      *
      * // Edge: a get with no families/columns yields an empty (but non-null) map.
-     * Map&lt;byte[], NavigableSet&lt;byte[]&gt;&gt; empty = AnyGet.of("user123").getFamilyMap();
+     * Map<byte[], NavigableSet<byte[]>> empty = AnyGet.of("user123").getFamilyMap();
      * boolean isEmpty = empty.isEmpty();   // true
      * }</pre>
      *
@@ -562,7 +562,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *                    .setTimeRange(startTime, endTime);   // returns same builder for chaining
      * long min = get.getTimeRange().getMin();                 // startTime
      *
-     * // Edge: minStamp &gt; maxStamp is rejected.
+     * // Edge: minStamp > maxStamp is rejected.
      * AnyGet.of("user123").setTimeRange(200L, 100L);   // throws IllegalArgumentException
      *
      * // Edge: a negative stamp is rejected.
@@ -953,7 +953,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * AnyGet get = AnyGet.of("user123")
      *                    .addFamily("info")
      *                    .addFamily("stats");
-     * Set&lt;byte[]&gt; families = get.familySet();
+     * Set<byte[]> families = get.familySet();
      * int size = families.size();   // 2 — byte arrays for "info" and "stats"
      *
      * // Edge: a get with no families yields an empty set.
@@ -1091,16 +1091,16 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * List&lt;AnyGet&gt; anyGets = Arrays.asList(
+     * List<AnyGet> anyGets = Arrays.asList(
      *     AnyGet.of("user1").addFamily("info"),
      *     AnyGet.of("user2").addFamily("info"),
      *     AnyGet.of("user3").addFamily("info")
      * );
-     * List&lt;Get&gt; gets = AnyGet.toGetList(anyGets);   // 3 Get objects, in iteration order
+     * List<Get> gets = AnyGet.toGetList(anyGets);   // 3 Get objects, in iteration order
      * Result[] results = table.get(gets);             // Batch get with native HBase API
      *
      * // Edge: an empty collection yields an empty list (not null).
-     * List&lt;Get&gt; empty = AnyGet.toGetList(java.util.Collections.emptyList());   // size 0
+     * List<Get> empty = AnyGet.toGetList(java.util.Collections.emptyList());   // size 0
      *
      * // Edge: a null element is rejected.
      * AnyGet.toGetList(Arrays.asList(AnyGet.of("user1"), null));   // throws IllegalArgumentException

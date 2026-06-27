@@ -53,8 +53,8 @@ import com.landawn.abacus.util.stream.Stream;
  * but completion order depends on the executor's scheduling and on how long each individual HBase
  * operation takes; concurrent submissions are not serialised. Each returned {@code ContinuableFuture}
  * completes when its single underlying synchronous call returns. A synchronous transform created via
- * {@link ContinuableFuture#map(com.landawn.abacus.util.Throwables.Function)} runs on the completing
- * thread, whereas the {@code Async} continuations ({@link ContinuableFuture#thenRunAsync},
+ * {@link ContinuableFuture#map(com.landawn.abacus.util.Throwables.Function)} runs lazily on the thread
+ * that calls {@code get()}, whereas the {@code Async} continuations ({@link ContinuableFuture#thenRunAsync},
  * {@link ContinuableFuture#thenCallAsync}, etc.) are dispatched back to the same {@code AsyncExecutor}.</p>
  *
  * <h2>Key Features</h2>

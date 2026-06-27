@@ -276,8 +276,9 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
     /**
      * Asynchronously executes the given CQL query and returns a future that completes with a
      * non-{@code null} value from the first column of the first row converted to
-     * {@code valueClass}, or an empty {@link Optional} if no row is returned or the value is
-     * {@code null}.
+     * {@code valueClass}, or an empty {@link Optional} if no row is returned. If a row is returned
+     * but the value is {@code null}, {@code get()} throws a {@link NullPointerException} (an
+     * {@link Optional} cannot hold {@code null}).
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -307,7 +308,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param query the CQL query to execute
      * @param parameters the positional query parameters
      * @return a future that completes with an {@code Optional} of the non-null value, or empty
-     *         if no row exists or the value is {@code null}
+     *         if no row exists; if a row exists but the value is {@code null}, {@code get()} throws
+     *         a {@link NullPointerException} directly
      */
     @Override
     public <T> ContinuableFuture<Optional<T>> queryForSingleNonNull(final Class<T> valueClass, final String query, final Object... parameters) {

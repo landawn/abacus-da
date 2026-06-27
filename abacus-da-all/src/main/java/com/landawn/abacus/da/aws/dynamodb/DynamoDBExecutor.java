@@ -729,7 +729,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      */
     public static Map<String, AttributeValue> asItem(final Object... a) {
         if ((a.length % 2) != 0) {
-            throw new IllegalArgumentException("Parameters must be property name-value pairs, a Map, or an entity with getter/setter methods");
+            throw new IllegalArgumentException("Parameters must be name-value pairs (an even number of arguments)");
         }
 
         final Map<String, AttributeValue> item = N.newLinkedHashMap(a.length / 2);
@@ -857,7 +857,7 @@ public final class DynamoDBExecutor implements AutoCloseable {
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final Object... a) {
         if ((a.length % 2) != 0) {
-            throw new IllegalArgumentException("Parameters must be property name-value pairs, a Map, or an entity with getter/setter methods");
+            throw new IllegalArgumentException("Parameters must be name-value pairs (an even number of arguments)");
         }
 
         final Map<String, AttributeValueUpdate> item = N.newLinkedHashMap(a.length / 2);
@@ -989,7 +989,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      *
      * <p>This method converts Java objects (POJOs, Maps, or Object arrays) to DynamoDB item format.
      * The conversion uses reflection for POJOs, direct mapping for Maps, and name-value pairs for arrays.
-     * Null properties are excluded from the result.</p>
+     * Null bean properties are excluded; for {@code Map} and {@code Object[]} inputs a {@code null} value
+     * is written as a DynamoDB NULL attribute.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1076,8 +1077,9 @@ public final class DynamoDBExecutor implements AutoCloseable {
     /**
      * Converts an entity to a DynamoDB update item map using CAMEL_CASE naming policy.
      *
-     * <p>This method creates {@link AttributeValueUpdate} objects with {@link AttributeAction#PUT} action
-     * for all non-null properties. Properties with {@code null} values are excluded from the result.
+     * <p>This method creates {@link AttributeValueUpdate} objects with {@link AttributeAction#PUT} action.
+     * Null bean properties are excluded; for {@link Map} and {@code Object[]} inputs a {@code null} value
+     * is written as a PUT of a NULL attribute.
      * Supported inputs are beans with getter/setter methods, {@link Map}, and {@code Object[]} name-value pairs.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -1099,10 +1101,11 @@ public final class DynamoDBExecutor implements AutoCloseable {
     /**
      * Converts an entity to a DynamoDB update item map with specified naming policy.
      *
-     * <p>This method creates {@link AttributeValueUpdate} objects with {@link AttributeAction#PUT} action
-     * for all non-null properties, providing control over how property names are converted to attribute
-     * names. Properties with {@code null} values are excluded from the result. Supported inputs are beans
-     * with getter/setter methods, {@link Map}, and {@code Object[]} name-value pairs.</p>
+     * <p>This method creates {@link AttributeValueUpdate} objects with {@link AttributeAction#PUT} action,
+     * providing control over how property names are converted to attribute names. Null bean properties are
+     * excluded; for {@link Map} and {@code Object[]} inputs a {@code null} value is written as a PUT of a
+     * NULL attribute. Supported inputs are beans with getter/setter methods, {@link Map}, and
+     * {@code Object[]} name-value pairs.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -4169,9 +4172,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
          * }</pre>
          *
          * @param scanFilter map of attribute names to {@link Condition} objects for filtering results,
-         *                  must not be {@code null}
+         *                  or {@code null} to apply no filter (scans all items)
          * @return Stream of entities matching the filter conditions
-         * @throws IllegalArgumentException if scanFilter is {@code null}
          * @see #scan(ScanRequest)
          */
         public Stream<T> scan(final Map<String, Condition> scanFilter) {
@@ -4206,9 +4208,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
          *
          * @param attributesToGet list of attribute names to retrieve; {@code null} retrieves all attributes
          * @param scanFilter map of attribute names to {@link Condition} objects for filtering results,
-         *                  must not be {@code null}
+         *                  or {@code null} to apply no filter (scans all items)
          * @return Stream of entities with specified attributes matching the filter conditions
-         * @throws IllegalArgumentException if scanFilter is {@code null}
          * @see #scan(ScanRequest)
          */
         public Stream<T> scan(final List<String> attributesToGet, final Map<String, Condition> scanFilter) {

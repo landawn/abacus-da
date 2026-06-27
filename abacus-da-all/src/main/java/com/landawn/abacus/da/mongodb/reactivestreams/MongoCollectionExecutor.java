@@ -1617,7 +1617,7 @@ public final class MongoCollectionExecutor {
      * @param valueType the specific Date subclass to convert to
      * @return a {@code Mono} that emits the typed {@code Date} value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty, if {@code filter} is null, or if {@code rowType} is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code propName} is null or empty, if {@code filter} is null, or if {@code valueType} is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForDate(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1942,7 +1942,7 @@ public final class MongoCollectionExecutor {
     // malformed Dataset on subscription.
     private static void checkResultClass(final Class<?> rowType) {
         if (!(Beans.isBeanClass(rowType) || Map.class.isAssignableFrom(rowType))) {
-            throw new IllegalArgumentException("The target class must be an entity class with getter\\setter methods or Map.class\\Document.class. But it is: "
+            throw new IllegalArgumentException("The target class must be an entity class with getter/setter methods or Map.class/Document.class. But it is: "
                     + ClassUtil.getCanonicalClassName(rowType));
         }
     }

@@ -1064,7 +1064,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * }</pre>
      *
      * @param family the column family name; must not be null or empty
-     * @param qualifier the column qualifier name; must not be null
+     * @param qualifier the column qualifier name; may be {@code null} to denote an empty qualifier
      * @param value the value to store; automatically converted to bytes ({@code null} is permitted
      *              and stored as an empty value)
      * @return this {@code AnyPut} instance, to allow fluent method chaining
@@ -1103,7 +1103,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * }</pre>
      *
      * @param family the column family name; must not be null or empty
-     * @param qualifier the column qualifier name; must not be null
+     * @param qualifier the column qualifier name; may be {@code null} to denote an empty qualifier
      * @param ts the timestamp for this cell (milliseconds since epoch); must be non-negative
      * @param value the value to store; automatically converted to bytes ({@code null} is permitted)
      * @return this {@code AnyPut} instance, to allow fluent method chaining
@@ -1362,6 +1362,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @return this {@code AnyPut} instance, to allow fluent method chaining
      * @throws IOException if the cell's row key does not match this Put's row key (thrown by the
      *         underlying {@link Put#add(Cell)})
+     * @throws IllegalArgumentException if the cell's family is null or empty
      * @see Cell
      * @see Put#add(Cell)
      * @see #addColumn(String, String, Object)

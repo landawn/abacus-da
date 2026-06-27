@@ -2157,7 +2157,7 @@ public final class AsyncMongoCollectionExecutor {
      *                      .append("age", 30);
      *
      * async.insertOne(userDoc)
-     *      .thenAcceptAsync(result -> {
+     *      .thenRunAsync(result -> {
      *          System.out.println("User inserted successfully");
      *          // The server-assigned _id is exposed via the result
      *          BsonValue userId = result.getInsertedId();
@@ -2193,7 +2193,7 @@ public final class AsyncMongoCollectionExecutor {
      * InsertOneOptions options = new InsertOneOptions().bypassDocumentValidation(true);
      *
      * async.insertOne(newUser, options)
-     *      .thenAcceptAsync(result -> System.out.println("User inserted with validation bypass: " + result.getInsertedId()));
+     *      .thenRunAsync(result -> System.out.println("User inserted with validation bypass: " + result.getInsertedId()));
      * }</pre>
      *
      * @param obj the object to insert, which will be converted to a Document
@@ -2224,7 +2224,7 @@ public final class AsyncMongoCollectionExecutor {
      * );
      *
      * async.insertMany(users)
-     *      .thenAcceptAsync(result -> System.out.println("All users inserted successfully: " + result.getInsertedIds()));
+     *      .thenRunAsync(result -> System.out.println("All users inserted successfully: " + result.getInsertedIds()));
      * }</pre>
      *
      * @param objList the collection of objects to insert, each will be converted to a Document
@@ -2253,7 +2253,7 @@ public final class AsyncMongoCollectionExecutor {
      *     .bypassDocumentValidation(true);
      *
      * async.insertMany(products, options)
-     *      .thenAcceptAsync(result -> System.out.println("Bulk product import completed: " + result.getInsertedIds()));
+     *      .thenRunAsync(result -> System.out.println("Bulk product import completed: " + result.getInsertedIds()));
      * }</pre>
      *
      * @param objList the collection of objects to insert, each will be converted to a Document
@@ -2886,7 +2886,7 @@ public final class AsyncMongoCollectionExecutor {
      * <pre>{@code
      * List<User> users = Arrays.asList(new User("Alice"), new User("Bob"), new User("Charlie"));
      * async.bulkInsert(users)
-     *      .thenAcceptAsync(result -> System.out.println("Inserted " + result.getInsertedCount() + " users"));
+     *      .thenRunAsync(result -> System.out.println("Inserted " + result.getInsertedCount() + " users"));
      * }</pre>
      *
      * @param entities the collection of documents to insert
@@ -2912,7 +2912,7 @@ public final class AsyncMongoCollectionExecutor {
      * <pre>{@code
      * BulkWriteOptions options = new BulkWriteOptions().ordered(false).bypassDocumentValidation(true);
      * async.bulkInsert(documents, options)
-     *      .thenAcceptAsync(result -> System.out.println("Inserted " + result.getInsertedCount() + " documents (unordered)"));
+     *      .thenRunAsync(result -> System.out.println("Inserted " + result.getInsertedCount() + " documents (unordered)"));
      * }</pre>
      *
      * @param entities the collection of documents to insert

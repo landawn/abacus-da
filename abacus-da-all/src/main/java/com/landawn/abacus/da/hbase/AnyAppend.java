@@ -598,6 +598,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      *
      * @param cell the {@link Cell} to add to this append operation
      * @return this AnyAppend instance, to allow fluent method chaining
+     * @throws IllegalArgumentException if the cell's family is null or empty
      * @see org.apache.hadoop.hbase.Cell
      * @see #addColumn(String, String, Object)
      */
