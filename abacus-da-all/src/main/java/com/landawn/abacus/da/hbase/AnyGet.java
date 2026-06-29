@@ -1096,17 +1096,17 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *     AnyGet.of("user2").addFamily("info"),
      *     AnyGet.of("user3").addFamily("info")
      * );
-     * List<Get> gets = AnyGet.toGetList(anyGets);   // 3 Get objects, in iteration order
+     * List<Get> gets = AnyGet.toGet(anyGets);   // 3 Get objects, in iteration order
      * Result[] results = table.get(gets);             // Batch get with native HBase API
      *
      * // Edge: an empty collection yields an empty list (not null).
-     * List<Get> empty = AnyGet.toGetList(java.util.Collections.emptyList());   // size 0
+     * List<Get> empty = AnyGet.toGet(java.util.Collections.emptyList());   // size 0
      *
      * // Edge: a null element is rejected.
-     * AnyGet.toGetList(Arrays.asList(AnyGet.of("user1"), null));   // throws IllegalArgumentException
+     * AnyGet.toGet(Arrays.asList(AnyGet.of("user1"), null));   // throws IllegalArgumentException
      *
      * // Edge: a null collection is rejected.
-     * AnyGet.toGetList(null);   // throws IllegalArgumentException
+     * AnyGet.toGet(null);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param anyGets the collection of AnyGet instances to convert; must not be null
@@ -1117,7 +1117,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @see Get
      * @see HBaseExecutor#get(String, Collection)
      */
-    public static List<Get> toGetList(final Collection<AnyGet> anyGets) {
+    public static List<Get> toGet(final Collection<AnyGet> anyGets) {
         N.checkArgNotNull(anyGets, "anyGets");
 
         if (N.isEmpty(anyGets)) {

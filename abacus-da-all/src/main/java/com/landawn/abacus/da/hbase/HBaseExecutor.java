@@ -1506,7 +1506,7 @@ public final class HBaseExecutor {
      * @see #exists(String, List)
      */
     public List<Boolean> exists(final String tableName, final Collection<AnyGet> anyGets) throws UncheckedIOException {
-        return exists(tableName, AnyGet.toGetList(anyGets));
+        return exists(tableName, AnyGet.toGet(anyGets));
     }
 
     // There is no too much benefit to add method for "Object rowKey"
@@ -1637,7 +1637,7 @@ public final class HBaseExecutor {
      * @see #get(String, List)
      */
     public List<Result> get(final String tableName, final Collection<AnyGet> anyGets) throws UncheckedIOException {
-        return get(tableName, AnyGet.toGetList(anyGets));
+        return get(tableName, AnyGet.toGet(anyGets));
     }
 
     // There is no too much benefit to add method for "Object rowKey"
@@ -3345,7 +3345,7 @@ public final class HBaseExecutor {
          * @see AnyGet
          */
         public List<Boolean> exists(final List<AnyGet> anyGets) throws UncheckedIOException {
-            return hbaseExecutor.exists(tableName, AnyGet.toGetList(anyGets));
+            return hbaseExecutor.exists(tableName, AnyGet.toGet(anyGets));
         }
 
         /**

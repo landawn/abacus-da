@@ -371,7 +371,7 @@ public class AnyGetTest extends TestBase {
         AnyGet g1 = AnyGet.of("r1").addFamily("cf");
         AnyGet g2 = AnyGet.of("r2");
 
-        List<Get> gets = AnyGet.toGetList(Arrays.asList(g1, g2));
+        List<Get> gets = AnyGet.toGet(Arrays.asList(g1, g2));
 
         assertEquals(2, gets.size());
         assertSame(g1.val(), gets.get(0));
@@ -380,20 +380,20 @@ public class AnyGetTest extends TestBase {
 
     @Test
     public void testToGet_emptyCollection() {
-        List<Get> gets = AnyGet.toGetList(Collections.<AnyGet> emptyList());
+        List<Get> gets = AnyGet.toGet(Collections.<AnyGet> emptyList());
         assertEquals(0, gets.size());
     }
 
     @Test
     public void testToGet_nullCollection_throws() {
-        assertThrows(IllegalArgumentException.class, () -> AnyGet.toGetList(null));
+        assertThrows(IllegalArgumentException.class, () -> AnyGet.toGet(null));
     }
 
     @Test
     public void testToGet_collectionWithNull_throws() {
         // Null elements are rejected with IllegalArgumentException (consistent with AnyDelete.toDelete / AnyPut.toPut).
         AnyGet g1 = AnyGet.of("r1");
-        assertThrows(IllegalArgumentException.class, () -> AnyGet.toGetList(Arrays.asList(g1, null)));
+        assertThrows(IllegalArgumentException.class, () -> AnyGet.toGet(Arrays.asList(g1, null)));
     }
 
     @Test
