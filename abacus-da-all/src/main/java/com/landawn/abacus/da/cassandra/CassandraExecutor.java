@@ -238,7 +238,7 @@ import lombok.experimental.Accessors;
  * is no longer needed.</p>
  *
  * <h3>Resource Management</h3>
- * <p>The executor implements {@link AutoCloseable} and should be closed properly to release
+ * <p>The executor should be closed properly via {@link #close()} to release
  * underlying resources:</p>
  * <pre>{@code
  * try (CassandraExecutor executor = new CassandraExecutor(session)) {
@@ -328,6 +328,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * }</pre>
      *
      * @param session the Cassandra session to use for database operations
+     * @throws NullPointerException if session is null
      * @see CqlSession
      */
     public CassandraExecutor(final CqlSession session) {
@@ -353,6 +354,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * @param session the Cassandra session to use for database operations
      * @param settings default statement settings to apply to all operations, or null for defaults
+     * @throws NullPointerException if session is null
      * @see StatementSettings
      */
     public CassandraExecutor(final CqlSession session, final StatementSettings settings) {
@@ -377,6 +379,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param session the Cassandra session to use for database operations
      * @param settings default statement settings, or null for defaults
      * @param cqlMapper CQL mapper containing pre-configured statements, or null if not needed
+     * @throws NullPointerException if session is null
      * @see CqlMapper
      */
     public CassandraExecutor(final CqlSession session, final StatementSettings settings, final CqlMapper cqlMapper) {
@@ -421,6 +424,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param cqlMapper CQL mapper containing pre-configured statements, or {@code null} if not needed
      * @param namingPolicy policy for mapping Java property names to column names; when {@code null} the
      *                     subclass default (defined in {@link CassandraExecutorBase}) is used
+     * @throws NullPointerException if session is null
      * @see NamingPolicy
      */
     public CassandraExecutor(final CqlSession session, final StatementSettings settings, final CqlMapper cqlMapper, final NamingPolicy namingPolicy) {
@@ -1295,7 +1299,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param statement the configured CQL Statement to execute
      * @param rowMapper a function that maps column definitions and rows to result objects
      * @return a Stream of mapped objects
-     * @throws IllegalArgumentException if statement or rowMapper is null
+     * @throws IllegalArgumentException if rowMapper is null
+     * @throws NullPointerException if statement is null
      */
     public <T> Stream<T> stream(final Statement<?> statement, final BiFunction<ColumnDefinitions, Row, T> rowMapper) {
         N.checkArgNotNull(rowMapper, "rowMapper");

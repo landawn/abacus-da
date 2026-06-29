@@ -333,8 +333,8 @@ public abstract class MongoDBBase {
      *
      * <p>This method converts a BSON object to a JSON string using MongoDB's codec registry.
      * If the BSON object is already a Map, it's converted directly. Otherwise, it's first
-     * converted to a BsonDocument and then to JSON format. The output follows MongoDB's
-     * extended JSON format.</p>
+     * converted to a BsonDocument and then to JSON format. The output follows standard
+     * JSON format.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

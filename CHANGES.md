@@ -1,7 +1,10 @@
-## 2.7.7
+## 2.8.0
 * Naming convention improvements
 * Improvements and bug fixes
 
+## 2.7.7
+* Naming convention improvements
+* Improvements and bug fixes
 
 ## 2.7.6
 * Naming convention improvements

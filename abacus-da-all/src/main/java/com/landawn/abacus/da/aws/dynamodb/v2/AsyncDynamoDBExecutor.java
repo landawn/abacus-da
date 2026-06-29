@@ -127,7 +127,7 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
  * </ul>
  *
  * <h3>Resource Management:</h3>
- * <p>This class implements {@link AutoCloseable}; call {@link #close()} (or use try-with-resources)
+ * <p>Call {@link #close()} when you are finished with this executor
  * to shut down the underlying {@link DynamoDbAsyncClient}'s connection pool and async resources.</p>
  *
  * <p><b>Usage Examples:</b></p>

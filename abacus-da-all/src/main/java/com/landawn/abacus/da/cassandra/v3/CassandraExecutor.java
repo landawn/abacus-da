@@ -1393,7 +1393,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param statement the statement to execute
      * @param rowMapper function to convert column definitions and rows to result objects
      * @return a Stream of mapped results
-     * @throws IllegalArgumentException if statement or rowMapper is null
+     * @throws IllegalArgumentException if rowMapper is null
+     * @throws NullPointerException if statement is null
      */
     public <T> Stream<T> stream(final Statement statement, final BiFunction<ColumnDefinitions, Row, T> rowMapper) {
         N.checkArgNotNull(rowMapper, "rowMapper");
@@ -1582,7 +1583,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * @param statement the configured CQL Statement to execute
      * @return the ResultSet containing execution results
-     * @throws IllegalArgumentException if statement is null
+     * @throws NullPointerException if statement is null
      * @throws com.datastax.driver.core.exceptions.NoHostAvailableException if all contact points are unreachable
      */
     @Override
