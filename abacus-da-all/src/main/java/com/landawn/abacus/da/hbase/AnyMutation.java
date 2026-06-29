@@ -665,7 +665,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * Compares this mutation with another {@link Row} by row key. Implementation of
      * {@link Row#compareTo(Row)}, delegated to the wrapped {@link Mutation}.
      *
-     * @param d the other {@link Row} to compare with
+     * @param other the {@link Row} to compare with
      * @return a negative integer, zero, or a positive integer as this row key is less than,
      *         equal to, or greater than the other row's key
      * @deprecated As of HBase 2.0.0; will be removed in HBase 3.0.0. Use {@link Row#COMPARATOR}
@@ -673,7 +673,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      */
     @Override
     @Deprecated
-    public int compareTo(final Row d) {
-        return mutation.compareTo(d);
+    public int compareTo(final Row other) {
+        return mutation.compareTo(other);
     }
 }

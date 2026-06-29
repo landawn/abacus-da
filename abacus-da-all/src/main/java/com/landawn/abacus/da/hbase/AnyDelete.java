@@ -508,7 +508,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * AnyDelete.of("user123").add(wrongRow);           // throws IOException
      * }</pre>
      *
-     * @param kv an existing Cell to attach to this delete; should be a delete-type cell
+     * @param cell an existing Cell to attach to this delete; should be a delete-type cell
      *           whose row matches this delete's row
      * @return this AnyDelete instance for method chaining
      * @throws IOException if the cell's row does not match this delete's row
@@ -517,8 +517,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @see Cell
      * @see Delete#add(Cell)
      */
-    public AnyDelete add(final Cell kv) throws IOException {
-        delete.add(kv);
+    public AnyDelete add(final Cell cell) throws IOException {
+        delete.add(cell);
         return this;
     }
 

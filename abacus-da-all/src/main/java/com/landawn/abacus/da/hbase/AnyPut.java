@@ -1358,7 +1358,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * AnyPut.of("user123").add(wrongRow);            // throws IOException
      * }</pre>
      *
-     * @param kv the Cell to add; must not be null and must have the same row key as this put
+     * @param cell the Cell to add; must not be null and must have the same row key as this put
      * @return this {@code AnyPut} instance, to allow fluent method chaining
      * @throws IOException if the cell's row key does not match this Put's row key (thrown by the
      *         underlying {@link Put#add(Cell)})
@@ -1367,8 +1367,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @see Put#add(Cell)
      * @see #addColumn(String, String, Object)
      */
-    public AnyPut add(final Cell kv) throws IOException {
-        put.add(kv);
+    public AnyPut add(final Cell cell) throws IOException {
+        put.add(cell);
 
         return this;
     }

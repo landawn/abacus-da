@@ -360,14 +360,14 @@ public final class AnyRowMutations implements Row {
      * a.compareTo(a2);                     // returns 0
      * }</pre>
      *
-     * @param row the {@link Row} to compare with
+     * @param other the {@link Row} to compare with
      * @return a negative integer, zero, or a positive integer as this row key is less than,
-     *         equal to, or greater than {@code row}'s key
+     *         equal to, or greater than {@code other}'s key
      */
     @Override
     @SuppressWarnings("deprecation")
-    public int compareTo(final Row row) {
-        return rowMutations.compareTo(row);
+    public int compareTo(final Row other) {
+        return rowMutations.compareTo(other);
     }
 
     /**

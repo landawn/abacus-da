@@ -989,6 +989,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *             instead.
      */
     @Override
+    @Deprecated
     public int compareTo(final Row other) {
         return get.compareTo(other);
     }

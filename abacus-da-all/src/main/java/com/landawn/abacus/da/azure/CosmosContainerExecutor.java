@@ -640,16 +640,16 @@ public class CosmosContainerExecutor {
      * @param itemId the id of the item to patch (must not be null)
      * @param partitionKey the partition key of the item (must not be null)
      * @param cosmosPatchOperations the patch operations to apply (must not be null)
-     * @param itemType the class type for deserializing the response (must not be null)
+     * @param targetClass the class type for deserializing the response (must not be null)
      * @return a CosmosItemResponse containing the patched item and metadata
      * @throws CosmosException if the operation fails or the item doesn't exist
-     * @throws NullPointerException if itemId, partitionKey, cosmosPatchOperations, or itemType is null
+     * @throws NullPointerException if itemId, partitionKey, cosmosPatchOperations, or targetClass is null
      *
      * @see CosmosPatchOperations for available patch operations
      */
     public <T> CosmosItemResponse<T> patchItem(final String itemId, final PartitionKey partitionKey, final CosmosPatchOperations cosmosPatchOperations,
-            final Class<T> itemType) {
-        return cosmosContainer.patchItem(itemId, partitionKey, cosmosPatchOperations, itemType);
+            final Class<T> targetClass) {
+        return cosmosContainer.patchItem(itemId, partitionKey, cosmosPatchOperations, targetClass);
     }
 
     /**
@@ -696,17 +696,17 @@ public class CosmosContainerExecutor {
      * @param partitionKey the partition key of the item (must not be null)
      * @param cosmosPatchOperations the patch operations to apply (must not be null)
      * @param options additional options for the patch operation (can be null for default behavior)
-     * @param itemType the class type for deserializing the response (must not be null)
+     * @param targetClass the class type for deserializing the response (must not be null)
      * @return a CosmosItemResponse containing the patched item and metadata
      * @throws CosmosException if the operation fails or the item doesn't exist
-     * @throws NullPointerException if itemId, partitionKey, cosmosPatchOperations, or itemType is null
+     * @throws NullPointerException if itemId, partitionKey, cosmosPatchOperations, or targetClass is null
      *
      * @see CosmosPatchOperations for available patch operations
      * @see CosmosPatchItemRequestOptions for available options
      */
     public <T> CosmosItemResponse<T> patchItem(final String itemId, final PartitionKey partitionKey, final CosmosPatchOperations cosmosPatchOperations,
-            final CosmosPatchItemRequestOptions options, final Class<T> itemType) {
-        return cosmosContainer.patchItem(itemId, partitionKey, cosmosPatchOperations, options, itemType);
+            final CosmosPatchItemRequestOptions options, final Class<T> targetClass) {
+        return cosmosContainer.patchItem(itemId, partitionKey, cosmosPatchOperations, options, targetClass);
     }
 
     /**
@@ -854,16 +854,16 @@ public class CosmosContainerExecutor {
      * @param <T> the type of the item to read
      * @param itemId the id of the item to read (must not be null)
      * @param partitionKey the partition key of the item (must not be null)
-     * @param itemType the class type for deserializing the response (must not be null)
+     * @param targetClass the class type for deserializing the response (must not be null)
      * @return an {@code Optional} holding the item if it exists, or {@link Optional#empty()} if no item exists for the given id/partition key (404)
      * @throws CosmosException if the operation fails for any reason other than the item being absent
-     * @throws NullPointerException if itemId, partitionKey, or itemType is null
+     * @throws NullPointerException if itemId, partitionKey, or targetClass is null
      * @see #readItem(String, PartitionKey, Class)
      * @see #get(String, PartitionKey, CosmosItemRequestOptions, Class)
      */
-    public <T> Optional<T> get(final String itemId, final PartitionKey partitionKey, final Class<T> itemType) {
+    public <T> Optional<T> get(final String itemId, final PartitionKey partitionKey, final Class<T> targetClass) {
         try {
-            return Optional.ofNullable(readItem(itemId, partitionKey, itemType).getItem());
+            return Optional.ofNullable(readItem(itemId, partitionKey, targetClass).getItem());
         } catch (final CosmosException e) {
             if (e.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
                 return Optional.empty();
@@ -894,16 +894,16 @@ public class CosmosContainerExecutor {
      * @param itemId the id of the item to read (must not be null)
      * @param partitionKey the partition key of the item (must not be null)
      * @param options additional options for the read operation (can be null for default behavior)
-     * @param itemType the class type for deserializing the response (must not be null)
+     * @param targetClass the class type for deserializing the response (must not be null)
      * @return an {@code Optional} holding the item if it exists, or {@link Optional#empty()} if no item exists for the given id/partition key (404)
      * @throws CosmosException if the operation fails for any reason other than the item being absent
-     * @throws NullPointerException if itemId, partitionKey, or itemType is null
+     * @throws NullPointerException if itemId, partitionKey, or targetClass is null
      * @see #readItem(String, PartitionKey, CosmosItemRequestOptions, Class)
      * @see #get(String, PartitionKey, Class)
      */
-    public <T> Optional<T> get(final String itemId, final PartitionKey partitionKey, final CosmosItemRequestOptions options, final Class<T> itemType) {
+    public <T> Optional<T> get(final String itemId, final PartitionKey partitionKey, final CosmosItemRequestOptions options, final Class<T> targetClass) {
         try {
-            return Optional.ofNullable(readItem(itemId, partitionKey, options, itemType).getItem());
+            return Optional.ofNullable(readItem(itemId, partitionKey, options, targetClass).getItem());
         } catch (final CosmosException e) {
             if (e.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
                 return Optional.empty();
@@ -946,13 +946,13 @@ public class CosmosContainerExecutor {
      * @param <T> the type of the item to read
      * @param itemId the id of the item to read (must not be null)
      * @param partitionKey the partition key of the item (must not be null)
-     * @param itemType the class type for deserializing the response (must not be null)
+     * @param targetClass the class type for deserializing the response (must not be null)
      * @return a CosmosItemResponse containing the item and metadata
      * @throws CosmosException if the operation fails or the item doesn't exist (404 status)
-     * @throws NullPointerException if itemId, partitionKey, or itemType is null
+     * @throws NullPointerException if itemId, partitionKey, or targetClass is null
      */
-    public <T> CosmosItemResponse<T> readItem(final String itemId, final PartitionKey partitionKey, final Class<T> itemType) {
-        return cosmosContainer.readItem(itemId, partitionKey, itemType);
+    public <T> CosmosItemResponse<T> readItem(final String itemId, final PartitionKey partitionKey, final Class<T> targetClass) {
+        return cosmosContainer.readItem(itemId, partitionKey, targetClass);
     }
 
     /**
@@ -993,14 +993,14 @@ public class CosmosContainerExecutor {
      * @param itemId the id of the item to read (must not be null)
      * @param partitionKey the partition key of the item (must not be null)
      * @param options additional options for the read operation (can be null for default behavior)
-     * @param itemType the class type for deserializing the response (must not be null)
+     * @param targetClass the class type for deserializing the response (must not be null)
      * @return a CosmosItemResponse containing the item and metadata
      * @throws CosmosException if the operation fails or the item doesn't exist
-     * @throws NullPointerException if itemId, partitionKey, or itemType is null
+     * @throws NullPointerException if itemId, partitionKey, or targetClass is null
      */
     public <T> CosmosItemResponse<T> readItem(final String itemId, final PartitionKey partitionKey, final CosmosItemRequestOptions options,
-            final Class<T> itemType) {
-        return cosmosContainer.readItem(itemId, partitionKey, options, itemType);
+            final Class<T> targetClass) {
+        return cosmosContainer.readItem(itemId, partitionKey, options, targetClass);
     }
 
     /**
@@ -1043,15 +1043,15 @@ public class CosmosContainerExecutor {
      *
      * @param <T> the type of the items to read
      * @param itemIdentityList list of item identities (id and partition key pairs, must not be null)
-     * @param classType the class type for deserializing the response items (must not be null)
+     * @param targetClass the class type for deserializing the response items (must not be null)
      * @return a FeedResponse containing all found items (items not found will be omitted)
      * @throws CosmosException if the operation fails
-     * @throws NullPointerException if itemIdentityList or classType is null
+     * @throws NullPointerException if itemIdentityList or targetClass is null
      *
      * @see CosmosItemIdentity for item identity specification
      */
-    public <T> FeedResponse<T> readMany(final List<CosmosItemIdentity> itemIdentityList, final Class<T> classType) {
-        return cosmosContainer.readMany(itemIdentityList, classType);
+    public <T> FeedResponse<T> readMany(final List<CosmosItemIdentity> itemIdentityList, final Class<T> targetClass) {
+        return cosmosContainer.readMany(itemIdentityList, targetClass);
     }
 
     /**
@@ -1089,13 +1089,13 @@ public class CosmosContainerExecutor {
      * @param <T> the type of the items to read
      * @param itemIdentityList list of item identities (id and partition key pairs, must not be null)
      * @param sessionToken the session token for consistency (can be null for default consistency)
-     * @param classType the class type for deserializing the response items (must not be null)
+     * @param targetClass the class type for deserializing the response items (must not be null)
      * @return a FeedResponse containing all found items
      * @throws CosmosException if the operation fails
-     * @throws NullPointerException if itemIdentityList or classType is null
+     * @throws NullPointerException if itemIdentityList or targetClass is null
      */
-    public <T> FeedResponse<T> readMany(final List<CosmosItemIdentity> itemIdentityList, final String sessionToken, final Class<T> classType) {
-        return cosmosContainer.readMany(itemIdentityList, sessionToken, classType);
+    public <T> FeedResponse<T> readMany(final List<CosmosItemIdentity> itemIdentityList, final String sessionToken, final Class<T> targetClass) {
+        return cosmosContainer.readMany(itemIdentityList, sessionToken, targetClass);
     }
 
     /**
@@ -1131,15 +1131,15 @@ public class CosmosContainerExecutor {
      *
      * @param <T> the type of the items to read
      * @param partitionKey the partition key identifying the partition to scan (must not be null)
-     * @param classType the class type for deserializing the response items (must not be null)
+     * @param targetClass the class type for deserializing the response items (must not be null)
      * @return a CosmosPagedIterable for iterating through all items
      * @throws CosmosException if the operation fails
-     * @throws NullPointerException if partitionKey or classType is null
+     * @throws NullPointerException if partitionKey or targetClass is null
      *
      * @see #streamAllItems(PartitionKey, Class) for stream-based processing
      */
-    public <T> CosmosPagedIterable<T> readAllItems(final PartitionKey partitionKey, final Class<T> classType) {
-        return cosmosContainer.readAllItems(partitionKey, classType);
+    public <T> CosmosPagedIterable<T> readAllItems(final PartitionKey partitionKey, final Class<T> targetClass) {
+        return cosmosContainer.readAllItems(partitionKey, targetClass);
     }
 
     /**
@@ -1178,13 +1178,13 @@ public class CosmosContainerExecutor {
      * @param <T> the type of the items to read
      * @param partitionKey the partition key identifying the partition to scan (must not be null)
      * @param options query options controlling the scan behavior (can be null for default behavior)
-     * @param classType the class type for deserializing the response items (must not be null)
+     * @param targetClass the class type for deserializing the response items (must not be null)
      * @return a CosmosPagedIterable for iterating through all items
      * @throws CosmosException if the operation fails
-     * @throws NullPointerException if partitionKey or classType is null
+     * @throws NullPointerException if partitionKey or targetClass is null
      */
-    public <T> CosmosPagedIterable<T> readAllItems(final PartitionKey partitionKey, final CosmosQueryRequestOptions options, final Class<T> classType) {
-        return cosmosContainer.readAllItems(partitionKey, options, classType);
+    public <T> CosmosPagedIterable<T> readAllItems(final PartitionKey partitionKey, final CosmosQueryRequestOptions options, final Class<T> targetClass) {
+        return cosmosContainer.readAllItems(partitionKey, options, targetClass);
     }
 
     /**
@@ -1226,16 +1226,16 @@ public class CosmosContainerExecutor {
      *
      * @param <T> the type of the items to stream
      * @param partitionKey the partition key identifying the partition to scan (must not be null)
-     * @param classType the class type for deserializing the items (must not be null)
+     * @param targetClass the class type for deserializing the items (must not be null)
      * @return a {@link Stream} of items for functional processing
      * @throws CosmosException if the operation fails
-     * @throws NullPointerException if partitionKey or classType is null
+     * @throws NullPointerException if partitionKey or targetClass is null
      *
      * @see #readAllItems(PartitionKey, Class) for paginated results
      */
     @Beta
-    public <T> Stream<T> streamAllItems(final PartitionKey partitionKey, final Class<T> classType) {
-        return Stream.from(cosmosContainer.readAllItems(partitionKey, classType).stream());
+    public <T> Stream<T> streamAllItems(final PartitionKey partitionKey, final Class<T> targetClass) {
+        return Stream.from(cosmosContainer.readAllItems(partitionKey, targetClass).stream());
     }
 
     /**
@@ -1268,14 +1268,14 @@ public class CosmosContainerExecutor {
      * @param <T> the type of the items to stream
      * @param partitionKey the partition key identifying the partition to scan (must not be null)
      * @param options query options controlling the scan behavior (can be null for default behavior)
-     * @param classType the class type for deserializing the items (must not be null)
+     * @param targetClass the class type for deserializing the items (must not be null)
      * @return a {@link Stream} of items for functional processing
      * @throws CosmosException if the operation fails
-     * @throws NullPointerException if partitionKey or classType is null
+     * @throws NullPointerException if partitionKey or targetClass is null
      */
     @Beta
-    public <T> Stream<T> streamAllItems(final PartitionKey partitionKey, final CosmosQueryRequestOptions options, final Class<T> classType) {
-        return Stream.from(cosmosContainer.readAllItems(partitionKey, options, classType).stream());
+    public <T> Stream<T> streamAllItems(final PartitionKey partitionKey, final CosmosQueryRequestOptions options, final Class<T> targetClass) {
+        return Stream.from(cosmosContainer.readAllItems(partitionKey, options, targetClass).stream());
     }
 
     /**
@@ -1311,13 +1311,13 @@ public class CosmosContainerExecutor {
      *
      * @param <T> the type of the items in the query result
      * @param query the SQL query string (e.g., "SELECT * FROM c WHERE c.status = 'active'", must not be null)
-     * @param classType the class type for deserializing the query results (must not be null)
+     * @param targetClass the class type for deserializing the query results (must not be null)
      * @return a CosmosPagedIterable for iterating through query results
      * @throws CosmosException if the query fails or contains syntax errors
-     * @throws NullPointerException if query or classType is null
+     * @throws NullPointerException if query or targetClass is null
      */
-    public <T> CosmosPagedIterable<T> queryItems(final String query, final Class<T> classType) {
-        return queryItems(query, null, classType);
+    public <T> CosmosPagedIterable<T> queryItems(final String query, final Class<T> targetClass) {
+        return queryItems(query, null, targetClass);
     }
 
     /**
@@ -1365,13 +1365,13 @@ public class CosmosContainerExecutor {
      * @param <T> the type of the items in the query result
      * @param query the SQL query string (must not be null)
      * @param options query options controlling execution behavior (can be null for default behavior)
-     * @param classType the class type for deserializing the query results (must not be null)
+     * @param targetClass the class type for deserializing the query results (must not be null)
      * @return a CosmosPagedIterable for iterating through query results
      * @throws CosmosException if the query fails or contains syntax errors
-     * @throws NullPointerException if query or classType is null
+     * @throws NullPointerException if query or targetClass is null
      */
-    public <T> CosmosPagedIterable<T> queryItems(final String query, final CosmosQueryRequestOptions options, final Class<T> classType) {
-        return cosmosContainer.queryItems(query, options, classType);
+    public <T> CosmosPagedIterable<T> queryItems(final String query, final CosmosQueryRequestOptions options, final Class<T> targetClass) {
+        return cosmosContainer.queryItems(query, options, targetClass);
     }
 
     /**
@@ -1404,16 +1404,16 @@ public class CosmosContainerExecutor {
      *
      * @param <T> the type of the items in the query result
      * @param querySpec the SQL query specification with parameters (must not be null)
-     * @param classType the class type for deserializing the query results (must not be null)
+     * @param targetClass the class type for deserializing the query results (must not be null)
      * @return a CosmosPagedIterable for iterating through query results
      * @throws CosmosException if the query fails or contains syntax errors
-     * @throws NullPointerException if querySpec or classType is null
+     * @throws NullPointerException if querySpec or targetClass is null
      *
      * @see SqlQuerySpec for parameterized query construction
      * @see com.azure.cosmos.models.SqlParameter for parameter specification
      */
-    public <T> CosmosPagedIterable<T> queryItems(final SqlQuerySpec querySpec, final Class<T> classType) {
-        return queryItems(querySpec, null, classType);
+    public <T> CosmosPagedIterable<T> queryItems(final SqlQuerySpec querySpec, final Class<T> targetClass) {
+        return queryItems(querySpec, null, targetClass);
     }
 
     /**
@@ -1450,15 +1450,15 @@ public class CosmosContainerExecutor {
      * @param <T> the type of the items in the query result
      * @param querySpec the SQL query specification with bound parameters (must not be null)
      * @param options query options controlling execution behavior (can be null for defaults)
-     * @param classType the class type for deserializing the query results (must not be null)
+     * @param targetClass the class type for deserializing the query results (must not be null)
      * @return a CosmosPagedIterable for iterating through query results
      * @throws CosmosException if the query fails or contains syntax errors
-     * @throws NullPointerException if querySpec or classType is null
+     * @throws NullPointerException if querySpec or targetClass is null
      * @see SqlQuerySpec
      * @see CosmosQueryRequestOptions
      */
-    public <T> CosmosPagedIterable<T> queryItems(final SqlQuerySpec querySpec, final CosmosQueryRequestOptions options, final Class<T> classType) {
-        return cosmosContainer.queryItems(querySpec, options, classType);
+    public <T> CosmosPagedIterable<T> queryItems(final SqlQuerySpec querySpec, final CosmosQueryRequestOptions options, final Class<T> targetClass) {
+        return cosmosContainer.queryItems(querySpec, options, targetClass);
     }
 
     /**
@@ -1498,15 +1498,15 @@ public class CosmosContainerExecutor {
      *
      * @param <T> the type of the items in the query result
      * @param query the SQL query string (must not be null)
-     * @param classType the class type for deserializing the query results (must not be null)
+     * @param targetClass the class type for deserializing the query results (must not be null)
      * @return a Stream of query results for functional processing
      * @throws CosmosException if the query fails or contains syntax errors
-     * @throws NullPointerException if query or classType is null
+     * @throws NullPointerException if query or targetClass is null
      *
      * @see #queryItems(String, Class) for paginated results
      */
-    public final <T> Stream<T> streamItems(final String query, final Class<T> classType) {
-        return streamItems(query, null, classType);
+    public final <T> Stream<T> streamItems(final String query, final Class<T> targetClass) {
+        return streamItems(query, null, targetClass);
     }
 
     /**
@@ -1540,13 +1540,13 @@ public class CosmosContainerExecutor {
      * @param <T> the type of the items in the query result
      * @param query the SQL query string (must not be null)
      * @param options query options controlling execution behavior (can be null for default behavior)
-     * @param classType the class type for deserializing the query results (must not be null)
+     * @param targetClass the class type for deserializing the query results (must not be null)
      * @return a Stream of query results for functional processing
      * @throws CosmosException if the query fails or contains syntax errors
-     * @throws NullPointerException if query or classType is null
+     * @throws NullPointerException if query or targetClass is null
      */
-    public final <T> Stream<T> streamItems(final String query, final CosmosQueryRequestOptions options, final Class<T> classType) {
-        return Stream.from(cosmosContainer.queryItems(query, options, classType).stream());
+    public final <T> Stream<T> streamItems(final String query, final CosmosQueryRequestOptions options, final Class<T> targetClass) {
+        return Stream.from(cosmosContainer.queryItems(query, options, targetClass).stream());
     }
 
     /**
@@ -1583,13 +1583,13 @@ public class CosmosContainerExecutor {
      *
      * @param <T> the type of the items in the query result
      * @param querySpec the SQL query specification with parameters (must not be null)
-     * @param classType the class type for deserializing the query results (must not be null)
+     * @param targetClass the class type for deserializing the query results (must not be null)
      * @return a Stream of query results for functional processing
      * @throws CosmosException if the query fails or contains syntax errors
-     * @throws NullPointerException if querySpec or classType is null
+     * @throws NullPointerException if querySpec or targetClass is null
      */
-    public final <T> Stream<T> streamItems(final SqlQuerySpec querySpec, final Class<T> classType) {
-        return streamItems(querySpec, null, classType);
+    public final <T> Stream<T> streamItems(final SqlQuerySpec querySpec, final Class<T> targetClass) {
+        return streamItems(querySpec, null, targetClass);
     }
 
     /**
@@ -1629,13 +1629,13 @@ public class CosmosContainerExecutor {
      * @param <T> the type of the items in the query result
      * @param querySpec the SQL query specification with parameters (must not be null)
      * @param options query options controlling execution behavior (can be null for default behavior)
-     * @param classType the class type for deserializing the query results (must not be null)
+     * @param targetClass the class type for deserializing the query results (must not be null)
      * @return a Stream of query results for functional processing
      * @throws CosmosException if the query fails or contains syntax errors
-     * @throws NullPointerException if querySpec or classType is null
+     * @throws NullPointerException if querySpec or targetClass is null
      */
-    public final <T> Stream<T> streamItems(final SqlQuerySpec querySpec, final CosmosQueryRequestOptions options, final Class<T> classType) {
-        return Stream.from(cosmosContainer.queryItems(querySpec, options, classType).stream());
+    public final <T> Stream<T> streamItems(final SqlQuerySpec querySpec, final CosmosQueryRequestOptions options, final Class<T> targetClass) {
+        return Stream.from(cosmosContainer.queryItems(querySpec, options, targetClass).stream());
     }
 
     /**
@@ -1675,17 +1675,17 @@ public class CosmosContainerExecutor {
      *
      * @param <T> the type of the items to stream
      * @param whereClause the condition object defining the WHERE clause (can be null for no filter)
-     * @param classType the class type for deserializing the results (must not be null)
+     * @param targetClass the class type for deserializing the results (must not be null)
      * @return a Stream of items matching the condition
      * @throws CosmosException if the query fails
-     * @throws NullPointerException if classType is null
+     * @throws NullPointerException if targetClass is null
      *
      * @see Condition for condition construction
      * @see com.landawn.abacus.query.Filters for available filter operations
      */
     @Beta
-    public final <T> Stream<T> streamItems(final Condition whereClause, final Class<T> classType) {
-        return streamItems(whereClause, null, classType);
+    public final <T> Stream<T> streamItems(final Condition whereClause, final Class<T> targetClass) {
+        return streamItems(whereClause, null, targetClass);
     }
 
     /**
@@ -1720,14 +1720,14 @@ public class CosmosContainerExecutor {
      * @param <T> the type of the items to stream
      * @param whereClause the condition object defining the WHERE clause (can be null for no filter)
      * @param options query options controlling execution behavior (can be null for default behavior)
-     * @param classType the class type for deserializing the results (must not be null)
+     * @param targetClass the class type for deserializing the results (must not be null)
      * @return a Stream of items matching the condition
      * @throws CosmosException if the query fails
-     * @throws NullPointerException if classType is null
+     * @throws NullPointerException if targetClass is null
      */
     @Beta
-    public final <T> Stream<T> streamItems(final Condition whereClause, final CosmosQueryRequestOptions options, final Class<T> classType) {
-        return streamItems(null, whereClause, options, classType);
+    public final <T> Stream<T> streamItems(final Condition whereClause, final CosmosQueryRequestOptions options, final Class<T> targetClass) {
+        return streamItems(null, whereClause, options, targetClass);
     }
 
     /**
@@ -1767,13 +1767,13 @@ public class CosmosContainerExecutor {
      * @param <T> the type of the items to stream
      * @param selectPropNames collection of property names to select (null for SELECT *, selecting all fields)
      * @param whereClause the condition object defining the WHERE clause (can be null for no filter)
-     * @param classType the class type for deserializing the results (must not be null)
+     * @param targetClass the class type for deserializing the results (must not be null)
      * @return a Stream of items with only selected properties populated
      * @throws CosmosException if the query fails
-     * @throws NullPointerException if classType is null
+     * @throws NullPointerException if targetClass is null
      */
-    public final <T> Stream<T> streamItems(final Collection<String> selectPropNames, final Condition whereClause, final Class<T> classType) {
-        return streamItems(selectPropNames, whereClause, null, classType);
+    public final <T> Stream<T> streamItems(final Collection<String> selectPropNames, final Condition whereClause, final Class<T> targetClass) {
+        return streamItems(selectPropNames, whereClause, null, targetClass);
     }
 
     /**
@@ -1827,19 +1827,19 @@ public class CosmosContainerExecutor {
      * @param selectPropNames collection of property names to select (null for SELECT *, selecting all fields)
      * @param whereClause the condition object defining the WHERE clause (can be null for no filter)
      * @param options query options controlling execution behavior (can be null for default behavior)
-     * @param classType the class type for deserializing the results (must not be null)
+     * @param targetClass the class type for deserializing the results (must not be null)
      * @return a Stream of items with only selected properties populated
      * @throws CosmosException if the query fails
-     * @throws NullPointerException if classType is null
+     * @throws NullPointerException if targetClass is null
      *
      * @see NamingPolicy for field name mapping behavior
      * @see com.landawn.abacus.query.Filters for available filter operations
      */
     public final <T> Stream<T> streamItems(final Collection<String> selectPropNames, final Condition whereClause, final CosmosQueryRequestOptions options,
-            final Class<T> classType) {
-        final SP sp = prepareQuery(classType, selectPropNames, whereClause);
+            final Class<T> targetClass) {
+        final SP sp = prepareQuery(targetClass, selectPropNames, whereClause);
 
-        return Stream.from(cosmosContainer.queryItems(toSqlQuerySpec(sp), options, classType).stream());
+        return Stream.from(cosmosContainer.queryItems(toSqlQuerySpec(sp), options, targetClass).stream());
     }
 
     private static SqlQuerySpec toSqlQuerySpec(final SP sp) {

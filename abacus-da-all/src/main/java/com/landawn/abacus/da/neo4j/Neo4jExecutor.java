@@ -2108,7 +2108,7 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Executes a Cypher query and maps the single result row to an instance of {@code objectType}.
+     * Executes a Cypher query and maps the single result row to an instance of {@code targetClass}.
      * <p>
      * Delegates to {@link Session#queryForObject(Class, String, Map)}. The query must return
      * exactly zero or one row; if multiple rows are returned the underlying OGM session raises a
@@ -2134,7 +2134,7 @@ public final class Neo4jExecutor {
      * }</pre>
      *
      * @param <T> the result type
-     * @param objectType the target class &mdash; either a mapped OGM entity class or a basic value
+     * @param targetClass the target class &mdash; either a mapped OGM entity class or a basic value
      *                   type (e.g. {@code Long.class} for an aggregate result)
      * @param cypher the Cypher query string with {@code $name} parameter placeholders
      * @param parameters named parameters bound by the OGM session; may be empty but should not be
@@ -2145,7 +2145,7 @@ public final class Neo4jExecutor {
      * @see #stream(Class, String, Map)
      * @see #stream(String, Map)
      */
-    public <T> T queryForObject(final Class<T> objectType, final String cypher, final Map<String, ?> parameters) {
+    public <T> T queryForObject(final Class<T> targetClass, final String cypher, final Map<String, ?> parameters) {
         if (logger.isDebugEnabled()) {
             logger.debug("Executing Cypher: {}", cypher);
         }
@@ -2153,7 +2153,7 @@ public final class Neo4jExecutor {
         final Session session = getSession();
 
         try {
-            return session.queryForObject(objectType, cypher, parameters);
+            return session.queryForObject(targetClass, cypher, parameters);
         } finally {
             closeSession(session);
         }
@@ -2260,9 +2260,9 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Executes a Cypher query and maps each row to an instance of {@code objectType}.
+     * Executes a Cypher query and maps each row to an instance of {@code targetClass}.
      * <p>
-     * Delegates to {@link Session#query(Class, String, Map)}. {@code objectType} is typically an
+     * Delegates to {@link Session#query(Class, String, Map)}. {@code targetClass} is typically an
      * OGM-mapped entity class for queries that return whole nodes, but may also be a basic value
      * type when the {@code RETURN} clause produces a single scalar per row.
      * <p>
@@ -2281,23 +2281,23 @@ public final class Neo4jExecutor {
      * }</pre>
      *
      * @param <T> the result row type
-     * @param objectType the target class &mdash; an OGM-mapped entity class or a basic value type
+     * @param targetClass the target class &mdash; an OGM-mapped entity class or a basic value type
      * @param cypher the Cypher query string with {@code $name} parameter placeholders
      * @param parameters named parameters bound by the OGM session
-     * @return a lazily-evaluated {@link Stream} of rows mapped to {@code objectType}; close the
+     * @return a lazily-evaluated {@link Stream} of rows mapped to {@code targetClass}; close the
      *         stream to release the underlying session
      * @throws RuntimeException if the underlying OGM session rejects the query
      * @see #queryForObject(Class, String, Map)
      * @see #stream(String, Map)
      */
-    public <T> Stream<T> stream(final Class<T> objectType, final String cypher, final Map<String, ?> parameters) {
+    public <T> Stream<T> stream(final Class<T> targetClass, final String cypher, final Map<String, ?> parameters) {
         if (logger.isDebugEnabled()) {
             logger.debug("Executing Cypher: {}", cypher);
         }
 
         final Session session = getSession();
         try {
-            return Stream.of(session.query(objectType, cypher, parameters).iterator()).onClose(newCloseHandle(session));
+            return Stream.of(session.query(targetClass, cypher, parameters).iterator()).onClose(newCloseHandle(session));
         } catch (RuntimeException | Error e) {
             closeSession(session);
             throw e;
@@ -2334,19 +2334,19 @@ public final class Neo4jExecutor {
      * int totalPages = (int) Math.ceil((double) totalItems / pageSize);
      * }</pre>
      *
-     * @param clazz the OGM-mapped class whose nodes are counted
+     * @param targetClass the OGM-mapped class whose nodes are counted
      * @param filters an {@link Iterable} of OGM {@link Filter}s combined with AND semantics; pass
-     *                an empty iterable to count all nodes of {@code clazz}
-     * @return the number of nodes of {@code clazz} that satisfy all the supplied filters
+     *                an empty iterable to count all nodes of {@code targetClass}
+     * @return the number of nodes of {@code targetClass} that satisfy all the supplied filters
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #countEntitiesOfType(Class)
      * @see org.neo4j.ogm.cypher.Filter
      */
-    public long count(final Class<?> clazz, final Iterable<Filter> filters) {
+    public long count(final Class<?> targetClass, final Iterable<Filter> filters) {
         final Session session = getSession();
 
         try {
-            return session.count(clazz, filters);
+            return session.count(targetClass, filters);
         } finally {
             closeSession(session);
         }
@@ -2380,16 +2380,16 @@ public final class Neo4jExecutor {
      * }
      * }</pre>
      *
-     * @param entity the OGM-mapped class whose nodes are counted
-     * @return the total number of nodes mapped by {@code entity}
+     * @param targetClass the OGM-mapped class whose nodes are counted
+     * @return the total number of nodes mapped by {@code targetClass}
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #count(Class, Iterable)
      */
-    public long countEntitiesOfType(final Class<?> entity) {
+    public long countEntitiesOfType(final Class<?> targetClass) {
         final Session session = getSession();
 
         try {
-            return session.countEntitiesOfType(entity);
+            return session.countEntitiesOfType(targetClass);
         } finally {
             closeSession(session);
         }
