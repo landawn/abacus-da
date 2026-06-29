@@ -1,0 +1,40 @@
+================================================================================
+API DESIGN REVIEW — v2.AsyncDynamoDBExecutor (AWS SDK v2; com.landawn.abacus.da.aws.dynamodb.v2)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/AsyncDynamoDBExecutor.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+Mirrors the sync executor's top-level method set faithfully (CRUD, batch, list/query/stream/
+scan, Mapper) with CompletableFuture returns, and correctly avoids re-declaring the static
+converters by importing them from DynamoDBExecutor (good — no duplication). Pagination, table-
+name checkItem/checkQueryRequest guarding in the Mapper, and resource ownership are consistent
+with the sync side. The actionable items are the shared batch-get unprocessed-keys limitation
+and a minor argument-validation parity gap.
+
+Note: this v2 async executor returns CompletableFuture (the v1 async executor and the other
+async executors in the library return ContinuableFuture) — a cross-class return-type
+inconsistency flagged at the SUMMARY level.
+
+2. NAMING ISSUES — None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] <T> CompletableFuture<Map<String,List<T>>> batchGetItem(BatchGetItemRequest,Class<T>) (and
+    siblings) | AsyncDynamoDBExecutor.java:970 (Javadoc remedy @697-699) | Med | Same defect as
+    sync v2 3[2]: the async batch-get overloads return only CompletableFuture<Map<String,List<T>>>
+    and discard unprocessedKeys(); the Javadoc's "inspect the underlying response and re-issue"
+    is misleading because no async batchGetItem overload surfaces the raw response. Inconsistent
+    with batchWriteItem@1245/1292 which returns CompletableFuture<BatchWriteItemResponse>.
+    Recommendation: add a raw CompletableFuture<BatchGetItemResponse> batchGetItem(BatchGetItemRequest)
+    overload or correct the Javadoc.
+[2] <T> CompletableFuture<List<T>> list(QueryRequest,Class<T>)@1677 and
+    <T> CompletableFuture<Stream<T>> stream(QueryRequest,Class<T>)@1938 | AsyncDynamoDBExecutor.java
+    | Low | Neither performs the N.checkArgNotNull(queryRequest/targetClass,...) fail-fast
+    validation that their sync counterparts (DynamoDBExecutor.java:3019-3021, 3260-3261) and the
+    async query(QueryRequest,Class)@1797-1798 all do; a null queryRequest defers to an NPE inside
+    the SDK/stream setup. Recommendation: add the same checkArgNotNull guards for sync<->async
+    parity and consistent error reporting.
+
+4. MISPLACED METHODS — None.
+5. MISSING METHODS — None.
+6. DEPRECATION / REMOVAL CANDIDATES — None.

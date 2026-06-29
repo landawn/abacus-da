@@ -76,6 +76,13 @@ import com.landawn.abacus.util.stream.Stream;
  * map-driven INSERT/UPDATE/DELETE, parameterised SELECTs, and {@link Stream}/{@link Dataset}
  * result handling against BigQuery's <i>query jobs</i> API.
  *
+ * <p><b>Naming convention:</b> this executor uses the abacus "house" CRUD vocabulary shared by the
+ * {@code Condition}/{@code SqlBuilder}-based executors (e.g. Cassandra): {@code list}, {@code query}
+ * (returns a {@code Dataset}), {@code stream}, {@code exists}, {@code queryForSingleValue}, and
+ * {@code insert}/{@code update}/{@code delete}. Driver-native method names are intentionally not exposed;
+ * contrast the driver-passthrough executors (HBase, DynamoDB, Cosmos, Neo4j), which keep their
+ * underlying driver's vocabulary.</p>
+ *
  * <h2>Query-Job Semantics (no streaming insert)</h2>
  * <p>Every method on this executor ultimately submits work as a synchronous BigQuery <i>query job</i>
  * via {@link BigQuery#query(QueryJobConfiguration, com.google.cloud.bigquery.BigQuery.JobOption...)}.

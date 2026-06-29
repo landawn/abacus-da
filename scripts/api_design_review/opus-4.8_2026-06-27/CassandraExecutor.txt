@@ -1,0 +1,48 @@
+================================================================================
+API DESIGN REVIEW — CassandraExecutor  (DataStax driver 4.x — the modern, non-deprecated
+executor; imports com.datastax.oss.driver.api.core.*)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutor.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+NOTE: The package layout is the inverse of what the name suggests — this `cassandra/`
+class targets driver MAJOR VERSION 4, while `cassandra/v3/` targets driver version 3
+(deprecated). Verified from imports.
+
+1. OVERALL ASSESSMENT
+Healthy and well documented. Its self-declared surface (4 constructors, session(),
+async(), two registerTypeCodec overloads, the static converter family extractData/toList/
+toEntity/toMap, the overridden gett/queryForSingleValue/queryForSingleNonNull/findFirst/
+execute, the two row-mapper stream overloads, close(), and the public nested UDTCodec/
+StatementSettings) is internally consistent in naming, return types, and parameter shapes.
+Optional-vs-Nullable semantics are correctly documented and implemented. It mirrors the
+v3 class almost method-for-method; the only public members v3 has that this lacks
+(cluster(), mapper()) are driver-architecture-justified omissions. The one debatable
+design point is resource ownership in close().
+
+2. NAMING ISSUES
+None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] close() | CassandraExecutor.java:1500-1513 | Med | close() force-closes the CqlSession
+    the caller passed into the constructor (the executor did not create it). Closing a
+    caller-owned, potentially shared session as a side effect of closing the wrapper is a
+    footgun; per ground rule 5, being documented does not excuse it. Recommendation: either
+    do not close the injected session (close only internal statement pools), or make
+    ownership explicit via a static createExecutor(...)/of(...) factory that builds (and thus
+    owns) the session, closing it only when the executor created it. Neither this class nor
+    v3 currently offers any static factory, so the ownership contract is entirely implicit.
+
+4. MISPLACED METHODS
+None (the public static extractData/toList/toEntity/toMap converters legitimately belong on
+the executor, matching the BigQuery/Dynamo pattern).
+
+5. MISSING METHODS
+[1] object-mapper accessor (cf. v3 mapper(Class)) | CassandraExecutor.java (absent) | Low |
+    The v3 executor exposes <T> Mapper<T> mapper(Class<T>); this driver-4 class has none.
+    Recommendation: a one-line class-Javadoc note that the omission is intentional.
+    Confirming check: the driver-4 object mapper is a separate module driven by a generated
+    @Mapper builder (no runtime MappingManager in driver 4), so a drop-in mapper() cannot be
+    provided the way v3 does — the gap is by design.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+None.

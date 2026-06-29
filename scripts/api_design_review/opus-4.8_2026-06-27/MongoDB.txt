@@ -1,0 +1,29 @@
+================================================================================
+API DESIGN REVIEW — MongoDB (sync; com.landawn.abacus.da.mongodb)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDB.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+Clean, well-formed synchronous facade. Constructor pair (MongoDatabase /
+MongoDatabase+AsyncExecutor), db(), and the collection/collectionExecutor/collectionMapper
+factory families all validate arguments eagerly and mirror the reactive variant where it
+makes sense (the extra AsyncExecutor overload is legitimately sync-only). The factories
+deliberately do not cache (commented-out pooling fields/blocks remain as dead code @56-58,
+235-242, 348-356, 395-403 — cleanup, not an API issue). One Javadoc inaccuracy.
+
+2. NAMING ISSUES
+[1] MongoCollectionExecutor collectionExecutor(String) | MongoDB.java:223 | Med | The usage-
+    example comment states "Unlike collection(String), this overload validates its argument up
+    front," but collection(String) DOES validate (N.checkArgNotNull@172), and the Javadoc of
+    collection(String) itself (@161) claims the opposite ("validated up front, consistent with
+    collectionExecutor(String)"). The two doc comments contradict each other; the
+    collectionExecutor comment is the wrong one. Recommendation: delete/replace the "Unlike
+    collection(String)" clause — both methods validate.
+
+3. RETURN-TYPE AND PARAMETER ISSUES — None.
+4. MISPLACED METHODS — None (but note the inherited static conversion surface from MongoDBBase;
+   see MongoDBBase 4[1]).
+5. MISSING METHODS — None.
+6. DEPRECATION / REMOVAL CANDIDATES — None (dead commented-out pooling code @56-58/235-242/
+   348-356/395-403 is a cleanup item, not API).

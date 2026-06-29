@@ -1,0 +1,65 @@
+================================================================================
+API DESIGN REVIEW — v2.DynamoDBExecutor (AWS SDK v2; com.landawn.abacus.da.aws.dynamodb.v2)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/v2/DynamoDBExecutor.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+A large, well-structured synchronous SDK-v2 wrapper. The instance CRUD/query/scan surface is
+coherent and the List/Dataset/Stream triad (list->List, query->Dataset, stream->Stream) is a
+clean intentional design. Pagination semantics (auto-follow lastEvaluatedKey unless
+exclusiveStartKey is set) are uniformly applied and documented. The Mapper, Filters, and
+ConditionBuilder nested classes are sensible, and the one deprecation (ConditionBuilder.create()
+-> Filters.builder()) is correct. The static converter set is mostly DynamoDB-specific and
+justified. The actionable issues are a write/read type-handling asymmetry, batch-get dropping
+unprocessed keys, and one genuinely misplaced/duplicative generic utility.
+
+2. NAMING ISSUES — (see 4[1] for the toMap overload-name collision, grouped with placement).
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] static AttributeValue toAttributeValue(Object) vs static <T> T toValue(AttributeValue,Class<T>)
+    | DynamoDBExecutor.java:822 (write) and 1536 (read; L@1564, M@1573, SS/NS/BS@1551-1556) |
+    High | The write path collapses every non-number/boolean/byte[]/ByteBuffer value — incl.
+    List, Map, Set, arrays — to AttributeValue.fromS(type.stringOf(value)), while the read path
+    materializes native L/M/SS/NS/BS. VERIFIED against source. So an entity/Map property that is
+    a collection is silently stringified by toItem/Mapper.putItem but parsed as a native
+    structure on read, making round-trips lossy/asymmetric. The Javadoc admits "does NOT handle
+    complex types like Lists, Maps, or Sets," but the asymmetry is the defect. Recommendation:
+    either add List/Map/Set handling to toAttributeValue (so write mirrors toValue's read
+    support) or have toItem reject collection-typed properties instead of silently stringifying.
+[2] <T> Map<String,List<T>> batchGetItem(BatchGetItemRequest,Class<T>) (and the 5 sibling
+    batchGetItem overloads) | DynamoDBExecutor.java:2457 (Javadoc remedy @2247-2251) | Med | All
+    six batchGetItem overloads return only the converted Map<String,List<T>>;
+    BatchGetItemResponse.unprocessedKeys() is discarded with no executor method exposing it. The
+    Javadoc tells callers to "inspect the underlying response," but those overloads ALSO drop
+    unprocessed keys — the only recourse is bypassing the wrapper. Inconsistent with
+    batchWriteItem@2679/2708 which returns the raw BatchWriteItemResponse (exposing
+    unprocessedItems()). Recommendation: add a BatchGetItemResponse batchGetItem(BatchGetItemRequest)
+    (raw) overload, or document accurately that unprocessed-key recovery requires the raw client.
+
+4. MISPLACED METHODS
+[1] static Map<String,Object> toMap(Object[] propNameAndValues) | DynamoDBExecutor.java:1201 |
+    Med | A generic name/value-array->Map utility with no DynamoDB content; unused inside the
+    class (internal toMap calls are all the Map<String,AttributeValue> overload @1242/1269) and
+    it DUPLICATES com.landawn.abacus.da.aws.AnyUtil.array2Props (AnyUtil.java:70) — the helper
+    toItem(Object[])/toUpdateItem(Object[]) actually call @1021/1105. The two duplicates even
+    disagree on edge behavior (toMap returns null on null input and coerces keys via
+    String.valueOf; array2Props returns an empty map and requires String keys). It also overloads
+    the toMap name across two unrelated concepts. Recommendation: remove toMap(Object[]) (or fold
+    into AnyUtil.array2Props) and have toItem/toUpdateItem use a single shared helper, reserving
+    the toMap name for AttributeValue-item conversion. (See also AnyUtil report.)
+[2] asKey(...) family (4 overloads) | DynamoDBExecutor.java:430, 468, 508, 546 | Low | Every
+    asKey overload is a verbatim delegate to the corresponding asItem overload, producing byte-
+    identical maps; only the name signals "key" vs "full item" intent. asKey(Object...) Javadoc
+    itself warns it "may be misused for non-key attributes." Recommendation: keep one family
+    (prefer asItem) and document asKey as a pure alias, or drop the asKey overloads.
+
+5. MISSING METHODS
+[1] getItem(...) single-item family returns null when absent (no Optional/gett variant) |
+    DynamoDBExecutor.java:2042, 2228 | Low | Consistent class-wide and mirrors the v1 executor,
+    so a deliberate convention. Recommendation: only if alignment with the broader library's
+    Optional convention is desired, add Optional-returning companions. Confirming check: grep
+    shows no Optional/gett anywhere in either v2 file.
+
+6. DEPRECATION / REMOVAL CANDIDATES — None beyond the existing, correct ConditionBuilder.create()
+   @Deprecated (replacement: Filters.builder()). See 4[1] for removing the duplicate toMap(Object[]).

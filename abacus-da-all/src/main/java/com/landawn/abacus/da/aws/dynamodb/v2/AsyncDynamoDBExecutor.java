@@ -14,11 +14,11 @@
 
 package com.landawn.abacus.da.aws.dynamodb.v2;
 
-import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toAttributeValue;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.createRowMapper;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.extractData;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.getAttrName;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.readRow;
+import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toAttributeValue;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toEntities;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toItem;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toList;
@@ -160,6 +160,12 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
  * ProvisionedThroughputExceededException. Implement proper error handling using CompletableFuture's
  * exception handling methods.</p>
  *
+ * <p><b>Naming convention:</b> method names are identical to the synchronous
+ * {@link com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor} (the AWS DynamoDB SDK v2 vocabulary:
+ * {@code getItem}, {@code query}, {@code scan}, {@code putItem}, {@code updateItem}, {@code deleteItem},
+ * plus abacus-style {@code list}/{@code stream}). Unlike the other async executors in this library
+ * (which use {@code ContinuableFuture}), v2 async results are wrapped in a JDK {@code CompletableFuture}.</p>
+ *
  * @see DynamoDbAsyncClient
  * @see com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor
  * @see com.landawn.abacus.da.aws.dynamodb.AsyncDynamoDBExecutor
@@ -167,7 +173,7 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
  * @see <a href="https://sdk.amazonaws.com/java/api/latest/software/amazon/awssdk/services/dynamodb/DynamoDbAsyncClient.html">DynamoDbAsyncClient JavaDoc</a>
  * @see <a href="https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/">DynamoDB Developer Guide</a>
  */
-public final class AsyncDynamoDBExecutor implements AutoCloseable {
+public final class AsyncDynamoDBExecutor {
 
     private final DynamoDbAsyncClient dynamoDBClient;
 
@@ -2378,10 +2384,8 @@ public final class AsyncDynamoDBExecutor implements AutoCloseable {
      * }
      * }</pre>
      *
-     * @see AutoCloseable#close()
      * @see DynamoDbAsyncClient#close()
      */
-    @Override
     public void close() {
         if (dynamoDBClient != null) {
             dynamoDBClient.close();

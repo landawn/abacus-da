@@ -1,0 +1,60 @@
+================================================================================
+API DESIGN REVIEW — DynamoDBExecutor (AWS SDK v1; com.landawn.abacus.da.aws.dynamodb)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/DynamoDBExecutor.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+A large but well-structured sync wrapper. CRUD (getItem/putItem/updateItem/deleteItem),
+batch, and query/scan families are coherent and each request-object overload has matching
+primitive-arg overloads. The Query family deliberately follows the abacus convention
+list->List, query->Dataset, stream->Stream, so query returning a Dataset is by design.
+Returning null (not Optional) from the getItem/Mapper.getItem single-item family is
+consistent across sync, async, and Mapper and matches the underlying SDK — a deliberate,
+consistent choice. The name/value varargs builders (asKey/asItem/asUpdateItem/toMap(Object[]))
+are inherently unsafe but mirror the library-wide N.asMap idiom and are documented. The
+actionable items are about where the static helpers live, one overload-name collision, and a
+batch return-type asymmetry.
+
+2. NAMING ISSUES
+[1] toMap(Object[] propNameAndValues) | DynamoDBExecutor.java:1222 vs toMap(Map<String,AttributeValue> item)
+    @1257 | Med | The toMap name is overloaded across two unrelated domains: one builds a
+    Map<String,Object> from alternating name/value pairs (nothing DynamoDB-specific), the other
+    decodes a DynamoDB item into Java values. VERIFIED against source. A reader cannot infer
+    behavior from the name. Recommendation: rename the pair-builder (e.g. pairsToMap, or fold it
+    into a util class) so toMap unambiguously means "decode AttributeValue item -> map."
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] batchGetItem(...) family returns decoded Map<String,List<Map<String,Object>>> /
+    Map<String,List<T>> | DynamoDBExecutor.java:2097, 2138, 2168, 2212 | Med | All batchGetItem
+    overloads — including the BatchGetItemRequest one — return only the decoded getResponses()
+    and silently discard UnprocessedKeys, whereas the parallel batchWriteItem(...)@2380, 2406
+    returns the full BatchWriteItemResult exposing getUnprocessedItems(). No convenience overload
+    surfaces unprocessed get keys, so retry-needing callers must drop to the raw client.
+    Recommendation: add a result-returning batchGetItem overload (or align the two batch families
+    on one return philosophy).
+
+4. MISPLACED METHODS
+[1] ~30 public static converter/factory helpers on the AutoCloseable executor: asKey/asItem/
+    asUpdateItem@527, 634, 766; toAttributeValue/toAttributeValueUpdate@907, 950, 983; toItem/
+    toUpdateItem@1007, 1097; toMap@1222, 1257; toEntity@1317, 1357; toList@1607, 1676;
+    extractData@1739, 1785 | DynamoDBExecutor.java | Med | Many are pure stateless utilities
+    (toMap(Object[]), asKey, asItem, toAttributeValue) yet callers must reach them through an
+    instance-bearing executor. Recommendation: extract the stateless converters into a dedicated
+    non-instantiable utility class (e.g. DynamoDBs/DynamoDBUtil), keeping only instance I/O on
+    the executor. (Mirror the same change in the v2 executor — see v2.DynamoDBExecutor.)
+
+5. MISSING METHODS
+[1] Scan exposes only Stream-returning overloads (scan(...)@3070-3375); Query exposes List
+    (list@2670), Dataset (query@2821) and Stream (stream@2956) | DynamoDBExecutor.java | Low |
+    Asymmetric surface: no List- or Dataset-returning scan convenience. Recommendation: add
+    parity overloads or document the intentional streaming-only design for scans. Confirming
+    check: no public Dataset/List scan exists in the file — only Stream-returning scans @3070-3375.
+[2] Entity/Mapper-level operations have no async counterpart | DynamoDBExecutor.java:3439
+    (Mapper); Mapper.getItem(entity)@3515, list/query/stream/scan@4040-4262 | Low | async()
+    mirrors only the raw key/request operations; the typed Mapper API cannot be invoked
+    asynchronously. Recommendation: consider an async Mapper or document the scope limit.
+    Confirming check: AsyncDynamoDBExecutor references no Mapper type or entity-key overloads.
+
+6. DEPRECATION / REMOVAL CANDIDATES — None (the single-item getItem null-return convention is
+   deliberate and consistent; not a deprecation candidate).

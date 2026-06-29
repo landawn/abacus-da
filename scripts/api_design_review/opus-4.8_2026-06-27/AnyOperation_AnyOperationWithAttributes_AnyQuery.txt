@@ -1,0 +1,32 @@
+================================================================================
+API DESIGN REVIEW — AnyOperation / AnyOperationWithAttributes / AnyQuery
+(abstract, package-private bases; public methods inherited by AnyGet/AnyScan/the mutation
+types)
+Files:
+  hbase/AnyOperation.java
+  hbase/AnyOperationWithAttributes.java
+  hbase/AnyQuery.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+No actionable findings across the three abstract bases.
+
+- AnyOperation: thin clean wrapper over HBase Operation. The introspection family
+  (getFingerprint, toMap/toMap(int), toJson/toJson(int), toString/toString(int)) is a
+  faithful mirror with sensible int maxCols overloads and correct IOException ->
+  UncheckedIOException wrapping. Return types appropriate; null-safety documented.
+
+- AnyOperationWithAttributes: faithful mirror of OperationWithAttributes. The attribute/
+  id/priority getter-setter pairs are consistent; fluent setters all return AOWA; the
+  setAttribute(String,Object) auto-conversion is well documented (incl. null-removes-
+  attribute). The set-Object/get-byte[] asymmetry is unavoidable (the wrapper cannot know
+  the decode target type) and is consistent with the library's value model. NOTE: the
+  redundant byte[] setAttribute overloads on AnyAppend/AnyIncrement are flagged in those
+  reports; the base's single setAttribute(String,Object) is the correct surface.
+
+- AnyQuery: solid read-side base. Every fluent setter returns AQ; getter/setter naming
+  mirrors HBase (getFilter/setFilter, getConsistency/setConsistency, the
+  getLoadColumnFamiliesOnDemandValue/setLoadColumnFamiliesOnDemand/doLoadColumnFamiliesOnDemand
+  trio). The setColumnFamilyTimeRange(String,..)/(byte[],..) pair@AnyQuery.java:510/551 is
+  the single canonical source; AnyGet inherits it correctly, but AnyScan needlessly
+  overrides it (tracked under AnyScan 3[2]).

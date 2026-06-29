@@ -152,11 +152,19 @@ import com.landawn.abacus.util.stream.Stream;
  * {@code com.landawn.abacus.da.aws.dynamodb.v2} sub-package and wraps {@code software.amazon.awssdk.services.dynamodb}
  * types; the two are not interchangeable.</p>
  *
+ * <p><b>Naming convention:</b> this executor mirrors the AWS DynamoDB SDK vocabulary ({@code getItem},
+ * {@code batchGetItem}, {@code query}, {@code scan}, {@code putItem}, {@code updateItem},
+ * {@code deleteItem}, {@code batchWriteItem}), augmented with a few abacus-style conveniences
+ * ({@code list}/{@code stream} returning mapped results, {@code query} returning a {@code Dataset}).
+ * It does <i>not</i> adopt the abacus "house" CRUD vocabulary
+ * ({@code findFirst}/{@code insert}/{@code update}/{@code delete}) used by the {@code Condition}-based
+ * executors such as Cassandra and BigQuery.</p>
+ *
  * @see com.amazonaws.services.dynamodbv2.AmazonDynamoDBClient
  * @see AsyncDynamoDBExecutor
  * @see <a href="https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/">DynamoDB Developer Guide</a>
  */
-public final class DynamoDBExecutor implements AutoCloseable {
+public final class DynamoDBExecutor {
 
     private static final Logger logger = LoggerFactory.getLogger(DynamoDBExecutor.class);
 
@@ -3404,7 +3412,6 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * }</pre>
      *
      */
-    @Override
     public void close() {
         dynamoDBClient.shutdown();
     }

@@ -106,6 +106,11 @@ import com.landawn.abacus.util.stream.Stream;
  * <li><strong>Error Handling</strong>: Exceptions thrown by the underlying call are propagated through the returned {@code ContinuableFuture}</li>
  * </ul>
  *
+ * <p><b>Naming convention:</b> method names are identical to the synchronous {@link HBaseExecutor}
+ * (the HBase client vocabulary: {@code get}, {@code scan}, {@code put}, {@code delete}, {@code append},
+ * {@code increment}, {@code mutateRow}, {@code exists}); each result is wrapped in a
+ * {@code ContinuableFuture}.</p>
+ *
  * @see HBaseExecutor
  * @see HBaseExecutor#async()
  * @see ContinuableFuture

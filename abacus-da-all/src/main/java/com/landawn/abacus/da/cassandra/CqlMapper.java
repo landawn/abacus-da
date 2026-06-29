@@ -373,18 +373,18 @@ public final class CqlMapper {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * CqlMapper m = new CqlMapper();
-     * m.cqlIds();                                       // returns [] (empty set for an empty mapper)
+     * m.ids();                                       // returns [] (empty set for an empty mapper)
      * m.add("findUserById", "SELECT * FROM users WHERE id = ?", null);
      * m.add("findAll", "SELECT * FROM users", null);
-     * m.cqlIds();                                       // returns ["findUserById", "findAll"]
+     * m.ids();                                       // returns ["findUserById", "findAll"]
      * m.remove("findAll");
-     * m.cqlIds();                                       // returns ["findUserById"] (live view reflects removal)
-     * m.cqlIds().clear();                              // throws UnsupportedOperationException (read-only view)
+     * m.ids();                                       // returns ["findUserById"] (live view reflects removal)
+     * m.ids().clear();                              // throws UnsupportedOperationException (read-only view)
      * }</pre>
      *
      * @return a read-only, live view of the set of all CQL statement IDs currently in this mapper
      */
-    public ImmutableSet<String> cqlIds() {
+    public ImmutableSet<String> ids() {
         return ImmutableSet.copyOf(cqlMap.keySet());
     }
 
@@ -704,7 +704,7 @@ public final class CqlMapper {
      *
      * // round-trips through load:
      * CqlMapper reloaded = CqlMapper.load("target/cql/config.xml");
-     * reloaded.cqlIds();                            // contains "findUserById"
+     * reloaded.ids();                            // contains "findUserById"
      *
      * // an unwritable target surfaces as an UncheckedIOException:
      * m.saveTo(new File("/")); // throws UncheckedIOException (cannot write to a directory path)

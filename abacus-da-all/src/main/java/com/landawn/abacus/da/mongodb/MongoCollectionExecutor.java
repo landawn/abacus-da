@@ -148,6 +148,13 @@ import com.mongodb.client.result.UpdateResult;
  * BulkWriteResult result = executor.bulkWrite(operations);
  * }</pre>
  *
+ * <p><b>Naming convention:</b> this executor uses a <i>hybrid</i> vocabulary. <b>Reads</b> follow the
+ * abacus "house" style ({@code get}/{@code gett}, {@code findFirst}, {@code list}, {@code query}
+ * returning a {@code Dataset}, {@code stream}, {@code exists}, {@code count}, {@code queryForXxx}),
+ * while <b>writes</b> mirror the MongoDB driver ({@code insertOne}/{@code insertMany},
+ * {@code updateOne}/{@code updateMany}, {@code replaceOne}, {@code deleteOne}/{@code deleteMany},
+ * {@code findOneAndXxx}), plus the abacus-style bulk helpers {@code bulkInsert}/{@code bulkWrite}.</p>
+ *
  * @see MongoCollection
  * @see Document
  * @see Bson
@@ -447,6 +454,9 @@ public final class MongoCollectionExecutor {
      * <p>This method performs a find operation using the provided ObjectId string to locate
      * a single document. The ObjectId string must be a valid 24-character hexadecimal representation.</p>
      *
+     * <p>For the nullable counterpart that returns the document directly (or {@code null} when not
+     * found) instead of an {@link Optional}, use {@link #gett(String)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Optional<Document> user = executor.get("507f1f77bcf86cd799439011"); // present if found, Optional.empty() if not
@@ -460,6 +470,7 @@ public final class MongoCollectionExecutor {
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Optional
      * @see #get(ObjectId)
+     * @see #gett(String)
      */
     public Optional<Document> get(final String objectId) {
         return get(createObjectId(objectId));
@@ -483,6 +494,7 @@ public final class MongoCollectionExecutor {
      * @throws com.mongodb.MongoException if the database operation fails
      * @see ObjectId
      * @see Optional
+     * @see #gett(ObjectId)
      */
     public Optional<Document> get(final ObjectId objectId) {
         return get(objectId, Document.class);
@@ -507,6 +519,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if objectId or rowType is null, or if objectId format is invalid
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #get(ObjectId, Class)
+     * @see #gett(String, Class)
      */
     public <T> Optional<T> get(final String objectId, final Class<T> rowType) {
         return get(createObjectId(objectId), rowType);
@@ -531,6 +544,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if objectId or rowType is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #get(ObjectId, Collection, Class)
+     * @see #gett(ObjectId, Class)
      */
     public <T> Optional<T> get(final ObjectId objectId, final Class<T> rowType) {
         return get(objectId, null, rowType);
@@ -557,6 +571,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if objectId or rowType is null, or objectId format is invalid
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #get(ObjectId, Collection, Class)
+     * @see #gett(String, Collection, Class)
      */
     public <T> Optional<T> get(final String objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
         return get(createObjectId(objectId), selectPropNames, rowType);
@@ -583,6 +598,7 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if objectId or rowType is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @see com.mongodb.client.model.Projections
+     * @see #gett(ObjectId, Collection, Class)
      */
     public <T> Optional<T> get(final ObjectId objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
         return findFirst(selectPropNames, MongoDBBase.objectId2Filter(objectId), null, rowType);

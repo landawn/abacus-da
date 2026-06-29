@@ -1,0 +1,65 @@
+================================================================================
+API DESIGN REVIEW — Neo4jExecutor
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/neo4j/Neo4jExecutor.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+A deliberately thin pooling wrapper that mirrors the Neo4j OGM Session API method-for-method
+(load/loadAll/save/delete/deleteAll/queryForObject/count/countEntitiesOfType/resolveGraphIdFor),
+borrowing a pooled session per call. That OGM-mirroring is documented and is a legitimate reason
+for the OGM-style names and the large loadAll overload family. Healthy: targetClass-first ordering
+is consistent across load/loadAll/count/queryForObject/stream; the stream overloads correctly
+return the abacus Stream with a proper onClose session-release handler and fail-safe closeSession
+on construction error; run/call give a clean transactional-scope escape hatch; lifecycle is
+reasonable (OGM Session has no close(), so not being AutoCloseable is defensible) and there is no
+static-converter cruft. The deviations from the abacus executor conventions all stem from the
+OGM-mirror choice: single-row reads return bare null (no Optional/Nullable), no exists, a verbose
+countEntitiesOfType, and raw-Cypher results only via a must-close Stream.
+
+2. NAMING ISSUES
+[1] long countEntitiesOfType(Class<?>) vs long count(Class<?>,Iterable<Filter>) |
+    Neo4jExecutor.java:2382 (and 2339) | Med | Two count operations under two names;
+    countEntitiesOfType is the verbose OGM name where the abacus convention is a plain count(Class)
+    overload. Recommendation: add a count(Class) overload (delegating to countEntitiesOfType) and
+    consider deprecating the OGM-named one, so all counting is reachable through the count family.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] <T> T load(Class<T>,Serializable) / load(Class<T>,Serializable,int) /
+    <T> T queryForObject(Class<T>,String,Map) / Long resolveGraphIdFor(Object) |
+    Neo4jExecutor.java:322, 357, 2142, 2418 | Med | All single-value reads return a bare nullable
+    value rather than the abacus Optional/Nullable wrappers, and there is NO Optional-returning
+    read at all. Per the convention a single-row read should split get->Optional<T> vs gett->nullable,
+    and a single scalar (resolveGraphIdFor) -> Nullable<Long>/OptionalLong. Recommendation: keep the
+    OGM-named load/queryForObject as the nullable (gett-equivalent) forms but add get(Class,id):Optional<T>
+    and a first/unique Cypher read findFirst(Class,cypher,params):Optional<T>. This is the primary
+    convention gap.
+[2] long count(Class<?>,Iterable<Filter>) | Neo4jExecutor.java:2339 | Low | Filter parameter type
+    is inconsistent with the loadAll family, which accepts OGM Filter and Filters (e.g. @1339/1662)
+    but never Iterable<Filter>; conversely count accepts only Iterable<Filter>. Recommendation: add
+    count(Class,Filter)/count(Class,Filters) overloads to align criteria-typing across read and count.
+[3] void save(Object) / void delete(Object) / void deleteAll(Class<?>) | Neo4jExecutor.java:1991,
+    2059, 2093 | Low | Mutations return void, so deleteAll gives no affected-node count (abacus
+    delete convention returns the count). Forced by the OGM Session signatures, so a weak finding.
+    Confirming check: OGM Session.save/delete/deleteAll are all void, so a count is not available
+    without an extra query.
+[4] <T> Stream<T> stream(Class<T>,String,Map) | Neo4jExecutor.java:2287 | Low | Asymmetric with
+    stream(String,Map,boolean readOnly)@2242: the typed-entity stream has no readOnly routing-hint
+    overload. Confirming check: OGM Session only declares query(String,Map,boolean), not
+    query(Class,String,Map,boolean), so the gap is inherited from OGM.
+
+4. MISPLACED METHODS — None.
+
+5. MISSING METHODS
+[1] exists(...) | Neo4jExecutor.java (whole class) | Low | The convention provides exists->boolean;
+    here callers must fall back to count(...) > 0 or load(...) != null. Recommendation: add
+    exists(Class,Serializable id):boolean and/or exists(Class,Filters):boolean (implementable via count).
+[2] eager raw-Cypher readers: list(Class,cypher,params)->List<T> / query(cypher,params)->DataSet |
+    Neo4jExecutor.java:2187, 2287 (only Stream forms exist) | Med | A raw Cypher query can only be
+    consumed as a lazy Stream that MUST be closed to avoid a session leak; there is no eager
+    list(...)->List nor query(...)->DataSet. The convention has list/query/stream as siblings.
+    Recommendation: add eager list(Class,cypher,params):List<T> and a DataSet-returning
+    query(cypher,params) so non-streaming callers aren't forced into the close-or-leak contract.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+See 2[1] — consider deprecating countEntitiesOfType(Class) in favor of a new count(Class) overload.

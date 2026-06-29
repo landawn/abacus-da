@@ -1,0 +1,12 @@
+================================================================================
+API DESIGN REVIEW — ColumnFamily (annotation)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/annotation/ColumnFamily.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+No actionable findings. A minimal, single-element (value() defaulting to "") runtime
+annotation with @Target({FIELD, TYPE}), matching exactly how HBaseExecutor's
+getClassFamilyColumnNameMap/getFamilyColumnFieldNameMap consume it (class-level default
+family, field-level override, empty-string -> default mapping). The value() semantics are
+accurately and thoroughly documented and consistent with the executor's actual mapping
+logic.

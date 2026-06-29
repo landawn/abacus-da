@@ -1,0 +1,36 @@
+================================================================================
+API DESIGN REVIEW — AnyRowMutations
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyRowMutations.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+A clean, thin standalone adapter over org.apache.hadoop.hbase.client.RowMutations.
+Factory set (of(Object), of(Object,int), of(byte[]), of(byte[],int)), val(), the two add
+overloads, and getRow/equals/hashCode/toString are correct and well documented (including
+the surprising HBase semantics that equals/compareTo consider the row key only). Two
+consistency/coverage gaps stand out versus the rest of the package.
+
+2. NAMING ISSUES
+None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+None.
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+[1] getMutations() / size() / isEmpty() pass-throughs | AnyRowMutations.java:231-322 | Low |
+    Callers cannot inspect the batch without reaching through val(). Every AnyMutation
+    subclass exposes size()/isEmpty(), so the absence here is a parity gap. Recommendation:
+    add getMutations() (and/or size()/isEmpty()). Confirming check: verify
+    RowMutations.getMutations()/getMaxPriority() exist in the targeted HBase version before
+    mirroring.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+[1] compareTo(Row) | AnyRowMutations.java:369 (@SuppressWarnings("deprecation")@368, no
+    @Deprecated) | Med | Delegates to the same deprecated HBase Row.compareTo as
+    AnyMutation.compareTo, which IS marked @Deprecated (AnyMutation.java:674-677). VERIFIED.
+    Recommendation: add @Deprecated here (with @see Row#COMPARATOR) so the two are
+    consistent.

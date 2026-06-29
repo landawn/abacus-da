@@ -172,7 +172,7 @@ import com.landawn.abacus.util.stream.Stream;
  * @see ParsedCql
  * @see com.landawn.abacus.query.Filters
  */
-public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS, BT> implements AutoCloseable {
+public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS, BT> {
 
     protected static final String NULL_STR = "NULL";
 
@@ -511,6 +511,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * and returns the matching entity wrapped in an Optional. Returns Optional.empty()
      * if no entity is found.</p>
      *
+     * <p>For the nullable counterpart that returns the entity directly (or {@code null} when no row
+     * matches) instead of an {@link Optional}, use {@link #gett(Class, Object...)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // single-key entity
@@ -529,6 +532,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return an Optional containing the entity if found, otherwise empty
      * @throws IllegalArgumentException if ids is null or empty
      * @throws DuplicateResultException if more than one entity is found
+     * @see #gett(Class, Object...)
      */
     public final <T> Optional<T> get(final Class<T> targetClass, final Object... ids) throws DuplicateResultException {
         return get(targetClass, null, ids);
@@ -560,6 +564,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return an Optional containing the entity if found, otherwise empty
      * @throws IllegalArgumentException if ids is null or empty
      * @throws DuplicateResultException if more than one entity is found
+     * @see #gett(Class, Collection, Object...)
      */
     public final <T> Optional<T> get(final Class<T> targetClass, final Collection<String> selectPropNames, final Object... ids)
             throws DuplicateResultException {
@@ -586,6 +591,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param whereClause the WHERE condition
      * @return an Optional containing the entity if found, otherwise empty
      * @throws DuplicateResultException if more than one entity is found
+     * @see #gett(Class, Condition)
      */
     public <T> Optional<T> get(final Class<T> targetClass, final Condition whereClause) throws DuplicateResultException {
         return get(targetClass, null, whereClause);
@@ -614,6 +620,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param whereClause the WHERE condition
      * @return an Optional containing the entity if found, otherwise empty
      * @throws DuplicateResultException if more than one entity is found
+     * @see #gett(Class, Collection, Condition)
      */
     public <T> Optional<T> get(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause)
             throws DuplicateResultException {

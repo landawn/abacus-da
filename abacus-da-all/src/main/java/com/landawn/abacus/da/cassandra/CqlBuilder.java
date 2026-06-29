@@ -553,7 +553,16 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @see #iF(String)
      */
     public CqlBuilder onlyIf(final String expr) {
-        return iF(expr);
+        assertNotClosed();
+        init(true);
+
+        checkInsertClauseOrder();
+
+        _sb.append(_SPACE_IF_SPACE);
+
+        appendStringExpr(expr, false);
+
+        return this;
     }
 
     /**
@@ -587,7 +596,25 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @see com.landawn.abacus.query.Filters
      */
     public CqlBuilder onlyIf(final Condition cond) {
-        return iF(cond);
+        assertNotClosed();
+        init(true);
+
+        checkInsertClauseOrder();
+
+        _sb.append(_SPACE_IF_SPACE);
+
+        // Cassandra's LWT grammar is "IF columnCondition (AND columnCondition)*"; parenthesized members
+        // are a syntax error there (unlike WHERE relations), so the Junction branch of appendCondition
+        // renders without per-member parentheses while this flag is set.
+        _appendingIfClause = true;
+
+        try {
+            appendCondition(cond);
+        } finally {
+            _appendingIfClause = false;
+        }
+
+        return this;
     }
 
     /**
@@ -621,19 +648,13 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @param expr the conditional expression as a string
      * @return this CqlBuilder instance for method chaining
      * @see #onlyIf(String)
-     * @see #iF(Condition)
+     * @see #onlyIf(Condition)
+     * @deprecated {@code if} is a Java keyword, so this method is awkwardly spelled {@code iF}.
+     *             Use {@link #onlyIf(String)} instead, which has identical behavior.
      */
+    @Deprecated
     public CqlBuilder iF(final String expr) {
-        assertNotClosed();
-        init(true);
-
-        checkInsertClauseOrder();
-
-        _sb.append(_SPACE_IF_SPACE);
-
-        appendStringExpr(expr, false);
-
-        return this;
+        return onlyIf(expr);
     }
 
     /**
@@ -670,29 +691,14 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @param cond the condition object for the IF clause
      * @return this CqlBuilder instance for method chaining
      * @see #onlyIf(Condition)
-     * @see #iF(String)
+     * @see #onlyIf(String)
      * @see com.landawn.abacus.query.Filters
+     * @deprecated {@code if} is a Java keyword, so this method is awkwardly spelled {@code iF}.
+     *             Use {@link #onlyIf(Condition)} instead, which has identical behavior.
      */
+    @Deprecated
     public CqlBuilder iF(final Condition cond) {
-        assertNotClosed();
-        init(true);
-
-        checkInsertClauseOrder();
-
-        _sb.append(_SPACE_IF_SPACE);
-
-        // Cassandra's LWT grammar is "IF columnCondition (AND columnCondition)*"; parenthesized members
-        // are a syntax error there (unlike WHERE relations), so the Junction branch of appendCondition
-        // renders without per-member parentheses while this flag is set.
-        _appendingIfClause = true;
-
-        try {
-            appendCondition(cond);
-        } finally {
-            _appendingIfClause = false;
-        }
-
-        return this;
+        return onlyIf(cond);
     }
 
     /**

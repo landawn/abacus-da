@@ -1,0 +1,35 @@
+================================================================================
+API DESIGN REVIEW — Package-private placeholder / helper classes (NO public API surface)
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+Files:
+  aws/AWSRDSUtil.java, aws/AWSS3Util.java
+  blink/DataSetUtil.java, blink/DataStreamUtil.java
+  spark/DStreamUtil.java, spark/DatasetUtil.java
+  hadoop/HDFSUtil.java, hadoop/HadoopUtil.java
+  search/ElasticsearchExecutor.java, search/LuceneExecutor.java, search/SolrExecutor.java
+  cassandra/ResultSets.java
+
+1. OVERALL ASSESSMENT
+All 12 are package-private `final class` (none declare `public class`), so none contribute to
+the public API surface. Eleven are empty/no-op placeholders (the *Util classes and the three
+search executors; ElasticsearchExecutor contains only commented-out method stubs @28-66) and are
+unreferenced in production. cassandra/ResultSets is the one real, live package-private helper (used
+by AsyncCassandraExecutor). No public members leak: ResultSets.wrap(AsyncResultSet)@99 is declared
+public, but the enclosing class is package-private so its effective visibility is package-private —
+the public API surface is clean.
+
+Because there is no public API, sections 2-5 do not apply. The only actionable items are hygiene.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+[1] 11 dead/empty placeholders | AWSRDSUtil:26, AWSS3Util:26, blink/DataSetUtil:25,
+    blink/DataStreamUtil:25, spark/DStreamUtil:26, spark/DatasetUtil:25, hadoop/HDFSUtil:26,
+    hadoop/HadoopUtil:27, search/ElasticsearchExecutor:26, search/LuceneExecutor:27,
+    search/SolrExecutor:27 | Low | Zero API, zero behavior, unreferenced in production — pure
+    namespace anchors. Recommendation: delete until the features are implemented (YAGNI), OR at
+    least make them consistent — LuceneExecutor, SolrExecutor and ElasticsearchExecutor lack the
+    private no-arg constructor the other eight placeholders use to prevent instantiation; add one
+    or remove the class.
+[2] cassandra/ResultSets.wrap(AsyncResultSet) | ResultSets.java:99 | Low | Optional nit: drop the
+    misleading `public` modifier (the class is package-private, so it has no effect). Keep the class
+    — it is a used helper, not a placeholder.

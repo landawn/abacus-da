@@ -1,0 +1,34 @@
+================================================================================
+API DESIGN REVIEW — AsyncHBaseExecutor
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AsyncHBaseExecutor.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+Sync<->async parity is excellent. Every synchronous operation (exists/get/scan/put/delete/
+mutateRow/append/increment/incrementColumnValue/coprocessorService/batchCoprocessorService,
+including all incrementColumnValue and all 12 scan overloads) has an async counterpart with
+the same parameter list and a ContinuableFuture-of-the-sync-return shape; void ops correctly
+become ContinuableFuture<Void>. Non-operational members (admin/connection/getTable/mapper/
+static converters) are intentionally reachable only via sync(), as documented. Notably the
+async coprocessor-with-callback/batch methods do NOT leak `throws Exception` (deferred to
+get()), which is cleaner than their sync counterparts (see HBaseExecutor 3[2]).
+
+2. NAMING ISSUES
+None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] get(String,List<Get>,Class) & get(String,Collection<AnyGet>,Class) |
+    AsyncHBaseExecutor.java:550, 624 | Low | These faithfully mirror the sync typed-batch-get
+    behavior that silently drops missing/empty rows and breaks positional alignment. Not a
+    separate defect — fix at the source (HBaseExecutor 3[1]); the async wrappers inherit the
+    correction.
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+None (sync<->async parity is complete).
+
+6. DEPRECATION / REMOVAL CANDIDATES
+None.

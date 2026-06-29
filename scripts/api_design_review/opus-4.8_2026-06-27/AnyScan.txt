@@ -1,0 +1,70 @@
+================================================================================
+API DESIGN REVIEW — AnyScan
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyScan.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+Comprehensive, faithful fluent wrapper over org.apache.hadoop.hbase.client.Scan.
+Fluent setters uniformly return AnyScan; the range (withStartRow/withStopRow with
+inclusive overloads), throughput (setCaching/setBatch/setMaxResultSize/setLimit),
+versioning and feature-toggle families are consistent and thoroughly documented.
+Legacy positional factories/constructors (of(Object), of(Object,Object),
+of(Object,Filter)) and setRowPrefixFilter(Object) are correctly @Deprecated with
+stated replacements, and dead deprecated HBase methods are commented out rather
+than re-exposed. The actionable items are one concrete signature defect on the
+replacement for a deprecated method, a redundant override pair, and a few
+low-priority sibling-consistency notes versus AnyGet.
+
+2. NAMING ISSUES
+[1] createScanFromCursor(Cursor) | AnyScan.java:265 | Low | A third static-factory
+    naming style alongside create() and of(...). It mirrors Scan.createScanFromCursor,
+    so it is defensible; for factory-surface consistency consider adding an of(Cursor)
+    alias. Confirming check: whether the team wants all factories funnelled through of(...).
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] setStartStopRowForPrefixScan(byte[]) | AnyScan.java:1195 | High | This is the
+    documented replacement for the deprecated setRowPrefixFilter(Object) (line 1171),
+    yet it takes byte[] while every other row-key setter (withStartRow(Object),
+    withStopRow(Object), the deprecated setRowPrefixFilter(Object)) takes Object. It
+    then calls toRowKeyBytes(rowPrefix) which for a byte[] is a verified no-op
+    (toRowKeyBytes@HBaseExecutor.java:2951 -> toValueBytes@2986 returns byte[] as-is),
+    so the conversion does nothing AND callers migrating off the deprecated Object
+    method are forced to pre-encode bytes. VERIFIED against source. Recommendation:
+    change the parameter to `Object rowPrefix` (the existing toRowKeyBytes call then
+    does real work), or add an Object overload.
+[2] setColumnFamilyTimeRange(String,long,long) / setColumnFamilyTimeRange(byte[],long,long)
+    | AnyScan.java:677, 711 | Med | Both overrides reproduce AnyQuery's inherited
+    behavior exactly (AnyQuery.java:510/551) — they call setColumnFamilyTimeRange on the
+    same underlying instance — and even rename the params (family/minTimestamp/maxTimestamp
+    vs the base cf/minStamp/maxStamp). AnyGet does NOT override these, so the two read
+    siblings diverge for no functional reason. Recommendation: delete both overrides and
+    inherit from AnyQuery (or, if kept for docs, align parameter names with the base).
+[3] readVersions(int) | AnyScan.java:1283 | Low | Accepts any int (incl. 0/negative)
+    with no validation, while AnyGet.readVersions(int)@AnyGet.java:675 rejects < 1. The
+    divergence mirrors HBase Scan vs Get and is documented, but is a surprising sibling
+    inconsistency. Recommendation: optionally validate for a uniform contract. Confirming
+    check: HBase Get.readVersions throws on <1 while Scan.readVersions does not — verify
+    against the bundled hbase-client version.
+[4] equals(Object) / hashCode() | AnyScan.java:2215, 2184 | Low | Scan does not override
+    equals, so AnyScan.equals is reference identity (two identically-built scans are not
+    equal), whereas AnyGet.equals is row-key value equality. Documented but surprising for
+    sibling types. Recommendation: keep (no value equality is available from HBase Scan);
+    ensure the contrast is documented on both classes. Confirming check: confirm Scan does
+    not override equals in the bundled hbase-client.
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+[1] getFamilies()/hasFilter() (present here) vs familySet() (present on AnyGet) |
+    AnyScan.java (family-introspection surface) | Low | AnyScan exposes getFamilies()
+    (byte[][]) / hasFilter() but not familySet(); AnyGet exposes familySet() but not
+    getFamilies()/hasFilter(). The split mirrors HBase's own asymmetry, but for wrapper
+    symmetry consider adding the missing accessors on both. Confirming check: confirm
+    HBase Scan lacks familySet() and Get lacks getFamilies()/hasFilter().
+
+6. DEPRECATION / REMOVAL CANDIDATES
+None beyond the existing, correct @Deprecated markers (of(Object), of(Object,Object),
+of(Object,Filter), setRowPrefixFilter(Object)). Note finding 3[1] is the more important
+follow-up to the setRowPrefixFilter deprecation.

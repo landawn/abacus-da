@@ -164,12 +164,18 @@ import com.landawn.abacus.util.stream.Stream;
  * }
  * }</pre>
  *
+ * <p><b>Naming convention:</b> this executor deliberately mirrors the HBase client's own method
+ * vocabulary ({@code get}, {@code scan}, {@code put}, {@code delete}, {@code append}, {@code increment},
+ * {@code mutateRow}, {@code exists}) so it reads naturally to HBase users. It does <i>not</i> adopt the
+ * abacus "house" CRUD vocabulary ({@code findFirst}/{@code list}/{@code insert}/{@code update}) used by
+ * the {@code Condition}-based executors such as Cassandra and BigQuery.</p>
+ *
  * @see com.landawn.abacus.util.HBaseColumn
  * @see com.landawn.abacus.da.hbase.annotation.ColumnFamily
  * @see AsyncHBaseExecutor
  * @see <a href="http://hbase.apache.org/devapidocs/index.html">Apache HBase Java API</a>
  */
-public final class HBaseExecutor implements AutoCloseable {
+public final class HBaseExecutor {
 
     static {
         final BiFunction<Result, Class<?>, Object> converter = HBaseExecutor::toValue;
@@ -3048,9 +3054,7 @@ public final class HBaseExecutor implements AutoCloseable {
      * }</pre>
      *
      * @throws IOException if closing {@link Admin} or {@link Connection} fails
-     * @see AutoCloseable
      */
-    @Override
     public void close() throws IOException {
         try {
             if (admin != null) {

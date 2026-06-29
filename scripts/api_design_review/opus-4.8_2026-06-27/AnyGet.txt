@@ -1,0 +1,45 @@
+================================================================================
+API DESIGN REVIEW — AnyGet
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyGet.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+Well-rounded fluent Get wrapper. Factory methods (of(Object), of(Object,int,int),
+of(ByteBuffer), of(Get)) are clear and val() cleanly exposes the wrapped Get. Fluent
+setters consistently return AnyGet; the String+byte[] overload pairs for addFamily/
+addColumn are consistent with AnyScan. Null/empty and exception semantics are unusually
+well documented. compareTo(Row) is correctly @Deprecated with the Row.COMPARATOR
+replacement. The only rough edges are sibling-consistency notes versus AnyScan; this
+class has no internal defects.
+
+2. NAMING ISSUES
+None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] readVersions(int) | AnyGet.java:675 | Low | Rejects values < 1 (wrapping the HBase
+    IOException as IllegalArgumentException), whereas AnyScan.readVersions(int)@AnyScan.java:1283
+    accepts any int silently. Mirrors HBase Get vs Scan and is documented, but is a
+    surprising sibling inconsistency. Recommendation: keep; consider validating AnyScan the
+    same way for a uniform contract (tracked as the same family issue in AnyScan 3[3]).
+    Confirming check: HBase Get.readVersions throws on <1 while Scan.readVersions does not.
+[2] equals(Object) / hashCode() | AnyGet.java:1051, 1018 | Low | Equality delegates to
+    Get.equals, which compares the row key ONLY — two AnyGets on the same row but different
+    columns/time-ranges compare equal. Documented, but diverges from AnyScan.equals
+    (identity-based), so the two read siblings have different equality contracts.
+    Recommendation: keep (matches HBase); document the contrast on both classes. Confirming
+    check: confirm Get overrides equals (row-key only) in the bundled hbase-client.
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+[1] getFamilies()/hasFilter() | AnyGet.java:967 (familySet present) | Low | AnyGet exposes
+    familySet() (Set<byte[]>) but not getFamilies()/hasFilter(), while AnyScan exposes the
+    latter pair but not familySet(). For wrapper symmetry consider adding getFamilies()/
+    hasFilter() here and familySet() to AnyScan (or accept the documented mirror of HBase's
+    own asymmetry). Confirming check: confirm HBase Get lacks getFamilies()/hasFilter().
+
+6. DEPRECATION / REMOVAL CANDIDATES
+None beyond the existing, correct compareTo(Row) @Deprecated marker (replacement:
+Row.COMPARATOR).

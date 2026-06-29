@@ -118,6 +118,13 @@ import com.mongodb.client.result.UpdateResult;
  * Optional<Document> highPriority = findFuture.get();
  * }</pre>
  *
+ * <p><b>Naming convention:</b> method names are identical to the synchronous
+ * {@link MongoCollectionExecutor} — a hybrid vocabulary of abacus "house" reads
+ * ({@code get}/{@code gett}, {@code findFirst}, {@code list}, {@code query}, {@code stream},
+ * {@code exists}, {@code count}) and MongoDB-driver writes ({@code insertOne}/{@code insertMany},
+ * {@code updateOne}/{@code updateMany}, {@code replaceOne}, {@code deleteOne}/{@code deleteMany}).
+ * Each result is wrapped in a {@code ContinuableFuture}.</p>
+ *
  * @see MongoCollectionExecutor
  * @see ContinuableFuture
  * @see AsyncExecutor

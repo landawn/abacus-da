@@ -1,0 +1,52 @@
+================================================================================
+API DESIGN REVIEW — reactivestreams.MongoCollectionExecutor
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/reactivestreams/MongoCollectionExecutor.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+A strong reactive mirror with good parity to the sync executor. Single-row reads are
+correctly re-shaped for reactive: get(...) and findFirst(...) collapse the sync Optional/
+gett-nullable split into Mono<T> (empty = absent), the right reactive idiom; multi-row
+list(...) returns Flux<T> (subsuming sync list->List and stream->Stream); writes return
+Mono<…Result>; count/estimatedDocumentCount return Mono<Long>; distinct/aggregate/groupBy*/
+mapReduce return Flux<T>; watch(...) returns the driver's ChangeStreamPublisher. The
+deliberate omissions are correct: async() is N/A (this class IS async), and gett(...) /
+queryForSingleNonNull(...) are correctly dropped because a Mono<V> cannot carry a null
+onNext. @Beta/@Deprecated placement matches sync. Soft spots: the typed queryForXxx family
+loses its rationale in reactive, and the Mono<Dataset> query family eagerly materializes.
+
+2. NAMING ISSUES — None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] queryForBoolean/Char/Byte/Short/Int/Long/Float/Double/String/Date(String,Bson) -> Mono<wrapper>
+    | reactivestreams/MongoCollectionExecutor.java:1162-1163, 1486-1488, 1532-1533, 1578-1580
+    (all delegate to queryForSingleValue@1677) | Med | The whole typed queryForXxx convenience
+    family is now pure one-line sugar over queryForSingleValue — every overload returns
+    Mono<X>. The distinction that justified the split in sync (primitive OptionalInt/... to
+    avoid boxing; Nullable vs Optional) evaporates because there are no primitive Publisher
+    types and a Mono already cannot carry null; they also cannot default (caller adds
+    .defaultIfEmpty). Compounding it, @Beta is applied unevenly (same asymmetry as sync).
+    Recommendation: either commit (drop @Beta) or remove the primitive queryForBoolean…
+    queryForDouble overloads and keep only queryForSingleValue (+ optionally queryForString/
+    queryForDate for type-inference brevity); align @Beta across whichever set remains.
+[2] query(...) family -> Mono<Dataset> | reactivestreams/MongoCollectionExecutor.java:1731,
+    1754, 1877-1886, 1934-1938 | Low | Returning Mono<Dataset> forces every matching document
+    into memory and emits as a single value (empty Dataset on no-match, never empty Mono),
+    defeating backpressure — awkward for a reactive API. This is a deliberate sync mirror and
+    the Javadoc (@1703-1705) warns "use list(Bson) for very large result sets." Recommendation:
+    acceptable as a by-design mirror; keep but consistently steer reactive consumers toward
+    list(...)/aggregate(...) in docs. Confirming check: query(...) builds the Dataset via
+    .collectList().map(...) @1882-1884/1937 (full materialization).
+
+4. MISPLACED METHODS — None.
+
+5. MISSING METHODS
+[1] list() / list(Class) (whole-collection) | reactivestreams/MongoCollectionExecutor.java
+    (smallest reactive list is list(Bson filter)@889) | Low | Sync provides no-arg stream() and
+    stream(Class) for streaming the entire collection, but the reactive class has no list()/
+    list(Class) — every list/query overload requires a Bson filter. Recommendation: add
+    Flux<Document> list() and <T> Flux<T> list(Class<T>) delegating to an empty/null filter,
+    for parity with sync stream().
+
+6. DEPRECATION / REMOVAL CANDIDATES — None beyond the existing mapReduce @Deprecated.

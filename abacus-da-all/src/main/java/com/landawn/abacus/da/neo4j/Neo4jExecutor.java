@@ -107,6 +107,12 @@ import com.landawn.abacus.util.stream.Stream;
  * Collection<Person> pagedResults = executor.loadAll(Person.class, ageFilter, pagination);
  * }</pre>
  *
+ * <p><b>Naming convention:</b> this executor mirrors the Neo4j OGM vocabulary ({@code load}/{@code loadAll},
+ * {@code save}, {@code delete}/{@code deleteAll}, {@code queryForObject}, {@code count}) so it reads
+ * naturally to Neo4j-OGM users. It does <i>not</i> adopt the abacus "house" CRUD vocabulary
+ * ({@code findFirst}/{@code list}/{@code insert}/{@code update}/{@code delete}) used by the
+ * {@code Condition}-based executors such as Cassandra and BigQuery.</p>
+ *
  * @see org.neo4j.ogm.session.SessionFactory
  * @see org.neo4j.ogm.session.Session
  * @see <a href="http://neo4j.com/docs/ogm/java/stable/">Neo4j OGM Documentation</a>

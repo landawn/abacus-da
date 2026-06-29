@@ -299,11 +299,14 @@ public class HBaseExecutorStaticTest extends TestBase {
         Admin admin = mock(Admin.class);
         when(conn.getAdmin()).thenReturn(admin);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             assertSame(conn, executor.connection());
             assertSame(admin, executor.admin());
             assertNotNull(executor.async(), "async() must return a non-null AsyncHBaseExecutor");
             assertSame(executor, executor.async().sync(), "async().sync() must return this executor");
+        } finally {
+            executor.close();
         }
     }
 
@@ -330,10 +333,13 @@ public class HBaseExecutorStaticTest extends TestBase {
         when(conn.getAdmin()).thenReturn(admin);
         when(conn.getTable(any(TableName.class))).thenReturn(table);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             org.apache.hadoop.hbase.client.Table returned = executor.getTable("some_table");
             assertSame(table, returned);
             verify(conn).getTable(TableName.valueOf("some_table"));
+        } finally {
+            executor.close();
         }
     }
 
@@ -343,12 +349,15 @@ public class HBaseExecutorStaticTest extends TestBase {
         Admin admin = mock(Admin.class);
         when(conn.getAdmin()).thenReturn(admin);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             HBaseMapper<Bean, String> mapper = executor.mapper(Bean.class);
             assertNotNull(mapper);
             // Re-fetch returns the cached mapper.
             HBaseMapper<Bean, String> mapper2 = executor.mapper(Bean.class);
             assertSame(mapper, mapper2);
+        } finally {
+            executor.close();
         }
     }
 
@@ -358,9 +367,12 @@ public class HBaseExecutorStaticTest extends TestBase {
         Admin admin = mock(Admin.class);
         when(conn.getAdmin()).thenReturn(admin);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             // NoIdBean has no @Table annotation -> mapper() must throw.
             assertThrows(IllegalArgumentException.class, () -> executor.mapper(NoIdBean.class));
+        } finally {
+            executor.close();
         }
     }
 
@@ -370,9 +382,12 @@ public class HBaseExecutorStaticTest extends TestBase {
         Admin admin = mock(Admin.class);
         when(conn.getAdmin()).thenReturn(admin);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             HBaseMapper<Bean, String> mapper = executor.mapper(Bean.class, "explicit_table", NamingPolicy.CAMEL_CASE);
             assertNotNull(mapper);
+        } finally {
+            executor.close();
         }
     }
 
@@ -382,10 +397,13 @@ public class HBaseExecutorStaticTest extends TestBase {
         Admin admin = mock(Admin.class);
         when(conn.getAdmin()).thenReturn(admin);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             // Null naming policy should default to CAMEL_CASE.
             HBaseMapper<Bean, String> mapper = executor.mapper(Bean.class, "explicit_table", null);
             assertNotNull(mapper);
+        } finally {
+            executor.close();
         }
     }
 
@@ -395,9 +413,12 @@ public class HBaseExecutorStaticTest extends TestBase {
         Admin admin = mock(Admin.class);
         when(conn.getAdmin()).thenReturn(admin);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             // NoIdBean has no @Id property -> mapper constructor must throw.
             assertThrows(IllegalArgumentException.class, () -> executor.mapper(NoIdBean.class, "t", NamingPolicy.CAMEL_CASE));
+        } finally {
+            executor.close();
         }
     }
 
@@ -416,9 +437,12 @@ public class HBaseExecutorStaticTest extends TestBase {
         org.apache.hadoop.hbase.client.Get get = new org.apache.hadoop.hbase.client.Get(Bytes.toBytes("k"));
         when(table.exists(get)).thenReturn(true);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             assertTrue(executor.exists("tbl", get));
             verify(table, times(1)).close();
+        } finally {
+            executor.close();
         }
     }
 
@@ -431,8 +455,11 @@ public class HBaseExecutorStaticTest extends TestBase {
         when(conn.getTable(any(TableName.class))).thenReturn(table);
         when(table.exists(any(org.apache.hadoop.hbase.client.Get.class))).thenReturn(true);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             assertTrue(executor.exists("tbl", AnyGet.of("k")));
+        } finally {
+            executor.close();
         }
     }
 
@@ -448,10 +475,13 @@ public class HBaseExecutorStaticTest extends TestBase {
         Result expected = Result.create(Arrays.<Cell> asList(cell));
         when(table.get(any(org.apache.hadoop.hbase.client.Get.class))).thenReturn(expected);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             Result actual = executor.get("tbl", new org.apache.hadoop.hbase.client.Get(Bytes.toBytes("k")));
             assertSame(expected, actual);
             verify(table, times(1)).close();
+        } finally {
+            executor.close();
         }
     }
 
@@ -463,12 +493,15 @@ public class HBaseExecutorStaticTest extends TestBase {
         when(conn.getAdmin()).thenReturn(admin);
         when(conn.getTable(any(TableName.class))).thenReturn(table);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             org.apache.hadoop.hbase.client.Put put = new org.apache.hadoop.hbase.client.Put(Bytes.toBytes("k"));
             put.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
             executor.put("tbl", put);
             verify(table).put(put);
             verify(table, times(1)).close();
+        } finally {
+            executor.close();
         }
     }
 
@@ -480,10 +513,13 @@ public class HBaseExecutorStaticTest extends TestBase {
         when(conn.getAdmin()).thenReturn(admin);
         when(conn.getTable(any(TableName.class))).thenReturn(table);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             AnyPut anyPut = AnyPut.of("k").addColumn("cf", "q", "v");
             executor.put("tbl", anyPut);
             verify(table).put(anyPut.val());
+        } finally {
+            executor.close();
         }
     }
 
@@ -495,11 +531,14 @@ public class HBaseExecutorStaticTest extends TestBase {
         when(conn.getAdmin()).thenReturn(admin);
         when(conn.getTable(any(TableName.class))).thenReturn(table);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             org.apache.hadoop.hbase.client.Delete del = new org.apache.hadoop.hbase.client.Delete(Bytes.toBytes("k"));
             executor.delete("tbl", del);
             verify(table).delete(del);
             verify(table, times(1)).close();
+        } finally {
+            executor.close();
         }
     }
 
@@ -511,10 +550,13 @@ public class HBaseExecutorStaticTest extends TestBase {
         when(conn.getAdmin()).thenReturn(admin);
         when(conn.getTable(any(TableName.class))).thenReturn(table);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             AnyDelete anyDelete = AnyDelete.of("k");
             executor.delete("tbl", anyDelete);
             verify(table).delete(anyDelete.val());
+        } finally {
+            executor.close();
         }
     }
 
@@ -526,11 +568,14 @@ public class HBaseExecutorStaticTest extends TestBase {
         when(conn.getAdmin()).thenReturn(admin);
         when(conn.getTable(any(TableName.class))).thenReturn(table);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             // Empty AnyPut collection - should be a no-op (no put call to table).
             executor.put("tbl", Collections.<AnyPut> emptyList());
             // Cannot assert table.put was NOT called without knowing the impl;
             // simply verify no exception was thrown.
+        } finally {
+            executor.close();
         }
     }
 
@@ -547,12 +592,15 @@ public class HBaseExecutorStaticTest extends TestBase {
         when(conn.getTable(any(TableName.class))).thenReturn(table);
         when(table.exists(org.mockito.ArgumentMatchers.<List<org.apache.hadoop.hbase.client.Get>> any())).thenReturn(new boolean[] { true, false });
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             org.apache.hadoop.hbase.client.Get g1 = new org.apache.hadoop.hbase.client.Get(Bytes.toBytes("k1"));
             org.apache.hadoop.hbase.client.Get g2 = new org.apache.hadoop.hbase.client.Get(Bytes.toBytes("k2"));
             List<Boolean> result = executor.exists("tbl", Arrays.asList(g1, g2));
             assertEquals(2, result.size());
             assertEquals(Boolean.TRUE, result.get(0));
+        } finally {
+            executor.close();
         }
     }
 
@@ -565,10 +613,13 @@ public class HBaseExecutorStaticTest extends TestBase {
         when(conn.getTable(any(TableName.class))).thenReturn(table);
         when(table.exists(org.mockito.ArgumentMatchers.<List<org.apache.hadoop.hbase.client.Get>> any())).thenReturn(new boolean[] { true });
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             List<Boolean> result = executor.exists("tbl", Arrays.asList(AnyGet.of("k")));
             assertEquals(1, result.size());
             assertEquals(Boolean.TRUE, result.get(0));
+        } finally {
+            executor.close();
         }
     }
 
@@ -588,9 +639,12 @@ public class HBaseExecutorStaticTest extends TestBase {
         Result[] results = new Result[] { Result.create(Arrays.<Cell> asList(c)) };
         when(table.get(org.mockito.ArgumentMatchers.<List<org.apache.hadoop.hbase.client.Get>> any())).thenReturn(results);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             List<Result> got = executor.get("tbl", Arrays.asList(new org.apache.hadoop.hbase.client.Get(Bytes.toBytes("k"))));
             assertEquals(1, got.size());
+        } finally {
+            executor.close();
         }
     }
 
@@ -606,8 +660,11 @@ public class HBaseExecutorStaticTest extends TestBase {
         Result expected = Result.create(Arrays.<Cell> asList(c));
         when(table.get(any(org.apache.hadoop.hbase.client.Get.class))).thenReturn(expected);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             assertSame(expected, executor.get("tbl", AnyGet.of("k")));
+        } finally {
+            executor.close();
         }
     }
 
@@ -623,9 +680,12 @@ public class HBaseExecutorStaticTest extends TestBase {
         Result[] results = new Result[] { Result.create(Arrays.<Cell> asList(c)) };
         when(table.get(org.mockito.ArgumentMatchers.<List<org.apache.hadoop.hbase.client.Get>> any())).thenReturn(results);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             List<Result> got = executor.get("tbl", Arrays.asList(AnyGet.of("k")));
             assertEquals(1, got.size());
+        } finally {
+            executor.close();
         }
     }
 
@@ -641,11 +701,14 @@ public class HBaseExecutorStaticTest extends TestBase {
         Result result = Result.create(Arrays.<Cell> asList(c));
         when(table.get(any(org.apache.hadoop.hbase.client.Get.class))).thenReturn(result);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             Bean bean = executor.get("tbl", new org.apache.hadoop.hbase.client.Get(Bytes.toBytes("rk1")), Bean.class);
             assertNotNull(bean);
             assertEquals("rk1", bean.getId());
             assertEquals("Alice", bean.getName());
+        } finally {
+            executor.close();
         }
     }
 
@@ -661,10 +724,13 @@ public class HBaseExecutorStaticTest extends TestBase {
         Result result = Result.create(Arrays.<Cell> asList(c));
         when(table.get(any(org.apache.hadoop.hbase.client.Get.class))).thenReturn(result);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             Bean bean = executor.get("tbl", AnyGet.of("rk1"), Bean.class);
             assertNotNull(bean);
             assertEquals("Bob", bean.getName());
+        } finally {
+            executor.close();
         }
     }
 
@@ -681,11 +747,14 @@ public class HBaseExecutorStaticTest extends TestBase {
         Result[] results = new Result[] { Result.create(Arrays.<Cell> asList(c1)), Result.create(Arrays.<Cell> asList(c2)) };
         when(table.get(org.mockito.ArgumentMatchers.<List<org.apache.hadoop.hbase.client.Get>> any())).thenReturn(results);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             List<Bean> beans = executor.get("tbl",
                     Arrays.asList(new org.apache.hadoop.hbase.client.Get(Bytes.toBytes("r1")), new org.apache.hadoop.hbase.client.Get(Bytes.toBytes("r2"))),
                     Bean.class);
             assertEquals(2, beans.size());
+        } finally {
+            executor.close();
         }
     }
 
@@ -701,9 +770,12 @@ public class HBaseExecutorStaticTest extends TestBase {
         Result[] results = new Result[] { Result.create(Arrays.<Cell> asList(c1)) };
         when(table.get(org.mockito.ArgumentMatchers.<List<org.apache.hadoop.hbase.client.Get>> any())).thenReturn(results);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             List<Bean> beans = executor.get("tbl", Arrays.asList(AnyGet.of("r1")), Bean.class);
             assertEquals(1, beans.size());
+        } finally {
+            executor.close();
         }
     }
 
@@ -719,11 +791,14 @@ public class HBaseExecutorStaticTest extends TestBase {
         when(conn.getAdmin()).thenReturn(admin);
         when(conn.getTable(any(TableName.class))).thenReturn(table);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             org.apache.hadoop.hbase.client.Put p1 = new org.apache.hadoop.hbase.client.Put(Bytes.toBytes("k1"));
             p1.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
             executor.put("tbl", Arrays.asList(p1));
             verify(table).put(org.mockito.ArgumentMatchers.<List<org.apache.hadoop.hbase.client.Put>> any());
+        } finally {
+            executor.close();
         }
     }
 
@@ -735,10 +810,13 @@ public class HBaseExecutorStaticTest extends TestBase {
         when(conn.getAdmin()).thenReturn(admin);
         when(conn.getTable(any(TableName.class))).thenReturn(table);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             org.apache.hadoop.hbase.client.Delete d1 = new org.apache.hadoop.hbase.client.Delete(Bytes.toBytes("k1"));
             executor.delete("tbl", Arrays.asList(d1));
             verify(table).delete(org.mockito.ArgumentMatchers.<List<org.apache.hadoop.hbase.client.Delete>> any());
+        } finally {
+            executor.close();
         }
     }
 
@@ -750,9 +828,12 @@ public class HBaseExecutorStaticTest extends TestBase {
         when(conn.getAdmin()).thenReturn(admin);
         when(conn.getTable(any(TableName.class))).thenReturn(table);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             executor.delete("tbl", Arrays.asList(AnyDelete.of("k1"), AnyDelete.of("k2")));
             verify(table).delete(org.mockito.ArgumentMatchers.<List<org.apache.hadoop.hbase.client.Delete>> any());
+        } finally {
+            executor.close();
         }
     }
 
@@ -764,9 +845,12 @@ public class HBaseExecutorStaticTest extends TestBase {
         when(conn.getAdmin()).thenReturn(admin);
         when(conn.getTable(any(TableName.class))).thenReturn(table);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             executor.put("tbl", Arrays.asList(AnyPut.of("k1").addColumn("cf", "q", "v"), AnyPut.of("k2").addColumn("cf", "q", "v")));
             verify(table).put(org.mockito.ArgumentMatchers.<List<org.apache.hadoop.hbase.client.Put>> any());
+        } finally {
+            executor.close();
         }
     }
 
@@ -782,13 +866,16 @@ public class HBaseExecutorStaticTest extends TestBase {
         when(conn.getAdmin()).thenReturn(admin);
         when(conn.getTable(any(TableName.class))).thenReturn(table);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             org.apache.hadoop.hbase.client.RowMutations rm = new org.apache.hadoop.hbase.client.RowMutations(Bytes.toBytes("rk"));
             org.apache.hadoop.hbase.client.Put put = new org.apache.hadoop.hbase.client.Put(Bytes.toBytes("rk"));
             put.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
             rm.add(put);
             executor.mutateRow("tbl", rm);
             verify(table).mutateRow(rm);
+        } finally {
+            executor.close();
         }
     }
 
@@ -800,12 +887,15 @@ public class HBaseExecutorStaticTest extends TestBase {
         when(conn.getAdmin()).thenReturn(admin);
         when(conn.getTable(any(TableName.class))).thenReturn(table);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             org.apache.hadoop.hbase.client.Put put = new org.apache.hadoop.hbase.client.Put(Bytes.toBytes("rk"));
             put.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
             AnyRowMutations rm = AnyRowMutations.of("rk").add(put);
             executor.mutateRow("tbl", rm);
             verify(table).mutateRow(rm.val());
+        } finally {
+            executor.close();
         }
     }
 
@@ -821,10 +911,13 @@ public class HBaseExecutorStaticTest extends TestBase {
         Result expected = Result.create(Arrays.<Cell> asList(c));
         when(table.append(any(org.apache.hadoop.hbase.client.Append.class))).thenReturn(expected);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             org.apache.hadoop.hbase.client.Append a = new org.apache.hadoop.hbase.client.Append(Bytes.toBytes("rk"));
             a.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
             assertSame(expected, executor.append("tbl", a));
+        } finally {
+            executor.close();
         }
     }
 
@@ -840,9 +933,12 @@ public class HBaseExecutorStaticTest extends TestBase {
         Result expected = Result.create(Arrays.<Cell> asList(c));
         when(table.append(any(org.apache.hadoop.hbase.client.Append.class))).thenReturn(expected);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             AnyAppend a = AnyAppend.of("rk").addColumn("cf", "q", "v");
             assertSame(expected, executor.append("tbl", a));
+        } finally {
+            executor.close();
         }
     }
 
@@ -858,10 +954,13 @@ public class HBaseExecutorStaticTest extends TestBase {
         Result expected = Result.create(Arrays.<Cell> asList(c));
         when(table.increment(any(org.apache.hadoop.hbase.client.Increment.class))).thenReturn(expected);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             org.apache.hadoop.hbase.client.Increment inc = new org.apache.hadoop.hbase.client.Increment(Bytes.toBytes("rk"));
             inc.addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), 1L);
             assertSame(expected, executor.increment("tbl", inc));
+        } finally {
+            executor.close();
         }
     }
 
@@ -877,9 +976,12 @@ public class HBaseExecutorStaticTest extends TestBase {
         Result expected = Result.create(Arrays.<Cell> asList(c));
         when(table.increment(any(org.apache.hadoop.hbase.client.Increment.class))).thenReturn(expected);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             AnyIncrement inc = AnyIncrement.of("rk").addColumn("cf", "q", 1L);
             assertSame(expected, executor.increment("tbl", inc));
+        } finally {
+            executor.close();
         }
     }
 
@@ -897,8 +999,11 @@ public class HBaseExecutorStaticTest extends TestBase {
 
         when(table.incrementColumnValue(any(byte[].class), any(byte[].class), any(byte[].class), org.mockito.ArgumentMatchers.anyLong())).thenReturn(7L);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             assertEquals(7L, executor.incrementColumnValue("tbl", "rk", "cf", "q", 1L));
+        } finally {
+            executor.close();
         }
     }
 
@@ -913,8 +1018,11 @@ public class HBaseExecutorStaticTest extends TestBase {
         when(table.incrementColumnValue(any(byte[].class), any(byte[].class), any(byte[].class), org.mockito.ArgumentMatchers.anyLong(),
                 any(org.apache.hadoop.hbase.client.Durability.class))).thenReturn(8L);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             assertEquals(8L, executor.incrementColumnValue("tbl", "rk", "cf", "q", 1L, org.apache.hadoop.hbase.client.Durability.SYNC_WAL));
+        } finally {
+            executor.close();
         }
     }
 
@@ -928,8 +1036,11 @@ public class HBaseExecutorStaticTest extends TestBase {
 
         when(table.incrementColumnValue(any(byte[].class), any(byte[].class), any(byte[].class), org.mockito.ArgumentMatchers.anyLong())).thenReturn(9L);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             assertEquals(9L, executor.incrementColumnValue("tbl", "rk", Bytes.toBytes("cf"), Bytes.toBytes("q"), 1L));
+        } finally {
+            executor.close();
         }
     }
 
@@ -944,9 +1055,12 @@ public class HBaseExecutorStaticTest extends TestBase {
         when(table.incrementColumnValue(any(byte[].class), any(byte[].class), any(byte[].class), org.mockito.ArgumentMatchers.anyLong(),
                 any(org.apache.hadoop.hbase.client.Durability.class))).thenReturn(10L);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             assertEquals(10L, executor.incrementColumnValue("tbl", "rk", Bytes.toBytes("cf"), Bytes.toBytes("q"), 1L,
                     org.apache.hadoop.hbase.client.Durability.SKIP_WAL));
+        } finally {
+            executor.close();
         }
     }
 
@@ -965,9 +1079,12 @@ public class HBaseExecutorStaticTest extends TestBase {
         org.apache.hadoop.hbase.ipc.CoprocessorRpcChannel ch = mock(org.apache.hadoop.hbase.ipc.CoprocessorRpcChannel.class);
         when(table.coprocessorService(any(byte[].class))).thenReturn(ch);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             assertSame(ch, executor.coprocessorService("tbl", "rk"));
             verify(table, times(1)).close();
+        } finally {
+            executor.close();
         }
     }
 
@@ -981,10 +1098,13 @@ public class HBaseExecutorStaticTest extends TestBase {
         Admin admin = mock(Admin.class);
         when(conn.getAdmin()).thenReturn(admin);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             try (var stream = executor.scan("tbl", "info")) {
                 assertNotNull(stream);
             }
+        } finally {
+            executor.close();
         }
     }
 
@@ -994,10 +1114,13 @@ public class HBaseExecutorStaticTest extends TestBase {
         Admin admin = mock(Admin.class);
         when(conn.getAdmin()).thenReturn(admin);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             try (var stream = executor.scan("tbl", Bytes.toBytes("info"))) {
                 assertNotNull(stream);
             }
+        } finally {
+            executor.close();
         }
     }
 
@@ -1007,10 +1130,13 @@ public class HBaseExecutorStaticTest extends TestBase {
         Admin admin = mock(Admin.class);
         when(conn.getAdmin()).thenReturn(admin);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             try (var stream = executor.scan("tbl", AnyScan.create().addFamily("info"))) {
                 assertNotNull(stream);
             }
+        } finally {
+            executor.close();
         }
     }
 
@@ -1020,10 +1146,13 @@ public class HBaseExecutorStaticTest extends TestBase {
         Admin admin = mock(Admin.class);
         when(conn.getAdmin()).thenReturn(admin);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             try (var stream = executor.scan("tbl", AnyScan.create().addFamily("info"), Bean.class)) {
                 assertNotNull(stream);
             }
+        } finally {
+            executor.close();
         }
     }
 
@@ -1033,10 +1162,13 @@ public class HBaseExecutorStaticTest extends TestBase {
         Admin admin = mock(Admin.class);
         when(conn.getAdmin()).thenReturn(admin);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             try (var stream = executor.scan("tbl", "info", Bean.class)) {
                 assertNotNull(stream);
             }
+        } finally {
+            executor.close();
         }
     }
 }

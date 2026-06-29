@@ -1,0 +1,51 @@
+================================================================================
+API DESIGN REVIEW — MongoCollectionExecutor (sync)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoCollectionExecutor.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+Large but well-organized and largely internally consistent. The read families follow the
+Abacus conventions cleanly: get/findFirst->Optional, gett->nullable, query->Dataset,
+list->List, stream->Stream, exists->boolean, count->long, and the queryForXxx single-value
+family is correctly split (primitive OptionalX for the 8 primitives, Nullable for
+queryForString/queryForDate/queryForSingleValue, Optional for queryForSingleNonNull). Write
+ops return the native driver result types (InsertOneResult, InsertManyResult, UpdateResult,
+DeleteResult, BulkWriteResult); the projection/filter/sort/offset/count overload ladder is
+uniform across findFirst/list/query/stream; the Bson-vs-Collection-vs-Object parameter sets
+are unambiguous at the compiler level. The deprecated mapReduce pair is correctly marked.
+Findings are minor consistency items.
+
+2. NAMING ISSUES
+[1] findOneAndUpdate(...)/findOneAndReplace(...)/findOneAndDelete(...) return bare nullable
+    Document/T | MongoCollectionExecutor.java:3685, 3911, 4019 | Low | The other single-doc
+    finders (findFirst@785, get@487) return Optional, so a "find…" returning a raw nullable is
+    inconsistent with the read convention. This deliberately mirrors the driver's findOneAnd*
+    (nullable TDocument) and they are modify-and-return ops, so keeping them is defensible.
+    Recommendation: leave as-is but document the intentional divergence from findFirst.
+    Confirming check: driver MongoCollection.findOneAndUpdate returns nullable TDocument.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] queryForBoolean/Char/Byte/Short/Int/Long/Float/Double + queryForString + queryForDate(String,Bson)
+    are @Beta, but queryForDate(String,Bson,Class), queryForSingleValue(String,Bson,Class),
+    queryForSingleNonNull(String,Bson,Class) are NOT | MongoCollectionExecutor.java:1215-1522
+    (@Beta) vs 1560, 1602, 1658 (no @Beta) | Med | One logical family is split on maturity: the
+    convenience wrappers are @Beta yet the foundational queryForSingleValue they delegate to is
+    stable. VERIFIED via grep. Recommendation: apply @Beta uniformly across the whole
+    queryForXxx family (or drop it from all). Mirror the change in the async and reactive
+    classes and both mappers.
+[2] selectPropNames is FIRST in findFirst/list/query/stream (e.g.
+    findFirst(Collection selectPropNames, Bson filter, Class)) but SECOND in get/gett
+    (get(ObjectId, Collection selectPropNames, Class)) | MongoCollectionExecutor.java:837 vs 587
+    | Low | Cross-family ordering difference for the same conceptual argument; natural because
+    get is id-keyed (id first). Borderline; no change strictly required, noted for uniformity.
+[3] insertOne(Object)/insertMany(Collection<?>)/updateOne(Bson,Object)/updateMany(Bson,Object)/
+    replaceOne(...,Object) accept untyped Object/Collection payloads | MongoCollectionExecutor.java:2660,
+    2879, 3371 | Low | Compile-time-unsafe (wrong types fail only at runtime), but this is the
+    intentional Document/Map/entity-bean mapping design and is documented with precise IAE
+    contracts. No action beyond awareness.
+
+4. MISPLACED METHODS — None.
+5. MISSING METHODS — None (absence of a dedicated upsert/save is idiomatic for MongoDB, which
+   expresses upsert via UpdateOptions.upsert(true)/ReplaceOptions.upsert(true)).
+6. DEPRECATION / REMOVAL CANDIDATES — None beyond the existing, correct mapReduce @Deprecated.

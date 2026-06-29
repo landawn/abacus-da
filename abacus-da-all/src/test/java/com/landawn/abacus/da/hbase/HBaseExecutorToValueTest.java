@@ -257,10 +257,13 @@ public class HBaseExecutorToValueTest {
         when(conn.getAdmin()).thenReturn(admin);
         when(conn.getTable(any(TableName.class))).thenReturn(table);
         when(table.coprocessorService(any(byte[].class))).thenReturn(channel);
+        HBaseExecutor executor = new HBaseExecutor(conn);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        try {
             final CoprocessorRpcChannel returned = executor.coprocessorService("any-table", "row-1");
             assertSame(channel, returned, "Returned channel must be the one obtained from Table");
+        } finally {
+            executor.close();
         }
 
         // The Table acquired for the coprocessorService call must be closed exactly once

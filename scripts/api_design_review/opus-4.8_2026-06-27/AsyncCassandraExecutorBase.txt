@@ -1,0 +1,41 @@
+================================================================================
+API DESIGN REVIEW — AsyncCassandraExecutorBase (abstract; shared async base for
+AsyncCassandraExecutor [driver 4] and v3.AsyncCassandraExecutor [driver 3])
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/AsyncCassandraExecutorBase.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+In very good shape. Every synchronous operation in CassandraExecutorBase has an async
+counterpart here, and the wrapping is consistent end to end: single-row reads preserve
+the sync Optional/Nullable contract (get->Optional, gett->nullable T, findFirst->Optional,
+queryForSingleValue/queryForString/queryForDate->Nullable, queryForSingleNonNull->Optional,
+queryForBoolean/...->primitive Optional*), multi-row reads return List/Dataset/Stream, and
+mutations return the driver RS — each uniformly wrapped in ContinuableFuture. Deprecation
+parity is correct (count(String,Object...) deprecated on both sync and async ->
+queryForLong). The sync() accessor is appropriately typed and instances correctly
+originate from sync.async().
+
+2. NAMING ISSUES
+None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+None.
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+[1] queryForDate raw-query form: ContinuableFuture<Nullable<Date>> queryForDate(String query,
+    Object...) | AsyncCassandraExecutorBase.java:2254, 2292 (only Condition forms exist) | Low |
+    Every other scalar queryForXxx exposes BOTH a (targetClass,propName,Condition) form and a
+    raw (String,Object...) form (e.g. queryForString(String,Object...)@2711,
+    queryForLong(String,Object...)@2599); only queryForDate lacks the raw-query form. This is
+    mirrored identically in the sync base (queryForDate@1921/1957 only), so it is a library-
+    wide gap, not async-specific, and queryForSingleValue(Date.class,query,..) substitutes.
+    Recommendation: for symmetry add queryForDate(String,Object...) delegating to
+    queryForSingleValue(Date.class,...), or document that path. Tracked jointly with
+    CassandraExecutorBase 5[1].
+
+6. DEPRECATION / REMOVAL CANDIDATES
+None beyond the existing, correct count(String,Object...) @Deprecated marker.

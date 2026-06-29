@@ -1,0 +1,55 @@
+================================================================================
+API DESIGN REVIEW — CosmosContainerExecutor
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/azure/CosmosContainerExecutor.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+A well-documented, deliberately thin @Beta wrapper over CosmosContainer. The write side
+(createItem/upsertItem/replaceItem/patchItem/deleteItem) and the raw read side (readItem/
+readMany/readAllItems/queryItems) are clean, faithful SDK pass-throughs that correctly keep
+the SDK's CosmosItemResponse/FeedResponse/CosmosPagedIterable return types and own no lifecycle
+(the container is injected, so correctly NOT AutoCloseable). The absence-tolerant get->Optional
+reads (@856, 896) and the paged-vs-stream parallelism for partition scans and SQL queries are
+good. Parameter ordering (targetClass last) MATCHES the real sibling executors (e.g.
+MongoCollectionExecutor uses rowType-last), so it is NOT a deviation. The actionable issues are
+all about incomplete adoption of the abacus convenience layer the class already partially opted
+into (it builds SQL from Condition via SqlBuilder), plus two minor annotation/modifier nits.
+
+2. NAMING ISSUES — None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] final applied only to the streamItems family | CosmosContainerExecutor.java:1500, 1540, 1583,
+    1629, 1679, 1721, 1767, 1830 | Low | Every streamItems overload is public final, while all
+    other sibling public methods (createItem, get, readItem, queryItems, streamAllItems) and the
+    class itself are non-final. The split is arbitrary. Recommendation: make the modifier uniform.
+
+4. MISPLACED METHODS — None.
+
+5. MISSING METHODS
+[1] <T> T gett(String,PartitionKey,Class<T>) (nullable) | CosmosContainerExecutor.java:856 (get
+    present, gett absent) | Med | Sibling pairs get(Optional)/gett(nullable) — MongoCollectionExecutor.java:511/669.
+    Cosmos offers only get(Optional) and readItem (full response, throws 404). Recommendation:
+    add gett returning null on 404 (and an options overload).
+[2] exists(...)->boolean / count(...)->long convenience | CosmosContainerExecutor.java (whole
+    class; cf. MongoCollectionExecutor.java:264/336) | Med | The class already builds Cosmos SQL
+    from Condition, so existence/count are natural (SELECT VALUE COUNT(1)). Recommendation: add
+    boolean exists(Condition) / long count(Condition) (and id+partitionKey exists).
+[3] Condition queries are exposed ONLY as streamItems (Stream); no list(List), query(DataSet),
+    findFirst(Optional), nor paged queryItems(Condition,...) | CosmosContainerExecutor.java:1679,
+    1721, 1767, 1830 | Med | String/SqlQuerySpec queries get both paged (queryItems@1311/1407)
+    and stream (streamItems@1500/1583) shapes, but the Condition/projection path has only
+    streamItems. Recommendation: add the matching list->List, findFirst->Optional, and optionally
+    query->DataSet overloads for Condition/selectPropNames.
+[4] queryForXxx single-value family | CosmosContainerExecutor.java (whole class; cf.
+    MongoCollectionExecutor.java:1354..1490, 1602, 1658) | Low | None exist; aggregate/single-
+    column reads currently require hand-built streamItems(...).first(). Lower priority than [2]/[3]
+    but a real gap vs the sibling.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+[1] redundant + inconsistent method-level @Beta | CosmosContainerExecutor.java:1228 & 1268
+    (streamAllItems), 1678 & 1720 (streamItems(Condition…)) vs un-annotated 1767 & 1830 | Low |
+    The whole class is already @Beta (@182), so per-method @Beta is redundant; worse it is applied
+    to two streamItems(Condition…) overloads but NOT to the projection overloads @1767/1830 that
+    travel the same path. Recommendation: drop the redundant method-level @Beta (class annotation
+    suffices) or apply it uniformly.

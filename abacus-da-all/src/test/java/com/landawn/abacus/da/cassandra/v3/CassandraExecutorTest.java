@@ -845,11 +845,11 @@ public class CassandraExecutorTest extends TestBase {
     public void test_CqlMapper_keySet_isEmpty_remove() {
         CqlMapper mapper = new CqlMapper();
         assertTrue(mapper.isEmpty());
-        assertTrue(mapper.cqlIds().isEmpty());
+        assertTrue(mapper.ids().isEmpty());
 
         mapper.add("k1", "SELECT 3 FROM simplex.users WHERE id = ?", null);
         assertFalse(mapper.isEmpty());
-        assertTrue(mapper.cqlIds().contains("k1"));
+        assertTrue(mapper.ids().contains("k1"));
 
         mapper.remove("k1");
         assertTrue(mapper.isEmpty());

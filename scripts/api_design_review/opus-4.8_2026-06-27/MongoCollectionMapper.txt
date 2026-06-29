@@ -1,0 +1,59 @@
+================================================================================
+API DESIGN REVIEW — MongoCollectionMapper<T> (sync)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoCollectionMapper.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+A clean, thin, pre-typed delegate: nearly every public method is a one-line forward to the
+bound collectionExecutor with rowType supplied automatically, so no method redundantly asks
+the caller for a Class<T>. The only non-trivial logic is distinct(...), which deliberately
+routes through a $group/$project pipeline (well-commented @3128) to avoid the driver's
+scalar-decode failure (mirrored identically in the reactive class). Overload families
+(exists/count/get/findFirst/list/query/stream/insert/update/replace/delete/bulk/findOneAndX/
+distinct/aggregate/groupBy) are complete and the selectPropNames/filter/sort/offset/count
+ordering is internally regular. Deprecation of mapReduce is correct. The issues are
+consistency-level.
+
+2. NAMING ISSUES
+[1] selectPropNames placement differs across families: it trails the key in
+    get(String,Collection)/gett(...)@446, 568 but leads the filter in findFirst(Collection,
+    Bson)/list(Collection,Bson)/query/stream@662, 819; separately, the leading Bson means
+    *filter* in list(Bson)@759 / list(Bson,int,int)@790 but means *projection* in
+    list(Bson,Bson,Bson)@951 | MongoCollectionMapper.java (cited lines) | Low | Both are
+    inherited from the executor's overload shape (by-design mirroring) and consistent within
+    each sub-family, but cross-family the position/meaning of a parameter shifts — an ergonomic
+    foot-gun. Not worth a breaking change; recommend a one-line class-Javadoc note that the
+    first Bson is the filter in 1-arg/paginated overloads and the projection only in the
+    3-Bson overloads. Confirming check: compare signatures @759 vs 951.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] findOneAndUpdate(Bson,T)/findOneAndReplace(Bson,T)/findOneAndDelete(Bson) return bare
+    nullable T | MongoCollectionMapper.java:2871, 2995, 3059 | Med | The other single-entity
+    reads get(...)@386 and findFirst(...)@631 return Optional<T>. These are all "find at most
+    one entity, may be absent" ops, yet two return shapes are used; the reactive mirror is
+    internally consistent here (all Mono<T>), making the sync split more visible.
+    Recommendation: add Optional<T> overloads (or at minimum document the deliberate
+    divergence). Same family-level issue as MongoCollectionExecutor 2[1].
+
+4. MISPLACED METHODS — None.
+5. MISSING METHODS — None (the mapper is a complete pre-typed delegate).
+
+6. DEPRECATION / REMOVAL CANDIDATES
+[1] queryFor* @Beta family split | MongoCollectionMapper.java:1025, 1328, 1365 (@Beta) vs 1408,
+    1450 (no @Beta) | Med | Within one "query for a single field value" family, 10 methods are
+    @Beta and 2 (the Class-taking queryForDate(3-arg)/queryForSingleValue they build on) are
+    stable, with no documented rationale. Recommendation: unify the family's stability marking
+    (drop @Beta from all, or apply it to the two Class overloads too). Fix in lockstep with the
+    executor and reactive mapper.
+[2] distinct(String)/distinct(String,Bson) NOT @Beta but groupBy(String) IS @Beta |
+    MongoCollectionMapper.java:3118, 3167 vs 3230 | Low | distinct is implemented via the same
+    $group/$project pipeline as groupBy (its comment @3124 says "like groupBy"), so the
+    experimental-vs-stable split between two methods sharing one mechanism is inconsistent.
+    Recommendation: align their @Beta status. Confirming check: distinctPipeline@3128 is the
+    shared routine.
+[3] bulkInsert(Collection)->BulkWriteResult overlaps insertMany(Collection)->InsertManyResult |
+    MongoCollectionMapper.java:2753 vs 2084 | Low | Two public ways to batch-insert that differ
+    only in driver pathway and result type — defensible but easy to confuse. Recommendation:
+    cross-reference each in the other's Javadoc with a one-line "choose this when you need X
+    result" (currently only bulkInsert hints at it). Not a removal.

@@ -1,0 +1,38 @@
+================================================================================
+API DESIGN REVIEW — AnyIncrement
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyIncrement.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+Clean mirror of org.apache.hadoop.hbase.client.Increment with the same fluent shape as
+AnyAppend: addColumn(String,String,long) / addColumn(byte[],byte[],long), add(Cell),
+setTimeRange/getTimeRange, setReturnResults/isReturnResults, plus the Increment-specific
+hasFamilies() and getFamilyMapOfLongs(). add(Cell) correctly throws IOException
+(consistent with Put/Delete, unlike Append). The actionable items are the same cross-
+cutting consistency issues as AnyAppend.
+
+2. NAMING ISSUES
+None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] setAttribute(String,byte[]) | AnyIncrement.java:700 | Med | Same redundant/inconsistent
+    overload as AnyAppend.setAttribute(String,byte[])@636 — observationally equivalent to
+    the inherited Object overload and present on only 2 of 4 mutation types. VERIFIED.
+    Recommendation: resolve uniformly across the family (remove from AnyAppend/AnyIncrement,
+    or add to AnyPut/AnyDelete). See AnyAppend 3[2].
+[2] of(byte[],int,int) | AnyIncrement.java:225 ; of(byte[],long,NavigableMap) | AnyIncrement.java:262
+    | Med | Same row-key-type asymmetry as AnyAppend 3[3]: only byte[] accepted vs Object on
+    the AnyPut/AnyDelete equivalents. Recommendation: add Object-keyed overloads for a
+    uniform factory contract.
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+[1] static toIncrement(Collection) | AnyIncrement.java (class surface) | Low | Parity gap
+    with AnyPut.toPut / AnyDelete.toDelete. Recommendation: add for parity (same confirming
+    check as AnyAppend 5[1]).
+
+6. DEPRECATION / REMOVAL CANDIDATES
+See 3[1] — recommend removing the redundant setAttribute(String,byte[]) overload.

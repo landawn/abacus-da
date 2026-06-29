@@ -1,0 +1,71 @@
+================================================================================
+API DESIGN REVIEW — MongoDBBase (abstract; superclass of MongoDB [sync] and
+reactivestreams.MongoDB)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/MongoDBBase.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+A hybrid: it serves as the superclass for the two concrete MongoDB facades, but it also
+carries ~30 public static conversion/extraction utilities (JSON/BSON conversion,
+toDocument/toEntity/toList/toMap/extractData/stream, objectId2Filter, registerIdProperty).
+The conversion logic, codec machinery (GeneralCodecRegistry/GeneralCodec), ObjectId
+resolution, and scalar-projection handling in readRow/toList are careful and correct. The
+main design tension is PLACEMENT: a large static toolbox living on an abstract instance base
+creates three redundant entry points to identical statics (MongoDBBase.x, MongoDB.x,
+reactivestreams.MongoDB.x) and forces cross-package visibility hacks. A few naming and
+contract inconsistencies follow from that mixing.
+
+2. NAMING ISSUES
+[1] static Bson objectId2Filter(String) / objectId2Filter(ObjectId) | MongoDBBase.java:237, 267
+    | Med | The "2"-as-"to" digit style is inconsistent with the rest of this class, which
+    uses the to-prefix convention (toBson, toDocument, toJson). Recommendation: rename to
+    objectIdToFilter(...) / toIdFilter(...) (keep the old name @Deprecated if needed).
+[2] static Dataset extractData(...) family (6 overloads) | MongoDBBase.java:1168, 1201, 1235,
+    1270, 1305, 1349 | Med | "Convert to a Dataset" is named extractData while the sibling
+    converters are toList/toMap/toEntity. Recommendation: rename to toDataset(...) for in-class
+    consistency (keep extractData as a deprecated alias if the JdbcUtil.extractData precedent
+    is valued).
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] static <T> T toEntity(Document doc, Class<T> rowType) | MongoDBBase.java:941 (mutation @952
+    `doc.remove(_ID)`, re-put @965-967) | Med | toEntity removes _ID then restores it in a
+    finally via doc.put(_ID, objectId). Because Document is insertion-ordered (LinkedHashMap-
+    backed), _id is permanently MOVED to the LAST position in the caller's document, and the
+    transient removal is not thread-safe — contradicting the class-level "all static utility
+    methods can be called concurrently" claim (@84). VERIFIED against source. Recommendation:
+    do not mutate the input; map from a shallow copy, or exclude _id during Beans.mapToBean
+    without removing it from the source.
+[2] extractData(Collection,MongoIterable,Class) vs extractData(Collection,List,Class) |
+    MongoDBBase.java:1236 (calls checkResultClass) vs 1349 (does not) | Med | The
+    MongoIterable-based extractData validates rowType (must be bean or Map, else IAE) but the
+    List-based variant performs no such check and silently falls through. Same conceptual op,
+    different contracts. Recommendation: route both through checkResultClass (or neither) and
+    align the Javadoc @throws.
+[3] static Bson toBson(Object) | MongoDBBase.java:449 | Low | toBson(obj) is exactly
+    `return toDocument(obj)` — identical Document object, only widening the static return type
+    to Bson (and Document implements Bson, so `Bson b = toDocument(x)` already compiles). Adds
+    no behavior. Recommendation: drop toBson in favor of toDocument, or document that its sole
+    purpose is the interface-typed return for driver Bson params. Confirming check: toDocument
+    returns Document which implements Bson (@517).
+
+4. MISPLACED METHODS
+[1] The entire static utility surface: fromJson, toJson(...), toBson(...), toDocument(...),
+    toBSONObject(...), toDBObject(...), toMap(...), toEntity, toList, extractData(...),
+    stream(...), objectId2Filter(...), registerIdProperty | MongoDBBase.java:109 (class);
+    representative statics @313, 358, 449, 517, 941, 1009, 1168, 1436 | Med | These statics
+    have nothing to do with the abstract base's instance role; inheriting statics means each
+    utility is reachable as MongoDBBase.x AND MongoDB.x AND reactivestreams.MongoDB.x — three
+    names for one method, with the Javadoc examples leaning on the subclass form.
+    Recommendation: move the conversion/extraction/JSON/BSON/stream statics into a dedicated
+    final utility class (e.g. MongoDBs / MongoUtil), leaving MongoDBBase a thin abstract base
+    (codecRegistry, DEFAULT_ASYNC_EXECUTOR, the protected row helpers). This also removes the
+    need for the reactivestreams readRow re-export (see reactivestreams.MongoDB).
+
+5. MISSING METHODS — None.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+[1] registerIdProperty | MongoDBBase.java:193-194 | (keep) | Correctly @Deprecated with a
+    clear replacement (@Id annotation). No change beyond the placement concern in 4[1] (it is
+    a static method mutating a process-global pool, itself an argument for relocating it out of
+    the instance base).

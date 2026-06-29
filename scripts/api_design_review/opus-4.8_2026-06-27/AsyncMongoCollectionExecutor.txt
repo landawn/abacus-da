@@ -1,0 +1,48 @@
+================================================================================
+API DESIGN REVIEW — AsyncMongoCollectionExecutor
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/AsyncMongoCollectionExecutor.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+A clean, thin ContinuableFuture wrapper that faithfully mirrors the sync executor's return
+shapes (Optional, Nullable, primitive OptionalX, driver result types, Dataset/List/Stream
+wrapped in futures) and correctly mirrors the @Beta and @Deprecated markings. The sync()<->
+async() bridge is sound. The real problem is not divergent shapes but MISSING methods:
+several sync public methods have no async counterpart, confirmed by the fact that BOTH the
+sync class and the reactivestreams variant expose them while this class does not.
+
+2. NAMING ISSUES — None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] queryForXxx @Beta split (mirrored from sync) | AsyncMongoCollectionExecutor.java:1080-1420
+    (@Beta) vs 1461, 1502, 1545 (no @Beta) | Med | Same inconsistency as the sync executor;
+    fix together so the two classes stay aligned. See MongoCollectionExecutor 3[1].
+
+4. MISPLACED METHODS — None.
+
+5. MISSING METHODS
+[1] estimatedDocumentCount() and estimatedDocumentCount(EstimatedDocumentCountOptions) |
+    AsyncMongoCollectionExecutor.java (absent; sync @MongoCollectionExecutor.java:417, 440) |
+    High | count() has an async form but estimatedDocumentCount has none. VERIFIED via grep
+    (no occurrence in this file). Recommendation: add both overloads delegating via
+    asyncExecutor.execute(() -> collectionExecutor.estimatedDocumentCount(...)). Confirming
+    check: reactivestreams/MongoCollectionExecutor.java:456, 491 has both.
+[2] typed group overloads: groupBy(String,Class<T>), groupBy(Collection,Class<T>),
+    groupByAndCount(String,Class<T>), groupByAndCount(Collection,Class<T>) |
+    AsyncMongoCollectionExecutor.java:3553/3578/3616/3658 expose only the Document-returning
+    forms (sync typed forms @MongoCollectionExecutor.java:4253, 4302, 4356, 4404) | High |
+    Async callers cannot obtain type-converted grouping results, only Stream<Document>.
+    VERIFIED against source (only Document-returning groupBy/groupByAndCount present).
+    Recommendation: add the four Class<T> overloads. Confirming check:
+    reactivestreams/MongoCollectionExecutor.java:3843, 3889, 3951, 3997 has all four.
+[3] stream() (no-arg, all docs) and stream(Class<T>) | AsyncMongoCollectionExecutor.java
+    (async stream family starts @1811 stream(Bson filter); sync unfiltered forms
+    @MongoCollectionExecutor.java:2035, 2078) | Med | No async way to stream the whole
+    collection without constructing an explicit empty filter. VERIFIED (smallest async stream
+    takes Bson). Recommendation: add stream() and stream(Class<T>) async overloads.
+[4] coll() accessor | AsyncMongoCollectionExecutor.java:168 exposes only sync() (sync exposes
+    coll()@MongoCollectionExecutor.java:213 and async()) | Low | The raw MongoCollection is
+    reachable via sync().coll(), so acceptable; optionally add a convenience coll().
+
+6. DEPRECATION / REMOVAL CANDIDATES — None beyond the existing, correct mapReduce @Deprecated.

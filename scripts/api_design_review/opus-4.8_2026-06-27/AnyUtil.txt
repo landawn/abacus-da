@@ -1,0 +1,45 @@
+================================================================================
+API DESIGN REVIEW — AnyUtil (aws)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/aws/AnyUtil.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+A public final utility with a single static method array2Props(Object[]) -> Map<String,Object>
+that converts an even-length, alternating name/value array into an ordered LinkedHashMap. The
+implementation is correct and the Javadoc is thorough and accurate (null -> empty map; odd length
+-> IAE; non-String name -> IAE; last-wins on duplicate keys with original position retained; null
+values preserved). Two design smells: (1) the class name AnyUtil is non-descriptive and its Javadoc
+overstates scope ("general-purpose helper methods used across the data-access layer") while it holds
+one method and lives in the AWS package; (2) the method is fully general (nothing AWS/DynamoDB-
+specific) yet is exposed as PUBLIC API in the aws package, while its only production consumer is
+aws.dynamodb.v2.DynamoDBExecutor (calls @1021, 1105). Note: there is now exactly ONE AnyUtil in
+main source — the former mongodb.AnyUtil no longer exists, so this is NOT a duplication.
+
+2. NAMING ISSUES
+[1] public final class AnyUtil / class Javadoc | AnyUtil.java:11 (Javadoc @7) | Med | Rename to
+    something descriptive of its one job (e.g. PropsUtil) and fix the Javadoc, which claims broad
+    cross-layer scope the single-method class does not have. array2Props itself is a fine,
+    convention-following name (matches the array2X helper style).
+
+3. RETURN-TYPE AND PARAMETER ISSUES — None (array2Props's null-tolerant, IAE-on-odd/non-String
+   contract is correct and well documented).
+
+4. MISPLACED METHODS
+[1] public static Map<String,Object> array2Props(Object[]) | AnyUtil.java:70 (sole prod caller
+    DynamoDBExecutor.java:1021, 1105) | Med | A fully general property-bag helper exported as PUBLIC
+    API from the aws package though its only production user is the DynamoDB v2 executor.
+    Recommendation: reduce visibility to package-private / fold into aws.dynamodb.v2.DynamoDBExecutor,
+    or move to a neutral shared util package. Cleanest: inline into the v2 executor (consistent with
+    the v1 executor, which builds its item map directly via N.newLinkedHashMap and never uses
+    array2Props). NOTE: v2.DynamoDBExecutor ALSO ships its own near-identical toMap(Object[])@1201
+    with diverging null/key semantics — resolve the duplication together (see v2.DynamoDBExecutor 4[1]).
+
+5. MISSING METHODS — None.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+[1] array2Props(Object[]) duplication vs core | AnyUtil.java:70 | Low | Not actionable as
+    duplication — core N.asMap(...) is fixed-arity/Immutable and N.asProps/asLinkedHashMap are
+    commented out in abacus-common, so no core method has the same contract (Object[] -> mutable
+    LinkedHashMap, null-tolerant). Keep the behavior; the actionable parts are the rename (2[1]) and
+    placement (4[1]).

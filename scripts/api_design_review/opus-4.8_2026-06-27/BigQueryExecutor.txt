@@ -1,0 +1,69 @@
+================================================================================
+API DESIGN REVIEW — BigQueryExecutor
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/gcp/BigQueryExecutor.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+A healthy, internally coherent executor. The read families honor the library conventions
+exactly: list->List<T>, query->Dataset, stream->Stream<T>, extractData/toList->Dataset/List,
+execute->TableResult, with targetClass-first ordering on every instance read and (descriptor,
+row, Class) ordering on the static converters — the latter mirror CassandraExecutor's public
+static toEntity/toMap/toList/extractData and are therefore correctly placed on the executor.
+queryForSingleValue correctly returns Nullable<V> (preserving present-but-null), DML insert/
+update/delete returning the native TableResult matches the sibling pattern, there are no
+deprecated members, and the class rightly does not implement AutoCloseable (it does not own the
+injected BigQuery client). The prepareQuery alias handling is coherent: the double-quote->backtick
+rewrite (@2429) is guarded by an indexOf('"') check and is safe because every emitted value is a
+positional ? parameter. The actionable gaps are missing surface relative to sibling executors,
+plus a visibility/Javadoc mismatch on the documented package-private helpers.
+
+2. NAMING ISSUES — None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] <V> Nullable<V> queryForSingleValue(Class<?> targetClass, Class<V> valueClass, String propName,
+    Condition whereClause) | BigQueryExecutor.java:1769 | Low | Two adjacent Class parameters
+    (targetClass, valueClass) are transposable — swapping them compiles and silently converts to
+    the wrong type at runtime. Recommendation: document the order prominently and keep valueClass
+    adjacent to propName, or split into a fluent form; low severity since both are genuinely
+    required. Confirming check: both args erase to java.lang.Class, so the compiler cannot reject
+    a swap.
+
+4. MISPLACED METHODS
+[1] package-private statics carry public-style Javadoc with non-compilable cross-package usage
+    examples, and the public class Javadoc {@link}s one of them | BigQueryExecutor.java:2513
+    (buildQueryParameterValue), 2560 (getSchema), 1601 (idsToCondition), 1645 (entityToCondition);
+    class Javadoc link @116 | Med | All four are package-private yet documented as public API
+    (e.g. getSchema's example calls BigQueryExecutor.getSchema(row)@2546; the public class Javadoc
+    links {@link #buildQueryParameterValue(Object...)}@116 to a non-public member). VERIFIED:
+    buildQueryParameterValue@2513 and getSchema@2560 are package-private statics referenced from
+    the public class Javadoc. Recommendation: either promote the genuinely reusable ones
+    (buildQueryParameterValue, idsToCondition, entityToCondition) to public, or strip the external
+    usage examples / {@link} so the docs don't imply a public contract.
+
+5. MISSING METHODS
+[1] get(Class,Object...ids) / findFirst(Class,Condition) / findFirst(Class,Collection,Condition) /
+    findFirst(Class,String,Object...) returning Optional<T> | BigQueryExecutor.java:1984 (list),
+    2105 (stream), 1769/1820 (only scalar queryForSingleValue) | High | The single-ENTITY read
+    convention is universal across siblings — CassandraExecutorBase.java:533/590 (get->Optional),
+    1447 (findFirst->Optional), MongoCollectionExecutor.java:810, CosmosContainerExecutor.java:856.
+    VERIFIED via grep: BigQueryExecutor has NO findFirst/Optional/get-by-id at all — only
+    queryForSingleValue (scalar->Nullable) and list/query/stream; a caller wanting one row must do
+    list(...).get(0) with no empty-safety. Recommendation: add findFirst(...)->Optional<T> and
+    get(Class,Object...ids)->Optional<T> (it already has exists(Class,ids)@1551 and
+    delete(Class,ids)@1459 but no get by id).
+[2] count(Class,Condition)->long / count(String,Object...)->long | BigQueryExecutor.java:1718
+    (exists present, count absent) | Med | exists is present in both condition and SQL forms, but
+    its natural companion count is absent, unlike CassandraExecutorBase.java:1410/2146. Today
+    callers fall back to queryForSingleValue(Long.class, "SELECT COUNT(*) ..."). Recommendation:
+    add count(Class,Condition) and count(String,Object...) mirroring the two exists overloads.
+[3] QueryJobConfiguration access exposed only via stream; no execute/list/query parity |
+    BigQueryExecutor.java:2236 (stream(Class,config)), 2299 (stream(config)), 2357 (execute is
+    String-only) | Med | The native-config path is asymmetric: there is stream(Class,config) and
+    raw stream(config), but no execute(QueryJobConfiguration)->TableResult, list(Class,config)->List,
+    or query(Class,config)->Dataset. The two stream overloads also perform InterruptedException/
+    JobException translation a caller cannot get via bigQuery().query(config) directly.
+    Recommendation: add execute(QueryJobConfiguration) as the primitive and list/query overloads
+    built on it.
+
+6. DEPRECATION / REMOVAL CANDIDATES — None.

@@ -1,0 +1,30 @@
+================================================================================
+API DESIGN REVIEW — ParsedCql
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/ParsedCql.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+Context: ParsedCql deliberately mirrors abacus-common ParsedSql; its Map<Integer,String>
+namedParameters shape and attrs-in-ParsedCql are intentionally locked. Matching the SQL
+sibling is not flagged on its own.
+
+1. OVERALL ASSESSMENT
+Healthy and immutable-by-construction. The parse/cache entry point, the four accessors
+(originalCql, parameterizedCql, namedParameters, parameterCount), and equals/hashCode/
+toString are internally consistent and match documented behavior, including the deliberate
+Map<Integer,String> shape for namedParameters. No functional or naming defects; only a
+minor doc-precision nit.
+
+2. NAMING ISSUES — None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] ImmutableMap<Integer,String> namedParameters() | ParsedCql.java:564-566 (doc @542-543) |
+    Low | The Javadoc says the returned map "is the instance's internal map ... not intended
+    to be modified by callers. Treat it as read-only." The return type is ImmutableMap
+    (modification throws), so the value is genuinely immutable; the wording understates the
+    guarantee and implies a mutable map callers must avoid touching. Recommendation: simplify
+    to "@return an immutable map from index to name," consistent with
+    ParsedSql.namedParameters.
+
+4. MISPLACED METHODS — None.
+5. MISSING METHODS — None.
+6. DEPRECATION / REMOVAL CANDIDATES — None.

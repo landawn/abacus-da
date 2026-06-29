@@ -1,0 +1,172 @@
+================================================================================
+API DESIGN REVIEW — CROSS-CLASS SUMMARY
+Package: com.landawn.abacus.da   (abacus-da-all/src/main/java)
+Model: opus-4.8   Date: 2026-06-27   Execution: PARALLEL (per-family sub-agents;
+orchestrator verified every promoted finding against source)
+================================================================================
+
+SCOPE RECAP
+- 35 public classes with reviewable API + 4 package-private abstract bases (HBase Any*)
+  whose public methods surface through concrete subclasses + 12 package-private
+  placeholder/helper classes (no public API). Per-class reports are in this folder.
+- Heavy intentional mirroring (verified, NOT flagged as duplication): HBase Any* <-> HBase
+  client hierarchy; HBaseExecutor <-> AsyncHBaseExecutor; Cassandra driver-4 (cassandra/*)
+  <-> driver-3 (cassandra/v3/*, @Deprecated) and their async pair; DynamoDB SDK-v1 <-> v2
+  and each sync <-> async; Mongo sync <-> reactivestreams; Cassandra Cql* <-> abacus SQL
+  siblings. NOTE: the "v3" Cassandra package is driver MAJOR-VERSION 3 (the legacy/deprecated
+  one); the non-v3 cassandra/* package targets the modern driver 4.
+
+The library is, overall, in good health: return-type discipline (Optional vs Nullable vs
+primitive OptionalX; List/Dataset/Stream) is deliberate and mostly consistent; parameter
+ordering (targetClass/tableName first or id-first) is regular; deprecations are generally
+correct. The findings below are about consistency, placement, and a handful of Javadoc-vs-
+implementation defects — not broad design failure.
+
+================================================================================
+1. CONSISTENCY ISSUES SPANNING MULTIPLE CLASSES
+================================================================================
+
+C1. STATIC CONVERTER/UTILITY HELPERS LIVE ON STATEFUL EXECUTORS (placement).
+    ~30 public static converters on each DynamoDBExecutor (v1 @527-1785; v2 @822-...),
+    ~30 on MongoDBBase (@313-1436), plus the standalone aws/AnyUtil. These are pure stateless
+    utilities reachable only through instance-bearing/abstract types, and (MongoDBBase) become
+    triple-named via inheritance (MongoDBBase.x / MongoDB.x / reactivestreams.MongoDB.x), which
+    in turn forced the reactivestreams.MongoDB.readRow re-export hack. The Cassandra/BigQuery
+    public statics are a milder version of the same pattern (there it is acceptable and
+    consistent). Target: dedicated final util classes (DynamoDBs/DynamoDBUtil, MongoDBs/MongoUtil).
+
+C2. PROPERTY-BAG HELPER DUPLICATED 3x WITH DIVERGING SEMANTICS.
+    aws/AnyUtil.array2Props(Object[])@70, dynamodb/DynamoDBExecutor.toMap(Object[])@1222,
+    dynamodb/v2/DynamoDBExecutor.toMap(Object[])@1201 — three near-identical alternating
+    name/value -> Map helpers that disagree on null input (null map vs empty map) and key
+    handling (String.valueOf vs require-String), and the two toMap variants overload the toMap
+    name against the unrelated AttributeValue-item decoder. Collapse to ONE shared helper.
+
+C3. ASYNC FUTURE RETURN TYPE IS INCONSISTENT.
+    ContinuableFuture is used by HBase async, Cassandra async, Mongo async, and DynamoDB v1
+    async; but dynamodb/v2/AsyncDynamoDBExecutor returns CompletableFuture (verified @423/470/...).
+    The v2 DynamoDB async executor is the lone outlier.
+
+C4. @Beta APPLIED UNEVENLY ACROSS THE queryFor* FAMILY.
+    In MongoCollectionExecutor, AsyncMongoCollectionExecutor, reactivestreams.MongoCollectionExecutor,
+    MongoCollectionMapper, and reactivestreams.MongoCollectionMapper, the primitive queryForXxx +
+    queryForString + 2-arg queryForDate are @Beta while the foundational queryForSingleValue /
+    3-arg queryForDate / queryForSingleNonNull they delegate to are stable (verified). Cosmos
+    separately carries redundant method-level @Beta under an already-@Beta class. Decide one
+    stability signal per family and apply it in lockstep across all five Mongo classes.
+
+C5. SINGLE-ENTITY READ CONVENTION (get->Optional / gett->nullable / findFirst->Optional) IS NOT
+    UNIFORMLY ADOPTED. Strong in CassandraExecutorBase and the Mongo executors. Gaps:
+    BigQueryExecutor has NO get/findFirst/Optional at all (verified); CosmosContainerExecutor has
+    get(Optional) but no gett/exists/count; Neo4jExecutor returns bare null from load/queryForObject
+    with no Optional read; HBaseExecutor/DynamoDB return null by design. Some gaps are defensible
+    mirrors (Dynamo->SDK, Neo4j->OGM); the clear wins are BigQuery (add get/findFirst) and Cosmos
+    (add gett/exists/count).
+
+C6. SYNC<->ASYNC / VERSION PARITY GAPS.
+    AsyncMongoCollectionExecutor is missing estimatedDocumentCount, the four typed groupBy/
+    groupByAndCount(Class<T>) overloads, and no-arg stream()/stream(Class) that both the sync and
+    reactive variants expose (verified). DynamoDB's typed Mapper API has no async counterpart.
+
+C7. BATCH-GET SILENTLY DROPS UNPROCESSED KEYS (DynamoDB v1 & v2, sync & async).
+    Every batchGetItem returns only decoded responses and discards UnprocessedKeys, while the
+    sibling batchWriteItem returns the full result exposing unprocessed items — an asymmetry that
+    forces retry-needing callers to the raw client, with misleading Javadoc.
+
+C8. JAVADOC CONTRADICTS IMPLEMENTATION (correctness of the contract, per ground rule 5).
+    CqlMapper.ids()@387 documents a "live view" but returns an ImmutableSet snapshot (verified);
+    MongoDB.collectionExecutor(String)@223 and collection(String)@161 carry mutually contradictory
+    "which one validates" comments (both validate); reactivestreams.MongoCollectionMapper update-
+    Collection overloads are documented as "merge from multiple sources" but are aggregation-
+    pipeline updates; BigQuery documents package-private statics (buildQueryParameterValue@2513,
+    getSchema@2560) as public with a public-class {@link}@116; ParsedCql.namedParameters wording
+    understates the ImmutableMap guarantee.
+
+C9. HBASE MUTATION-FAMILY ASYMMETRIES (within AnyPut/AnyDelete/AnyAppend/AnyIncrement/AnyRowMutations):
+    (a) setAttribute(String,byte[]) exists only on AnyAppend@636/AnyIncrement@700 (redundant with
+    the inherited Object overload); (b) the slice/familyMap of(...) factories take byte[] on
+    AnyAppend/AnyIncrement but Object on AnyPut/AnyDelete; (c) AnyAppend.add(Cell)@605 lacks the
+    `throws IOException` the other three declare; (d) compareTo(Row) is @Deprecated on AnyMutation
+    but not on AnyRowMutations. All verified.
+
+C10. REDUNDANT / NO-OP PUBLIC SURFACE.
+    CassandraExecutorBase.update(String,Object...)@967 is a pure pass-through to execute (like the
+    already-deprecated count(String,..)); the four Async Cassandra executor overrides only re-doc
+    base methods; CqlBuilder.iF is a non-deprecated alias of the "preferred" onlyIf; AnyScan
+    overrides setColumnFamilyTimeRange identically to AnyQuery; v2.DynamoDB toMap(Object[]) duplicates
+    AnyUtil.array2Props.
+
+C11. SAME-TYPE / OVERLOAD AMBIGUITY TRAPS.
+    BigQuery queryForSingleValue(Class targetClass, Class valueClass, ...) has two transposable
+    Class params; the (Object entity) vs (Class, Object... ids) overload pairing in
+    CassandraExecutorBase (and its siblings) silently mis-binds a Class literal to the entity
+    overload. Both are latent footguns rather than failures.
+
+================================================================================
+2. PRIORITIZED ACTION PLAN
+================================================================================
+Tags: P1 = clear win, low risk | P2 = worthwhile, needs a design decision | P3 = nice-to-have
+Compat: doc-only / additive (non-breaking) / breaking (acceptable per task ground rule 4).
+
+---- P1 (do first; mostly doc-only or purely additive) ----------------------------------
+P1.1  Fix Javadoc-vs-impl defects (C8): CqlMapper.ids() snapshot wording; MongoDB.collection/
+      collectionExecutor contradiction; reactive mapper update-overload docs; ParsedCql.namedParameters
+      wording; BigQuery package-private statics' public-style Javadoc/{@link}.
+      Effort: S. Compat: doc-only (BigQuery: also decide promote-to-public vs strip-docs).
+P1.2  Add @Deprecated(->Row.COMPARATOR) to AnyRowMutations.compareTo to match AnyMutation (C9d).
+      Effort: XS. Compat: additive.
+P1.3  AsyncMongoCollectionExecutor parity (C6): add estimatedDocumentCount(2), typed groupBy/
+      groupByAndCount(Class<T>)(4), stream()/stream(Class)(2). Effort: S. Compat: additive.
+P1.4  Unify @Beta across the five Mongo queryFor* families (C4) + drop redundant method-level
+      @Beta in Cosmos. Effort: S. Compat: additive/annotation-only.
+P1.5  AnyScan.setStartStopRowForPrefixScan: accept Object (or add an Object overload) so the
+      replacement for the deprecated setRowPrefixFilter(Object) matches every other row-key setter.
+      Effort: XS. Compat: additive (add overload) or breaking-minor (change param).
+P1.6  Deprecate CqlBuilder.iF in favor of onlyIf (C10). Effort: XS. Compat: additive.
+
+---- P2 (worthwhile; each needs a design decision) --------------------------------------
+P2.1  Extract stateless converters from DynamoDBExecutor(v1+v2) and MongoDBBase into dedicated
+      util classes (C1); removes the MongoDBBase triple-naming + the reactivestreams.readRow hack.
+      Effort: L. Compat: breaking (or additive if old statics kept as deprecated delegates).
+P2.2  Collapse the array2Props/toMap(Object[]) trio into one shared helper with one null/key
+      contract; reserve toMap for AttributeValue decoding; rename/retire aws/AnyUtil (C2).
+      Effort: M. Compat: breaking-minor.
+P2.3  Standardize async future type — move v2.AsyncDynamoDBExecutor to ContinuableFuture (C3).
+      Effort: M. Compat: breaking (return type).
+P2.4  HBaseExecutor typed batch get(String,List<Get>,Class): restore positional alignment
+      (null/default placeholders) OR rename the filtering variant; mirror into the Any* and async
+      forms. Effort: M. Compat: breaking-behavioral (current behavior is the footgun).
+P2.5  DynamoDB v2 toAttributeValue/toValue round-trip asymmetry: support List/Map/Set on write OR
+      reject collection-typed properties (C7-adjacent). Effort: M. Compat: behavioral.
+P2.6  DynamoDB batchGetItem: surface UnprocessedKeys (add a raw-response overload) across v1/v2 &
+      sync/async (C7). Effort: M. Compat: additive.
+P2.7  Adopt get/gett/findFirst->Optional in BigQuery (add get/findFirst/count) and Cosmos (add
+      gett/exists/count, and Condition list/findFirst/query) (C5). Effort: M-L. Compat: additive.
+P2.8  Resolve HBase mutation-family asymmetries (C9 a/b/c): remove the redundant setAttribute(byte[])
+      from AnyAppend/AnyIncrement (or add to Put/Delete); give Append/Increment Object-keyed of(...)
+      factories; reconcile AnyAppend.add(Cell)'s missing throws/validation. Effort: M. Compat: mixed.
+P2.9  Cassandra executor close() ownership: only close resources the executor created (ownership
+      flag or createExecutor(...) factory). Effort: M. Compat: behavioral (safer).
+P2.10 Add the missing queryForDate(String,Object...) raw form in CassandraExecutorBase +
+      AsyncCassandraExecutorBase (C-completeness). Effort: S. Compat: additive.
+
+---- P3 (nice-to-have) ------------------------------------------------------------------
+P3.1  Delete or normalize the 11 empty placeholder classes (add the missing private constructors,
+      or remove until implemented). Effort: S. Compat: breaking-trivial (none are referenced).
+P3.2  Remove redundant overrides: AnyScan.setColumnFamilyTimeRange(2); the four Async Cassandra
+      pass-through overrides; deprecate CassandraExecutorBase.update(String,..) (C10). Effort: S.
+P3.3  Renames for in-class consistency: MongoDBBase objectId2Filter->objectIdToFilter,
+      extractData->toDataset; clarify Mongo selectPropNames/Bson param-position docs. Effort: S.
+P3.4  Cosmos: make the `final` modifier uniform across public methods. Effort: XS.
+P3.5  Add fail-fast guards for the (Object entity) vs (Class, Object... ids) overload trap and
+      document BigQuery's two-adjacent-Class queryForSingleValue order (C11). Effort: S.
+P3.6  Minor parity converters: AnyRowMutations getMutations()/size()/isEmpty(); toAppend/toIncrement
+      collection converters; AnyGet/AnyScan family-accessor & equals/hashCode doc symmetry. Effort: S.
+
+================================================================================
+VERIFICATION NOTE
+All High-confidence findings and a representative cross-section of Med findings (≈18 total,
+spanning every major family) were independently re-read against the cited source lines by the
+orchestrator before promotion; 100% matched. Low-confidence items carry the confirming check the
+human reviewer should run. See state.md "Verified findings log" for the line-by-line record.
+================================================================================

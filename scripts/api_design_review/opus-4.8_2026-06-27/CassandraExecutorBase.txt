@@ -1,0 +1,61 @@
+================================================================================
+API DESIGN REVIEW — CassandraExecutorBase (abstract; shared base for CassandraExecutor
+[driver 4] and v3.CassandraExecutor [driver 3])
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CassandraExecutorBase.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+A healthy, internally consistent facade. Return-type discipline across the get/gett/
+findFirst/list/query/stream/queryFor families is deliberate and correct: only-one reads
+split cleanly into get (Optional) vs gett (nullable); findFirst (LIMIT 1, Optional) is
+distinguished from the only-one get-by-Condition (throws DuplicateResultException);
+list->List, query->Dataset, stream->Stream; primitive queryForXxx return OptionalX while
+reference/String/Date lookups return Nullable (preserving NULL-vs-no-row), and
+queryForSingleValue (Nullable) vs queryForSingleNonNull (Optional) is right. Parameter
+ordering is uniformly targetClass-first. count(String,..) is already correctly deprecated
+toward queryForLong. Remaining issues are minor asymmetries/redundancies.
+
+2. NAMING ISSUES
+None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] insert(Object) / update(Object) / delete(Object) | CassandraExecutorBase.java:758, 877, 1123
+    | Low | These accept a bare Object entity, which collides with the sibling
+    (Class<?>, Object... ids) overloads: a Class literal (e.g. delete(User.class)) binds to
+    the non-varargs Object-entity overload and is then treated as an entity via
+    entity.getClass() -> Class.class, a confusing failure rather than a key-based op.
+    Recommendation: add a fail-fast guard rejecting a null/Class entity with a clear message.
+    A latent library-wide trap (same (Object)+(Class,Object...) pairing recurs in sibling
+    executors). Confirming check: Java picks the non-varargs Object overload for a Class arg
+    because the varargs (Class,Object...) candidate is only considered in the variable-arity
+    phase.
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+[1] queryForDate CQL-string form | CassandraExecutorBase.java:1921, 1957 (Condition forms)
+    vs queryForString(String,Object...)@2424 | Med | The Condition-based family has
+    queryForDate(Class,String,Condition) and queryForDate(Class,Class<E extends Date>,String,
+    Condition), and the CQL-string family has queryForString(String,Object...), but there is
+    NO queryForDate(String,Object...) (nor a Class<E extends Date> String-form variant) —
+    the one gap in an otherwise complete primitive/String/Date matrix. Recommendation: add
+    Nullable<Date> queryForDate(String query,Object...) and
+    <E extends Date> Nullable<E> queryForDate(Class<E> valueClass,String query,Object...).
+    (Same gap exists in the async base — see AsyncCassandraExecutorBase 5[1].)
+[2] list(Class,ST) / query(Class,ST) / findFirst(Class,ST) statement-based readers |
+    CassandraExecutorBase.java:2730 (stream(Class,ST) is the only ST-consuming reader) | Low |
+    A caller who builds a custom driver statement (paging/consistency) can stream but cannot
+    list/query/findFirst from it without manually calling execute(stmt). Recommendation: add
+    list/query/findFirst (Class,ST) overloads, or document the deliberate stream-only choice.
+    Confirming check: ST-typed overloads exist only on execute@2889 and stream@2730.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+[1] update(String query, Object... parameters) | CassandraExecutorBase.java:967-968 | Med |
+    Body is exactly `return execute(query, parameters)` — it adds nothing over
+    execute(String,Object...) (no entity/key handling, same RS return), unlike list/query/
+    stream(String,..) which add row mapping. VERIFIED against source. This is the same thin-
+    wrapper shape as the already-@Deprecated count(String,Object...)@2146. Recommendation:
+    deprecate update(String,..) pointing to execute(String,Object...) (or remove it), for
+    consistency with the count deprecation.

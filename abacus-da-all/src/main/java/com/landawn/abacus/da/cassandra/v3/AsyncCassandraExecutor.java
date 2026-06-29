@@ -37,6 +37,11 @@ import com.landawn.abacus.util.stream.Stream;
  * {@code executeAsync} API. Instances are obtained from {@link CassandraExecutor#async()}, and
  * the backing synchronous executor is available via {@link #sync()}.</p>
  *
+ * <p><b>Naming convention:</b> method names are identical to the synchronous {@link CassandraExecutor}
+ * (the abacus "house" CRUD vocabulary: {@code get}/{@code gett}, {@code findFirst}, {@code list},
+ * {@code query}, {@code stream}, {@code exists}, {@code count}, {@code insert}/{@code update}/{@code delete});
+ * each result is wrapped in a {@code ContinuableFuture}.</p>
+ *
  * @deprecated The Cassandra Java Driver 3.x is no longer maintained. Use
  *             {@link com.landawn.abacus.da.cassandra.AsyncCassandraExecutor} for new
  *             applications (which requires Cassandra Java Driver 4.x).

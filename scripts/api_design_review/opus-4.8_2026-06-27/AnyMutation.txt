@@ -1,0 +1,34 @@
+================================================================================
+API DESIGN REVIEW — AnyMutation (abstract base, package-private; methods inherited by
+AnyPut/AnyDelete/AnyAppend/AnyIncrement)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyMutation.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+Healthy. As the shared base it faithfully mirrors HBase Mutation and exposes the common
+controls (durability, timestamp, cluster ids, cell visibility, ACL, TTL) plus inspection
+methods (has/get/size/numFamilies/isEmpty/cellScanner/getFamilyCellMap). Fluent setters
+consistently return the concrete type AM. The has/get overload families are symmetric
+across String and byte[] forms with the expected timestamp/value variants, and Object
+values route through toValueBytes consistently. No functional, naming, or placement
+problems; one inherited-from-HBase deprecation note for cross-class consistency.
+
+2. NAMING ISSUES
+None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+None.
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+None.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+[1] compareTo(Row) | AnyMutation.java:674-677 (@Deprecated@675) | (keep) | Correctly
+    @Deprecated mirroring HBase's deprecation of Row.compareTo; replacement Row.COMPARATOR.
+    VERIFIED. Listed only because the same method is NOT marked @Deprecated in
+    AnyRowMutations.java:369 — the two should be made consistent (fix belongs in
+    AnyRowMutations, see that report 6[1]).

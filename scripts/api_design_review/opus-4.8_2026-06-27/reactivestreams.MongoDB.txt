@@ -1,0 +1,30 @@
+================================================================================
+API DESIGN REVIEW — reactivestreams.MongoDB (com.landawn.abacus.da.mongodb.reactivestreams)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/reactivestreams/MongoDB.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+Faithful reactive mirror of the sync facade — db(), collection/collection(name,Class),
+collectionExecutor(String|MongoCollection), collectionMapper(Class|String,Class|MongoCollection,
+Class) are all present with matching validation and Publisher-returning semantics; the single
+constructor (no AsyncExecutor) is correct for a non-blocking driver. The mirroring with the
+sync class is by design and healthy. The one wart is a cross-package visibility workaround.
+
+2. NAMING ISSUES — None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES — None.
+
+4. MISPLACED METHODS
+[1] protected static <T> T readRow(Document, Class<T>) (delegates to MongoDBBase.readRow) |
+    reactivestreams/MongoDB.java:518 | Med | This method exists only to re-expose
+    MongoDBBase.readRow (a protected static in package ...mongodb) to collaborators in the
+    ...reactivestreams package, which otherwise cannot reach it. The sync side needs no such
+    re-declaration because its executor/mapper share the base's package. This asymmetric
+    shadowing is a symptom of MongoDBBase 4[1]: had the row-mapping helpers lived in a package-
+    or-public utility class, no per-package re-export would be required. Recommendation:
+    extract readRow/toMap/toEntity into a shared utility with package-or-public access and
+    remove this delegating override.
+
+5. MISSING METHODS — None.
+6. DEPRECATION / REMOVAL CANDIDATES — None.

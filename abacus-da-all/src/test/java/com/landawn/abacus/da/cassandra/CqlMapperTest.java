@@ -33,7 +33,7 @@ public class CqlMapperTest extends TestBase {
     public void testDefaultConstructor_IsEmpty() {
         final CqlMapper m = new CqlMapper();
         assertTrue(m.isEmpty());
-        assertTrue(m.cqlIds().isEmpty());
+        assertTrue(m.ids().isEmpty());
     }
 
     @Test
@@ -155,7 +155,7 @@ public class CqlMapperTest extends TestBase {
         final CqlMapper m = new CqlMapper();
         m.add("alpha", "SELECT * FROM mapper_test_keyset_a", null);
         m.add("beta", "SELECT * FROM mapper_test_keyset_b", null);
-        final Set<String> keys = m.cqlIds();
+        final Set<String> keys = m.ids();
         assertEquals(2, keys.size());
         assertTrue(keys.contains("alpha"));
         assertTrue(keys.contains("beta"));
@@ -166,8 +166,8 @@ public class CqlMapperTest extends TestBase {
         final CqlMapper m = new CqlMapper();
         m.add("k", "SELECT * FROM mapper_test_keyset_readonly", null);
         // keySet() is a read-only live view: it reflects the mapper but cannot mutate it.
-        assertThrows(UnsupportedOperationException.class, () -> m.cqlIds().clear());
-        assertThrows(UnsupportedOperationException.class, () -> m.cqlIds().remove("k"));
+        assertThrows(UnsupportedOperationException.class, () -> m.ids().clear());
+        assertThrows(UnsupportedOperationException.class, () -> m.ids().remove("k"));
         assertTrue(m.containsId("k"));
     }
 

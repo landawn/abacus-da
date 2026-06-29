@@ -1,0 +1,40 @@
+================================================================================
+API DESIGN REVIEW — v3.CassandraExecutor  (DataStax driver 3.x — class-level @Deprecated;
+imports com.datastax.driver.core.*)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/CassandraExecutor.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+The legacy driver-3 mirror, correctly @Deprecated at the class level with a clear
+migration pointer to the driver-4 class, so individual-method deprecation is unnecessary.
+Its public surface is parity-complete with the driver-4 class for every shared operation,
+with only driver-appropriate type substitutions (Session/Cluster vs CqlSession,
+BatchStatement.Type vs BatchType, RetryPolicy/readTimeoutMillis vs timeout, UserType vs
+UserDefinedType). It additionally and legitimately exposes cluster() and mapper(), which
+are driver-3 concepts. The one notable concern is, again, close() ownership — amplified
+here because it also closes the Cluster.
+
+2. NAMING ISSUES
+None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] close() | v3/CassandraExecutor.java:1608-1627 | Med | close() closes the caller-supplied
+    Session AND the caller-supplied Cluster. Closing the Cluster is especially high-blast-
+    radius — a driver-3 Cluster is typically shared and is the parent of many Sessions, so
+    closing one executor tears down connectivity for everything built on that cluster. The
+    Javadoc warns about this, but per ground rule 5 that does not make it good API.
+    Recommendation: same as the driver-4 class — only close resources the executor itself
+    created (gate Cluster/Session closing behind an ownership flag or a createExecutor(...)
+    factory). Lower urgency since the whole class is already @Deprecated.
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+None (cluster()@460 and mapper(Class)@537 exist here and are correct for driver 3; they
+have no driver-4 counterpart by design — see CassandraExecutor 5[1]).
+
+6. DEPRECATION / REMOVAL CANDIDATES
+The class is already correctly @Deprecated at the type level (replacement: the driver-4
+cassandra/CassandraExecutor). No per-method deprecation needed.

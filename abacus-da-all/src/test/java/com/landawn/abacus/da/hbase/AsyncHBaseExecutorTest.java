@@ -478,11 +478,13 @@ public class AsyncHBaseExecutorTest extends TestBase {
         Connection conn = mock(Connection.class);
         Admin admin = mock(Admin.class);
         when(conn.getAdmin()).thenReturn(admin);
-
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             AsyncHBaseExecutor async = executor.async();
             assertNotNull(async);
             assertSame(executor, async.sync());
+        } finally {
+            executor.close();
         }
     }
 }

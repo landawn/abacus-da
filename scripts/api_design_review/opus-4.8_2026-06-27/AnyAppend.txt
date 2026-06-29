@@ -1,0 +1,54 @@
+================================================================================
+API DESIGN REVIEW — AnyAppend
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyAppend.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+Solid wrapper over org.apache.hadoop.hbase.client.Append exposing the expected
+append-specific controls (setTimeRange/getTimeRange, setReturnResults/isReturnResults),
+addColumn(String,String,Object) / addColumn(byte[],byte[],byte[]), add(Cell), factories
+and val(). Its add-value shape matches AnyIncrement. The actionable items are all
+cross-class consistency issues shared with the other three mutation types: a checked-
+exception divergence on add(Cell), a redundant setAttribute overload, and a row-key
+parameter-type asymmetry in the slice/familyMap factories.
+
+2. NAMING ISSUES
+None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] add(Cell) | AnyAppend.java:605 | Med | add(Cell) here does NOT declare `throws
+    IOException`, whereas all three siblings DO: AnyPut.add(Cell)@AnyPut.java:1370,
+    AnyDelete.add(Cell)@AnyDelete.java:520, AnyIncrement.add(Cell)@AnyIncrement.java:356.
+    VERIFIED against source. The signature divergence is the actionable defect (it
+    mirrors HBase Append.add not throwing, but inconsistency across the wrapper family is
+    the issue). The agent's stronger "silently drops a row-mismatched cell" framing is an
+    HBase-internal behavior not visible in this file — treat that as Low/unverified.
+    Recommendation: align the family — either add validation that throws on row mismatch
+    here, or accept the divergence and document why only Append differs.
+[2] setAttribute(String,byte[]) | AnyAppend.java:636 | Med | Redundant with the inherited
+    setAttribute(String,Object)@AnyOperationWithAttributes.java:143 — its own Javadoc
+    (lines 616-619) admits it is "observationally equivalent" (toValueBytes returns byte[]
+    as-is) — and present on only 2 of 4 mutation types (also AnyIncrement.java:700; absent
+    on AnyPut/AnyDelete). VERIFIED via grep across the hbase package. Recommendation:
+    remove from AnyAppend and AnyIncrement for consistency (or add to AnyPut/AnyDelete).
+    One finding spanning AnyAppend, AnyIncrement, AnyPut, AnyDelete.
+[3] of(byte[],int,int) | AnyAppend.java:269 ; of(byte[],long,NavigableMap) | AnyAppend.java:301
+    | Med | These factories accept only byte[] row keys, whereas the corresponding
+    AnyPut.of(Object,int,int)@AnyPut.java:370 and AnyDelete.of(Object,...)@AnyDelete.java:344/423
+    accept Object (converting via toRowBytes). Recommendation: add Object-keyed overloads
+    to AnyAppend (and AnyIncrement) so the row-key contract is uniform across all four
+    mutation types.
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+[1] static toAppend(Collection) | AnyAppend.java (class surface) | Low | AnyPut.toPut(Collection)
+    and AnyDelete.toDelete(Collection) exist but there is no toAppend/toIncrement equivalent.
+    Recommendation: add for parity. Confirming check: confirm a batch use case
+    (Table.batch / HBaseExecutor) actually consumes a List<Append> before adding, since
+    HBase has no Table.append(List).
+
+6. DEPRECATION / REMOVAL CANDIDATES
+See 3[2] — recommend removing the redundant setAttribute(String,byte[]) overload.

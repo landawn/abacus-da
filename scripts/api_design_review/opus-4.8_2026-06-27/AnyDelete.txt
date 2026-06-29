@@ -1,0 +1,18 @@
+================================================================================
+API DESIGN REVIEW — AnyDelete
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyDelete.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+No actionable findings. The deletion API is comprehensive and symmetric: addFamily,
+addFamilyVersion, addColumn, and addColumns each provide String and byte[] forms plus
+timestamp variants, and val()/add(Cell)/toDelete(Collection) round out the surface.
+Javadoc is careful about the genuinely tricky HBase semantics (addColumn single-version +
+server-side get vs addColumns all-versions; family-tombstone override; addFamilyVersion
+exact-stamp match). The addColumn/addColumns near-homograph naming is a known HBase
+footgun but is within the intentional method-for-method mirror, so it is not flagged.
+
+NOTE (cross-class, not a defect in this file): AnyDelete, like AnyPut, lacks the
+setAttribute(String,byte[]) overload present on AnyAppend/AnyIncrement — resolution is
+tracked under AnyPut 3[1] / AnyAppend 3[2].

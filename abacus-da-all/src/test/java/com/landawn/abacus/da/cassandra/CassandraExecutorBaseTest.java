@@ -1379,7 +1379,6 @@ public class CassandraExecutorBaseTest extends TestBase {
             return new TestResultSet();
         }
 
-        @Override
         public void close() {
             // No-op
         }

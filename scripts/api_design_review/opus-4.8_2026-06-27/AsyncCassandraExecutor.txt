@@ -1,0 +1,31 @@
+================================================================================
+API DESIGN REVIEW — AsyncCassandraExecutor (driver 4; com.landawn.abacus.da.cassandra)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/AsyncCassandraExecutor.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+A clean, correct concrete facade. It supplies the two driver-specific stream(...) row-mapper
+overloads (stream(String,BiFunction<ColumnDefinitions,Row,T>,Object...) and
+stream(Statement<?>,BiFunction<ColumnDefinitions,Row,T>)) that cannot live in the base and
+exactly mirror the sync CassandraExecutor's row-mapper streams. The four execute(...) methods
+are implemented and additionally wrap the driver's AsyncResultSet via ResultSets::wrap so
+callers get a synchronous-style ResultSet — consistent across all four. sync() is covariantly
+narrowed to CassandraExecutor. Return shapes match the base/sync contract throughout. The
+only issue is a set of redundant pass-through overrides.
+
+2. NAMING ISSUES
+[1] Redundant pure-delegation overrides that only call super: stream(String,Object...),
+    findFirst(Class<T>,String,Object...), queryForSingleValue(Class<T>,String,Object...),
+    queryForSingleNonNull(Class<T>,String,Object...) | AsyncCassandraExecutor.java:110-113,
+    230-233, 271-274, 314-317 | Low | Unlike the sync executor (where findFirst/
+    queryForSingleValue/queryForSingleNonNull are abstract in the base and MUST be
+    implemented), these are already concrete in AsyncCassandraExecutorBase, so each override
+    adds no behavior — only duplicate driver-agnostic Javadoc that must be kept in sync with
+    the base. Recommendation: delete the four overrides and inherit (keep the genuine driver-
+    specific overrides — the two row-mapper streams and the four execute methods).
+
+3. RETURN-TYPE AND PARAMETER ISSUES — None.
+4. MISPLACED METHODS — None.
+5. MISSING METHODS — None.
+6. DEPRECATION / REMOVAL CANDIDATES — None.

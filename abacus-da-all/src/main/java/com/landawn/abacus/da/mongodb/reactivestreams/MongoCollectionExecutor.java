@@ -143,6 +143,13 @@ import reactor.core.publisher.Mono;
  * );
  * }</pre>
  *
+ * <p><b>Naming convention:</b> method names match the synchronous
+ * {@link com.landawn.abacus.da.mongodb.MongoCollectionExecutor} — a hybrid vocabulary of abacus "house"
+ * reads ({@code get}/{@code gett}, {@code findFirst}, {@code list}, {@code query}, {@code exists},
+ * {@code count}) and MongoDB-driver writes ({@code insertOne}/{@code insertMany},
+ * {@code updateOne}/{@code updateMany}, {@code replaceOne}, {@code deleteOne}/{@code deleteMany}).
+ * Each result is returned as a reactive {@code Publisher} ({@code Mono}/{@code Flux}).</p>
+ *
  * @see com.mongodb.reactivestreams.client.MongoCollection
  * @see org.reactivestreams.Publisher
  * @see org.reactivestreams.Subscriber

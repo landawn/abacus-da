@@ -99,6 +99,14 @@ import lombok.experimental.Accessors;
  * (this class) and asynchronous (via {@link #async()}) execution modes, comprehensive parameter
  * binding support, and automatic result set mapping to Java objects.</p>
  *
+ * <p><b>Naming convention:</b> this executor uses the abacus "house" CRUD vocabulary shared by the
+ * {@code Condition}/{@code SqlBuilder}-based executors (Cassandra, BigQuery): {@code get}/{@code gett},
+ * {@code findFirst}, {@code list}, {@code query} (returns a {@code Dataset}), {@code stream},
+ * {@code exists}, {@code count}, and {@code insert}/{@code update}/{@code delete} (plus the
+ * {@code batchInsert}/{@code batchUpdate}/{@code batchDelete} helpers). Driver-native method names are
+ * intentionally not exposed; contrast the driver-passthrough executors (HBase, DynamoDB, Cosmos, Neo4j),
+ * which keep their underlying driver's vocabulary.</p>
+ *
  * <h2>Prepared Statement &amp; Bound Statement Caching</h2>
  * <p>Parameterized queries are parsed once via {@link ParsedCql} (which also extracts {@code :name}
  * named-parameter positions) and prepared on first use. Both the {@link PreparedStatement} and the
@@ -1495,9 +1503,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * }
      * }</pre>
      *
-     * @see AutoCloseable
      */
-    @Override
     public void close() {
         try {
             if (!session.isClosed()) {

@@ -1,0 +1,31 @@
+================================================================================
+API DESIGN REVIEW — v3.AsyncCassandraExecutor (driver 3; com.landawn.abacus.da.cassandra.v3;
+class-level @Deprecated)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/v3/AsyncCassandraExecutor.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+Structurally identical to the driver-4 facade and at full method parity with it (same
+sync(), same two row-mapper stream overloads, same four execute implementations, same four
+pass-through overrides). Driver-version differences are appropriate: driver-3 raw Statement/
+BatchStatement.Type/com.datastax.driver.core.* types, the execute impls return the driver-3
+ResultSet directly (no ResultSets::wrap, correct since driver-3's async future already
+yields a ResultSet), and the whole class is @Deprecated pointing at the driver-4
+AsyncCassandraExecutor. Return shapes and Optional/Nullable wrapping are identical to the
+driver-4 sibling, so there are no driver3<->driver4 inconsistencies in the async surface.
+
+2. NAMING ISSUES
+[1] Redundant pure-delegation overrides that only call super: stream(String,Object...),
+    findFirst(Class<T>,String,Object...), queryForSingleValue(Class<T>,String,Object...),
+    queryForSingleNonNull(Class<T>,String,Object...) | v3/AsyncCassandraExecutor.java:115-118,
+    237-240, 278-281, 321-324 | Low | Same issue as the driver-4 sibling — these base methods
+    are already concrete, so the overrides add only duplicate Javadoc. Recommendation: remove
+    the four overrides (keep the row-mapper streams and execute impls). Optional, since the
+    entire class is deprecated for removal.
+
+3. RETURN-TYPE AND PARAMETER ISSUES — None.
+4. MISPLACED METHODS — None.
+5. MISSING METHODS — None.
+6. DEPRECATION / REMOVAL CANDIDATES — Class already correctly @Deprecated (replacement:
+   driver-4 cassandra/AsyncCassandraExecutor).

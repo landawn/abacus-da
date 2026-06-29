@@ -1,0 +1,37 @@
+================================================================================
+API DESIGN REVIEW — AnyPut
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/AnyPut.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+The richest mutation class and largely well-built. The of(...) constructor-mirroring
+family, the entity-mapping create(...) family (single/collection x naming-policy x
+selected-props), addColumn overloads (String/Object, byte[]/byte[], ByteBuffer, with/
+without timestamp), add(Cell), and the toPut(...) converters are coherent, and the
+cell-overwrite-vs-versioning semantics are documented thoroughly. The commented-out
+deprecated addImmutable block is correctly left out of the API. The only notable issue
+is a cross-class consistency gap: AnyPut (like AnyDelete) lacks the setAttribute(String,
+byte[]) overload that AnyAppend/AnyIncrement add — see the recommendation below.
+
+2. NAMING ISSUES
+None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] setAttribute(String,byte[]) absent here (only inherited setAttribute(String,Object)
+    @AnyOperationWithAttributes.java:143) | AnyPut.java (class surface) | Med | The package-
+    wide split should be resolved: AnyAppend.java:636 and AnyIncrement.java:700 declare a
+    byte[] overload that AnyPut/AnyDelete do not. VERIFIED via grep. Preferred fix: REMOVE
+    the overload from AnyAppend/AnyIncrement (it is observationally equivalent to the
+    inherited Object overload); alternatively add it here and on AnyDelete. Grouped with the
+    same finding in AnyAppend 3[2] / AnyIncrement 3[1].
+
+4. MISPLACED METHODS
+None.
+
+5. MISSING METHODS
+None (the toPut(Collection) converter is present; this class is the parity reference the
+other mutation types are measured against).
+
+6. DEPRECATION / REMOVAL CANDIDATES
+None.

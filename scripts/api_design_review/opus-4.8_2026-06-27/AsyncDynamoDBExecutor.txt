@@ -1,0 +1,34 @@
+================================================================================
+API DESIGN REVIEW — AsyncDynamoDBExecutor (AWS SDK v1; com.landawn.abacus.da.aws.dynamodb)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/aws/dynamodb/AsyncDynamoDBExecutor.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+A thin, faithful async wrapper: every public raw operation of DynamoDBExecutor (getItem/
+batchGetItem/putItem/batchWriteItem/updateItem/deleteItem/list/query/stream/scan, incl. all
+primitive-arg and request-object overloads) has a 1:1 ContinuableFuture-returning mirror that
+delegates straight to the sync method. Sync<->async parity for raw operations is complete; the
+only intentionally sync-only members are accessors/config (dynamoDBClient, dynamoDBMapper,
+mapper, close), bridged via sync(). The one substantive concern is the semantics of the
+streaming overloads.
+
+2. NAMING ISSUES — None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] stream(QueryRequest[,Class])@1718, 1785 and scan(...)@1823, 1865, 1930, 2000, 2037, 2077,
+    2118, 2154 return ContinuableFuture<Stream<...>> | AsyncDynamoDBExecutor.java | Med | The
+    wrapped sync stream/scan build a lazy ObjIterator-backed Stream and perform no I/O until
+    terminal consumption (DynamoDBExecutor.java:2999-3040, 3334-3375). So
+    asyncExecutor.execute(() -> dbExecutor.stream(...)) completes the future almost immediately
+    having issued zero DynamoDB calls, and every actual query/scan page is then fetched
+    synchronously on whatever thread consumes the returned Stream — the "async" wrapper provides
+    essentially no off-thread execution for these methods. The Javadoc (@64-66) acknowledges
+    this, but the misleading return shape remains. Recommendation: either drop the stream/scan
+    async overloads, or have them eagerly drain off-thread and return CF<List<T>>/CF<Dataset>
+    so the future's completion reflects real work done.
+
+4. MISPLACED METHODS — None.
+5. MISSING METHODS — None for raw operations (note the Mapper-level async gap is tracked under
+   DynamoDBExecutor 5[2]).
+6. DEPRECATION / REMOVAL CANDIDATES — None.

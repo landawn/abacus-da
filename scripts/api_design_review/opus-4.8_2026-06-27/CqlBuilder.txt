@@ -1,0 +1,48 @@
+================================================================================
+API DESIGN REVIEW — CqlBuilder (extends AbstractQueryBuilder<CqlBuilder>)
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlBuilder.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+Context: CqlBuilder deliberately mirrors abacus-common SQLBuilder. Matching the SQL sibling
+is intentional; only genuine internal defects / Cassandra-specific issues are flagged.
+
+1. OVERALL ASSESSMENT
+A large Cassandra-specific subclass whose static Dsl factory family (insert/select/update/
+delete/deleteFrom/selectFrom/count/renderCondition/batchInsert), the LWT/Cassandra clause
+methods (usingTTL, usingTimestamp, ifExists, ifNotExists, allowFiltering), and the condition-
+rendering override are thorough and carefully documented (good @Deprecated/@Beta markers on
+the raw Dsl constants, batchInsert, repeatQM). The terminal is the inherited build()->SP.query();
+there is no cql() shortcut, matching the SQL sibling. Issues are limited to an undeprecated
+alias pair, an overload with inconsistent input units, and a minor Dsl naming inconsistency.
+
+2. NAMING ISSUES
+[1] Dsl.PSB / Dsl.NSB vs Dsl.SCCB / Dsl.ACCB / Dsl.LCCB | CqlBuilder.java:1249, 1269 vs
+    1226, 1235, 1244 | Low | The raw/deprecated family was renamed from the SQL sibling's
+    SCSB/ACSB/LCSB to SCCB/ACCB/LCCB ("SB"=Sql Builder -> "CB"=Cql Builder), but the
+    parameterized/named variants kept PSB/NSB instead of PCB/NCB — inconsistent within
+    CqlBuilder ("CB" for raw, "SB" for PSB/NSB). Recommendation: either rename PSB/NSB ->
+    PCB/NCB, or document the letter scheme to make the divergence intentional. Confirming
+    check: SqlBuilder.Dsl raw constants are SCSB/ACSB/LCSB; CqlBuilder renamed only the raw
+    family — borderline because PSB/NSB intentionally mirror SqlBuilder.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] usingTimestamp(long) / usingTimestamp(Date) / usingTimestamp(String) | CqlBuilder.java:392-393,
+    362-366, 424-428 | Low-Med | The long and Date overloads take milliseconds and convert x1000
+    to microseconds; the String overload appends as-is and requires the caller to pass
+    microseconds. Same method name, different input unit per overload — easy to misuse (a
+    millisecond string yields a value 1000x too small). Documented (@403-406), but per ground
+    rule 5 that does not excuse it. Recommendation: align units across overloads, or give the
+    microsecond String overload a distinct name (e.g. usingTimestampMicros).
+
+4. MISPLACED METHODS — None.
+5. MISSING METHODS — None.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+[1] iF(String) / iF(Condition) vs onlyIf(String) / onlyIf(Condition) | CqlBuilder.java:626 &
+    676 (aliases onlyIf@555 & 589 delegate to iF) | Med | onlyIf is an exact alias that calls
+    iF, and the Javadoc explicitly says "Prefer onlyIf ... iF is kept for backward
+    compatibility because if is a Java keyword" (@529-530, 600-601) — yet iF carries no
+    @Deprecated. VERIFIED against source. Two equally first-class public alias families is
+    exactly what deprecation exists for. Recommendation: annotate iF(String)/iF(Condition)
+    @Deprecated with replacement onlyIf(...), or drop the "prefer onlyIf" framing if both are
+    meant to stay first-class. (CQL-specific; no SQL counterpart, so no mirroring constraint.)

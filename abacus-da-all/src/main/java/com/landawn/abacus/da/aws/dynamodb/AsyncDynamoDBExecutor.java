@@ -93,6 +93,11 @@ import com.landawn.abacus.util.stream.Stream;
  * Map<String, Object> item = asyncExecutor.getItem("MyTable", key).get();
  * }</pre>
  *
+ * <p><b>Naming convention:</b> method names are identical to the synchronous {@link DynamoDBExecutor}
+ * (the AWS DynamoDB SDK vocabulary: {@code getItem}, {@code query}, {@code scan}, {@code putItem},
+ * {@code updateItem}, {@code deleteItem}, plus abacus-style {@code list}/{@code stream}); each result is
+ * wrapped in a {@code ContinuableFuture}.</p>
+ *
  * @see DynamoDBExecutor
  * @see ContinuableFuture
  * @see AsyncExecutor

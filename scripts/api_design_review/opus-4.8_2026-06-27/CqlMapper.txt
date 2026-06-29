@@ -1,0 +1,45 @@
+================================================================================
+API DESIGN REVIEW — CqlMapper
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/cassandra/CqlMapper.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+Context: CqlMapper deliberately mirrors abacus-common SqlMapper. Matching the SQL sibling
+is intentional and not flagged on its own; only genuine internal defects are reported.
+
+1. OVERALL ASSESSMENT
+A small, well-documented registry. The load/save XML round-trip, copy semantics, equals/
+hashCode, and the add/get/remove/containsId/size/isEmpty surface are coherent. The clear
+defect is a Javadoc claim on ids() that contradicts the implementation; a secondary
+robustness gap is that programmatic add skips id validation that both the XML loader and
+the SQL sibling enforce.
+
+2. NAMING ISSUES
+None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] ImmutableSet<String> ids() | CqlMapper.java:387 (impl `ImmutableSet.copyOf(cqlMap.keySet())`)
+    | High | The Javadoc (lines 368-371 and the example comment @381) states the result is a
+    "read-only live view of the internal key set, so subsequent add/remove calls are
+    reflected." ImmutableSet.copyOf builds a NEW set (a snapshot), not a live view. VERIFIED
+    against source. The SQL sibling SqlMapper.sqlIds() has the identical impl but correctly
+    documents a snapshot. Recommendation: rewrite the ids() Javadoc to describe a
+    snapshot/copy (mirror SqlMapper.sqlIds wording); drop the "live view reflects removal"
+    comment.
+[2] add(String,ParsedCql[,Map]) / add(String,String[,Map]) | CqlMapper.java:561 (+
+    checkDuplicateId@577) | Med | The add overloads only check for a duplicate id; the id is
+    otherwise used as the map key as-is, unvalidated, so null/empty/whitespace ids are
+    accepted. But the XML loader rejects an empty id (@346-347) and the SQL sibling
+    SqlMapper.add validates via checkId. Concrete consequence: add("", cql) then saveTo(...)
+    emits <cql id="">, which load(...) then rejects — a broken add->save->load round-trip.
+    Recommendation: validate the id in add (at minimum non-empty) to match the loader and
+    SqlMapper.
+[3] ImmutableMap<String,String> getAttributes(String id) | CqlMapper.java:609-610 | Low |
+    Returns null when the id is absent but an empty map when present with no attributes.
+    Documented and mirrors SqlMapper, so low priority, but the null/empty split forces
+    callers to null-check. Recommendation: consider always returning an empty map (or
+    Optional). Confirming check: matches SqlMapper.getAttributes (intentional mirroring), so
+    a change should be coordinated with the SQL sibling.
+
+4. MISPLACED METHODS — None.
+5. MISSING METHODS — None.
+6. DEPRECATION / REMOVAL CANDIDATES — None.

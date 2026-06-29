@@ -1,0 +1,87 @@
+================================================================================
+API DESIGN REVIEW — HBaseExecutor
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/hbase/HBaseExecutor.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+A large, well-structured facade whose CRUD/scan surface is internally consistent: each
+operation offers a native-HBase-typed overload (Get/Put/Delete/Scan), a fluent Any*
+overload, and a typed-conversion overload, with parameters consistently ordered
+(tableName first, target type last). Resource ownership (table-per-call closed in finally,
+lazy self-closing scan Stream) is handled carefully and documented; byte-array conversion
+and entity-mapping helpers are package-private and appropriately hidden. The
+registerRowKeyProperty deprecation is correct (clear @Id replacement). The actionable
+items: a surprising positional-vs-filtered semantic difference between typed and untyped
+batch get, a leaked checked exception inconsistent with the rest of the coprocessor
+family, plus naming/parameter-type inconsistencies (notably between HBaseExecutor and its
+nested HBaseMapper).
+
+2. NAMING ISSUES
+[1] toEntity(Result,Class) vs toList(ResultScanner,Class) / toList(ResultScanner,int,int,Class)
+    | HBaseExecutor.java:731, 574, 610 | Med | The single-result converter is named by
+    element type (toEntity) while the multi-result converter is named by container type
+    (toList), so the pair reads asymmetrically; toEntity also converts single-value target
+    types (String/Integer/Date per its own Javadoc), making "Entity" misleading.
+    Recommendation: a consistent pair such as toEntity/toEntityList (or toValue/toValueList).
+[2] HBaseMapper.get(K) vs HBaseMapper.deleteByRowKey(K) (delete(T) present, no get(T)) |
+    HBaseExecutor.java:3173, 3288, 3256 | Low | Row-key access is asymmetric: get-by-key is
+    plain get(K) but delete-by-key is suffixed deleteByRowKey(K). The suffix is partly
+    forced (delete(T)/delete(K) would erase-clash). Recommendation: add getByRowKey(K) alias
+    for symmetry, or document the rationale. Confirming check: verify T and K erase to the
+    same bound (both Object when unbounded) — if so the delete suffix is mandatory and only
+    get naming is free.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] get(String,List<Get>,Class) & get(String,Collection<AnyGet>,Class) | HBaseExecutor.java:1703, 1761
+    | High | The typed batch gets silently DROP rows whose Result.isEmpty() (skip logic in
+    the toList helper @664-678, specifically @668-670), so the result is NOT positionally
+    aligned with the input and may be shorter — yet untyped get(String,List<Get>)@1569
+    returns a positionally-aligned list with empty Result placeholders (Javadoc 1563-1564).
+    VERIFIED against source. Adding a Class argument changing list semantics from positional
+    to filtered is a footgun for correlate-by-index batch lookups. Recommendation: preserve
+    alignment (emit null/default for empty results) or rename the filtering variant to make
+    it explicit. The same defect mirrors into HBaseMapper.get(Collection)/get(List<AnyGet>)
+    and AsyncHBaseExecutor.
+[2] coprocessorService(String,Class,Object,Object,Batch.Call,Batch.Callback);
+    batchCoprocessorService(String,MethodDescriptor,Message,Object,Object,Message);
+    batchCoprocessorService(...,Batch.Callback) | HBaseExecutor.java:2786, 2839, 2893 | Med |
+    These three leak a checked `throws Exception` to callers, whereas the sibling
+    coprocessorService(...,Batch.Call)@2738-2751 catches non-IOException Throwable and wraps
+    via ExceptionUtil.toRuntimeException, declaring only `throws UncheckedIOException`. The
+    inconsistency forces catch(Exception) on only some coprocessor calls. Recommendation:
+    wrap non-IOException Throwable uniformly and drop `throws Exception`.
+[3] Batch Any*/key/entity collection-param type inconsistency: executor
+    exists/get/put/delete(String,Collection<AnyX>)@1502,1633/1761,2247,2370 vs
+    HBaseMapper.exists/get/put/delete(List<AnyX>)@3343,3385,3515,3549; mapper key/entity
+    batches use Collection<? extends ..>@3153 while Any* batches use List | Med | The same
+    conceptual batch operation takes Collection in one class and List in the mirror.
+    Recommendation: standardize all Any*/key/entity batch parameters on Collection<? extends X>.
+    (Native-HBase List<Get>/List<Put> overloads may stay List to mirror the HBase Table API,
+    but make that choice deliberate and document it.)
+[4] typed single get returns null/default rather than Optional: get(String,Get/AnyGet,Class)
+    and HBaseMapper.get(K)/get(AnyGet) | HBaseExecutor.java:1730, 3173, 3362 | Low | A missing
+    row yields null with no Optional-returning or gett-style alternative, unlike the
+    Cassandra/Mongo executors' get/gett split. Behavior is internally consistent and
+    documented. Recommendation: consider adding gett (nullable) / Optional companions for
+    cross-executor consistency. Confirming check: whether the team wants HBase to adopt the
+    get/gett convention used by the SQL/Cassandra/Mongo executors.
+
+4. MISPLACED METHODS
+None (the stateless byte/entity converters are package-private and appropriately hidden;
+the public static toAnyPut/toPut/toEntity converters legitimately belong on the facade,
+matching CassandraExecutor/BigQueryExecutor's public static converter pattern).
+
+5. MISSING METHODS
+[1] (a) public List<Result> -> entity conversion ; (b) HBaseMapper native scan(Scan)/
+    scan(Scan,Class) | HBaseExecutor.java:656 (package-private toList(List<Result>,Class)) ;
+    mapper scans 3406-3483 | Med | (a) A caller of public get(String,List<Get>) gets a
+    List<Result> but has no PUBLIC converter to entities (the List<Result> toList overload is
+    package-private) — expose toEntityList(List<Result>,Class). (b) The executor exposes
+    scan(String,Scan)/scan(String,Scan,Class) but the mapper only exposes family/qualifier/
+    AnyScan variants, so a mapper user cannot run a fully custom native Scan — add
+    scan(Scan)/scan(Scan,Class) to HBaseMapper.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+None beyond the existing, correct registerRowKeyProperty @Deprecated marker (replacement:
+@Id annotation).

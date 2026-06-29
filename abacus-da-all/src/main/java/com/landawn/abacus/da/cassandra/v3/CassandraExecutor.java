@@ -226,6 +226,14 @@ import lombok.experimental.Accessors;
  * // executor.close() has already released session + cluster + caches.
  * }</pre>
  *
+ * <p><b>Naming convention:</b> this executor uses the abacus "house" CRUD vocabulary shared by the
+ * {@code Condition}/{@code SqlBuilder}-based executors (Cassandra, BigQuery): {@code get}/{@code gett},
+ * {@code findFirst}, {@code list}, {@code query} (returns a {@code Dataset}), {@code stream},
+ * {@code exists}, {@code count}, and {@code insert}/{@code update}/{@code delete} (plus the
+ * {@code batchInsert}/{@code batchUpdate}/{@code batchDelete} helpers). Driver-native method names are
+ * intentionally not exposed; contrast the driver-passthrough executors (HBase, DynamoDB, Cosmos, Neo4j),
+ * which keep their underlying driver's vocabulary.</p>
+ *
  * @deprecated Use {@link com.landawn.abacus.da.cassandra.CassandraExecutor}
  *             for new applications (requires Cassandra Java Driver 4.x).
  * @see com.landawn.abacus.da.cassandra.CassandraExecutor
@@ -1605,7 +1613,6 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * }</pre>
      *
      */
-    @Override
     public void close() {
         try {
             if (!session.isClosed()) {

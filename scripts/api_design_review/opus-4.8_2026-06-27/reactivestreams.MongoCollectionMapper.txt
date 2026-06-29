@@ -1,0 +1,40 @@
+================================================================================
+API DESIGN REVIEW — reactivestreams.MongoCollectionMapper<T>
+File: abacus-da-all/src/main/java/com/landawn/abacus/da/mongodb/reactivestreams/MongoCollectionMapper.java
+Model: opus-4.8   Date: 2026-06-27
+================================================================================
+
+1. OVERALL ASSESSMENT
+A faithful Publisher-returning mirror of the sync mapper and itself a thin pre-typed delegate
+(every method one-lines to the reactive collectionExecutor, no per-call Class<T>). Method-
+for-method parity with the sync mapper is essentially complete; the only intentional, correct
+omissions are the gett(...) family (absence is conveyed by empty Mono) and the stream(...)
+family (the cold Flux from list(...) IS the streaming form). Return shapes are well chosen
+and, notably, MORE internally consistent than the sync class for single-entity reads — get,
+findFirst, and all findOneAndX uniformly return Mono<T> (empty == absent). The findings are
+the shared @Beta inconsistencies plus one Javadoc-accuracy divergence from the sync mirror.
+
+2. NAMING ISSUES — None.
+
+3. RETURN-TYPE AND PARAMETER ISSUES
+[1] Collection<? extends T> update overloads documented as a "merge from multiple sources"
+    rather than the aggregation-pipeline updates they actually are: updateOne(Bson,Collection)
+    @2194 ("partial updates from multiple sources"), updateMany(Bson,Collection)@2302,
+    findOneAndUpdate(Bson,Collection)@2815 ("aggregated from various entities") |
+    reactivestreams/MongoCollectionMapper.java (cited lines) | Low | The sync mirror documents
+    these identical methods correctly as pipeline-stage updates (sync @2250-2256, 2375-2381).
+    The reactive wording can mislead a caller into expecting last-write-wins field merging
+    rather than a $-pipeline. Per ground rule 5, correct the misleading docs rather than excuse
+    them. Recommendation: copy the sync "each item becomes a pipeline stage" description onto
+    these reactive overloads (no signature change).
+
+4. MISPLACED METHODS — None.
+5. MISSING METHODS — None.
+
+6. DEPRECATION / REMOVAL CANDIDATES
+[1] queryFor* @Beta split | reactivestreams/MongoCollectionMapper.java:1096, 1468, 1514 (@Beta)
+    vs 1563, 1612 (no @Beta) | Med | Identical inconsistency to the sync mapper. Recommendation:
+    fix both classes together to keep the same stability contract. See MongoCollectionMapper 6[1].
+[2] distinct(String)/distinct(String,Bson) not @Beta while groupBy(String) is @Beta |
+    reactivestreams/MongoCollectionMapper.java:3021, 3078 vs 3156 (shared distinctPipeline@3032)
+    | Low | Align @Beta across the two mappers in lockstep. See MongoCollectionMapper 6[2].

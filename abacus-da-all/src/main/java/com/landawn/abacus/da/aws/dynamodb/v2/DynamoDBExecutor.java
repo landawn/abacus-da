@@ -168,11 +168,19 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
  * <p>This executor maintains API compatibility with v1 while leveraging v2 SDK improvements.
  * Key differences include builder-based request construction and enhanced type safety.</p>
  *
+ * <p><b>Naming convention:</b> this executor mirrors the AWS DynamoDB SDK (v2) vocabulary
+ * ({@code getItem}, {@code batchGetItem}, {@code query}, {@code scan}, {@code putItem},
+ * {@code updateItem}, {@code deleteItem}, {@code batchWriteItem}), augmented with a few abacus-style
+ * conveniences ({@code list}/{@code stream} returning mapped results, {@code query} returning a
+ * {@code Dataset}). It does <i>not</i> adopt the abacus "house" CRUD vocabulary
+ * ({@code findFirst}/{@code insert}/{@code update}/{@code delete}) used by the {@code Condition}-based
+ * executors such as Cassandra and BigQuery.</p>
+ *
  * @see <a href="https://sdk.amazonaws.com/java/api/latest/software/amazon/awssdk/services/dynamodb/DynamoDbClient.html">DynamoDbClient</a>
  * @see <a href="https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/">DynamoDB Developer Guide</a>
  * @see <a href="https://aws.amazon.com/blogs/developer/aws-sdk-for-java-2-x-released/">AWS SDK v2 Release Notes</a>
  */
-public final class DynamoDBExecutor implements AutoCloseable {
+public final class DynamoDBExecutor {
 
     private static final Logger logger = LoggerFactory.getLogger(DynamoDBExecutor.class);
 
@@ -3584,10 +3592,8 @@ public final class DynamoDBExecutor implements AutoCloseable {
      * }
      * }</pre>
      *
-     * @see AutoCloseable#close()
      * @see DynamoDbClient#close()
      */
-    @Override
     public void close() {
         if (dynamoDBClient != null) {
             dynamoDBClient.close();
