@@ -3329,6 +3329,8 @@ public final class DynamoDBExecutor {
      * @throws IllegalArgumentException if tableName is null
      */
     public Stream<Map<String, Object>> scan(final String tableName, final List<String> attributesToGet) {
+        N.checkArgNotNull(tableName, "tableName");
+
         final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).attributesToGet(attributesToGet).build();
 
         return scan(scanRequest);
@@ -3346,11 +3348,13 @@ public final class DynamoDBExecutor {
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
-     * @param scanFilter a map of conditions to filter the scan results. Must not be null.
+     * @param scanFilter a map of conditions to filter the scan results, or null for no filter
      * @return a stream of maps representing the items retrieved by the scan. Never null.
-     * @throws IllegalArgumentException if tableName or scanFilter is null
+     * @throws IllegalArgumentException if tableName is null
      */
     public Stream<Map<String, Object>> scan(final String tableName, final Map<String, Condition> scanFilter) {
+        N.checkArgNotNull(tableName, "tableName");
+
         final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).scanFilter(scanFilter).build();
 
         return scan(scanRequest);
@@ -3369,12 +3373,14 @@ public final class DynamoDBExecutor {
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
-     * @param attributesToGet a list of attribute names to retrieve. Must not be null.
-     * @param scanFilter a map of conditions to filter the scan results. Must not be null.
+     * @param attributesToGet a list of attribute names to retrieve, or null/empty to retrieve all attributes
+     * @param scanFilter a map of conditions to filter the scan results, or null for no filter
      * @return a stream of maps representing the items retrieved by the scan. Never null.
-     * @throws IllegalArgumentException if tableName, attributesToGet, or scanFilter is null
+     * @throws IllegalArgumentException if tableName is null
      */
     public Stream<Map<String, Object>> scan(final String tableName, final List<String> attributesToGet, final Map<String, Condition> scanFilter) {
+        N.checkArgNotNull(tableName, "tableName");
+
         final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).attributesToGet(attributesToGet).scanFilter(scanFilter).build();
 
         return scan(scanRequest);
@@ -3416,12 +3422,15 @@ public final class DynamoDBExecutor {
      *
      * @param <T> the type of the entities to convert to
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
-     * @param attributesToGet a list of attribute names to retrieve. Must not be null.
+     * @param attributesToGet a list of attribute names to retrieve, or null/empty to retrieve all attributes
      * @param targetClass the class of the entities to convert to. Must not be null.
      * @return a stream of entities of the specified target class. Never null.
-     * @throws IllegalArgumentException if tableName, attributesToGet, or targetClass is null
+     * @throws IllegalArgumentException if tableName or targetClass is null
      */
     public <T> Stream<T> scan(final String tableName, final List<String> attributesToGet, final Class<T> targetClass) {
+        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(targetClass, "targetClass");
+
         final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).attributesToGet(attributesToGet).build();
 
         return scan(scanRequest, targetClass);
@@ -3441,12 +3450,15 @@ public final class DynamoDBExecutor {
      *
      * @param <T> the type of the entities to convert to
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
-     * @param scanFilter a map of conditions to filter the scan results. Must not be null.
+     * @param scanFilter a map of conditions to filter the scan results, or null for no filter
      * @param targetClass the class of the entities to convert to. Must not be null.
      * @return a stream of entities of the specified target class. Never null.
-     * @throws IllegalArgumentException if tableName, scanFilter, or targetClass is null
+     * @throws IllegalArgumentException if tableName or targetClass is null
      */
     public <T> Stream<T> scan(final String tableName, final Map<String, Condition> scanFilter, final Class<T> targetClass) {
+        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(targetClass, "targetClass");
+
         final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).scanFilter(scanFilter).build();
 
         return scan(scanRequest, targetClass);
@@ -3468,13 +3480,16 @@ public final class DynamoDBExecutor {
      *
      * @param <T> the type of the entities to convert to
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
-     * @param attributesToGet a list of attribute names to retrieve. Must not be null.
-     * @param scanFilter a map of conditions to filter the scan results. Must not be null.
+     * @param attributesToGet a list of attribute names to retrieve, or null/empty to retrieve all attributes
+     * @param scanFilter a map of conditions to filter the scan results, or null for no filter
      * @param targetClass the class of the entities to convert to. Must not be null.
      * @return a stream of entities of the specified target class. Never null.
-     * @throws IllegalArgumentException if tableName, attributesToGet, scanFilter, or targetClass is null
+     * @throws IllegalArgumentException if tableName or targetClass is null
      */
     public <T> Stream<T> scan(final String tableName, final List<String> attributesToGet, final Map<String, Condition> scanFilter, final Class<T> targetClass) {
+        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(targetClass, "targetClass");
+
         final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).attributesToGet(attributesToGet).scanFilter(scanFilter).build();
 
         return scan(scanRequest, targetClass);
@@ -3503,6 +3518,9 @@ public final class DynamoDBExecutor {
      * @throws IllegalArgumentException if scanRequest or targetClass is null
      */
     public <T> Stream<T> scan(final ScanRequest scanRequest, final Class<T> targetClass) {
+        N.checkArgNotNull(scanRequest, "scanRequest");
+        N.checkArgNotNull(targetClass, "targetClass");
+
         final Iterator<List<Map<String, AttributeValue>>> iterator = new ObjIterator<>() {
             private ScanRequest newScanRequest = scanRequest;
             private ScanResponse scanResult = null;

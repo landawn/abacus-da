@@ -1942,6 +1942,8 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalArgumentException if queryRequest or targetClass is null
      */
     public <T> CompletableFuture<Stream<T>> stream(final QueryRequest queryRequest, final Class<T> targetClass) {
+        N.checkArgNotNull(queryRequest, "queryRequest");
+        N.checkArgNotNull(targetClass, "targetClass");
 
         final Iterator<List<Map<String, AttributeValue>>> iterator = new ObjIterator<>() {
             private QueryRequest newQueryRequest = queryRequest;
@@ -2022,6 +2024,8 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalArgumentException if tableName is null
      */
     public CompletableFuture<Stream<Map<String, Object>>> scan(final String tableName, final List<String> attributesToGet) {
+        N.checkArgNotNull(tableName, "tableName");
+
         final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).attributesToGet(attributesToGet).build();
 
         return scan(scanRequest);
@@ -2060,6 +2064,8 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalArgumentException if tableName is null
      */
     public CompletableFuture<Stream<Map<String, Object>>> scan(final String tableName, final Map<String, Condition> scanFilter) {
+        N.checkArgNotNull(tableName, "tableName");
+
         final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).scanFilter(scanFilter).build();
 
         return scan(scanRequest);
@@ -2101,6 +2107,8 @@ public final class AsyncDynamoDBExecutor {
      */
     public CompletableFuture<Stream<Map<String, Object>>> scan(final String tableName, final List<String> attributesToGet,
             final Map<String, Condition> scanFilter) {
+        N.checkArgNotNull(tableName, "tableName");
+
         final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).attributesToGet(attributesToGet).scanFilter(scanFilter).build();
 
         return scan(scanRequest);
@@ -2179,6 +2187,9 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalArgumentException if tableName or targetClass is null
      */
     public <T> CompletableFuture<Stream<T>> scan(final String tableName, final List<String> attributesToGet, final Class<T> targetClass) {
+        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(targetClass, "targetClass");
+
         final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).attributesToGet(attributesToGet).build();
 
         return scan(scanRequest, targetClass);
@@ -2213,6 +2224,9 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalArgumentException if tableName or targetClass is null
      */
     public <T> CompletableFuture<Stream<T>> scan(final String tableName, final Map<String, Condition> scanFilter, final Class<T> targetClass) {
+        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(targetClass, "targetClass");
+
         final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).scanFilter(scanFilter).build();
 
         return scan(scanRequest, targetClass);
@@ -2251,6 +2265,9 @@ public final class AsyncDynamoDBExecutor {
      */
     public <T> CompletableFuture<Stream<T>> scan(final String tableName, final List<String> attributesToGet, final Map<String, Condition> scanFilter,
             final Class<T> targetClass) {
+        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(targetClass, "targetClass");
+
         final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).attributesToGet(attributesToGet).scanFilter(scanFilter).build();
 
         return scan(scanRequest, targetClass);
@@ -2291,6 +2308,8 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalArgumentException if scanRequest or targetClass is null
      */
     public <T> CompletableFuture<Stream<T>> scan(final ScanRequest scanRequest, final Class<T> targetClass) {
+        N.checkArgNotNull(scanRequest, "scanRequest");
+        N.checkArgNotNull(targetClass, "targetClass");
 
         final Iterator<List<Map<String, AttributeValue>>> iterator = new ObjIterator<>() {
             private ScanRequest newScanRequest = scanRequest;

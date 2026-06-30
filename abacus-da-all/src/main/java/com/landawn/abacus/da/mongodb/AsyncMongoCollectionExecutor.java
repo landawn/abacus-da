@@ -1070,7 +1070,7 @@ public final class AsyncMongoCollectionExecutor {
      *
      * // No document matches the filter:
      * OptionalBoolean none = async.queryForBoolean("isActive", Filters.eq("userId", "absent")).get();
-     * // returns OptionalBoolean.empty()  -> none.isPresent() == false // throws InterruptedException, ExecutionException
+     * // returns OptionalBoolean.empty(); none.isPresent() == false
      * }</pre>
      *
      * @param propName the name of the boolean property to retrieve

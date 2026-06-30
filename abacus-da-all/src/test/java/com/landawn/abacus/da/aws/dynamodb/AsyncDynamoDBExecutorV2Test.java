@@ -746,6 +746,28 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> asyncExecutor.query(null, Map.class));
     }
 
+    @Test
+    public void testStreamAndScan_NullArgsThrowEagerly() {
+        QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
+        ScanRequest scanRequest = ScanRequest.builder().tableName("TestTable").build();
+
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.stream((QueryRequest) null, Map.class));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.stream(queryRequest, (Class<?>) null));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.scan((ScanRequest) null, Map.class));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.scan(scanRequest, (Class<?>) null));
+
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.scan((String) null, List.of("id")));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.scan((String) null, Map.<String, Condition> of()));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.scan((String) null, List.of("id"), Map.<String, Condition> of()));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.scan((String) null, List.of("id"), Map.class));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.scan((String) null, Map.<String, Condition> of(), Map.class));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.scan((String) null, List.of("id"), Map.<String, Condition> of(), Map.class));
+
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.scan("TestTable", List.of("id"), (Class<?>) null));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.scan("TestTable", Map.<String, Condition> of(), (Class<?>) null));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.scan("TestTable", List.of("id"), Map.<String, Condition> of(), (Class<?>) null));
+    }
+
     /**
      * Regression test: {@code stream(QueryRequest, Class)} must not terminate prematurely when an
      * intermediate page returns zero items but a non-empty LastEvaluatedKey. AWS SDK v2's

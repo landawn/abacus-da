@@ -547,6 +547,28 @@ public class DynamoDBExecutorV2Test extends TestBase {
     }
 
     @Test
+    public void testStreamAndScan_NullArgsThrow() {
+        QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
+        ScanRequest scanRequest = ScanRequest.builder().tableName("TestTable").build();
+
+        assertThrows(IllegalArgumentException.class, () -> executor.stream((QueryRequest) null, Map.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.stream(queryRequest, (Class<?>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.scan((ScanRequest) null, Map.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.scan(scanRequest, (Class<?>) null));
+
+        assertThrows(IllegalArgumentException.class, () -> executor.scan((String) null, List.of("id")));
+        assertThrows(IllegalArgumentException.class, () -> executor.scan((String) null, Map.<String, Condition> of()));
+        assertThrows(IllegalArgumentException.class, () -> executor.scan((String) null, List.of("id"), Map.<String, Condition> of()));
+        assertThrows(IllegalArgumentException.class, () -> executor.scan((String) null, List.of("id"), Map.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.scan((String) null, Map.<String, Condition> of(), Map.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.scan((String) null, List.of("id"), Map.<String, Condition> of(), Map.class));
+
+        assertThrows(IllegalArgumentException.class, () -> executor.scan("TestTable", List.of("id"), (Class<?>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.scan("TestTable", Map.<String, Condition> of(), (Class<?>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.scan("TestTable", List.of("id"), Map.<String, Condition> of(), (Class<?>) null));
+    }
+
+    @Test
     public void testStream() {
         QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
 
