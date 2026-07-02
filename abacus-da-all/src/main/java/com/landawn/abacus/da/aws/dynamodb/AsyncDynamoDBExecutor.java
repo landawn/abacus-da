@@ -337,7 +337,9 @@ public final class AsyncDynamoDBExecutor {
      * @param key the primary key of the item to retrieve, must include all key attributes, must not be {@code null}
      * @param targetClass the class to convert the item to, must have a default constructor, must not be {@code null}
      * @return a {@link ContinuableFuture} containing the item converted to type T, or {@code null} if not found
-     * @throws IllegalArgumentException if any parameter is {@code null}
+     * @throws IllegalArgumentException if targetClass is unsupported (surfaced through the future)
+     * @throws RuntimeException if the request is rejected by the underlying DynamoDB client (for example,
+     *         when tableName or key is null or invalid), surfaced through the future
      * @see #getItem(String, Map, Boolean, Class)
      */
     public <T> ContinuableFuture<T> getItem(final String tableName, final Map<String, AttributeValue> key, final Class<T> targetClass) {
@@ -387,7 +389,9 @@ public final class AsyncDynamoDBExecutor {
      * @param targetClass the class to convert the item to, must not be {@code null}
      * @return a {@link ContinuableFuture} whose payload is the item converted to type {@code T},
      *         or {@code null} if the item does not exist
-     * @throws IllegalArgumentException if tableName, key, or targetClass is {@code null}
+     * @throws IllegalArgumentException if targetClass is unsupported (surfaced through the future)
+     * @throws RuntimeException if the request is rejected by the underlying DynamoDB client (for example,
+     *         when tableName or key is null or invalid), surfaced through the future
      */
     public <T> ContinuableFuture<T> getItem(final String tableName, final Map<String, AttributeValue> key, final Boolean consistentRead,
             final Class<T> targetClass) {
@@ -441,7 +445,9 @@ public final class AsyncDynamoDBExecutor {
      * @param getItemRequest the complete GetItemRequest with all parameters configured, must not be {@code null}
      * @param targetClass the class to convert the item to, must have a default constructor, must not be {@code null}
      * @return a ContinuableFuture containing the item converted to type T, or null if not found
-     * @throws IllegalArgumentException if getItemRequest or targetClass is {@code null}
+     * @throws IllegalArgumentException if targetClass is unsupported (surfaced through the future)
+     * @throws RuntimeException if the request is rejected by the underlying DynamoDB client (for example,
+     *         when getItemRequest is null or invalid), surfaced through the future
      */
     public <T> ContinuableFuture<T> getItem(final GetItemRequest getItemRequest, final Class<T> targetClass) {
         return asyncExecutor.execute(() -> dbExecutor.getItem(getItemRequest, targetClass));
@@ -476,15 +482,18 @@ public final class AsyncDynamoDBExecutor {
      * // Typical: block for the result map
      * Map<String, List<Map<String, Object>>> results = asyncExecutor.batchGetItem(requestItems).get(); // returns e.g. {Products=[{id=item1}, {id=item2}]}
      *
-     * // Edge: keys that match no rows are simply omitted; a table with no hits maps to an empty list
-     * List<Map<String, Object>> products = results.get("Products"); // returns a (possibly empty) list, never null for a requested table
+     * // Edge: keys that match no rows are simply omitted; a table whose keys were processed but matched
+     * // nothing maps to an empty list. If ALL of a table's keys went unprocessed (throttling/size limits),
+     * // the table is absent from the map, so this can be null.
+     * List<Map<String, Object>> products = results.get("Products");
      * }</pre>
      *
      * @param requestItems a map where keys are table names and values are {@link KeysAndAttributes}
      *                    objects specifying the items to retrieve from each table, must not be {@code null}
      * @return a {@link ContinuableFuture} containing a map of table names to lists of retrieved items,
      *         where each item is represented as a Map of attribute names to values
-     * @throws IllegalArgumentException if requestItems is {@code null} or exceeds batch limits
+     * @throws IllegalArgumentException if requestItems is {@code null} (surfaced through the future);
+     *         exceeding DynamoDB's batch limits fails with a service {@code ValidationException} via the future
      * @see #batchGetItem(Map, String)
      */
     public ContinuableFuture<Map<String, List<Map<String, Object>>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems) {
@@ -550,7 +559,8 @@ public final class AsyncDynamoDBExecutor {
      *                              "TOTAL" - returns only total consumed capacity,
      *                              "NONE" - no capacity details returned
      * @return a ContinuableFuture containing a map of table names to lists of retrieved items
-     * @throws IllegalArgumentException if requestItems is {@code null} or exceeds batch limits (100 items)
+     * @throws IllegalArgumentException if requestItems is {@code null} (surfaced through the future);
+     *         exceeding DynamoDB's 100-item batch limit fails with a service {@code ValidationException} via the future
      */
     public ContinuableFuture<Map<String, List<Map<String, Object>>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems,
             final String returnConsumedCapacity) {
@@ -618,7 +628,8 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param batchGetItemRequest the complete BatchGetItemRequest with all parameters configured, must not be {@code null}
      * @return a {@link ContinuableFuture} containing a map of table names to lists of retrieved items
-     * @throws IllegalArgumentException if batchGetItemRequest is {@code null} or exceeds batch limits (100 items)
+     * @throws IllegalArgumentException if batchGetItemRequest is {@code null} (surfaced through the future);
+     *         exceeding DynamoDB's 100-item batch limit fails with a service {@code ValidationException} via the future
      * @see BatchGetItemRequest
      * @see #batchGetItem(BatchGetItemRequest, Class)
      */
@@ -1112,7 +1123,8 @@ public final class AsyncDynamoDBExecutor {
      * @param batchWriteItemRequest the complete BatchWriteItemRequest with all parameters configured. Must not be null.
      * @return a ContinuableFuture containing the BatchWriteItemResult with consumed capacity,
      *         item collection metrics, and any unprocessed items
-     * @throws IllegalArgumentException if batchWriteItemRequest is null or contains more than 25 write requests
+     * @throws IllegalArgumentException if batchWriteItemRequest is null (surfaced through the future);
+     *         exceeding DynamoDB's 25-request batch limit fails with a service {@code ValidationException} via the future
      * @see BatchWriteItemRequest
      * @see BatchWriteItemResult
      * @see #batchWriteItem(Map)
@@ -1488,7 +1500,7 @@ public final class AsyncDynamoDBExecutor {
      *                    filter expressions, and other query parameters, must not be {@code null}
      * @return a {@link ContinuableFuture} containing a list of all items matching the query,
      *         where each item is represented as a Map of attribute names to values
-     * @throws IllegalArgumentException if queryRequest is {@code null}
+     * @throws NullPointerException if queryRequest is {@code null} (surfaced through the future)
      * @see #stream(QueryRequest)
      */
     public ContinuableFuture<List<Map<String, Object>>> list(final QueryRequest queryRequest) {
@@ -1556,7 +1568,8 @@ public final class AsyncDynamoDBExecutor {
      * @param queryRequest the QueryRequest with all parameters configured. Must not be null.
      * @param targetClass the class to convert each item to. Must not be null.
      * @return a ContinuableFuture containing a list of all matching items converted to type T
-     * @throws IllegalArgumentException if queryRequest or targetClass is null
+     * @throws NullPointerException if queryRequest is {@code null} (surfaced through the future)
+     * @throws IllegalArgumentException if targetClass is {@code null} or unsupported (surfaced through the future)
      * @see #list(QueryRequest)
      * @see #stream(QueryRequest, Class)
      */
@@ -1602,7 +1615,7 @@ public final class AsyncDynamoDBExecutor {
      *                    filter expressions, and other query parameters, must not be {@code null}
      * @return a {@link ContinuableFuture} containing a {@link Dataset} with all query results
      *         organized in a tabular format for easy analysis
-     * @throws IllegalArgumentException if queryRequest is {@code null}
+     * @throws NullPointerException if queryRequest is {@code null} (surfaced through the future)
      * @see #list(QueryRequest)
      */
     public ContinuableFuture<Dataset> query(final QueryRequest queryRequest) {
@@ -1671,7 +1684,7 @@ public final class AsyncDynamoDBExecutor {
      *                    or a {@link Map} type, results are extracted as raw attribute maps
      * @return a {@link ContinuableFuture} containing a {@link Dataset} with the query results
      *         and associated type information for type-safe operations
-     * @throws IllegalArgumentException if queryRequest is {@code null}
+     * @throws NullPointerException if queryRequest is {@code null} (surfaced through the future)
      * @see #query(QueryRequest)
      * @see #list(QueryRequest, Class)
      */
@@ -1717,7 +1730,7 @@ public final class AsyncDynamoDBExecutor {
      *                    filter expressions, and other query parameters, must not be {@code null}
      * @return a {@link ContinuableFuture} containing a {@link Stream} of items matching the query,
      *         providing lazy evaluation and automatic pagination
-     * @throws IllegalArgumentException if queryRequest is {@code null}
+     * @throws NullPointerException if queryRequest is {@code null} (surfaced through the future)
      * @see #list(QueryRequest)
      */
     public ContinuableFuture<Stream<Map<String, Object>>> stream(final QueryRequest queryRequest) {
@@ -1783,7 +1796,8 @@ public final class AsyncDynamoDBExecutor {
      * @param targetClass the class to convert each result item to, must have a default constructor, must not be {@code null}
      * @return a {@link ContinuableFuture} containing a {@link Stream} of items matching the query,
      *         each automatically converted to type {@code T} with lazy evaluation and automatic pagination
-     * @throws IllegalArgumentException if any parameter is {@code null}
+     * @throws NullPointerException if queryRequest is {@code null} (surfaced through the future)
+     * @throws IllegalArgumentException if targetClass is {@code null} or unsupported (surfaced through the future)
      * @see #stream(QueryRequest)
      * @see #list(QueryRequest, Class)
      */

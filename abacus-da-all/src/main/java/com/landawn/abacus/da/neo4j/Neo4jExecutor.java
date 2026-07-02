@@ -18,7 +18,6 @@ import java.io.Serializable;
 import java.util.Collection;
 import java.util.Map;
 import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -28,6 +27,7 @@ import org.neo4j.ogm.cypher.query.Pagination;
 import org.neo4j.ogm.cypher.query.SortOrder;
 import org.neo4j.ogm.session.Session;
 import org.neo4j.ogm.session.SessionFactory;
+import org.neo4j.ogm.transaction.Transaction;
 
 import com.landawn.abacus.annotation.Beta;
 import com.landawn.abacus.logging.Logger;
@@ -45,12 +45,16 @@ import com.landawn.abacus.util.stream.Stream;
  * <h2>Session and Transaction Semantics</h2>
  * <ul>
  *   <li><b>Pool:</b> Sessions are held in a bounded {@link LinkedBlockingQueue} (capacity 8192).
- *       {@link #getSession()} polls the queue with a 100&nbsp;ms timeout and opens a fresh OGM
- *       session via {@link SessionFactory#openSession()} if the queue is empty or the wait is
- *       interrupted (the thread's interrupt status is preserved).</li>
- *   <li><b>Release:</b> {@link Session#clear()} is invoked before a session is offered back to the
- *       queue. If the queue is full or the offer times out the session is silently dropped (no
- *       {@code close()} call is made; the OGM {@link Session} has no {@code close} operation).</li>
+ *       {@link #getSession()} polls the queue without blocking and opens a fresh OGM session via
+ *       {@link SessionFactory#openSession()} (a cheap in-memory operation) when the queue is
+ *       empty.</li>
+ *   <li><b>Release:</b> Any transaction left open on the session is rolled back (a session that
+ *       fails to roll back is discarded), then {@link Session#clear()} is invoked before the
+ *       session is offered back to the queue. If the queue is full the session is silently dropped
+ *       (no {@code close()} call is made; the OGM {@link Session} has no {@code close} operation).
+ *       Other session-level state mutated by callers of {@link #run(Consumer)}/{@link #call(Function)}
+ *       — registered event listeners, bookmarks, load strategy — is <i>not</i> reset and would leak
+ *       into subsequent borrowers; do not mutate such configuration on a pooled session.</li>
  *   <li><b>Transactions:</b> Each operation runs against an auto-commit OGM session unless callers
  *       use {@link #run(Consumer)} or {@link #call(Function)} to open a multi-statement transaction
  *       explicitly via {@link Session#beginTransaction()}. Read/write routing is the OGM/driver's
@@ -71,10 +75,11 @@ import com.landawn.abacus.util.stream.Stream;
  *
  * <h2>Result Streaming</h2>
  * <p>The {@link #stream(String, Map)}, {@link #stream(String, Map, boolean)}, and
- * {@link #stream(Class, String, Map)} overloads return lazily-consumed {@link Stream}s that own a
- * pooled session for their lifetime. The session is returned to the pool when the stream is closed
+ * {@link #stream(Class, String, Map)} overloads execute the Cypher immediately and fully fetch the
+ * result rows; the returned {@link Stream} lazily iterates the already-fetched rows and owns a
+ * pooled session for its lifetime. The session is returned to the pool when the stream is closed
  * (either explicitly via {@link Stream#close()} or via try-with-resources). Failing to close such a
- * stream will leak a session from the pool.</p>
+ * stream means the session is never returned to the pool for reuse.</p>
  *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
@@ -374,8 +379,8 @@ public final class Neo4jExecutor {
      * Loads multiple nodes from Neo4j by their unique IDs.
      * <p>
      * This method efficiently retrieves multiple nodes in a single database operation.
-     * Only the node properties are loaded; relationships are not included. For loading
-     * relationships, use {@link #loadAll(Class, Collection, int)} with depth > 0.
+     * Uses the OGM default load depth of 1, so immediate relationships are loaded along with node
+     * properties; use {@link #loadAll(Class, Collection, int)} with depth 0 to load properties only.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -453,7 +458,7 @@ public final class Neo4jExecutor {
      * Loads multiple nodes from Neo4j by their unique IDs with specified sort order.
      * <p>
      * This method retrieves multiple nodes and applies the specified sorting to the results.
-     * Only the node properties are loaded; relationships are not included.
+     * The OGM default load depth of 1 applies: immediate relationships are loaded along with node properties.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -533,7 +538,7 @@ public final class Neo4jExecutor {
      * Loads multiple nodes from Neo4j by their unique IDs with pagination.
      * <p>
      * This method retrieves a subset of nodes based on pagination settings, allowing
-     * efficient handling of large result sets. Only node properties are loaded.
+     * efficient handling of large result sets. The OGM default load depth of 1 applies (immediate relationships are loaded too).
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -699,7 +704,7 @@ public final class Neo4jExecutor {
      * <p>
      * This method refreshes the provided entities from the database, updating their
      * properties to the current state in Neo4j. The entities must already have IDs.
-     * Only node properties are reloaded; relationships are not included.
+     * The OGM default load depth of 1 applies: immediate relationships are reloaded along with node properties.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1018,7 +1023,7 @@ public final class Neo4jExecutor {
      * Loads all nodes of the specified type from Neo4j.
      * <p>
      * This method retrieves all nodes of the given type from the database.
-     * Only node properties are loaded; relationships are not included.
+     * The OGM default load depth of 1 applies: immediate relationships are loaded along with node properties.
      * Use with caution on large datasets as it loads all matching nodes.
      *
      * <p><b>Usage Examples:</b></p>
@@ -1093,7 +1098,7 @@ public final class Neo4jExecutor {
      * Loads all nodes of the specified type from Neo4j with sort order.
      * <p>
      * This method retrieves all nodes of the given type and sorts them according
-     * to the specified order. Only node properties are loaded. Use with caution
+     * to the specified order. The OGM default load depth of 1 applies (immediate relationships are loaded too). Use with caution
      * on large datasets as it loads and sorts all matching nodes.
      *
      * <p><b>Usage Examples:</b></p>
@@ -1166,7 +1171,7 @@ public final class Neo4jExecutor {
      * Loads a paginated subset of nodes of the specified type from Neo4j.
      * <p>
      * This method retrieves a specific page of nodes of the given type, allowing
-     * efficient navigation through large datasets. Only node properties are loaded.
+     * efficient navigation through large datasets. The OGM default load depth of 1 applies (immediate relationships are loaded too).
      * Recommended approach for handling large node collections.
      *
      * <p><b>Usage Examples:</b></p>
@@ -1240,7 +1245,7 @@ public final class Neo4jExecutor {
      * <p>
      * This method retrieves a specific page of nodes, sorted according to the specified
      * order. Ideal for building paginated, sorted views of large node collections.
-     * Only node properties are loaded.
+     * The OGM default load depth of 1 applies (immediate relationships are loaded too).
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1318,7 +1323,7 @@ public final class Neo4jExecutor {
      * Loads nodes of the specified type from Neo4j that match the given filter criteria.
      * <p>
      * This method retrieves nodes that satisfy the specified filter conditions.
-     * Only node properties are loaded; relationships are not included.
+     * The OGM default load depth of 1 applies: immediate relationships are loaded along with node properties.
      * This is the primary method for filtered node retrieval.
      *
      * <p><b>Usage Examples:</b></p>
@@ -1394,7 +1399,7 @@ public final class Neo4jExecutor {
      * <p>
      * This method retrieves nodes that satisfy the filter conditions and sorts them
      * according to the specified order. Combines filtering with sorting for organized
-     * data retrieval. Only node properties are loaded.
+     * data retrieval. The OGM default load depth of 1 applies (immediate relationships are loaded too).
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1475,7 +1480,7 @@ public final class Neo4jExecutor {
      * <p>
      * This method retrieves a specific page of nodes that satisfy the filter conditions.
      * Combines filtering with pagination for efficient handling of large filtered datasets.
-     * Only node properties are loaded.
+     * The OGM default load depth of 1 applies (immediate relationships are loaded too).
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1639,7 +1644,7 @@ public final class Neo4jExecutor {
      * <p>
      * This method retrieves nodes that satisfy all the specified filter conditions.
      * The Filters object allows combining multiple filter criteria with logical operators.
-     * Only node properties are loaded; relationships are not included.
+     * The OGM default load depth of 1 applies: immediate relationships are loaded along with node properties.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1719,7 +1724,7 @@ public final class Neo4jExecutor {
      * <p>
      * This method retrieves nodes that satisfy all the filter conditions and sorts them
      * according to the specified order. Combines complex filtering with sorting for
-     * organized data retrieval with multiple criteria. Only node properties are loaded.
+     * organized data retrieval with multiple criteria. The OGM default load depth of 1 applies (immediate relationships are loaded too).
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1804,7 +1809,7 @@ public final class Neo4jExecutor {
      * <p>
      * This method retrieves a specific page of nodes that satisfy all the filter conditions.
      * Combines complex filtering with pagination for efficient handling of large filtered
-     * datasets with multiple criteria. Only node properties are loaded.
+     * datasets with multiple criteria. The OGM default load depth of 1 applies (immediate relationships are loaded too).
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2163,10 +2168,10 @@ public final class Neo4jExecutor {
      * Executes a Cypher query and returns each result row as a {@code Map<String, Object>} keyed
      * by the column alias declared in the {@code RETURN} clause.
      * <p>
-     * The returned stream is lazy: the underlying OGM session is borrowed from the pool when this
-     * method is invoked, and is returned to the pool when the stream is closed. <b>Callers must
-     * close the stream</b> (preferably with try-with-resources); leaving it open leaks a session
-     * for the lifetime of the executor.
+     * The Cypher executes immediately and the result rows are fully fetched; the returned stream
+     * lazily iterates the fetched rows and holds the borrowed session until closed. <b>Callers must
+     * close the stream</b> (preferably with try-with-resources); leaving it open means the session
+     * is never returned to the pool for reuse.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2183,7 +2188,7 @@ public final class Neo4jExecutor {
      *
      * @param cypher the Cypher query string with {@code $name} parameter placeholders
      * @param parameters named parameters bound by the OGM session
-     * @return a lazily-evaluated {@link Stream} of result rows, each row a {@code Map} keyed by the
+     * @return a {@link Stream} over the already-fetched result rows, each row a {@code Map} keyed by the
      *         {@code RETURN}-clause aliases; close the stream to release the underlying session
      * @throws RuntimeException if the underlying OGM session rejects the query
      * @see #stream(Class, String, Map)
@@ -2211,10 +2216,12 @@ public final class Neo4jExecutor {
      * The {@code readOnly} flag is forwarded to {@link Session#query(String, Map, boolean)} so the
      * Neo4j driver can route the request to a read replica in a clustered deployment or otherwise
      * optimise execution. Pass {@code false} for any query that mutates the graph; passing
-     * {@code true} for a write query will result in a runtime failure from the driver.
+     * {@code true} for a write query may fail at the driver/server depending on the deployment
+     * (OGM logs a warning and still submits the query in a read-only transaction).
      * <p>
-     * The returned stream is lazy and borrows a pooled session for its lifetime; close the stream
-     * (try-with-resources) to release the session back to the pool.
+     * The Cypher executes immediately and the result rows are fully fetched; the returned stream
+     * lazily iterates the fetched rows and borrows a pooled session for its lifetime. Close the
+     * stream (try-with-resources) to release the session back to the pool.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2232,14 +2239,14 @@ public final class Neo4jExecutor {
      *     created.forEach(row -> System.out.println("new id: " + row.get("id")));
      * }
      *
-     * // Failing to close the stream leaks a pooled session - always use try-with-resources
+     * // An unclosed stream's session is never returned to the pool - always use try-with-resources
      * }</pre>
      *
      * @param cypher the Cypher query string with {@code $name} parameter placeholders
      * @param parameters named parameters bound by the OGM session
      * @param readOnly {@code true} to mark the query as read-only (eligible for read-replica
      *                 routing); must be {@code false} for queries that write to the graph
-     * @return a lazily-evaluated {@link Stream} of result rows; close the stream to release the
+     * @return a {@link Stream} over the already-fetched result rows; close the stream to release the
      *         underlying session
      * @throws RuntimeException if the underlying OGM session rejects the query
      * @see #stream(String, Map)
@@ -2266,8 +2273,9 @@ public final class Neo4jExecutor {
      * OGM-mapped entity class for queries that return whole nodes, but may also be a basic value
      * type when the {@code RETURN} clause produces a single scalar per row.
      * <p>
-     * The returned stream is lazy and owns a pooled session for its lifetime; close the stream
-     * (try-with-resources recommended) to release the session back to the pool.
+     * The Cypher executes immediately and the result rows are fully fetched; the returned stream
+     * lazily iterates the fetched rows and owns a pooled session for its lifetime. Close the
+     * stream (try-with-resources recommended) to release the session back to the pool.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2284,7 +2292,7 @@ public final class Neo4jExecutor {
      * @param targetClass the target class &mdash; an OGM-mapped entity class or a basic value type
      * @param cypher the Cypher query string with {@code $name} parameter placeholders
      * @param parameters named parameters bound by the OGM session
-     * @return a lazily-evaluated {@link Stream} of rows mapped to {@code targetClass}; close the
+     * @return a {@link Stream} over the already-fetched rows mapped to {@code targetClass}; close the
      *         stream to release the underlying session
      * @throws RuntimeException if the underlying OGM session rejects the query
      * @see #queryForObject(Class, String, Map)
@@ -2432,19 +2440,9 @@ public final class Neo4jExecutor {
     }
 
     private Session getSession() {
-        Session session = null;
-
-        try {
-            session = sessionPool.poll(100, TimeUnit.MILLISECONDS);
-        } catch (final InterruptedException e) {
-            Thread.currentThread().interrupt(); // Preserve interrupt status
-            // After interrupt, still need to return a session
-            if (logger.isWarnEnabled()) {
-                logger.warn("Interrupted while waiting for a session from the pool; opening a new session instead", e);
-            }
-            session = openSession();
-            return session;
-        }
+        // Non-blocking: opening an OGM session is a cheap in-memory operation, so there is no point
+        // waiting on an empty pool (nothing fills it except returns).
+        Session session = sessionPool.poll();
 
         if (session == null) {
             session = openSession();
@@ -2455,16 +2453,27 @@ public final class Neo4jExecutor {
 
     private void closeSession(final Session session) {
         if (session != null) {
-            session.clear();
+            // A run/call action may have left a transaction open (e.g. it threw between
+            // beginTransaction() and tx.close()). Never pool a session with a live transaction:
+            // roll it back, and discard the session entirely if that fails.
+            final Transaction tx = session.getTransaction();
 
-            try {
-                sessionPool.offer(session, 100, TimeUnit.MILLISECONDS); //NOSONAR
-            } catch (final InterruptedException e) {
-                Thread.currentThread().interrupt(); // Preserve interrupt status
-                if (logger.isWarnEnabled()) {
-                    logger.warn("Interrupted while returning a session to the pool; the session may not be reused", e);
+            if (tx != null) {
+                try {
+                    tx.rollback();
+                    tx.close();
+                } catch (final RuntimeException e) {
+                    if (logger.isWarnEnabled()) {
+                        logger.warn("Failed to roll back a transaction left open on a returned session; discarding the session", e);
+                    }
+
+                    return;
                 }
             }
+
+            session.clear();
+
+            sessionPool.offer(session); //NOSONAR
         }
     }
 

@@ -32,31 +32,31 @@ public final class AnyUtil {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Typical: alternating name/value pairs, iteration order preserved.
-     * Map<String, Object> p = AnyUtil.array2Props(new Object[] { "name", "Alice", "age", 30 });
+     * Map<String, Object> p = AnyUtil.asProps(new Object[] { "name", "Alice", "age", 30 });
      * // returns {name=Alice, age=30} (a LinkedHashMap)
      *
      * // Negative: a non-String name is rejected.
-     * AnyUtil.array2Props(new Object[] { 100, "hundred" });
+     * AnyUtil.asProps(new Object[] { 100, "hundred" });
      * // throws IllegalArgumentException
      *
      * // Duplicate name: later value overwrites, original position retained.
-     * Map<String, Object> r = AnyUtil.array2Props(new Object[] { "z", 1, "a", 2, "z", 3 });
+     * Map<String, Object> r = AnyUtil.asProps(new Object[] { "z", 1, "a", 2, "z", 3 });
      * // returns {z=3, a=2}
      *
      * // Edge: null array yields an empty map (not null).
-     * Map<String, Object> s = AnyUtil.array2Props(null);
+     * Map<String, Object> s = AnyUtil.asProps(null);
      * // returns {} (an empty LinkedHashMap)
      *
      * // Edge: empty array yields an empty map.
-     * Map<String, Object> t = AnyUtil.array2Props(new Object[0]);
+     * Map<String, Object> t = AnyUtil.asProps(new Object[0]);
      * // returns {}
      *
      * // Edge: a null value is allowed and preserved.
-     * Map<String, Object> u = AnyUtil.array2Props(new Object[] { "key", null });
+     * Map<String, Object> u = AnyUtil.asProps(new Object[] { "key", null });
      * // returns {key=null}
      *
      * // Negative: odd-length array is rejected.
-     * AnyUtil.array2Props(new Object[] { "name", "Alice", "age" });
+     * AnyUtil.asProps(new Object[] { "name", "Alice", "age" });
      * // throws IllegalArgumentException
      * }</pre>
      *
@@ -67,7 +67,7 @@ public final class AnyUtil {
      * @throws IllegalArgumentException if {@code propNameAndValues} has an odd length,
      *         or if any property name is not a {@link String}
      */
-    public static Map<String, Object> array2Props(final Object[] propNameAndValues) {
+    public static Map<String, Object> asProps(final Object[] propNameAndValues) {
         if (propNameAndValues == null) {
             return new LinkedHashMap<>(); // NOSONAR
         }

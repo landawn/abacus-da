@@ -292,7 +292,7 @@ public final class MongoCollectionExecutor {
      * @see #exists(String)
      */
     public boolean exists(final ObjectId objectId) {
-        return exists(MongoDBBase.objectId2Filter(objectId));
+        return exists(MongoDBBase.objectIdToFilter(objectId));
     }
 
     /**
@@ -601,7 +601,7 @@ public final class MongoCollectionExecutor {
      * @see #gett(ObjectId, Collection, Class)
      */
     public <T> Optional<T> get(final ObjectId objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
-        return findFirst(selectPropNames, MongoDBBase.objectId2Filter(objectId), null, rowType);
+        return findFirst(selectPropNames, MongoDBBase.objectIdToFilter(objectId), null, rowType);
     }
 
     /**
@@ -774,7 +774,7 @@ public final class MongoCollectionExecutor {
      * @see com.mongodb.client.model.Projections
      */
     public <T> T gett(final ObjectId objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
-        return findFirst(selectPropNames, MongoDBBase.objectId2Filter(objectId), null, rowType).orElse(null);
+        return findFirst(selectPropNames, MongoDBBase.objectIdToFilter(objectId), null, rowType).orElse(null);
     }
 
     /**
@@ -882,6 +882,8 @@ public final class MongoCollectionExecutor {
      * @see com.mongodb.client.model.Sorts
      */
     public <T> Optional<T> findFirst(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         final FindIterable<Document> findIterable = query(selectPropNames, filter, sort, 0, 1);
 
         final T result = toEntity(findIterable, rowType);
@@ -920,6 +922,8 @@ public final class MongoCollectionExecutor {
      * @see com.mongodb.client.model.Sorts
      */
     public <T> Optional<T> findFirst(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         final FindIterable<Document> findIterable = executeQuery(projection, filter, sort, 0, 1);
 
         final T result = toEntity(findIterable, rowType);
@@ -1936,6 +1940,8 @@ public final class MongoCollectionExecutor {
      */
     public Dataset query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<?> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         final FindIterable<Document> findIterable = query(selectPropNames, filter, sort, offset, count);
 
         if (N.isEmpty(selectPropNames)) {
@@ -2007,9 +2013,11 @@ public final class MongoCollectionExecutor {
      * @param count maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the paginated query results with projected fields and typed rows
-     * @throws IllegalArgumentException if filter is null
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
      */
     public Dataset query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<?> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         final FindIterable<Document> findIterable = executeQuery(projection, filter, sort, offset, count);
 
         return MongoDBBase.extractData(findIterable, rowType);
@@ -2524,7 +2532,7 @@ public final class MongoCollectionExecutor {
             return coll.find(new Document(_$EXPR, false));
         }
 
-        FindIterable<Document> findIterable = filter == null ? coll.find() : coll.find(filter);
+        FindIterable<Document> findIterable = coll.find(filter);
 
         if (projection != null) {
             findIterable = findIterable.projection(projection);
@@ -2919,7 +2927,7 @@ public final class MongoCollectionExecutor {
      * @see #updateOne(String, Object)
      */
     public UpdateResult updateOne(final ObjectId objectId, final Object update) {
-        return updateOne(MongoDBBase.objectId2Filter(objectId), update);
+        return updateOne(MongoDBBase.objectIdToFilter(objectId), update);
     }
 
     /**
@@ -3361,7 +3369,7 @@ public final class MongoCollectionExecutor {
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public UpdateResult replaceOne(final ObjectId objectId, final Object replacement) {
-        return replaceOne(MongoDBBase.objectId2Filter(objectId), replacement);
+        return replaceOne(MongoDBBase.objectIdToFilter(objectId), replacement);
     }
 
     /**
@@ -3456,7 +3464,7 @@ public final class MongoCollectionExecutor {
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public DeleteResult deleteOne(final ObjectId objectId) {
-        return deleteOne(MongoDBBase.objectId2Filter(objectId));
+        return deleteOne(MongoDBBase.objectIdToFilter(objectId));
     }
 
     /**
@@ -3717,7 +3725,7 @@ public final class MongoCollectionExecutor {
      * @param update update operations to apply
      * @param rowType class to convert the result to
      * @return the original document as the specified type, or null if not found
-     * @throws IllegalArgumentException if filter or update is null
+     * @throws IllegalArgumentException if filter, update, or rowType is null
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> T findOneAndUpdate(final Bson filter, final Object update, final Class<T> rowType) {
@@ -3778,6 +3786,7 @@ public final class MongoCollectionExecutor {
      */
     public <T> T findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options, final Class<T> rowType) {
         N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(rowType, "rowType");
 
         if (options == null) {
             return toEntity(coll.findOneAndUpdate(filter, toBson(update)), rowType);
@@ -3829,7 +3838,7 @@ public final class MongoCollectionExecutor {
      * @param objList collection of update operations
      * @param rowType class to convert the result to
      * @return the original document as the specified type, or null if not found
-     * @throws IllegalArgumentException if filter or objList is null, or if objList is empty
+     * @throws IllegalArgumentException if filter, objList, or rowType is null, or if objList is empty
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> T findOneAndUpdate(final Bson filter, final Collection<?> objList, final Class<T> rowType) {
@@ -3885,11 +3894,12 @@ public final class MongoCollectionExecutor {
      * @param options additional options (null uses defaults)
      * @param rowType class to convert the result to
      * @return the document as the specified type, or null if not found
-     * @throws IllegalArgumentException if filter or objList is null, or if objList is empty
+     * @throws IllegalArgumentException if filter, objList, or rowType is null, or if objList is empty
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> T findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options, final Class<T> rowType) {
         N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(rowType, "rowType");
 
         final List<Bson> updateToUse = toBson(objList);
 
@@ -3943,7 +3953,7 @@ public final class MongoCollectionExecutor {
      * @param replacement the replacement document
      * @param rowType class to convert the result to
      * @return the original document as the specified type, or null if not found
-     * @throws IllegalArgumentException if filter or replacement is null
+     * @throws IllegalArgumentException if filter, replacement, or rowType is null
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> T findOneAndReplace(final Bson filter, final Object replacement, final Class<T> rowType) {
@@ -4006,6 +4016,7 @@ public final class MongoCollectionExecutor {
      */
     public <T> T findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options, final Class<T> rowType) {
         N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(rowType, "rowType");
 
         N.checkArgNotNull(replacement, "replacement");
 
@@ -4108,6 +4119,7 @@ public final class MongoCollectionExecutor {
      */
     public <T> T findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options, final Class<T> rowType) {
         N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(rowType, "rowType");
 
         if (options == null) {
             return toEntity(coll.findOneAndDelete(filter), rowType);
@@ -4319,12 +4331,6 @@ public final class MongoCollectionExecutor {
         N.checkArgNotEmpty(fieldNames, "fieldNames");
         N.checkArgNotNull(rowType, "rowType");
 
-        final Document groupFields = new Document();
-
-        for (final String fieldName : fieldNames) {
-            groupFields.put(fieldName, _$ + fieldName);
-        }
-
         return aggregate(groupByPipeline(fieldNames, false, rowType), rowType);
     }
 
@@ -4420,12 +4426,6 @@ public final class MongoCollectionExecutor {
     public <T> Stream<T> groupByAndCount(final Collection<String> fieldNames, final Class<T> rowType) {
         N.checkArgNotEmpty(fieldNames, "fieldNames");
         N.checkArgNotNull(rowType, "rowType");
-
-        final Document groupFields = new Document();
-
-        for (final String fieldName : fieldNames) {
-            groupFields.put(fieldName, _$ + fieldName);
-        }
 
         return aggregate(groupByPipeline(fieldNames, true, rowType), rowType);
     }
@@ -4531,6 +4531,8 @@ public final class MongoCollectionExecutor {
      */
     @Deprecated
     public <T> Stream<T> mapReduce(final String mapFunction, final String reduceFunction, final Class<T> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         final MongoCursor<Document> cursor = coll.mapReduce(mapFunction, reduceFunction, Document.class).iterator();
 
         return Stream.of(cursor).map(toEntity(rowType)).onClose(Fn.close(cursor));

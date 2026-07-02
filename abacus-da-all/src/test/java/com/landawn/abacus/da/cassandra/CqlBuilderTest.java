@@ -55,11 +55,12 @@ public class CqlBuilderTest extends TestBase {
         N.println("IN PSC: " + PSC.select("id").from("account").where(Filters.in("id", N.asList(1, 2, 3))).build().query());
         N.println("IN NSC: " + NSC.select("id").from("account").where(Filters.in("id", N.asList(1, 2, 3))).build().query());
         N.println("NOTIN NSC: " + NSC.select("id").from("account").where(Filters.notIn("id", N.asList(1, 2, 3))).build().query());
-        N.println("iF cond PSC: " + PSC.update("account").set("firstName").where(Filters.eq("id", 1)).iF(Filters.eq("status", "x")).build().query());
+        N.println("onlyIf cond PSC: " + PSC.update("account").set("firstName").where(Filters.eq("id", 1)).onlyIf(Filters.eq("status", "x")).build().query());
         N.println("DELETE cols: " + PSC.delete("firstName", "lastName").from("account").where(Filters.eq("id", 1)).build().query());
         N.println("AND junction: " + PSC.select("id").from("account").where(Filters.and(Filters.eq("a", 1), Filters.eq("b", 2))).build().query());
         assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from("account").where(Filters.or(Filters.eq("a", 1), Filters.eq("b", 2))).build());
-        N.println("TTL+IF order: " + PSC.update("account").set("firstName").where(Filters.eq("id", 1)).usingTTL(60).iF(Filters.eq("s", "x")).build().query());
+        N.println(
+                "TTL+IF order: " + PSC.update("account").set("firstName").where(Filters.eq("id", 1)).usingTTL(60).onlyIf(Filters.eq("s", "x")).build().query());
         N.println("INSERT TTL: " + PSC.insert("id", "name").into("account").usingTTL(60).build().query());
         N.println("batchInsert: " + SCCB.batchInsert(N.asList(N.asMap("firstName", "a"), N.asMap("firstName", "b"))).into("account").build().query());
         N.println("NotEqual null: " + SCCB.select("id").from("account").where(Filters.ne("firstName", "x")).build().query());
@@ -139,7 +140,7 @@ public class CqlBuilderTest extends TestBase {
 
     public void test_11() {
 
-        N.println(NSC.update(Account.class).set("firstName", "lastName").iF(Filters.eq("firstName", "123")).build().query());
+        N.println(NSC.update(Account.class).set("firstName", "lastName").onlyIf(Filters.eq("firstName", "123")).build().query());
 
         String cql = SCCB.insert("gui", "firstName", "lastName").into("account").build().query();
         N.println(cql);
@@ -510,7 +511,7 @@ public class CqlBuilderTest extends TestBase {
         assertTrue(afCql.contains("? ALLOW FILTERING"), afCql);
 
         // Lightweight transaction IF clause spacing (leading space, single space around expr).
-        final String iFCql = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).iF("status = 'inactive'").build().query();
+        final String iFCql = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).onlyIf("status = 'inactive'").build().query();
         N.println(iFCql);
         assertTrue(iFCql.endsWith(" IF status = 'inactive'"), iFCql);
 
@@ -3935,7 +3936,7 @@ public class CqlBuilderTest extends TestBase {
     }
 
     /**
-     * Regression guard for {@code iF(Condition)}/{@code onlyIf(Condition)} with an AND junction:
+     * Regression guard for {@code onlyIf(Condition)} with an AND junction:
      * Cassandra's LWT grammar is {@code IF columnCondition (AND columnCondition)*} and rejects
      * parenthesized members, so junction members must render WITHOUT per-member parentheses in the
      * IF clause (WHERE junction rendering keeps its parentheses and is unaffected).
@@ -3951,15 +3952,6 @@ public class CqlBuilderTest extends TestBase {
         N.println(cql);
 
         assertEquals("UPDATE account SET first_name = ? WHERE id = ? IF last_name = ? AND id < ?", cql);
-
-        // iF(Condition) is the same path.
-        final String iFCql = PSC.update("account")
-                .set("firstName")
-                .where(Filters.eq("id", 1))
-                .iF(Filters.and(Filters.eq("lastName", "x"), Filters.lt("id", 3)))
-                .build()
-                .query();
-        assertEquals(cql, iFCql);
 
         // The WHERE-clause junction rendering (with parentheses) is unaffected by the IF fix.
         final String whereCql = PSC.select("id").from("account").where(Filters.and(Filters.eq("a", 1), Filters.eq("b", 2))).build().query();
@@ -4093,5 +4085,24 @@ public class CqlBuilderTest extends TestBase {
         // Non-regression: the simple unaliased case keeps :minPropName/:maxPropName.
         final String simple = NSC.select("id").from("account").where(Filters.between("age", 18, 65)).build().query();
         assertEquals("SELECT id FROM account WHERE age BETWEEN :minAge AND :maxAge", simple);
+    }
+
+    /**
+     * Regression guard for {@code appendOperationBeforeFrom}: {@code distinct()}/{@code selectModifier(...)}
+     * called AFTER {@code from(...)} must be inserted right after the emitted SELECT keyword. The
+     * override didn't record {@code _selectKeywordEndIdx} (the parent does it right after appending
+     * SELECT), so a post-from modifier was silently dropped from the generated CQL.
+     */
+    @Test
+    public void test_distinct_afterFrom_isNotDropped() {
+        assertEquals("SELECT DISTINCT name FROM account", PSC.select("name").from("account").distinct().build().query());
+
+        // Same order via the general modifier entry point (SELECT JSON is a real CQL feature; the
+        // naming policy may normalize the modifier's case, which CQL treats as equivalent).
+        final String json = PSC.select("name").from("account").selectModifier("JSON").build().query();
+        assertTrue(json.equalsIgnoreCase("SELECT JSON name FROM account"), json);
+
+        // Non-regression: modifier before from() keeps working.
+        assertEquals("SELECT DISTINCT name FROM account", PSC.select("name").distinct().from("account").build().query());
     }
 }

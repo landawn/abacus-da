@@ -1189,6 +1189,27 @@ public class AsyncMongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
+    public void testEstimatedDocumentCount_LambdaRuns() throws Exception {
+        stubRunCallable();
+        when(mockCollExecutor.estimatedDocumentCount()).thenReturn(1000L);
+
+        ContinuableFuture<Long> result = asyncExecutor.estimatedDocumentCount();
+        Assertions.assertEquals(1000L, result.get());
+        verify(mockCollExecutor).estimatedDocumentCount();
+    }
+
+    @Test
+    public void testEstimatedDocumentCountWithOptions_LambdaRuns() throws Exception {
+        stubRunCallable();
+        com.mongodb.client.model.EstimatedDocumentCountOptions options = new com.mongodb.client.model.EstimatedDocumentCountOptions();
+        when(mockCollExecutor.estimatedDocumentCount(options)).thenReturn(2000L);
+
+        ContinuableFuture<Long> result = asyncExecutor.estimatedDocumentCount(options);
+        Assertions.assertEquals(2000L, result.get());
+        verify(mockCollExecutor).estimatedDocumentCount(options);
+    }
+
+    @Test
     public void testGetStringObjectId_LambdaRuns() throws Exception {
         stubRunCallable();
         String objectId = "507f1f77bcf86cd799439011";

@@ -2462,17 +2462,6 @@ public class DynamoDBExecutor01Test extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> executor.mapper(NoTableEntity.class));
     }
 
-    // ===== checkEntityClass static helper - covers both branches =====
-    @Test
-    public void testCheckEntityClass_BeanOk() {
-        assertDoesNotThrow(() -> DynamoDBExecutor.checkEntityClass(TestEntity.class));
-    }
-
-    @Test
-    public void testCheckEntityClass_NonBeanThrows() {
-        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.checkEntityClass(String.class));
-    }
-
     // ===== Package-private static toItem(Collection)/toUpdateItem(Collection) overloads =====
     @Test
     public void testToItem_CollectionDefaultNamingPolicy() {

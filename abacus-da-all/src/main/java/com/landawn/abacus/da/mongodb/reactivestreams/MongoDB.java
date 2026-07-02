@@ -76,7 +76,7 @@ import com.mongodb.reactivestreams.client.MongoDatabase;
  * MongoCollectionExecutor executor = reactiveMongoDB.collectionExecutor("users");
  * 
  * // With Project Reactor:
- * Flux<Document> flux = Flux.from(executor.list(Filters.eq("status", "active")))
+ * Flux<String> flux = Flux.from(executor.list(Filters.eq("status", "active")))
  *     .filter(doc -> doc.getInteger("age") > 18)
  *     .map(doc -> doc.getString("name"))
  *     .doOnNext(System.out::println);

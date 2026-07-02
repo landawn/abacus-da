@@ -122,7 +122,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * Optional<User> user = async.get(User.class, 1L).get(); // present if a row with id=1 exists, else empty
      *
      * // Typical: react to completion without blocking the caller.
-     * async.get(User.class, 1L).thenAccept(opt -> opt.ifPresent(System.out::println)); // prints the entity if present
+     * async.get(User.class, 1L).thenRunAsync(opt -> opt.ifPresent(System.out::println)); // prints the entity if present
      *
      * // Edge: no matching row -> the future completes with an empty Optional.
      * boolean none = async.get(User.class, -1L).get().isEmpty(); // returns true
@@ -344,7 +344,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * User user = async.gett(User.class, Filters.eq("email", "a@b.com")).get(); // the entity, or null
      *
      * // Typical: handle the resolved value in a continuation.
-     * async.gett(User.class, Filters.eq("id", 1L)).thenAccept(u -> { if (u != null) process(u); });
+     * async.gett(User.class, Filters.eq("id", 1L)).thenRunAsync(u -> { if (u != null) process(u); });
      *
      * // Edge: no matching row -> the future completes with null.
      * User missing = async.gett(User.class, Filters.eq("id", -1L)).get(); // missing == null
@@ -1106,7 +1106,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * boolean present = async.exists(User.class, 1L).get(); // true if a row with id=1 exists
      *
      * // Typical: branch on the resolved boolean in a continuation.
-     * async.exists(User.class, 1L).thenAccept(found -> { if (found) log.info("present"); });
+     * async.exists(User.class, 1L).thenRunAsync(found -> { if (found) log.info("present"); });
      *
      * // Edge: a non-existent key resolves to false.
      * boolean none = async.exists(User.class, -1L).get(); // returns false
@@ -1205,7 +1205,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * long active = async.count(User.class, Filters.eq("status", "active")).get(); // number of active users
      *
      * // Typical: count then branch in a continuation.
-     * async.count(User.class, Filters.eq("status", "active")).thenAccept(n -> log.info("active=" + n));
+     * async.count(User.class, Filters.eq("status", "active")).thenRunAsync(n -> log.info("active=" + n));
      *
      * // Edge: a condition matching no rows yields 0.
      * long none = async.count(User.class, Filters.eq("id", -1L)).get(); // returns 0
@@ -1709,12 +1709,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * Statement<?> none = SimpleStatement.newInstance("SELECT * FROM users WHERE id = ?", -1L);
      * boolean empty = async.stream(User.class, none).get().toList().isEmpty(); // returns true
      *
-     * // Edge: a null statement makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.stream(User.class, (Statement<?>) null).get(); // throws ExecutionException (cause NullPointerException)
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is a NullPointerException
-     * }
+     * // Edge: a null statement is rejected synchronously at the call site (no future is created):
+     * // the v4 driver throws IllegalArgumentException, the v3 driver NullPointerException.
+     * async.stream(User.class, (Statement<?>) null); // throws a RuntimeException immediately
      * }</pre>
      *
      * @param <T> the row type
@@ -2328,9 +2325,12 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is a {@link Nullable} holding the value, or empty if no row
      *         matches; the value is {@code null} when the column is SQL NULL
+     * @throws IllegalArgumentException if {@code propName} is {@code null} or empty
      */
     public <V> ContinuableFuture<Nullable<V>> queryForSingleValue(final Class<?> targetClass, final Class<V> valueClass, final String propName,
             final Condition whereClause) {
+        N.checkArgNotEmpty(propName, "propName");
+
         final SP cp = cassandraExecutor.prepareQuery(targetClass, List.of(propName), whereClause, 1);
 
         return queryForSingleValue(valueClass, cp.query(), cp.parameters().toArray());
@@ -2372,9 +2372,12 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         matches; if a row was returned but the column value is {@code null}, {@code get()}
      *         throws a {@link NullPointerException} directly (not wrapped in an {@code ExecutionException}),
      *         since {@link Optional} cannot hold {@code null}
+     * @throws IllegalArgumentException if {@code propName} is {@code null} or empty
      */
     public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final Class<?> targetClass, final Class<V> valueClass, final String propName,
             final Condition whereClause) {
+        N.checkArgNotEmpty(propName, "propName");
+
         final SP cp = cassandraExecutor.prepareQuery(targetClass, List.of(propName), whereClause, 1);
 
         return queryForSingleNonNull(valueClass, cp.query(), cp.parameters().toArray());
@@ -2714,6 +2717,70 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
 
     /**
      * Asynchronously executes the supplied CQL query and returns the first column of the first
+     * row as a {@link Date} value.
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AsyncCassandraExecutor async = executor.async();
+     *
+     * // Typical: read a date from a raw single-column query.
+     * Nullable<Date> createdAt = async.queryForDate("SELECT created_at FROM users WHERE id = ?", 1L).get();
+     *
+     * // Edge: no matching row -> the future completes with an empty Nullable.
+     * boolean empty = async.queryForDate("SELECT created_at FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
+     *
+     * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
+     * try {
+     *     async.queryForDate("SELECT FROM").get(); // throws ExecutionException
+     * } catch (ExecutionException ex) {
+     *     // ex.getCause() is the driver/parse failure
+     * }
+     * }</pre>
+     *
+     * @param query the parameterized CQL SELECT statement
+     * @param parameters the parameter values to bind
+     * @return a future whose payload is a {@link Nullable} holding the {@code Date} value, or
+     *         empty if the query returned no row; the value is {@code null} when the column is
+     *         SQL NULL
+     * @see #queryForDate(Class, String, Object...)
+     * @see #queryForDate(Class, String, Condition)
+     */
+    @Beta
+    public final ContinuableFuture<Nullable<Date>> queryForDate(final String query, final Object... parameters) {
+        return queryForSingleValue(Date.class, query, parameters);
+    }
+
+    /**
+     * Asynchronously executes the supplied CQL query and returns the first column of the first
+     * row converted to the specified {@link Date} subclass (e.g. {@code java.sql.Timestamp}).
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AsyncCassandraExecutor async = executor.async();
+     *
+     * // Typical: read a timestamp from a raw single-column query.
+     * Nullable<Timestamp> lastLogin = async.queryForDate(Timestamp.class, "SELECT last_login FROM users WHERE id = ?", 1L).get();
+     *
+     * // Edge: no matching row -> the future completes with an empty Nullable.
+     * boolean empty = async.queryForDate(Timestamp.class, "SELECT last_login FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
+     * }</pre>
+     *
+     * @param <E> the concrete {@code Date} subtype to be returned
+     * @param valueClass the {@code Date} subclass the column value is converted to
+     * @param query the parameterized CQL SELECT statement
+     * @param parameters the parameter values to bind
+     * @return a future whose payload is a {@link Nullable} holding the converted value, or empty
+     *         if the query returned no row; the value is {@code null} when the column is SQL NULL
+     * @see #queryForDate(String, Object...)
+     * @see #queryForDate(Class, Class, String, Condition)
+     */
+    @Beta
+    public final <E extends Date> ContinuableFuture<Nullable<E>> queryForDate(final Class<E> valueClass, final String query, final Object... parameters) {
+        return queryForSingleValue(valueClass, query, parameters);
+    }
+
+    /**
+     * Asynchronously executes the supplied CQL query and returns the first column of the first
      * row coerced to {@code valueClass}.
      *
      * <p><b>Usage Examples:</b></p>
@@ -2909,14 +2976,11 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *
      * // Typical: apply per-statement options (e.g. page size) before executing.
      * Statement<?> paged = SimpleStatement.newInstance("SELECT * FROM users").setPageSize(500);
-     * async.execute(paged).thenAccept(result -> process(result)); // processes the result set when ready
+     * async.execute(paged).thenRunAsync(result -> process(result)); // processes the result set when ready
      *
-     * // Edge: a null statement makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.execute((Statement<?>) null).get(); // throws ExecutionException (cause NullPointerException)
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is a NullPointerException
-     * }
+     * // Edge: a null statement is rejected synchronously at the call site (no future is created):
+     * // the v4 driver throws IllegalArgumentException, the v3 driver NullPointerException.
+     * async.execute((Statement<?>) null); // throws a RuntimeException immediately
      *
      * // Edge: a statement against a missing table likewise completes the future exceptionally.
      * try {

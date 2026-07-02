@@ -483,7 +483,7 @@ public class DynamoDBExecutorV2_2Test extends TestBase {
     @Test
     public void testToMapWithObjectArray() {
         Object[] propNameAndValues = { "id", "123", "name", "test" };
-        Map<String, Object> result = AnyUtil.array2Props(propNameAndValues);
+        Map<String, Object> result = AnyUtil.asProps(propNameAndValues);
 
         assertNotNull(result);
         assertEquals("123", result.get("id"));

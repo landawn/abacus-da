@@ -72,6 +72,15 @@ public class HBaseExecutorStaticTest extends TestBase {
         private String something;
     }
 
+    @Data
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class PlainBean {
+        @Id
+        private String id;
+        private String guid;
+    }
+
     // ---------------------------------------------------------------------
     // toRowBytes / toValueBytes / toRowKeyBytes / toFamilyQualifierBytes
     // (package-private static methods)
@@ -206,6 +215,21 @@ public class HBaseExecutorStaticTest extends TestBase {
         assertNotNull(bean);
         assertEquals("rk1", bean.getId());
         assertEquals("Alice", bean.getName());
+    }
+
+    @Test
+    public void testToEntity_foreignQualifierUnderScalarFamily_isIgnored() {
+        // Regression: a cell with an unknown, non-empty qualifier under a scalar property's family
+        // used to resolve via the EMPTY_QUALIFIER fallback and overwrite the property's real
+        // (empty-qualifier) cell value; the class contract says unresolvable cells are silently ignored.
+        Cell real = new KeyValue(Bytes.toBytes("rk1"), Bytes.toBytes("guid"), Bytes.toBytes(""), Bytes.toBytes("real-guid"));
+        Cell foreign = new KeyValue(Bytes.toBytes("rk1"), Bytes.toBytes("guid"), Bytes.toBytes("junk"), Bytes.toBytes("bogus"));
+        Result result = Result.create(Arrays.<Cell> asList(real, foreign));
+
+        PlainBean bean = HBaseExecutor.toEntity(result, PlainBean.class);
+        assertNotNull(bean);
+        assertEquals("rk1", bean.getId());
+        assertEquals("real-guid", bean.getGuid());
     }
 
     @Test

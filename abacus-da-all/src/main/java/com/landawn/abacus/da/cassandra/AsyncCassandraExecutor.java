@@ -177,12 +177,9 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * Statement<?> none = SimpleStatement.newInstance("SELECT id FROM users WHERE id = ?", -1);
      * long n = async.stream(none, (defs, row) -> row.getInt("id")).map(Stream::count).get(); // n == 0
      *
-     * // Edge: a null statement makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.stream((Statement<?>) null, mapper).get();  // throws ExecutionException (cause NullPointerException)
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is a NullPointerException
-     * }
+     * // Edge: a null statement is rejected synchronously by the driver's request dispatch
+     * // (no request processor matches a null statement); no future is created.
+     * async.stream((Statement<?>) null, mapper);        // throws IllegalArgumentException
      * }</pre>
      *
      * @param <T> the type of objects in the returned stream
@@ -452,12 +449,9 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * Statement<?> none = SimpleStatement.newInstance("SELECT id FROM users WHERE id = ?", -1);
      * boolean hasRows = async.execute(none).get().iterator().hasNext(); // returns false
      *
-     * // Edge: a null statement makes the future complete exceptionally (cause NullPointerException).
-     * try {
-     *     async.execute((Statement<?>) null).get();       // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is a NullPointerException
-     * }
+     * // Edge: a null statement is rejected synchronously by the driver's request dispatch
+     * // (no request processor matches a null statement); no future is created.
+     * async.execute((Statement<?>) null);               // throws IllegalArgumentException
      * }</pre>
      *
      * @param statement the CQL statement to execute

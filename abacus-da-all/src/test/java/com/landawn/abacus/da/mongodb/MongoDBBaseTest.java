@@ -452,12 +452,12 @@ public class MongoDBBaseTest extends TestBase {
         assertEquals("v", d.getString("k"));
     }
 
-    // -- objectId2Filter with invalid hex string --
+    // -- objectIdToFilter with invalid hex string --
 
     @Test
-    public void testObjectId2FilterWithInvalidHexStringThrows() {
+    public void testobjectIdToFilterWithInvalidHexStringThrows() {
         // The string is not a valid 24-hex ObjectId
-        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.objectId2Filter("not-an-objectid"));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.objectIdToFilter("not-an-objectid"));
     }
 
     // -- GeneralCodec tests (package-private inner class) --

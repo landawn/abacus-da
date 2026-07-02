@@ -220,15 +220,14 @@ import lombok.experimental.Accessors;
  * <p>This executor integrates with the CqlBuilder for dynamic query construction:</p>
  * <pre>{@code
  * // Using CqlBuilder for dynamic queries
- * String cql = NSC.select("id", "name", "email")
+ * String cql = PSC.select("id", "name", "email")
  *                 .from("users")
- *                 .where(Filters.eq("status", "active"))
- *                 .and(Filters.gt("created_at", lastWeek))
+ *                 .where(Filters.and(Filters.eq("status", "active"), Filters.gt("created_at", lastWeek)))
  *                 .orderBy("created_at")
  *                 .limit(100)
- *                 .cql();
+ *                 .build().query();
  *
- * List<User> recentUsers = executor.list(User.class, cql);
+ * List<User> recentUsers = executor.list(User.class, cql, "active", lastWeek);
  * }</pre>
  *
  * <h3>Thread Safety</h3>
@@ -666,7 +665,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * List<User> users = CassandraExecutor.toList(resultSet, User.class); // one User per row
      *
      * // Convert to map list
-     * List<Map<String, Object>> userMaps = CassandraExecutor.toList(resultSet, Map.class); // one Map<String,Object> per row
+     * List<Map> userMaps = CassandraExecutor.toList(resultSet, Map.class); // one Map<String,Object> per row
      *
      * // Convert single column to value list
      * ResultSet names = session.execute("SELECT name FROM users");
@@ -1175,7 +1174,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * Optional<User> none = executor.findFirst(User.class,
      *     "SELECT * FROM users WHERE email = ?", unknownEmail); // returns Optional.empty() when no row matches
      *
-     * Optional<Map<String, Object>> userData = executor.findFirst(Map.class,
+     * Optional<Map> userData = executor.findFirst(Map.class,
      *     "SELECT name, email FROM users WHERE id = ?", userId); // present Optional holding a Map of the row
      *
      * Optional<Object[]> row = executor.findFirst(Object[].class,
@@ -1299,8 +1298,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param statement the configured CQL Statement to execute
      * @param rowMapper a function that maps column definitions and rows to result objects
      * @return a Stream of mapped objects
-     * @throws IllegalArgumentException if rowMapper is null
-     * @throws NullPointerException if statement is null
+     * @throws IllegalArgumentException if rowMapper is null (rejected eagerly), or if statement is
+     *         null (the driver's request dispatch finds no processor for a null statement)
      */
     public <T> Stream<T> stream(final Statement<?> statement, final BiFunction<ColumnDefinitions, Row, T> rowMapper) {
         N.checkArgNotNull(rowMapper, "rowMapper");
@@ -1473,7 +1472,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * @param statement the configured CQL Statement to execute
      * @return the raw ResultSet from Cassandra
-     * @throws NullPointerException if statement is null
+     * @throws IllegalArgumentException if statement is null (the driver's request dispatch finds no
+     *         processor for a null statement)
      * @throws com.datastax.oss.driver.api.core.AllNodesFailedException if all contact points are unreachable
      */
     @Override
@@ -2294,7 +2294,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * <p>Values are serialized via {@link N#toJson(Object)} and deserialized via
      * {@link N#fromJson(String, Class)}; {@code null} payloads are represented by the literal
-     * {@code "NULL"} ({@link CassandraExecutorBase#NULL_STR}). Suitable for storing arbitrary POJOs as
+     * {@code "NULL"} ({@link CassandraExecutorBase#NULL_STR}) in the string forms
+     * ({@code format}/{@code parse}). Suitable for storing arbitrary POJOs as
      * JSON in a {@code TEXT} column.</p>
      *
      * @param <T> the Java class encoded/decoded by this codec

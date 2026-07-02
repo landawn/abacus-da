@@ -218,26 +218,26 @@ public abstract class MongoDBBase {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Build an _id filter from a 24-char hex string:
-     * Bson filter = MongoDB.objectId2Filter("507f1f77bcf86cd799439011");
+     * Bson filter = MongoDB.objectIdToFilter("507f1f77bcf86cd799439011");
      * // filter is a Document holding the ObjectId as the _id value: {"_id": ObjectId("507f1f77bcf86cd799439011")}
      * // (the {"$oid": "..."} form is the Extended-JSON serialization of that ObjectId, not the in-memory value)
      * Document doc = collection.find(filter).first();
      *
-     * MongoDB.objectId2Filter((String) null);            // throws IllegalArgumentException
-     * MongoDB.objectId2Filter("");                       // throws IllegalArgumentException
-     * MongoDB.objectId2Filter("not-a-valid-objectid");   // throws IllegalArgumentException
+     * MongoDB.objectIdToFilter((String) null);            // throws IllegalArgumentException
+     * MongoDB.objectIdToFilter("");                       // throws IllegalArgumentException
+     * MongoDB.objectIdToFilter("not-a-valid-objectid");   // throws IllegalArgumentException
      * }</pre>
      *
      * @param objectId the string representation of the ObjectId (24 hex characters)
      * @return a Bson filter document that matches the specified ObjectId
      * @throws IllegalArgumentException if objectId is null or empty, or is not a valid hexadecimal ObjectId representation
      * @see ObjectId
-     * @see #objectId2Filter(ObjectId)
+     * @see #objectIdToFilter(ObjectId)
      */
-    public static Bson objectId2Filter(final String objectId) {
+    public static Bson objectIdToFilter(final String objectId) {
         N.checkArgNotEmpty(objectId, "objectId");
 
-        return objectId2Filter(new ObjectId(objectId));
+        return objectIdToFilter(new ObjectId(objectId));
     }
 
     /**
@@ -250,21 +250,21 @@ public abstract class MongoDBBase {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ObjectId oid = new ObjectId("507f1f77bcf86cd799439011");
-     * Bson filter = MongoDB.objectId2Filter(oid);
+     * Bson filter = MongoDB.objectIdToFilter(oid);
      * // filter is a Document holding the ObjectId as the _id value: {"_id": ObjectId("507f1f77bcf86cd799439011")}
      * // (the {"$oid": "..."} form is the Extended-JSON serialization of that ObjectId, not the in-memory value)
      * collection.deleteOne(filter);
      *
-     * MongoDB.objectId2Filter((ObjectId) null);          // throws IllegalArgumentException
+     * MongoDB.objectIdToFilter((ObjectId) null);          // throws IllegalArgumentException
      * }</pre>
      *
      * @param objectId the ObjectId to create a filter for
      * @return a Bson filter document that matches the specified ObjectId
      * @throws IllegalArgumentException if objectId is null
      * @see Document
-     * @see #objectId2Filter(String)
+     * @see #objectIdToFilter(String)
      */
-    public static Bson objectId2Filter(final ObjectId objectId) {
+    public static Bson objectIdToFilter(final ObjectId objectId) {
         N.checkArgNotNull(objectId, "objectId");
 
         return new Document(MongoDB._ID, objectId);

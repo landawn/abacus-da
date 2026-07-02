@@ -103,11 +103,13 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
  * </ul>
  *
  * <h3>Underlying executor:</h3>
- * <p>All returned futures are completed on whatever thread the underlying
+ * <p>Single-item and batch CRUD futures are completed on whatever thread the underlying
  * {@link DynamoDbAsyncClient} dispatches its asynchronous responses on (typically the SDK's
  * Netty event-loop or the executor configured via
- * {@code DynamoDbAsyncClientBuilder.asyncConfiguration(...)}). Continuations attached with
- * {@code thenApply}/{@code thenAccept} therefore run on that pool — push CPU-heavy or
+ * {@code DynamoDbAsyncClientBuilder.asyncConfiguration(...)}). The auto-paginating
+ * {@code list}/{@code query}/{@code stream}/{@code scan} methods instead complete on the common
+ * {@code ForkJoinPool} (see the threading notes on those methods). Continuations attached with
+ * {@code thenApply}/{@code thenAccept} therefore run on the completing pool — push CPU-heavy or
  * blocking work onto your own executor with the {@code *Async} variants (e.g.
  * {@code thenApplyAsync(fn, myExecutor)}) to avoid blocking I/O threads.</p>
  *
@@ -1681,6 +1683,9 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalArgumentException if queryRequest or targetClass is null
      */
     public <T> CompletableFuture<List<T>> list(final QueryRequest queryRequest, final Class<T> targetClass) {
+        N.checkArgNotNull(queryRequest, "queryRequest");
+        N.checkArgNotNull(targetClass, "targetClass");
+
         final CompletableFuture<QueryResponse> queryResultFuture = dynamoDBClient.query(queryRequest);
 
         return queryResultFuture.thenApplyAsync(queryResult -> {
@@ -1738,12 +1743,11 @@ public final class AsyncDynamoDBExecutor {
      *
      * future.thenAccept(dataset -> {
      *         // Group sales by product and sum amounts
-     *         Dataset grouped = dataset.groupBy("productId")
-     *             .aggregate("amount", Collectors.summingDouble(Double::doubleValue));
+     *         Dataset grouped = dataset.groupBy("productId", "amount", "totalAmount",
+     *             Collectors.summingDouble(v -> ((Number) v).doubleValue()));
      *
      *         System.out.println("Sales by product:");
-     *         grouped.forEach(row ->
-     *             System.out.println(row.get("productId") + ": $" + row.get("amount")));
+     *         grouped.println();
      *     });
      * }</pre>
      *
@@ -1779,7 +1783,7 @@ public final class AsyncDynamoDBExecutor {
      * executor.query(queryRequest, Product.class)
      *     .thenAccept(dataset -> {
      *         // Work with typed Product objects in Dataset
-     *         double avgPrice = dataset.stream()
+     *         double avgPrice = dataset.stream(Product.class)
      *             .mapToDouble(product -> product.getPrice())
      *             .average()
      *             .orElse(0.0);
@@ -2585,9 +2589,9 @@ public final class AsyncDynamoDBExecutor {
          * }</pre>
          *
          * @param key a map of attribute names to AttributeValues representing the primary key.
-         *           Must not be null and must contain all key attributes.
+         *           Must not be null and must contain all key attributes; a null or incomplete key
+         *           fails with the SDK's validation exception through the returned future
          * @return a CompletableFuture containing the retrieved entity, or null if not found
-         * @throws IllegalArgumentException if key is null or incomplete
          */
         public CompletableFuture<T> getItem(final Map<String, AttributeValue> key) {
             return dynamoDBExecutor.getItem(tableName, key, targetEntityClass);
@@ -3043,9 +3047,9 @@ public final class AsyncDynamoDBExecutor {
          * }</pre>
          *
          * @param key a map of attribute names to AttributeValues representing the primary key.
-         *           Must not be null and must contain all key attributes.
+         *           Must not be null and must contain all key attributes; a null or incomplete key
+         *           fails with the SDK's validation exception through the returned future
          * @return a CompletableFuture containing the DeleteItemResponse
-         * @throws IllegalArgumentException if key is null or incomplete
          */
         public CompletableFuture<DeleteItemResponse> deleteItem(final Map<String, AttributeValue> key) {
             return dynamoDBExecutor.deleteItem(tableName, key);
@@ -3209,9 +3213,8 @@ public final class AsyncDynamoDBExecutor {
          * userMapper.query(request)
          *     .thenAccept(dataset -> {
          *         // Use Dataset operations for analysis
-         *         dataset.groupBy("department").forEach((dept, users) -> {
-         *             System.out.println(dept + ": " + users.size() + " users");
-         *         });
+         *         Dataset usersPerDept = dataset.groupBy("department", "userId", "userCount", Collectors.counting());
+         *         usersPerDept.println();
          *     });
          * }</pre>
          *
@@ -3404,7 +3407,7 @@ public final class AsyncDynamoDBExecutor {
                 keys.add(createKey(entity));
             }
 
-            return N.asMap(tableName, KeysAndAttributes.builder().keys(keys).build());
+            return N.newLinkedHashMap(N.asMap(tableName, KeysAndAttributes.builder().keys(keys).build()));
         }
 
         private Map<String, List<WriteRequest>> createBatchPutRequest(final Collection<? extends T> entities) {
@@ -3414,7 +3417,7 @@ public final class AsyncDynamoDBExecutor {
                 keys.add(WriteRequest.builder().putRequest(PutRequest.builder().item(toItem(entity, namingPolicy)).build()).build());
             }
 
-            return N.asMap(tableName, keys);
+            return N.newLinkedHashMap(N.asMap(tableName, keys));
         }
 
         private Map<String, List<WriteRequest>> createBatchDeleteRequest(final Collection<? extends T> entities) {
@@ -3424,7 +3427,7 @@ public final class AsyncDynamoDBExecutor {
                 keys.add(WriteRequest.builder().deleteRequest(DeleteRequest.builder().key(createKey(entity)).build()).build());
             }
 
-            return N.asMap(tableName, keys);
+            return N.newLinkedHashMap(N.asMap(tableName, keys));
         }
 
         private GetItemRequest checkItem(final GetItemRequest item) {

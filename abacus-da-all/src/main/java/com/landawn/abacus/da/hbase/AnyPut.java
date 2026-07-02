@@ -258,9 +258,11 @@ public final class AnyPut extends AnyMutation<AnyPut> {
     }
 
     /**
-     * Package-private constructor backing {@link #of(Put)}. Creates a deep copy of the given Put.
+     * Package-private constructor backing {@link #of(Put)}. Copies the given Put's row, timestamp,
+     * attributes, and family-to-cells map structure (new collections; the {@code Cell} instances
+     * themselves are shared with the source).
      *
-     * @param putToCopy the existing HBase Put to deep-copy
+     * @param putToCopy the existing HBase Put to copy
      */
     AnyPut(final Put putToCopy) {
         super(new Put(putToCopy));
@@ -548,10 +550,11 @@ public final class AnyPut extends AnyMutation<AnyPut> {
     /**
      * Creates a new AnyPut instance by copying an existing HBase Put operation.
      *
-     * <p>This factory method creates a deep copy of the provided HBase Put object, preserving all
-     * configuration, column data, and attributes from the original. This is useful when you want
-     * to modify a copy without affecting the original put, or when converting existing HBase Put
-     * objects to the AnyPut wrapper for additional functionality.</p>
+     * <p>This factory method copies the provided HBase Put's row, timestamp, attributes, and
+     * family-to-cells map structure (new collections; the {@code Cell} instances themselves are
+     * shared with the source). This is useful when you want to add columns to a copy without
+     * affecting the original put, or when converting existing HBase Put objects to the AnyPut
+     * wrapper for additional functionality.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

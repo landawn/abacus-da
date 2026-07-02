@@ -179,7 +179,9 @@ abstract class AnyOperationWithAttributes<AOWA extends AnyOperationWithAttribute
      * operation.setId("batch-user-updates-" + System.currentTimeMillis());
      * }</pre>
      *
-     * @param id the identifier to assign; may be {@code null} to clear any previously set id
+     * @param id the identifier to assign; must not be {@code null} (the underlying HBase client
+     *           raises {@code NullPointerException} converting it to bytes) — once set, the id
+     *           cannot be cleared via this API
      * @return this instance, to allow fluent method chaining
      * @see #getId()
      */

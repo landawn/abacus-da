@@ -580,7 +580,7 @@ public final class DynamoDBExecutor {
      * @throws IllegalArgumentException if attrName is null
      */
     public static Map<String, AttributeValue> asItem(final String attrName, final Object value) {
-        return N.asMap(attrName, toAttributeValue(value));
+        return N.newLinkedHashMap(N.asMap(attrName, toAttributeValue(value)));
     }
 
     /**
@@ -604,7 +604,7 @@ public final class DynamoDBExecutor {
      * @throws IllegalArgumentException if any attribute name is null.
      */
     public static Map<String, AttributeValue> asItem(final String attrName, final Object value, final String attrName2, final Object value2) {
-        return N.asMap(attrName, toAttributeValue(value), attrName2, toAttributeValue(value2));
+        return N.newLinkedHashMap(N.asMap(attrName, toAttributeValue(value), attrName2, toAttributeValue(value2)));
     }
 
     /**
@@ -631,7 +631,7 @@ public final class DynamoDBExecutor {
      */
     public static Map<String, AttributeValue> asItem(final String attrName, final Object value, final String attrName2, final Object value2,
             final String attrName3, final Object value3) {
-        return N.asMap(attrName, toAttributeValue(value), attrName2, toAttributeValue(value2), attrName3, toAttributeValue(value3));
+        return N.newLinkedHashMap(N.asMap(attrName, toAttributeValue(value), attrName2, toAttributeValue(value2), attrName3, toAttributeValue(value3)));
     }
 
     /**
@@ -695,7 +695,7 @@ public final class DynamoDBExecutor {
      * @throws IllegalArgumentException if attrName is null
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final String attrName, final Object value) {
-        return N.asMap(attrName, toAttributeValueUpdate(value));
+        return N.newLinkedHashMap(N.asMap(attrName, toAttributeValueUpdate(value)));
     }
 
     /**
@@ -720,7 +720,7 @@ public final class DynamoDBExecutor {
      * @throws IllegalArgumentException if any attribute name is null.
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final String attrName, final Object value, final String attrName2, final Object value2) {
-        return N.asMap(attrName, toAttributeValueUpdate(value), attrName2, toAttributeValueUpdate(value2));
+        return N.newLinkedHashMap(N.asMap(attrName, toAttributeValueUpdate(value), attrName2, toAttributeValueUpdate(value2)));
     }
 
     /**
@@ -749,7 +749,8 @@ public final class DynamoDBExecutor {
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final String attrName, final Object value, final String attrName2, final Object value2,
             final String attrName3, final Object value3) {
-        return N.asMap(attrName, toAttributeValueUpdate(value), attrName2, toAttributeValueUpdate(value2), attrName3, toAttributeValueUpdate(value3));
+        return N.newLinkedHashMap(
+                N.asMap(attrName, toAttributeValueUpdate(value), attrName2, toAttributeValueUpdate(value2), attrName3, toAttributeValueUpdate(value3)));
     }
 
     /**
@@ -1026,7 +1027,7 @@ public final class DynamoDBExecutor {
                 }
             }
         } else if (entity instanceof Object[]) {
-            return toItem(AnyUtil.array2Props((Object[]) entity), namingPolicy);
+            return toItem(AnyUtil.asProps((Object[]) entity), namingPolicy);
         } else {
             throw new IllegalArgumentException("Unsupported type: " + ClassUtil.getCanonicalClassName(cls)
                     + ". Only Entity or Map<String, Object> classes with getter/setter methods are supported");
@@ -1110,7 +1111,7 @@ public final class DynamoDBExecutor {
                 }
             }
         } else if (entity instanceof Object[]) {
-            return toUpdateItem(AnyUtil.array2Props((Object[]) entity), namingPolicy);
+            return toUpdateItem(AnyUtil.asProps((Object[]) entity), namingPolicy);
         } else {
             throw new IllegalArgumentException("Unsupported type: " + ClassUtil.getCanonicalClassName(cls)
                     + ". Only Entity or Map<String, Object> classes with getter/setter methods are supported");
@@ -1241,7 +1242,7 @@ public final class DynamoDBExecutor {
      * Object value = n.get("x");                         // returns null
      *
      * Map<String, Object> empty = toMap(new HashMap<>()); // returns an empty (non-null) map
-     * Map<String, Object> none = toMap(null);             // returns null
+     * Map<String, Object> none = toMap((Map<String, AttributeValue>) null); // returns null (cast disambiguates from toMap(Object[]))
      * }</pre>
      *
      * @param item the DynamoDB item map with {@link AttributeValue} objects, can be {@code null}
@@ -1995,13 +1996,6 @@ public final class DynamoDBExecutor {
         return new RowDataset(columnNameList, columnList);
     }
 
-    static void checkEntityClass(final Class<?> targetClass) {
-        if (!Beans.isBeanClass(targetClass)) {
-            throw new IllegalArgumentException("Unsupported type: " + ClassUtil.getCanonicalClassName(targetClass)
-                    + ". Only Entity class generated by CodeGenerator with getter/setter methods are supported");
-        }
-    }
-
     static String getAttrName(final PropInfo propInfo, final NamingPolicy namingPolicy) {
         if (propInfo.columnName.isPresent()) {
             return propInfo.columnName.get();
@@ -2089,7 +2083,8 @@ public final class DynamoDBExecutor {
      * Map<String, Object> item2 = executor.getItem("Accounts", key, true);
      *
      * if (item2 != null) {
-     *     BigDecimal balance = (BigDecimal) item2.get("balance");
+     *     // numeric (N) attributes are materialized as their raw number String
+     *     BigDecimal balance = new BigDecimal((String) item2.get("balance"));
      *     System.out.println("Current balance: $" + balance);
      * }
      * }</pre>
@@ -2234,6 +2229,8 @@ public final class DynamoDBExecutor {
      * @throws IllegalArgumentException if any parameter is null or targetClass is unsupported
      */
     public <T> T getItem(final GetItemRequest getItemRequest, final Class<T> targetClass) {
+        N.checkArgNotNull(targetClass, "targetClass");
+
         return readRow(dynamoDBClient.getItem(getItemRequest), targetClass);
     }
 
@@ -3862,7 +3859,9 @@ public final class DynamoDBExecutor {
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * BatchGetItemRequest request = BatchGetItemRequest.builder()
-         *     .requestItems(createKeys(entities))
+         *     .requestItems(Map.of("Users", KeysAndAttributes.builder()
+         *         .keys(List.of(asKey("id", "u1"), asKey("id", "u2")))
+         *         .build()))
          *     .returnConsumedCapacity("TOTAL")
          *     .build();
          * List<User> users = userMapper.batchGetItem(request);
@@ -4380,7 +4379,7 @@ public final class DynamoDBExecutor {
                 keys.add(createKey(entity));
             }
 
-            return N.asMap(tableName, KeysAndAttributes.builder().keys(keys).build());
+            return N.newLinkedHashMap(N.asMap(tableName, KeysAndAttributes.builder().keys(keys).build()));
         }
 
         private Map<String, List<WriteRequest>> createBatchPutRequest(final Collection<? extends T> entities) {
@@ -4390,7 +4389,7 @@ public final class DynamoDBExecutor {
                 keys.add(WriteRequest.builder().putRequest(PutRequest.builder().item(toItem(entity, namingPolicy)).build()).build());
             }
 
-            return N.asMap(tableName, keys);
+            return N.newLinkedHashMap(N.asMap(tableName, keys));
         }
 
         private Map<String, List<WriteRequest>> createBatchDeleteRequest(final Collection<? extends T> entities) {
@@ -4400,7 +4399,7 @@ public final class DynamoDBExecutor {
                 keys.add(WriteRequest.builder().deleteRequest(DeleteRequest.builder().key(createKey(entity)).build()).build());
             }
 
-            return N.asMap(tableName, keys);
+            return N.newLinkedHashMap(N.asMap(tableName, keys));
         }
 
         private GetItemRequest checkItem(final GetItemRequest item) {
@@ -4541,7 +4540,8 @@ public final class DynamoDBExecutor {
          * @return a map containing the equality condition
          */
         public static Map<String, Condition> eq(final String attrName, final Object attrValue) {
-            return N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.EQ).attributeValueList(toAttributeValue(attrValue)).build());
+            return N.newLinkedHashMap(
+                    N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.EQ).attributeValueList(toAttributeValue(attrValue)).build()));
         }
 
         /**
@@ -4559,7 +4559,8 @@ public final class DynamoDBExecutor {
          * @return a map containing the not-equal condition
          */
         public static Map<String, Condition> ne(final String attrName, final Object attrValue) {
-            return N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.NE).attributeValueList(toAttributeValue(attrValue)).build());
+            return N.newLinkedHashMap(
+                    N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.NE).attributeValueList(toAttributeValue(attrValue)).build()));
         }
 
         /**
@@ -4577,7 +4578,8 @@ public final class DynamoDBExecutor {
          * @return a map containing the greater-than condition
          */
         public static Map<String, Condition> gt(final String attrName, final Object attrValue) {
-            return N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.GT).attributeValueList(toAttributeValue(attrValue)).build());
+            return N.newLinkedHashMap(
+                    N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.GT).attributeValueList(toAttributeValue(attrValue)).build()));
         }
 
         /**
@@ -4595,7 +4597,8 @@ public final class DynamoDBExecutor {
          * @return a map containing the greater-than-or-equal condition
          */
         public static Map<String, Condition> ge(final String attrName, final Object attrValue) {
-            return N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.GE).attributeValueList(toAttributeValue(attrValue)).build());
+            return N.newLinkedHashMap(
+                    N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.GE).attributeValueList(toAttributeValue(attrValue)).build()));
         }
 
         /**
@@ -4613,7 +4616,8 @@ public final class DynamoDBExecutor {
          * @return a map containing the less-than condition
          */
         public static Map<String, Condition> lt(final String attrName, final Object attrValue) {
-            return N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.LT).attributeValueList(toAttributeValue(attrValue)).build());
+            return N.newLinkedHashMap(
+                    N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.LT).attributeValueList(toAttributeValue(attrValue)).build()));
         }
 
         /**
@@ -4631,7 +4635,8 @@ public final class DynamoDBExecutor {
          * @return a map containing the less-than-or-equal condition
          */
         public static Map<String, Condition> le(final String attrName, final Object attrValue) {
-            return N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.LE).attributeValueList(toAttributeValue(attrValue)).build());
+            return N.newLinkedHashMap(
+                    N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.LE).attributeValueList(toAttributeValue(attrValue)).build()));
         }
 
         /**
@@ -4650,17 +4655,20 @@ public final class DynamoDBExecutor {
          * @return a map containing the between condition
          */
         public static Map<String, Condition> bt(final String attrName, final Object minAttrValue, final Object maxAttrValue) {
-            return N.asMap(attrName,
+            return N.newLinkedHashMap(N.asMap(attrName,
                     Condition.builder()
                             .comparisonOperator(ComparisonOperator.BETWEEN)
                             .attributeValueList(toAttributeValue(minAttrValue), toAttributeValue(maxAttrValue))
-                            .build());
+                            .build()));
         }
 
         /**
          * Creates a null check condition filter.
          *
-         * <p>This filter matches items where the specified attribute does not exist or has a null value.</p>
+         * <p>This filter matches items where the specified attribute does not exist. Note that the
+         * legacy {@code NULL} comparison operator tests attribute <i>nonexistence</i> only: an
+         * attribute whose value is the DynamoDB {@code NULL} data type still <i>exists</i>, so it is
+         * NOT matched by this filter.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -4671,13 +4679,16 @@ public final class DynamoDBExecutor {
          * @return a map containing the null condition
          */
         public static Map<String, Condition> isNull(final String attrName) {
-            return N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.NULL).build());
+            return N.newLinkedHashMap(N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.NULL).build()));
         }
 
         /**
          * Creates a not-null check condition filter.
          *
-         * <p>This filter matches items where the specified attribute exists and is not null.</p>
+         * <p>This filter matches items where the specified attribute exists. Note that the legacy
+         * {@code NOT_NULL} comparison operator tests attribute <i>existence</i> only: an attribute
+         * whose value is the DynamoDB {@code NULL} data type still <i>exists</i>, so it IS matched
+         * by this filter.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -4688,7 +4699,7 @@ public final class DynamoDBExecutor {
          * @return a map containing the not-null condition
          */
         public static Map<String, Condition> notNull(final String attrName) {
-            return N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.NOT_NULL).build());
+            return N.newLinkedHashMap(N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.NOT_NULL).build()));
         }
 
         /**
@@ -4707,8 +4718,8 @@ public final class DynamoDBExecutor {
          * @return a map containing the contains condition
          */
         public static Map<String, Condition> contains(final String attrName, final Object attrValue) {
-            return N.asMap(attrName,
-                    Condition.builder().comparisonOperator(ComparisonOperator.CONTAINS).attributeValueList(toAttributeValue(attrValue)).build());
+            return N.newLinkedHashMap(N.asMap(attrName,
+                    Condition.builder().comparisonOperator(ComparisonOperator.CONTAINS).attributeValueList(toAttributeValue(attrValue)).build()));
         }
 
         /**
@@ -4726,8 +4737,8 @@ public final class DynamoDBExecutor {
          * @return a map containing the not-contains condition
          */
         public static Map<String, Condition> notContains(final String attrName, final Object attrValue) {
-            return N.asMap(attrName,
-                    Condition.builder().comparisonOperator(ComparisonOperator.NOT_CONTAINS).attributeValueList(toAttributeValue(attrValue)).build());
+            return N.newLinkedHashMap(N.asMap(attrName,
+                    Condition.builder().comparisonOperator(ComparisonOperator.NOT_CONTAINS).attributeValueList(toAttributeValue(attrValue)).build()));
         }
 
         /**
@@ -4745,8 +4756,8 @@ public final class DynamoDBExecutor {
          * @return a map containing the begins-with condition
          */
         public static Map<String, Condition> beginsWith(final String attrName, final Object attrValue) {
-            return N.asMap(attrName,
-                    Condition.builder().comparisonOperator(ComparisonOperator.BEGINS_WITH).attributeValueList(toAttributeValue(attrValue)).build());
+            return N.newLinkedHashMap(N.asMap(attrName,
+                    Condition.builder().comparisonOperator(ComparisonOperator.BEGINS_WITH).attributeValueList(toAttributeValue(attrValue)).build()));
         }
 
         /**
@@ -5061,7 +5072,10 @@ public final class DynamoDBExecutor {
         /**
          * Adds a null check condition to the filter.
          *
-         * <p>The condition will match items where the specified attribute does not exist or has a null value.</p>
+         * <p>The condition will match items where the specified attribute does not exist. Note that
+         * the legacy {@code NULL} comparison operator tests attribute <i>nonexistence</i> only: an
+         * attribute whose value is the DynamoDB {@code NULL} data type still <i>exists</i>, so it is
+         * NOT matched by this condition.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -5080,7 +5094,10 @@ public final class DynamoDBExecutor {
         /**
          * Adds a not-null check condition to the filter.
          *
-         * <p>The condition will match items where the specified attribute exists and is not null.</p>
+         * <p>The condition will match items where the specified attribute exists. Note that the
+         * legacy {@code NOT_NULL} comparison operator tests attribute <i>existence</i> only: an
+         * attribute whose value is the DynamoDB {@code NULL} data type still <i>exists</i>, so it
+         * IS matched by this condition.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code

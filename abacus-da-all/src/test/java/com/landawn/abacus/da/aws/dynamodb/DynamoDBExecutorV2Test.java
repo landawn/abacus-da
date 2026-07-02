@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -275,7 +276,7 @@ public class DynamoDBExecutorV2Test extends TestBase {
     @Test
     public void testToMapWithObjectArray() {
         Object[] propNameAndValues = { "id", "123", "name", "test" };
-        Map<String, Object> result = AnyUtil.array2Props(propNameAndValues);
+        Map<String, Object> result = AnyUtil.asProps(propNameAndValues);
 
         assertNotNull(result);
         assertEquals("123", result.get("id"));
@@ -2199,6 +2200,17 @@ public class DynamoDBExecutorV2Test extends TestBase {
     }
 
     // ===== readRow branches via getItem(GetItemRequest, Class) - exercise private readRow paths =====
+
+    @Test
+    public void testGetItemRequest_NullTargetClassThrowsIAE() {
+        // Regression: getItem(GetItemRequest, Class) documents "@throws IllegalArgumentException if
+        // any parameter is null" and every sibling read API guards targetClass, but this chokepoint
+        // silently fell through to readRow's null-tolerant Object[] branch.
+        GetItemRequest req = GetItemRequest.builder().tableName("T").key(Map.of("id", AttributeValue.builder().s("1").build())).build();
+        assertThrows(IllegalArgumentException.class, () -> executor.getItem(req, null));
+        verify(mockDynamoDbClient, never()).getItem(any(GetItemRequest.class));
+    }
+
     @Test
     public void testGetItemRequest_ReadRowAsObjectArrayClass() {
         Map<String, AttributeValue> item = new LinkedHashMap<>();
@@ -2360,7 +2372,6 @@ public class DynamoDBExecutorV2Test extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> executor.mapper(V2NoTableEntity.class));
     }
 
-    // TODO: v2 checkEntityClass is package-private and inaccessible from this test package
     // TODO: v2 toItem(Collection), toUpdateItem(Collection), putItem(String, Object) are package-private
     // and inaccessible from this test package - exercised indirectly via Mapper.batchPutItem/batchPutItem
 

@@ -125,10 +125,10 @@ public class JavadocExampleTest {
     // ===== MDB.java Examples =====
 
     @Test
-    public void test_MDB_objectId2Filter_String() {
+    public void test_MDB_objectIdToFilter_String() {
         // From MDB.java line 177-180
         String id = "507f1f77bcf86cd799439011";
-        Bson filter = MongoDBBase.objectId2Filter(id);
+        Bson filter = MongoDBBase.objectIdToFilter(id);
         assertNotNull(filter);
         assertTrue(filter instanceof Document);
         Document doc = (Document) filter;
@@ -136,10 +136,10 @@ public class JavadocExampleTest {
     }
 
     @Test
-    public void test_MDB_objectId2Filter_ObjectId() {
+    public void test_MDB_objectIdToFilter_ObjectId() {
         // From MDB.java line 203-206
         ObjectId oid = new ObjectId();
-        Bson filter = MongoDBBase.objectId2Filter(oid);
+        Bson filter = MongoDBBase.objectIdToFilter(oid);
         assertNotNull(filter);
         assertTrue(filter instanceof Document);
         Document doc = (Document) filter;

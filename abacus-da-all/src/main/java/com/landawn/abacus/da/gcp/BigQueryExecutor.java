@@ -22,6 +22,7 @@ import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -1057,6 +1058,7 @@ public class BigQueryExecutor {
         final List<String> columnNameList = new ArrayList<>(fieldCount);
         final List<List<Object>> columnList = new ArrayList<>(fieldCount);
         final Class<?>[] columnClasses = new Class<?>[fieldCount];
+        final PropInfo[] columnPropInfos = new PropInfo[fieldCount];
         final boolean isEntity = Beans.isBeanClass(targetClass);
         final boolean isMap = targetClass != null && Map.class.isAssignableFrom(targetClass);
         final Map<String, String> column2FieldNameMap = isEntity ? QueryUtil.getColumn2PropNameMap(targetClass) : null;
@@ -1077,6 +1079,7 @@ public class BigQueryExecutor {
                     propInfo = entityInfo.getPropInfo(propName);
                 }
 
+                columnPropInfos[i] = propInfo;
                 columnClasses[i] = propInfo == null ? null : propInfo.clazz;
             } else {
                 // null = no per-column conversion (raw values), per the documented contract for non-bean
@@ -1092,11 +1095,21 @@ public class BigQueryExecutor {
             for (int i = 0; i < fieldCount; i++) {
                 value = row.get(i).getValue();
 
-                if (value instanceof FieldValueList && (columnClasses[i] == null || !columnClasses[i].isAssignableFrom(FieldValueList.class))) {
+                // RECORD value. Note a FieldValueList IS a List, so a plain assignability check against a
+                // List-typed property would store the raw FieldValue wrappers; convert through readRow
+                // unless the property explicitly wants the raw FieldValueList (same rule as toEntity).
+                if (value instanceof FieldValueList && (columnClasses[i] == null || !FieldValueList.class.isAssignableFrom(columnClasses[i]))) {
                     columnList.get(i).add(readRow((FieldValueList) value, columnClasses[i]));
                 } else if (value instanceof List && !(value instanceof FieldValueList)) {
-                    // REPEATED column: unwrap the FieldValue wrapper elements (mirrors the toMap path).
-                    columnList.get(i).add(unwrapRepeatedValue(fields.get(i), (List<?>) value));
+                    // REPEATED column: unwrap the FieldValue wrapper elements (mirrors the toMap path) and,
+                    // when the matching bean property is parameterized (e.g. List<Long>), rebuild the list
+                    // through the property's JSON codec so elements are typed the same way toEntity types them.
+                    final Object unwrapped = unwrapRepeatedValue(fields.get(i), (List<?>) value);
+
+                    columnList.get(i)
+                            .add(columnPropInfos[i] != null && columnPropInfos[i].jsonXmlType.isParameterizedType()
+                                    ? columnPropInfos[i].jsonXmlType.valueOf(N.toJson(unwrapped))
+                                    : unwrapped);
                 } else if (value == null || targetClass == null || isMap || columnClasses[i] == null || columnClasses[i].isAssignableFrom(value.getClass())) {
                     columnList.get(i).add(value);
                 } else {
@@ -1183,7 +1196,7 @@ public class BigQueryExecutor {
      * customerData.put("customerId", "CUST456");
      * customerData.put("name", "Jane Smith");
      * customerData.put("email", "jane@example.com");
-     * customerData.put("createdDate", LocalDate.now());
+     * customerData.put("createdDate", java.sql.Date.valueOf(LocalDate.now()));   // java.sql.Date binds as a native DATE parameter
      *
      * TableResult result = executor.insert(Customer.class, customerData);   // returns a TableResult; getTotalRows() is the affected-row count
      * }</pre>
@@ -1247,9 +1260,13 @@ public class BigQueryExecutor {
      * executor.update((Object) null);                   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param entity the entity instance containing updated values and primary key values
+     * @param entity the entity instance containing updated values and primary key values; null-valued
+     *               properties are excluded from the SET clause (mirroring insert semantics) — to set a
+     *               column to NULL explicitly, use {@link #update(Class, Map, Condition)} with a typed
+     *               {@code QueryParameterValue}
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if entity is null, or if no primary key fields are found for the entity class
+     * @throws IllegalArgumentException if entity is null, if no primary key fields are found for the
+     *         entity class, or if every non-key property of the entity is null (nothing to update)
      * @see #update(Object, Set)
      */
     public TableResult update(final Object entity) {
@@ -1290,10 +1307,14 @@ public class BigQueryExecutor {
      * executor.update(item, N.<String> asSet());               // throws IllegalArgumentException
      * }</pre>
      *
-     * @param entity the entity instance containing updated values and primary key values
+     * @param entity the entity instance containing updated values and primary key values; null-valued
+     *               properties are excluded from the SET clause (mirroring insert semantics) — to set a
+     *               column to NULL explicitly, use {@link #update(Class, Map, Condition)} with a typed
+     *               {@code QueryParameterValue}
      * @param primaryKeyNames the set of property names to use as primary key fields in the WHERE clause
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if entity is null, or if primaryKeyNames is null or empty
+     * @throws IllegalArgumentException if entity is null, if primaryKeyNames is null or empty, or if
+     *         every non-key property of the entity is null (nothing to update)
      * @see #update(Class, Map, Condition)
      */
     public TableResult update(final Object entity, final Set<String> primaryKeyNames) {
@@ -1315,15 +1336,33 @@ public class BigQueryExecutor {
             conds.add(Filters.eq(keyName, entityInfo.getPropValue(entity, keyName)));
         }
 
+        // Null-valued properties are excluded from the SET clause (mirroring insert semantics):
+        // BigQuery requires null query parameters to be typed (QueryParameterValue), which a raw
+        // bean property can't express, so a null in the parameter list would fail in
+        // buildQueryParameterValue. To set a column to NULL explicitly, use the Map-based
+        // update(Class, Map, Condition) overload with a typed QueryParameterValue.
+        final Set<String> excludedPropNames = new HashSet<>(primaryKeyNames);
+        boolean hasNonNullProp = false;
+
+        for (final PropInfo propInfo : entityInfo.propInfoList) {
+            if (propInfo.getPropValue(entity) == null) {
+                excludedPropNames.add(propInfo.name);
+            } else if (!excludedPropNames.contains(propInfo.name)) {
+                hasNonNullProp = true;
+            }
+        }
+
+        N.checkArgument(hasNonNullProp, "No non-null non-key properties to update in the given entity");
+
         switch (namingPolicy) {
             case SNAKE_CASE:
-                return PSC.update(targetClass).setEntity(entity, primaryKeyNames).where(Filters.and(conds)).build();
+                return PSC.update(targetClass).setEntity(entity, excludedPropNames).where(Filters.and(conds)).build();
 
             case SCREAMING_SNAKE_CASE:
-                return PAC.update(targetClass).setEntity(entity, primaryKeyNames).where(Filters.and(conds)).build();
+                return PAC.update(targetClass).setEntity(entity, excludedPropNames).where(Filters.and(conds)).build();
 
             case CAMEL_CASE:
-                return PLC.update(targetClass).setEntity(entity, primaryKeyNames).where(Filters.and(conds)).build();
+                return PLC.update(targetClass).setEntity(entity, excludedPropNames).where(Filters.and(conds)).build();
 
             default:
                 throw new IllegalStateException("Unsupported naming policy: " + namingPolicy);
@@ -1342,11 +1381,11 @@ public class BigQueryExecutor {
      * // Update multiple records with a condition
      * Map<String, Object> updates = new HashMap<>();
      * updates.put("status", "archived");
-     * updates.put("archivedDate", LocalDate.now());
+     * updates.put("archivedDate", java.sql.Date.valueOf(LocalDate.now()));   // java.sql.Date binds as a native DATE parameter
      *
      * Condition condition = Filters.and(
      *     Filters.eq("status", "inactive"),
-     *     Filters.lt("lastAccessDate", LocalDate.now().minusYears(1))
+     *     Filters.lt("lastAccessDate", java.sql.Date.valueOf(LocalDate.now().minusYears(1)))
      * );
      *
      * TableResult result = executor.update(Customer.class, updates, condition);   // returns a TableResult; getTotalRows() is the affected-row count
@@ -1482,7 +1521,7 @@ public class BigQueryExecutor {
      * // Delete with complex condition
      * Condition complexCondition = Filters.and(
      *     Filters.eq("status", "pending"),
-     *     Filters.lt("createdDate", LocalDate.now().minusDays(30)),
+     *     Filters.lt("createdDate", java.sql.Date.valueOf(LocalDate.now().minusDays(30))),   // java.sql.Date binds as a native DATE parameter
      *     Filters.isNull("processedDate")
      * );
      * TableResult result2 = executor.delete(Order.class, complexCondition);   // returns a TableResult
@@ -1719,7 +1758,7 @@ public class BigQueryExecutor {
      * @param targetClass the class representing the target table (used for table name resolution)
      * @param whereClause the condition to check for matching records, or {@code null} to check whether the table has any rows
      * @return {@code true} if at least one record matches the condition, {@code false} otherwise
-     * @throws IllegalArgumentException if targetClass is null
+     * @throws NullPointerException if targetClass is null
      * @see com.landawn.abacus.query.Filters
      */
     public boolean exists(final Class<?> targetClass, final Condition whereClause) {
@@ -2463,7 +2502,10 @@ public class BigQueryExecutor {
         queryParameterMap.put(java.util.Date.class, value -> QueryParameterValue.timestamp(TimeUnit.MILLISECONDS.toMicros(((java.util.Date) value).getTime())));
 
         queryParameterMap.put(java.sql.Date.class, value -> QueryParameterValue.date(value.toString()));
-        queryParameterMap.put(java.sql.Time.class, value -> QueryParameterValue.time(value.toString() + ".000000"));
+        // java.sql.Time.toString() renders only HH:mm:ss; append the actual millisecond component
+        // (floorMod guards pre-epoch values) instead of a hard-coded ".000000" that would discard it.
+        queryParameterMap.put(java.sql.Time.class,
+                value -> QueryParameterValue.time(String.format("%s.%03d000", value, Math.floorMod(((java.sql.Time) value).getTime(), 1000L))));
         queryParameterMap.put(java.sql.Timestamp.class, value -> QueryParameterValue.timestamp(toMicros((java.sql.Timestamp) value)));
 
         queryParameterMap.put(com.google.cloud.Date.class, value -> QueryParameterValue.date(value.toString()));

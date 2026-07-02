@@ -1956,7 +1956,7 @@ public final class AsyncHBaseExecutor {
      * // Typical: stream each region's result into a callback as it arrives
      * Batch.Call<MyService, Long> call = service -> service.countRows();
      * AtomicLong total = new AtomicLong();
-     * Batch.Callback<Long> callback = (region, result) -> total.addAndGet(result);
+     * Batch.Callback<Long> callback = (region, row, result) -> total.addAndGet(result);
      * Object done = async.coprocessorService("users", MyService.class, "user1", "user9", call, callback).get(); // returns null when all regions have responded
      *
      * // Typical: run a follow-up only after every region has been processed
@@ -2053,7 +2053,7 @@ public final class AsyncHBaseExecutor {
      * Descriptors.MethodDescriptor methodDescriptor = MyService.getDescriptor().findMethodByName("count");
      * Message request = CountRequest.getDefaultInstance();
      * CountResponse responsePrototype = CountResponse.getDefaultInstance();
-     * Batch.Callback<CountResponse> callback = (region, response) -> accumulate(response);
+     * Batch.Callback<CountResponse> callback = (region, row, response) -> accumulate(response);
      * Object done = async.batchCoprocessorService("users", methodDescriptor, request, "user1", "user9", responsePrototype, callback).get(); // returns null when all regions have responded
      *
      * // Typical: run a follow-up only after every region has been processed

@@ -1543,9 +1543,9 @@ public final class MongoCollectionMapper<T> {
      * // Edge: cold publisher — building it issues no query until subscribed.
      * Mono<Timestamp> notRunYet = userMapper.queryForDate("processedAt", Filters.empty(), Timestamp.class);
      *
-     * // Negative: null valueType -> error signal (IllegalArgumentException) on subscription.
-     * userMapper.queryForDate("processedAt", Filters.empty(), (Class<Timestamp>) null)
-     *     .subscribe(ts -> {}, err -> System.err.println("Null valueType: " + err));   // onError(IllegalArgumentException)
+     * // Negative: null valueType throws IllegalArgumentException synchronously
+     * // (at the call site, before any Mono is returned).
+     * userMapper.queryForDate("processedAt", Filters.empty(), (Class<Timestamp>) null); // throws IllegalArgumentException
      * }</pre>
      *
      * @param <P> the specific Date subclass type
@@ -1594,9 +1594,9 @@ public final class MongoCollectionMapper<T> {
      * // Edge: cold publisher — building it issues no query until subscribed.
      * Mono<BigDecimal> notRunYet = userMapper.queryForSingleValue("amount", Filters.empty(), BigDecimal.class);
      *
-     * // Negative: null valueType -> error signal (IllegalArgumentException) on subscription.
-     * userMapper.queryForSingleValue("amount", Filters.empty(), (Class<BigDecimal>) null)
-     *     .subscribe(a -> {}, err -> System.err.println("Null valueType: " + err));   // onError(IllegalArgumentException)
+     * // Negative: null valueType throws IllegalArgumentException synchronously
+     * // (at the call site, before any Mono is returned).
+     * userMapper.queryForSingleValue("amount", Filters.empty(), (Class<BigDecimal>) null); // throws IllegalArgumentException
      * }</pre>
      *
      * @param <V> the type of value to retrieve

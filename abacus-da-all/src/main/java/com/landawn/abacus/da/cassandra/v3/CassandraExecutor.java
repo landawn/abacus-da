@@ -653,8 +653,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * // Column types match User property types
      * List<User> users = dataset.toList(User.class);
      *
-     * // With Map.class (or null) no per-column conversion is performed:
-     * Dataset raw = CassandraExecutor.extractData(rs, Map.class);     // returns a Dataset with raw driver values
+     * // With Map.class (or null) no per-column conversion is performed
+     * // (re-execute the query: extractData consumes the ResultSet):
+     * ResultSet rs2 = executor.execute("SELECT * FROM users");
+     * Dataset raw = CassandraExecutor.extractData(rs2, Map.class);    // returns a Dataset with raw driver values
      * }</pre>
      *
      * @param resultSet the Cassandra ResultSet to extract data from
@@ -732,8 +734,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * ResultSet rs = executor.execute("SELECT * FROM users");
      * List<User> users = CassandraExecutor.toList(rs, User.class);   // returns one User per row
      *
-     * // Convert to Map list
-     * List<Map> maps = CassandraExecutor.toList(rs, Map.class);      // returns one Map<String,Object> per row
+     * // Convert to Map list (re-execute the query: toList consumes the ResultSet)
+     * ResultSet rs2 = executor.execute("SELECT * FROM users");
+     * List<Map> maps = CassandraExecutor.toList(rs2, Map.class);     // returns one Map<String,Object> per row
      *
      * // Convert single column to value list
      * ResultSet names = executor.execute("SELECT name FROM users");
@@ -1272,7 +1275,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * Optional<User> none = executor.findFirst(User.class,
      *     "SELECT * FROM users WHERE email = ?", unknownEmail); // returns Optional.empty() when no row matches
      *
-     * Optional<Map<String, Object>> userData = executor.findFirst(Map.class,
+     * Optional<Map> userData = executor.findFirst(Map.class,
      *     "SELECT name, email FROM users WHERE id = ?", userId); // present Optional holding a Map of the row
      *
      * Optional<Object[]> stats = executor.findFirst(Object[].class,

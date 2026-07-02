@@ -438,9 +438,10 @@ public final class AnyRowMutations implements Row {
     /**
      * Returns a string representation of this AnyRowMutations.
      * <p>
-     * The string representation includes information about the row key
-     * and all mutations in this batch, which is useful for debugging
-     * and logging purposes.
+     * Delegates to the wrapped {@code RowMutations}, which does not override
+     * {@code Object.toString()}, so the result is the default
+     * {@code className@hashCode} form and does not include the row key or
+     * the mutations in this batch.
      * </p>
      *
      * <p><b>Usage Examples:</b></p>

@@ -43,6 +43,7 @@ import com.mongodb.client.ChangeStreamIterable;
 import com.mongodb.client.model.BulkWriteOptions;
 import com.mongodb.client.model.CountOptions;
 import com.mongodb.client.model.DeleteOptions;
+import com.mongodb.client.model.EstimatedDocumentCountOptions;
 import com.mongodb.client.model.FindOneAndDeleteOptions;
 import com.mongodb.client.model.FindOneAndReplaceOptions;
 import com.mongodb.client.model.FindOneAndUpdateOptions;
@@ -308,6 +309,53 @@ public final class AsyncMongoCollectionExecutor {
      */
     public ContinuableFuture<Long> count(final Bson filter, final CountOptions options) {
         return asyncExecutor.execute(() -> collectionExecutor.count(filter, options));
+    }
+
+    /**
+     * Asynchronously returns an estimate of the number of documents in the collection based on
+     * collection metadata.
+     *
+     * <p>This is faster than {@link #count()} for large collections because it does not scan
+     * documents, but the result may be inaccurate after unclean shutdowns or while chunks are
+     * being migrated in a sharded cluster.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * async.estimatedDocumentCount()
+     *      .thenRunAsync(approx -> System.out.println("~" + approx + " documents"));
+     * }</pre>
+     *
+     * @return a ContinuableFuture that completes with the estimated document count
+     * @see #count()
+     * @see ContinuableFuture
+     */
+    public ContinuableFuture<Long> estimatedDocumentCount() {
+        return asyncExecutor.execute((Callable<Long>) collectionExecutor::estimatedDocumentCount);
+    }
+
+    /**
+     * Asynchronously returns an estimate of the number of documents in the collection based on
+     * collection metadata, with additional options.
+     *
+     * <p>This is faster than {@link #count(Bson)} for large collections because it does not scan
+     * documents, but the result may be inaccurate after unclean shutdowns or while chunks are
+     * being migrated in a sharded cluster.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * EstimatedDocumentCountOptions options = new EstimatedDocumentCountOptions().maxTime(5, TimeUnit.SECONDS);
+     * async.estimatedDocumentCount(options)
+     *      .thenRunAsync(approx -> System.out.println("~" + approx + " documents"));
+     * }</pre>
+     *
+     * @param options additional options for the estimated count operation
+     * @return a ContinuableFuture that completes with the estimated document count
+     * @see #estimatedDocumentCount()
+     * @see EstimatedDocumentCountOptions
+     * @see ContinuableFuture
+     */
+    public ContinuableFuture<Long> estimatedDocumentCount(final EstimatedDocumentCountOptions options) {
+        return asyncExecutor.execute(() -> collectionExecutor.estimatedDocumentCount(options));
     }
 
     /**
@@ -3552,6 +3600,7 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param fieldName the field name to group by
      * @return a ContinuableFuture that completes with a Stream of grouped Documents
+     * @throws IllegalArgumentException if fieldName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #groupBy(Collection)
      * @see #aggregate(List)
@@ -3614,6 +3663,7 @@ public final class AsyncMongoCollectionExecutor {
      *
      * @param fieldName the field name to group by and count
      * @return a ContinuableFuture that completes with a Stream of Documents containing group keys and counts
+     * @throws IllegalArgumentException if fieldName is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #groupByAndCount(Collection)
      * @see #groupBy(String)

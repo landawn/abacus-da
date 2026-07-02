@@ -133,7 +133,7 @@ import com.landawn.abacus.util.u.Optional;
  * <ul>
  *   <li><b>TTL (Time To Live):</b> {@code usingTTL(seconds)} for automatic data expiration</li>
  *   <li><b>Timestamps:</b> {@code usingTimestamp(timestamp)} for precise operation timing</li>
- *   <li><b>Lightweight Transactions:</b> {@code iF()}, {@code ifExists()}, {@code ifNotExists()} for consistency</li>
+ *   <li><b>Lightweight Transactions:</b> {@code onlyIf()}, {@code ifExists()}, {@code ifNotExists()} for consistency</li>
  *   <li><b>Allow Filtering:</b> {@code allowFiltering()} for server-side filtering (use with caution)</li>
  * </ul>
  *
@@ -186,7 +186,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
     static final char[] _SPACE_ALLOW_FILTERING = " ALLOW FILTERING".toCharArray();
 
-    // True while iF(Condition) renders its condition: Cassandra's LWT IF grammar rejects parenthesized
+    // True while onlyIf(Condition) renders its condition: Cassandra's LWT IF grammar rejects parenthesized
     // members, so Junction members are rendered without parentheses in that context.
     private boolean _appendingIfClause; //NOSONAR
 
@@ -526,8 +526,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * that must be met for the operation to succeed. This is particularly useful for ensuring
      * data consistency in concurrent environments.</p>
      *
-     * <p>Prefer this method over {@link #iF(String)}. The {@code iF} method is kept for
-     * backward compatibility because {@code if} is a Java keyword.</p>
+     * <p>The method is named {@code onlyIf} because {@code if} is a Java keyword.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -550,7 +549,6 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @param expr the conditional expression as a string
      * @return this CqlBuilder instance for method chaining
      * @see #onlyIf(Condition)
-     * @see #iF(String)
      */
     public CqlBuilder onlyIf(final String expr) {
         assertNotClosed();
@@ -568,8 +566,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     /**
      * Adds a conditional IF clause to the CQL statement with the specified condition.
      *
-     * <p>Prefer this method over {@link #iF(Condition)}. The {@code iF} method is kept for
-     * backward compatibility because {@code if} is a Java keyword.</p>
+     * <p>The method is named {@code onlyIf} because {@code if} is a Java keyword.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -592,7 +589,6 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @param cond the condition object for the IF clause
      * @return this CqlBuilder instance for method chaining
      * @see #onlyIf(String)
-     * @see #iF(Condition)
      * @see com.landawn.abacus.query.Filters
      */
     public CqlBuilder onlyIf(final Condition cond) {
@@ -615,90 +611,6 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         }
 
         return this;
-    }
-
-    /**
-     * Adds a conditional IF clause to the CQL statement with the specified expression.
-     *
-     * <p>The IF clause enables lightweight transactions (LWT) in Cassandra by adding conditions
-     * that must be met for the operation to succeed. This is particularly useful for ensuring
-     * data consistency in concurrent environments.</p>
-     *
-     * <p><b>Note:</b> Prefer {@link #onlyIf(String)}. The method name is spelled {@code iF}
-     * because {@code if} is a Java keyword.</p>
-     *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * // INSERT with condition
-     * String cql = PSC.insert("id", "name")
-     *                 .into("users")
-     *                 .iF("name = NULL")
-     *                 .build().query();
-     * // Output: INSERT INTO users (id, name) VALUES (?, ?) IF name = NULL
-     *
-     * // UPDATE with condition
-     * String cql = PSC.update("users")
-     *                 .set("status")
-     *                 .where(Filters.eq("id", 123))
-     *                 .iF("status = 'inactive'")
-     *                 .build().query();
-     * // Output: UPDATE users SET status = ? WHERE id = ? IF status = 'inactive'
-     * }</pre>
-     *
-     * @param expr the conditional expression as a string
-     * @return this CqlBuilder instance for method chaining
-     * @see #onlyIf(String)
-     * @see #onlyIf(Condition)
-     * @deprecated {@code if} is a Java keyword, so this method is awkwardly spelled {@code iF}.
-     *             Use {@link #onlyIf(String)} instead, which has identical behavior.
-     */
-    @Deprecated
-    public CqlBuilder iF(final String expr) {
-        return onlyIf(expr);
-    }
-
-    /**
-     * Adds a conditional IF clause to the CQL statement with the specified condition.
-     *
-     * <p>The IF clause enables lightweight transactions (LWT) in Cassandra by adding conditions
-     * that must be met for the operation to succeed. This overload accepts a {@link Condition}
-     * object, providing type-safe condition building with proper parameter binding.</p>
-     *
-     * <p><b>Note:</b> Prefer {@link #onlyIf(Condition)}. The method name is spelled {@code iF}
-     * because {@code if} is a Java keyword.</p>
-     *
-     * <p><b>Note:</b> Any literal written in Expression condition won't be formalized according
-     * to the naming policy.</p>
-     *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * // INSERT with condition using Filters
-     * String cql = PSC.insert("id", "name")
-     *                 .into("users")
-     *                 .iF(Filters.isNull("name"))
-     *                 .build().query();
-     * // Output: INSERT INTO users (id, name) VALUES (?, ?) IF name IS NULL
-     *
-     * // UPDATE with complex condition
-     * String cql = PSC.update("users")
-     *                 .set("status")
-     *                 .where(Filters.eq("id", 123))
-     *                 .iF(Filters.and(Filters.eq("status", "inactive"), Filters.lt("retryCount", 3)))
-     *                 .build().query();
-     * // Output: UPDATE users SET status = ? WHERE id = ? IF status = ? AND retry_count < ?
-     * }</pre>
-     *
-     * @param cond the condition object for the IF clause
-     * @return this CqlBuilder instance for method chaining
-     * @see #onlyIf(Condition)
-     * @see #onlyIf(String)
-     * @see com.landawn.abacus.query.Filters
-     * @deprecated {@code if} is a Java keyword, so this method is awkwardly spelled {@code iF}.
-     *             Use {@link #onlyIf(Condition)} instead, which has identical behavior.
-     */
-    @Deprecated
-    public CqlBuilder iF(final Condition cond) {
-        return onlyIf(cond);
     }
 
     /**
@@ -728,8 +640,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      *
      * @return this CqlBuilder instance for method chaining
      * @see #ifNotExists()
-     * @see #iF(String)
-     * @see #iF(Condition)
+     * @see #onlyIf(String)
+     * @see #onlyIf(Condition)
      */
     public CqlBuilder ifExists() {
         assertNotClosed();
@@ -769,8 +681,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      *
      * @return this CqlBuilder instance for method chaining
      * @see #ifExists()
-     * @see #iF(String)
-     * @see #iF(Condition)
+     * @see #onlyIf(String)
+     * @see #onlyIf(Condition)
      */
     public CqlBuilder ifNotExists() {
         assertNotClosed();
@@ -867,6 +779,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             _sb.append(_DELETE);
         } else {
             _sb.append(_SELECT);
+            // Mirrors the parent builder: selectModifier()/distinct() called after from() insert the
+            // modifier at this buffer position; without it the modifier is silently dropped.
+            _selectKeywordEndIdx = _sb.length();
         }
 
         if (Strings.isNotEmpty(_selectModifier)) {
@@ -2032,7 +1947,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * Creates a SELECT statement with a single expression.
          *
          * <p>This method is useful for complex select expressions, aggregate functions, or when
-         * selecting computed values. The expression is used as-is without property name conversion.</p>
+         * selecting computed values. Property-name tokens inside the expression are converted per the
+         * builder's naming policy; function names, quoted literals, and the {@code AS} alias are kept
+         * as-is.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -2040,12 +1957,12 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *                 .from("account")
          *                 .where(Filters.eq("status", "active"))
          *                 .build().query();
-         * // Output: SELECT count(*) FROM account WHERE status = ?
+         * // Output: SELECT COUNT(*) FROM account WHERE status = ?
          *
          * String cql2 = PSC.select("firstName || ' ' || lastName AS fullName")
          *                  .from("account")
          *                  .build().query();
-         * // Output: SELECT firstName || ' ' || lastName AS fullName FROM account
+         * // Output: SELECT first_name || ' ' || last_name AS fullName FROM account
          * }</pre>
          *
          * @param selectPart the select expression

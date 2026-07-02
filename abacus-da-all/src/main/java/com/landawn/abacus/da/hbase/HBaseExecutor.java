@@ -110,7 +110,7 @@ import com.landawn.abacus.util.stream.Stream;
  * <pre>{@code
  * public static class Account {
  *     @Id
- *     private String id;            // HBase: "id:"          (columnFamily=id,  qualifier="")
+ *     private String id;            // row key (not stored as a cell)
  *     private String guid;          // HBase: "guid:"        (columnFamily=guid, qualifier="")
  *     private Name name;            // HBase: "name:firstName" and "name:lastName"
  *     private String emailAddress;  // HBase: "emailAddress:"
@@ -131,7 +131,7 @@ import com.landawn.abacus.util.stream.Stream;
  * @ColumnFamily("cf")
  * public static class Account {
  *     @Id
- *     private String id;            // HBase: "cf:id"
+ *     private String id;            // row key (not stored as a cell)
  *     @Column("guid")
  *     private String guid;          // HBase: "cf:guid"
  *     @ColumnFamily("name")
@@ -354,8 +354,8 @@ public final class HBaseExecutor {
      *
      * <p>The setter of the registered property is recorded and used by the result-to-entity
      * conversion path to populate the row-key value when reading rows. Calling this method
-     * also clears any previously cached column-family/qualifier name maps for {@code cls}
-     * so they are recomputed from the new row-key configuration.</p>
+     * also defensively clears any previously cached column-family/qualifier name maps for
+     * {@code cls}; they are lazily rebuilt on next use.</p>
      *
      * <p><strong>Deprecated:</strong> prefer annotating the row-key field with {@code @Id}
      * from one of the following:</p>
@@ -915,8 +915,13 @@ public final class HBaseExecutor {
                     if (familyTP != null) {
                         final PropInfo fallbackPropInfo = entityInfo.getPropInfo(familyTP._1);
 
-                        if (fallbackPropInfo != null && fallbackPropInfo.jsonXmlType.isBean()
-                                && !getFamilyColumnFieldNameMap(fallbackPropInfo.jsonXmlType.javaType())._2.containsKey(qualifier)) {
+                        // This branch is only reached with a non-empty, unknown qualifier (the empty qualifier
+                        // resolves directly above). The fallback entry exists for bean-typed properties, whose
+                        // nested field names are the qualifiers; routing a foreign qualifier into a scalar or
+                        // versioned property would overwrite its real (empty-qualifier) cell value, so ignore it.
+                        if (fallbackPropInfo == null || !fallbackPropInfo.jsonXmlType.isBean()) {
+                            familyTP = null;
+                        } else if (!getFamilyColumnFieldNameMap(fallbackPropInfo.jsonXmlType.javaType())._2.containsKey(qualifier)) {
                             for (final Tuple2<String, Boolean> candidateTP : familyTPMap.values()) {
                                 final PropInfo candidatePropInfo = candidateTP == familyTP ? null : entityInfo.getPropInfo(candidateTP._1);
 
@@ -2770,7 +2775,7 @@ public final class HBaseExecutor {
      * executor.coprocessorService(
      *         "users", MyService.class, "user_a", "user_z",
      *         instance -> instance.countRows(),
-     *         (region, count) -> total.addAndGet(count));   // callback runs per region as results arrive
+     *         (region, row, count) -> total.addAndGet(count));   // callback runs per region as results arrive
      * }</pre>
      *
      * @param <T> the service type
@@ -2877,7 +2882,7 @@ public final class HBaseExecutor {
      *         MyRequest.getDefaultInstance(),
      *         "user_a", "user_z",
      *         MyResponse.getDefaultInstance(),
-     *         (region, response) -> total.addAndGet(response.getCount()));   // callback runs per region
+     *         (region, row, response) -> total.addAndGet(response.getCount()));   // callback runs per region
      * }</pre>
      *
      * @param <R> the response message type
@@ -3755,7 +3760,7 @@ public final class HBaseExecutor {
          * mapper.coprocessorService(
          *         MyService.class, "user_a", "user_z",
          *         instance -> instance.countRows(),
-         *         (region, count) -> total.addAndGet(count));   // callback runs per region
+         *         (region, row, count) -> total.addAndGet(count));   // callback runs per region
          * }</pre>
          *
          * @param <S> the service type
@@ -3816,7 +3821,7 @@ public final class HBaseExecutor {
          *         MyRequest.getDefaultInstance(),
          *         "user_a", "user_z",
          *         MyResponse.getDefaultInstance(),
-         *         (region, response) -> total.addAndGet(response.getCount()));   // callback runs per region
+         *         (region, row, response) -> total.addAndGet(response.getCount()));   // callback runs per region
          * }</pre>
          *
          * @param <R> the response message type

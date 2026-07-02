@@ -3193,7 +3193,8 @@ public final class MongoCollectionMapper<T> {
      *
      * @param pipeline list of aggregation pipeline stages to execute
      * @return a Stream of entities representing the aggregation results
-     * @throws IllegalArgumentException if pipeline is null or empty
+     * @throws IllegalArgumentException if pipeline is null (an empty pipeline is accepted and
+     *         streams the entire collection)
      * @throws com.mongodb.MongoException if the database operation fails
      * @see Stream
      * @see com.mongodb.client.model.Aggregates
@@ -3348,7 +3349,8 @@ public final class MongoCollectionMapper<T> {
      * @param mapFunction JavaScript map function as a string
      * @param reduceFunction JavaScript reduce function as a string
      * @return a Stream of entities representing the MapReduce results
-     * @throws IllegalArgumentException if mapFunction or reduceFunction is null or empty
+     * @throws IllegalArgumentException if mapFunction or reduceFunction is null (an empty string
+     *         fails server-side via {@code MongoException})
      * @throws com.mongodb.MongoException if the database operation fails
      * @deprecated Use {@link #aggregate(List)} with aggregation pipeline instead.
      * @see #aggregate(List)

@@ -151,8 +151,8 @@ import com.landawn.abacus.util.stream.Stream;
  * }</pre>
  *
  * <h2>Lifecycle</h2>
- * <p>The class declares {@link AutoCloseable} so the concrete subclass can release its underlying
- * driver session in {@code close()}; the base itself holds no closeable resources.</p>
+ * <p>The concrete subclass exposes a public {@code close()} to release its underlying
+ * driver session; the base itself holds no closeable resources.</p>
  *
  * <h2>Thread Safety</h2>
  * <p>Implementations are expected to be thread-safe. The static caches maintained by the base
@@ -1174,8 +1174,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <pre>{@code
      * ResultSet result = executor.delete(User.class, "user123"); // returns the driver ResultSet for the DELETE
      *
-     * executor.delete(User.class);            // throws IllegalArgumentException (ids is empty)
-     * executor.delete(User.class, "a", "b");  // throws IllegalArgumentException (id count != single key column)
+     * executor.delete(User.class, new Object[0]); // throws IllegalArgumentException (ids is empty)
+     * executor.delete(User.class, "a", "b");      // throws IllegalArgumentException (id count != single key column)
      * }</pre>
      *
      * @param targetClass the entity class
@@ -1204,7 +1204,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * ResultSet whole = executor.delete(User.class, null, "user123"); // returns the driver ResultSet (entire row removed)
      *
      * executor.delete(User.class, new ArrayList<>(), "user123"); // throws IllegalArgumentException (propNamesToDelete empty, not null)
-     * executor.delete(User.class, Arrays.asList("email"));       // throws IllegalArgumentException (ids is empty)
+     * executor.delete(User.class, Arrays.asList("email"), new Object[0]); // throws IllegalArgumentException (ids is empty)
      * }</pre>
      *
      * @param targetClass the entity class
@@ -2433,6 +2433,71 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
     }
 
     /**
+     * Executes the given CQL query and returns the first column of the first row as a {@link Date}.
+     *
+     * <p>Only the first column of the first row of the {@code ResultSet} is read; remaining rows and
+     * columns are ignored. Parameters are bound positionally to {@code ?} placeholders.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned <i>only</i> when the
+     * query produces no rows. If a row exists but the column is {@code NULL}, the returned
+     * {@code Nullable} is <i>present-but-null</i> ({@code Nullable.of(null)}), preserving the distinction
+     * between "no row matched" and "row matched but value is null".</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Nullable<Date> createdAt = executor.queryForDate(
+     *     "SELECT created_at FROM users WHERE id = ?", userId); // returns present Nullable (may hold null when the column is NULL); empty when no row matches
+     * }</pre>
+     *
+     * @param query the CQL query string with {@code ?} placeholders for parameters
+     * @param parameters the values to bind, in declaration order
+     * @return a <i>present</i> {@code Nullable<Date>} holding the column value (possibly {@code null}
+     *         for {@code NULL}) when at least one row is returned; {@code Nullable.empty()} when the
+     *         query returns no rows
+     * @see #queryForDate(Class, String, Object...)
+     * @see #queryForDate(Class, String, Condition)
+     * @see #queryForSingleValue(Class, String, Object...)
+     */
+    @Beta
+    public final Nullable<Date> queryForDate(final String query, final Object... parameters) {
+        return this.queryForSingleValue(Date.class, query, parameters);
+    }
+
+    /**
+     * Executes the given CQL query and returns the first column of the first row converted to the
+     * specified {@link Date} subclass (e.g. {@code java.sql.Timestamp}).
+     *
+     * <p>Only the first column of the first row of the {@code ResultSet} is read; remaining rows and
+     * columns are ignored. Parameters are bound positionally to {@code ?} placeholders.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> {@code Nullable.empty()} is returned <i>only</i> when the
+     * query produces no rows. If a row exists but the column is {@code NULL}, the returned
+     * {@code Nullable} is <i>present-but-null</i> ({@code Nullable.of(null)}), preserving the distinction
+     * between "no row matched" and "row matched but value is null".</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Nullable<Timestamp> lastLogin = executor.queryForDate(
+     *     Timestamp.class, "SELECT last_login FROM users WHERE id = ?", userId); // returns present Nullable (may hold null when the column is NULL); empty when no row matches
+     * }</pre>
+     *
+     * @param <E> the concrete {@code Date} subtype to be returned
+     * @param valueClass the {@code Date} subclass the column value is converted to
+     * @param query the CQL query string with {@code ?} placeholders for parameters
+     * @param parameters the values to bind, in declaration order
+     * @return a <i>present</i> {@code Nullable<E>} holding the column value (possibly {@code null}
+     *         for {@code NULL}) when at least one row is returned; {@code Nullable.empty()} when the
+     *         query returns no rows
+     * @see #queryForDate(String, Object...)
+     * @see #queryForDate(Class, Class, String, Condition)
+     * @see #queryForSingleValue(Class, String, Object...)
+     */
+    @Beta
+    public final <E extends Date> Nullable<E> queryForDate(final Class<E> valueClass, final String query, final Object... parameters) {
+        return this.queryForSingleValue(valueClass, query, parameters);
+    }
+
+    /**
      * Executes the given CQL query and returns the first column of the first row converted to
      * {@code valueClass}.
      *
@@ -2559,7 +2624,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * Optional<User> user = executor.findFirst(User.class,
      *     "SELECT * FROM users WHERE email = ? LIMIT 1", email); // returns present Optional<User>; empty when no row matches
      *
-     * Optional<Map<String, Object>> userData = executor.findFirst(Map.class,
+     * Optional<Map> userData = executor.findFirst(Map.class,
      *     "SELECT name, email FROM users WHERE id = ?", userId); // returns present Optional holding a Map; empty when no row matches
      *
      * Optional<Object[]> row = executor.findFirst(Object[].class,
@@ -2891,7 +2956,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param statement the configured CQL Statement to execute
      * @return the result set from the statement execution
-     * @throws NullPointerException if statement is null
+     * @throws RuntimeException if statement is null (the v4 driver rejects it with
+     *         IllegalArgumentException, the v3 driver with NullPointerException)
      */
     public abstract RS execute(final ST statement);
 

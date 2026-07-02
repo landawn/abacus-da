@@ -101,7 +101,7 @@ import com.landawn.abacus.util.Strings;
  *
  * <ul>
  * <li><strong>Cache Size:</strong> Up to 10,000 parsed statements</li>
- * <li><strong>Eviction Time:</strong> 60 seconds for inactive entries</li>
+ * <li><strong>Eviction Sweep:</strong> the evictor runs every 60 seconds to remove expired entries</li>
  * <li><strong>Max Live Time:</strong> 24 hours absolute TTL</li>
  * <li><strong>Max Idle Time:</strong> 24 hours since last access</li>
  * </ul>

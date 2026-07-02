@@ -106,7 +106,7 @@ import com.landawn.abacus.util.XmlUtil;
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * // Initialize mapper with XML file
- * CqlMapper mapper = CqlMapper.load("classpath:cql-config.xml");
+ * CqlMapper mapper = CqlMapper.load("config/cql-config.xml");
  *
  * // Get parsed CQL statement
  * ParsedCql parsedCql = mapper.get("findAccountById");
@@ -181,7 +181,7 @@ public final class CqlMapper {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * CqlMapper m = CqlMapper.load("classpath:cql-config.xml");  // single file
+     * CqlMapper m = CqlMapper.load("config/cql-config.xml");     // single file
      * CqlMapper both = CqlMapper.load("a.xml,b.xml");            // merges entries from both files
      * CqlMapper.load((String) null);                            // throws IllegalArgumentException (null path)
      * CqlMapper.load("");                                       // throws IllegalArgumentException (empty path)
@@ -265,7 +265,8 @@ public final class CqlMapper {
      * @throws IllegalArgumentException if {@code is} is null, if duplicate CQL ids are found,
      *         or if a {@code <cql>} element is missing its {@code id} attribute
      * @throws UncheckedIOException if an I/O error occurs reading the stream
-     * @throws ParsingException if the XML content is malformed, or does not contain a {@code <cqlMapper>} element
+     * @throws ParsingException if the XML content is malformed
+     * @throws RuntimeException if the required {@code <cqlMapper>} root element is missing
      */
     public static CqlMapper load(final InputStream is) {
         N.checkArgNotNull(is, "is");
@@ -365,8 +366,8 @@ public final class CqlMapper {
      *
      * <p>This method provides access to all the IDs that have been loaded into this mapper,
      * allowing you to discover what CQL statements are available. The returned set is a
-     * read-only live view of the internal key set, so subsequent {@code add}/{@code remove} calls are
-     * reflected in a previously returned set. Attempts to modify the returned set (or its iterator)
+     * read-only snapshot taken at call time; subsequent {@code add}/{@code remove} calls are
+     * not reflected in a previously returned set. Attempts to modify the returned set (or its iterator)
      * throw {@link UnsupportedOperationException}; use {@link #add} / {@link #remove} to change the
      * mapper's contents.</p>
      *
@@ -376,13 +377,13 @@ public final class CqlMapper {
      * m.ids();                                       // returns [] (empty set for an empty mapper)
      * m.add("findUserById", "SELECT * FROM users WHERE id = ?", null);
      * m.add("findAll", "SELECT * FROM users", null);
-     * m.ids();                                       // returns ["findUserById", "findAll"]
+     * m.ids();                                       // returns a set containing "findUserById" and "findAll"
      * m.remove("findAll");
-     * m.ids();                                       // returns ["findUserById"] (live view reflects removal)
-     * m.ids().clear();                              // throws UnsupportedOperationException (read-only view)
+     * m.ids();                                       // returns ["findUserById"] (a fresh snapshot after removal)
+     * m.ids().clear();                              // throws UnsupportedOperationException (read-only set)
      * }</pre>
      *
-     * @return a read-only, live view of the set of all CQL statement IDs currently in this mapper
+     * @return a read-only snapshot of the set of all CQL statement IDs currently in this mapper
      */
     public ImmutableSet<String> ids() {
         return ImmutableSet.copyOf(cqlMap.keySet());

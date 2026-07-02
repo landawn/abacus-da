@@ -437,4 +437,23 @@ public class AsyncCassandraExecutorTest extends TestBase {
         Optional<Map<String, Object>> result = async.findFirst("SELECT * FROM t WHERE id = ?", 1).get();
         assertTrue(result.isEmpty());
     }
+
+    /**
+     * Regression guard: the 4-arg Condition overloads of queryForSingleValue/queryForSingleNonNull
+     * must eagerly reject a null/empty propName with IllegalArgumentException (parity with the sync
+     * CassandraExecutorBase siblings); previously a null propName surfaced as an NPE from
+     * List.of(propName) and an empty one produced a malformed projection.
+     */
+    @Test
+    public void testQueryForSingleValueAndNonNull_Condition_NullOrEmptyPropName_ThrowsIAE() {
+        final com.landawn.abacus.query.condition.Condition cond = com.landawn.abacus.query.Filters.eq("id", 1);
+
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> async.queryForSingleValue(Map.class, String.class, null, cond));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> async.queryForSingleValue(Map.class, String.class, "", cond));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> async.queryForSingleNonNull(Map.class, String.class, null, cond));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> async.queryForSingleNonNull(Map.class, String.class, "", cond));
+
+        // The guard fires before the query is even prepared.
+        org.mockito.Mockito.verify(mockExecutor, org.mockito.Mockito.never()).prepareQuery(any(), any(), any(), org.mockito.ArgumentMatchers.anyInt());
+    }
 }

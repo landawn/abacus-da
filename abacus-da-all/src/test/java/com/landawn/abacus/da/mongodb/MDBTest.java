@@ -52,9 +52,9 @@ public class MDBTest extends TestBase {
     }
 
     @Test
-    public void testObjectId2FilterWithString() {
+    public void testobjectIdToFilterWithString() {
         String objectId = "507f1f77bcf86cd799439011";
-        Bson result = MongoDBBase.objectId2Filter(objectId);
+        Bson result = MongoDBBase.objectIdToFilter(objectId);
 
         Assertions.assertNotNull(result);
         Document doc = (Document) result;
@@ -62,9 +62,9 @@ public class MDBTest extends TestBase {
     }
 
     @Test
-    public void testObjectId2FilterWithObjectId() {
+    public void testobjectIdToFilterWithObjectId() {
         ObjectId objectId = new ObjectId();
-        Bson result = MongoDBBase.objectId2Filter(objectId);
+        Bson result = MongoDBBase.objectIdToFilter(objectId);
 
         Assertions.assertNotNull(result);
         Document doc = (Document) result;
@@ -72,23 +72,23 @@ public class MDBTest extends TestBase {
     }
 
     @Test
-    public void testObjectId2FilterWithNullString() {
+    public void testobjectIdToFilterWithNullString() {
         Assertions.assertThrows(IllegalArgumentException.class, () -> {
-            MongoDBBase.objectId2Filter((String) null);
+            MongoDBBase.objectIdToFilter((String) null);
         });
     }
 
     @Test
-    public void testObjectId2FilterWithEmptyString() {
+    public void testobjectIdToFilterWithEmptyString() {
         Assertions.assertThrows(IllegalArgumentException.class, () -> {
-            MongoDBBase.objectId2Filter("");
+            MongoDBBase.objectIdToFilter("");
         });
     }
 
     @Test
-    public void testObjectId2FilterWithNullObjectId() {
+    public void testobjectIdToFilterWithNullObjectId() {
         Assertions.assertThrows(IllegalArgumentException.class, () -> {
-            MongoDBBase.objectId2Filter((ObjectId) null);
+            MongoDBBase.objectIdToFilter((ObjectId) null);
         });
     }
 

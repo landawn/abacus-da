@@ -47,6 +47,9 @@ import com.mongodb.client.MongoCursor;
 import com.mongodb.client.model.CountOptions;
 import com.mongodb.client.model.DeleteOptions;
 import com.mongodb.client.model.EstimatedDocumentCountOptions;
+import com.mongodb.client.model.FindOneAndDeleteOptions;
+import com.mongodb.client.model.FindOneAndReplaceOptions;
+import com.mongodb.client.model.FindOneAndUpdateOptions;
 import com.mongodb.client.model.InsertManyOptions;
 import com.mongodb.client.model.InsertOneOptions;
 import com.mongodb.client.model.WriteModel;
@@ -1812,6 +1815,40 @@ public class MongoCollectionExecutorTest extends TestBase {
         verify(mockCollection, never()).find(any(Bson.class));
         verify(mockCollection, never()).countDocuments(any(Bson.class));
         verify(mockCollection, never()).countDocuments(any(Bson.class), any(CountOptions.class));
+    }
+
+    @Test
+    public void testTypedReadAndModifyMethodsRejectNullRowTypeWithIAE() {
+        // Regression: findFirst/get/gett, the Dataset query(..., Class) overloads, the typed
+        // findOneAndUpdate/findOneAndReplace/findOneAndDelete overloads, and mapReduce(map, reduce,
+        // Class) all document "@throws IllegalArgumentException ... rowType is null" but had no
+        // guard — a null rowType silently produced Object[] rows via MongoDBBase.readRow (or an NPE
+        // via checkResultClass for the Dataset overloads). The guards now throw eagerly.
+        final Collection<String> selectPropNames = Arrays.asList("name");
+        final Bson filter = new Document("id", 1);
+        final Bson sort = new Document("name", 1);
+        final Bson projection = new Document("name", 1);
+        final Document update = new Document("$set", new Document("a", 1));
+
+        // findFirst terminals (the get/gett/findFirst typed family funnels through these two).
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findFirst(selectPropNames, filter, sort, null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findFirst(projection, filter, sort, null));
+
+        // Dataset query terminals.
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.query(selectPropNames, filter, sort, 0, 10, null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.query(projection, filter, sort, 0, 10, null));
+
+        // Typed find-and-modify chokepoints (the no-options typed variants delegate into them).
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndUpdate(filter, update, (FindOneAndUpdateOptions) null, null));
+        Assertions.assertThrows(IllegalArgumentException.class,
+                () -> executor.findOneAndUpdate(filter, Arrays.asList(update), (FindOneAndUpdateOptions) null, null));
+        Assertions.assertThrows(IllegalArgumentException.class,
+                () -> executor.findOneAndReplace(filter, new Document("a", 1), (FindOneAndReplaceOptions) null, null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete(filter, (FindOneAndDeleteOptions) null, null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete(filter, (Class<Document>) null));
+
+        // Typed mapReduce.
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.mapReduce("function(){}", "function(k,v){}", null));
     }
 
     // ========= Regression: entity/Map update payloads must not carry the immutable _id into $set =========

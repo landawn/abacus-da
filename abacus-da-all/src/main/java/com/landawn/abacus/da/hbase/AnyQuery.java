@@ -168,7 +168,7 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * visibility expression is not satisfied by this set are filtered out by the server.
      *
      * <p>Unlike {@link #toJson()} — which wraps HBase's {@link java.io.IOException} as an
-     * {@link java.io.UncheckedIOException} because a JSON serialization failure is non-recoverable —
+     * {@link com.landawn.abacus.exception.UncheckedIOException} because a JSON serialization failure is non-recoverable —
      * this method intentionally surfaces the checked {@link DeserializationException}. The exception
      * signals a corrupt or undecodable stored authorizations expression, a condition the caller may
      * legitimately want to detect and handle, so it is propagated rather than hidden.</p>
@@ -378,7 +378,7 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * Returns the raw {@code loadColumnFamiliesOnDemand} setting as it was supplied to
      * {@link #setLoadColumnFamiliesOnDemand(boolean)} — or {@code null} when the setting has not
      * been explicitly configured. Use {@link #doLoadColumnFamiliesOnDemand()} to get the effective
-     * {@code boolean} value after server-side defaults are applied.
+     * {@code boolean} value ({@code false} when the setting has not been explicitly configured).
      *
      * @return the raw setting, or {@code null} if it has not been set
      * @see #setLoadColumnFamiliesOnDemand(boolean)
@@ -440,7 +440,7 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
 
     /**
      * Returns the effective {@code boolean} value of the {@code loadColumnFamiliesOnDemand}
-     * setting after any cluster defaults are applied. Unlike
+     * setting — {@code false} when the setting has not been explicitly configured. Unlike
      * {@link #getLoadColumnFamiliesOnDemandValue()}, this method never returns {@code null}.
      *
      * @return {@code true} if on-demand column family loading is enabled, {@code false} otherwise

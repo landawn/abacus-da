@@ -1157,7 +1157,6 @@ public class CosmosContainerExecutor {
      * CosmosQueryRequestOptions options = new CosmosQueryRequestOptions();
      * options.setMaxDegreeOfParallelism(4);   // Parallel query execution
      * options.setMaxBufferedItemCount(100);   // Buffer size
-     * options.setMaxItemCount(50);            // Page size
      *
      * CosmosPagedIterable<Product> pagedResults = executor.readAllItems(
      *     partitionKey,
@@ -1251,7 +1250,6 @@ public class CosmosContainerExecutor {
      *
      * // Configure options for optimized streaming
      * CosmosQueryRequestOptions options = new CosmosQueryRequestOptions();
-     * options.setMaxItemCount(100);           // Fetch 100 items per page
      * options.setMaxBufferedItemCount(500);   // Buffer size
      *
      * // Stream with options and process
@@ -1340,7 +1338,6 @@ public class CosmosContainerExecutor {
      * // Control parallelism and buffering
      * options.setMaxDegreeOfParallelism(4);
      * options.setMaxBufferedItemCount(1000);
-     * options.setMaxItemCount(100); // Page size
      *
      * // Execute query
      * CosmosPagedIterable<Product> results = executor.queryItems(
@@ -1523,7 +1520,6 @@ public class CosmosContainerExecutor {
      * // Configure options for single partition query
      * CosmosQueryRequestOptions options = new CosmosQueryRequestOptions();
      * options.setPartitionKey(new PartitionKey("Electronics"));
-     * options.setMaxItemCount(50);
      *
      * // Stream with options
      * Map<String, Long> categoryCount = executor.streamItems(query, options, Product.class)
@@ -1603,7 +1599,7 @@ public class CosmosContainerExecutor {
      * <pre>{@code
      * // Build parameterized query
      * SqlQuerySpec querySpec = new SqlQuerySpec(
-     *     "SELECT * FROM c WHERE c.tags ARRAY_CONTAINS @tag AND c.rating >= @minRating"
+     *     "SELECT * FROM c WHERE ARRAY_CONTAINS(c.tags, @tag) AND c.rating >= @minRating"
      * ).setParameters(
      *     Arrays.asList(
      *         new SqlParameter("@tag", "featured"),
@@ -1652,7 +1648,7 @@ public class CosmosContainerExecutor {
      * // Simple condition query
      * Condition condition = eq("category", "Electronics")
      *     .and(gt("price", 100.0))
-     *     .and(eq("inStock", true));
+     *     .and(eq("featured", true));
      *
      * List<Product> results = executor.streamItems(condition, Product.class)
      *     .collect(Collectors.toList());
@@ -1707,7 +1703,6 @@ public class CosmosContainerExecutor {
      * // Configure options
      * CosmosQueryRequestOptions options = new CosmosQueryRequestOptions();
      * options.setPartitionKey(new PartitionKey("Electronics"));
-     * options.setMaxItemCount(100);
      *
      * // Stream with condition and options
      * List<Product> midRangeProducts = executor.streamItems(condition, options, Product.class)
@@ -1745,7 +1740,7 @@ public class CosmosContainerExecutor {
      * // Select specific fields to reduce RU cost
      * Collection<String> selectFields = Arrays.asList("id", "name", "price");
      * Condition condition = eq("category", "Electronics")
-     *     .and(eq("inStock", true));
+     *     .and(eq("featured", true));
      *
      * // Stream with projection
      * List<Product> products = executor.streamItems(selectFields, condition, Product.class)
@@ -1789,15 +1784,14 @@ public class CosmosContainerExecutor {
      * import static com.landawn.abacus.query.Filters.*;
      *
      * // Select specific fields with condition and options
-     * Collection<String> fields = Arrays.asList("id", "name", "price", "stockQuantity");
+     * Collection<String> fields = Arrays.asList("id", "name", "price", "quantity");
      * Condition condition = eq("category", "Electronics")
      *     .and(gt("price", 50.0))
-     *     .and(eq("inStock", true));
+     *     .and(eq("featured", true));
      *
      * // Configure query options
      * CosmosQueryRequestOptions options = new CosmosQueryRequestOptions();
      * options.setPartitionKey(new PartitionKey("Electronics"));
-     * options.setMaxItemCount(50);
      *
      * // Stream with projection, condition, and options
      * List<Product> optimizedResults = executor.streamItems(

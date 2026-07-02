@@ -459,6 +459,32 @@ public class BigQueryExecutorTest extends TestBase {
     }
 
     @Test
+    public void testUpdateEntity_NullPropertiesExcludedFromSetClause() throws Exception {
+        // Regression: a null non-key property used to flow into the parameter list as a raw null,
+        // which buildQueryParameterValue rejects with IAE — entity update was unusable for entities
+        // with null fields. Null props are now excluded from SET (mirroring insert semantics).
+        TestEntityWithEmail entity = new TestEntityWithEmail();
+        entity.setId(1);
+        entity.setName("OnlyName");
+        // email left null
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        executor.update(entity, N.asSet("id"));
+
+        final String sql = captureGeneratedSql();
+        assertTrue(sql.contains("SET name = ? WHERE"), sql);
+        assertFalse(sql.contains("email = ?"), sql);
+    }
+
+    @Test
+    public void testUpdateEntity_AllNonKeyPropsNullThrows() {
+        TestEntityWithEmail entity = new TestEntityWithEmail();
+        entity.setId(1);
+
+        assertThrows(IllegalArgumentException.class, () -> executor.update(entity, N.asSet("id")));
+    }
+
+    @Test
     public void testUpdateClassPropsConditionGeneratesPositionalSql() throws Exception {
         Map<String, Object> props = new LinkedHashMap<>();
         props.put("name", "UpdatedTest");
@@ -2211,6 +2237,36 @@ public class BigQueryExecutorTest extends TestBase {
     }
 
     // Test entity classes
+    public static class TestEntityWithEmail {
+        private int id;
+        private String name;
+        private String email;
+
+        public int getId() {
+            return id;
+        }
+
+        public void setId(int id) {
+            this.id = id;
+        }
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+
+        public String getEmail() {
+            return email;
+        }
+
+        public void setEmail(String email) {
+            this.email = email;
+        }
+    }
+
     public static class TestEntity {
         private int id;
         private String name;

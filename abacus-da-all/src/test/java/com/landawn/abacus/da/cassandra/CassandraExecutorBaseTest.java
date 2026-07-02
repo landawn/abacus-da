@@ -407,6 +407,14 @@ public class CassandraExecutorBaseTest extends TestBase {
         // Test queryForString with query
         Nullable<String> stringResult = executor.queryForString("SELECT name FROM test WHERE id = ?", 1L);
         assertNotNull(stringResult);
+
+        // Test queryForDate with query
+        Nullable<Date> dateResult = executor.queryForDate("SELECT created_date FROM test WHERE id = ?", 1L);
+        assertNotNull(dateResult);
+
+        // Test queryForDate with valueClass and query
+        Nullable<java.sql.Date> sqlDateResult = executor.queryForDate(java.sql.Date.class, "SELECT created_date FROM test WHERE id = ?", 1L);
+        assertNotNull(sqlDateResult);
     }
 
     @Test
@@ -689,6 +697,13 @@ public class CassandraExecutorBaseTest extends TestBase {
 
         ContinuableFuture<Nullable<java.sql.Date>> asyncDate2 = executor.async().queryForDate(TestEntity.class, java.sql.Date.class, "createdDate", condition);
         assertNotNull(asyncDate2);
+
+        ContinuableFuture<Nullable<Date>> asyncDate3 = executor.async().queryForDate("SELECT created_date FROM test WHERE id = ?", 1L);
+        assertNotNull(asyncDate3);
+
+        ContinuableFuture<Nullable<java.sql.Date>> asyncDate4 = executor.async()
+                .queryForDate(java.sql.Date.class, "SELECT created_date FROM test WHERE id = ?", 1L);
+        assertNotNull(asyncDate4);
     }
 
     @Test

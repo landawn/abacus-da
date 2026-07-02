@@ -286,7 +286,7 @@ public final class MongoCollectionExecutor {
      * @see ObjectId
      */
     public Mono<Boolean> exists(final ObjectId objectId) {
-        return exists(MongoDBBase.objectId2Filter(objectId));
+        return exists(MongoDBBase.objectIdToFilter(objectId));
     }
 
     /**
@@ -595,7 +595,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return a {@code Mono} that emits the converted object on subscription, or completes empty
      *         when no document matches the ObjectId
-     * @throws IllegalArgumentException if objectId is null/empty, rowType is null, or objectId is not a valid ObjectId hex string
+     * @throws IllegalArgumentException if objectId is null/empty or not a valid ObjectId hex string
      * @see ObjectId
      */
     public <T> Mono<T> get(final String objectId, final Class<T> rowType) {
@@ -624,7 +624,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return a {@code Mono} that emits the converted object on subscription, or completes empty
      *         when no document matches the ObjectId
-     * @throws IllegalArgumentException if objectId or rowType is null
+     * @throws IllegalArgumentException if objectId is null
      * @see ObjectId
      */
     public <T> Mono<T> get(final ObjectId objectId, final Class<T> rowType) {
@@ -693,7 +693,7 @@ public final class MongoCollectionExecutor {
      * @see com.mongodb.client.model.Projections
      */
     public <T> Mono<T> get(final ObjectId objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
-        return findFirst(selectPropNames, MongoDBBase.objectId2Filter(objectId), null, rowType);
+        return findFirst(selectPropNames, MongoDBBase.objectIdToFilter(objectId), null, rowType);
     }
 
     /**
@@ -1613,8 +1613,8 @@ public final class MongoCollectionExecutor {
      * executor.queryForDate("lastModified", Filters.eq("docId", "x"), Timestamp.class)
      *         .subscribe(v -> {}, e -> {}, () -> System.out.println("absent")); // prints "absent"
      *
-     * // Negative: null rowType -> IllegalArgumentException is thrown synchronously at the call site
-     * // (before any Mono is returned), because rowType is validated eagerly.
+     * // Negative: null valueType -> IllegalArgumentException is thrown synchronously at the call site
+     * // (before any Mono is returned), because valueType is validated eagerly.
      * executor.queryForDate("lastModified", Filters.eq("docId", id), (Class<Timestamp>) null); // throws IllegalArgumentException
      * }</pre>
      *
@@ -1995,7 +1995,7 @@ public final class MongoCollectionExecutor {
             return Flux.from(coll.find(new Document(_$EXPR, false)));
         }
 
-        FindPublisher<Document> findIterable = filter == null ? coll.find() : coll.find(filter);
+        FindPublisher<Document> findIterable = coll.find(filter);
 
         if (projection != null) {
             findIterable = findIterable.projection(projection);
@@ -2353,7 +2353,7 @@ public final class MongoCollectionExecutor {
      *         matched count, modified count, and upserted id if applicable
      */
     public Mono<UpdateResult> updateOne(final ObjectId objectId, final Object update) {
-        return updateOne(MongoDBBase.objectId2Filter(objectId), update);
+        return updateOne(MongoDBBase.objectIdToFilter(objectId), update);
     }
 
     /**
@@ -2753,7 +2753,7 @@ public final class MongoCollectionExecutor {
      * @see #replaceOne(Bson, Object)
      */
     public Mono<UpdateResult> replaceOne(final ObjectId objectId, final Object replacement) {
-        return replaceOne(MongoDBBase.objectId2Filter(objectId), replacement);
+        return replaceOne(MongoDBBase.objectIdToFilter(objectId), replacement);
     }
 
     /**
@@ -2856,7 +2856,7 @@ public final class MongoCollectionExecutor {
      * @see #deleteOne(Bson)
      */
     public Mono<DeleteResult> deleteOne(final ObjectId objectId) {
-        return deleteOne(MongoDBBase.objectId2Filter(objectId));
+        return deleteOne(MongoDBBase.objectIdToFilter(objectId));
     }
 
     /**
@@ -3276,6 +3276,8 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if filter, update, or rowType is null
      */
     public <T> Mono<T> findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options, final Class<T> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         return findOneAndUpdate(filter, update, options).mapNotNull(toEntity(rowType));
     }
 
@@ -3406,6 +3408,8 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if filter, objList, or rowType is null, or objList is empty
      */
     public <T> Mono<T> findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options, final Class<T> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         return findOneAndUpdate(filter, objList, options).mapNotNull(toEntity(rowType));
     }
 
@@ -3538,6 +3542,8 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if filter, replacement, or rowType is null
      */
     public <T> Mono<T> findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options, final Class<T> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         return findOneAndReplace(filter, replacement, options).mapNotNull(toEntity(rowType));
     }
 
@@ -3658,6 +3664,8 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if filter or rowType is null
      */
     public <T> Mono<T> findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options, final Class<T> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         return findOneAndDelete(filter, options).mapNotNull(toEntity(rowType));
     }
 
@@ -3897,12 +3905,6 @@ public final class MongoCollectionExecutor {
         N.checkArgNotEmpty(fieldNames, "fieldNames");
         N.checkArgNotNull(rowType, "rowType");
 
-        final Document groupFields = new Document();
-
-        for (final String fieldName : fieldNames) {
-            groupFields.put(fieldName, _$ + fieldName);
-        }
-
         return aggregate(groupByPipeline(fieldNames, false, rowType), rowType);
     }
 
@@ -4004,12 +4006,6 @@ public final class MongoCollectionExecutor {
     public <T> Flux<T> groupByAndCount(final Collection<String> fieldNames, final Class<T> rowType) {
         N.checkArgNotEmpty(fieldNames, "fieldNames");
         N.checkArgNotNull(rowType, "rowType");
-
-        final Document groupFields = new Document();
-
-        for (final String fieldName : fieldNames) {
-            groupFields.put(fieldName, _$ + fieldName);
-        }
 
         return aggregate(groupByPipeline(fieldNames, true, rowType), rowType);
     }

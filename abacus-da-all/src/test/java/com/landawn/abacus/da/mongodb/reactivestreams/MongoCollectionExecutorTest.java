@@ -1461,6 +1461,24 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
+    public void testFindOneAndXxxTypedWithNullRowTypeThrowsIAE() {
+        // Regression: the typed findOneAndUpdate/findOneAndReplace/findOneAndDelete overloads all
+        // document "@throws IAE ... rowType is null" but had no guard — a null rowType silently
+        // emitted Object[] rows (same defect class as aggregate(List, Class) above). The guard at
+        // the four typed chokepoints now throws eagerly at the call site.
+        final Bson filter = new Document("_id", "x");
+        final Document update = new Document("$set", new Document("a", 1));
+
+        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndUpdate(filter, update, (FindOneAndUpdateOptions) null, null));
+        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndUpdate(filter, Arrays.asList(update), (FindOneAndUpdateOptions) null, null));
+        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndReplace(filter, new Document("a", 1), (FindOneAndReplaceOptions) null, null));
+        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete(filter, (FindOneAndDeleteOptions) null, null));
+
+        // The delegating no-options typed overloads inherit the guard.
+        assertThrows(IllegalArgumentException.class, () -> executor.findOneAndDelete(filter, (Class<Document>) null));
+    }
+
+    @Test
     public void testGroupByWithFieldName() {
         String fieldName = "category";
         List<Document> groupResults = Arrays.asList(new Document("_id", "electronics"), new Document("_id", "books"));

@@ -19,18 +19,18 @@ import com.landawn.abacus.da.aws.AnyUtil;
 /**
  * Tests for the AnyUtil utility class.
  *
- * <p>Covers {@link AnyUtil#array2Props(Object[])} including normal pairs, null,
+ * <p>Covers {@link AnyUtil#asProps(Object[])} including normal pairs, null,
  * empty, odd-length error, non-string keys, and null values; plus a sanity test
  * that the class itself is non-instantiable.</p>
  */
 public class AnyUtilTest extends TestBase {
 
-    // -- array2Props normal cases --
+    // -- asProps normal cases --
 
     @Test
-    public void testArray2PropsWithKeyValuePairs() {
+    public void testasPropsWithKeyValuePairs() {
         Object[] input = new Object[] { "name", "John", "age", 30 };
-        Map<String, Object> props = AnyUtil.array2Props(input);
+        Map<String, Object> props = AnyUtil.asProps(input);
 
         assertNotNull(props);
         assertEquals(2, props.size());
@@ -39,10 +39,10 @@ public class AnyUtilTest extends TestBase {
     }
 
     @Test
-    public void testArray2PropsPreservesInsertionOrder() {
+    public void testasPropsPreservesInsertionOrder() {
         // Implementation uses LinkedHashMap so insertion order is preserved
         Object[] input = new Object[] { "z", 1, "a", 2, "m", 3 };
-        Map<String, Object> props = AnyUtil.array2Props(input);
+        Map<String, Object> props = AnyUtil.asProps(input);
 
         assertTrue(props instanceof LinkedHashMap);
         assertEquals(3, props.size());
@@ -54,34 +54,34 @@ public class AnyUtilTest extends TestBase {
     }
 
     @Test
-    public void testArray2PropsWithEmptyArray() {
-        Map<String, Object> props = AnyUtil.array2Props(new Object[0]);
+    public void testasPropsWithEmptyArray() {
+        Map<String, Object> props = AnyUtil.asProps(new Object[0]);
         assertNotNull(props);
         assertEquals(0, props.size());
     }
 
     @Test
-    public void testArray2PropsWithNullArray() {
+    public void testasPropsWithNullArray() {
         // null array returns an empty LinkedHashMap (not null)
-        Map<String, Object> props = AnyUtil.array2Props(null);
+        Map<String, Object> props = AnyUtil.asProps(null);
         assertNotNull(props);
         assertEquals(0, props.size());
         assertTrue(props instanceof LinkedHashMap);
     }
 
-    // -- array2Props error and edge cases --
+    // -- asProps error and edge cases --
 
     @Test
-    public void testArray2PropsWithOddLengthThrows() {
+    public void testasPropsWithOddLengthThrows() {
         Object[] input = new Object[] { "name", "John", "age" };
-        assertThrows(IllegalArgumentException.class, () -> AnyUtil.array2Props(input));
+        assertThrows(IllegalArgumentException.class, () -> AnyUtil.asProps(input));
     }
 
     @Test
-    public void testArray2PropsWithNullValue() {
+    public void testasPropsWithNullValue() {
         // null value is allowed and preserved
         Object[] input = new Object[] { "key", null };
-        Map<String, Object> props = AnyUtil.array2Props(input);
+        Map<String, Object> props = AnyUtil.asProps(input);
 
         assertEquals(1, props.size());
         assertTrue(props.containsKey("key"));
@@ -89,16 +89,16 @@ public class AnyUtilTest extends TestBase {
     }
 
     @Test
-    public void testArray2PropsWithNonStringKeyThrows() {
+    public void testasPropsWithNonStringKeyThrows() {
         // Property names must be Strings; a non-String name (here an Integer at index 0) is rejected.
         Object[] input = new Object[] { 100, "hundred", true, "yes" };
-        assertThrows(IllegalArgumentException.class, () -> AnyUtil.array2Props(input));
+        assertThrows(IllegalArgumentException.class, () -> AnyUtil.asProps(input));
     }
 
     @Test
-    public void testArray2PropsWithMixedValueTypes() {
+    public void testasPropsWithMixedValueTypes() {
         Object[] input = new Object[] { "str", "abc", "int", 42, "bool", true, "dbl", 3.14 };
-        Map<String, Object> props = AnyUtil.array2Props(input);
+        Map<String, Object> props = AnyUtil.asProps(input);
 
         assertEquals(4, props.size());
         assertEquals("abc", props.get("str"));
@@ -108,9 +108,9 @@ public class AnyUtilTest extends TestBase {
     }
 
     @Test
-    public void testArray2PropsSingleEntry() {
+    public void testasPropsSingleEntry() {
         Object[] input = new Object[] { "only", "value" };
-        Map<String, Object> props = AnyUtil.array2Props(input);
+        Map<String, Object> props = AnyUtil.asProps(input);
 
         assertEquals(1, props.size());
         assertEquals("value", props.get("only"));
