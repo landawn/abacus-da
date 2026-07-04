@@ -267,7 +267,7 @@ public abstract class MongoDBBase {
     public static Bson objectIdToFilter(final ObjectId objectId) {
         N.checkArgNotNull(objectId, "objectId");
 
-        return new Document(MongoDB._ID, objectId);
+        return new Document(_ID, objectId);
     }
 
     /**
@@ -1000,8 +1000,8 @@ public abstract class MongoDBBase {
      * @param findIterable the MongoDB query result to convert
      * @param rowType the target class - can be an entity class with getter/setter methods, Map.class, or basic single value type (Primitive/String/Date...)
      * @return a List containing all results converted to the specified type (empty list if no results)
-     * @throws NullPointerException if findIterable or rowType is null
-     * @throws IllegalArgumentException if a result document cannot be projected onto {@code rowType} (e.g. a document with more than two fields targeted at a primitive/String/Date scalar)
+     * @throws NullPointerException if findIterable is null
+     * @throws IllegalArgumentException if {@code rowType} is null, or if a result document cannot be projected onto {@code rowType} (e.g. a document with more than two fields targeted at a primitive/String/Date scalar)
      * @see com.mongodb.client.MongoIterable
      * @see #toEntity(Document, Class)
      */
@@ -1397,7 +1397,13 @@ public abstract class MongoDBBase {
                     return N.newDataset(selectPropNames, newRowList);
                 }
             } else {
-                return N.newDataset(selectPropNames, rowList);
+                // Mirror the branches above: null/empty selectPropNames means "include all"
+                // (N.newDataset(columnNames, rows) rejects an empty columnNames with IAE).
+                if (N.isEmpty(selectPropNames)) {
+                    return N.newDataset(rowList);
+                } else {
+                    return N.newDataset(selectPropNames, rowList);
+                }
             }
         } else {
             return N.newEmptyDataset();

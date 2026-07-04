@@ -15,7 +15,7 @@
 package com.landawn.abacus.da.hbase;
 
 import static com.landawn.abacus.da.hbase.HBaseExecutor.toFamilyQualifierBytes;
-import static com.landawn.abacus.da.hbase.HBaseExecutor.toRowBytes;
+import static com.landawn.abacus.da.hbase.HBaseExecutor.toRowKeyBytes;
 
 import java.io.IOException;
 import java.util.List;
@@ -62,14 +62,14 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
     /**
      * Package-private constructor: prefer {@link #of(Object)}. Wraps a new HBase {@link Increment}
      * for the given row key. The row key is converted to bytes via
-     * {@link HBaseExecutor#toRowBytes(Object)}.
+     * {@link HBaseExecutor#toRowKeyBytes(Object)}.
      *
      * @param rowKey the row key for the increment operation
      * @throws NullPointerException if {@code rowKey} is {@code null} (its converted row bytes are
      *         {@code null}, which the underlying {@link Increment} constructor rejects)
      */
     AnyIncrement(final Object rowKey) {
-        super(new Increment(toRowBytes(rowKey)));
+        super(new Increment(toRowKeyBytes(rowKey)));
         increment = (Increment) mutation;
     }
 
@@ -348,8 +348,8 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *
      * @param cell the {@link Cell} to add
      * @return this AnyIncrement instance, to allow fluent method chaining
-     * @throws IOException if the cell's row key does not match this increment's row key, or if
-     *         the cell is otherwise rejected by HBase
+     * @throws IOException if the cell's row key does not match this increment's row key
+     * @throws IllegalArgumentException if the cell's family is null or empty
      * @see Cell
      * @see #addColumn(String, String, long)
      */
@@ -430,6 +430,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *                  {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @param amount the long delta to apply to the existing cell value (negative for decrement)
      * @return this AnyIncrement instance, to allow fluent method chaining
+     * @throws IllegalArgumentException if {@code family} is null
      * @see #addColumn(byte[], byte[], long)
      */
     public AnyIncrement addColumn(final String family, final String qualifier, final long amount) {
@@ -625,7 +626,9 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * This method provides access to the increment data in a structured format where
      * the outer map keys are column family names (as byte arrays) and the values are
      * NavigableMap instances containing qualifier-to-increment-value mappings.
-     * This is useful for inspecting or manipulating the increment data programmatically.
+     * This is useful for inspecting the queued increment data programmatically.
+     * The returned map is a snapshot rebuilt on each call; modifying it does not
+     * affect this increment.
      * </p>
      *
      * <p><b>Structure:</b></p>

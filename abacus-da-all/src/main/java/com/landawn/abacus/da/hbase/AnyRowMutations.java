@@ -14,7 +14,7 @@
 
 package com.landawn.abacus.da.hbase;
 
-import static com.landawn.abacus.da.hbase.HBaseExecutor.toRowBytes;
+import static com.landawn.abacus.da.hbase.HBaseExecutor.toRowKeyBytes;
 
 import java.io.IOException;
 import java.util.List;
@@ -41,9 +41,10 @@ import com.landawn.abacus.annotation.SuppressFBWarnings;
  * mutation whose row key differs from the one this {@code AnyRowMutations} was created with.</p>
  *
  * <p>Unlike the other {@code Any*} types in this package, {@code AnyRowMutations} is a thin
- * adapter and does not extend {@link AnyOperation} / {@link AnyMutation}; it implements
- * {@link Row} so it can be passed directly to {@code Table#mutateRow(RowMutations)}-style APIs
- * via {@link #val()}.</p>
+ * adapter and does not extend {@link AnyOperation} / {@link AnyMutation}. It implements
+ * {@link Row} for row-key access and ordering interop; to submit through
+ * {@code Table#mutateRow(RowMutations)}-style APIs, pass the wrapped {@link RowMutations}
+ * obtained from {@link #val()}.</p>
  *
  * <p>Only {@link Put} and {@link Delete} mutations are supported by the underlying HBase
  * {@link RowMutations}; other {@link Mutation} subtypes (such as {@code Increment} or
@@ -68,12 +69,12 @@ public final class AnyRowMutations implements Row {
     /**
      * Package-private constructor: prefer {@link #of(Object)}. Creates a new
      * {@link RowMutations} for the given row key, which is converted to bytes via
-     * {@link HBaseExecutor#toRowBytes(Object)}.
+     * {@link HBaseExecutor#toRowKeyBytes(Object)}.
      *
      * @param rowKey the row key shared by all mutations in this batch
      */
     AnyRowMutations(final Object rowKey) {
-        rowMutations = new RowMutations(toRowBytes(rowKey));
+        rowMutations = new RowMutations(toRowKeyBytes(rowKey));
     }
 
     /**
@@ -84,7 +85,7 @@ public final class AnyRowMutations implements Row {
      * @param initialCapacity the initial capacity for the internal mutation list
      */
     AnyRowMutations(final Object rowKey, final int initialCapacity) {
-        rowMutations = new RowMutations(toRowBytes(rowKey), initialCapacity);
+        rowMutations = new RowMutations(toRowKeyBytes(rowKey), initialCapacity);
     }
 
     /**
@@ -110,7 +111,7 @@ public final class AnyRowMutations implements Row {
 
     /**
      * Factory: creates a new {@code AnyRowMutations} for the given row key. The row key is
-     * converted to bytes via {@link HBaseExecutor#toRowBytes(Object)}.
+     * converted to bytes via {@link HBaseExecutor#toRowKeyBytes(Object)}.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -363,9 +364,11 @@ public final class AnyRowMutations implements Row {
      * @param other the {@link Row} to compare with
      * @return a negative integer, zero, or a positive integer as this row key is less than,
      *         equal to, or greater than {@code other}'s key
+     * @deprecated As of HBase 2.0.0; will be removed in HBase 3.0.0. Use {@link Row#COMPARATOR}
+     *             instead.
      */
     @Override
-    @SuppressWarnings("deprecation")
+    @Deprecated
     public int compareTo(final Row other) {
         return rowMutations.compareTo(other);
     }

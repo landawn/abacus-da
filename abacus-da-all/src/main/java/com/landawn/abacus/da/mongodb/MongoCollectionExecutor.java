@@ -438,14 +438,18 @@ public final class MongoCollectionExecutor {
      * long estimate = executor.estimatedDocumentCount(options); // estimated count, computed within the 5s limit
      * }</pre>
      *
-     * @param options configuration options for the estimation operation
+     * @param options configuration options for the estimation operation; may be null (default options)
      * @return an estimated count of documents in the collection
      * @throws com.mongodb.MongoException if the database operation fails
      * @see EstimatedDocumentCountOptions
      * @see MongoCollection#estimatedDocumentCount(EstimatedDocumentCountOptions)
      */
     public long estimatedDocumentCount(final EstimatedDocumentCountOptions options) {
-        return coll.estimatedDocumentCount(options);
+        if (options == null) {
+            return coll.estimatedDocumentCount();
+        } else {
+            return coll.estimatedDocumentCount(options);
+        }
     }
 
     /**
@@ -3084,18 +3088,26 @@ public final class MongoCollectionExecutor {
         // for Map/entity updates. Call the public single-arg overload directly.
         final Bson bson = update instanceof Bson ? (Bson) update : MongoDBBase.toDocument(update);
 
+        final Bson bsonToUse;
+
         if (bson instanceof final Document doc) {
             if (!doc.isEmpty() && doc.keySet().iterator().next().startsWith(_$)) {
                 return doc;
             }
 
-            doc.remove(MongoDBBase._ID);
+            // A caller-supplied Document must not be mutated: strip _id from a copy.
+            final Document docToUse = doc == update ? new Document(doc) : doc;
+            docToUse.remove(MongoDBBase._ID);
+            bsonToUse = docToUse;
         } else if (bson instanceof final BasicDBObject dbObject) { //NOSONAR
             if (!dbObject.isEmpty() && dbObject.keySet().iterator().next().startsWith(_$)) {
                 return dbObject;
             }
 
-            dbObject.remove(MongoDBBase._ID);
+            // Always caller-supplied (toDocument never returns BasicDBObject): strip _id from a copy.
+            final BasicDBObject dbObjectToUse = new BasicDBObject(dbObject);
+            dbObjectToUse.remove(MongoDBBase._ID);
+            bsonToUse = dbObjectToUse;
         } else {
             // A driver-built Bson (e.g. Updates.set(...)/Updates.combine(...)) is already a
             // complete update expression. It is neither Document nor BasicDBObject, so it must
@@ -3108,12 +3120,12 @@ public final class MongoCollectionExecutor {
         // update by filter" pattern (updateMany with an entity payload failed on all but one document).
 
         // The server rejects an empty $set ("'$set' is empty"); fail fast with a clear message instead.
-        if (bson instanceof final Document doc && doc.isEmpty() || bson instanceof final BasicDBObject dbObject && dbObject.isEmpty()) {
+        if (bsonToUse instanceof final Document doc && doc.isEmpty() || bsonToUse instanceof final BasicDBObject dbObject && dbObject.isEmpty()) {
             throw new IllegalArgumentException(
                     "The update payload is empty (no non-null updatable properties besides the immutable _id). MongoDB rejects an empty $set");
         }
 
-        return new Document(_$SET, bson);
+        return new Document(_$SET, bsonToUse);
     }
 
     /**

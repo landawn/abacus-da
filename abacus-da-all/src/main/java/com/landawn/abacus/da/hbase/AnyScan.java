@@ -826,7 +826,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @param maxStamp the maximum timestamp (exclusive)
      * @return this AnyScan instance for method chaining
      * @throws IllegalArgumentException if either stamp is negative or {@code maxStamp} is smaller
-     *         than {@code minStamp} (the underlying {@link IOException} is wrapped as such)
+     *         than {@code minStamp}
      * @see #getTimeRange()
      * @see #setTimestamp(long)
      */
@@ -1685,7 +1685,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     /**
      * Configures the scan to return at most one row.
      * <p>
-     * This is a convenience method equivalent to {@code setLimit(1)}.
+     * This is a convenience method equivalent to calling {@code setLimit(1)} and
+     * {@code setReadType(ReadType.PREAD)} — it also switches the read type to pread.
      * It's useful when you know you only need a single row and want to
      * optimize the scan accordingly.
      * </p>

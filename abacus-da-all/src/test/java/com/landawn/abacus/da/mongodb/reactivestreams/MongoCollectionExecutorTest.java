@@ -199,6 +199,18 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
+    public void testEstimatedDocumentCountWithNullOptionsUsesDefaults() {
+        // Null options fall back to the no-options driver call (family convention),
+        // instead of the driver's notNull IAE.
+        Publisher<Long> countPublisher = Mono.just(42L);
+        when(mockCollection.estimatedDocumentCount()).thenReturn(countPublisher);
+
+        Mono<Long> result = executor.estimatedDocumentCount((EstimatedDocumentCountOptions) null);
+
+        StepVerifier.create(result).expectNext(42L).verifyComplete();
+    }
+
+    @Test
     public void testGetWithStringObjectId() {
         String objectId = "507f1f77bcf86cd799439011";
         Document doc = new Document("_id", new ObjectId(objectId)).append("name", "test");
@@ -862,6 +874,31 @@ public class MongoCollectionExecutorTest extends TestBase {
         Mono<UpdateResult> result = executor.updateOne(filter, update);
 
         StepVerifier.create(result).expectNext(updateResult).verifyComplete();
+    }
+
+    @Test
+    public void testUpdateOneDoesNotMutateCallerDocument() {
+        // Regression: toBson stripped _id from the CALLER's Document in place on the
+        // non-$-operator path; the $set payload must be built from a copy.
+        Bson filter = new Document("name", "test");
+        ObjectId id = new ObjectId();
+        Document callerUpdate = new Document("_id", id).append("name", "updated");
+        UpdateResult updateResult = mock(UpdateResult.class);
+        Publisher<UpdateResult> publisher = Mono.just(updateResult);
+        org.mockito.ArgumentCaptor<Bson> updateCaptor = org.mockito.ArgumentCaptor.forClass(Bson.class);
+        when(mockCollection.updateOne(eq(filter), any(Bson.class))).thenReturn(publisher);
+
+        StepVerifier.create(executor.updateOne(filter, callerUpdate)).expectNext(updateResult).verifyComplete();
+
+        // The caller's Document must be untouched.
+        assertEquals(id, callerUpdate.get("_id"));
+        assertEquals(2, callerUpdate.size());
+        // The sent update is {$set: {...}} without _id.
+        verify(mockCollection).updateOne(eq(filter), updateCaptor.capture());
+        Document sent = (Document) updateCaptor.getValue();
+        Document setPayload = (Document) sent.get("$set");
+        assertTrue(!setPayload.containsKey("_id"));
+        assertEquals("updated", setPayload.get("name"));
     }
 
     @Test

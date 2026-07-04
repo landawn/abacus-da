@@ -15,7 +15,7 @@
 package com.landawn.abacus.da.hbase;
 
 import static com.landawn.abacus.da.hbase.HBaseExecutor.toFamilyQualifierBytes;
-import static com.landawn.abacus.da.hbase.HBaseExecutor.toRowBytes;
+import static com.landawn.abacus.da.hbase.HBaseExecutor.toRowKeyBytes;
 import static com.landawn.abacus.da.hbase.HBaseExecutor.toValueBytes;
 
 import java.io.IOException;
@@ -58,8 +58,9 @@ import com.landawn.abacus.util.Tuple.Tuple3;
  *       (subject to the column family's {@code VERSIONS} setting, which controls how many
  *       historical versions HBase retains).</li>
  *   <li>{@code addColumn(family, qualifier, value)} variants without an explicit timestamp use the
- *       server's current time, so successive calls within a single millisecond may overwrite each
- *       other.</li>
+ *       Put's default timestamp — the timestamp supplied at construction, or the server's current
+ *       time when none was supplied — so successive calls with the same {@code (family, qualifier)}
+ *       pair overwrite each other.</li>
  * </ul>
  * <p>In short, repeated {@code addColumn} calls do <i>not</i> concatenate or merge values; for
  * append-style semantics use {@link AnyAppend}, and for atomic counter increments use
@@ -170,10 +171,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
     /**
      * Package-private constructor backing {@link #of(Object)}.
      *
-     * @param rowKey the row key, converted to bytes via {@link HBaseExecutor#toRowBytes(Object)}
+     * @param rowKey the row key, converted to bytes via {@link HBaseExecutor#toRowKeyBytes(Object)}
      */
     AnyPut(final Object rowKey) {
-        super(new Put(toRowBytes(rowKey)));
+        super(new Put(toRowKeyBytes(rowKey)));
         put = (Put) mutation;
     }
 
@@ -184,7 +185,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param timestamp the timestamp assigned to all cells added to this Put
      */
     AnyPut(final Object rowKey, final long timestamp) {
-        super(new Put(toRowBytes(rowKey), timestamp));
+        super(new Put(toRowKeyBytes(rowKey), timestamp));
         put = (Put) mutation;
     }
 
@@ -196,7 +197,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowLength the number of bytes to use from the row key starting at offset
      */
     AnyPut(final Object rowKey, final int rowOffset, final int rowLength) {
-        super(new Put(toRowBytes(rowKey), rowOffset, rowLength));
+        super(new Put(toRowKeyBytes(rowKey), rowOffset, rowLength));
         put = (Put) mutation;
     }
 
@@ -209,7 +210,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param timestamp the timestamp assigned to all cells added to this Put
      */
     AnyPut(final Object rowKey, final int rowOffset, final int rowLength, final long timestamp) {
-        super(new Put(toRowBytes(rowKey), rowOffset, rowLength, timestamp));
+        super(new Put(toRowKeyBytes(rowKey), rowOffset, rowLength, timestamp));
         put = (Put) mutation;
     }
 
@@ -220,7 +221,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowIsImmutable when true, the row key byte array is treated as immutable and not defensively copied
      */
     AnyPut(final Object rowKey, final boolean rowIsImmutable) {
-        super(new Put(toRowBytes(rowKey), rowIsImmutable));
+        super(new Put(toRowKeyBytes(rowKey), rowIsImmutable));
         put = (Put) mutation;
     }
 
@@ -232,7 +233,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowIsImmutable when true, the row key byte array is treated as immutable and not defensively copied
      */
     AnyPut(final Object rowKey, final long timestamp, final boolean rowIsImmutable) {
-        super(new Put(toRowBytes(rowKey), timestamp, rowIsImmutable));
+        super(new Put(toRowKeyBytes(rowKey), timestamp, rowIsImmutable));
         put = (Put) mutation;
     }
 
@@ -1066,13 +1067,13 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * int size = p2.size();   // 1 (the cell is still added)
      * }</pre>
      *
-     * @param family the column family name; must not be null or empty
+     * @param family the column family name; must not be null or empty (not validated
+     *               client-side; an invalid family causes the put to fail when it is executed
+     *               against the table)
      * @param qualifier the column qualifier name; may be {@code null} to denote an empty qualifier
      * @param value the value to store; automatically converted to bytes ({@code null} is permitted
      *              and stored as an empty value)
      * @return this {@code AnyPut} instance, to allow fluent method chaining
-     * @throws IllegalArgumentException if {@code family} is null or empty (validated by the
-     *         underlying {@link Put})
      * @see #addColumn(String, String, long, Object)
      * @see #addColumn(byte[], byte[], byte[])
      */
@@ -1105,13 +1106,14 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * AnyPut.of("row").addColumn("cf", "q", -1L, "v");   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param family the column family name; must not be null or empty
+     * @param family the column family name; must not be null or empty (not validated
+     *               client-side; an invalid family causes the put to fail when it is executed
+     *               against the table)
      * @param qualifier the column qualifier name; may be {@code null} to denote an empty qualifier
      * @param ts the timestamp for this cell (milliseconds since epoch); must be non-negative
      * @param value the value to store; automatically converted to bytes ({@code null} is permitted)
      * @return this {@code AnyPut} instance, to allow fluent method chaining
-     * @throws IllegalArgumentException if {@code family} is null or empty, or {@code ts} is
-     *         negative (validated by the underlying {@link Put})
+     * @throws IllegalArgumentException if {@code ts} is negative (validated by the underlying {@link Put})
      * @see #addColumn(String, String, Object)
      * @see #of(Object, long)
      */
@@ -1148,13 +1150,13 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * int size = p2.size();   // 1 (the cell is still added)
      * }</pre>
      *
-     * @param family the column family name as a byte array; must not be null or empty
+     * @param family the column family name as a byte array; must not be null or empty (not validated
+     *               client-side; an invalid family causes the put to fail when it is executed
+     *               against the table)
      * @param qualifier the column qualifier as a byte array; may be {@code null} to denote an
      *                  empty qualifier
      * @param value the value as a byte array; may be {@code null}
      * @return this {@code AnyPut} instance, to allow fluent method chaining
-     * @throws IllegalArgumentException if {@code family} is null or empty (validated by the
-     *         underlying {@link Put})
      * @see #addColumn(String, String, Object)
      * @see #addColumn(byte[], byte[], long, byte[])
      */
@@ -1186,13 +1188,14 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * AnyPut.of("row").addColumn(family, qualifier, -1L, value);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param family the column family name as a byte array; must not be null or empty
+     * @param family the column family name as a byte array; must not be null or empty (not validated
+     *               client-side; an invalid family causes the put to fail when it is executed
+     *               against the table)
      * @param qualifier the column qualifier as a byte array; may be {@code null}
      * @param ts the timestamp for this cell (milliseconds since epoch); must be non-negative
      * @param value the value as a byte array; may be {@code null}
      * @return this {@code AnyPut} instance, to allow fluent method chaining
-     * @throws IllegalArgumentException if {@code family} is null or empty, or {@code ts} is
-     *         negative (validated by the underlying {@link Put})
+     * @throws IllegalArgumentException if {@code ts} is negative (validated by the underlying {@link Put})
      * @see #addColumn(byte[], byte[], byte[])
      * @see #addColumn(String, String, long, Object)
      */
@@ -1224,13 +1227,14 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * AnyPut.of("row").addColumn(familyBytes, qualifier, -1L, value);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param family the column family name as a byte array; must not be null or empty
+     * @param family the column family name as a byte array; must not be null or empty (not validated
+     *               client-side; an invalid family causes the put to fail when it is executed
+     *               against the table)
      * @param qualifier the column qualifier as a ByteBuffer; must not be null
      * @param ts the timestamp for this cell (milliseconds since epoch); must be non-negative
      * @param value the value as a ByteBuffer; must not be null
      * @return this {@code AnyPut} instance, to allow fluent method chaining
-     * @throws IllegalArgumentException if {@code family} is null/empty or {@code ts} is negative
-     *         (validated by the underlying {@link Put})
+     * @throws IllegalArgumentException if {@code ts} is negative (validated by the underlying {@link Put})
      * @see #addColumn(byte[], byte[], long, byte[])
      * @see ByteBuffer
      */

@@ -64,7 +64,7 @@ import com.landawn.abacus.util.stream.Stream;
  * <li><strong>Row Key Operations</strong>: Async existence checks, gets, puts, deletes with row key support</li>
  * <li><strong>Batch Operations</strong>: Async batch gets, puts, and deletes for high throughput</li>
  * <li><strong>Scanning</strong>: Async table scans with column family and qualifier filtering</li>
- * <li><strong>Entity Mapping</strong>: Automatic object-to-row mapping is available only on the synchronous {@link HBaseExecutor} (reachable via {@code sync().mapper(...)}); this async wrapper exposes no entity mapper of its own</li>
+ * <li><strong>Entity Mapping</strong>: {@code get}/{@code scan} overloads taking a {@code Class<T>} convert results to entities here too; only the id-keyed {@code HBaseMapper} CRUD facade is synchronous-only (reachable via {@code sync().mapper(...)})</li>
  * <li><strong>Coprocessor Support</strong>: Async coprocessor execution and batch processing</li>
  * <li><strong>Atomic Operations</strong>: Async increments, appends, and row mutations</li>
  * </ul>

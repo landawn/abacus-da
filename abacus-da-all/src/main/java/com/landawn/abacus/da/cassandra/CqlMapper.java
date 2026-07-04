@@ -192,7 +192,8 @@ public final class CqlMapper {
      * @param filePath single file path or multiple file paths separated by ',' or ';'
      * @return a new CqlMapper populated with the loaded CQL definitions
      * @throws IllegalArgumentException if {@code filePath} is null/empty, resolves to no paths after splitting,
-     *         if duplicate CQL ids are found, or if a {@code <cql>} element is missing its {@code id} attribute
+     *         if duplicate CQL ids are found, if a {@code <cql>} element is missing its {@code id} attribute,
+     *         or if a CQL statement in a file cannot be parsed (see {@link ParsedCql#parse(String)})
      * @throws UncheckedIOException if a file cannot be read
      * @throws ParsingException if any XML file is malformed
      * @throws RuntimeException if a file is not found, or the required {@code <cqlMapper>} root element is missing
@@ -210,7 +211,15 @@ public final class CqlMapper {
         final CqlMapper cqlMapper = new CqlMapper();
 
         for (final String subFilePath : filePaths) {
-            cqlMapper.loadFile(PropertiesUtil.formatPath(PropertiesUtil.findFile(subFilePath)));
+            final File file = PropertiesUtil.findFile(subFilePath);
+
+            // findFile returns null when nothing matches; fail with a descriptive message instead
+            // of the bare NPE that formatPath(null) would raise.
+            if (file == null) {
+                throw new RuntimeException("File not found: " + subFilePath);
+            }
+
+            cqlMapper.loadFile(PropertiesUtil.formatPath(file));
         }
 
         return cqlMapper;
@@ -229,7 +238,8 @@ public final class CqlMapper {
      * @param files one or more XML files to load (must be non-empty and contain no null element)
      * @return a new CqlMapper populated with the loaded CQL definitions
      * @throws IllegalArgumentException if {@code files} is null or empty, if any element is null,
-     *         if duplicate CQL ids are found, or if a {@code <cql>} element is missing its {@code id} attribute
+     *         if duplicate CQL ids are found, if a {@code <cql>} element is missing its {@code id} attribute,
+     *         or if a CQL statement in a file cannot be parsed (see {@link ParsedCql#parse(String)})
      * @throws UncheckedIOException if a file cannot be read
      * @throws ParsingException if any XML file is malformed
      * @throws RuntimeException if the required {@code <cqlMapper>} root element is missing
@@ -263,7 +273,8 @@ public final class CqlMapper {
      * @param is the input stream to read the XML CQL definitions from (must not be null)
      * @return a new CqlMapper populated with the loaded CQL definitions
      * @throws IllegalArgumentException if {@code is} is null, if duplicate CQL ids are found,
-     *         or if a {@code <cql>} element is missing its {@code id} attribute
+     *         if a {@code <cql>} element is missing its {@code id} attribute, or if a CQL
+     *         statement cannot be parsed (see {@link ParsedCql#parse(String)})
      * @throws UncheckedIOException if an I/O error occurs reading the stream
      * @throws ParsingException if the XML content is malformed
      * @throws RuntimeException if the required {@code <cqlMapper>} root element is missing

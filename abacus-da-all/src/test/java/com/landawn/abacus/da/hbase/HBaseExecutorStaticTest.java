@@ -82,37 +82,37 @@ public class HBaseExecutorStaticTest extends TestBase {
     }
 
     // ---------------------------------------------------------------------
-    // toRowBytes / toValueBytes / toRowKeyBytes / toFamilyQualifierBytes
+    // toValueBytes / toRowKeyBytes / toFamilyQualifierBytes
     // (package-private static methods)
     // ---------------------------------------------------------------------
 
     @Test
     public void testToRowBytes_string() {
-        assertArrayEquals(Bytes.toBytes("hello"), HBaseExecutor.toRowBytes("hello"));
+        assertArrayEquals(Bytes.toBytes("hello"), HBaseExecutor.toRowKeyBytes("hello"));
     }
 
     @Test
     public void testToRowBytes_null_returnsNull() {
-        assertNull(HBaseExecutor.toRowBytes(null));
+        assertNull(HBaseExecutor.toRowKeyBytes(null));
     }
 
     @Test
     public void testToRowBytes_byteArray_returnedDirectly() {
         byte[] data = new byte[] { 1, 2, 3 };
-        assertSame(data, HBaseExecutor.toRowBytes(data));
+        assertSame(data, HBaseExecutor.toRowKeyBytes(data));
     }
 
     @Test
     public void testToRowBytes_byteBuffer() {
         ByteBuffer bb = ByteBuffer.wrap(Bytes.toBytes("buf"));
-        byte[] out = HBaseExecutor.toRowBytes(bb);
+        byte[] out = HBaseExecutor.toRowKeyBytes(bb);
         assertArrayEquals(Bytes.toBytes("buf"), out);
     }
 
     @Test
     public void testToRowBytes_nonStringObject_convertedViaToString() {
         // Numeric value uses N.stringOf which produces "12345"
-        byte[] out = HBaseExecutor.toRowBytes(12345);
+        byte[] out = HBaseExecutor.toRowKeyBytes(12345);
         assertArrayEquals(Bytes.toBytes("12345"), out);
     }
 

@@ -44,7 +44,7 @@ import java.lang.annotation.Target;
  * <pre>{@code
  * public static class Account {
  *     @Id
- *     private String id;  // Maps to HBase: "id:"
+ *     private String id;  // Row key — becomes the HBase row key, not stored as a cell
  *     private String guid;  // Maps to HBase: "guid:"
  *     private Name name;  // Maps to HBase: "name:firstName", "name:lastName"
  *     private String emailAddress;  // Maps to HBase: "emailAddress:"
@@ -63,7 +63,7 @@ import java.lang.annotation.Target;
  * @ColumnFamily("user_info")
  * public static class Account {
  *     @Id
- *     private String id;  // Maps to HBase: "user_info:id"
+ *     private String id;  // Row key — becomes the HBase row key, not stored as a cell
  *     @Column("user_guid")
  *     private String guid;  // Maps to HBase: "user_info:user_guid"
  *     private String emailAddress;  // Maps to HBase: "user_info:emailAddress"
@@ -78,7 +78,7 @@ import java.lang.annotation.Target;
  * @ColumnFamily("basic_info")
  * public static class Account {
  *     @Id
- *     private String id;  // Maps to HBase: "basic_info:id"
+ *     private String id;  // Row key — becomes the HBase row key, not stored as a cell
  *
  *     @Column("user_guid")
  *     private String guid;  // Maps to HBase: "basic_info:user_guid"

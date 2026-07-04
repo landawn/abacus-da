@@ -851,11 +851,9 @@ public class CosmosContainerExecutor2Test extends TestBase {
     @Test
     public void testUnsupportedNamingPolicy() {
         assumeCosmosAvailable();
-        // NO_CHANGE is not handled by prepareQuery's switch and fails fast while building the SQL,
-        // before any request is sent to Cosmos.
-        final CosmosContainerExecutor exec = new CosmosContainerExecutor(container, NamingPolicy.NO_CHANGE);
-
-        assertThrows(RuntimeException.class, () -> exec.streamItems(Filters.eq("value", "x"), TestItem.class));
+        // NO_CHANGE is not handled by prepareQuery's switch; the constructor now rejects it
+        // eagerly, before any request is sent to Cosmos.
+        assertThrows(IllegalArgumentException.class, () -> new CosmosContainerExecutor(container, NamingPolicy.NO_CHANGE));
     }
 
     // ----------------------------------------------------------------------------------------------------

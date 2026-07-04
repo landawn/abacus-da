@@ -180,11 +180,15 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *
      * // Edge: a null row key is rejected.
      * AnyGet.of((Object) null);   // throws IllegalArgumentException
+     *
+     * // Edge: an empty row key is likewise rejected.
+     * AnyGet.of("");              // throws IllegalArgumentException
      * }</pre>
      *
      * @param rowKey the row key object to retrieve, automatically converted to bytes
      * @return a new AnyGet instance configured with the specified row key
-     * @throws IllegalArgumentException if rowKey is null
+     * @throws IllegalArgumentException if {@code rowKey} is null or its converted byte
+     *         representation is empty
      * @see #of(Object, int, int)
      * @see #of(ByteBuffer)
      * @see #of(Get)
@@ -220,7 +224,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @param rowOffset the starting offset within the row key byte array
      * @param rowLength the number of bytes to use from the row key
      * @return a new AnyGet instance configured with the partial row key
-     * @throws IllegalArgumentException if {@code rowKey} is null
+     * @throws IllegalArgumentException if {@code rowKey} is null or the selected slice is empty
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative, or
      *         {@code rowOffset + rowLength} exceeds the length of the converted row-key bytes
      * @see #of(Object)

@@ -253,19 +253,18 @@ public class BigQueryExecutor {
      *     new BigQueryExecutor(bigQuery, NamingPolicy.SCREAMING_SNAKE_CASE);  // firstName -> FIRST_NAME
      * executor.bigQuery();                                                    // returns the same bigQuery instance
      *
-     * // Edge: both arguments are validated eagerly
+     * // Edge: all arguments are validated eagerly
      * new BigQueryExecutor(null, NamingPolicy.SNAKE_CASE);                    // throws IllegalArgumentException
      * new BigQueryExecutor(bigQuery, null);                                   // throws IllegalArgumentException
-     *
-     * // Note: an unsupported policy is accepted here but fails on the first DML call
-     * BigQueryExecutor bad = new BigQueryExecutor(bigQuery, NamingPolicy.NO_CHANGE);
-     * bad.insert(someEntity);                                                 // throws IllegalStateException
+     * new BigQueryExecutor(bigQuery, NamingPolicy.NO_CHANGE);                 // throws IllegalArgumentException (unsupported policy)
      * }</pre>
      *
      * @param bigQuery the Google Cloud BigQuery client this executor will delegate to
      * @param namingPolicy the convention used when translating Java property names to BigQuery
-     *                     column/table names
-     * @throws IllegalArgumentException if {@code bigQuery} or {@code namingPolicy} is {@code null}
+     *                     column/table names; one of {@link NamingPolicy#SNAKE_CASE},
+     *                     {@link NamingPolicy#SCREAMING_SNAKE_CASE} or {@link NamingPolicy#CAMEL_CASE}
+     * @throws IllegalArgumentException if {@code bigQuery} or {@code namingPolicy} is {@code null},
+     *         or if {@code namingPolicy} is not one of the three supported policies
      * @see NamingPolicy
      */
     public BigQueryExecutor(final BigQuery bigQuery, final NamingPolicy namingPolicy) {
@@ -274,6 +273,12 @@ public class BigQueryExecutor {
         }
         if (namingPolicy == null) {
             throw new IllegalArgumentException("namingPolicy cannot be null");
+        }
+        // Fail fast: the prepare* methods support only these three policies; without this check an
+        // unsupported policy would surface as an IllegalStateException on the first Condition-based operation.
+        if (namingPolicy != NamingPolicy.SNAKE_CASE && namingPolicy != NamingPolicy.SCREAMING_SNAKE_CASE && namingPolicy != NamingPolicy.CAMEL_CASE) {
+            throw new IllegalArgumentException(
+                    "Unsupported naming policy: " + namingPolicy + ". Only SNAKE_CASE, SCREAMING_SNAKE_CASE and CAMEL_CASE are supported");
         }
         this.bigQuery = bigQuery;
         this.namingPolicy = namingPolicy;
@@ -1333,7 +1338,15 @@ public class BigQueryExecutor {
         final List<Condition> conds = new ArrayList<>(primaryKeyNames.size());
 
         for (final String keyName : primaryKeyNames) {
-            conds.add(Filters.eq(keyName, entityInfo.getPropValue(entity, keyName)));
+            final Object propVal = entityInfo.getPropValue(entity, keyName);
+
+            // Fail fast with a clear message (mirroring entityToCondition): a null/blank key value
+            // would otherwise surface as a generic error from buildQueryParameterValue.
+            if (propVal == null || (propVal instanceof CharSequence) && Strings.isEmpty(((CharSequence) propVal))) {
+                throw new IllegalArgumentException("No property value specified in entity for key names: " + primaryKeyNames);
+            }
+
+            conds.add(Filters.eq(keyName, propVal));
         }
 
         // Null-valued properties are excluded from the SET clause (mirroring insert semantics):
@@ -1650,9 +1663,13 @@ public class BigQueryExecutor {
         final ImmutableList<String> keyNames = getKeyNames(targetClass);
 
         if (ids.length != keyNames.size()) {
-            throw new IllegalArgumentException("ID count mismatch: provided " + ids.length + " IDs but expected "
-                    + (N.isEmpty(keyNames) ? "1 key [id]" : keyNames.size() + " keys " + N.toString(keyNames)) + " for class "
-                    + ClassUtil.getCanonicalClassName(targetClass));
+            if (N.isEmpty(keyNames)) {
+                throw new IllegalArgumentException("No @Id-annotated or id-named property found for class " + ClassUtil.getCanonicalClassName(targetClass)
+                        + " (0 keys); can't build a key condition from the provided " + ids.length + " IDs");
+            }
+
+            throw new IllegalArgumentException("ID count mismatch: provided " + ids.length + " IDs but expected " + keyNames.size() + " keys "
+                    + N.toString(keyNames) + " for class " + ClassUtil.getCanonicalClassName(targetClass));
         }
 
         if (keyNames.size() == 1) {
@@ -1982,6 +1999,8 @@ public class BigQueryExecutor {
      * @param parameters the parameter values to bind to the query
      * @return a Dataset containing query results in columnar format
      * @throws NullPointerException if query is null
+     * @throws IllegalArgumentException if any positional parameter value is null (BigQuery requires
+     *         null parameters to be typed; pass a typed {@code QueryParameterValue} instead)
      * @see #execute(String, Object...)
      * @see Dataset
      */
@@ -2104,6 +2123,8 @@ public class BigQueryExecutor {
      * @param parameters the parameter values to bind to the query
      * @return a List containing all query results converted to the target type, empty list if no results
      * @throws NullPointerException if query is null
+     * @throws IllegalArgumentException if any positional parameter value is null (BigQuery requires
+     *         null parameters to be typed; pass a typed {@code QueryParameterValue} instead)
      * @see #execute(String, Object...)
      * @see #toList(TableResult, Class)
      */
@@ -2226,6 +2247,8 @@ public class BigQueryExecutor {
      * @param parameters the parameter values to bind to the query
      * @return a Stream containing all query results converted to the target type
      * @throws NullPointerException if query is null
+     * @throws IllegalArgumentException if any positional parameter value is null (BigQuery requires
+     *         null parameters to be typed; pass a typed {@code QueryParameterValue} instead)
      * @see #execute(String, Object...)
      * @see Stream
      */
@@ -2395,6 +2418,8 @@ public class BigQueryExecutor {
      *         rows, for DML the affected-row count via {@link TableResult#getTotalRows()}, for DDL
      *         a result with no schema
      * @throws NullPointerException if {@code query} is null
+     * @throws IllegalArgumentException if any positional parameter value is null (BigQuery requires
+     *         null parameters to be typed; pass a typed {@code QueryParameterValue} instead)
      * @throws RuntimeException if the underlying BigQuery call throws {@link JobException} or the
      *                          calling thread is interrupted while waiting for the job
      * @see #stream(Class, String, Object...)
@@ -2470,8 +2495,10 @@ public class BigQueryExecutor {
 
         // BigQuery (GoogleSQL) quotes identifiers with backticks; a double-quoted token is a string literal.
         // SqlBuilder emits ANSI double-quoted column aliases (e.g. SELECT id AS "id"), which BigQuery rejects
-        // with "Unexpected string literal". Every value in the generated SELECT is a positional '?' parameter
-        // (no string literals), so the only double quotes are alias delimiters; rewrite them to backticks.
+        // with "Unexpected string literal". Values in the generated SELECT are positional '?' parameters,
+        // so double quotes are normally alias delimiters only. Caveat: a raw-expression condition (e.g.
+        // Filters.expr(...)) can inject a double-quoted string literal, which this blanket rewrite would
+        // also convert — use single-quoted literals in raw expressions.
         return sp.query().indexOf('"') < 0 ? sp : new SP(sp.query().replace('"', '`'), sp.parameters());
     }
 

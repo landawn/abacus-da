@@ -89,7 +89,7 @@ import com.landawn.abacus.util.N;
  *                                       .addFamily("info");
  *
  * // Delete with pre-built family map
- * NavigableMap&lt;byte[], List&lt;Cell&gt;&gt; familyMap = buildFamilyMap();
+ * NavigableMap<byte[], List<Cell>> familyMap = buildFamilyMap();
  * AnyDelete complexDelete = AnyDelete.of("user123", timestamp, familyMap);
  * }</pre>
  *

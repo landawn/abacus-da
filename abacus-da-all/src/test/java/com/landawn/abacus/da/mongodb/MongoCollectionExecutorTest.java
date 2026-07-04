@@ -807,6 +807,42 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
+    public void testUpdateOneDoesNotMutateCallerDocument() {
+        // Regression: toBson stripped _id from the CALLER's Document in place on the
+        // non-$-operator path; the $set payload must be built from a copy.
+        Document filter = new Document("name", "test");
+        ObjectId id = new ObjectId();
+        Document callerUpdate = new Document("_id", id).append("name", "updated");
+        UpdateResult updateResult = mock(UpdateResult.class);
+        org.mockito.ArgumentCaptor<Bson> updateCaptor = org.mockito.ArgumentCaptor.forClass(Bson.class);
+        when(mockCollection.updateOne(any(Bson.class), any(Bson.class))).thenReturn(updateResult);
+
+        executor.updateOne(filter, callerUpdate);
+
+        // The caller's Document must be untouched.
+        Assertions.assertEquals(id, callerUpdate.get("_id"));
+        Assertions.assertEquals(2, callerUpdate.size());
+        // The sent update is {$set: {...}} without _id.
+        verify(mockCollection).updateOne(any(Bson.class), updateCaptor.capture());
+        Document sent = (Document) updateCaptor.getValue();
+        Document setPayload = (Document) sent.get("$set");
+        Assertions.assertFalse(setPayload.containsKey("_id"));
+        Assertions.assertEquals("updated", setPayload.get("name"));
+    }
+
+    @Test
+    public void testEstimatedDocumentCountWithNullOptionsUsesDefaults() {
+        // Null options fall back to the no-options driver call (family convention),
+        // instead of the driver's notNull IAE.
+        when(mockCollection.estimatedDocumentCount()).thenReturn(42L);
+
+        long count = executor.estimatedDocumentCount((EstimatedDocumentCountOptions) null);
+
+        Assertions.assertEquals(42L, count);
+        verify(mockCollection).estimatedDocumentCount();
+    }
+
+    @Test
     public void testStreamRejectsNullRowTypeBeforeOpeningCursor() {
         // Regression: previously, stream(null) would open a cursor and then throw NPE on
         // `rowType.isAssignableFrom(...)`, leaking the cursor. The contract says null rowType

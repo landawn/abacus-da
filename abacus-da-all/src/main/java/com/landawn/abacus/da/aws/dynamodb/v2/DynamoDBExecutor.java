@@ -2301,7 +2301,7 @@ public final class DynamoDBExecutor {
      *                    objects specifying the items to retrieve from each table. Must not be null.
      * @return a map of table names to lists of retrieved items, where each item is represented
      *         as a Map of attribute names to values
-     * @throws IllegalArgumentException if requestItems is null or exceeds batch limits
+     * @throws IllegalArgumentException if requestItems is null; exceeding DynamoDB's batch limits fails with a service {@code ValidationException}
      * @see KeysAndAttributes
      * @see #batchGetItem(Map, String)
      */
@@ -2331,7 +2331,7 @@ public final class DynamoDBExecutor {
      * @param returnConsumedCapacity the level of consumed capacity to return. Can be "INDEXES", "TOTAL", or "NONE".
      * @return a map of table names to lists of retrieved items, where each item is represented
      *         as a Map of attribute names to values
-     * @throws IllegalArgumentException if requestItems is null or exceeds batch limits
+     * @throws IllegalArgumentException if requestItems is null; exceeding DynamoDB's batch limits fails with a service {@code ValidationException}
      */
     public Map<String, List<Map<String, Object>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems, final String returnConsumedCapacity) {
         return batchGetItem(requestItems, returnConsumedCapacity, Clazz.PROPS_MAP);
@@ -2357,7 +2357,7 @@ public final class DynamoDBExecutor {
      * @param batchGetItemRequest the BatchGetItemRequest containing the request items and options. Must not be null.
      * @return a map of table names to lists of retrieved items, where each item is represented
      *         as a Map of attribute names to values
-     * @throws IllegalArgumentException if batchGetItemRequest is null or exceeds batch limits
+     * @throws IllegalArgumentException if batchGetItemRequest is null; exceeding DynamoDB's batch limits fails with a service {@code ValidationException}
      */
     public Map<String, List<Map<String, Object>>> batchGetItem(final BatchGetItemRequest batchGetItemRequest) {
         return batchGetItem(batchGetItemRequest, Clazz.PROPS_MAP);
@@ -2678,7 +2678,7 @@ public final class DynamoDBExecutor {
      *
      * @param requestItems map of table names to lists of write requests (puts/deletes). Must not be null.
      * @return a {@link BatchWriteItemResponse} containing unprocessed items and consumed capacity
-     * @throws IllegalArgumentException if requestItems is null or exceeds batch limits
+     * @throws IllegalArgumentException if requestItems is null; exceeding DynamoDB's batch limits fails with a service {@code ValidationException}
      * @see #batchWriteItem(BatchWriteItemRequest)
      */
     public BatchWriteItemResponse batchWriteItem(final Map<String, List<WriteRequest>> requestItems) {
@@ -3043,53 +3043,6 @@ public final class DynamoDBExecutor {
         return res;
     }
 
-    //    /**
-    //     *
-    //     * @param targetClass <code>Map</code> or entity class with getter/setter method.
-    //     * @param queryRequest
-    //     * @param pageOffset
-    //     * @param pageCount
-    //     * @return
-    //     * @see <a href="http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Query.html#Query.Pagination">Query.Pagination</a>
-    //     */
-    //    public <T> List<T> list(final QueryRequest queryRequest, int pageOffset, int pageCount, final Class<T> targetClass) {
-    //        N.checkArgument(pageOffset >= 0 && pageCount >= 0, "'pageOffset' and 'pageCount' can't be negative");
-    //
-    //        final List<T> res = new ArrayList<>();
-    //        QueryRequest newQueryRequest = queryRequest;
-    //        QueryResult queryResult = null;
-    //
-    //        do {
-    //            if (queryResult != null && N.notEmpty(queryResult.lastEvaluatedKey())) {
-    //                if (newQueryRequest == queryRequest) {
-    //                    newQueryRequest = queryRequest.clone();
-    //                }
-    //
-    //                newQueryRequest.setExclusiveStartKey(queryResult.lastEvaluatedKey());
-    //            }
-    //
-    //            queryResult = dynamoDB.query(newQueryRequest);
-    //        } while (pageOffset-- > 0 && N.notEmpty(queryResult.getItems()) && N.notEmpty(queryResult.lastEvaluatedKey()));
-    //
-    //        if (pageOffset >= 0 || pageCount-- <= 0) {
-    //            return res;
-    //        } else {
-    //            res.addAll(toList(targetClass, queryResult));
-    //        }
-    //
-    //        while (pageCount-- > 0 && N.notEmpty(queryResult.lastEvaluatedKey())) {
-    //            if (newQueryRequest == queryRequest) {
-    //                newQueryRequest = queryRequest.clone();
-    //            }
-    //
-    //            newQueryRequest.setExclusiveStartKey(queryResult.lastEvaluatedKey());
-    //            queryResult = dynamoDB.query(newQueryRequest);
-    //            res.addAll(toList(targetClass, queryResult));
-    //        }
-    //
-    //        return res;
-    //    }
-
     /**
      * Queries items from the specified DynamoDB table using a QueryRequest and returns the results as a Dataset.
      *
@@ -3171,48 +3124,6 @@ public final class DynamoDBExecutor {
             return N.newDataset(list(queryRequest, targetClass));
         }
     }
-
-    //    public Dataset query(final QueryRequest queryRequest, int pageOffset, int pageCount, final Class<?> targetClass) {
-    //        return N.newDataset(find(targetClass, queryRequest, pageOffset, pageCount));
-    //    }
-
-    //    public <T> List<T> scan(final ScanRequest scanRequest, int pageOffset, int pageCount, final Class<T> targetClass) {
-    //        N.checkArgument(pageOffset >= 0 && pageCount >= 0, "'pageOffset' and 'pageCount' can't be negative");
-    //
-    //        final List<T> res = new ArrayList<>();
-    //        ScanRequest newQueryRequest = scanRequest;
-    //        ScanResult queryResult = null;
-    //
-    //        do {
-    //            if (queryResult != null && N.notEmpty(queryResult.lastEvaluatedKey())) {
-    //                if (newQueryRequest == scanRequest) {
-    //                    newQueryRequest = scanRequest.clone();
-    //                }
-    //
-    //                newQueryRequest.setExclusiveStartKey(queryResult.lastEvaluatedKey());
-    //            }
-    //
-    //            queryResult = dynamoDB.scan(newQueryRequest);
-    //        } while (pageOffset-- > 0 && N.notEmpty(queryResult.getItems()) && N.notEmpty(queryResult.lastEvaluatedKey()));
-    //
-    //        if (pageOffset >= 0 || pageCount-- <= 0) {
-    //            return res;
-    //        } else {
-    //            res.addAll(toList(targetClass, queryResult));
-    //        }
-    //
-    //        while (pageCount-- > 0 && N.notEmpty(queryResult.lastEvaluatedKey())) {
-    //            if (newQueryRequest == scanRequest) {
-    //                newQueryRequest = scanRequest.clone();
-    //            }
-    //
-    //            newQueryRequest.setExclusiveStartKey(queryResult.lastEvaluatedKey());
-    //            queryResult = dynamoDB.scan(newQueryRequest);
-    //            res.addAll(toList(targetClass, queryResult));
-    //        }
-    //
-    //        return res;
-    //    }
 
     /**
      * Streams items from the specified DynamoDB table using a QueryRequest.

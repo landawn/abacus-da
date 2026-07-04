@@ -735,7 +735,7 @@ public final class AsyncDynamoDBExecutor {
      *                    objects specifying the items to retrieve from each table. Must not be null.
      * @return a CompletableFuture containing a map of table names to lists of retrieved items,
      *         where each item is represented as a Map of attribute names to values
-     * @throws IllegalArgumentException if requestItems is null or exceeds batch limits
+     * @throws IllegalArgumentException if requestItems is null; exceeding DynamoDB's batch limits fails with a service {@code ValidationException} via the future
      * @see #batchGetItem(Map, String)
      */
     public CompletableFuture<Map<String, List<Map<String, Object>>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems) {
@@ -843,7 +843,7 @@ public final class AsyncDynamoDBExecutor {
      * @param batchGetItemRequest the complete BatchGetItemRequest with all parameters configured.
      *                           Must not be null.
      * @return a CompletableFuture containing a map of table names to lists of retrieved items
-     * @throws IllegalArgumentException if batchGetItemRequest is null or exceeds batch limits
+     * @throws IllegalArgumentException if batchGetItemRequest is null; exceeding DynamoDB's batch limits fails with a service {@code ValidationException} via the future
      */
     public CompletableFuture<Map<String, List<Map<String, Object>>>> batchGetItem(final BatchGetItemRequest batchGetItemRequest) {
         return batchGetItem(batchGetItemRequest, Clazz.PROPS_MAP);
@@ -1248,7 +1248,7 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param requestItems map of table names to lists of write requests. Must not be null.
      * @return a CompletableFuture containing BatchWriteItemResponse with unprocessed items if any
-     * @throws IllegalArgumentException if requestItems is null or exceeds batch limits
+     * @throws IllegalArgumentException if requestItems is null; exceeding DynamoDB's batch limits fails with a service {@code ValidationException} via the future
      */
     public CompletableFuture<BatchWriteItemResponse> batchWriteItem(final Map<String, List<WriteRequest>> requestItems) {
         final BatchWriteItemRequest batchWriteItemRequest = BatchWriteItemRequest.builder().requestItems(requestItems).build();
@@ -1676,6 +1676,10 @@ public final class AsyncDynamoDBExecutor {
      * });
      * }</pre>
      *
+     * <p><b>Threading note:</b> the returned future completes on the common
+     * {@link java.util.concurrent.ForkJoinPool}; when auto-pagination applies, each subsequent
+     * page is fetched inside that pool via a blocking {@code dynamoDBClient.query(...).get()}.</p>
+     *
      * @param <T> the type of objects to return
      * @param queryRequest the QueryRequest with query parameters. Must not be null.
      * @param targetClass the class to convert results to. Must not be null.
@@ -1751,6 +1755,10 @@ public final class AsyncDynamoDBExecutor {
      *     });
      * }</pre>
      *
+     * <p><b>Threading note:</b> the returned future completes on the common
+     * {@link java.util.concurrent.ForkJoinPool}; when auto-pagination applies, each subsequent
+     * page is fetched inside that pool via a blocking {@code dynamoDBClient.query(...).get()}.</p>
+     *
      * @param queryRequest the QueryRequest with query parameters. Must not be null.
      * @return a CompletableFuture containing a Dataset with all query results
      * @throws IllegalArgumentException if queryRequest is null
@@ -1795,6 +1803,10 @@ public final class AsyncDynamoDBExecutor {
      * <p><b>Automatic pagination:</b> When the caller has not set {@code exclusiveStartKey} on the
      * request, all pages are fetched and concatenated into the returned Dataset; if it was set,
      * only the single page returned by DynamoDB is materialized.</p>
+     *
+     * <p><b>Threading note:</b> the returned future completes on the common
+     * {@link java.util.concurrent.ForkJoinPool}; when auto-pagination applies, each subsequent
+     * page is fetched inside that pool via a blocking {@code dynamoDBClient.query(...).get()}.</p>
      *
      * @param queryRequest the QueryRequest with query parameters. Must not be null.
      * @param targetClass the row type for the Dataset; must not be null. Pass a {@link Map} subtype

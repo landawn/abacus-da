@@ -34,8 +34,10 @@ import org.apache.hadoop.hbase.security.visibility.CellVisibility;
  * Abstract base wrapper for HBase {@link Mutation} operations. Concrete subclasses include
  * {@link AnyPut}, {@link AnyDelete}, {@link AnyAppend}, and {@link AnyIncrement}.
  *
- * <p>This class implements {@link Row}, so any concrete mutation can be passed directly to HBase
- * batch APIs that accept {@code Row} instances. It exposes the common mutation-level controls —
+ * <p>This class implements {@link Row}, so concrete mutations expose {@link #getRow()} and can be
+ * ordered alongside native HBase {@code Row} instances (e.g. via {@code Row.COMPARATOR}). Note that
+ * HBase's own batch APIs only accept the native driver types — to submit through them, pass the
+ * wrapped mutation (e.g. {@code anyPut.val()}). It exposes the common mutation-level controls —
  * durability, timestamp, cluster ids, cell visibility, ACLs, TTL, and family-map / cell
  * inspection — without forcing callers to deal with byte arrays.</p>
  *
@@ -130,7 +132,8 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * which (per HBase) includes the set of column families touched by this mutation but
      * excludes per-cell data such as qualifiers, values, and the row key.
      *
-     * @return the fingerprint map produced by HBase; never {@code null} but may be empty
+     * @return the fingerprint map produced by HBase; never {@code null} and always contains a
+     *         {@code "families"} entry (whose list may be empty)
      * @see AnyOperation#getFingerprint()
      * @see #toMap()
      */

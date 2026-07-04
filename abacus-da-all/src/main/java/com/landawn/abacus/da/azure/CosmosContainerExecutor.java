@@ -265,7 +265,8 @@ public class CosmosContainerExecutor {
      *                     (must not be null; one of {@link NamingPolicy#SNAKE_CASE},
      *                     {@link NamingPolicy#SCREAMING_SNAKE_CASE}, or
      *                     {@link NamingPolicy#CAMEL_CASE})
-     * @throws IllegalArgumentException if {@code cosmosContainer} or {@code namingPolicy} is null
+     * @throws IllegalArgumentException if {@code cosmosContainer} or {@code namingPolicy} is null,
+     *         or if {@code namingPolicy} is not one of the three supported policies
      */
     public CosmosContainerExecutor(final CosmosContainer cosmosContainer, final NamingPolicy namingPolicy) {
         if (cosmosContainer == null) {
@@ -273,6 +274,12 @@ public class CosmosContainerExecutor {
         }
         if (namingPolicy == null) {
             throw new IllegalArgumentException("namingPolicy cannot be null");
+        }
+        // Fail fast: prepareQuery supports only these three policies; without this check an
+        // unsupported policy would surface as an IllegalStateException on the first Condition-based query.
+        if (namingPolicy != NamingPolicy.SNAKE_CASE && namingPolicy != NamingPolicy.SCREAMING_SNAKE_CASE && namingPolicy != NamingPolicy.CAMEL_CASE) {
+            throw new IllegalArgumentException(
+                    "Unsupported naming policy: " + namingPolicy + ". Only SNAKE_CASE, SCREAMING_SNAKE_CASE and CAMEL_CASE are supported");
         }
         this.cosmosContainer = cosmosContainer;
         this.namingPolicy = namingPolicy;
@@ -1767,6 +1774,7 @@ public class CosmosContainerExecutor {
      * @throws CosmosException if the query fails
      * @throws NullPointerException if targetClass is null
      */
+    @Beta
     public final <T> Stream<T> streamItems(final Collection<String> selectPropNames, final Condition whereClause, final Class<T> targetClass) {
         return streamItems(selectPropNames, whereClause, null, targetClass);
     }
@@ -1829,6 +1837,7 @@ public class CosmosContainerExecutor {
      * @see NamingPolicy for field name mapping behavior
      * @see com.landawn.abacus.query.Filters for available filter operations
      */
+    @Beta
     public final <T> Stream<T> streamItems(final Collection<String> selectPropNames, final Condition whereClause, final CosmosQueryRequestOptions options,
             final Class<T> targetClass) {
         final SP sp = prepareQuery(targetClass, selectPropNames, whereClause);

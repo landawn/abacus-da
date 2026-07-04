@@ -956,13 +956,8 @@ public class BigQueryExecutorTest extends TestBase {
 
     @Test
     public void testUnsupportedNamingPolicy() {
-        BigQueryExecutor executorWithUnsupportedPolicy = new BigQueryExecutor(mockBigQuery, NamingPolicy.NO_CHANGE);
-        TestEntity entity = new TestEntity();
-        entity.setId(1);
-
-        assertThrows(RuntimeException.class, () -> {
-            executorWithUnsupportedPolicy.insert(entity);
-        });
+        // The constructor now fails fast on an unsupported policy (was a deferred ISE on first DML).
+        assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(mockBigQuery, NamingPolicy.NO_CHANGE));
     }
 
     @Test
@@ -1205,11 +1200,8 @@ public class BigQueryExecutorTest extends TestBase {
 
     @Test
     public void testInsertWithMap_UnsupportedNamingPolicy() {
-        BigQueryExecutor exec = new BigQueryExecutor(mockBigQuery, NamingPolicy.NO_CHANGE);
-        Map<String, Object> props = new HashMap<>();
-        props.put("id", 1);
-
-        assertThrows(IllegalStateException.class, () -> exec.insert(TestEntity.class, props));
+        // The constructor now fails fast on an unsupported policy (was a deferred ISE on insert).
+        assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(mockBigQuery, NamingPolicy.NO_CHANGE));
     }
 
     @Test
@@ -1256,10 +1248,8 @@ public class BigQueryExecutorTest extends TestBase {
 
     @Test
     public void testUpdateWithMap_UnsupportedNamingPolicy() {
-        BigQueryExecutor exec = new BigQueryExecutor(mockBigQuery, NamingPolicy.NO_CHANGE);
-        Map<String, Object> props = new HashMap<>();
-        props.put("name", "Y");
-        assertThrows(IllegalStateException.class, () -> exec.update(TestEntity.class, props, Filters.eq("id", 1)));
+        // The constructor now fails fast on an unsupported policy (was a deferred ISE on update).
+        assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(mockBigQuery, NamingPolicy.NO_CHANGE));
     }
 
     @Test
@@ -1278,8 +1268,8 @@ public class BigQueryExecutorTest extends TestBase {
 
     @Test
     public void testDelete_UnsupportedNamingPolicy() {
-        BigQueryExecutor exec = new BigQueryExecutor(mockBigQuery, NamingPolicy.NO_CHANGE);
-        assertThrows(IllegalStateException.class, () -> exec.delete(TestEntity.class, Filters.eq("id", 1)));
+        // The constructor now fails fast on an unsupported policy (was a deferred ISE on delete).
+        assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(mockBigQuery, NamingPolicy.NO_CHANGE));
     }
 
     // ---------- prepareQuery (covers PAC / PLC branches via query()) ----------
@@ -1361,8 +1351,8 @@ public class BigQueryExecutorTest extends TestBase {
 
     @Test
     public void testQuery_UnsupportedNamingPolicy() {
-        BigQueryExecutor exec = new BigQueryExecutor(mockBigQuery, NamingPolicy.NO_CHANGE);
-        assertThrows(IllegalStateException.class, () -> exec.query(TestEntity.class, Filters.eq("id", 1)));
+        // The constructor now fails fast on an unsupported policy (was a deferred ISE on query).
+        assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(mockBigQuery, NamingPolicy.NO_CHANGE));
     }
 
     // ---------- stream(Class, QueryJobConfiguration) / stream(QueryJobConfiguration) error paths ----------
@@ -1936,6 +1926,25 @@ public class BigQueryExecutorTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> executor.exists(TestEntity.class, 1, 2, 3));
     }
 
+    // idsToCondition: a class with no @Id/id-named property gets a descriptive message
+    // (was a self-contradictory "provided 1 IDs but expected 1 key [id]")
+    @Test
+    public void testIdsToCondition_KeylessClassThrowsDescriptiveIAE() {
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.idsToCondition(KeylessEntity.class, "x"));
+        assertTrue(ex.getMessage().contains("No @Id-annotated or id-named property"));
+    }
+
+    // prepareUpdate: a null key value fails fast with a clear message
+    // (was a confusing generic error from buildQueryParameterValue)
+    @Test
+    public void testUpdateEntityWithNullKeyValueThrowsDescriptiveIAE() {
+        TestEntityWithStringKey entity = new TestEntityWithStringKey();
+        entity.setValue("v"); // id left null
+
+        IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> executor.update(entity, N.asSet("id")));
+        assertTrue(ex.getMessage().contains("No property value specified in entity for key names"));
+    }
+
     // stream(Class, QueryJobConfiguration) returns rows
     @Test
     public void testStream_WithClassAndQueryConfig() throws Exception {
@@ -2215,6 +2224,19 @@ public class BigQueryExecutorTest extends TestBase {
     }
 
     // Entity with a String id used to exercise entityToCondition's empty/null-key error paths.
+    // Entity with no @Id annotation and no id-named property (keyless)
+    public static class KeylessEntity {
+        private String name;
+
+        public String getName() {
+            return name;
+        }
+
+        public void setName(String name) {
+            this.name = name;
+        }
+    }
+
     public static class TestEntityWithStringKey {
         private String id;
         private String value;

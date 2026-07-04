@@ -539,8 +539,8 @@ public final class ParsedCql {
      *
      * <p>The map will be empty for CQL statements that use only positional parameters ({@code ?}).</p>
      *
-     * <p>The returned map is the instance's internal map; it is populated during construction and
-     * is not intended to be modified by callers. Treat it as read-only.</p>
+     * <p>The returned map is unmodifiable; attempts to modify it throw
+     * {@link UnsupportedOperationException}. It reflects the mapping computed at construction time.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

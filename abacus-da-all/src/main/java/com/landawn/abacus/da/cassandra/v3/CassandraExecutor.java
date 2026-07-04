@@ -75,7 +75,6 @@ import com.landawn.abacus.type.Type;
 import com.landawn.abacus.util.Beans;
 import com.landawn.abacus.util.ClassUtil;
 import com.landawn.abacus.util.Dataset;
-import com.landawn.abacus.util.ImmutableList;
 import com.landawn.abacus.util.IntFunctions;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.NamingPolicy;
@@ -256,10 +255,6 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     //            N.max(64, IOUtil.CPU_CORES * 8), // coreThreadPoolSize
     //            N.max(128, IOUtil.CPU_CORES * 16), // maxThreadPoolSize
     //            180L, TimeUnit.SECONDS);
-
-    static final ImmutableList<String> EXISTS_SELECT_PROP_NAMES = ImmutableList.of("1");
-
-    static final ImmutableList<String> COUNT_SELECT_PROP_NAMES = ImmutableList.of(CqlBuilder.COUNT_ALL);
 
     static final int POOLABLE_LENGTH = 1024;
 
@@ -627,6 +622,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * @param resultSet the Cassandra ResultSet to extract data from
      * @return a {@link Dataset} containing all rows from the ResultSet
+     * @throws NullPointerException if {@code resultSet} is {@code null}
      * @see #extractData(ResultSet, Class)
      */
     public static Dataset extractData(final ResultSet resultSet) {
@@ -664,6 +660,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *                    or {@code null} for no type hint
      * @return a {@link Dataset} containing all rows from the ResultSet, with values converted
      *         to match {@code targetClass} property types when applicable
+     * @throws NullPointerException if {@code resultSet} is {@code null}
      */
     public static Dataset extractData(final ResultSet resultSet, final Class<?> targetClass) {
         final boolean isEntity = Beans.isBeanClass(targetClass);
@@ -751,6 +748,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param resultSet the Cassandra ResultSet to convert
      * @param targetClass the per-row target type (see supported types above)
      * @return a list of converted rows
+     * @throws NullPointerException if {@code resultSet} is {@code null}
      * @throws IllegalArgumentException if {@code targetClass} is a single-value type but
      *         the result set has more than one column
      */
@@ -888,6 +886,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * @param row the Cassandra Row to convert
      * @return a {@link HashMap} containing all column name-value pairs from the row
+     * @throws NullPointerException if {@code row} is {@code null}
      * @see #toMap(Row, IntFunction)
      */
     public static Map<String, Object> toMap(final Row row) {
@@ -916,6 +915,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param row the Cassandra Row to convert
      * @param supplier factory invoked with the expected column count to create the target map
      * @return a Map containing all column name-value pairs from the row
+     * @throws NullPointerException if {@code row} or {@code supplier} is {@code null}
      */
     public static Map<String, Object> toMap(final Row row, final IntFunction<? extends Map<String, Object>> supplier) {
         final ColumnDefinitions columnDefinitions = row.getColumnDefinitions();

@@ -15,7 +15,7 @@
 package com.landawn.abacus.da.hbase;
 
 import static com.landawn.abacus.da.hbase.HBaseExecutor.toFamilyQualifierBytes;
-import static com.landawn.abacus.da.hbase.HBaseExecutor.toRowBytes;
+import static com.landawn.abacus.da.hbase.HBaseExecutor.toRowKeyBytes;
 import static com.landawn.abacus.da.hbase.HBaseExecutor.toValueBytes;
 
 import java.util.List;
@@ -126,14 +126,14 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
 
     /**
      * Package-private constructor: prefer {@link #of(Object)}. Wraps a new HBase {@link Append}
-     * for the given row key, which is converted to bytes via {@link HBaseExecutor#toRowBytes(Object)}.
+     * for the given row key, which is converted to bytes via {@link HBaseExecutor#toRowKeyBytes(Object)}.
      *
      * @param rowKey the row key for the append operation
      * @throws NullPointerException if {@code rowKey} is {@code null} (its converted row bytes are
      *         {@code null}, which the underlying {@link Append} constructor rejects)
      */
     AnyAppend(final Object rowKey) {
-        super(new Append(toRowBytes(rowKey)));
+        super(new Append(toRowKeyBytes(rowKey)));
         append = (Append) mutation;
     }
 
@@ -189,7 +189,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * Creates a new AnyAppend instance for the specified row key.
      *
      * <p>This factory method creates an append operation for the given row key. The row key
-     * will be converted to bytes via {@link HBaseExecutor#toRowBytes(Object)}. This is the
+     * will be converted to bytes via {@link HBaseExecutor#toRowKeyBytes(Object)}. This is the
      * most commonly used factory method for creating append operations.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -485,21 +485,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
         return append.isReturnResults();
     }
 
-    //    /**
-    //     * Add the specified column and value to this Append operation.
-    //     * @param family family name
-    //     * @param qualifier column qualifier
-    //     * @param value value to append to specified column
-    //     * @return this
-    //     * @deprecated As of release 2.0.0, this will be removed in HBase 3.0.0.
-    //     *             Use {@link #addColumn(byte[], byte[], byte[])} instead
-    //     */
-    //    @Deprecated
-    //    public AnyAppend add(byte[] family, byte[] qualifier, byte[] value) {
-    //        append.add(family, qualifier, value);
-    //
-    //        return this;
-    //    }
+    // HBase's deprecated add(family, qualifier, value) is intentionally not wrapped; use addColumn.
 
     /**
      * Adds the specified column and value to this append operation using byte array identifiers.
@@ -565,6 +551,8 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @param value the value whose encoded bytes will be appended; converted via
      *              {@link HBaseExecutor#toValueBytes(Object)}
      * @return this AnyAppend instance, to allow fluent method chaining
+     * @throws IllegalArgumentException if {@code family} is null or empty (validated by the
+     *         underlying {@link Append})
      * @see #addColumn(byte[], byte[], byte[])
      * @see AnyIncrement
      */

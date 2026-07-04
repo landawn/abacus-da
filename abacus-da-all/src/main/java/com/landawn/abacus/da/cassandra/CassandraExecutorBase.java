@@ -176,7 +176,6 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
     protected static final String NULL_STR = "NULL";
 
-    protected static final ImmutableList<String> EXISTS_SELECT_PROP_NAMES = ImmutableList.of("1");
     protected static final ImmutableList<String> COUNT_SELECT_PROP_NAMES = ImmutableList.of(CqlBuilder.COUNT_ALL);
 
     protected static final int POOLABLE_LENGTH = 1024;
@@ -218,9 +217,20 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param cqlMapper optional registry of named CQL fragments consulted first by
      *        {@link #parseCql(String)}; pass {@code null} to disable named-CQL lookup
      * @param namingPolicy the policy applied when mapping entity property names to CQL column names;
-     *        when {@code null}, snake-case is used
+     *        one of {@link NamingPolicy#SNAKE_CASE}, {@link NamingPolicy#SCREAMING_SNAKE_CASE} or
+     *        {@link NamingPolicy#CAMEL_CASE}; when {@code null}, snake-case is used
+     * @throws IllegalArgumentException if {@code namingPolicy} is non-null but not one of the three
+     *         supported policies
      */
     protected CassandraExecutorBase(final CqlMapper cqlMapper, final NamingPolicy namingPolicy) {
+        // Fail fast: the prepare* methods support only these three policies; without this check an
+        // unsupported policy would surface as an IllegalStateException on the first Condition-based operation.
+        if (namingPolicy != null && namingPolicy != NamingPolicy.SNAKE_CASE && namingPolicy != NamingPolicy.SCREAMING_SNAKE_CASE
+                && namingPolicy != NamingPolicy.CAMEL_CASE) {
+            throw new IllegalArgumentException(
+                    "Unsupported naming policy: " + namingPolicy + ". Only SNAKE_CASE, SCREAMING_SNAKE_CASE and CAMEL_CASE are supported");
+        }
+
         this.cqlMapper = cqlMapper;
         this.namingPolicy = namingPolicy == null ? NamingPolicy.SNAKE_CASE : namingPolicy;
     }
@@ -755,12 +765,12 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * ResultSet result = executor.insert(user); // returns the driver ResultSet for the INSERT
      *
-     * executor.insert((Object) null);           // throws NullPointerException (entity.getClass() on null)
+     * executor.insert((Object) null);           // throws IllegalArgumentException (entity is null)
      * }</pre>
      *
      * @param entity the entity to insert
      * @return the result set from the INSERT operation
-     * @throws NullPointerException if entity is null
+     * @throws IllegalArgumentException if entity is null
      */
     public RS insert(final Object entity) {
         final SP cp = prepareInsert(entity);
@@ -874,14 +884,16 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * ResultSet result = executor.update(user); // returns the driver ResultSet for the UPDATE (all non-key props)
      *
-     * executor.update((Object) null);           // throws NullPointerException (entity.getClass() on null)
+     * executor.update((Object) null);           // throws IllegalArgumentException (entity is null)
      * }</pre>
      *
      * @param entity the entity to update
      * @return the result set from the UPDATE operation
-     * @throws NullPointerException if entity is null
+     * @throws IllegalArgumentException if entity is null
      */
     public RS update(final Object entity) {
+        N.checkArgNotNull(entity, "entity");
+
         final Class<?> entityClass = entity.getClass();
         final Set<String> keyNameSet = getKeyNameSet(entityClass);
         final Collection<String> updatePropNames = QueryUtil.getUpdatePropNames(entityClass, keyNameSet);
@@ -912,7 +924,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param entity the entity containing the values to update
      * @param propNamesToUpdate the property names to update
      * @return the result set from the UPDATE operation
-     * @throws IllegalArgumentException if propNamesToUpdate is null or empty
+     * @throws IllegalArgumentException if entity is null, or if propNamesToUpdate is null or empty
      */
     public RS update(final Object entity, final Collection<String> propNamesToUpdate) {
         N.checkArgument(N.notEmpty(propNamesToUpdate), "'propNamesToUpdate' can't be null or empty");
@@ -945,7 +957,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param props the properties to update
      * @param whereClause the WHERE condition
      * @return the result set from the UPDATE operation
-     * @throws IllegalArgumentException if targetClass is null or props is null or empty
+     * @throws IllegalArgumentException if targetClass is null, if props is null or empty, or if whereClause is null
      */
     public RS update(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause) {
         N.checkArgument(N.notEmpty(props), "'props' can't be null or empty.");
@@ -1120,12 +1132,12 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * ResultSet result = executor.delete(user); // returns the driver ResultSet for the DELETE (entire row)
      *
-     * executor.delete((Object) null);           // throws NullPointerException (entity.getClass() on null)
+     * executor.delete((Object) null);           // throws IllegalArgumentException (entity is null)
      * }</pre>
      *
      * @param entity the entity to delete (must have primary key values set)
      * @return the result set from the DELETE operation
-     * @throws NullPointerException if entity is null
+     * @throws IllegalArgumentException if entity is null
      */
     public RS delete(final Object entity) {
         return delete(entity, null);
@@ -1155,10 +1167,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param entity the entity identifying the row to delete from
      * @param propNamesToDelete the property names to delete (null for entire row)
      * @return the result set from the DELETE operation
-     * @throws IllegalArgumentException if propNamesToDelete is empty (but not null)
-     * @throws NullPointerException if entity is null
+     * @throws IllegalArgumentException if entity is null, or if propNamesToDelete is empty (but not null)
      */
     public RS delete(final Object entity, final Collection<String> propNamesToDelete) {
+        N.checkArgNotNull(entity, "entity");
         N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be null or empty");
 
         return delete(entity.getClass(), propNamesToDelete, entityToCondition(entity));
@@ -1237,7 +1249,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param targetClass the entity class
      * @param whereClause the WHERE condition
      * @return the result set from the DELETE operation
-     * @throws IllegalArgumentException if targetClass is null
+     * @throws IllegalArgumentException if targetClass is null or whereClause is null
      */
     public RS delete(final Class<?> targetClass, final Condition whereClause) {
         return delete(targetClass, null, whereClause);
@@ -1267,7 +1279,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param propNamesToDelete the property names to delete (null for entire rows)
      * @param whereClause the WHERE condition
      * @return the result set from the DELETE operation
-     * @throws IllegalArgumentException if targetClass is null or propNamesToDelete is empty (but not null)
+     * @throws IllegalArgumentException if targetClass is null, if propNamesToDelete is empty (but not
+     *         null), or if whereClause is null
      */
     public RS delete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Condition whereClause) {
         N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be null or empty");
@@ -1653,6 +1666,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code propName} is
      *         {@code null} or empty
      * @see #queryForSingleValue(Class, Class, String, Condition)
+     * @see #queryForChar(String, Object...)
      */
     @Beta
     public OptionalChar queryForChar(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -2983,6 +2997,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return the prepared statement with parameters
      */
     protected SP prepareInsert(final Object entity) {
+        N.checkArgNotNull(entity, "entity");
+
         final Class<?> targetClass = entity.getClass();
 
         switch (namingPolicy) {
@@ -3384,5 +3400,16 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     protected abstract <T> Function<RW, T> createRowMapper(Class<T> targetClass);
 
+    /**
+     * Reads the first column of the given row and converts it to the target type.
+     *
+     * <p>Used by the single-value query paths (e.g. {@code queryForSingleValue}) to extract
+     * a scalar from the first column of the first row.</p>
+     *
+     * @param <T> the target type
+     * @param row the driver row to read from
+     * @param targetClass the type to convert the first column value to
+     * @return the converted first-column value (may be null)
+     */
     protected abstract <T> T readFirstColumn(RW row, Class<T> targetClass);
 }

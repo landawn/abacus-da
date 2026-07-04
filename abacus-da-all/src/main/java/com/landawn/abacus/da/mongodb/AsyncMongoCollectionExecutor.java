@@ -2473,7 +2473,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to select the document to update
      * @param objList the collection of update operations to apply
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
-     * @throws IllegalArgumentException if filter or objList is null (propagated through future)
+     * @throws IllegalArgumentException if filter or objList is null, or if objList is empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see UpdateResult
      */
@@ -2503,7 +2503,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param objList the collection of update operations to apply
      * @param options the options to apply to the update operation (null uses defaults)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
-     * @throws IllegalArgumentException if filter or objList is null (propagated through future)
+     * @throws IllegalArgumentException if filter or objList is null, or if objList is empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see UpdateResult
      */
@@ -2591,7 +2591,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to select documents to update
      * @param objList the collection of update operations to apply
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
-     * @throws IllegalArgumentException if filter or objList is null (propagated through future)
+     * @throws IllegalArgumentException if filter or objList is null, or if objList is empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      */
     public ContinuableFuture<UpdateResult> updateMany(final Bson filter, final Collection<?> objList) {
@@ -2620,7 +2620,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param objList the collection of update operations to apply
      * @param options the options to apply to the update operation (null uses defaults)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
-     * @throws IllegalArgumentException if filter or objList is null (propagated through future)
+     * @throws IllegalArgumentException if filter or objList is null, or if objList is empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      */
     public ContinuableFuture<UpdateResult> updateMany(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
@@ -3172,7 +3172,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to find the document
      * @param objList the collection of update operations to apply
      * @return a ContinuableFuture that completes with the found document (before update by default), or {@code null} if no document matches
-     * @throws IllegalArgumentException if filter or objList is null or empty (propagated through future)
+     * @throws IllegalArgumentException if filter or objList is null, or if objList is empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #findOneAndUpdate(Bson, Object)
      * @see #findOneAndUpdate(Bson, Collection, FindOneAndUpdateOptions)

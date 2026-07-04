@@ -177,4 +177,37 @@ public class DynamoDBExecutorTest extends TestBase {
 
         assertEquals(accountList, accountList2);
     }
+
+    // Null-argument guards throw IAE eagerly, before any request is sent — offline-safe.
+
+    @org.junit.jupiter.api.Test
+    public void test_mapper_nullEntityArgs_throwIAE() {
+        final DynamoDBExecutor.Mapper<Account> mapper = dbExecutor.mapper(Account.class, "account", com.landawn.abacus.util.NamingPolicy.CAMEL_CASE);
+
+        // Entity methods: guarded at the createKey/toItem chokepoints (was NPE).
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> mapper.getItem((Account) null));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> mapper.putItem((Account) null));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> mapper.updateItem((Account) null));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> mapper.deleteItem((Account) null));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> mapper.batchGetItem((List<Account>) null));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> mapper.batchPutItem((List<Account>) null));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> mapper.batchDeleteItem((List<Account>) null));
+    }
+
+    @org.junit.jupiter.api.Test
+    public void test_mapper_nullRequestArgs_throwIAE() {
+        final DynamoDBExecutor.Mapper<Account> mapper = dbExecutor.mapper(Account.class, "account", com.landawn.abacus.util.NamingPolicy.CAMEL_CASE);
+
+        // Request-object methods: guarded at the check* chokepoints (was NPE).
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> mapper.getItem((com.amazonaws.services.dynamodbv2.model.GetItemRequest) null));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> mapper.stream((QueryRequest) null));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> mapper.scan((ScanRequest) null));
+    }
+
+    @org.junit.jupiter.api.Test
+    public void test_streamScan_nullRequest_throwIAE() {
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> dbExecutor.stream((QueryRequest) null, Account.class));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> dbExecutor.scan((ScanRequest) null, Account.class));
+    }
 }

@@ -226,6 +226,26 @@ public class MongoDBBaseTest extends TestBase {
     }
 
     @Test
+    public void testExtractDataFromBeanListWithoutSelectPropNames() {
+        // Regression: the else branch passed a null selectPropNames straight to
+        // N.newDataset(columnNames, rows), which rejects it with IAE — contradicting the
+        // documented "null to include all". It must fall back to the column-deriving overload.
+        List<NoIdEntity> beans = new ArrayList<>();
+        NoIdEntity e1 = new NoIdEntity();
+        e1.setValue("x");
+        beans.add(e1);
+        NoIdEntity e2 = new NoIdEntity();
+        e2.setValue("y");
+        beans.add(e2);
+
+        Dataset result = MongoDBBase.extractData(beans);
+
+        assertNotNull(result);
+        assertEquals(2, result.size());
+        assertTrue(result.containsColumn("value"));
+    }
+
+    @Test
     public void testExtractDataWithUnsupportedRowTypeThrows() {
         // checkResultClass should reject non-bean, non-Map types
         assertThrows(IllegalArgumentException.class, () -> MongoDBBase.extractData(mockFindIterable, String.class));

@@ -1997,6 +1997,7 @@ public final class DynamoDBExecutor {
      * @param key the primary key of the item to retrieve. Must not be null or empty.
      * @param targetClass the class to convert the result to. Must not be null.
      * @return an instance of targetClass containing the item data, or null if item doesn't exist
+     *         (a primitive {@code targetClass} yields its default value, e.g. {@code 0}, instead of null)
      * @throws IllegalArgumentException if targetClass is unsupported
      * @throws RuntimeException if the request is rejected by the underlying DynamoDB client (for example, when tableName or key is null or invalid)
      * @see #getItem(String, Map, Boolean, Class)
@@ -2024,6 +2025,7 @@ public final class DynamoDBExecutor {
      * @param consistentRead true for strongly consistent reads, false/null for eventually consistent reads
      * @param targetClass the class to convert the result to. Must not be null.
      * @return an instance of targetClass containing the item data, or null if item doesn't exist
+     *         (a primitive {@code targetClass} yields its default value, e.g. {@code 0}, instead of null)
      * @throws IllegalArgumentException if targetClass is unsupported
      * @throws RuntimeException if the request is rejected by the underlying DynamoDB client (for example, when tableName or key is null or invalid)
      */
@@ -2047,6 +2049,7 @@ public final class DynamoDBExecutor {
      * @param getItemRequest the complete request with all parameters
      * @param targetClass the class to convert the result to
      * @return an instance of targetClass containing the item data, or null if item doesn't exist
+     *         (a primitive {@code targetClass} yields its default value, e.g. {@code 0}, instead of null)
      * @throws IllegalArgumentException if targetClass is unsupported
      * @throws RuntimeException if the request is rejected by the underlying DynamoDB client (for example, when getItemRequest is null or invalid)
      */
@@ -2377,7 +2380,7 @@ public final class DynamoDBExecutor {
      *
      * @param requestItems map of table names to lists of write requests (puts/deletes). Must not be {@code null}.
      * @return a {@link BatchWriteItemResult} containing unprocessed items and consumed capacity
-     * @throws IllegalArgumentException if requestItems is null or exceeds batch limits
+     * @throws IllegalArgumentException if requestItems is null; exceeding DynamoDB's batch limits fails with a service {@code ValidationException}
      * @see #batchWriteItem(BatchWriteItemRequest)
      */
     public BatchWriteItemResult batchWriteItem(final Map<String, List<WriteRequest>> requestItems) {
@@ -2958,7 +2961,7 @@ public final class DynamoDBExecutor {
      *
      * @param queryRequest the query parameters. Must not be {@code null}.
      * @return a {@link Stream} of maps representing query results with automatic pagination
-     * @throws NullPointerException if queryRequest is null
+     * @throws IllegalArgumentException if queryRequest is null
      * @see #stream(QueryRequest, Class)
      */
     public Stream<Map<String, Object>> stream(final QueryRequest queryRequest) {
@@ -3001,10 +3004,11 @@ public final class DynamoDBExecutor {
      * @param queryRequest the query parameters. Must not be {@code null}.
      * @param targetClass the class to convert retrieved items to. Must not be {@code null}.
      * @return a {@link Stream} of converted objects with automatic pagination
-     * @throws NullPointerException if queryRequest is null
-     * @throws IllegalArgumentException if targetClass is null or unsupported
+     * @throws IllegalArgumentException if queryRequest is null, or if targetClass is null or unsupported
      */
     public <T> Stream<T> stream(final QueryRequest queryRequest, final Class<T> targetClass) {
+        N.checkArgNotNull(queryRequest, "queryRequest");
+
         final Iterator<List<Map<String, AttributeValue>>> iterator = new ObjIterator<>() {
             private final QueryRequest newQueryRequest = queryRequest.clone();
             private QueryResult queryResult = null;
@@ -3340,6 +3344,8 @@ public final class DynamoDBExecutor {
      * @see #scan(ScanRequest)
      */
     public <T> Stream<T> scan(final ScanRequest scanRequest, final Class<T> targetClass) {
+        N.checkArgNotNull(scanRequest, "scanRequest");
+
         final Iterator<List<Map<String, AttributeValue>>> iterator = new ObjIterator<>() {
             private final ScanRequest newScanRequest = scanRequest.clone();
             private ScanResult scanResult = null;
@@ -3701,6 +3707,8 @@ public final class DynamoDBExecutor {
          * @throws IllegalArgumentException if entity is {@code null}
          */
         public PutItemResult putItem(final T entity) {
+            N.checkArgNotNull(entity, "entity");
+
             return dynamoDBExecutor.putItem(tableName, DynamoDBExecutor.toItem(entity, namingPolicy));
         }
 
@@ -3720,6 +3728,8 @@ public final class DynamoDBExecutor {
          * @throws IllegalArgumentException if entity is {@code null}
          */
         public PutItemResult putItem(final T entity, final String returnValues) {
+            N.checkArgNotNull(entity, "entity");
+
             return dynamoDBExecutor.putItem(tableName, DynamoDBExecutor.toItem(entity, namingPolicy), returnValues);
         }
 
@@ -4271,6 +4281,8 @@ public final class DynamoDBExecutor {
         }
 
         private Map<String, AttributeValue> createKey(final T entity) {
+            N.checkArgNotNull(entity, "entity");
+
             final Map<String, AttributeValue> key = new HashMap<>(keyPropNames.size());
 
             for (int i = 0, len = keyPropNames.size(); i < len; i++) {
@@ -4291,6 +4303,8 @@ public final class DynamoDBExecutor {
         }
 
         private Map<String, KeysAndAttributes> createKeys(final Collection<? extends T> entities) {
+            N.checkArgNotNull(entities, "entities");
+
             final List<Map<String, AttributeValue>> keys = new ArrayList<>(entities.size());
 
             for (final T entity : entities) {
@@ -4301,9 +4315,12 @@ public final class DynamoDBExecutor {
         }
 
         private Map<String, List<WriteRequest>> createBatchPutRequest(final Collection<? extends T> entities) {
+            N.checkArgNotNull(entities, "entities");
+
             final List<WriteRequest> keys = new ArrayList<>(entities.size());
 
             for (final T entity : entities) {
+                N.checkArgNotNull(entity, "entity");
                 keys.add(new WriteRequest().withPutRequest(new PutRequest().withItem(toItem(entity, namingPolicy))));
             }
 
@@ -4311,6 +4328,8 @@ public final class DynamoDBExecutor {
         }
 
         private Map<String, List<WriteRequest>> createBatchDeleteRequest(final Collection<? extends T> entities) {
+            N.checkArgNotNull(entities, "entities");
+
             final List<WriteRequest> keys = new ArrayList<>(entities.size());
 
             for (final T entity : entities) {
@@ -4321,6 +4340,8 @@ public final class DynamoDBExecutor {
         }
 
         private GetItemRequest checkItem(final GetItemRequest item) {
+            N.checkArgNotNull(item, "getItemRequest");
+
             if (Strings.isEmpty(item.getTableName())) {
                 item.setTableName(tableName);
             } else {
@@ -4331,6 +4352,8 @@ public final class DynamoDBExecutor {
         }
 
         private BatchGetItemRequest checkItem(final BatchGetItemRequest item) {
+            N.checkArgNotNull(item, "batchGetItemRequest");
+
             if (item.getRequestItems() != null) {
                 for (final String tableNameInRequest : item.getRequestItems().keySet()) {
                     checkTableName(tableNameInRequest);
@@ -4342,6 +4365,8 @@ public final class DynamoDBExecutor {
         }
 
         private BatchWriteItemRequest checkItem(final BatchWriteItemRequest item) {
+            N.checkArgNotNull(item, "batchWriteItemRequest");
+
             if (item.getRequestItems() != null) {
                 for (final String tableNameInRequest : item.getRequestItems().keySet()) {
                     checkTableName(tableNameInRequest);
@@ -4352,6 +4377,8 @@ public final class DynamoDBExecutor {
         }
 
         private PutItemRequest checkItem(final PutItemRequest item) {
+            N.checkArgNotNull(item, "putItemRequest");
+
             if (Strings.isEmpty(item.getTableName())) {
                 item.setTableName(tableName);
             } else {
@@ -4362,6 +4389,8 @@ public final class DynamoDBExecutor {
         }
 
         private UpdateItemRequest checkItem(final UpdateItemRequest item) {
+            N.checkArgNotNull(item, "updateItemRequest");
+
             if (Strings.isEmpty(item.getTableName())) {
                 item.setTableName(tableName);
             } else {
@@ -4372,6 +4401,8 @@ public final class DynamoDBExecutor {
         }
 
         private DeleteItemRequest checkItem(final DeleteItemRequest item) {
+            N.checkArgNotNull(item, "deleteItemRequest");
+
             if (Strings.isEmpty(item.getTableName())) {
                 item.setTableName(tableName);
             } else {
@@ -4382,6 +4413,8 @@ public final class DynamoDBExecutor {
         }
 
         private QueryRequest checkQueryRequest(final QueryRequest queryRequest) {
+            N.checkArgNotNull(queryRequest, "queryRequest");
+
             if (Strings.isEmpty(queryRequest.getTableName())) {
                 queryRequest.setTableName(tableName);
             } else {
@@ -4392,6 +4425,8 @@ public final class DynamoDBExecutor {
         }
 
         private ScanRequest checkScanRequest(final ScanRequest scanRequest) {
+            N.checkArgNotNull(scanRequest, "scanRequest");
+
             if (Strings.isEmpty(scanRequest.getTableName())) {
                 scanRequest.setTableName(tableName);
             } else {

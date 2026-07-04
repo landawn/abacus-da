@@ -417,21 +417,19 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * async.insert(u).get(); // returns the driver result set once applied
      *
      * // Typical: chain a follow-up action after the insert completes.
-     * async.insert(new User(2L, "Bob")).thenRun(() -> log.info("inserted")); // runs after the INSERT completes
+     * async.insert(new User(2L, "Bob")).thenRunAsync(() -> log.info("inserted")); // runs after the INSERT completes
      *
      * // Edge: a null entity is rejected eagerly (synchronously), before any future is returned.
-     * assertThrows(NullPointerException.class, () -> async.insert(null)); // throws NullPointerException
+     * assertThrows(IllegalArgumentException.class, () -> async.insert(null)); // throws IllegalArgumentException
      *
-     * // Edge: a CQL/driver failure (e.g. unknown table) surfaces as an ExecutionException on get().
-     * try {
-     *     async.insert(entityForMissingTable).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.insert(entityForMissingTable); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param entity the entity instance to insert
      * @return a future whose payload is the driver result set produced by the INSERT
+     * @throws IllegalArgumentException if {@code entity} is {@code null} (thrown synchronously at the call site)
      */
     public ContinuableFuture<RS> insert(final Object entity) {
         return execute(cassandraExecutor.prepareInsert(entity));
@@ -543,24 +541,24 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * async.update(u).get(); // returns the driver result set
      *
      * // Typical: chain a continuation after the update completes.
-     * async.update(u).thenRun(() -> log.info("updated")); // runs after the UPDATE completes
+     * async.update(u).thenRunAsync(() -> log.info("updated")); // runs after the UPDATE completes
      *
      * // Edge: a null entity is rejected eagerly (synchronously), before any future is returned.
-     * assertThrows(NullPointerException.class, () -> async.update((Object) null)); // throws NullPointerException
+     * assertThrows(IllegalArgumentException.class, () -> async.update((Object) null)); // throws IllegalArgumentException
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.update(entityForMissingTable).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.update(entityForMissingTable); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param entity the entity whose primary-key fields are used in the WHERE clause and whose
      *               non-key fields supply the new values
      * @return a future whose payload is the driver result set produced by the UPDATE
+     * @throws IllegalArgumentException if {@code entity} is {@code null} (thrown synchronously at the call site)
      */
     public ContinuableFuture<RS> update(final Object entity) {
+        N.checkArgNotNull(entity, "entity");
+
         final Class<?> entityClass = entity.getClass();
         final Set<String> keyNameSet = getKeyNameSet(entityClass);
         final Collection<String> updatePropNames = QueryUtil.getUpdatePropNames(entityClass, keyNameSet);
@@ -596,7 +594,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *               selected fields supply the new values
      * @param propNamesToUpdate the names of the properties to update; must be non-empty
      * @return a future whose payload is the driver result set produced by the UPDATE
-     * @throws IllegalArgumentException if {@code propNamesToUpdate} is {@code null} or empty
+     * @throws IllegalArgumentException if {@code entity} is {@code null}, or if {@code propNamesToUpdate}
+     *         is {@code null} or empty (thrown synchronously at the call site)
      */
     public ContinuableFuture<RS> update(final Object entity, final Collection<String> propNamesToUpdate) {
         N.checkArgument(N.notEmpty(propNamesToUpdate), "'propNamesToUpdate' can't be null or empty");
@@ -622,12 +621,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: a condition matching no rows still completes normally (no row changed).
      * async.update(User.class, props, Filters.eq("id", -1L)).get(); // returns a result set; no row updated
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.update(User.class, props, Filters.eq("missingCol", 1)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.update(User.class, props, Filters.eq("missingCol", 1)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param targetClass the entity class identifying the target table
@@ -657,12 +653,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: a statement affecting no rows still completes normally.
      * async.update("UPDATE users SET name = ? WHERE id = ?", "x", -1L).get(); // returns a result set; no row changed
      *
-     * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.update("UPDATE SET").get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.update("UPDATE SET"); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param query the parameterized CQL UPDATE / INSERT / DELETE statement
@@ -797,12 +790,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // immediately (before any future is created) with an IllegalArgumentException.
      * async.batchUpdate("UPDATE users SET name = ? WHERE id = ?", Collections.emptyList(), BatchType.LOGGED); // throws IllegalArgumentException
      *
-     * // Edge: a malformed query likewise completes the future exceptionally.
-     * try {
-     *     async.batchUpdate("UPDATE SET", rows, BatchType.LOGGED).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.batchUpdate("UPDATE SET", rows, BatchType.LOGGED); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param query the parameterized CQL statement to batch-execute
@@ -827,21 +817,19 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * async.delete(u).get(); // returns the driver result set
      *
      * // Typical: delete then chain a continuation.
-     * async.delete(new User(2L, "Bob")).thenRun(() -> log.info("deleted")); // runs after the DELETE completes
+     * async.delete(new User(2L, "Bob")).thenRunAsync(() -> log.info("deleted")); // runs after the DELETE completes
      *
      * // Edge: a null entity is rejected eagerly (synchronously), before any future is returned.
-     * assertThrows(NullPointerException.class, () -> async.delete((Object) null)); // throws NullPointerException
+     * assertThrows(IllegalArgumentException.class, () -> async.delete((Object) null)); // throws IllegalArgumentException
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.delete(entityForMissingTable).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.delete(entityForMissingTable); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param entity the entity whose primary-key fields identify the row to delete
      * @return a future whose payload is the driver result set produced by the DELETE
+     * @throws IllegalArgumentException if {@code entity} is {@code null} (thrown synchronously at the call site)
      */
     public ContinuableFuture<RS> delete(final Object entity) {
         return delete(entity, null);
@@ -866,16 +854,18 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * assertThrows(IllegalArgumentException.class, () -> async.delete(u, Collections.emptyList())); // throws IllegalArgumentException
      *
      * // Edge: a null entity is rejected eagerly (synchronously), before any future is returned.
-     * assertThrows(NullPointerException.class, () -> async.delete((Object) null, Arrays.asList("name"))); // throws NullPointerException
+     * assertThrows(IllegalArgumentException.class, () -> async.delete((Object) null, Arrays.asList("name"))); // throws IllegalArgumentException
      * }</pre>
      *
      * @param entity the entity whose primary-key fields identify the target row
      * @param propNamesToDelete the columns to delete; {@code null} deletes the entire row, a
      *                          non-{@code null} value must be non-empty
      * @return a future whose payload is the driver result set produced by the DELETE
-     * @throws IllegalArgumentException if {@code propNamesToDelete} is non-{@code null} and empty
+     * @throws IllegalArgumentException if {@code entity} is {@code null}, or if {@code propNamesToDelete}
+     *         is non-{@code null} and empty (thrown synchronously at the call site)
      */
     public ContinuableFuture<RS> delete(final Object entity, final Collection<String> propNamesToDelete) {
+        N.checkArgNotNull(entity, "entity");
         N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be null or empty");
 
         return delete(entity.getClass(), propNamesToDelete, CassandraExecutorBase.entityToCondition(entity));
@@ -893,7 +883,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * async.delete(User.class, 1L).get(); // returns the driver result set
      *
      * // Typical: delete then react to completion.
-     * async.delete(User.class, 2L).thenRun(() -> log.info("deleted")); // runs after the DELETE completes
+     * async.delete(User.class, 2L).thenRunAsync(() -> log.info("deleted")); // runs after the DELETE completes
      *
      * // Edge: deleting a non-existent key still completes normally.
      * async.delete(User.class, -1L).get(); // returns a result set; nothing removed
@@ -956,17 +946,14 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * async.delete(User.class, Filters.eq("id", 1L)).get(); // returns the driver result set
      *
      * // Typical: delete then chain a continuation.
-     * async.delete(User.class, Filters.eq("status", "inactive")).thenRun(() -> log.info("purged")); // runs after the DELETE completes
+     * async.delete(User.class, Filters.eq("status", "inactive")).thenRunAsync(() -> log.info("purged")); // runs after the DELETE completes
      *
      * // Edge: a condition matching no rows still completes normally.
      * async.delete(User.class, Filters.eq("id", -1L)).get(); // returns a result set; nothing removed
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.delete(User.class, Filters.eq("missingCol", 1)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.delete(User.class, Filters.eq("missingCol", 1)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param targetClass the entity class identifying the target table
@@ -995,12 +982,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * assertThrows(IllegalArgumentException.class,
      *     () -> async.delete(User.class, Collections.emptyList(), Filters.eq("id", 1L))); // throws IllegalArgumentException
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.delete(User.class, Arrays.asList("name"), Filters.eq("missingCol", 1)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.delete(User.class, Arrays.asList("name"), Filters.eq("missingCol", 1)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param targetClass the entity class identifying the target table
@@ -1029,7 +1013,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * async.batchDelete(users).get(); // returns the driver result set
      *
      * // Typical: delete then react to completion.
-     * async.batchDelete(users).thenRun(() -> log.info("batch deleted")); // runs after the DELETE completes
+     * async.batchDelete(users).thenRunAsync(() -> log.info("batch deleted")); // runs after the DELETE completes
      *
      * // Edge: an empty collection is rejected eagerly (synchronously), before any future is returned.
      * assertThrows(IllegalArgumentException.class, () -> async.batchDelete(Collections.emptyList())); // throws IllegalArgumentException
@@ -1141,12 +1125,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: a condition matching no rows resolves to false.
      * boolean none = async.exists(User.class, Filters.eq("id", -1L)).get(); // returns false
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.exists(User.class, Filters.eq("missingCol", 1)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.exists(User.class, Filters.eq("missingCol", 1)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param targetClass the entity class identifying the target table
@@ -1176,12 +1157,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: a query returning no rows resolves to false.
      * boolean none = async.exists("SELECT id FROM users WHERE id = ? LIMIT 1", -1L).get(); // returns false
      *
-     * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.exists("SELECT FROM").get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.exists("SELECT FROM"); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param query the CQL query (typically a SELECT limited to 1)
@@ -1210,12 +1188,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: a condition matching no rows yields 0.
      * long none = async.count(User.class, Filters.eq("id", -1L)).get(); // returns 0
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.count(User.class, Filters.eq("missingCol", 1)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.count(User.class, Filters.eq("missingCol", 1)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param targetClass the entity class identifying the target table
@@ -1245,12 +1220,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: a query producing no row (or a null value) yields 0.
      * long none = async.count("SELECT COUNT(*) FROM users WHERE id = ?", -1L).get(); // returns the count, 0 if none
      *
-     * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.count("SELECT COUNT FROM").get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.count("SELECT COUNT FROM"); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param query the CQL query to execute (typically a {@code SELECT COUNT(*) ...})
@@ -1283,12 +1255,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching rows -> the future completes with an empty list.
      * boolean empty = async.list(User.class, Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.list(User.class, Filters.eq("missingCol", 1)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.list(User.class, Filters.eq("missingCol", 1)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param <T> the entity type
@@ -1317,12 +1286,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching rows -> the future completes with an empty list.
      * boolean empty = async.list(User.class, Arrays.asList("id"), Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.list(User.class, Arrays.asList("id"), Filters.eq("missingCol", 1)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.list(User.class, Arrays.asList("id"), Filters.eq("missingCol", 1)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param <T> the entity type
@@ -1356,12 +1322,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching rows -> the future completes with an empty list.
      * boolean empty = async.list("SELECT id FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
      *
-     * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.list("SELECT FROM").get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.list("SELECT FROM"); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param query the parameterized CQL SELECT statement
@@ -1390,12 +1353,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching rows -> the future completes with an empty list.
      * boolean empty = async.list(User.class, "SELECT * FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
      *
-     * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.list(User.class, "SELECT FROM").get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.list(User.class, "SELECT FROM"); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param <T> the row type
@@ -1426,12 +1386,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching rows -> the future completes with an empty Dataset.
      * boolean empty = async.query(User.class, Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.query(User.class, Filters.eq("missingCol", 1)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.query(User.class, Filters.eq("missingCol", 1)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param targetClass the entity class identifying the target table and column mappings
@@ -1459,12 +1416,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching rows -> the future completes with an empty Dataset.
      * boolean empty = async.query(User.class, Arrays.asList("id"), Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.query(User.class, Arrays.asList("id"), Filters.eq("missingCol", 1)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.query(User.class, Arrays.asList("id"), Filters.eq("missingCol", 1)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param targetClass the entity class identifying the target table and column mappings
@@ -1497,12 +1451,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching rows -> the future completes with an empty Dataset.
      * boolean empty = async.query("SELECT id FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
      *
-     * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.query("SELECT FROM").get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.query("SELECT FROM"); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param query the parameterized CQL SELECT statement
@@ -1530,12 +1481,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching rows -> the future completes with an empty Dataset.
      * boolean empty = async.query(User.class, "SELECT * FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
      *
-     * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.query(User.class, "SELECT FROM").get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.query(User.class, "SELECT FROM"); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param targetClass the class whose property mapping is used to interpret result columns
@@ -1564,12 +1512,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching rows -> the streamed result is empty.
      * boolean empty = async.stream(User.class, Filters.eq("id", -1L)).get().toList().isEmpty(); // returns true
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.stream(User.class, Filters.eq("missingCol", 1)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.stream(User.class, Filters.eq("missingCol", 1)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param <T> the entity type
@@ -1599,12 +1544,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching rows -> the streamed result is empty.
      * boolean empty = async.stream(User.class, Arrays.asList("id"), Filters.eq("id", -1L)).get().toList().isEmpty(); // returns true
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.stream(User.class, Arrays.asList("id"), Filters.eq("missingCol", 1)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.stream(User.class, Arrays.asList("id"), Filters.eq("missingCol", 1)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param <T> the entity type
@@ -1638,12 +1580,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching rows -> the streamed result is empty.
      * boolean empty = async.stream("SELECT id FROM users WHERE id = ?", -1L).get().toList().isEmpty(); // returns true
      *
-     * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.stream("SELECT FROM").get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.stream("SELECT FROM"); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param query the parameterized CQL SELECT statement
@@ -1671,12 +1610,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching rows -> the streamed result is empty.
      * boolean empty = async.stream(User.class, "SELECT * FROM users WHERE id = ?", -1L).get().toList().isEmpty(); // returns true
      *
-     * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.stream(User.class, "SELECT FROM").get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.stream(User.class, "SELECT FROM"); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param <T> the row type
@@ -1740,12 +1676,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching row -> the future completes with an empty Optional.
      * boolean none = async.findFirst(User.class, Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.findFirst(User.class, Filters.eq("missingCol", 1)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.findFirst(User.class, Filters.eq("missingCol", 1)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param <T> the entity type
@@ -1775,12 +1708,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching row -> the future completes with an empty Optional.
      * boolean none = async.findFirst(User.class, Arrays.asList("id"), Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.findFirst(User.class, Arrays.asList("id"), Filters.eq("missingCol", 1)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.findFirst(User.class, Arrays.asList("id"), Filters.eq("missingCol", 1)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param <T> the entity type
@@ -1815,12 +1745,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching row -> the future completes with an empty Optional.
      * boolean none = async.findFirst("SELECT id FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
      *
-     * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.findFirst("SELECT FROM").get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.findFirst("SELECT FROM"); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param query the parameterized CQL SELECT statement
@@ -1892,12 +1819,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // column is NULL, the OptionalBoolean is PRESENT and holds the primitive default false.
      * boolean empty = async.queryForBoolean(User.class, "active", Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.queryForBoolean(User.class, "missingCol", Filters.eq("id", 1L)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.queryForBoolean(User.class, "missingCol", Filters.eq("id", 1L)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param targetClass the entity class identifying the target table
@@ -1930,12 +1854,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // column is NULL, the OptionalChar is PRESENT and holds the primitive default (char) 0.
      * boolean empty = async.queryForChar(User.class, "grade", Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.queryForChar(User.class, "missingCol", Filters.eq("id", 1L)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.queryForChar(User.class, "missingCol", Filters.eq("id", 1L)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param targetClass the entity class identifying the target table
@@ -1968,12 +1889,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // column is NULL, the OptionalByte is PRESENT and holds the primitive default (byte) 0.
      * boolean empty = async.queryForByte(User.class, "level", Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.queryForByte(User.class, "missingCol", Filters.eq("id", 1L)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.queryForByte(User.class, "missingCol", Filters.eq("id", 1L)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param targetClass the entity class identifying the target table
@@ -2006,12 +1924,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // column is NULL, the OptionalShort is PRESENT and holds the primitive default (short) 0.
      * boolean empty = async.queryForShort(User.class, "count", Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.queryForShort(User.class, "missingCol", Filters.eq("id", 1L)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.queryForShort(User.class, "missingCol", Filters.eq("id", 1L)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param targetClass the entity class identifying the target table
@@ -2044,12 +1959,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // column is NULL, the OptionalInt is PRESENT and holds the primitive default 0.
      * boolean empty = async.queryForInt(User.class, "age", Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.queryForInt(User.class, "missingCol", Filters.eq("id", 1L)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.queryForInt(User.class, "missingCol", Filters.eq("id", 1L)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param targetClass the entity class identifying the target table
@@ -2082,12 +1994,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // column is NULL, the OptionalLong is PRESENT and holds the primitive default 0L.
      * boolean empty = async.queryForLong(User.class, "id", Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.queryForLong(User.class, "missingCol", Filters.eq("id", 1L)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.queryForLong(User.class, "missingCol", Filters.eq("id", 1L)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param targetClass the entity class identifying the target table
@@ -2120,12 +2029,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // column is NULL, the OptionalFloat is PRESENT and holds the primitive default 0f.
      * boolean empty = async.queryForFloat(User.class, "score", Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.queryForFloat(User.class, "missingCol", Filters.eq("id", 1L)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.queryForFloat(User.class, "missingCol", Filters.eq("id", 1L)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param targetClass the entity class identifying the target table
@@ -2158,12 +2064,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // column is NULL, the OptionalDouble is PRESENT and holds the primitive default 0d.
      * boolean empty = async.queryForDouble(User.class, "price", Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.queryForDouble(User.class, "missingCol", Filters.eq("id", 1L)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.queryForDouble(User.class, "missingCol", Filters.eq("id", 1L)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param targetClass the entity class identifying the target table
@@ -2196,12 +2099,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching row -> the future completes with an empty Nullable.
      * boolean empty = async.queryForString(User.class, "name", Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.queryForString(User.class, "missingCol", Filters.eq("id", 1L)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.queryForString(User.class, "missingCol", Filters.eq("id", 1L)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param targetClass the entity class identifying the target table
@@ -2233,12 +2133,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching row -> the future completes with an empty Nullable.
      * boolean empty = async.queryForDate(User.class, "createdDate", Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.queryForDate(User.class, "missingCol", Filters.eq("id", 1L)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.queryForDate(User.class, "missingCol", Filters.eq("id", 1L)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param targetClass the entity class identifying the target table
@@ -2269,12 +2166,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching row -> the future completes with an empty Nullable.
      * boolean empty = async.queryForDate(User.class, java.sql.Timestamp.class, "createdDate", Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.queryForDate(User.class, java.sql.Timestamp.class, "missingCol", Filters.eq("id", 1L)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.queryForDate(User.class, java.sql.Timestamp.class, "missingCol", Filters.eq("id", 1L)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param <E> the concrete {@link Date} subtype to return (e.g. {@code java.sql.Timestamp})
@@ -2310,12 +2204,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching row -> the future completes with an empty Nullable; a present-but-null value is allowed.
      * boolean empty = async.queryForSingleValue(User.class, String.class, "name", Filters.eq("id", -1L)).get().isEmpty(); // returns true
      *
-     * // Edge: a CQL/driver failure surfaces as an ExecutionException on get().
-     * try {
-     *     async.queryForSingleValue(User.class, String.class, "missingCol", Filters.eq("id", 1L)).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.queryForSingleValue(User.class, String.class, "missingCol", Filters.eq("id", 1L)); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param <V> the column-value type
@@ -2402,12 +2293,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // column is NULL, the OptionalBoolean is PRESENT and holds the primitive default false.
      * boolean empty = async.queryForBoolean("SELECT active FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
      *
-     * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.queryForBoolean("SELECT FROM").get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.queryForBoolean("SELECT FROM"); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param query the parameterized CQL SELECT statement
@@ -2439,12 +2327,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // column is NULL, the OptionalChar is PRESENT and holds the primitive default (char) 0.
      * boolean empty = async.queryForChar("SELECT grade FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
      *
-     * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.queryForChar("SELECT FROM").get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.queryForChar("SELECT FROM"); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param query the parameterized CQL SELECT statement
@@ -2476,12 +2361,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // column is NULL, the OptionalByte is PRESENT and holds the primitive default (byte) 0.
      * boolean empty = async.queryForByte("SELECT level FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
      *
-     * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.queryForByte("SELECT FROM").get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.queryForByte("SELECT FROM"); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param query the parameterized CQL SELECT statement
@@ -2513,12 +2395,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // column is NULL, the OptionalShort is PRESENT and holds the primitive default (short) 0.
      * boolean empty = async.queryForShort("SELECT count FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
      *
-     * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.queryForShort("SELECT FROM").get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.queryForShort("SELECT FROM"); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param query the parameterized CQL SELECT statement
@@ -2549,12 +2428,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // column is NULL, the OptionalInt is PRESENT and holds the primitive default 0.
      * boolean empty = async.queryForInt("SELECT age FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
      *
-     * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.queryForInt("SELECT FROM").get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.queryForInt("SELECT FROM"); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param query the parameterized CQL SELECT statement
@@ -2585,12 +2461,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // column is NULL, the OptionalLong is PRESENT and holds the primitive default 0L.
      * boolean empty = async.queryForLong("SELECT id FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
      *
-     * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.queryForLong("SELECT FROM").get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.queryForLong("SELECT FROM"); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param query the parameterized CQL SELECT statement
@@ -2622,12 +2495,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // column is NULL, the OptionalFloat is PRESENT and holds the primitive default 0f.
      * boolean empty = async.queryForFloat("SELECT score FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
      *
-     * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.queryForFloat("SELECT FROM").get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.queryForFloat("SELECT FROM"); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param query the parameterized CQL SELECT statement
@@ -2659,12 +2529,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // column is NULL, the OptionalDouble is PRESENT and holds the primitive default 0d.
      * boolean empty = async.queryForDouble("SELECT price FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
      *
-     * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.queryForDouble("SELECT FROM").get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.queryForDouble("SELECT FROM"); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param query the parameterized CQL SELECT statement
@@ -2696,12 +2563,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching row -> the future completes with an empty Nullable.
      * boolean empty = async.queryForString("SELECT name FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
      *
-     * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.queryForString("SELECT FROM").get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.queryForString("SELECT FROM"); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param query the parameterized CQL SELECT statement
@@ -2729,12 +2593,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching row -> the future completes with an empty Nullable.
      * boolean empty = async.queryForDate("SELECT created_at FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
      *
-     * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.queryForDate("SELECT FROM").get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.queryForDate("SELECT FROM"); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param query the parameterized CQL SELECT statement
@@ -2797,12 +2658,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: no matching row -> the future completes with an empty Nullable; a present-but-null value is allowed.
      * boolean empty = async.queryForSingleValue(String.class, "SELECT name FROM users WHERE id = ?", -1L).get().isEmpty(); // returns true
      *
-     * // Edge: a malformed query makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.queryForSingleValue(String.class, "SELECT FROM").get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // CQL failure (malformed query, unknown table/column) throws directly from the call site.
+     * async.queryForSingleValue(String.class, "SELECT FROM"); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
      * @param <T> the column-value type
@@ -2875,21 +2733,14 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * RS rs = async.execute("SELECT * FROM users").get();
      *
      * // Typical: run a DDL/maintenance statement asynchronously.
-     * async.execute("TRUNCATE users").thenRun(() -> log.info("truncated")); // runs after the statement completes
+     * async.execute("TRUNCATE users").thenRunAsync(() -> log.info("truncated")); // runs after the statement completes
      *
-     * // Edge: a malformed statement makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.execute("SELECT FROM").get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // malformed statement throws directly from the call site (no future is created).
+     * async.execute("SELECT FROM"); // throws the driver parse failure synchronously
      *
-     * // Edge: a statement against a missing table likewise completes the future exceptionally.
-     * try {
-     *     async.execute("SELECT * FROM no_such_table").get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver failure
-     * }
+     * // Edge: a statement against a missing table likewise fails during the synchronous preparation.
+     * async.execute("SELECT * FROM no_such_table"); // throws the driver failure synchronously
      * }</pre>
      *
      * @param query the CQL statement to execute
@@ -2913,12 +2764,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Edge: a statement affecting no rows still completes normally.
      * async.execute("UPDATE users SET name = ? WHERE id = ?", "x", -1L).get(); // returns a result set; no row changed
      *
-     * // Edge: a malformed statement makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.execute("SELECT FROM", 1L).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: the statement is prepared synchronously before the async call is issued, so a
+     * // malformed statement throws directly from the call site (no future is created).
+     * async.execute("SELECT FROM", 1L); // throws the driver parse failure synchronously
      * }</pre>
      *
      * @param query the parameterized CQL statement
@@ -2942,19 +2790,12 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * // Typical: an empty parameter map for a statement that has no placeholders.
      * async.execute("SELECT * FROM users", new HashMap<String, Object>()).get(); // returns the result set
      *
-     * // Edge: a missing named parameter makes the future complete exceptionally; get() rethrows it wrapped.
-     * try {
-     *     async.execute("SELECT * FROM users WHERE id = :id", new HashMap<String, Object>()).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the binding/driver failure
-     * }
+     * // Edge: the statement is prepared and bound synchronously before the async call is issued,
+     * // so a missing named parameter throws directly from the call site (no future is created).
+     * async.execute("SELECT * FROM users WHERE id = :id", new HashMap<String, Object>()); // throws IllegalArgumentException synchronously
      *
-     * // Edge: a malformed statement likewise completes the future exceptionally.
-     * try {
-     *     async.execute("SELECT FROM", params).get(); // throws ExecutionException
-     * } catch (ExecutionException ex) {
-     *     // ex.getCause() is the driver/parse failure
-     * }
+     * // Edge: a malformed statement likewise fails during the synchronous preparation.
+     * async.execute("SELECT FROM", params); // throws the driver parse failure synchronously
      * }</pre>
      *
      * @param query the parameterized CQL statement with named parameters

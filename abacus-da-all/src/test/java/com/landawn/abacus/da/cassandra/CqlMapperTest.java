@@ -251,7 +251,10 @@ public class CqlMapperTest extends TestBase {
 
     @Test
     public void testLoad_String_MissingFileThrows() {
-        assertThrows(RuntimeException.class, () -> CqlMapper.load("/definitely/not/an/existing/path/cql-mapper-load-missing.xml"));
+        // A missing file now fails with a descriptive RuntimeException (was a bare NPE from
+        // formatPath(null)).
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> CqlMapper.load("/definitely/not/an/existing/path/cql-mapper-load-missing.xml"));
+        assertTrue(ex.getMessage().contains("File not found"));
     }
 
     @Test

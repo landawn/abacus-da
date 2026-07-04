@@ -692,17 +692,9 @@ public class CosmosContainerExecutorTest extends TestBase {
 
     @Test
     public void testUnsupportedNamingPolicy() {
-        // Create a mock naming policy that's not supported
-        NamingPolicy unsupportedPolicy = NamingPolicy.NO_CHANGE;
-        CosmosContainerExecutor executorWithUnsupportedPolicy = new CosmosContainerExecutor(mockCosmosContainer, unsupportedPolicy);
-
-        List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"));
-        when(mockPagedIterable.stream()).thenReturn(items.stream());
-
-        // This should throw RuntimeException for unsupported naming policy
-        assertThrows(RuntimeException.class, () -> {
-            executorWithUnsupportedPolicy.streamItems(Filters.eq("id", "1"), TestItem.class);
-        });
+        // The constructor now fails fast on an unsupported policy (was a deferred ISE on the
+        // first Condition-based query).
+        assertThrows(IllegalArgumentException.class, () -> new CosmosContainerExecutor(mockCosmosContainer, NamingPolicy.NO_CHANGE));
     }
 
     // Test data class

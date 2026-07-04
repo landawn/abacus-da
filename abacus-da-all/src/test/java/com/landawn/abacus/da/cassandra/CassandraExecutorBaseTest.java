@@ -1226,6 +1226,39 @@ public class CassandraExecutorBaseTest extends TestBase {
         assertEquals(first.size(), second.size());
     }
 
+    // Null-entity guards: insert/update/delete reject a null entity eagerly with IAE (was NPE).
+
+    @Test
+    public void testInsert_nullEntity_throwsIAE() {
+        assertThrows(IllegalArgumentException.class, () -> executor.insert((Object) null));
+    }
+
+    @Test
+    public void testUpdate_nullEntity_throwsIAE() {
+        assertThrows(IllegalArgumentException.class, () -> executor.update((Object) null));
+    }
+
+    @Test
+    public void testUpdate_nullEntityWithPropNames_throwsIAE() {
+        assertThrows(IllegalArgumentException.class, () -> executor.update((Object) null, java.util.Arrays.asList("name")));
+    }
+
+    @Test
+    public void testDelete_nullEntity_throwsIAE() {
+        assertThrows(IllegalArgumentException.class, () -> executor.delete((Object) null));
+    }
+
+    @Test
+    public void testDelete_nullEntityWithPropNames_throwsIAE() {
+        assertThrows(IllegalArgumentException.class, () -> executor.delete((Object) null, java.util.Arrays.asList("name")));
+    }
+
+    // The constructor fails fast on a naming policy the prepare* methods can't render.
+    @Test
+    public void testConstructor_unsupportedNamingPolicy_throwsIAE() {
+        assertThrows(IllegalArgumentException.class, () -> new TestCassandraExecutor(NamingPolicy.NO_CHANGE));
+    }
+
     // Composite-key entity for entityToCondition / idsToCondition tests
     public static class CompositeKeyEntity {
         @Id

@@ -148,9 +148,10 @@ import com.landawn.abacus.util.u.Optional;
  * to properly finalize the query and release resources.</p>
  *
  * <h2>Naming Policy</h2>
- * <p>Column names are automatically transformed according to the configured naming policy. By default,
- * Java camelCase property names are converted to Cassandra snake_case column names. Table names are
- * NOT transformed and are used as-is.</p>
+ * <p>Column names are automatically transformed according to the naming policy of the chosen
+ * {@link Dsl} constant (e.g. camelCase property names become snake_case column names under
+ * {@code PSC}/{@code NSC}). Explicit table-name strings are used as-is; table names derived from
+ * an entity class follow the naming policy unless overridden by {@code @Table}.</p>
  *
  * @see com.landawn.abacus.query.Filters
  * @see CassandraExecutor
@@ -161,10 +162,6 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     // TODO performance goal: 80% cases (or maybe CQL.length < 1024?) can be composed in 0.1 millisecond. 0.01 millisecond will be fantastic if possible.
 
     protected static final Logger logger = LoggerFactory.getLogger(CqlBuilder.class);
-
-    static final char[] _SPACE_USING_TIMESTAMP_SPACE = " USING TIMESTAMP ".toCharArray();
-
-    static final char[] _SPACE_USING_TTL_SPACE = " USING TTL ".toCharArray();
 
     private static final String SPACE_USING = " USING ";
 
@@ -524,26 +521,27 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      *
      * <p>The IF clause enables lightweight transactions (LWT) in Cassandra by adding conditions
      * that must be met for the operation to succeed. This is particularly useful for ensuring
-     * data consistency in concurrent environments.</p>
+     * data consistency in concurrent environments. Note that Cassandra accepts arbitrary IF
+     * conditions on UPDATE and DELETE only; INSERT supports only {@link #ifNotExists()}.</p>
      *
      * <p>The method is named {@code onlyIf} because {@code if} is a Java keyword.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // INSERT with a raw expression (appended verbatim)
-     * String cql = PSC.insert("id", "name")
-     *                 .into("users")
-     *                 .onlyIf("name = NULL")
-     *                 .build().query();
-     * // Output: INSERT INTO users (id, name) VALUES (?, ?) IF name = NULL
-     *
-     * // UPDATE with a raw expression
+     * // UPDATE with a raw expression (appended verbatim)
      * String cql = PSC.update("users")
      *                 .set("status")
      *                 .where(Filters.eq("id", 123))
      *                 .onlyIf("status = 'inactive'")
      *                 .build().query();
      * // Output: UPDATE users SET status = ? WHERE id = ? IF status = 'inactive'
+     *
+     * // DELETE with a raw expression
+     * String cql = PSC.deleteFrom("users")
+     *                 .where(Filters.eq("id", 123))
+     *                 .onlyIf("version = 1")
+     *                 .build().query();
+     * // Output: DELETE FROM users WHERE id = ? IF version = 1
      * }</pre>
      *
      * @param expr the conditional expression as a string
@@ -566,16 +564,18 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     /**
      * Adds a conditional IF clause to the CQL statement with the specified condition.
      *
-     * <p>The method is named {@code onlyIf} because {@code if} is a Java keyword.</p>
+     * <p>The method is named {@code onlyIf} because {@code if} is a Java keyword. Note that
+     * Cassandra accepts arbitrary IF conditions on UPDATE and DELETE only; INSERT supports only
+     * {@link #ifNotExists()}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // INSERT with a single condition
-     * String cql = PSC.insert("id", "name")
-     *                 .into("users")
-     *                 .onlyIf(Filters.isNull("name"))
+     * // DELETE with a single condition
+     * String cql = PSC.deleteFrom("users")
+     *                 .where(Filters.eq("id", 123))
+     *                 .onlyIf(Filters.eq("version", 1))
      *                 .build().query();
-     * // Output: INSERT INTO users (id, name) VALUES (?, ?) IF name IS NULL
+     * // Output: DELETE FROM users WHERE id = ? IF version = ?
      *
      * // UPDATE with a compound condition (operands are NOT parenthesized, per Cassandra's LWT grammar)
      * String cql = PSC.update("users")
@@ -657,9 +657,11 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     /**
      * Adds an IF NOT EXISTS clause to the CQL statement.
      *
-     * <p>The IF NOT EXISTS clause is typically used with INSERT operations to ensure the operation
-     * only executes if the target row does not already exist. This provides a lightweight transaction
-     * that prevents duplicate insertions and can be useful for ensuring data uniqueness.</p>
+     * <p>The IF NOT EXISTS clause is used with INSERT operations to ensure the operation only
+     * executes if the target row does not already exist. This provides a lightweight transaction
+     * that prevents duplicate insertions and can be useful for ensuring data uniqueness. Note that
+     * {@code IF NOT EXISTS} is valid only on INSERT statements — for conditional UPDATE/DELETE use
+     * {@link #ifExists()} or {@link #onlyIf(Condition)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -669,14 +671,6 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      *                 .ifNotExists()
      *                 .build().query();
      * // Output: INSERT INTO users (id, name, email) VALUES (?, ?, ?) IF NOT EXISTS
-     *
-     * // Can also be used with UPDATE operations
-     * String cql = PSC.update("users")
-     *                 .set("status")
-     *                 .where(Filters.eq("id", 123))
-     *                 .ifNotExists()
-     *                 .build().query();
-     * // Output: UPDATE users SET status = ? WHERE id = ? IF NOT EXISTS
      * }</pre>
      *
      * @return this CqlBuilder instance for method chaining
@@ -1283,7 +1277,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * Creates an INSERT statement for multiple columns.
          *
          * <p>This method creates an INSERT statement template with multiple columns. Property names
-         * are automatically converted to snake_case format. Values will be provided as parameters
+         * are automatically converted per the DSL's naming policy (snake_case in the PSC examples shown). Values will be provided as parameters
          * when executing the query.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -1313,7 +1307,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * Creates an INSERT statement for a collection of columns.
          *
          * <p>This method provides flexibility when column names are dynamically generated or come from
-         * a collection. Property names are automatically converted to snake_case format.</p>
+         * a collection. Property names are automatically converted per the DSL's naming policy (snake_case in the PSC examples shown).</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -1341,7 +1335,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * Creates an INSERT statement from a map of property names and values.
          *
          * <p>This method generates an INSERT statement where map keys represent property names
-         * (converted to snake_case) and values are used to generate parameter placeholders.
+         * (converted per the DSL's naming policy) and values are used to generate parameter placeholders.
          * The CQL string and parameter list can both be retrieved from the {@code SP} returned
          * by {@link CqlBuilder#build()}.</p>
          *
@@ -1375,7 +1369,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *
          * <p>This method inspects the entity object and extracts the properties that are
          * suitable for insertion. Properties marked with @Transient, @ReadOnly, or @ReadOnlyId
-         * annotations are automatically excluded. Property names are converted to snake_case format.</p>
+         * annotations are automatically excluded. Property names are converted per the DSL's naming policy (snake_case in the PSC examples shown).</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -1441,7 +1435,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *
          * <p>This method generates an INSERT statement template based on the entity class structure.
          * All properties suitable for insertion (excluding those marked with @Transient, @ReadOnly,
-         * or @ReadOnlyId) are included. Property names are converted to snake_case format.</p>
+         * or @ReadOnlyId) are included. Property names are converted per the DSL's naming policy (snake_case in the PSC examples shown).</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -1493,7 +1487,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *
          * <p>This is a convenience method that combines insert() and into() operations.
          * The table name is automatically derived from the entity class name or @Table annotation.
-         * Property names are converted to snake_case format.</p>
+         * Property names are converted per the DSL's naming policy (snake_case in the PSC examples shown).</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -1582,7 +1576,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *
          * <p>This method starts building an UPDATE statement. Use the {@code set()} method to specify
          * which columns to update and their values. Property names in subsequent operations will be
-         * converted to snake_case format.</p>
+         * converted per the DSL's naming policy (snake_case in the PSC examples shown).</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -1917,7 +1911,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *
          * <p>This method creates a DELETE statement where the table name is derived from the entity
          * class name or @Table annotation. Property names in WHERE conditions will be automatically
-         * converted to snake_case format.</p>
+         * converted per the DSL's naming policy (snake_case in the PSC examples shown).</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -1983,7 +1977,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * Creates a SELECT statement with multiple columns.
          *
          * <p>This method creates a SELECT statement for multiple columns. Property names are
-         * converted to snake_case format and aliased back to their original camelCase names
+         * converted per the DSL's naming policy (snake_case in the PSC examples shown) and aliased back to their original camelCase names
          * to maintain proper object mapping.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -2014,7 +2008,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * Creates a SELECT statement with a collection of columns.
          *
          * <p>This method provides flexibility when column names are dynamically generated. Property
-         * names are converted to snake_case format with appropriate aliases.</p>
+         * names are converted per the DSL's naming policy (snake_case in the PSC examples shown) with appropriate aliases.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -2044,7 +2038,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * Creates a SELECT statement with column aliases.
          *
          * <p>This method allows specifying custom aliases for selected columns. The map keys are
-         * property names (converted to snake_case) and values are their desired aliases in the
+         * property names (converted per the DSL's naming policy) and values are their desired aliases in the
          * result set.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -2062,7 +2056,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *
          * @param propOrColumnNameAliases Map of property/column names to their aliases
          * @return a new CqlBuilder instance for method chaining
-         * @throws IllegalArgumentException if propOrColumnNameAliases is null or empty
+         * @throws IllegalArgumentException if propOrColumnNameAliases is null or empty, or if any
+         *         alias is blank, quoted, or contains CQL comment tokens
          */
         public CqlBuilder select(final Map<String, String> propOrColumnNameAliases) {
             N.checkArgNotEmpty(propOrColumnNameAliases, SELECTION_PART_MSG);
@@ -2080,7 +2075,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * Creates a SELECT statement for all properties of an entity class.
          *
          * <p>This method generates a SELECT statement including all properties from the entity class
-         * that are not marked with @Transient. Property names are converted to snake_case with
+         * that are not marked with @Transient. Property names are converted per the DSL's naming policy with
          * appropriate aliases.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -2190,7 +2185,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *
          * <p>This is a convenience method that combines select() and from() operations.
          * The table name is automatically derived from the entity class name or @Table annotation.
-         * All property names are converted to snake_case with appropriate aliases.</p>
+         * All property names are converted per the DSL's naming policy with appropriate aliases.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -2236,8 +2231,11 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * Creates a SELECT FROM statement with optional sub-entity properties.
          *
          * <p>This convenience method combines SELECT and FROM operations with control over
-         * sub-entity inclusion. Cassandra CQL does not support JOIN; sub-entity columns are
-         * simply added to the projection of the single FROM table.</p>
+         * sub-entity inclusion. <b>Caution:</b> when the entity declares sub-entity properties and
+         * {@code includeSubEntityProperties} is {@code true}, this mirrors the parent SQL builder
+         * and emits a comma-separated multi-table FROM clause — which Cassandra CQL does not
+         * support (CQL has no JOIN and no multi-table FROM). Use it with sub-entities only for
+         * SQL-parity/offline rendering, not for statements to be executed against Cassandra.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
