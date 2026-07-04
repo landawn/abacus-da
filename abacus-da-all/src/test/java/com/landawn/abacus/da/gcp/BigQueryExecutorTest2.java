@@ -545,40 +545,32 @@ public class BigQueryExecutorTest2 extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(null, NamingPolicy.SNAKE_CASE));
     }
 
+    // An unsupported naming policy is now rejected eagerly at construction (fail-fast contract),
+    // so no INSERT/UPDATE/DELETE/query call is ever reached.
+
     @Test
     public void testUnsupportedNamingPolicy() {
-        BigQueryExecutor exec = new BigQueryExecutor(bigQuery, NamingPolicy.NO_CHANGE);
-        TestEntity entity = new TestEntity();
-        entity.setId(1);
-        assertThrows(RuntimeException.class, () -> exec.insert(entity));
+        assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(bigQuery, NamingPolicy.NO_CHANGE));
     }
 
     @Test
     public void testInsertWithMap_UnsupportedNamingPolicy() {
-        BigQueryExecutor exec = new BigQueryExecutor(bigQuery, NamingPolicy.NO_CHANGE);
-        Map<String, Object> props = new HashMap<>();
-        props.put("id", 1);
-        assertThrows(IllegalStateException.class, () -> exec.insert(TestEntity.class, props));
+        assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(bigQuery, NamingPolicy.NO_CHANGE));
     }
 
     @Test
     public void testUpdateWithMap_UnsupportedNamingPolicy() {
-        BigQueryExecutor exec = new BigQueryExecutor(bigQuery, NamingPolicy.NO_CHANGE);
-        Map<String, Object> props = new HashMap<>();
-        props.put("name", "Y");
-        assertThrows(IllegalStateException.class, () -> exec.update(TestEntity.class, props, Filters.eq("id", 1)));
+        assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(bigQuery, NamingPolicy.NO_CHANGE));
     }
 
     @Test
     public void testDelete_UnsupportedNamingPolicy() {
-        BigQueryExecutor exec = new BigQueryExecutor(bigQuery, NamingPolicy.NO_CHANGE);
-        assertThrows(IllegalStateException.class, () -> exec.delete(TestEntity.class, Filters.eq("id", 1)));
+        assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(bigQuery, NamingPolicy.NO_CHANGE));
     }
 
     @Test
     public void testQuery_UnsupportedNamingPolicy() {
-        BigQueryExecutor exec = new BigQueryExecutor(bigQuery, NamingPolicy.NO_CHANGE);
-        assertThrows(IllegalStateException.class, () -> exec.query(TestEntity.class, Filters.eq("id", 1)));
+        assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(bigQuery, NamingPolicy.NO_CHANGE));
     }
 
     @Test

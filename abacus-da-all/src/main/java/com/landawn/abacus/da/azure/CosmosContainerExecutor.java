@@ -1956,20 +1956,4 @@ public class CosmosContainerExecutor {
         //        SqlBuilder.resetHandlerForNamedParameter();
         //    }
     }
-
-    //    public static void main(String[] args) {
-    //        CosmosContainerExecutor cosmosContainerExecutor = new CosmosContainerExecutor(null, NamingPolicy.SNAKE_CASE);
-    //
-    //        SP sp = cosmosContainerExecutor.prepareQuery(User.class, null, Filters.eq("id", 1).and(Filters.notEqual("name", "abc")));
-    //
-    //        N.println(sp.query());
-    //    }
-    //
-    //    @Data
-    //    public static class User {
-    //
-    //        private int id;
-    //        private String name;
-    //
-    //    }
 }

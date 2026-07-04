@@ -89,8 +89,10 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
  * <h2>Key Features and Architecture</h2>
  * <h3>Key Features:</h3>
  * <ul>
- * <li><b>Non-blocking Operations</b> — every public method returns a {@link CompletableFuture}
- *     for asynchronous execution (streaming results are returned as a {@code CompletableFuture<Stream<T>>})</li>
+ * <li><b>Non-blocking Operations</b> — every asynchronous operation method returns a {@link CompletableFuture}
+ *     for asynchronous execution (streaming results are returned as a {@code CompletableFuture<Stream<T>>});
+ *     factory, accessor, and lifecycle methods such as {@code mapper(..)}, {@code dynamoDBAsyncClient()},
+ *     and {@code close()} are excepted</li>
  * <li><b>Complete CRUD Support</b> — async get/put/update/delete (including {@code returnValues})</li>
  * <li><b>Batch Operations</b> — efficient async batch get/write; unprocessed items must be retried
  *     by the caller (not automatic)</li>
@@ -211,10 +213,8 @@ public final class AsyncDynamoDBExecutor {
      * // Edge: a null client is rejected eagerly
      * new AsyncDynamoDBExecutor(null);                                    // throws IllegalArgumentException
      *
-     * // Typical: prefer try-with-resources so close() shuts the client down
-     * try (AsyncDynamoDBExecutor e = new AsyncDynamoDBExecutor(client)) {
-     *     // ... async operations ...
-     * }                                                                   // e.close() -> client.close()
+     * // Remember to call close() when finished to shut the underlying client down
+     * executor.close();                                                  // -> client.close()
      * }</pre>
      *
      * @param dynamoDBClient the DynamoDB async client to use for operations. Must not be null.
@@ -684,6 +684,8 @@ public final class AsyncDynamoDBExecutor {
      *         {@link java.util.concurrent.CompletionException}
      */
     public <T> CompletableFuture<T> getItem(final GetItemRequest getItemRequest, final Class<T> targetClass) {
+        N.checkArgNotNull(targetClass, "targetClass");
+
         return dynamoDBClient.getItem(getItemRequest).thenApply(getItemResponse -> readRow(getItemResponse, targetClass));
     }
 
@@ -2396,24 +2398,17 @@ public final class AsyncDynamoDBExecutor {
      * <p><b>Best Practices:</b></p>
      * <ul>
      * <li>Always call {@code close()} when finished with the executor</li>
-     * <li>Use try-with-resources for automatic cleanup</li>
+     * <li>Call {@code close()} from a finally block for guaranteed cleanup</li>
      * <li>Avoid calling {@code close()} while operations are still pending</li>
      * <li>For graceful shutdown, wait for outstanding {@code CompletableFuture}s to complete first</li>
      * </ul>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Try-with-resources (recommended)
-     * try (AsyncDynamoDBExecutor executor = new AsyncDynamoDBExecutor(client)) {
-     *     // Use executor for operations
-     *     CompletableFuture<User> future = executor.getItem(tableName, key, User.class);
-     *     User user = future.get();
-     * } // close() called automatically -> underlying client.close()
-     *
-     * // Manual cleanup
      * AsyncDynamoDBExecutor executor = new AsyncDynamoDBExecutor(client);
      * try {
-     *     // Use executor
+     *     CompletableFuture<User> future = executor.getItem(tableName, key, User.class);
+     *     User user = future.get();
      * } finally {
      *     executor.close();   // closes the wrapped client; further operations on it will fail
      * }

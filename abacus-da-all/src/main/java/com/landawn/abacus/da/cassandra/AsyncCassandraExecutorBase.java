@@ -630,6 +630,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param props the column-name to new-value map to apply
      * @param whereClause the WHERE condition selecting rows to update
      * @return a future whose payload is the driver result set produced by the UPDATE
+     * @throws IllegalArgumentException if {@code props} is null or empty (thrown synchronously at the call site)
      */
     public ContinuableFuture<RS> update(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause) {
         N.checkArgument(N.notEmpty(props), "'props' can't be null or empty.");
@@ -1829,6 +1830,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is a <i>present</i> {@link OptionalBoolean} holding the value
      *         ({@code false} when the column is {@code null}); empty only when no row matches
+     * @throws IllegalArgumentException if targetClass is null, or propName is null or empty
      */
     @Beta
     public ContinuableFuture<OptionalBoolean> queryForBoolean(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -1864,6 +1866,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is a <i>present</i> {@link OptionalChar} holding the value
      *         ({@code (char) 0} when the column is {@code null}); empty only when no row matches
+     * @throws IllegalArgumentException if targetClass is null, or propName is null or empty
      */
     @Beta
     public ContinuableFuture<OptionalChar> queryForChar(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -1899,6 +1902,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is a <i>present</i> {@link OptionalByte} holding the value
      *         ({@code (byte) 0} when the column is {@code null}); empty only when no row matches
+     * @throws IllegalArgumentException if targetClass is null, or propName is null or empty
      */
     @Beta
     public ContinuableFuture<OptionalByte> queryForByte(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -1934,6 +1938,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is a <i>present</i> {@link OptionalShort} holding the value
      *         ({@code (short) 0} when the column is {@code null}); empty only when no row matches
+     * @throws IllegalArgumentException if targetClass is null, or propName is null or empty
      */
     @Beta
     public ContinuableFuture<OptionalShort> queryForShort(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -1969,6 +1974,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is a <i>present</i> {@link OptionalInt} holding the value
      *         ({@code 0} when the column is {@code null}); empty only when no row matches
+     * @throws IllegalArgumentException if targetClass is null, or propName is null or empty
      */
     @Beta
     public ContinuableFuture<OptionalInt> queryForInt(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -2004,6 +2010,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is a <i>present</i> {@link OptionalLong} holding the value
      *         ({@code 0L} when the column is {@code null}); empty only when no row matches
+     * @throws IllegalArgumentException if targetClass is null, or propName is null or empty
      */
     @Beta
     public ContinuableFuture<OptionalLong> queryForLong(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -2039,6 +2046,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is a <i>present</i> {@link OptionalFloat} holding the value
      *         ({@code 0f} when the column is {@code null}); empty only when no row matches
+     * @throws IllegalArgumentException if targetClass is null, or propName is null or empty
      */
     @Beta
     public ContinuableFuture<OptionalFloat> queryForFloat(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -2074,6 +2082,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is a <i>present</i> {@link OptionalDouble} holding the value
      *         ({@code 0d} when the column is {@code null}); empty only when no row matches
+     * @throws IllegalArgumentException if targetClass is null, or propName is null or empty
      */
     @Beta
     public ContinuableFuture<OptionalDouble> queryForDouble(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -2109,6 +2118,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is a {@link Nullable} holding the {@code String} value, or
      *         empty if no row matches; the value is {@code null} when the column is SQL NULL
+     * @throws IllegalArgumentException if targetClass is null, or propName is null or empty
      */
     @Beta
     public ContinuableFuture<Nullable<String>> queryForString(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -2143,6 +2153,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is a {@link Nullable} holding the {@code Date} value, or
      *         empty if no row matches
+     * @throws IllegalArgumentException if targetClass is null, or propName is null or empty
      */
     @Beta
     public ContinuableFuture<Nullable<Date>> queryForDate(final Class<?> targetClass, final String propName, final Condition whereClause) {

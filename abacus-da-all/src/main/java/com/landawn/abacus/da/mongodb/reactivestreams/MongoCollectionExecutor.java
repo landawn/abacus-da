@@ -829,10 +829,12 @@ public final class MongoCollectionExecutor {
      * @param sort the sort criteria to determine document order
      * @param rowType the Class representing the target type for conversion
      * @return a Mono that emits the first matching document converted to type T, or empty if no match
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if filter or rowType is null (thrown synchronously at the call site)
      * @see com.mongodb.client.model.Sorts
      */
     public <T> Mono<T> findFirst(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         return query(selectPropNames, filter, sort, 0, 1).next().mapNotNull(toEntity(rowType));
     }
 
@@ -856,9 +858,11 @@ public final class MongoCollectionExecutor {
      * @param sort the sort criteria to determine document order
      * @param rowType the Class representing the target type for conversion
      * @return a Mono that emits the first matching document converted to type T, or empty if no match
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if filter or rowType is null (thrown synchronously at the call site)
      */
     public <T> Mono<T> findFirst(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         return executeQuery(projection, filter, sort, 0, 1).next().mapNotNull(toEntity(rowType));
     }
 

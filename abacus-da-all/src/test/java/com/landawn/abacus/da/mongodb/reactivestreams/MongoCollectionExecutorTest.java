@@ -1516,6 +1516,21 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
+    public void testFindFirstWithNullRowTypeThrowsIAE() {
+        // Regression: the two terminal reactive findFirst overloads previously had no rowType guard, so a
+        // null rowType silently produced an empty Mono instead of the eager IllegalArgumentException thrown
+        // by the synchronous sibling (and by every other reactive read). The guard now throws at the call site.
+        final Bson filter = new Document("_id", "x");
+
+        // findFirst(Collection, Bson, Bson, Class) terminal (routes through query(...)).
+        assertThrows(IllegalArgumentException.class, () -> executor.findFirst(Arrays.asList("name"), filter, (Bson) null, (Class<Document>) null));
+        // findFirst(Bson, Bson, Bson, Class) terminal (routes through executeQuery(...)).
+        assertThrows(IllegalArgumentException.class, () -> executor.findFirst((Bson) new Document(), filter, (Bson) null, (Class<Document>) null));
+        // The delegating convenience overload inherits the guard.
+        assertThrows(IllegalArgumentException.class, () -> executor.findFirst(filter, (Class<Document>) null));
+    }
+
+    @Test
     public void testGroupByWithFieldName() {
         String fieldName = "category";
         List<Document> groupResults = Arrays.asList(new Document("_id", "electronics"), new Document("_id", "books"));

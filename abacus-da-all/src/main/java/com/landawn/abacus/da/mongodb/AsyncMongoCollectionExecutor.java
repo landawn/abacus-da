@@ -94,7 +94,8 @@ import com.mongodb.client.result.UpdateResult;
  *   <li>Prefer batch operations such as {@link #insertMany(Collection)} or {@link #bulkWrite(List)}
  *       over many parallel single-document calls.</li>
  *   <li>Streams and cursors materialised on the executor thread must still be drained by the caller;
- *       remember to close the returned {@link Stream} / {@link ChangeStreamIterable}.</li>
+ *       remember to close the returned {@link Stream}, and the {@code MongoCursor} obtained from a
+ *       {@link ChangeStreamIterable}.</li>
  * </ul>
  *
  * <p><b>Usage Examples:</b></p>
@@ -348,7 +349,7 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(approx -> System.out.println("~" + approx + " documents"));
      * }</pre>
      *
-     * @param options additional options for the estimated count operation
+     * @param options additional options for the estimated count operation (null uses defaults)
      * @return a ContinuableFuture that completes with the estimated document count
      * @see #estimatedDocumentCount()
      * @see EstimatedDocumentCountOptions
@@ -2252,7 +2253,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param obj the object to insert, which will be converted to a Document
-     * @param options the options to apply to the insert operation
+     * @param options the options to apply to the insert operation (null uses defaults)
      * @return a ContinuableFuture that completes with the {@link InsertOneResult} reported by the server
      * @throws IllegalArgumentException if obj is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
@@ -2312,7 +2313,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param objList the collection of objects to insert, each will be converted to a Document
-     * @param options the options to apply to the insert operation
+     * @param options the options to apply to the insert operation (null uses defaults)
      * @return a ContinuableFuture that completes with the {@link InsertManyResult} reported by the server
      * @throws IllegalArgumentException if objList is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if any database operation fails (propagated through future)
@@ -3493,7 +3494,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param fieldName the field name to get distinct values for
      * @param rowType the class to deserialize the distinct values into
      * @return a ContinuableFuture that completes with a Stream of distinct values
-     * @throws IllegalArgumentException if fieldName or rowType is null (propagated through future)
+     * @throws IllegalArgumentException if fieldName is null or empty, or if rowType is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #distinct(String, Bson, Class)
      */
@@ -3519,7 +3520,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to apply before getting distinct values (must not be null)
      * @param rowType the class to deserialize the distinct values into
      * @return a ContinuableFuture that completes with a Stream of distinct values
-     * @throws IllegalArgumentException if filter is null, or if any other parameter is null (propagated through future)
+     * @throws IllegalArgumentException if fieldName is null or empty, if filter is null, or if rowType is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #distinct(String, Class)
      */

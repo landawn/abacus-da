@@ -1548,7 +1548,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.queryForDate("processedAt", Filters.empty(), (Class<Timestamp>) null); // throws IllegalArgumentException
      * }</pre>
      *
-     * @param <P> the specific Date subclass type
+     * @param <V> the specific Date subclass type
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against (must not be null)
      * @param valueType the class of the Date subclass to convert to
@@ -1560,7 +1560,7 @@ public final class MongoCollectionMapper<T> {
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForDate(String, Bson, Class)
      */
-    public <P extends Date> Mono<P> queryForDate(final String propName, final Bson filter, final Class<P> valueType) {
+    public <V extends Date> Mono<V> queryForDate(final String propName, final Bson filter, final Class<V> valueType) {
         return collectionExecutor.queryForDate(propName, filter, valueType);
     }
 

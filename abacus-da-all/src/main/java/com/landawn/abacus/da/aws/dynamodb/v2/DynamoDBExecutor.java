@@ -3491,28 +3491,20 @@ public final class DynamoDBExecutor {
      * <p><b>Best Practices:</b></p>
      * <ul>
      * <li>Always call close() when finished with the executor</li>
-     * <li>Use try-with-resources for automatic resource management</li>
+     * <li>Call close() from a finally block for guaranteed cleanup</li>
      * <li>Ensure all operations complete before closing</li>
      * <li>Don't share closed executors between threads</li>
      * </ul>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Try-with-resources (recommended)
      * DynamoDbClient client = DynamoDbClient.builder()
      *     .region(Region.US_EAST_1)
      *     .build();
      *
-     * try (DynamoDBExecutor executor = new DynamoDBExecutor(client)) {
-     *     // Use executor for operations
-     *     Map<String, Object> item = executor.getItem(tableName, key);
-     *     // executor.close() called automatically
-     * }
-     *
-     * // Manual cleanup
      * DynamoDBExecutor executor = new DynamoDBExecutor(client);
      * try {
-     *     // Perform operations
+     *     Map<String, Object> item = executor.getItem(tableName, key);
      * } finally {
      *     executor.close();   // Ensure cleanup
      * }
@@ -4686,7 +4678,7 @@ public final class DynamoDBExecutor {
          * @return a map containing the IN condition
          */
         public static Map<String, Condition> in(final String attrName, final Object... attrValues) {
-            final Map<String, Condition> result = new HashMap<>(1);
+            final Map<String, Condition> result = new LinkedHashMap<>(1);
 
             in(result, attrName, attrValues);
 
@@ -4711,7 +4703,7 @@ public final class DynamoDBExecutor {
          * @return a map containing the IN condition
          */
         public static Map<String, Condition> in(final String attrName, final Collection<?> attrValues) {
-            final Map<String, Condition> result = new HashMap<>(1);
+            final Map<String, Condition> result = new LinkedHashMap<>(1);
 
             in(result, attrName, attrValues);
 
@@ -4804,7 +4796,7 @@ public final class DynamoDBExecutor {
          * <p>Initializes an empty condition map that will be populated through the builder methods.</p>
          */
         ConditionBuilder() {
-            condMap = new HashMap<>();
+            condMap = new LinkedHashMap<>();
         }
 
         /**

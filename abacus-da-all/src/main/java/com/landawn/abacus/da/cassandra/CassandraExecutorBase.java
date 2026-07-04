@@ -458,10 +458,11 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
     /**
      * Creates a WHERE condition to match any entity in the provided collection.
      *
-     * <p>This method generates a condition that can match any of the entities in the collection
-     * by their primary key values. For single-key entities, it creates an IN condition. For
-     * composite-key entities, it creates an OR condition with AND clauses for each entity's
-     * key components.</p>
+     * <p>This method generates a condition that matches any of the entities in the collection
+     * by their primary key values. Only single-key entities are supported: it builds an IN
+     * condition over the key values. Composite-key entities are rejected with an
+     * {@link IllegalArgumentException}, because a batch of composite keys cannot be expressed
+     * in a single Cassandra {@code WHERE} clause.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -470,16 +471,17 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * Condition cond = entityToCondition(User.class, users);
      * // Result: WHERE user_id IN (?, ?, ?)
      *
-     * // Composite key entities
+     * // Composite key entities are not supported
      * List<UserSession> sessions = Arrays.asList(session1, session2);
-     * Condition cond = entityToCondition(UserSession.class, sessions);
-     * // Result: WHERE (user_id = ? AND session_id = ?) OR (user_id = ? AND session_id = ?)
+     * entityToCondition(UserSession.class, sessions); // throws IllegalArgumentException
      * }</pre>
      *
      * @param entityClass the entity class
      * @param entities the collection of entities whose keys should be matched
      * @return a Condition that matches any entity in the collection by primary key
-     * @throws IllegalArgumentException if entityClass or entities is null or empty
+     * @throws IllegalArgumentException if {@code entityClass} is null, if {@code entities} is null or empty,
+     *         if the entity declares no key names, if it has a composite (multi-column) primary key, if any
+     *         entity in the collection is null, or if any entity has no value for the key property
      */
     protected static Condition entityToCondition(final Class<?> entityClass, final Collection<?> entities) {
         N.checkArgNotNull(entityClass, "entityClass");
@@ -1005,7 +1007,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param entities the collection of entities to update
      * @param type the batch type
      * @return the result set from the batch UPDATE operation
-     * @throws IllegalArgumentException if entities is null or empty
+     * @throws IllegalArgumentException if entities is null or empty, or if its first element is null
      */
     public RS batchUpdate(final Collection<?> entities, final BT type) {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
@@ -1293,8 +1295,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
     /**
      * Performs a batch delete of multiple entities.
      *
-     * <p>This method deletes all provided entities in a single batch operation
-     * for better performance. Each entity must have its primary key values set.</p>
+     * <p>This method deletes all provided entities in a single {@code DELETE} whose {@code WHERE}
+     * clause matches every entity's primary key (an {@code IN} over the key). Each entity must have
+     * its primary key values set.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1306,7 +1309,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param entities the collection of entities to delete
      * @return the result set from the batch DELETE operation
-     * @throws IllegalArgumentException if entities is null or empty
+     * @throws IllegalArgumentException if entities is null or empty, or if its first element is null
      */
     public RS batchDelete(final Collection<?> entities) {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
@@ -1340,7 +1343,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param entities the collection of entities to delete from
      * @param propNamesToDelete the property names to delete (null for entire rows)
      * @return the result set from the batch DELETE operation
-     * @throws IllegalArgumentException if entities is empty or propNamesToDelete is empty (but not null)
+     * @throws IllegalArgumentException if entities is empty or its first element is null, or if
+     *         propNamesToDelete is empty (but not null)
      */
     public RS batchDelete(final Collection<?> entities, final Collection<String> propNamesToDelete) {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
@@ -2126,7 +2130,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * boolean exists = executor.exists(
-     *     "SELECT 1 FROM users WHERE email = ? LIMIT 1",
+     *     "SELECT email FROM users WHERE email = ? LIMIT 1",
      *     "user@example.com"); // returns true if the query yields at least one row, else false
      * }</pre>
      *
@@ -3366,19 +3370,19 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param <T> the target type
      * @param targetClass the entity class
-     * @param execute the result set to convert
+     * @param resultSet the result set to convert
      * @return a List of mapped objects
      */
-    protected abstract <T> List<T> toList(Class<T> targetClass, RS execute);
+    protected abstract <T> List<T> toList(Class<T> targetClass, RS resultSet);
 
     /**
      * Extracts data from a result set into a Dataset.
      *
      * @param targetClass the entity class
-     * @param execute the result set to extract from
+     * @param resultSet the result set to extract from
      * @return a Dataset containing the extracted data
      */
-    protected abstract Dataset extractData(Class<?> targetClass, RS execute);
+    protected abstract Dataset extractData(Class<?> targetClass, RS resultSet);
 
     /**
      * Fetches exactly one row from a result set.

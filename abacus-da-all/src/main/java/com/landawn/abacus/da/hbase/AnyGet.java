@@ -240,7 +240,10 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * <p>This factory method creates a get operation using a ByteBuffer as the row key.
      * This is useful when working with NIO operations or when the row key is already
      * in ByteBuffer format. The ByteBuffer's current position and limit determine
-     * which bytes are used for the row key.</p>
+     * which bytes are used for the row key. Note that the underlying
+     * {@link org.apache.hadoop.hbase.client.Get#Get(ByteBuffer)} constructor performs a relative
+     * bulk read, so the buffer's position is advanced to its limit; duplicate the buffer first if
+     * you intend to reuse it (e.g. for a subsequent operation on the same key).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

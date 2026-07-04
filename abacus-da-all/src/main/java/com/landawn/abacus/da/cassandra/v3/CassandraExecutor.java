@@ -217,12 +217,14 @@ import lombok.experimental.Accessors;
  * <p>Always properly close resources to avoid connection leaks. The executor's
  * {@link #close()} closes the underlying {@link com.datastax.driver.core.Session},
  * the associated {@link com.datastax.driver.core.Cluster}, and the internal statement
- * caches, so try-with-resources alone is normally sufficient:</p>
+ * caches:</p>
  * <pre>{@code
- * try (CassandraExecutor executor = new CassandraExecutor(session)) {
+ * CassandraExecutor executor = new CassandraExecutor(session);
+ * try {
  *     // Perform database operations
+ * } finally {
+ *     executor.close();   // releases session + cluster + caches
  * }
- * // executor.close() has already released session + cluster + caches.
  * }</pre>
  *
  * <p><b>Naming convention:</b> this executor uses the abacus "house" CRUD vocabulary shared by the

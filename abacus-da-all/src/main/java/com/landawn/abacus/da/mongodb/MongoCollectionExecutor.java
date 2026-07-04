@@ -3035,20 +3035,20 @@ public final class MongoCollectionExecutor {
      *
      * @param filter BSON filter to identify the document
      * @param objList collection of update operations
-     * @param updateOptions additional update options
+     * @param options additional update options (null uses defaults)
      * @return UpdateResult containing update operation details
      * @throws IllegalArgumentException if filter or objList is null, or if objList is empty
      * @throws com.mongodb.MongoException if the database operation fails
      */
-    public UpdateResult updateOne(final Bson filter, final Collection<?> objList, final UpdateOptions updateOptions) {
+    public UpdateResult updateOne(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
         N.checkArgNotNull(filter, "filter");
 
         final List<Bson> updateToUse = toBson(objList);
 
-        if (updateOptions == null) {
+        if (options == null) {
             return coll.updateOne(filter, updateToUse);
         } else {
-            return coll.updateOne(filter, updateToUse, updateOptions);
+            return coll.updateOne(filter, updateToUse, options);
         }
     }
 
@@ -3311,24 +3311,24 @@ public final class MongoCollectionExecutor {
      *
      * @param filter the query filter to identify documents to update
      * @param objList collection of update operations; each can be Bson/Document/Map or entity objects
-     * @param updateOptions additional options for the update operation (null uses defaults)
+     * @param options additional options for the update operation (null uses defaults)
      * @return UpdateResult containing information about the update operation
      * @throws IllegalArgumentException if filter or objList is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #updateMany(Bson, Collection)
      * @see UpdateOptions
      */
-    public UpdateResult updateMany(final Bson filter, final Collection<?> objList, final UpdateOptions updateOptions) {
+    public UpdateResult updateMany(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
         N.checkArgNotNull(filter, "filter");
 
         N.checkArgNotEmpty(objList, "objList");
 
         final List<Bson> updateToUse = toBson(objList);
 
-        if (updateOptions == null) {
+        if (options == null) {
             return coll.updateMany(filter, updateToUse);
         } else {
-            return coll.updateMany(filter, updateToUse, updateOptions);
+            return coll.updateMany(filter, updateToUse, options);
         }
     }
 
@@ -4147,7 +4147,7 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * executor.distinct("category", String.class) // returns a lazy Stream of the unique non-null "category" values
+     * executor.distinct("category", String.class) // returns a lazy Stream of the unique "category" values (null included if documents store the field as null/missing)
      *     .forEach(category -> System.out.println("Category: " + category));
      * }</pre>
      *
@@ -4389,6 +4389,7 @@ public final class MongoCollectionExecutor {
     @Beta
     public <T> Stream<T> groupByAndCount(final String fieldName, final Class<T> rowType) {
         N.checkArgNotEmpty(fieldName, "fieldName");
+        N.checkArgNotNull(rowType, "rowType");
 
         return aggregate(groupByPipeline(fieldName, true, rowType), rowType);
     }

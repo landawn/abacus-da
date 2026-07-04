@@ -19,11 +19,14 @@ package com.landawn.abacus.da.search;
  *
  * <p>This class is reserved for a future implementation that will wrap a Solr client
  * and expose convenience methods for indexing and querying documents against a Solr
- * core or collection. It currently declares no members and is not visible outside
- * this package.</p>
+ * core or collection. It currently exposes no API and is not visible outside this
+ * package.</p>
  *
  * @see LuceneExecutor
  */
 final class SolrExecutor { //NOSONAR
 
+    SolrExecutor() {
+        // placeholder class - reserved for a future implementation
+    }
 }

@@ -590,7 +590,6 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @see #setReturnResults(boolean)
      */
     public boolean isReturnResults() {
-
         return increment.isReturnResults();
     }
 

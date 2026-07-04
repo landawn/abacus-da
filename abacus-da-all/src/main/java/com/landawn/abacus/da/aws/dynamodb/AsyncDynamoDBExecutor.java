@@ -1755,7 +1755,7 @@ public final class AsyncDynamoDBExecutor {
      *                    filter expressions, and other query parameters, must not be {@code null}
      * @return a {@link ContinuableFuture} containing a {@link Stream} of items matching the query,
      *         providing lazy evaluation and automatic pagination
-     * @throws NullPointerException if queryRequest is {@code null} (surfaced through the future)
+     * @throws IllegalArgumentException if queryRequest is {@code null} (surfaced through the future)
      * @see #list(QueryRequest)
      */
     public ContinuableFuture<Stream<Map<String, Object>>> stream(final QueryRequest queryRequest) {
@@ -1821,8 +1821,8 @@ public final class AsyncDynamoDBExecutor {
      * @param targetClass the class to convert each result item to, must have a default constructor, must not be {@code null}
      * @return a {@link ContinuableFuture} containing a {@link Stream} of items matching the query,
      *         each automatically converted to type {@code T} with lazy evaluation and automatic pagination
-     * @throws NullPointerException if queryRequest is {@code null} (surfaced through the future)
-     * @throws IllegalArgumentException if targetClass is {@code null} or unsupported (surfaced through the future)
+     * @throws IllegalArgumentException if queryRequest is {@code null}, or if targetClass is {@code null}
+     *         or unsupported (surfaced through the future)
      * @see #stream(QueryRequest)
      * @see #list(QueryRequest, Class)
      */

@@ -99,7 +99,7 @@ import com.landawn.abacus.util.stream.Stream;
  * <li><b>Object Mapping</b> - Automatic conversion between Java objects and DynamoDB AttributeValues</li>
  * <li><b>Stream Processing</b> - Memory-efficient streaming for large result sets with automatic pagination</li>
  * <li><b>Async Support</b> - Built-in asynchronous execution via {@link #async()} method</li>
- * <li><b>Connection Management</b> - Proper resource management with AutoCloseable support</li>
+ * <li><b>Connection Management</b> - Proper resource management via an explicit {@link #close()} method</li>
  * </ul>
  *
  * <h3>DynamoDB Concepts:</h3>
@@ -188,9 +188,10 @@ public final class DynamoDBExecutor {
     /**
      * Constructs a new DynamoDBExecutor with the specified DynamoDB client using default configuration.
      *
-     * <p>This constructor uses default DynamoDBMapperConfig and creates an internal async executor
-     * with CPU-optimized thread pool settings for handling asynchronous operations. The executor
-     * will use AWS SDK v1 with standard retry policies and connection pooling.</p>
+     * <p>This constructor uses default DynamoDBMapperConfig and the shared, library-default async
+     * executor (a single static, CPU-sized thread pool shared by all executors constructed without
+     * an explicit {@link AsyncExecutor}). The executor will use AWS SDK v1 with standard retry
+     * policies and connection pooling.</p>
      *
      * <p><b>Default Configuration:</b></p>
      * <ul>
@@ -391,9 +392,9 @@ public final class DynamoDBExecutor {
      * DynamoDBMapper customMapper = executor.dynamoDBMapper(config);
      * }</pre>
      *
-     * @param config the DynamoDB mapper configuration to use. Must not be null.
+     * @param config the DynamoDB mapper configuration to use; may be {@code null}, in which case the
+     *               SDK's default configuration is used
      * @return a new DynamoDBMapper instance configured with the specified settings, never null
-     * @throws IllegalArgumentException if config is null
      */
     public DynamoDBMapper dynamoDBMapper(final DynamoDBMapperConfig config) {
         return new DynamoDBMapper(dynamoDBClient, config);
@@ -497,8 +498,9 @@ public final class DynamoDBExecutor {
      * programming patterns. All async operations share the same underlying DynamoDB client and configuration.</p>
      *
      * <p>The async executor uses the {@link AsyncExecutor} supplied during construction. When the default
-     * is used, it is a dedicated thread pool with CPU-optimized settings (core threads = max(64, CPU_CORES * 8),
-     * max threads = max(128, CPU_CORES * 16)).</p>
+     * is used, it is the library-wide shared thread pool with CPU-optimized settings (core threads =
+     * max(64, CPU_CORES * 8), max threads = max(128, CPU_CORES * 16)), shared by all executors constructed
+     * without an explicit {@link AsyncExecutor}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3410,11 +3412,6 @@ public final class DynamoDBExecutor {
      * } finally {
      *     executor.close();   // shuts down the underlying AmazonDynamoDBClient
      * }
-     *
-     * // Or via try-with-resources, since DynamoDBExecutor is AutoCloseable
-     * try (DynamoDBExecutor ex = new DynamoDBExecutor(dynamoDBClient)) {
-     *     ex.getItem("Users", DynamoDBExecutor.asKey("id", "1"));
-     * }   // close() is invoked automatically on block exit
      * }</pre>
      *
      */
@@ -3672,9 +3669,9 @@ public final class DynamoDBExecutor {
          * List<User> retrieved = mapper.batchGetItem(request);
          * }</pre>
          *
-         * @param batchGetItemRequest the BatchGetItemRequest containing query parameters
+         * @param batchGetItemRequest the BatchGetItemRequest containing query parameters, must not be {@code null}
          * @return list of retrieved entities from DynamoDB; empty list if none found
-         * @throws IllegalArgumentException if the request specifies a different table than configured
+         * @throws IllegalArgumentException if the request specifies a different table than configured, or if {@code batchGetItemRequest} is {@code null}
          */
         public List<T> batchGetItem(final BatchGetItemRequest batchGetItemRequest) {
             final Map<String, List<T>> map = dynamoDBExecutor.batchGetItem(checkItem(batchGetItemRequest), targetEntityClass);
@@ -3745,9 +3742,9 @@ public final class DynamoDBExecutor {
          * PutItemResult result = mapper.putItem(request);
          * }</pre>
          *
-         * @param putItemRequest the PutItemRequest containing the item and parameters
+         * @param putItemRequest the PutItemRequest containing the item and parameters, must not be {@code null}
          * @return the PutItemResult containing operation metadata
-         * @throws IllegalArgumentException if the request specifies a different table than configured
+         * @throws IllegalArgumentException if the request specifies a different table than configured, or if {@code putItemRequest} is {@code null}
          */
         public PutItemResult putItem(final PutItemRequest putItemRequest) {
             return dynamoDBExecutor.putItem(checkItem(putItemRequest));
@@ -3830,9 +3827,9 @@ public final class DynamoDBExecutor {
          * UpdateItemResult result = mapper.updateItem(request);
          * }</pre>
          *
-         * @param updateItemRequest the UpdateItemRequest containing update expressions and parameters
+         * @param updateItemRequest the UpdateItemRequest containing update expressions and parameters, must not be {@code null}
          * @return the UpdateItemResult containing operation metadata
-         * @throws IllegalArgumentException if the request specifies a different table than configured
+         * @throws IllegalArgumentException if the request specifies a different table than configured, or if {@code updateItemRequest} is {@code null}
          */
         public UpdateItemResult updateItem(final UpdateItemRequest updateItemRequest) {
             return dynamoDBExecutor.updateItem(checkItem(updateItemRequest));
@@ -4708,7 +4705,7 @@ public final class DynamoDBExecutor {
          * @return a Map containing the IN condition for use in DynamoDB operations
          */
         public static Map<String, Condition> in(final String attrName, final Object... attrValues) {
-            final Map<String, Condition> result = new HashMap<>(1);
+            final Map<String, Condition> result = new LinkedHashMap<>(1);
 
             in(result, attrName, attrValues);
 
@@ -4731,7 +4728,7 @@ public final class DynamoDBExecutor {
          * @return a Map containing the IN condition for use in DynamoDB operations
          */
         public static Map<String, Condition> in(final String attrName, final Collection<?> attrValues) {
-            final Map<String, Condition> result = new HashMap<>(1);
+            final Map<String, Condition> result = new LinkedHashMap<>(1);
 
             in(result, attrName, attrValues);
 

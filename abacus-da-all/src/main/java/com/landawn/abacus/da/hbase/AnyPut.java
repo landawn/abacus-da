@@ -365,6 +365,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowOffset the starting position (0-based) within the row key bytes
      * @param rowLength the number of bytes to use from the row key, starting at offset
      * @return a new AnyPut instance configured with the partial row key
+     * @throws IllegalArgumentException if {@code rowKey} converts to a {@code null} byte array, or if
+     *         {@code rowLength} is 0 (both rejected by the underlying {@link Put} constructor's row check)
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative, or
      *         {@code rowOffset + rowLength} exceeds the length of the converted row-key bytes
      * @see #of(Object)
@@ -406,7 +408,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @return a new AnyPut configured with the partial row key and default timestamp
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative, or
      *         {@code rowOffset + rowLength} exceeds the length of the converted row-key bytes
-     * @throws IllegalArgumentException if {@code timestamp} is negative (validated by the
+     * @throws IllegalArgumentException if {@code rowKey} converts to a {@code null} byte array, if
+     *         {@code rowLength} is 0, or if {@code timestamp} is negative (all validated by the
      *         underlying {@link Put} constructor)
      * @see #of(Object, int, int)
      * @see #of(Object, long)
@@ -668,8 +671,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * Creates a list of AnyPut instances from a collection of Java entity objects.
      *
      * <p>This batch factory method converts multiple entities to put operations in a single call,
-     * using the default camelCase naming policy. This is more efficient than calling
-     * {@code create(Object)} repeatedly. Any AnyPut instances in the collection are passed through
+     * using the default camelCase naming policy. This is more convenient than calling
+     * {@code create(Object)} in a loop. Any AnyPut instances in the collection are passed through
      * unchanged, while other objects are converted using entity mapping.</p>
      *
      * <p><b>Usage Examples:</b></p>

@@ -1607,8 +1607,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * Creates an UPDATE statement for a table with entity class mapping.
          *
          * <p>This method creates an UPDATE statement where the entity class provides property-to-column
-         * name mapping information. This ensures proper snake_case conversion for all property names
-         * used in the update operation.</p>
+         * name mapping information. This ensures property names are converted to column names per the
+         * DSL's naming policy (snake_case in the PSC examples shown).</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -1699,8 +1699,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         /**
          * Creates a DELETE CQL builder for a single column or expression.
          *
-         * <p>This method initializes a DELETE statement for one column. The column name will be
-         * converted according to the snake_case naming policy. This is useful for deleting
+         * <p>This method initializes a DELETE statement for one column. The column name is converted
+         * per the DSL's naming policy (snake_case in the PSC examples shown). This is useful for deleting
          * specific columns from a row rather than the entire row.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -1725,8 +1725,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         /**
          * Creates a DELETE CQL builder for multiple columns.
          *
-         * <p>This method initializes a DELETE statement for multiple columns. All column names
-         * will be converted according to the snake_case naming policy. This allows selective
+         * <p>This method initializes a DELETE statement for multiple columns. All column names are
+         * converted per the DSL's naming policy (snake_case in the PSC examples shown). This allows selective
          * deletion of specific columns from rows.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -1757,8 +1757,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * Creates a DELETE CQL builder for a collection of columns.
          *
          * <p>This method is useful when column names are determined dynamically. The collection
-         * can contain property names that will be converted to column names according to the
-         * snake_case naming policy.</p>
+         * can contain property names that are converted to column names per the DSL's naming policy
+         * (snake_case in the PSC examples shown).</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -1847,8 +1847,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * Creates a DELETE FROM statement for a table.
          *
          * <p>This method starts building a DELETE statement. Typically followed by WHERE conditions
-         * to specify which rows to delete. Property names in WHERE conditions will be converted
-         * to snake_case format if an entity class is associated.</p>
+         * to specify which rows to delete. Property names in WHERE conditions are converted per the
+         * DSL's naming policy (snake_case in the PSC examples shown) if an entity class is associated.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -1877,8 +1877,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * Creates a DELETE FROM statement for a table with entity class mapping.
          *
          * <p>This method creates a DELETE statement where the entity class provides property-to-column
-         * name mapping for WHERE conditions. This ensures proper snake_case conversion for property
-         * names used in conditions.</p>
+         * name mapping for WHERE conditions. This ensures property names in conditions are converted
+         * per the DSL's naming policy (snake_case in the PSC examples shown).</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code

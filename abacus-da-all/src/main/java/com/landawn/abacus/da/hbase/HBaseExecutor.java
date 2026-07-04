@@ -153,7 +153,8 @@ import com.landawn.abacus.util.stream.Stream;
  *
  * <h2>Basic usage</h2>
  * <pre>{@code
- * try (HBaseExecutor executor = new HBaseExecutor(connection)) {
+ * HBaseExecutor executor = new HBaseExecutor(connection);
+ * try {
  *     boolean exists = executor.exists("users", AnyGet.of("user123"));
  *     Result result  = executor.get("users", AnyGet.of("user123"));
  *     executor.put("users", AnyPut.of("user123").addColumn("info", "name", "John"));
@@ -161,6 +162,8 @@ import com.landawn.abacus.util.stream.Stream;
  *     HBaseMapper<User, String> mapper = executor.mapper(User.class);
  *     User user = mapper.get("user123");
  *     mapper.put(user);
+ * } finally {
+ *     executor.close();   // closes the wrapped Connection
  * }
  * }</pre>
  *
@@ -224,8 +227,11 @@ public final class HBaseExecutor {
      * Configuration config = HBaseConfiguration.create();
      * Connection conn = ConnectionFactory.createConnection(config);
      *
-     * try (HBaseExecutor executor = new HBaseExecutor(conn)) {  // throws UncheckedIOException if conn.getAdmin() fails
+     * HBaseExecutor executor = new HBaseExecutor(conn);  // throws UncheckedIOException if conn.getAdmin() fails
+     * try {
      *     // ... perform HBase operations; closing executor closes conn too
+     * } finally {
+     *     executor.close();
      * }
      * }</pre>
      *
@@ -253,8 +259,11 @@ public final class HBaseExecutor {
      * AsyncExecutor sharedPool = new AsyncExecutor(16, 32, 60L, TimeUnit.SECONDS);
      * Connection conn = ConnectionFactory.createConnection(HBaseConfiguration.create());
      *
-     * try (HBaseExecutor executor = new HBaseExecutor(conn, sharedPool)) {  // throws UncheckedIOException if conn.getAdmin() fails
+     * HBaseExecutor executor = new HBaseExecutor(conn, sharedPool);  // throws UncheckedIOException if conn.getAdmin() fails
+     * try {
      *     ContinuableFuture<Result> future = executor.async().get("users", AnyGet.of("user123"));
+     * } finally {
+     *     executor.close();
      * }
      * // sharedPool is NOT shut down by closing the executor — the caller owns it
      * }</pre>
@@ -555,7 +564,7 @@ public final class HBaseExecutor {
      * {@code targetType}, and returns them as a {@link List}.
      *
      * <p>Equivalent to {@code toList(resultScanner, 0, Integer.MAX_VALUE, targetType)}.
-     * The scanner is always closed (via {@link IOUtil#closeQuietly(java.io.Closeable)})
+     * The scanner is always closed (via {@link IOUtil#closeQuietly(AutoCloseable)})
      * before this method returns, even on exception.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -587,7 +596,7 @@ public final class HBaseExecutor {
      *
      * <p>The first {@code offset} results are read and discarded; up to {@code count}
      * subsequent results are converted via the per-row mapping for {@code targetType}.
-     * The scanner is always closed (via {@link IOUtil#closeQuietly(java.io.Closeable)})
+     * The scanner is always closed (via {@link IOUtil#closeQuietly(AutoCloseable)})
      * before this method returns, even on exception.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -2756,6 +2765,11 @@ public final class HBaseExecutor {
         } catch (final IOException e) {
             throw new UncheckedIOException(e);
         } catch (final Throwable e) {
+            // Don't mask JVM errors: rethrow an Error unchanged rather than wrapping it in a RuntimeException.
+            if (e instanceof Error error) {
+                throw error;
+            }
+
             throw ExceptionUtil.toRuntimeException(e, true);
         } finally {
             closeQuietly(table);
@@ -2837,8 +2851,8 @@ public final class HBaseExecutor {
      * @param tableName the name of the HBase table
      * @param methodDescriptor the Protocol Buffers method descriptor
      * @param request the Protocol Buffers request message
-     * @param startRowKey the start row key (inclusive)
-     * @param endRowKey the end row key (exclusive)
+     * @param startRowKey the start row key (inclusive; {@code null} for unbounded start)
+     * @param endRowKey the end row key (exclusive; {@code null} for unbounded end)
      * @param responsePrototype the prototype for the response message
      * @return a map of region names (byte arrays) to their corresponding response messages
      * @throws UncheckedIOException if an I/O error occurs during the operation
@@ -2890,8 +2904,8 @@ public final class HBaseExecutor {
      * @param tableName the name of the HBase table
      * @param methodDescriptor the Protocol Buffers method descriptor
      * @param request the Protocol Buffers request message
-     * @param startRowKey the start row key (inclusive)
-     * @param endRowKey the end row key (exclusive)
+     * @param startRowKey the start row key (inclusive; {@code null} for unbounded start)
+     * @param endRowKey the end row key (exclusive; {@code null} for unbounded end)
      * @param responsePrototype the prototype for the response message
      * @param callback the callback to receive response messages from each region
      * @throws UncheckedIOException if an I/O error occurs during the operation
@@ -3040,8 +3054,11 @@ public final class HBaseExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * try (HBaseExecutor executor = new HBaseExecutor(connection)) {
+     * HBaseExecutor executor = new HBaseExecutor(connection);
+     * try {
      *     // perform HBase operations
+     * } finally {
+     *     executor.close();
      * }
      * }</pre>
      *
@@ -3726,11 +3743,13 @@ public final class HBaseExecutor {
          * @param <S> the service type
          * @param <R> the result type
          * @param service the service interface class
-         * @param startRowKey the start row key (inclusive)
-         * @param endRowKey the end row key (exclusive)
+         * @param startRowKey the start row key (inclusive; {@code null} for unbounded start)
+         * @param endRowKey the end row key (exclusive; {@code null} for unbounded end)
          * @param callable the callable to execute on each region
          * @return a map of region names to their corresponding results
          * @throws UncheckedIOException if an I/O error occurs during the operation
+         * @throws RuntimeException if the coprocessor invocation throws a non-IOException {@link Throwable}
+         *         (wrapped via {@code ExceptionUtil.toRuntimeException})
          * @see Service
          * @see Batch.Call
          */

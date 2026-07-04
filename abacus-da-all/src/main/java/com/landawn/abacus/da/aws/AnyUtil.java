@@ -4,7 +4,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
- * Utility class providing general-purpose helper methods used across the data-access layer.
+ * Utility class providing property-map helper methods for the AWS data-access executors.
  *
  * <p>This class is not intended to be instantiated; all members are {@code static}.</p>
  */
@@ -76,7 +76,7 @@ public final class AnyUtil {
             throw new IllegalArgumentException("The length of property name/value array must be even: " + propNameAndValues.length);
         }
 
-        final Map<String, Object> props = new LinkedHashMap<>(propNameAndValues.length / 2);
+        final Map<String, Object> props = new LinkedHashMap<>(propNameAndValues.length); // capacity = 2x pair count, so no rehash below the default load factor
 
         for (int i = 0, len = propNameAndValues.length; i < len; i += 2) {
             if (!(propNameAndValues[i] instanceof String)) {

@@ -330,6 +330,17 @@ public class MongoCollectionMapperTest extends TestBase {
     }
 
     @Test
+    public void testqueryForSingleNonNull() {
+        String propName = "value";
+        Document filter = new Document("id", 1);
+        when(mockCollExecutor.queryForSingleNonNull(propName, filter, String.class)).thenReturn(Optional.of("result"));
+
+        Optional<String> result = mapper.queryForSingleNonNull(propName, filter, String.class);
+        Assertions.assertEquals("result", result.get());
+        verify(mockCollExecutor).queryForSingleNonNull(propName, filter, String.class);
+    }
+
+    @Test
     public void testQuery() {
         Document filter = new Document("status", "active");
         Dataset dataset = N.newEmptyDataset(Arrays.asList("id", "name"));

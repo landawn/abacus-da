@@ -24,6 +24,10 @@ package com.landawn.abacus.da.search;
  * cannot be instantiated outside its package.</p>
  */
 final class ElasticsearchExecutor { //NOSONAR
+
+    ElasticsearchExecutor() {
+        // placeholder class - reserved for a future implementation
+    }
     //
     //    public void get() {
     //        // TODO

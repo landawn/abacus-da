@@ -190,7 +190,7 @@ public final class MongoCollectionMapper<T> {
      * MongoCollectionMapper<User> userMapper = mongoDB.collectionMapper(User.class);
      * MongoCollectionExecutor executor = userMapper.collectionExecutor(); // never null; same instance on each call
      * // Use raw executor for operations not exposed by the mapper, e.g. an untyped aggregate:
-     * Document complexResult = executor.aggregate(complexPipeline).first(); // raw Document, not the mapped entity
+     * Document complexResult = executor.aggregate(complexPipeline).first().orElse(null); // raw Document, not the mapped entity
      * }</pre>
      *
      * @return the underlying MongoCollectionExecutor instance
@@ -1392,7 +1392,7 @@ public final class MongoCollectionMapper<T> {
      * boolean isEmpty = none.isPresent() == false; // isEmpty == true
      * }</pre>
      *
-     * @param <P> the specific Date subtype to return
+     * @param <V> the specific Date subtype to return
      * @param propName the name of the date property to retrieve
      * @param filter the query filter to match documents against (must not be null)
      * @param valueType the class of the Date subtype to convert to
@@ -1405,7 +1405,7 @@ public final class MongoCollectionMapper<T> {
      * @see Date
      * @see #queryForSingleValue(String, Bson, Class)
      */
-    public <P extends Date> Nullable<P> queryForDate(final String propName, final Bson filter, final Class<P> valueType) {
+    public <V extends Date> Nullable<V> queryForDate(final String propName, final Bson filter, final Class<V> valueType) {
         return collectionExecutor.queryForDate(propName, filter, valueType);
     }
 
@@ -1449,6 +1449,41 @@ public final class MongoCollectionMapper<T> {
      */
     public <V> Nullable<V> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType) {
         return collectionExecutor.queryForSingleValue(propName, filter, valueType);
+    }
+
+    /**
+     * Returns the non-null value of {@code propName} from the first document matching {@code filter}, as the specified type.
+     *
+     * <p>Only the value of {@code propName} on the first matching document is read; any remaining documents or fields are ignored.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> {@code Optional.empty()} is returned when no document matches
+     * the filter. If a document <i>is</i> matched but the field is absent on the matched document or the
+     * stored value is BSON {@code null}, this method throws {@link NullPointerException} (an {@code Optional}
+     * cannot hold {@code null}). Use {@link #queryForSingleValue(String, Bson, Class)} instead when a
+     * matched-but-null field must be representable.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * MongoCollectionMapper<Product> mapper = mongoDB.collectionMapper(Product.class);
+     * Optional<BigDecimal> price = mapper.queryForSingleNonNull("price",
+     *     Filters.eq("productId", "PROD999"), BigDecimal.class);
+     * BigDecimal value = price.orElse(BigDecimal.ZERO); // the value if a document matched; ZERO when none matched
+     * }</pre>
+     *
+     * @param <V> the type to convert the property value to
+     * @param propName the name of the property to retrieve
+     * @param filter the query filter to match documents against (must not be null)
+     * @param valueType the class of the type to convert to
+     * @return a <i>present</i> {@code Optional<V>} holding the field value when at least one document is
+     *         matched; {@code Optional.empty()} when no document matches
+     * @throws IllegalArgumentException if {@code propName} is null or empty, {@code filter} is null, or {@code valueType} is null
+     * @throws NullPointerException if a document is matched but the field is absent or its value is BSON {@code null}
+     * @throws com.mongodb.MongoException if the database operation fails
+     * @see #queryForSingleValue(String, Bson, Class)
+     * @see Optional
+     */
+    public <V> Optional<V> queryForSingleNonNull(final String propName, final Bson filter, final Class<V> valueType) {
+        return collectionExecutor.queryForSingleNonNull(propName, filter, valueType);
     }
 
     /**
@@ -2916,7 +2951,7 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<User> updatePipeline = Arrays.asList(
-     *     new User().setVisitCount(5),  // Increment visits
+     *     new User().setVisitCount(5),  // Set visit count (literal $set assignment)
      *     new User().setLastUpdated(new Date())
      * );
      * // Pre-update entity by default (ReturnDocument.BEFORE):

@@ -240,10 +240,12 @@ import lombok.experimental.Accessors;
  * <p>The executor should be closed properly via {@link #close()} to release
  * underlying resources:</p>
  * <pre>{@code
- * try (CassandraExecutor executor = new CassandraExecutor(session)) {
+ * CassandraExecutor executor = new CassandraExecutor(session);
+ * try {
  *     // Perform database operations
+ * } finally {
+ *     executor.close();   // closes the session and releases cached statements
  * }
- * // Executor and session are automatically closed
  * }</pre>
  *
  * @see CqlBuilder
@@ -1489,17 +1491,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * should not be used for further database operations.</p>
      *
      * <p>This method is idempotent - calling it multiple times has the same effect as
-     * calling it once. It's recommended to use try-with-resources or explicit close()
-     * calls to ensure proper resource cleanup.</p>
+     * calling it once. It's recommended to call {@link #close()} from a finally block
+     * to ensure proper resource cleanup.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Using try-with-resources (recommended)
-     * try (CassandraExecutor executor = new CassandraExecutor(session)) {
-     *     // Perform database operations
-     * } // Automatically closed
-     *
-     * // Manual close
      * CassandraExecutor executor = new CassandraExecutor(session);
      * try {
      *     // Perform database operations

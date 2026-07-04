@@ -220,7 +220,7 @@ public final class MongoDB extends MongoDBBase {
      * MongoCollectionExecutor executor = mongoDB.collectionExecutor("users"); // never null; a fresh executor each call (not pooled)
      * long count = executor.count(Filters.eq("status", "active"));
      *
-     * // Unlike collection(String), this overload validates its argument up front.
+     * // Like collection(String), this overload validates its argument up front.
      * mongoDB.collectionExecutor((String) null);             // throws IllegalArgumentException ("collectionName")
      * }</pre>
      *
@@ -294,7 +294,7 @@ public final class MongoDB extends MongoDBBase {
      * Optional<User> user = mapper.findFirst(Filters.eq("email", "john@example.com")); // abacus u.Optional; empty when no match
      *
      * // Equivalent explicit-name form:
-     * mongoDB.collectionMapper(User.class);                  // same as mongoDB.collectionMapper("User", User.class)
+     * mongoDB.collectionMapper("User", User.class);          // same as mongoDB.collectionMapper(User.class)
      *
      * // Edge case: a null type is rejected eagerly, consistent with collectionMapper(String, Class):
      * mongoDB.collectionMapper((Class<User>) null);          // throws IllegalArgumentException ("rowType")

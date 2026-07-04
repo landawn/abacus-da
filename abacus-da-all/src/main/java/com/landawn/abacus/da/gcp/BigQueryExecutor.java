@@ -146,7 +146,7 @@ import com.landawn.abacus.util.stream.Stream;
  *   <li>{@link NamingPolicy#SCREAMING_SNAKE_CASE} &mdash; e.g. {@code firstName} &rarr; {@code FIRST_NAME}</li>
  *   <li>{@link NamingPolicy#CAMEL_CASE} &mdash; e.g. {@code firstName} &rarr; {@code firstName}</li>
  * </ul>
- * <p>Any other naming policy raises {@link IllegalStateException} from the DML helpers.</p>
+ * <p>Any other naming policy is rejected at construction time with {@link IllegalArgumentException}.</p>
  *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
@@ -243,8 +243,7 @@ public class BigQueryExecutor {
      * <p>
      * Only {@link NamingPolicy#SNAKE_CASE}, {@link NamingPolicy#SCREAMING_SNAKE_CASE}, and
      * {@link NamingPolicy#CAMEL_CASE} are honoured by the DML helpers; passing any other naming
-     * policy will cause the first INSERT/UPDATE/DELETE call to fail with
-     * {@link IllegalStateException}.
+     * policy is rejected at construction time with {@link IllegalArgumentException}.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -644,7 +643,8 @@ public class BigQueryExecutor {
         final Object value = fieldValue.getValue();
 
         if (value instanceof FieldValueList) {
-            return toMap((FieldValueList) value, supplier);
+            // Use the sub-schema already in hand rather than reading it reflectively off the nested row.
+            return toMap(field.getSubFields(), (FieldValueList) value, supplier);
         }
 
         if (value instanceof final List<?> values) {

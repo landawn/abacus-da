@@ -47,7 +47,7 @@ import com.landawn.abacus.util.N;
  *       next lexicographically greater row.</li>
  *   <li><b>Stop row</b> is <i>exclusive</i> by default and can be flipped with
  *       {@link #withStopRow(Object, boolean)}.</li>
- *   <li><b>Prefix scans</b> can be configured via {@link #setStartStopRowForPrefixScan(byte[])}
+ *   <li><b>Prefix scans</b> can be configured via {@link #setStartStopRowForPrefixScan(Object)}
  *       which translates the prefix into appropriate start/stop bounds without server-side filtering.</li>
  *   <li><b>Reversed scans</b> ({@link #setReversed(boolean)}) swap the natural traversal order: the
  *       scanner starts at the start row (now treated as the upper bound) and moves backwards toward
@@ -516,7 +516,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <p>
      * When a family is added without specific qualifiers, all columns within that
      * family will be retrieved. This is useful for getting all data associated with
-     * a particular column family in HBase.
+     * a particular column family in HBase. Per HBase semantics, this call overrides any
+     * previous {@link #addColumn(String, String)} entries for the same family (the family is
+     * reset to "all qualifiers").
      * </p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -568,11 +570,11 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     /**
      * Returns the complete family-to-qualifiers mapping for this scan.
      * <p>
-     * This method provides access to the internal structure of the scan,
-     * organized as a Map where keys are column family names (as byte arrays)
-     * and values are NavigableSet objects containing the specific qualifiers
-     * within each family. If a family has no specific qualifiers, it means
-     * all qualifiers in that family will be scanned.
+     * This method returns the same live map that backs the underlying {@link Scan} &mdash; it is
+     * <i>not</i> a defensive copy, so mutating the returned map (or its qualifier sets) directly
+     * affects this scan. The map is keyed by column family name (as byte arrays); each value is a
+     * {@code NavigableSet} of the specific qualifiers within that family, or {@code null} when all
+     * qualifiers in that family are to be scanned.
      * </p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -584,7 +586,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * Map<byte[], NavigableSet<byte[]>> map = scan.getFamilyMap();     // returns a map of size 1
      * }</pre>
      *
-     * @return a Map of column families to their qualifier sets; never null
+     * @return the live Map of column families to their qualifier sets; never null
      * @see #addFamily(String)
      * @see #addColumn(String, String)
      */
@@ -603,7 +605,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Map<byte[], NavigableSet<byte[]>> familyMap = new HashMap<>();
+     * // Use a byte[]-comparator map so content-equal family keys collide correctly
+     * // (a plain HashMap keyed by byte[] would treat equal-content arrays as distinct keys).
+     * Map<byte[], NavigableSet<byte[]>> familyMap = new TreeMap<>(Bytes.BYTES_COMPARATOR);
      *
      * // Add specific qualifiers for "info" family
      * NavigableSet<byte[]> infoQualifiers = new TreeSet<>(Bytes.BYTES_COMPARATOR);
@@ -1165,7 +1169,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @param rowPrefix the row prefix; converted to bytes via {@link HBaseExecutor#toRowKeyBytes(Object)}
      * @return this {@link AnyScan} instance for method chaining
      * @deprecated Since HBase 2.5.0, scheduled for removal in 4.0.0. The name is misleading because
-     *             no {@link Filter} is used. Use {@link #setStartStopRowForPrefixScan(byte[])} instead.
+     *             no {@link Filter} is used. Use {@link #setStartStopRowForPrefixScan(Object)} instead.
      */
     @Deprecated
     public AnyScan setRowPrefixFilter(final Object rowPrefix) {
@@ -1183,16 +1187,19 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * byte[] prefix = Bytes.toBytes("user_");
-     * AnyScan scan = AnyScan.create().setStartStopRowForPrefixScan(prefix);   // returns this scan
-     * byte[] sr = scan.getStartRow();                                         // returns the bytes of "user_" (inclusive lower bound)
+     * // Any object is converted to row-key bytes, so a String prefix works directly.
+     * AnyScan scan = AnyScan.create().setStartStopRowForPrefixScan("user_");   // returns this scan
+     * byte[] sr = scan.getStartRow();                                          // returns the bytes of "user_" (inclusive lower bound)
+     *
+     * // A pre-converted byte[] prefix is passed through unchanged.
+     * AnyScan scan2 = AnyScan.create().setStartStopRowForPrefixScan(Bytes.toBytes("user_"));
      * }</pre>
      *
      * @param rowPrefix the row key prefix; passed through {@link HBaseExecutor#toRowKeyBytes(Object)} (a {@code byte[]} input is returned as-is)
      * @return this AnyScan instance for method chaining
      * @see Scan#setStartStopRowForPrefixScan(byte[])
      */
-    public AnyScan setStartStopRowForPrefixScan(final byte[] rowPrefix) {
+    public AnyScan setStartStopRowForPrefixScan(final Object rowPrefix) {
         scan.setStartStopRowForPrefixScan(toRowKeyBytes(rowPrefix));
 
         return this;
