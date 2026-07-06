@@ -4,18 +4,20 @@ import java.util.Date;
 import java.util.List;
 import java.util.Objects;
 
-import org.neo4j.ogm.annotation.GraphId;
+import org.neo4j.ogm.annotation.GeneratedValue;
+import org.neo4j.ogm.annotation.Id;
 import org.neo4j.ogm.annotation.NodeEntity;
 import org.neo4j.ogm.annotation.Relationship;
 
 @NodeEntity(label = "Order")
 public class Order {
-    @GraphId
+    @Id
+    @GeneratedValue
     private Long id;
-    @Relationship(type = "CONTAINS", direction = Relationship.OUTGOING)
+    @Relationship(type = "CONTAINS", direction = Relationship.Direction.OUTGOING)
     private List<OrderItem> orderItemList;
     private double amount;
-    @Relationship(type = "HAS", direction = Relationship.OUTGOING)
+    @Relationship(type = "HAS", direction = Relationship.Direction.OUTGOING)
     private Address shippingAddress;
     private Date date;
 

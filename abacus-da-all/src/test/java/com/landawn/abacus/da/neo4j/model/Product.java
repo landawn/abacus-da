@@ -2,18 +2,20 @@ package com.landawn.abacus.da.neo4j.model;
 
 import java.util.Objects;
 
-import org.neo4j.ogm.annotation.GraphId;
+import org.neo4j.ogm.annotation.GeneratedValue;
+import org.neo4j.ogm.annotation.Id;
 import org.neo4j.ogm.annotation.NodeEntity;
 import org.neo4j.ogm.annotation.Relationship;
 
 @NodeEntity(label = "Product")
 public class Product {
-    @GraphId
+    @Id
+    @GeneratedValue
     private Long id;
     private String name;
     private double price;
     private String category;
-    @Relationship(type = "SOLD_BY", direction = Relationship.OUTGOING)
+    @Relationship(type = "SOLD_BY", direction = Relationship.Direction.OUTGOING)
     private Vendor vendor;
 
     /**

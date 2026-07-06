@@ -2,12 +2,14 @@ package com.landawn.abacus.da.neo4j.model;
 
 import java.util.Objects;
 
-import org.neo4j.ogm.annotation.GraphId;
+import org.neo4j.ogm.annotation.GeneratedValue;
+import org.neo4j.ogm.annotation.Id;
 import org.neo4j.ogm.annotation.NodeEntity;
 
 @NodeEntity(label = "Address")
 public class Address {
-    @GraphId
+    @Id
+    @GeneratedValue
     private Long id;
     private String street;
     private String city;

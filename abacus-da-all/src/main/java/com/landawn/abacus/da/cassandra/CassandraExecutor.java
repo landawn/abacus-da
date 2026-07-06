@@ -595,7 +595,6 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @return a Dataset with type-converted data based on the target class
      * @throws NullPointerException if resultSet is null
      */
-    @SuppressWarnings("deprecation")
     public static Dataset extractData(final ResultSet resultSet, final Class<?> targetClass) {
         final boolean isEntity = Beans.isBeanClass(targetClass);
         final boolean isMap = targetClass != null && Map.class.isAssignableFrom(targetClass);

@@ -1962,7 +1962,6 @@ public final class DynamoDBExecutor {
      * @param items the List of DynamoDB items (Maps) to convert
      * @return a Dataset containing the extracted data, never null
      */
-    @SuppressWarnings("deprecation")
     static Dataset extractData(final List<Map<String, AttributeValue>> items, final int offset, final int count) {
         N.checkArgument(offset >= 0 && count >= 0, "'offset' and 'count' can't be negative: %s, %s", offset, count);
 

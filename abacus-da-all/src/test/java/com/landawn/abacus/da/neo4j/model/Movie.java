@@ -3,19 +3,21 @@ package com.landawn.abacus.da.neo4j.model;
 import java.util.HashSet;
 import java.util.Set;
 
-import org.neo4j.ogm.annotation.GraphId;
+import org.neo4j.ogm.annotation.GeneratedValue;
+import org.neo4j.ogm.annotation.Id;
 import org.neo4j.ogm.annotation.NodeEntity;
 import org.neo4j.ogm.annotation.Relationship;
 
 @NodeEntity(label = "Movie")
 public class Movie {
 
-    @GraphId
+    @Id
+    @GeneratedValue
     private Long id;
     private String title;
     private int released;
 
-    @Relationship(type = "ACTS_IN", direction = Relationship.INCOMING)
+    @Relationship(type = "ACTS_IN", direction = Relationship.Direction.INCOMING)
     Set<Actor> actors = new HashSet<>();
 
     /**

@@ -3,21 +3,23 @@ package com.landawn.abacus.da.neo4j.model;
 import java.util.List;
 import java.util.Objects;
 
-import org.neo4j.ogm.annotation.GraphId;
+import org.neo4j.ogm.annotation.GeneratedValue;
+import org.neo4j.ogm.annotation.Id;
 import org.neo4j.ogm.annotation.NodeEntity;
 import org.neo4j.ogm.annotation.Relationship;
 
 @NodeEntity(label = "Customer")
 public class Customer {
-    @GraphId
+    @Id
+    @GeneratedValue
     private Long id;
     private String firstName;
     private String lastName;
 
-    @Relationship(type = "SHIPPING_TO", direction = Relationship.OUTGOING)
+    @Relationship(type = "SHIPPING_TO", direction = Relationship.Direction.OUTGOING)
     private Address address;
 
-    @Relationship(type = "OWNS", direction = Relationship.OUTGOING)
+    @Relationship(type = "OWNS", direction = Relationship.Direction.OUTGOING)
     private List<Order> orderList;
 
     /**

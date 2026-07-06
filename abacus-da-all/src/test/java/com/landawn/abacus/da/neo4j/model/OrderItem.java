@@ -2,15 +2,17 @@ package com.landawn.abacus.da.neo4j.model;
 
 import java.util.Objects;
 
-import org.neo4j.ogm.annotation.GraphId;
+import org.neo4j.ogm.annotation.GeneratedValue;
+import org.neo4j.ogm.annotation.Id;
 import org.neo4j.ogm.annotation.NodeEntity;
 import org.neo4j.ogm.annotation.Relationship;
 
 @NodeEntity(label = "OrderItem")
 public class OrderItem {
-    @GraphId
+    @Id
+    @GeneratedValue
     private Long id;
-    @Relationship(type = "OF", direction = Relationship.OUTGOING)
+    @Relationship(type = "OF", direction = Relationship.Direction.OUTGOING)
     private Product product;
     private int quantity;
     private double amount;

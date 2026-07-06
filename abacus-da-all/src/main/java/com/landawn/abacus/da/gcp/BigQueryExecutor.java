@@ -1044,7 +1044,7 @@ public class BigQueryExecutor {
      * @see RowDataset
      * @see #query(Class, String, Object...)
      */
-    @SuppressWarnings({ "null", "deprecation" })
+    @SuppressWarnings({ "null" })
     public static Dataset extractData(final TableResult tableResult, final Class<?> targetClass) {
         final Schema schema = tableResult.getSchema();
 

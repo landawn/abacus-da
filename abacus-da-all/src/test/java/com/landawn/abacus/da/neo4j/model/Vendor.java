@@ -2,17 +2,19 @@ package com.landawn.abacus.da.neo4j.model;
 
 import java.util.Objects;
 
-import org.neo4j.ogm.annotation.GraphId;
+import org.neo4j.ogm.annotation.GeneratedValue;
+import org.neo4j.ogm.annotation.Id;
 import org.neo4j.ogm.annotation.NodeEntity;
 import org.neo4j.ogm.annotation.Relationship;
 
 @NodeEntity(label = "Vendor")
 public class Vendor {
-    @GraphId
+    @Id
+    @GeneratedValue
     private Long id;
     private String name;
 
-    @Relationship(type = "WHERE", direction = Relationship.OUTGOING)
+    @Relationship(type = "WHERE", direction = Relationship.Direction.OUTGOING)
     private Address address;
 
     /**
