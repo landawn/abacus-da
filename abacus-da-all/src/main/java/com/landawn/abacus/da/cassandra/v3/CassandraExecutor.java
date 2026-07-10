@@ -750,7 +750,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param resultSet the Cassandra ResultSet to convert
      * @param targetClass the per-row target type (see supported types above)
      * @return a list of converted rows
-     * @throws NullPointerException if {@code resultSet} is {@code null}
+     * @throws NullPointerException if {@code resultSet} or {@code targetClass} is {@code null}
      * @throws IllegalArgumentException if {@code targetClass} is a single-value type but
      *         the result set has more than one column
      */

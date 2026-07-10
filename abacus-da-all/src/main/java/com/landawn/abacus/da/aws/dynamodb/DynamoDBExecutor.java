@@ -1362,8 +1362,7 @@ public final class DynamoDBExecutor {
      * @param targetClass the class to convert the item to; must be a bean class with getter/setter methods
      *                    and must not be {@code null}
      * @return the converted entity instance, or {@code null} if {@code item} is {@code null}
-     * @throws IllegalArgumentException if {@code targetClass} is not a valid bean class
-     * @throws NullPointerException if {@code targetClass} is {@code null} and {@code item} is non-null
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null} (and {@code item} is non-null), or is not a valid bean class
      */
     public static <T> T toEntity(final Map<String, AttributeValue> item, final Class<T> targetClass) {
         if (item == null) {

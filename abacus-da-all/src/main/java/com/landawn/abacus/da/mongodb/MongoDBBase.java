@@ -1086,7 +1086,8 @@ public abstract class MongoDBBase {
                         }
                     }
                 } else {
-                    throw new IllegalArgumentException("Cannot convert document: " + firstNonNull + " to class: " + ClassUtil.getCanonicalClassName(rowType));
+                    throw new IllegalArgumentException(
+                            "Cannot convert document: " + firstNonNull.get() + " to class: " + ClassUtil.getCanonicalClassName(rowType));
                 }
 
                 return (List<T>) resultList;

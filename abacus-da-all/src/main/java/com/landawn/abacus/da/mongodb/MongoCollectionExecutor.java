@@ -1982,7 +1982,8 @@ public final class MongoCollectionExecutor {
      * @param sort BSON sort specification for result ordering (null for natural order)
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing all matching query results with projected fields and typed rows
-     * @throws IllegalArgumentException if filter is null
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
+     * @throws com.mongodb.MongoException if the database operation fails
      */
     public Dataset query(final Bson projection, final Bson filter, final Bson sort, final Class<?> rowType) {
         return query(projection, filter, sort, 0, Integer.MAX_VALUE, rowType);
@@ -2017,7 +2018,8 @@ public final class MongoCollectionExecutor {
      * @param count maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the paginated query results with projected fields and typed rows
-     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported, or if offset or count is negative
+     * @throws com.mongodb.MongoException if the database operation fails
      */
     public Dataset query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<?> rowType) {
         N.checkArgNotNull(rowType, "rowType");

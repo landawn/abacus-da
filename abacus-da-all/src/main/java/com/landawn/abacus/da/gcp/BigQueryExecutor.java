@@ -187,9 +187,12 @@ public class BigQueryExecutor {
         try {
             tmp = FieldValueList.class.getDeclaredField("schema");
         } catch (final Throwable e) {
-            // ignore: optional optimization, falls back to the public API below.
+            // ignore: schema-from-row access is disabled; getSchema(FieldValueList) will then fail and
+            // callers must use the overloads that take an explicit FieldList/Schema.
             if (logger.isDebugEnabled()) {
-                logger.debug("Unable to access FieldValueList.schema via reflection; falling back to public API", e);
+                logger.debug(
+                        "Unable to access FieldValueList.schema via reflection; schema-from-row methods will fail - use the explicit FieldList/Schema overloads",
+                        e);
             }
         }
 
@@ -597,7 +600,7 @@ public class BigQueryExecutor {
      * the desired implementation type (e.g. {@link IntFunctions#ofMap()},
      * {@link IntFunctions#ofLinkedHashMap()}). Nested {@link FieldValueList} values are recursively
      * converted into nested maps, with each recursion also using {@code supplier} (the inner
-     * schemas are extracted via {@link #getSchema(FieldValueList)}).
+     * schemas are taken from the parent {@link Field}'s {@code getSubFields()}).
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

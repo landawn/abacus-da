@@ -1396,7 +1396,7 @@ public final class MongoCollectionMapper<T> {
      * @param propName the name of the date property to retrieve
      * @param filter the query filter to match documents against (must not be null)
      * @param valueType the class of the Date subtype to convert to
-     * @return a <i>present</i> {@code Nullable<P>} holding the field value (possibly {@code null} for
+     * @return a <i>present</i> {@code Nullable<V>} holding the field value (possibly {@code null} for
      *         a missing or BSON {@code null} field) when at least one document is matched;
      *         {@code Nullable.empty()} when no document matches
      * @throws IllegalArgumentException if {@code propName} is null or empty, {@code filter} is null, or {@code valueType} is null

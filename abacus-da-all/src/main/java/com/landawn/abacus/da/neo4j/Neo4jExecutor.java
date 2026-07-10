@@ -2217,7 +2217,7 @@ public final class Neo4jExecutor {
      * Neo4j driver can route the request to a read replica in a clustered deployment or otherwise
      * optimise execution. Pass {@code false} for any query that mutates the graph; passing
      * {@code true} for a write query may fail at the driver/server depending on the deployment
-     * (OGM logs a warning and still submits the query in a read-only transaction).
+     * (OGM logs a debug-level diagnostic and still submits the query in a read-only transaction).
      * <p>
      * The Cypher executes immediately and the result rows are fully fetched; the returned stream
      * lazily iterates the fetched rows and borrows a pooled session for its lifetime. Close the
