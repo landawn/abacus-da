@@ -1406,9 +1406,10 @@ public final class DynamoDBExecutor {
             // property — heap pollution surfacing as a ClassCastException at the call site. N.convert
             // can't be used here: it short-circuits whenever the raw container class is assignable
             // (e.g. ArrayList -> List<Long>) and keeps the polluted elements, so the value is rebuilt
-            // through the parameterized Type's JSON codec instead.
+            // through the parameterized Type's JSON codec instead. Object-typed slots skip the rebuild
+            // (see isElementConversionNeeded).
             if (rawValue != null && propType.isParameterizedType() && (propType.isCollection() || propType.isMap())
-                    && (rawValue instanceof Collection || rawValue instanceof Map || rawValue instanceof String)) {
+                    && (rawValue instanceof String || ((rawValue instanceof Collection || rawValue instanceof Map) && isElementConversionNeeded(propType)))) {
                 propInfo.setPropValue(entity, propType.valueOf(rawValue instanceof String ? (String) rawValue : N.toJson(rawValue)));
             } else if (rawValue == null || propInfo.clazz.isAssignableFrom(rawValue.getClass())) {
                 propInfo.setPropValue(entity, rawValue);
@@ -1418,6 +1419,23 @@ public final class DynamoDBExecutor {
         }
 
         return entityInfo.finishBeanResult(entity);
+    }
+
+    // A container value only needs the parameterized-Type rebuild when a declared element/value type
+    // can differ from what toValue produced. Object-typed slots accept any runtime type, so the raw
+    // container is assigned as-is for them: the JSON round trip can't re-type what it parses under
+    // Object and would corrupt binary values (a ByteBuffer from a native B attribute doesn't survive
+    // the round trip). Map keys from an M attribute are always String, so String keys need no rebuild.
+    // Mirrors the v2 toEntity.
+    private static boolean isElementConversionNeeded(final Type<?> propType) {
+        if (propType.isMap()) {
+            final Class<?> keyClass = propType.parameterTypes().get(0).javaType();
+            final Class<?> valueClass = propType.parameterTypes().get(1).javaType();
+
+            return valueClass != Object.class || (keyClass != String.class && keyClass != Object.class);
+        }
+
+        return propType.parameterTypes().get(0).javaType() != Object.class;
     }
 
     @SuppressWarnings("rawtypes")

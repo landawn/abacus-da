@@ -330,6 +330,80 @@ public class DynamoDBExecutorV2Test extends TestBase {
         assertNull(result);
     }
 
+    // Regression: v2 toEntity previously called toValue(propValue, propInfo.clazz) for every property,
+    // so native NS/L/M attributes populated typed collection/map properties (List<Integer>, Set<Long>,
+    // Map<String,Long>) with raw String elements — heap pollution surfacing as a ClassCastException on
+    // read. v1 had the parameterized-Type rebuild; v2 was missing it. The fix ports v1's logic to v2.
+    @Test
+    public void testToEntity_TypedCollectionFromNsAndL_NoHeapPollution() {
+        final Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("id", AttributeValue.builder().s("u1").build());
+        // NS -> Set<Long> tags; L -> List<Integer> scores; M -> Map<String,Long> ratings.
+        item.put("tags", AttributeValue.builder().ns("1", "2", "3").build());
+        item.put("scores", AttributeValue.builder().l(AttributeValue.builder().n("10").build(), AttributeValue.builder().n("20").build()).build());
+        item.put("ratings",
+                AttributeValue.builder().m(Map.of("a", AttributeValue.builder().n("7").build(), "b", AttributeValue.builder().n("8").build())).build());
+
+        final TypedCollectionEntity result = DynamoDBExecutor.toEntity(item, TypedCollectionEntity.class);
+
+        assertNotNull(result);
+        assertEquals("u1", result.getId());
+
+        assertNotNull(result.getTags());
+        assertEquals(3, result.getTags().size());
+        // Elements must be Long, not String (heap pollution before the fix).
+        for (final Long tag : result.getTags()) {
+            assertEquals(Long.class, tag.getClass(), "tag element should be Long, was " + (tag == null ? "null" : tag.getClass()));
+        }
+        assertTrue(result.getTags().contains(1L));
+        assertTrue(result.getTags().contains(2L));
+        assertTrue(result.getTags().contains(3L));
+
+        assertNotNull(result.getScores());
+        assertEquals(2, result.getScores().size());
+        for (final Integer score : result.getScores()) {
+            assertEquals(Integer.class, score.getClass(), "score element should be Integer, was " + (score == null ? "null" : score.getClass()));
+        }
+        assertEquals(Integer.valueOf(10), result.getScores().get(0));
+        assertEquals(Integer.valueOf(20), result.getScores().get(1));
+
+        assertNotNull(result.getRatings());
+        assertEquals(2, result.getRatings().size());
+        // Values must be Long, not String (Map branch of the rebuild).
+        for (final Long rating : result.getRatings().values()) {
+            assertEquals(Long.class, rating.getClass(), "rating value should be Long, was " + (rating == null ? "null" : rating.getClass()));
+        }
+        assertEquals(Long.valueOf(7), result.getRatings().get("a"));
+        assertEquals(Long.valueOf(8), result.getRatings().get("b"));
+    }
+
+    // Regression for the Object-typed-slot guard: a Map<String,Object> property must receive the raw
+    // container as-is. Rebuilding it through the JSON codec would re-parse a byte[] value (from a
+    // native B sub-attribute) under element type Object, turning it into a List of numbers.
+    @Test
+    public void testToEntity_ObjectValuedMap_PreservesByteArray() {
+        final byte[] blob = new byte[] { 1, 2, -3 };
+
+        final Map<String, AttributeValue> nested = new LinkedHashMap<>();
+        nested.put("blob", AttributeValue.builder().b(software.amazon.awssdk.core.SdkBytes.fromByteArray(blob)).build());
+        nested.put("name", AttributeValue.builder().s("n1").build());
+
+        final Map<String, AttributeValue> item = new LinkedHashMap<>();
+        item.put("id", AttributeValue.builder().s("u1").build());
+        item.put("attrs", AttributeValue.builder().m(nested).build());
+
+        final TypedCollectionEntity result = DynamoDBExecutor.toEntity(item, TypedCollectionEntity.class);
+
+        assertNotNull(result);
+        assertNotNull(result.getAttrs());
+        assertEquals("n1", result.getAttrs().get("name"));
+
+        final Object blobValue = result.getAttrs().get("blob");
+        assertEquals(byte[].class, blobValue == null ? null : blobValue.getClass(),
+                "blob should stay byte[], was " + (blobValue == null ? "null" : blobValue.getClass()));
+        assertTrue(java.util.Arrays.equals(blob, (byte[]) blobValue));
+    }
+
     @Test
     public void testToList() {
         QueryResponse queryResponse = QueryResponse.builder()
@@ -2506,6 +2580,56 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
         public void setUserName(String userName) {
             this.userName = userName;
+        }
+    }
+
+    // Bean with typed collection/map properties — used by the heap-pollution regression tests.
+    private static class TypedCollectionEntity {
+        @com.landawn.abacus.annotation.Id
+        private String id;
+        private java.util.Set<Long> tags;
+        private java.util.List<Integer> scores;
+        private Map<String, Long> ratings;
+        private Map<String, Object> attrs;
+
+        public String getId() {
+            return id;
+        }
+
+        public void setId(String id) {
+            this.id = id;
+        }
+
+        public java.util.Set<Long> getTags() {
+            return tags;
+        }
+
+        public void setTags(java.util.Set<Long> tags) {
+            this.tags = tags;
+        }
+
+        public java.util.List<Integer> getScores() {
+            return scores;
+        }
+
+        public void setScores(java.util.List<Integer> scores) {
+            this.scores = scores;
+        }
+
+        public Map<String, Long> getRatings() {
+            return ratings;
+        }
+
+        public void setRatings(Map<String, Long> ratings) {
+            this.ratings = ratings;
+        }
+
+        public Map<String, Object> getAttrs() {
+            return attrs;
+        }
+
+        public void setAttrs(Map<String, Object> attrs) {
+            this.attrs = attrs;
         }
     }
 

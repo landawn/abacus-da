@@ -1386,10 +1386,45 @@ public final class DynamoDBExecutor {
                 continue;
             }
 
-            propInfo.setPropValue(entity, toValue(propValue, propInfo.clazz));
+            final Object rawValue = toValue(propValue);
+            final Type<?> propType = propInfo.jsonXmlType;
+
+            // Convert container values through the property's FULL generic type: toValue only sees the
+            // raw class, so the elements of a native NS/SS/L/M attribute (or a JSON-serialized
+            // collection) would otherwise stay Strings inside a List<Integer>/Set<Long>/Map<String, Long>
+            // property — heap pollution surfacing as a ClassCastException at the call site. N.convert
+            // can't be used here: it short-circuits whenever the raw container class is assignable
+            // (e.g. ArrayList -> List<Long>) and keeps the polluted elements, so the value is rebuilt
+            // through the parameterized Type's JSON codec instead. Object-typed slots skip the rebuild
+            // (see isElementConversionNeeded). Mirrors the v1 toEntity.
+            if (rawValue != null && propType.isParameterizedType() && (propType.isCollection() || propType.isMap())
+                    && (rawValue instanceof String || ((rawValue instanceof Collection || rawValue instanceof Map) && isElementConversionNeeded(propType)))) {
+                propInfo.setPropValue(entity, propType.valueOf(rawValue instanceof String ? (String) rawValue : N.toJson(rawValue)));
+            } else if (rawValue == null || propInfo.clazz.isAssignableFrom(rawValue.getClass())) {
+                propInfo.setPropValue(entity, rawValue);
+            } else {
+                propInfo.setPropValue(entity, N.convert(rawValue, propInfo.clazz));
+            }
         }
 
         return entityInfo.finishBeanResult(entity);
+    }
+
+    // A container value only needs the parameterized-Type rebuild when a declared element/value type
+    // can differ from what toValue produced. Object-typed slots accept any runtime type, so the raw
+    // container is assigned as-is for them: the JSON round trip can't re-type what it parses under
+    // Object and would corrupt binary values (a byte[] from a native B attribute comes back as a List
+    // of numbers). Map keys from an M attribute are always String, so String keys need no rebuild.
+    // Mirrors the v1 toEntity.
+    private static boolean isElementConversionNeeded(final Type<?> propType) {
+        if (propType.isMap()) {
+            final Class<?> keyClass = propType.parameterTypes().get(0).javaType();
+            final Class<?> valueClass = propType.parameterTypes().get(1).javaType();
+
+            return valueClass != Object.class || (keyClass != String.class && keyClass != Object.class);
+        }
+
+        return propType.parameterTypes().get(0).javaType() != Object.class;
     }
 
     /**

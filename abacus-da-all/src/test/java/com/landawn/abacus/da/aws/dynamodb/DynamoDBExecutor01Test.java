@@ -1759,6 +1759,31 @@ public class DynamoDBExecutor01Test extends TestBase {
         assertEquals(Integer.valueOf(4), entity.getRatings().get("quality")); // ClassCastException before the fix
     }
 
+    // Regression for the Object-typed-slot guard: a Map<String,Object> property must receive the raw
+    // container as-is. Rebuilding it through the JSON codec would mangle a ByteBuffer value (from a
+    // native B sub-attribute) that the codec can't re-type under element type Object.
+    @Test
+    public void testToEntity_ObjectValuedMap_PreservesBinaryValue() {
+        byte[] blob = new byte[] { 1, 2, -3 };
+
+        Map<String, AttributeValue> nested = new LinkedHashMap<>();
+        nested.put("blob", new AttributeValue().withB(ByteBuffer.wrap(blob)));
+        nested.put("name", new AttributeValue("n1"));
+
+        Map<String, AttributeValue> item = new HashMap<>();
+        item.put("id", new AttributeValue("e4"));
+        item.put("attrs", new AttributeValue().withM(nested));
+
+        GenericPropsEntity entity = DynamoDBExecutor.toEntity(item, GenericPropsEntity.class);
+
+        assertNotNull(entity.getAttrs());
+        assertEquals("n1", entity.getAttrs().get("name"));
+
+        Object blobValue = entity.getAttrs().get("blob");
+        assertTrue(blobValue instanceof ByteBuffer, "blob should stay ByteBuffer, was " + (blobValue == null ? "null" : blobValue.getClass()));
+        assertEquals(ByteBuffer.wrap(blob), blobValue);
+    }
+
     // toItem(Object, NamingPolicy) Map branch (camel-case and non-camel-case branches)
     @Test
     public void testToItem_FromMapWithSnakeCase() {
@@ -2588,6 +2613,7 @@ public class DynamoDBExecutor01Test extends TestBase {
         private java.util.Set<Integer> scores;
         private List<Long> counts;
         private Map<String, Integer> ratings;
+        private Map<String, Object> attrs;
 
         public String getId() {
             return id;
@@ -2619,6 +2645,14 @@ public class DynamoDBExecutor01Test extends TestBase {
 
         public void setRatings(Map<String, Integer> ratings) {
             this.ratings = ratings;
+        }
+
+        public Map<String, Object> getAttrs() {
+            return attrs;
+        }
+
+        public void setAttrs(Map<String, Object> attrs) {
+            this.attrs = attrs;
         }
     }
 
