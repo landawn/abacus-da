@@ -738,6 +738,27 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
     }
 
     @Test
+    public void testListPaginationDoesNotBlockOnFutureGet() throws ExecutionException, InterruptedException {
+        final QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
+        final QueryResponse page1 = QueryResponse.builder()
+                .items(List.of(Map.of("id", AttributeValue.builder().s("1").build())))
+                .lastEvaluatedKey(Map.of("id", AttributeValue.builder().s("1").build()))
+                .build();
+        final QueryResponse page2 = QueryResponse.builder().items(List.of(Map.of("id", AttributeValue.builder().s("2").build()))).build();
+        final CompletableFuture<QueryResponse> page2Future = new CompletableFuture<>() {
+            @Override
+            public QueryResponse get() {
+                throw new AssertionError("Pagination must compose the future instead of blocking on get()");
+            }
+        };
+        page2Future.complete(page2);
+
+        when(mockDynamoDbAsyncClient.query(any(QueryRequest.class))).thenReturn(CompletableFuture.completedFuture(page1), page2Future);
+
+        assertEquals(2, asyncExecutor.list(queryRequest, Map.class).get().size());
+    }
+
+    @Test
     public void testQuery_NullArgsThrowEagerly() {
         // Aligned with the sync twin: both queryRequest and targetClass are validated at the call site
         // (before any CompletableFuture is built), so these throw IAE synchronously rather than completing exceptionally.

@@ -2,6 +2,7 @@ package com.landawn.abacus.da.aws.dynamodb;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -670,6 +671,17 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
         assertNotNull(stream);
         assertEquals(1, stream.count());
+    }
+
+    @Test
+    public void testScan_emptyAttributesToGetOmitsLegacyProjection() {
+        when(mockDynamoDbClient.scan(any(ScanRequest.class))).thenReturn(ScanResponse.builder().items(List.of()).build());
+
+        assertEquals(0, executor.scan("TestTable", List.of()).count());
+
+        final ArgumentCaptor<ScanRequest> requestCaptor = ArgumentCaptor.forClass(ScanRequest.class);
+        verify(mockDynamoDbClient).scan(requestCaptor.capture());
+        assertFalse(requestCaptor.getValue().hasAttributesToGet());
     }
 
     @Test

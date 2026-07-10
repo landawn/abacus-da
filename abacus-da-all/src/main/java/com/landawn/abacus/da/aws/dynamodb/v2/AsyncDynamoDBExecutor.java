@@ -1678,9 +1678,9 @@ public final class AsyncDynamoDBExecutor {
      * });
      * }</pre>
      *
-     * <p><b>Threading note:</b> the returned future completes on the common
-     * {@link java.util.concurrent.ForkJoinPool}; when auto-pagination applies, each subsequent
-     * page is fetched inside that pool via a blocking {@code dynamoDBClient.query(...).get()}.</p>
+     * <p><b>Threading note:</b> response conversion runs in the common
+     * {@link java.util.concurrent.ForkJoinPool}. Auto-pagination composes the asynchronous page
+     * requests without blocking a worker thread.</p>
      *
      * @param <T> the type of objects to return
      * @param queryRequest the QueryRequest with query parameters. Must not be null.
@@ -1694,26 +1694,26 @@ public final class AsyncDynamoDBExecutor {
 
         final CompletableFuture<QueryResponse> queryResultFuture = dynamoDBClient.query(queryRequest);
 
-        return queryResultFuture.thenApplyAsync(queryResult -> {
+        return queryResultFuture.thenComposeAsync(queryResult -> {
             final List<T> res = toList(queryResult, targetClass);
 
             if (N.notEmpty(queryResult.lastEvaluatedKey()) && N.isEmpty(queryRequest.exclusiveStartKey())) {
-                QueryRequest newQueryRequest = queryRequest.copy(builder -> builder.exclusiveStartKey(queryResult.lastEvaluatedKey()));
-                QueryResponse newQueryResult = queryResult;
-
-                try {
-                    do {
-                        final Map<String, AttributeValue> lastEvaluatedKey = newQueryResult.lastEvaluatedKey();
-                        newQueryRequest = queryRequest.copy(builder -> builder.exclusiveStartKey(lastEvaluatedKey));
-                        newQueryResult = dynamoDBClient.query(newQueryRequest).get();
-                        res.addAll(toList(newQueryResult, targetClass));
-                    } while (N.notEmpty(newQueryResult.lastEvaluatedKey()));
-                } catch (final InterruptedException | ExecutionException e) {
-                    throw ExceptionUtil.toRuntimeException(e, true);
-                }
+                return appendQueryPages(queryRequest, queryResult.lastEvaluatedKey(), res, targetClass);
             }
 
-            return res;
+            return CompletableFuture.completedFuture(res);
+        });
+    }
+
+    private <T> CompletableFuture<List<T>> appendQueryPages(final QueryRequest originalRequest, final Map<String, AttributeValue> lastEvaluatedKey,
+            final List<T> result, final Class<T> targetClass) {
+        final QueryRequest nextRequest = originalRequest.copy(builder -> builder.exclusiveStartKey(lastEvaluatedKey));
+
+        return dynamoDBClient.query(nextRequest).thenComposeAsync(queryResponse -> {
+            result.addAll(toList(queryResponse, targetClass));
+
+            return N.notEmpty(queryResponse.lastEvaluatedKey()) ? appendQueryPages(originalRequest, queryResponse.lastEvaluatedKey(), result, targetClass)
+                    : CompletableFuture.completedFuture(result);
         });
     }
 
@@ -1757,9 +1757,9 @@ public final class AsyncDynamoDBExecutor {
      *     });
      * }</pre>
      *
-     * <p><b>Threading note:</b> the returned future completes on the common
-     * {@link java.util.concurrent.ForkJoinPool}; when auto-pagination applies, each subsequent
-     * page is fetched inside that pool via a blocking {@code dynamoDBClient.query(...).get()}.</p>
+     * <p><b>Threading note:</b> response conversion runs in the common
+     * {@link java.util.concurrent.ForkJoinPool}. Auto-pagination composes the asynchronous page
+     * requests without blocking a worker thread.</p>
      *
      * @param queryRequest the QueryRequest with query parameters. Must not be null.
      * @return a CompletableFuture containing a Dataset with all query results
@@ -1806,9 +1806,9 @@ public final class AsyncDynamoDBExecutor {
      * request, all pages are fetched and concatenated into the returned Dataset; if it was set,
      * only the single page returned by DynamoDB is materialized.</p>
      *
-     * <p><b>Threading note:</b> the returned future completes on the common
-     * {@link java.util.concurrent.ForkJoinPool}; when auto-pagination applies, each subsequent
-     * page is fetched inside that pool via a blocking {@code dynamoDBClient.query(...).get()}.</p>
+     * <p><b>Threading note:</b> response conversion runs in the common
+     * {@link java.util.concurrent.ForkJoinPool}. Auto-pagination composes the asynchronous page
+     * requests without blocking a worker thread.</p>
      *
      * @param queryRequest the QueryRequest with query parameters. Must not be null.
      * @param targetClass the row type for the Dataset; must not be null. Pass a {@link Map} subtype
@@ -1824,32 +1824,35 @@ public final class AsyncDynamoDBExecutor {
         if (Map.class.isAssignableFrom(targetClass)) {
             final CompletableFuture<QueryResponse> queryResultFuture = dynamoDBClient.query(queryRequest);
 
-            return queryResultFuture.thenApplyAsync(queryResult -> {
+            return queryResultFuture.thenComposeAsync(queryResult -> {
                 List<Map<String, AttributeValue>> items = queryResult.items();
 
                 if (N.notEmpty(queryResult.lastEvaluatedKey()) && N.isEmpty(queryRequest.exclusiveStartKey())) {
                     // QueryResponse.items() returns an immutable list, so copy it before aggregating subsequent pages.
                     items = new ArrayList<>(items);
-                    QueryRequest newQueryRequest = queryRequest.copy(builder -> builder.exclusiveStartKey(queryResult.lastEvaluatedKey()));
-                    QueryResponse newQueryResult = queryResult;
+                    final List<Map<String, AttributeValue>> resultItems = items;
 
-                    try {
-                        do {
-                            final Map<String, AttributeValue> lastEvaluatedKey = newQueryResult.lastEvaluatedKey();
-                            newQueryRequest = queryRequest.copy(builder -> builder.exclusiveStartKey(lastEvaluatedKey));
-                            newQueryResult = dynamoDBClient.query(newQueryRequest).get();
-                            items.addAll(newQueryResult.items());
-                        } while (N.notEmpty(newQueryResult.lastEvaluatedKey()));
-                    } catch (final InterruptedException | ExecutionException e) {
-                        throw ExceptionUtil.toRuntimeException(e, true);
-                    }
+                    return appendRawQueryPages(queryRequest, queryResult.lastEvaluatedKey(), resultItems)
+                            .thenApply(allItems -> extractData(allItems, 0, allItems.size()));
                 }
 
-                return extractData(items, 0, items.size());
+                return CompletableFuture.completedFuture(extractData(items, 0, items.size()));
             });
         } else {
-            return list(queryRequest, targetClass).thenApplyAsync(N::newDataset);
+            return list(queryRequest, targetClass).thenApply(N::newDataset);
         }
+    }
+
+    private CompletableFuture<List<Map<String, AttributeValue>>> appendRawQueryPages(final QueryRequest originalRequest,
+            final Map<String, AttributeValue> lastEvaluatedKey, final List<Map<String, AttributeValue>> result) {
+        final QueryRequest nextRequest = originalRequest.copy(builder -> builder.exclusiveStartKey(lastEvaluatedKey));
+
+        return dynamoDBClient.query(nextRequest).thenComposeAsync(queryResponse -> {
+            result.addAll(queryResponse.items());
+
+            return N.notEmpty(queryResponse.lastEvaluatedKey()) ? appendRawQueryPages(originalRequest, queryResponse.lastEvaluatedKey(), result)
+                    : CompletableFuture.completedFuture(result);
+        });
     }
 
     /**

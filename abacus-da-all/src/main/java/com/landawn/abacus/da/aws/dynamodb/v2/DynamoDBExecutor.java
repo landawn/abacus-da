@@ -657,7 +657,7 @@ public final class DynamoDBExecutor {
      */
     public static Map<String, AttributeValue> asItem(final Object... a) {
         if ((a.length % 2) != 0) {
-            throw new IllegalArgumentException("Parameters must be property name-value pairs, a Map, or an entity with getter/setter methods");
+            throw new IllegalArgumentException("Parameters must be name-value pairs (an even number of arguments)");
         }
 
         final Map<String, AttributeValue> item = N.newLinkedHashMap(a.length / 2);
@@ -778,7 +778,7 @@ public final class DynamoDBExecutor {
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final Object... a) {
         if ((a.length % 2) != 0) {
-            throw new IllegalArgumentException("Parameters must be property name-value pairs, a Map, or an entity with getter/setter methods");
+            throw new IllegalArgumentException("Parameters must be name-value pairs (an even number of arguments)");
         }
 
         final Map<String, AttributeValueUpdate> item = N.newLinkedHashMap(a.length / 2);
@@ -3063,12 +3063,11 @@ public final class DynamoDBExecutor {
         final List<T> res = toList(queryResult, targetClass);
 
         if (N.notEmpty(queryResult.lastEvaluatedKey()) && N.isEmpty(queryRequest.exclusiveStartKey())) {
-            QueryRequest newQueryRequest = queryRequest.copy(builder -> builder.exclusiveStartKey(queryResult.lastEvaluatedKey()));
             QueryResponse newQueryResult = queryResult;
 
             do {
                 final Map<String, AttributeValue> lastEvaluatedKey = newQueryResult.lastEvaluatedKey();
-                newQueryRequest = queryRequest.copy(builder -> builder.exclusiveStartKey(lastEvaluatedKey));
+                final QueryRequest newQueryRequest = queryRequest.copy(builder -> builder.exclusiveStartKey(lastEvaluatedKey));
                 newQueryResult = dynamoDBClient.query(newQueryRequest);
                 res.addAll(toList(newQueryResult, targetClass));
             } while (N.notEmpty(newQueryResult.lastEvaluatedKey()));
@@ -3142,12 +3141,11 @@ public final class DynamoDBExecutor {
             if (N.notEmpty(queryResult.lastEvaluatedKey()) && N.isEmpty(queryRequest.exclusiveStartKey())) {
                 // QueryResponse.items() returns an immutable list, so copy it before aggregating subsequent pages.
                 items = new ArrayList<>(items);
-                QueryRequest newQueryRequest = queryRequest.copy(builder -> builder.exclusiveStartKey(queryResult.lastEvaluatedKey()));
                 QueryResponse newQueryResult = queryResult;
 
                 do {
                     final Map<String, AttributeValue> lastEvaluatedKey = newQueryResult.lastEvaluatedKey();
-                    newQueryRequest = queryRequest.copy(builder -> builder.exclusiveStartKey(lastEvaluatedKey));
+                    final QueryRequest newQueryRequest = queryRequest.copy(builder -> builder.exclusiveStartKey(lastEvaluatedKey));
                     newQueryResult = dynamoDBClient.query(newQueryRequest);
                     items.addAll(newQueryResult.items());
                 } while (N.notEmpty(newQueryResult.lastEvaluatedKey()));
@@ -3273,7 +3271,7 @@ public final class DynamoDBExecutor {
     public Stream<Map<String, Object>> scan(final String tableName, final List<String> attributesToGet) {
         N.checkArgNotNull(tableName, "tableName");
 
-        final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).attributesToGet(attributesToGet).build();
+        final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).attributesToGet(N.isEmpty(attributesToGet) ? null : attributesToGet).build();
 
         return scan(scanRequest);
     }
@@ -3323,7 +3321,11 @@ public final class DynamoDBExecutor {
     public Stream<Map<String, Object>> scan(final String tableName, final List<String> attributesToGet, final Map<String, Condition> scanFilter) {
         N.checkArgNotNull(tableName, "tableName");
 
-        final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).attributesToGet(attributesToGet).scanFilter(scanFilter).build();
+        final ScanRequest scanRequest = ScanRequest.builder()
+                .tableName(tableName)
+                .attributesToGet(N.isEmpty(attributesToGet) ? null : attributesToGet)
+                .scanFilter(scanFilter)
+                .build();
 
         return scan(scanRequest);
     }
@@ -3373,7 +3375,7 @@ public final class DynamoDBExecutor {
         N.checkArgNotNull(tableName, "tableName");
         N.checkArgNotNull(targetClass, "targetClass");
 
-        final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).attributesToGet(attributesToGet).build();
+        final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).attributesToGet(N.isEmpty(attributesToGet) ? null : attributesToGet).build();
 
         return scan(scanRequest, targetClass);
     }
@@ -3432,7 +3434,11 @@ public final class DynamoDBExecutor {
         N.checkArgNotNull(tableName, "tableName");
         N.checkArgNotNull(targetClass, "targetClass");
 
-        final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).attributesToGet(attributesToGet).scanFilter(scanFilter).build();
+        final ScanRequest scanRequest = ScanRequest.builder()
+                .tableName(tableName)
+                .attributesToGet(N.isEmpty(attributesToGet) ? null : attributesToGet)
+                .scanFilter(scanFilter)
+                .build();
 
         return scan(scanRequest, targetClass);
     }
