@@ -2436,11 +2436,13 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         }
 
         /**
-         * Renders a condition into CQL with entity class mapping.
+         * Creates a condition-only builder for the given condition with entity class mapping —
+         * the CQL counterpart of the parent {@code SqlBuilder}'s {@code fromCondition(Condition, Class)}.
          *
          * <p>This method is useful for generating just the WHERE clause portion of a query
          * with proper property-to-column name mapping. The resulting builder is condition-only:
-         * no {@code SELECT}, {@code FROM}, or other clause keyword is emitted, only the rendered condition.</p>
+         * no {@code SELECT}, {@code FROM}, or other clause keyword is emitted, only the rendered
+         * condition — call {@code .build().query()} on the returned builder to obtain the CQL text.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -2449,16 +2451,16 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *     Filters.like("email", "%@example.com")
          * );
          *
-         * String cql = PSC.renderCondition(cond, Account.class).build().query();
+         * String cql = PSC.fromCondition(cond, Account.class).build().query();
          * // Output: (first_name = ?) AND (email LIKE ?)
          * }</pre>
          *
          * @param cond the condition to render
          * @param entityClass the entity class for property mapping
-         * @return a new CqlBuilder instance containing the rendered condition
+         * @return a new condition-only CqlBuilder instance containing the rendered condition
          * @throws IllegalArgumentException if cond is null
          */
-        public CqlBuilder renderCondition(final Condition cond, final Class<?> entityClass) {
+        public CqlBuilder fromCondition(final Condition cond, final Class<?> entityClass) {
             N.checkArgNotNull(cond, "cond");
 
             final CqlBuilder instance = createCqlBuilderInstance();

@@ -523,6 +523,39 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
     }
 
     /**
+     * Sets a custom attribute on this delete using a raw byte-array value. This overload bypasses
+     * {@link HBaseExecutor#toValueBytes(Object)} and stores the supplied array directly on the
+     * wrapped HBase {@link Delete}; a {@code null} value clears the attribute.
+     *
+     * <p>For a {@code byte[]} argument, this is observationally equivalent to
+     * {@link AnyOperationWithAttributes#setAttribute(String, Object)} (since {@code toValueBytes}
+     * returns {@code byte[]} arguments as-is), but its presence avoids the {@code Object}-overload
+     * dispatch path and makes the byte-array intent explicit at the call site. It also keeps the
+     * {@code setAttribute} surface uniform with {@link AnyAppend#setAttribute(String, byte[])} and
+     * {@link AnyIncrement#setAttribute(String, byte[])}.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyDelete delete = AnyDelete.of("user123");
+     * delete.setAttribute("trace_id", Bytes.toBytes("trace-12345"));   // returns the same AnyDelete; getAttribute("trace_id") -> "trace-12345" bytes
+     * delete.setAttribute("priority", Bytes.toBytes("high"));          // returns the same AnyDelete; attribute stored
+     *
+     * delete.setAttribute("trace_id", (byte[]) null);      // returns the same AnyDelete; clears the "trace_id" attribute
+     * }</pre>
+     *
+     * @param name the attribute name
+     * @param value the attribute value as a raw byte array; may be {@code null} to clear it
+     * @return this AnyDelete instance, to allow fluent method chaining
+     * @see #getAttribute(String)
+     * @see AnyOperationWithAttributes#setAttribute(String, Object)
+     */
+    public AnyDelete setAttribute(final String name, final byte[] value) {
+        delete.setAttribute(name, value);
+
+        return this;
+    }
+
+    /**
      * Marks an entire column family for deletion.
      *
      * <p>Delegates to {@link Delete#addFamily(byte[])}. Writes a single family-level tombstone

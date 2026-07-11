@@ -145,10 +145,14 @@ import reactor.core.publisher.Mono;
  *
  * <p><b>Naming convention:</b> method names match the synchronous
  * {@link com.landawn.abacus.da.mongodb.MongoCollectionExecutor} — a hybrid vocabulary of abacus "house"
- * reads ({@code get}/{@code gett}, {@code findFirst}, {@code list}, {@code query}, {@code exists},
+ * reads ({@code get}, {@code findFirst}, {@code list}, {@code query}, {@code exists},
  * {@code count}) and MongoDB-driver writes ({@code insertOne}/{@code insertMany},
  * {@code updateOne}/{@code updateMany}, {@code replaceOne}, {@code deleteOne}/{@code deleteMany}).
- * Each result is returned as a reactive {@code Publisher} ({@code Mono}/{@code Flux}).</p>
+ * Each result is returned as a reactive {@code Publisher} ({@code Mono}/{@code Flux}).
+ * Unlike the blocking API, there is deliberately no {@code gett} and no {@code queryForSingleNonNull}:
+ * an empty {@code Mono} already signals absence, so the null-vs-{@code Optional} (and
+ * {@code Nullable}-vs-{@code Optional}) distinction those blocking siblings exist for does not
+ * apply here — {@code get} and {@link #queryForSingleValue(String, Bson, Class)} cover both.</p>
  *
  * @see com.mongodb.reactivestreams.client.MongoCollection
  * @see org.reactivestreams.Publisher
@@ -2475,18 +2479,18 @@ public final class MongoCollectionExecutor {
      *
      * @param filter the query filter to identify the document to update
      * @param objList the collection of update operations to apply
-     * @param updateOptions the options to apply to the update operation
+     * @param options the options to apply to the update operation
      * @return a Mono that emits the UpdateResult containing operation details
      */
-    public Mono<UpdateResult> updateOne(final Bson filter, final Collection<?> objList, final UpdateOptions updateOptions) {
+    public Mono<UpdateResult> updateOne(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
         N.checkArgNotNull(filter, "filter");
 
         final List<Bson> updateToUse = toBson(objList);
 
-        if (updateOptions == null) {
+        if (options == null) {
             return Mono.from(coll.updateOne(filter, updateToUse));
         } else {
-            return Mono.from(coll.updateOne(filter, updateToUse, updateOptions));
+            return Mono.from(coll.updateOne(filter, updateToUse, options));
         }
     }
 
@@ -2695,20 +2699,20 @@ public final class MongoCollectionExecutor {
      *
      * @param filter the query filter to identify documents to update; must not be null
      * @param objList collection of update operations to apply; must not be null or empty
-     * @param updateOptions the options to apply to the update operation; may be null for defaults
+     * @param options the options to apply to the update operation; may be null for defaults
      * @return a Mono that emits the UpdateResult containing operation details
      * @throws IllegalArgumentException if filter or objList is null or empty
      */
-    public Mono<UpdateResult> updateMany(final Bson filter, final Collection<?> objList, final UpdateOptions updateOptions) {
+    public Mono<UpdateResult> updateMany(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
         N.checkArgNotNull(filter, "filter");
         N.checkArgNotEmpty(objList, "objList");
 
         final List<Bson> updateToUse = toBson(objList);
 
-        if (updateOptions == null) {
+        if (options == null) {
             return Mono.from(coll.updateMany(filter, updateToUse));
         } else {
-            return Mono.from(coll.updateMany(filter, updateToUse, updateOptions));
+            return Mono.from(coll.updateMany(filter, updateToUse, options));
         }
     }
 

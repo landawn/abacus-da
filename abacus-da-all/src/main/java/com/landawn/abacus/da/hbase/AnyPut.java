@@ -1384,6 +1384,39 @@ public final class AnyPut extends AnyMutation<AnyPut> {
     }
 
     /**
+     * Sets a custom attribute on this put using a raw byte-array value. This overload bypasses
+     * {@link HBaseExecutor#toValueBytes(Object)} and stores the supplied array directly on the
+     * wrapped HBase {@link Put}; a {@code null} value clears the attribute.
+     *
+     * <p>For a {@code byte[]} argument, this is observationally equivalent to
+     * {@link AnyOperationWithAttributes#setAttribute(String, Object)} (since {@code toValueBytes}
+     * returns {@code byte[]} arguments as-is), but its presence avoids the {@code Object}-overload
+     * dispatch path and makes the byte-array intent explicit at the call site. It also keeps the
+     * {@code setAttribute} surface uniform with {@link AnyAppend#setAttribute(String, byte[])} and
+     * {@link AnyIncrement#setAttribute(String, byte[])}.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyPut put = AnyPut.of("user123");
+     * put.setAttribute("trace_id", Bytes.toBytes("trace-12345"));   // returns the same AnyPut; getAttribute("trace_id") -> "trace-12345" bytes
+     * put.setAttribute("priority", Bytes.toBytes("high"));          // returns the same AnyPut; attribute stored
+     *
+     * put.setAttribute("trace_id", (byte[]) null);       // returns the same AnyPut; clears the "trace_id" attribute
+     * }</pre>
+     *
+     * @param name the attribute name
+     * @param value the attribute value as a raw byte array; may be {@code null} to clear it
+     * @return this AnyPut instance, to allow fluent method chaining
+     * @see #getAttribute(String)
+     * @see AnyOperationWithAttributes#setAttribute(String, Object)
+     */
+    public AnyPut setAttribute(final String name, final byte[] value) {
+        put.setAttribute(name, value);
+
+        return this;
+    }
+
+    /**
      * Returns the hash code value for this AnyPut instance.
      *
      * <p>The hash code is based on the underlying HBase Put object and is consistent

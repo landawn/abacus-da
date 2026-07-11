@@ -300,16 +300,6 @@ public class DynamoDBExecutor01Test extends TestBase {
     }
 
     @Test
-    public void testToMapWithObjectArray() {
-        Object[] propNameAndValues = { "id", "123", "name", "test" };
-        Map<String, Object> result = DynamoDBExecutor.toMap(propNameAndValues);
-
-        assertNotNull(result);
-        assertEquals("123", result.get("id"));
-        assertEquals("test", result.get("name"));
-    }
-
-    @Test
     public void testToMapWithNull() {
         Map<String, Object> result = DynamoDBExecutor.toMap((Map<String, AttributeValue>) null);
         assertNull(result);
@@ -1959,19 +1949,6 @@ public class DynamoDBExecutor01Test extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.extractData(qr, -1, 1));
     }
 
-    // toMap with empty array
-    @Test
-    public void testToMap_EmptyArray() {
-        Map<String, Object> result = DynamoDBExecutor.toMap(new Object[0]);
-        assertNotNull(result);
-        assertEquals(0, result.size());
-    }
-
-    @Test
-    public void testToMap_OddArrayThrows() {
-        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toMap(new Object[] { "k1", "v1", "k2" }));
-    }
-
     // ===== Mapper additional coverage =====
 
     // Mapper.getItem(entity, consistentRead) - new overload not yet tested
@@ -2530,11 +2507,6 @@ public class DynamoDBExecutor01Test extends TestBase {
         List<Map<String, AttributeValueUpdate>> result = DynamoDBExecutor.toUpdateItem(List.of(e), NamingPolicy.SNAKE_CASE);
         assertEquals(1, result.size());
         assertEquals("John", result.get(0).get("first_name").getValue().getS());
-    }
-
-    @Test
-    public void testToMap_NullArrayReturnsNull() {
-        assertNull(DynamoDBExecutor.toMap((Object[]) null));
     }
 
     // ===== Package-private putItem/updateItem/deleteItem with String tableName and Map key =====

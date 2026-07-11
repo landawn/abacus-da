@@ -53,6 +53,7 @@ import com.landawn.abacus.util.Strings;
 import com.landawn.abacus.util.stream.Stream;
 
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
+import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValueUpdate;
 import software.amazon.awssdk.services.dynamodb.model.BatchGetItemRequest;
@@ -255,6 +256,33 @@ public final class AsyncDynamoDBExecutor {
      */
     public DynamoDbAsyncClient dynamoDBAsyncClient() {
         return dynamoDBClient;
+    }
+
+    /**
+     * Creates a synchronous executor backed by the given sync client — the v2 counterpart of the
+     * v1 {@code AsyncDynamoDBExecutor.sync()} bridge.
+     *
+     * <p>Unlike the v1 SDK, where the async wrapper holds the synchronous executor it delegates to
+     * (so the v1 bridge takes no arguments), this executor calls {@link DynamoDbAsyncClient}
+     * directly and holds no synchronous sibling. The {@link DynamoDbClient} to back the synchronous
+     * executor must therefore be supplied, and a new {@link DynamoDBExecutor} is created on every
+     * call — cache it if you bridge frequently.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * DynamoDbClient syncClient = DynamoDbClient.create();
+     * DynamoDBExecutor syncExecutor = asyncExecutor.sync(syncClient);
+     *
+     * Map<String, Object> item = syncExecutor.getItem("MyTable", key); // blocking call
+     * }</pre>
+     *
+     * @param dynamoDBSyncClient the synchronous client to back the returned executor (must not be null)
+     * @return a new {@link DynamoDBExecutor} backed by {@code dynamoDBSyncClient}
+     * @throws IllegalArgumentException if {@code dynamoDBSyncClient} is null
+     * @see DynamoDBExecutor#async(DynamoDbAsyncClient)
+     */
+    public DynamoDBExecutor sync(final DynamoDbClient dynamoDBSyncClient) {
+        return new DynamoDBExecutor(dynamoDBSyncClient);
     }
 
     @SuppressWarnings("rawtypes")

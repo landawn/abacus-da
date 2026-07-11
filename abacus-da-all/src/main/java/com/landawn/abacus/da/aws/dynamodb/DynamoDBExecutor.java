@@ -57,6 +57,7 @@ import com.amazonaws.services.dynamodbv2.model.ScanResult;
 import com.amazonaws.services.dynamodbv2.model.UpdateItemRequest;
 import com.amazonaws.services.dynamodbv2.model.UpdateItemResult;
 import com.amazonaws.services.dynamodbv2.model.WriteRequest;
+import com.landawn.abacus.da.aws.AnyUtil;
 import com.landawn.abacus.logging.Logger;
 import com.landawn.abacus.logging.LoggerFactory;
 import com.landawn.abacus.parser.ParserUtil;
@@ -1076,7 +1077,7 @@ public final class DynamoDBExecutor {
                 }
             }
         } else if (entity instanceof Object[]) {
-            return toItem(toMap((Object[]) entity), namingPolicy);
+            return toItem(AnyUtil.asProps((Object[]) entity), namingPolicy);
         } else {
             throw new IllegalArgumentException("Unsupported type: " + ClassUtil.getCanonicalClassName(cls)
                     + ". Only Entity or Map<String, Object> classes with getter/setter methods are supported");
@@ -1166,7 +1167,7 @@ public final class DynamoDBExecutor {
                 }
             }
         } else if (entity instanceof Object[]) {
-            return toUpdateItem(toMap((Object[]) entity), namingPolicy);
+            return toUpdateItem(AnyUtil.asProps((Object[]) entity), namingPolicy);
         } else {
             throw new IllegalArgumentException("Unsupported type: " + ClassUtil.getCanonicalClassName(cls)
                     + ". Only Entity or Map<String, Object> classes with getter/setter methods are supported");
@@ -1201,51 +1202,6 @@ public final class DynamoDBExecutor {
         }
 
         return attrsList;
-    }
-
-    /**
-     * Converts an object array of key-value pairs to a map.
-     *
-     * <p>The input array is interpreted as alternating key-value pairs:
-     * {@code [key1, value1, key2, value2, ...]}. Keys are coerced to {@code String} via
-     * {@link String#valueOf(Object)}, so non-String keys are accepted (unlike {@link #asItem(Object...)}).
-     * The result preserves insertion order.</p>
-     *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * Map<String, Object> map = toMap(new Object[] {"name", "John", "age", 30});
-     * // returns a LinkedHashMap: {"name"=John, "age"=30}
-     *
-     * Map<String, Object> empty = toMap(new Object[0]);
-     * // returns an empty map
-     *
-     * Map<String, Object> none = toMap((Object[]) null);
-     * // returns null
-     *
-     * toMap(new Object[] {"name", "John", "age"});
-     * // throws IllegalArgumentException (odd array length)
-     * }</pre>
-     *
-     * @param propNameAndValues the alternating property name and value pairs
-     * @return a map containing the key-value pairs, or {@code null} if input is {@code null}
-     * @throws IllegalArgumentException if the array length is odd
-     */
-    public static Map<String, Object> toMap(final Object[] propNameAndValues) {
-        if (propNameAndValues == null) {
-            return null; // NOSONAR
-        }
-
-        if ((propNameAndValues.length % 2) != 0) {
-            throw new IllegalArgumentException("The length of property name/value array must be even: " + propNameAndValues.length);
-        }
-
-        final Map<String, Object> props = new LinkedHashMap<>(propNameAndValues.length / 2);
-
-        for (int i = 0, len = propNameAndValues.length; i < len; i += 2) {
-            props.put(String.valueOf(propNameAndValues[i]), propNameAndValues[i + 1]);
-        }
-
-        return props;
     }
 
     /**

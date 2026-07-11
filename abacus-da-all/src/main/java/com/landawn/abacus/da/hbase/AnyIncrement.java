@@ -98,6 +98,20 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
     }
 
     /**
+     * Package-private constructor: prefer {@link #of(Object, int, int)}. Wraps a new HBase
+     * {@link Increment} that uses a slice of the row key's byte representation as its row key. The
+     * row key is converted to bytes via {@link HBaseExecutor#toRowKeyBytes(Object)} before slicing.
+     *
+     * @param rowKey the row key object whose byte representation will be sliced
+     * @param rowOffset the starting position within the converted row-key bytes (0-based)
+     * @param rowLength the number of bytes to use from the converted row-key bytes
+     */
+    AnyIncrement(final Object rowKey, final int rowOffset, final int rowLength) {
+        super(new Increment(toRowKeyBytes(rowKey), rowOffset, rowLength));
+        increment = (Increment) mutation;
+    }
+
+    /**
      * Package-private constructor: prefer {@link #of(byte[], long, NavigableMap)}. Wraps a new
      * HBase {@link Increment} pre-populated with the given family map and timestamp.
      *
@@ -223,6 +237,40 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * @see #of(byte[])
      */
     public static AnyIncrement of(final byte[] rowKey, final int rowOffset, final int rowLength) {
+        return new AnyIncrement(rowKey, rowOffset, rowLength);
+    }
+
+    /**
+     * Creates a new AnyIncrement instance using a portion of the row key object's byte representation.
+     *
+     * <p>Mirrors {@link AnyGet#of(Object, int, int)} / {@link AnyPut#of(Object, int, int)} /
+     * {@link AnyDelete#of(Object, int, int)}: the row key is first converted to bytes via
+     * {@link HBaseExecutor#toRowKeyBytes(Object)}, then the {@code [rowOffset, rowOffset + rowLength)}
+     * slice of those bytes is used as the row key. This is useful for composite or fixed-width
+     * row-key schemes.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * // Extract user ID from a composite key (use the first 7 bytes -> "user123")
+     * AnyIncrement increment = AnyIncrement.of("user123session456", 0, 7)
+     *                                      .addColumn("counters", "sessions", 1L);
+     * increment.getRow(); // returns Bytes.toBytes("user123")
+     *
+     * AnyIncrement.of((Object) null, 0, 1);   // throws IllegalArgumentException ("Row buffer is null")
+     * AnyIncrement.of("abc", -1, 3);          // throws ArrayIndexOutOfBoundsException (negative offset)
+     * }</pre>
+     *
+     * @param rowKey the row key object whose byte representation will be sliced
+     * @param rowOffset the starting position within the converted row-key bytes (0-based)
+     * @param rowLength the number of bytes to use for the row key
+     * @return a new AnyIncrement instance configured for the partial row key
+     * @throws IllegalArgumentException if {@code rowKey} converts to a {@code null} byte array, or if the
+     *         resulting slice is empty or exceeds HBase's maximum row-key length
+     * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} or {@code rowLength} addresses bytes
+     *         outside the converted row-key bytes (for example a negative {@code rowOffset})
+     * @see #of(byte[], int, int)
+     */
+    public static AnyIncrement of(final Object rowKey, final int rowOffset, final int rowLength) {
         return new AnyIncrement(rowKey, rowOffset, rowLength);
     }
 

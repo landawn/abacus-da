@@ -66,9 +66,8 @@ public class CqlBuilderTest extends TestBase {
         N.println("NotEqual null: " + SCCB.select("id").from("account").where(Filters.ne("firstName", "x")).build().query());
         N.println("InSubQuery: " + PSC.select("id").from("account").where(Filters.in("id", SubQueryGen())).build().query());
         N.println("NotInSubQuery: " + NSC.select("id").from("account").where(Filters.notIn("id", SubQueryGen())).build().query());
-        N.println("parse cond NSC: " + NSC.renderCondition(Filters.and(Filters.eq("status", "A"), Filters.gt("balance", 1000)), Account.class).build().query());
-        N.println(
-                "parse cond SCCB: " + SCCB.renderCondition(Filters.and(Filters.eq("status", "A"), Filters.gt("balance", 1000)), Account.class).build().query());
+        N.println("parse cond NSC: " + NSC.fromCondition(Filters.and(Filters.eq("status", "A"), Filters.gt("balance", 1000)), Account.class).build().query());
+        N.println("parse cond SCCB: " + SCCB.fromCondition(Filters.and(Filters.eq("status", "A"), Filters.gt("balance", 1000)), Account.class).build().query());
         assertThrows(IllegalArgumentException.class,
                 () -> PSC.select("id").from("account").where(Filters.and(Filters.eq("a", 1), Filters.or(Filters.eq("b", 2), Filters.eq("c", 3)))).build());
         N.println("update entity: " + SCCB.update(Account.class).set("firstName", "lastName").where(Filters.eq("id", 1)).build().query());
@@ -959,7 +958,7 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testNSB_parse() {
-        final String cql = NSB.renderCondition(Filters.eq("firstName", "John"), Account.class).build().query();
+        final String cql = NSB.fromCondition(Filters.eq("firstName", "John"), Account.class).build().query();
         assertEquals("firstName = :firstName", cql.trim());
     }
 
@@ -1237,7 +1236,7 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testPSB_parse() {
-        final String cql = PSB.renderCondition(Filters.eq("firstName", "John"), Account.class).build().query();
+        final String cql = PSB.fromCondition(Filters.eq("firstName", "John"), Account.class).build().query();
         assertTrue(cql.contains("firstName"), cql);
         assertTrue(cql.contains("?"), cql);
     }
@@ -1501,7 +1500,7 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testNAC_parse() {
-        final String cql = NAC.renderCondition(Filters.eq("firstName", "John"), Account.class).build().query();
+        final String cql = NAC.fromCondition(Filters.eq("firstName", "John"), Account.class).build().query();
         assertTrue(cql.contains("FIRST_NAME"), cql);
         assertTrue(cql.contains(":firstName"), cql);
     }
@@ -1763,7 +1762,7 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testPAC_parse() {
-        final String cql = PAC.renderCondition(Filters.eq("firstName", "John"), Account.class).build().query();
+        final String cql = PAC.fromCondition(Filters.eq("firstName", "John"), Account.class).build().query();
         assertTrue(cql.contains("FIRST_NAME"), cql);
         assertTrue(cql.contains("?"), cql);
     }
@@ -2025,7 +2024,7 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testPLC_parse() {
-        final String cql = PLC.renderCondition(Filters.eq("firstName", "John"), Account.class).build().query();
+        final String cql = PLC.fromCondition(Filters.eq("firstName", "John"), Account.class).build().query();
         assertTrue(cql.contains("firstName"), cql);
         assertTrue(cql.contains("?"), cql);
     }
@@ -2293,7 +2292,7 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testACCB_parse() {
-        final String cql = ACCB.renderCondition(Filters.eq("firstName", "John"), Account.class).build().query();
+        final String cql = ACCB.fromCondition(Filters.eq("firstName", "John"), Account.class).build().query();
         assertTrue(cql.contains("FIRST_NAME"), cql);
         // RAW_SQL inlines the value.
         assertTrue(cql.contains("'John'"), cql);
@@ -2557,7 +2556,7 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testNLC_parse() {
-        final String cql = NLC.renderCondition(Filters.eq("firstName", "John"), Account.class).build().query();
+        final String cql = NLC.fromCondition(Filters.eq("firstName", "John"), Account.class).build().query();
         assertTrue(cql.contains("firstName"), cql);
         assertTrue(cql.contains(":firstName"), cql);
     }
@@ -2586,8 +2585,8 @@ public class CqlBuilderTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> NSB.select((String) null));
         assertThrows(IllegalArgumentException.class, () -> PSB.select((String) null));
 
-        assertThrows(IllegalArgumentException.class, () -> NSB.renderCondition(null, Account.class));
-        assertThrows(IllegalArgumentException.class, () -> PSB.renderCondition(null, Account.class));
+        assertThrows(IllegalArgumentException.class, () -> NSB.fromCondition(null, Account.class));
+        assertThrows(IllegalArgumentException.class, () -> PSB.fromCondition(null, Account.class));
 
         assertThrows(IllegalArgumentException.class, () -> NSB.count((String) null));
         assertThrows(IllegalArgumentException.class, () -> NSB.count((Class<?>) null));
@@ -2889,7 +2888,7 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testNSC_parse() {
-        final String cql = NSC.renderCondition(Filters.eq("firstName", "John"), Account.class).build().query();
+        final String cql = NSC.fromCondition(Filters.eq("firstName", "John"), Account.class).build().query();
         assertEquals("first_name = :firstName", cql.trim());
     }
 
@@ -2928,7 +2927,7 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testNSC_parse_NullCondition() {
-        assertThrows(IllegalArgumentException.class, () -> NSC.renderCondition(null, Account.class));
+        assertThrows(IllegalArgumentException.class, () -> NSC.fromCondition(null, Account.class));
     }
 
     @Test
@@ -3220,7 +3219,7 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testPSC_parse() {
-        final String cql = PSC.renderCondition(Filters.eq("firstName", "John"), Account.class).build().query();
+        final String cql = PSC.fromCondition(Filters.eq("firstName", "John"), Account.class).build().query();
         assertTrue(cql.contains("first_name"), cql);
         assertTrue(cql.contains("?"), cql);
     }
@@ -3503,7 +3502,7 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testSCCB_parse() {
-        final String cql = SCCB.renderCondition(Filters.eq("firstName", "John"), Account.class).build().query();
+        final String cql = SCCB.fromCondition(Filters.eq("firstName", "John"), Account.class).build().query();
         assertTrue(cql.contains("first_name"), cql);
         // RAW_SQL inlines the value.
         assertTrue(cql.contains("'John'"), cql);
@@ -3787,7 +3786,7 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testLCCB_parse() {
-        final String cql = LCCB.renderCondition(Filters.eq("firstName", "John"), Account.class).build().query();
+        final String cql = LCCB.fromCondition(Filters.eq("firstName", "John"), Account.class).build().query();
         assertTrue(cql.contains("firstName"), cql);
         // RAW_SQL inlines the value.
         assertTrue(cql.contains("'John'"), cql);

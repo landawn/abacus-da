@@ -162,6 +162,20 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
     }
 
     /**
+     * Package-private constructor: prefer {@link #of(Object, int, int)}. Wraps a new HBase
+     * {@link Append} that uses a slice of the row key's byte representation as its row key. The
+     * row key is converted to bytes via {@link HBaseExecutor#toRowKeyBytes(Object)} before slicing.
+     *
+     * @param rowKey the row key object whose byte representation will be sliced
+     * @param rowOffset the starting position within the converted row-key bytes (0-based)
+     * @param rowLength the number of bytes to use from the converted row-key bytes
+     */
+    AnyAppend(final Object rowKey, final int rowOffset, final int rowLength) {
+        super(new Append(toRowKeyBytes(rowKey), rowOffset, rowLength));
+        append = (Append) mutation;
+    }
+
+    /**
      * Package-private constructor: prefer {@link #of(byte[], long, NavigableMap)}. Wraps a new
      * HBase {@link Append} pre-populated with the given family map and timestamp.
      *
@@ -267,6 +281,38 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * @see #of(byte[])
      */
     public static AnyAppend of(final byte[] rowKey, final int rowOffset, final int rowLength) {
+        return new AnyAppend(rowKey, rowOffset, rowLength);
+    }
+
+    /**
+     * Creates a new AnyAppend instance using a portion of the row key object's byte representation.
+     *
+     * <p>Mirrors {@link AnyGet#of(Object, int, int)} / {@link AnyPut#of(Object, int, int)} /
+     * {@link AnyDelete#of(Object, int, int)}: the row key is first converted to bytes via
+     * {@link HBaseExecutor#toRowKeyBytes(Object)}, then the {@code [rowOffset, rowOffset + rowLength)}
+     * slice of those bytes is used as the row key. This is useful for composite or fixed-width
+     * row-key schemes.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * AnyAppend append = AnyAppend.of("prefix:user123:suffix", 7, 7);   // returns a new AnyAppend; row = "user123"
+     * append.addColumn("logs", "activity", "login;");                   // returns the same AnyAppend (for chaining)
+     *
+     * AnyAppend.of((Object) null, 0, 1);      // throws IllegalArgumentException ("Row buffer is null")
+     * AnyAppend.of("abc", 1, 5);              // throws ArrayIndexOutOfBoundsException (offset+length > 3)
+     * }</pre>
+     *
+     * @param rowKey the row key object whose byte representation will be sliced
+     * @param rowOffset the starting position within the converted row-key bytes (0-based)
+     * @param rowLength the number of bytes to use for the row key
+     * @return a new AnyAppend instance configured for the specified row key portion
+     * @throws IllegalArgumentException if {@code rowKey} converts to a {@code null} byte array (validated
+     *         by the underlying {@link Append} constructor via {@code checkRow})
+     * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or {@code rowOffset + rowLength}
+     *         exceeds the converted array length (the slice copy goes out of bounds)
+     * @see #of(byte[], int, int)
+     */
+    public static AnyAppend of(final Object rowKey, final int rowOffset, final int rowLength) {
         return new AnyAppend(rowKey, rowOffset, rowLength);
     }
 

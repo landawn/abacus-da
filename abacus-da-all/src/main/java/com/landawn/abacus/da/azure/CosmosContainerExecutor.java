@@ -175,7 +175,8 @@ import com.landawn.abacus.util.stream.Stream;
  * <p><b>Naming convention:</b> this executor mirrors the Azure Cosmos DB SDK's "Item" vocabulary
  * ({@code readItem}, {@code readMany}, {@code readAllItems}, {@code queryItems}, {@code createItem},
  * {@code upsertItem}, {@code replaceItem}, {@code patchItem}, {@code deleteItem}), augmented with a few
- * abacus-style conveniences ({@code get} returning an {@code Optional}, and {@code streamItems} including
+ * abacus-style conveniences (the {@code get}/{@code gett} pair returning an {@code Optional} / a nullable
+ * item for a missing document, and {@code streamItems} including
  * a {@code Condition}-based overload). It does <i>not</i> adopt the abacus "house" CRUD vocabulary
  * ({@code findFirst}/{@code list}/{@code insert}/{@code update}) used by the {@code Condition}-based
  * executors such as Cassandra and BigQuery.</p>
@@ -867,6 +868,7 @@ public class CosmosContainerExecutor {
      * @throws NullPointerException if itemId, partitionKey, or targetClass is null
      * @see #readItem(String, PartitionKey, Class)
      * @see #get(String, PartitionKey, CosmosItemRequestOptions, Class)
+     * @see #gett(String, PartitionKey, Class)
      */
     public <T> Optional<T> get(final String itemId, final PartitionKey partitionKey, final Class<T> targetClass) {
         try {
@@ -907,6 +909,7 @@ public class CosmosContainerExecutor {
      * @throws NullPointerException if itemId, partitionKey, or targetClass is null
      * @see #readItem(String, PartitionKey, CosmosItemRequestOptions, Class)
      * @see #get(String, PartitionKey, Class)
+     * @see #gett(String, PartitionKey, CosmosItemRequestOptions, Class)
      */
     public <T> Optional<T> get(final String itemId, final PartitionKey partitionKey, final CosmosItemRequestOptions options, final Class<T> targetClass) {
         try {
@@ -914,6 +917,88 @@ public class CosmosContainerExecutor {
         } catch (final CosmosException e) {
             if (e.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
                 return Optional.empty();
+            }
+
+            throw e;
+        }
+    }
+
+    /**
+     * Reads a single item by id and partition key, returning {@code null} when the item does not exist.
+     *
+     * <p>This is the null-returning sibling of {@link #get(String, PartitionKey, Class)} (the abacus
+     * {@code get}/{@code gett} pairing used across the library's executors): a {@link CosmosException}
+     * with a {@code 404 Not Found} status is translated into a {@code null} return rather than
+     * propagated. All other failures (throttling, ETag conflicts, connectivity, etc.) still propagate
+     * as a {@code CosmosException}. Like {@code readItem}, this is executed as an efficient point read
+     * (typically 1 RU for items up to 1KB).</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Product product = executor.gett("prod123", new PartitionKey("Electronics"), Product.class);
+     *
+     * if (product == null) {
+     *     System.out.println("No such product");   // taken when the id/partition-key has no item (404)
+     * }
+     * }</pre>
+     *
+     * @param <T> the type of the item to read
+     * @param itemId the id of the item to read (must not be null)
+     * @param partitionKey the partition key of the item (must not be null)
+     * @param targetClass the class type for deserializing the response (must not be null)
+     * @return the item if it exists, or {@code null} if no item exists for the given id/partition key (404)
+     * @throws CosmosException if the operation fails for any reason other than the item being absent
+     * @throws NullPointerException if itemId, partitionKey, or targetClass is null
+     * @see #get(String, PartitionKey, Class)
+     * @see #gett(String, PartitionKey, CosmosItemRequestOptions, Class)
+     */
+    public <T> T gett(final String itemId, final PartitionKey partitionKey, final Class<T> targetClass) {
+        try {
+            return readItem(itemId, partitionKey, targetClass).getItem();
+        } catch (final CosmosException e) {
+            if (e.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+                return null;
+            }
+
+            throw e;
+        }
+    }
+
+    /**
+     * Reads a single item with additional options, returning {@code null} when the item does not exist.
+     *
+     * <p>This is the null-returning sibling of
+     * {@link #get(String, PartitionKey, CosmosItemRequestOptions, Class)} (the abacus {@code get}/{@code gett}
+     * pairing): a {@link CosmosException} with a {@code 404 Not Found} status is translated into a
+     * {@code null} return rather than propagated. All other failures still propagate as a
+     * {@code CosmosException}. The {@code options} argument allows specifying consistency level,
+     * session token, and other point-read settings.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * CosmosItemRequestOptions options = new CosmosItemRequestOptions();
+     * options.setConsistencyLevel(ConsistencyLevel.STRONG);
+     *
+     * Product product = executor.gett("prod456", new PartitionKey("Electronics"), options, Product.class);
+     * }</pre>
+     *
+     * @param <T> the type of the item to read
+     * @param itemId the id of the item to read (must not be null)
+     * @param partitionKey the partition key of the item (must not be null)
+     * @param options additional options for the read operation (can be null for default behavior)
+     * @param targetClass the class type for deserializing the response (must not be null)
+     * @return the item if it exists, or {@code null} if no item exists for the given id/partition key (404)
+     * @throws CosmosException if the operation fails for any reason other than the item being absent
+     * @throws NullPointerException if itemId, partitionKey, or targetClass is null
+     * @see #get(String, PartitionKey, CosmosItemRequestOptions, Class)
+     * @see #gett(String, PartitionKey, Class)
+     */
+    public <T> T gett(final String itemId, final PartitionKey partitionKey, final CosmosItemRequestOptions options, final Class<T> targetClass) {
+        try {
+            return readItem(itemId, partitionKey, options, targetClass).getItem();
+        } catch (final CosmosException e) {
+            if (e.getStatusCode() == HttpURLConnection.HTTP_NOT_FOUND) {
+                return null;
             }
 
             throw e;

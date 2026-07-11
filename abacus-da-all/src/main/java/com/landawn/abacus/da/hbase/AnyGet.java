@@ -673,15 +673,15 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *
      * <p>Unlike {@link AnyScan#readVersions(int)}, this rejects values &lt; 1 (mirrors the HBase Get client).</p>
      *
-     * @param versions the maximum number of versions to retrieve for each column (must be positive)
+     * @param maxVersions the maximum number of versions to retrieve for each column (must be positive)
      * @return this AnyGet instance for method chaining
-     * @throws IllegalArgumentException if versions is less than 1
+     * @throws IllegalArgumentException if maxVersions is less than 1
      * @see #readAllVersions()
      * @see #getMaxVersions()
      */
-    public AnyGet readVersions(final int versions) {
+    public AnyGet readVersions(final int maxVersions) {
         try {
-            get.readVersions(versions);
+            get.readVersions(maxVersions);
         } catch (final IOException e) {
             throw new IllegalArgumentException(e);
         }

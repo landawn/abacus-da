@@ -270,7 +270,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * boolean presentButNull = sqlNull.isPresent() && sqlNull.orElse("x") == null; // distinguishes null from "no row"
      * }</pre>
      *
-     * @param <T> the value type
+     * @param <V> the value type
      * @param valueClass the class to convert the single value to
      * @param query the CQL query to execute
      * @param parameters the positional query parameters
@@ -278,7 +278,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *         {@code null}), or empty if no row exists
      */
     @Override
-    public <T> ContinuableFuture<Nullable<T>> queryForSingleValue(final Class<T> valueClass, final String query, final Object... parameters) {
+    public <V> ContinuableFuture<Nullable<V>> queryForSingleValue(final Class<V> valueClass, final String query, final Object... parameters) {
         return super.queryForSingleValue(valueClass, query, parameters);
     }
 
@@ -312,7 +312,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * Optional<String> ignored = async.queryForSingleNonNull(String.class, "SELECT middle_name FROM users WHERE id = ?", 42).get(); // throws NullPointerException
      * }</pre>
      *
-     * @param <T> the value type
+     * @param <V> the value type
      * @param valueClass the class to convert the single value to
      * @param query the CQL query to execute
      * @param parameters the positional query parameters
@@ -321,7 +321,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *         a {@link NullPointerException} directly
      */
     @Override
-    public <T> ContinuableFuture<Optional<T>> queryForSingleNonNull(final Class<T> valueClass, final String query, final Object... parameters) {
+    public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final Class<V> valueClass, final String query, final Object... parameters) {
         return super.queryForSingleNonNull(valueClass, query, parameters);
     }
 

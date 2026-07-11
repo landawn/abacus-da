@@ -2541,17 +2541,17 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *     Instant.class, "SELECT max(created_at) FROM events WHERE date = ?", today); // returns present Nullable (may hold null when no events); empty when no row matches
      * }</pre>
      *
-     * @param <E> the type of the single result value to be returned
+     * @param <V> the type of the single result value to be returned
      * @param valueClass the Java class the column value is converted to
      * @param query the CQL query string with {@code ?} placeholders for parameters
      * @param parameters the values to bind, in declaration order
-     * @return a <i>present</i> {@code Nullable<E>} holding the column value (possibly {@code null} for
+     * @return a <i>present</i> {@code Nullable<V>} holding the column value (possibly {@code null} for
      *         {@code NULL}) when at least one row is returned; {@code Nullable.empty()} when the query
      *         returns no rows
      * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}
      * @see #queryForSingleNonNull(Class, String, Object...)
      */
-    public abstract <E> Nullable<E> queryForSingleValue(final Class<E> valueClass, final String query, final Object... parameters);
+    public abstract <V> Nullable<V> queryForSingleValue(final Class<V> valueClass, final String query, final Object... parameters);
 
     /**
      * Executes the given CQL query and returns the first column of the first row converted to
@@ -2577,11 +2577,11 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *     String.class, "SELECT email FROM users WHERE id = ?", userId); // returns present Optional with the email; empty when no row matches; throws NullPointerException if the matched value is NULL
      * }</pre>
      *
-     * @param <E> the type of the single result value to be returned
+     * @param <V> the type of the single result value to be returned
      * @param valueClass the Java class the column value is converted to
      * @param query the CQL query string with {@code ?} placeholders for parameters
      * @param parameters the values to bind, in declaration order
-     * @return a <i>present</i> {@code Optional<E>} holding the (non-null) column value when at least
+     * @return a <i>present</i> {@code Optional<V>} holding the (non-null) column value when at least
      *         one row is returned with a non-null value; {@code Optional.empty()} when the query
      *         returns no rows
      * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}
@@ -2589,7 +2589,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         {@code null}, because {@link Optional#of(Object)} rejects a null payload
      * @see #queryForSingleValue(Class, String, Object...)
      */
-    public abstract <E> Optional<E> queryForSingleNonNull(final Class<E> valueClass, final String query, final Object... parameters);
+    public abstract <V> Optional<V> queryForSingleNonNull(final Class<V> valueClass, final String query, final Object... parameters);
 
     /**
      * Executes the given CQL query and returns the first row as a {@code Map<String, Object>} keyed by

@@ -1077,22 +1077,22 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *     String.class, "SELECT nickname FROM users WHERE id = ?", userId); // Nullable.of(null) when the row exists but column is NULL
      * }</pre>
      *
-     * @param <E> the type of the single result value to be returned
+     * @param <V> the type of the single result value to be returned
      * @param valueClass the Java class the column value is converted to
      * @param query the CQL query string with {@code ?} placeholders for parameters
      * @param parameters the values to bind, in declaration order
-     * @return a <i>present</i> {@code Nullable<E>} holding the column value (possibly {@code null} for
+     * @return a <i>present</i> {@code Nullable<V>} holding the column value (possibly {@code null} for
      *         {@code NULL}) when at least one row is returned; {@code Nullable.empty()} when the query
      *         returns no rows
      * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}
      * @see #queryForSingleNonNull(Class, String, Object...)
      */
     @Override
-    public <E> Nullable<E> queryForSingleValue(final Class<E> valueClass, final String query, final Object... parameters) {
+    public <V> Nullable<V> queryForSingleValue(final Class<V> valueClass, final String query, final Object... parameters) {
         final ResultSet resultSet = execute(query, parameters);
         final Row row = resultSet.one();
 
-        return row == null ? (Nullable<E>) Nullable.empty() : Nullable.of(N.convert(row.getObject(0), valueClass));
+        return row == null ? (Nullable<V>) Nullable.empty() : Nullable.of(N.convert(row.getObject(0), valueClass));
     }
 
     /**
@@ -1127,11 +1127,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *     "SELECT nickname FROM users WHERE id = ?", userId); // throws NullPointerException when the matched value is NULL
      * }</pre>
      *
-     * @param <E> the type of the single result value to be returned
+     * @param <V> the type of the single result value to be returned
      * @param valueClass the Java class the column value is converted to
      * @param query the CQL query string with {@code ?} placeholders for parameters
      * @param parameters the values to bind, in declaration order
-     * @return a <i>present</i> {@code Optional<E>} holding the (non-null) column value when at least
+     * @return a <i>present</i> {@code Optional<V>} holding the (non-null) column value when at least
      *         one row is returned with a non-null value; {@code Optional.empty()} when the query
      *         returns no rows
      * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}
@@ -1140,11 +1140,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @see #queryForSingleValue(Class, String, Object...)
      */
     @Override
-    public <E> Optional<E> queryForSingleNonNull(final Class<E> valueClass, final String query, final Object... parameters) {
+    public <V> Optional<V> queryForSingleNonNull(final Class<V> valueClass, final String query, final Object... parameters) {
         final ResultSet resultSet = execute(query, parameters);
         final Row row = resultSet.one();
 
-        return row == null ? (Optional<E>) Optional.empty() : Optional.of(N.convert(row.getObject(0), valueClass));
+        return row == null ? (Optional<V>) Optional.empty() : Optional.of(N.convert(row.getObject(0), valueClass));
     }
 
     /**

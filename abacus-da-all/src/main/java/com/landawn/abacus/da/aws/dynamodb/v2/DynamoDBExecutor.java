@@ -53,6 +53,7 @@ import com.landawn.abacus.util.function.Function;
 import com.landawn.abacus.util.stream.Stream;
 
 import software.amazon.awssdk.core.SdkBytes;
+import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeAction;
 import software.amazon.awssdk.services.dynamodb.model.AttributeValue;
@@ -273,6 +274,33 @@ public final class DynamoDBExecutor {
      */
     public DynamoDbClient dynamoDBClient() {
         return dynamoDBClient;
+    }
+
+    /**
+     * Creates an asynchronous executor backed by the given async client — the v2 counterpart of the
+     * v1 {@code DynamoDBExecutor.async()} bridge.
+     *
+     * <p>Unlike the v1 SDK, where a single {@code AmazonDynamoDB} client serves both styles (so the
+     * v1 bridge takes no arguments), the AWS SDK v2 splits the client into {@link DynamoDbClient} and
+     * {@link DynamoDbAsyncClient}. An async executor therefore cannot be derived from this executor's
+     * synchronous client; the sibling async client must be supplied. A new
+     * {@link AsyncDynamoDBExecutor} is created on every call — cache it if you bridge frequently.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * DynamoDbAsyncClient asyncClient = DynamoDbAsyncClient.create();
+     * AsyncDynamoDBExecutor asyncExecutor = executor.async(asyncClient);
+     *
+     * CompletableFuture<Map<String, Object>> future = asyncExecutor.getItem("MyTable", key);
+     * }</pre>
+     *
+     * @param dynamoDBAsyncClient the async client to back the returned executor (must not be null)
+     * @return a new {@link AsyncDynamoDBExecutor} backed by {@code dynamoDBAsyncClient}
+     * @throws IllegalArgumentException if {@code dynamoDBAsyncClient} is null
+     * @see AsyncDynamoDBExecutor#sync(DynamoDbClient)
+     */
+    public AsyncDynamoDBExecutor async(final DynamoDbAsyncClient dynamoDBAsyncClient) {
+        return new AsyncDynamoDBExecutor(dynamoDBAsyncClient);
     }
 
     @SuppressWarnings("rawtypes")
@@ -1181,33 +1209,38 @@ public final class DynamoDBExecutor {
     }
 
     /**
-     * Converts an object array of key-value pairs to a map.
+     * Builds a map from alternating property name/value pairs.
      *
-     * <p>The input array is interpreted as alternating key-value pairs:
+     * <p>The input is interpreted as alternating key-value pairs:
      * {@code [key1, value1, key2, value2, ...]}. Keys are coerced to {@code String} via
      * {@link String#valueOf(Object)}, so non-String keys are accepted (unlike {@link #asItem(Object...)}).
      * The result preserves insertion order.</p>
      *
+     * <p>Named with the {@code as} prefix (like {@link #asItem(Object...)}) because it <i>builds</i> a
+     * map from loose name/value pairs; the {@code to*} converters ({@link #toMap(Map)},
+     * {@link #toItem(Object)}, ...) convert an existing object instead.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Map<String, Object> map = toMap(new Object[] {"name", "John", "age", 30});
+     * Map<String, Object> map = asMap("name", "John", "age", 30);
      * // returns a LinkedHashMap: {"name"=John, "age"=30}
      *
-     * Map<String, Object> empty = toMap(new Object[0]);
+     * Map<String, Object> empty = asMap();
      * // returns an empty map
      *
-     * Map<String, Object> none = toMap((Object[]) null);
+     * Map<String, Object> none = asMap((Object[]) null);
      * // returns null
      *
-     * toMap(new Object[] {"name", "John", "age"});
+     * asMap("name", "John", "age");
      * // throws IllegalArgumentException (odd array length)
      * }</pre>
      *
      * @param propNameAndValues the alternating property name and value pairs
      * @return a map containing the key-value pairs, or {@code null} if input is {@code null}
      * @throws IllegalArgumentException if the array length is odd
+     * @see #asItem(Object...)
      */
-    public static Map<String, Object> toMap(final Object[] propNameAndValues) {
+    public static Map<String, Object> asMap(final Object... propNameAndValues) {
         if (propNameAndValues == null) {
             return null; // NOSONAR
         }
@@ -1242,7 +1275,7 @@ public final class DynamoDBExecutor {
      * Object value = n.get("x");                         // returns null
      *
      * Map<String, Object> empty = toMap(new HashMap<>()); // returns an empty (non-null) map
-     * Map<String, Object> none = toMap((Map<String, AttributeValue>) null); // returns null (cast disambiguates from toMap(Object[]))
+     * Map<String, Object> none = toMap((Map<String, AttributeValue>) null); // returns null
      * }</pre>
      *
      * @param item the DynamoDB item map with {@link AttributeValue} objects, can be {@code null}

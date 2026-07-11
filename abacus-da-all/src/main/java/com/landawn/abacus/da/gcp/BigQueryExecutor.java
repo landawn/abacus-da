@@ -69,6 +69,7 @@ import com.landawn.abacus.util.Strings;
 import com.landawn.abacus.util.Tuple;
 import com.landawn.abacus.util.Tuple.Tuple2;
 import com.landawn.abacus.util.u.Nullable;
+import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.function.Function;
 import com.landawn.abacus.util.stream.Stream;
 
@@ -79,7 +80,8 @@ import com.landawn.abacus.util.stream.Stream;
  *
  * <p><b>Naming convention:</b> this executor uses the abacus "house" CRUD vocabulary shared by the
  * {@code Condition}/{@code SqlBuilder}-based executors (e.g. Cassandra): {@code list}, {@code query}
- * (returns a {@code Dataset}), {@code stream}, {@code exists}, {@code queryForSingleValue}, and
+ * (returns a {@code Dataset}), {@code stream}, {@code exists},
+ * {@code queryForSingleValue}/{@code queryForSingleNonNull}, and
  * {@code insert}/{@code update}/{@code delete}. Driver-native method names are intentionally not exposed;
  * contrast the driver-passthrough executors (HBase, DynamoDB, Cosmos, Neo4j), which keep their
  * underlying driver's vocabulary.</p>
@@ -596,10 +598,10 @@ public class BigQueryExecutor {
      * Converts a BigQuery {@link FieldValueList} to a {@code Map} of caller-chosen type, using the
      * supplied {@link FieldList} for the column names that become the map's keys.
      * <p>
-     * {@code supplier} is invoked with the expected entry count and must return a writable map of
+     * {@code mapSupplier} is invoked with the expected entry count and must return a writable map of
      * the desired implementation type (e.g. {@link IntFunctions#ofMap()},
      * {@link IntFunctions#ofLinkedHashMap()}). Nested {@link FieldValueList} values are recursively
-     * converted into nested maps, with each recursion also using {@code supplier} (the inner
+     * converted into nested maps, with each recursion also using {@code mapSupplier} (the inner
      * schemas are taken from the parent {@link Field}'s {@code getSubFields()}).
      *
      * <p><b>Usage Examples:</b></p>
@@ -614,40 +616,40 @@ public class BigQueryExecutor {
      * (map instanceof LinkedHashMap);                                // true
      * map.get("id");                                                 // returns "9"
      *
-     * // Edge: a null supplier is rejected
+     * // Edge: a null mapSupplier is rejected
      * BigQueryExecutor.toMap(fields, row, null);                     // throws IllegalArgumentException
      * }</pre>
      *
      * @param fields the field list describing {@code fieldValueList}; must not be {@code null}
      * @param fieldValueList the row to convert; must not be {@code null}
-     * @param supplier creates the outer {@link Map} instance given the expected size; must not be
-     *                 {@code null}
-     * @return the map produced by {@code supplier}, populated with one entry per field
+     * @param mapSupplier creates the outer {@link Map} instance given the expected size; must not be
+     *                    {@code null}
+     * @return the map produced by {@code mapSupplier}, populated with one entry per field
      * @throws IllegalArgumentException if any argument is {@code null}
      * @see IntFunctions#ofMap()
      * @see IntFunctions#ofLinkedHashMap()
      */
     public static Map<String, Object> toMap(final FieldList fields, final FieldValueList fieldValueList,
-            final IntFunction<? extends Map<String, Object>> supplier) {
+            final IntFunction<? extends Map<String, Object>> mapSupplier) {
         N.checkArgNotNull(fields, "fields");
         N.checkArgNotNull(fieldValueList, "fieldValueList");
-        N.checkArgNotNull(supplier, "supplier");
+        N.checkArgNotNull(mapSupplier, "mapSupplier");
 
-        final Map<String, Object> map = supplier.apply(fieldValueList.size());
+        final Map<String, Object> map = mapSupplier.apply(fieldValueList.size());
 
         for (int i = 0, size = fieldValueList.size(); i < size; i++) {
-            map.put(fields.get(i).getName(), toMapValue(fields.get(i), fieldValueList.get(i), supplier));
+            map.put(fields.get(i).getName(), toMapValue(fields.get(i), fieldValueList.get(i), mapSupplier));
         }
 
         return map;
     }
 
-    private static Object toMapValue(final Field field, final FieldValue fieldValue, final IntFunction<? extends Map<String, Object>> supplier) {
+    private static Object toMapValue(final Field field, final FieldValue fieldValue, final IntFunction<? extends Map<String, Object>> mapSupplier) {
         final Object value = fieldValue.getValue();
 
         if (value instanceof FieldValueList) {
             // Use the sub-schema already in hand rather than reading it reflectively off the nested row.
-            return toMap(field.getSubFields(), (FieldValueList) value, supplier);
+            return toMap(field.getSubFields(), (FieldValueList) value, mapSupplier);
         }
 
         if (value instanceof final List<?> values) {
@@ -657,7 +659,7 @@ public class BigQueryExecutor {
             for (final Object element : values) {
                 if (element instanceof final FieldValue repeatedFieldValue) {
                     final Object repeatedValue = repeatedFieldValue.getValue();
-                    list.add(repeatedValue instanceof FieldValueList ? toMap(subFields, (FieldValueList) repeatedValue, supplier) : repeatedValue);
+                    list.add(repeatedValue instanceof FieldValueList ? toMap(subFields, (FieldValueList) repeatedValue, mapSupplier) : repeatedValue);
                 } else {
                     list.add(element);
                 }
@@ -720,15 +722,15 @@ public class BigQueryExecutor {
      * }</pre>
      *
      * @param fieldValueList the row data from BigQuery containing both schema and values
-     * @param supplier a function that creates Map instances given the expected size
-     * @return a Map of the supplier's type containing column names as keys and corresponding values
-     * @throws IllegalArgumentException if fieldValueList or supplier is null
+     * @param mapSupplier a function that creates Map instances given the expected size
+     * @return a Map of the mapSupplier's type containing column names as keys and corresponding values
+     * @throws IllegalArgumentException if fieldValueList or mapSupplier is null
      * @see #toMap(FieldList, FieldValueList, IntFunction)
      */
-    public static Map<String, Object> toMap(final FieldValueList fieldValueList, final IntFunction<? extends Map<String, Object>> supplier) {
+    public static Map<String, Object> toMap(final FieldValueList fieldValueList, final IntFunction<? extends Map<String, Object>> mapSupplier) {
         N.checkArgNotNull(fieldValueList, "fieldValueList");
 
-        return toMap(getSchema(fieldValueList), fieldValueList, supplier);
+        return toMap(getSchema(fieldValueList), fieldValueList, mapSupplier);
     }
 
     @SuppressWarnings({ "rawtypes", "null" })
@@ -1830,6 +1832,7 @@ public class BigQueryExecutor {
      * @throws RuntimeException if the underlying BigQuery query execution fails or the calling thread
      *         is interrupted
      * @see #queryForSingleValue(Class, String, Object...)
+     * @see #queryForSingleNonNull(Class, Class, String, Condition)
      * @see #execute(String, Object...)
      */
     public <V> Nullable<V> queryForSingleValue(final Class<?> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause) {
@@ -1881,6 +1884,7 @@ public class BigQueryExecutor {
      * @throws RuntimeException if the underlying BigQuery query execution fails or the calling thread
      *         is interrupted
      * @see #queryForSingleValue(Class, Class, String, Condition)
+     * @see #queryForSingleNonNull(Class, String, Object...)
      * @see #execute(String, Object...)
      */
     public final <V> Nullable<V> queryForSingleValue(final Class<V> valueClass, final String query, final Object... parameters) {
@@ -1899,6 +1903,129 @@ public class BigQueryExecutor {
 
         final FieldValueList row = iter.next();
         return Nullable.of(N.convert(row.get(0).getValue(), valueClass));
+    }
+
+    /**
+     * Builds a SELECT SQL query against the BigQuery table mapped to {@code targetClass} for the single
+     * column named by {@code propName}, applies {@code whereClause}, executes it, and returns the value
+     * of that column from the first row converted to {@code valueClass}, wrapped in an {@link Optional}
+     * that is guaranteed to be non-null when present.
+     *
+     * <p>Only the first column of the first row of the {@link TableResult} is read; any remaining rows
+     * or columns are ignored.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> {@code Optional.empty()} is returned <i>only</i> when the
+     * query produces no rows. When a row is returned, the column value is wrapped in the {@code Optional}
+     * via {@link Optional#of(Object)}, which does not accept a null payload — so if the column is
+     * {@code NULL} in BigQuery (or the conversion to {@code valueClass} yields {@code null}), this
+     * method throws {@link NullPointerException} rather than returning {@code Optional.empty()}. Use
+     * {@link #queryForSingleValue(Class, Class, String, Condition)} (which returns {@link Nullable})
+     * when the column may legitimately be {@code NULL}.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Condition condition = Filters.eq("customerId", "CUST123");
+     * Optional<String> email = executor.queryForSingleNonNull(
+     *         Customer.class, String.class, "email", condition);   // present with the email when a row matches
+     *
+     * email.isPresent();          // returns true when at least one row matched with a non-null value
+     * email.orElse("n/a");        // returns the column value, or "n/a" when no row matched
+     *
+     * // Edge: no matching row -> Optional.empty()
+     * Optional<String> none = executor.queryForSingleNonNull(
+     *         Customer.class, String.class, "email", Filters.eq("customerId", "MISSING"));
+     * none.isPresent();           // returns false
+     * }</pre>
+     *
+     * @param <V> the expected value type
+     * @param targetClass the class representing the target BigQuery table
+     * @param valueClass the expected class of the returned value, used for type conversion
+     * @param propName the property/column name to select
+     * @param whereClause the condition to filter records, or {@code null} to omit the WHERE clause
+     * @return a <i>present</i> {@code Optional<V>} holding the (non-null) column value when at least one
+     *         row is returned with a non-null value; {@code Optional.empty()} when the query returns no rows
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null} or otherwise rejected by
+     *         the SQL builder
+     * @throws NullPointerException if a row is returned but the column value (or its conversion) is
+     *         {@code null}, because {@link Optional#of(Object)} rejects a null payload
+     * @throws RuntimeException if the underlying BigQuery query execution fails or the calling thread
+     *         is interrupted
+     * @see #queryForSingleNonNull(Class, String, Object...)
+     * @see #queryForSingleValue(Class, Class, String, Condition)
+     * @see #execute(String, Object...)
+     */
+    public <V> Optional<V> queryForSingleNonNull(final Class<?> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause) {
+        final SP sp = prepareQuery(targetClass, N.asList(propName), whereClause);
+
+        return queryForSingleNonNull(valueClass, sp.query(), sp.parameters().toArray());
+    }
+
+    /**
+     * Executes a custom BigQuery SQL query with positional parameters and returns the value of the
+     * first column of the first row, converted to {@code valueClass} and wrapped in an {@link Optional}
+     * that is guaranteed to be non-null when present.
+     *
+     * <p>Only the first column of the first row of the returned {@link TableResult} is read; any
+     * remaining rows or columns are ignored. This method is designed for queries that return a single
+     * scalar, such as {@code COUNT(*)}, {@code MAX(column)}, or single-field lookups.</p>
+     *
+     * <p><b>Empty vs. present semantics:</b> {@code Optional.empty()} is returned <i>only</i> when the
+     * query produces no rows (including DML statements where BigQuery surfaces an affected-row count
+     * but {@code getValues()} is empty). When a row is returned, the column value is wrapped via
+     * {@link Optional#of(Object)}, which does not accept a null payload — so a {@code NULL} column value
+     * (or a conversion yielding {@code null}) results in a {@link NullPointerException}. Use
+     * {@link #queryForSingleValue(Class, String, Object...)} (which returns {@link Nullable}) when the
+     * column may legitimately be {@code NULL}.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * Optional<Long> count = executor.queryForSingleNonNull(Long.class,
+     *         "SELECT COUNT(*) FROM customers WHERE status = ?", "active");
+     * count.orElse(0L);           // returns the COUNT(*) value (e.g. 5L), or 0L if the query returned no rows
+     *
+     * // Edge: a query with no rows yields Optional.empty()
+     * Optional<String> none = executor.queryForSingleNonNull(String.class,
+     *         "SELECT name FROM customers WHERE customer_id = ?", "MISSING");
+     * none.isPresent();           // returns false
+     *
+     * // Edge: a row whose column value is NULL cannot be held by Optional
+     * executor.queryForSingleNonNull(String.class,
+     *         "SELECT nickname FROM customers WHERE customer_id = ?", "CUST123"); // throws NullPointerException when nickname is NULL
+     * }</pre>
+     *
+     * @param <V> the expected value type
+     * @param valueClass the expected class of the returned value, used for type conversion
+     * @param query the BigQuery SQL query string with {@code ?} positional parameter placeholders
+     * @param parameters the parameter values to bind to the query, in positional order
+     * @return a <i>present</i> {@code Optional<V>} holding the (non-null) column value converted to
+     *         {@code valueClass} when at least one row is returned with a non-null value;
+     *         {@code Optional.empty()} when the query returns no rows
+     * @throws IllegalArgumentException if {@code valueClass} or {@code query} is rejected by the
+     *         conversion / BigQuery client layer
+     * @throws NullPointerException if a row is returned but the column value (or its conversion) is
+     *         {@code null}, because {@link Optional#of(Object)} rejects a null payload
+     * @throws RuntimeException if the underlying BigQuery query execution fails or the calling thread
+     *         is interrupted
+     * @see #queryForSingleNonNull(Class, Class, String, Condition)
+     * @see #queryForSingleValue(Class, String, Object...)
+     * @see #execute(String, Object...)
+     */
+    public final <V> Optional<V> queryForSingleNonNull(final Class<V> valueClass, final String query, final Object... parameters) {
+        final TableResult tableResult = execute(query, parameters);
+        // For DML statements BigQuery reports the affected-row count via getTotalRows() while
+        // getValues() is empty. Drive off the iterator rather than the row count so we don't
+        // throw NoSuchElementException in that case.
+        if (tableResult.getTotalRows() <= 0) {
+            return (Optional<V>) Optional.empty();
+        }
+
+        final Iterator<FieldValueList> iter = tableResult.getValues().iterator();
+        if (!iter.hasNext()) {
+            return (Optional<V>) Optional.empty();
+        }
+
+        final FieldValueList row = iter.next();
+        return Optional.of(N.convert(row.get(0).getValue(), valueClass));
     }
 
     /**

@@ -2674,14 +2674,14 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * async.queryForSingleValue(String.class, "SELECT FROM"); // throws the driver failure synchronously (no future is created)
      * }</pre>
      *
-     * @param <T> the column-value type
+     * @param <V> the column-value type
      * @param valueClass the type to convert the column value to
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
      * @return a future whose payload is a {@link Nullable} holding the value, or empty if the
      *         query returned no row; the value is {@code null} when the column is SQL NULL
      */
-    public <T> ContinuableFuture<Nullable<T>> queryForSingleValue(final Class<T> valueClass, final String query, final Object... parameters) {
+    public <V> ContinuableFuture<Nullable<V>> queryForSingleValue(final Class<V> valueClass, final String query, final Object... parameters) {
         return execute(query, parameters).map(resultSet -> {
             final java.util.Iterator<RW> iter = resultSet.iterator();
 
@@ -2716,7 +2716,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }
      * }</pre>
      *
-     * @param <T> the column-value type
+     * @param <V> the column-value type
      * @param valueClass the type to convert the column value to
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
@@ -2725,7 +2725,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         {@code get()} throws a {@link NullPointerException} directly (not wrapped in an
      *         {@code ExecutionException}), since {@link Optional} cannot hold {@code null}
      */
-    public <T> ContinuableFuture<Optional<T>> queryForSingleNonNull(final Class<T> valueClass, final String query, final Object... parameters) {
+    public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final Class<V> valueClass, final String query, final Object... parameters) {
         return execute(query, parameters).map(resultSet -> {
             final java.util.Iterator<RW> iter = resultSet.iterator();
 
