@@ -978,6 +978,9 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalArgumentException if batchGetItemRequest or targetClass is null
      */
     public <T> CompletableFuture<Map<String, List<T>>> batchGetItem(final BatchGetItemRequest batchGetItemRequest, final Class<T> targetClass) {
+        N.checkArgNotNull(batchGetItemRequest, "batchGetItemRequest");
+        N.checkArgNotNull(targetClass, "targetClass");
+
         return dynamoDBClient.batchGetItem(batchGetItemRequest).thenApply(batchGetItemResponse -> toEntities(batchGetItemResponse, targetClass));
     }
 
@@ -2040,14 +2043,14 @@ public final class AsyncDynamoDBExecutor {
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
-     * @param attributesToGet list of attribute names to retrieve, null for all attributes
+     * @param attributesToGet list of attribute names to retrieve; null or empty for all attributes
      * @return a CompletableFuture containing a Stream of items as Maps
      * @throws IllegalArgumentException if tableName is null
      */
     public CompletableFuture<Stream<Map<String, Object>>> scan(final String tableName, final List<String> attributesToGet) {
         N.checkArgNotNull(tableName, "tableName");
 
-        final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).attributesToGet(attributesToGet).build();
+        final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).attributesToGet(N.isEmpty(attributesToGet) ? null : attributesToGet).build();
 
         return scan(scanRequest);
     }
@@ -2121,7 +2124,7 @@ public final class AsyncDynamoDBExecutor {
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
-     * @param attributesToGet list of attribute names to retrieve, null for all
+     * @param attributesToGet list of attribute names to retrieve; null or empty for all attributes
      * @param scanFilter map of attribute names to filter conditions
      * @return a CompletableFuture containing a Stream of filtered items with specified attributes
      * @throws IllegalArgumentException if tableName is null
@@ -2130,7 +2133,11 @@ public final class AsyncDynamoDBExecutor {
             final Map<String, Condition> scanFilter) {
         N.checkArgNotNull(tableName, "tableName");
 
-        final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).attributesToGet(attributesToGet).scanFilter(scanFilter).build();
+        final ScanRequest scanRequest = ScanRequest.builder()
+                .tableName(tableName)
+                .attributesToGet(N.isEmpty(attributesToGet) ? null : attributesToGet)
+                .scanFilter(scanFilter)
+                .build();
 
         return scan(scanRequest);
     }
@@ -2202,7 +2209,7 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param <T> the type of objects in the stream
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
-     * @param attributesToGet list of attribute names to retrieve, null for all attributes
+     * @param attributesToGet list of attribute names to retrieve; null or empty for all attributes
      * @param targetClass the class to convert results to. Must not be null.
      * @return a CompletableFuture containing a Stream of typed objects
      * @throws IllegalArgumentException if tableName or targetClass is null
@@ -2211,7 +2218,7 @@ public final class AsyncDynamoDBExecutor {
         N.checkArgNotNull(tableName, "tableName");
         N.checkArgNotNull(targetClass, "targetClass");
 
-        final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).attributesToGet(attributesToGet).build();
+        final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).attributesToGet(N.isEmpty(attributesToGet) ? null : attributesToGet).build();
 
         return scan(scanRequest, targetClass);
     }
@@ -2278,7 +2285,7 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param <T> the type of objects in the stream
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
-     * @param attributesToGet list of attribute names to retrieve, null for all attributes
+     * @param attributesToGet list of attribute names to retrieve; null or empty for all attributes
      * @param scanFilter map of attribute names to filter conditions
      * @param targetClass the class to convert results to. Must not be null.
      * @return a CompletableFuture containing a Stream of typed objects
@@ -2289,7 +2296,11 @@ public final class AsyncDynamoDBExecutor {
         N.checkArgNotNull(tableName, "tableName");
         N.checkArgNotNull(targetClass, "targetClass");
 
-        final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).attributesToGet(attributesToGet).scanFilter(scanFilter).build();
+        final ScanRequest scanRequest = ScanRequest.builder()
+                .tableName(tableName)
+                .attributesToGet(N.isEmpty(attributesToGet) ? null : attributesToGet)
+                .scanFilter(scanFilter)
+                .build();
 
         return scan(scanRequest, targetClass);
     }
@@ -3289,7 +3300,7 @@ public final class AsyncDynamoDBExecutor {
          *     });
          * }</pre>
          *
-         * @param attributesToGet list of attribute names to retrieve, null for all attributes
+         * @param attributesToGet list of attribute names to retrieve; null or empty for all attributes
          * @return a CompletableFuture containing a Stream of all entities in the table
          */
         public CompletableFuture<Stream<T>> scan(final List<String> attributesToGet) {
@@ -3344,7 +3355,7 @@ public final class AsyncDynamoDBExecutor {
          *     });
          * }</pre>
          *
-         * @param attributesToGet list of attribute names to retrieve, null for all attributes
+         * @param attributesToGet list of attribute names to retrieve; null or empty for all attributes
          * @param scanFilter map of attribute names to filter conditions
          * @return a CompletableFuture containing a Stream of filtered entities
          */

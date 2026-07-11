@@ -1672,6 +1672,12 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
+    public void testMapReduceWithNullRowTypeThrowsIAE() {
+        assertThrows(IllegalArgumentException.class,
+                () -> executor.mapReduce("function() { emit(this.category, 1); }", "function(key, values) { return Array.sum(values); }", null));
+    }
+
+    @Test
     public void testExistsWithNullStringObjectId() {
         assertThrows(IllegalArgumentException.class, () -> {
             executor.exists((String) null);

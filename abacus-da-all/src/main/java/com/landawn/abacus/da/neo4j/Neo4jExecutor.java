@@ -2455,10 +2455,13 @@ public final class Neo4jExecutor {
         if (session != null) {
             // A run/call action may have left a transaction open (e.g. it threw between
             // beginTransaction() and tx.close()). Never pool a session with a live transaction:
-            // roll it back, and discard the session entirely if that fails.
-            final Transaction tx = session.getTransaction();
+            // roll it back, and discard the session entirely if that fails. On a nested
+            // ("extended") OGM transaction - beginTransaction() called again on the same session -
+            // each rollback()/close() pair only marks ROLLBACK_PENDING and pops one nesting level;
+            // only the root-level pair actually rolls back, hence the loop.
+            Transaction tx = null;
 
-            if (tx != null) {
+            while ((tx = session.getTransaction()) != null) {
                 try {
                     tx.rollback();
                     tx.close();

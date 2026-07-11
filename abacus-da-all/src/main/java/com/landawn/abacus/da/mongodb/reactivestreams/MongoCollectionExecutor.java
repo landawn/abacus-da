@@ -4134,11 +4134,14 @@ public final class MongoCollectionExecutor {
      * @param rowType the class to deserialize results into; must not be null
      * @return a cold {@code Flux} that, on subscription, emits each result document decoded as
      *         {@code T}, then completes
+     * @throws IllegalArgumentException if {@code rowType} is null
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
      * @deprecated Map-reduce is deprecated in MongoDB 5.0+. Use {@link #aggregate(List, Class)} instead.
      */
     @Deprecated
     public <T> Flux<T> mapReduce(final String mapFunction, final String reduceFunction, final Class<T> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         return Flux.from(coll.mapReduce(mapFunction, reduceFunction, Document.class)).mapNotNull(toEntity(rowType));
     }
 

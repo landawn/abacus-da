@@ -78,7 +78,9 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
      * with the same schema for metrics and monitoring rather than to uniquely identify them.
      *
      * @return the fingerprint map produced by HBase; never {@code null} and always contains a
-     *         {@code "families"} entry (whose list may be empty)
+     *         {@code "families"} entry — a list of family names (possibly empty) for {@code Get}
+     *         and mutation operations, but the string {@code "ALL"} for a {@code Scan} with no
+     *         families specified
      * @see #toMap()
      */
     public Map<String, Object> getFingerprint() {

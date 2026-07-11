@@ -1,6 +1,7 @@
 package com.landawn.abacus.da.aws.dynamodb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -765,6 +766,17 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
         QueryRequest queryRequest = QueryRequest.builder().tableName("TestTable").build();
         assertThrows(IllegalArgumentException.class, () -> asyncExecutor.query(queryRequest, (Class<?>) null));
         assertThrows(IllegalArgumentException.class, () -> asyncExecutor.query(null, Map.class));
+
+        // Regression: list(QueryRequest, Class) was the only request+class entry point without the
+        // eager guards its query/stream/scan siblings (and the sync twin's list) have.
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.list((QueryRequest) null, Map.class));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.list(queryRequest, (Class<?>) null));
+
+        // Regression: batchGetItem(BatchGetItemRequest, Class) validated targetClass only lazily,
+        // AFTER the network call had already been issued; both args are now guarded eagerly.
+        BatchGetItemRequest batchGetItemRequest = BatchGetItemRequest.builder().build();
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.batchGetItem((BatchGetItemRequest) null, Map.class));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.batchGetItem(batchGetItemRequest, (Class<?>) null));
     }
 
     @Test
@@ -787,6 +799,21 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> asyncExecutor.scan("TestTable", List.of("id"), (Class<?>) null));
         assertThrows(IllegalArgumentException.class, () -> asyncExecutor.scan("TestTable", Map.<String, Condition> of(), (Class<?>) null));
         assertThrows(IllegalArgumentException.class, () -> asyncExecutor.scan("TestTable", List.of("id"), Map.<String, Condition> of(), (Class<?>) null));
+    }
+
+    @Test
+    public void testScanEmptyAttributesToGetOmitsLegacyProjection() throws ExecutionException, InterruptedException {
+        when(mockDynamoDbAsyncClient.scan(any(ScanRequest.class)))
+                .thenReturn(CompletableFuture.completedFuture(ScanResponse.builder().items(List.of()).build()));
+
+        assertEquals(0, asyncExecutor.scan("TestTable", List.of()).get().count());
+        assertEquals(0, asyncExecutor.scan("TestTable", List.of(), Map.<String, Condition> of()).get().count());
+        assertEquals(0, asyncExecutor.scan("TestTable", List.of(), Map.class).get().count());
+        assertEquals(0, asyncExecutor.scan("TestTable", List.of(), Map.<String, Condition> of(), Map.class).get().count());
+
+        final ArgumentCaptor<ScanRequest> requestCaptor = ArgumentCaptor.forClass(ScanRequest.class);
+        verify(mockDynamoDbAsyncClient, times(4)).scan(requestCaptor.capture());
+        requestCaptor.getAllValues().forEach(request -> assertFalse(request.hasAttributesToGet()));
     }
 
     /**

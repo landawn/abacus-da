@@ -8,7 +8,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -32,6 +35,7 @@ import org.neo4j.ogm.cypher.query.SortOrder;
 import org.neo4j.ogm.model.Result;
 import org.neo4j.ogm.session.Session;
 import org.neo4j.ogm.session.SessionFactory;
+import org.neo4j.ogm.transaction.Transaction;
 
 import com.landawn.abacus.da.TestBase;
 
@@ -152,6 +156,59 @@ public class Neo4jExecutorTest extends TestBase {
             throw new RuntimeException("boom");
         }));
         verify(mockSession).clear();
+    }
+
+    // ---------- closeSession: leaked-transaction handling ----------
+
+    @Test
+    public void testRun_LeakedTransactionIsRolledBackBeforePooling() {
+        Transaction tx = mock(Transaction.class);
+        // The transaction is still current after the action returns, and gone once one
+        // rollback()/close() pair has run.
+        when(mockSession.getTransaction()).thenReturn(tx, (Transaction) null);
+
+        executor.run(s -> s.beginTransaction());
+
+        verify(tx).rollback();
+        verify(tx).close();
+        verify(mockSession).clear();
+    }
+
+    @Test
+    public void testRun_LeakedNestedTransactionIsFullyUnwound() {
+        // OGM "extended" transaction: beginTransaction() called twice on the same session returns
+        // the same underlying transaction with an incremented nesting count. One rollback()/close()
+        // pair only pops one level (rollback merely marks ROLLBACK_PENDING), so the transaction is
+        // still current after the first pair; only the root-level pair actually rolls back and
+        // deregisters it. closeSession must keep unwinding until no live transaction remains.
+        Transaction tx = mock(Transaction.class);
+        when(mockSession.getTransaction()).thenReturn(tx, tx, (Transaction) null);
+
+        executor.run(s -> {
+            s.beginTransaction();
+            s.beginTransaction();
+        });
+
+        verify(tx, times(2)).rollback();
+        verify(tx, times(2)).close();
+        // Fully unwound, so the session is safe to pool.
+        verify(mockSession).clear();
+    }
+
+    @Test
+    public void testRun_TransactionRollbackFailure_DiscardsSession() {
+        Transaction tx = mock(Transaction.class);
+        when(mockSession.getTransaction()).thenReturn(tx);
+        doThrow(new RuntimeException("rollback failed")).when(tx).rollback();
+
+        executor.run(s -> s.beginTransaction());
+
+        // A session whose transaction could not be rolled back must not be pooled (or even
+        // cleared); the next borrower gets a fresh session instead.
+        verify(mockSession, never()).clear();
+        executor.run(s -> {
+        });
+        verify(mockSessionFactory, times(2)).openSession();
     }
 
     // ---------- load / loadAll delegators ----------

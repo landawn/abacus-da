@@ -1908,6 +1908,18 @@ public class DynamoDBExecutorV2Test extends TestBase {
         assertEquals("1", result.get("TestTable").get(0).getId());
     }
 
+    @Test
+    public void testBatchGetItemWithRequestAndClass_NullArgsThrowEagerly() {
+        // Regression: batchGetItem(BatchGetItemRequest, Class) validated targetClass only lazily
+        // (inside createRowMapper), AFTER the billable network call had already been issued — and
+        // not at all when the response carried no Responses field. Both args are now guarded
+        // eagerly, matching the scan/list/query/stream family.
+        BatchGetItemRequest req = BatchGetItemRequest.builder().build();
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> executor.batchGetItem((BatchGetItemRequest) null, Map.class));
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class, () -> executor.batchGetItem(req, (Class<?>) null));
+        org.mockito.Mockito.verify(mockDynamoDbClient, org.mockito.Mockito.never()).batchGetItem(any(BatchGetItemRequest.class));
+    }
+
     // put/update/delete overloads
     @Test
     public void testPutItemWithRequest() {

@@ -67,6 +67,9 @@ final class ResultSets {
      * <ul>
      * <li>{@link ResultSet#all()} consumes the iterator and therefore eagerly drains all
      * remaining pages.</li>
+     * <li>{@link ResultSet#iterator()} returns the same stateful cursor on every call, matching
+     * the driver's synchronous result-set implementations. A later call therefore continues
+     * from the current position instead of replaying rows from the current page.</li>
      * <li>{@link ResultSet#isFullyFetched()} reflects whether the current page is the last one
      * known to the driver; it does not guarantee that all rows have already been iterated.</li>
      * <li>{@link ResultSet#getAvailableWithoutFetching()} is <strong>not</strong> supported by
@@ -102,6 +105,34 @@ final class ResultSets {
         return new ResultSet() {
             private AsyncResultSet currentResultSet = asyncResultSet;
             private final List<ExecutionInfo> executionInfos = new ArrayList<>(1);
+            private Iterator<Row> currentRows = N.iterate(asyncResultSet.currentPage());
+
+            private final Iterator<Row> rowIterator = new Iterator<>() {
+                @Override
+                public boolean hasNext() {
+                    while ((currentRows == null || !currentRows.hasNext()) && currentResultSet.hasMorePages()) {
+                        try {
+                            currentResultSet = currentResultSet.fetchNextPage().toCompletableFuture().get();
+                            executionInfos.add(currentResultSet.getExecutionInfo());
+                        } catch (ExecutionException | InterruptedException e) {
+                            throw ExceptionUtil.toRuntimeException(e, true);
+                        }
+
+                        currentRows = N.iterate(currentResultSet.currentPage());
+                    }
+
+                    return currentRows != null && currentRows.hasNext();
+                }
+
+                @Override
+                public Row next() {
+                    if (!hasNext()) {
+                        throw new NoSuchElementException();
+                    }
+
+                    return currentRows.next();
+                }
+            };
 
             {
                 executionInfos.add(asyncResultSet.getExecutionInfo());
@@ -139,34 +170,7 @@ final class ResultSets {
 
             @Override
             public Iterator<Row> iterator() {
-                return new Iterator<>() {
-                    private Iterator<Row> rows = N.iterate(currentResultSet.currentPage());
-
-                    @Override
-                    public boolean hasNext() {
-                        while ((rows == null || !rows.hasNext()) && currentResultSet.hasMorePages()) {
-                            try {
-                                currentResultSet = currentResultSet.fetchNextPage().toCompletableFuture().get();
-                                executionInfos.add(currentResultSet.getExecutionInfo());
-                            } catch (ExecutionException | InterruptedException e) {
-                                throw ExceptionUtil.toRuntimeException(e, true);
-                            }
-
-                            rows = N.iterate(currentResultSet.currentPage());
-                        }
-
-                        return rows != null && rows.hasNext();
-                    }
-
-                    @Override
-                    public Row next() {
-                        if (!hasNext()) {
-                            throw new NoSuchElementException();
-                        }
-
-                        return rows.next();
-                    }
-                };
+                return rowIterator;
             }
         };
     }

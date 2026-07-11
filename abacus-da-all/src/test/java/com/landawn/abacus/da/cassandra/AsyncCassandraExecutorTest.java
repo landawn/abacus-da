@@ -73,6 +73,22 @@ public class AsyncCassandraExecutorTest extends TestBase {
     }
 
     @Test
+    public void testWrappedResultSetReusesItsConsumptionCursor() {
+        final Row first = mock(Row.class);
+        final Row second = mock(Row.class);
+        final AsyncResultSet asyncResultSet = mock(AsyncResultSet.class);
+        when(asyncResultSet.currentPage()).thenReturn(Arrays.asList(first, second));
+        when(asyncResultSet.hasMorePages()).thenReturn(false);
+
+        final ResultSet resultSet = ResultSets.wrap(asyncResultSet);
+        final Iterator<Row> iterator = resultSet.iterator();
+
+        assertSame(first, iterator.next());
+        assertSame(iterator, resultSet.iterator());
+        assertEquals(Arrays.asList(second), resultSet.all());
+    }
+
+    @Test
     public void testSync_ReturnsUnderlyingExecutor() {
         assertSame(mockExecutor, async.sync());
     }

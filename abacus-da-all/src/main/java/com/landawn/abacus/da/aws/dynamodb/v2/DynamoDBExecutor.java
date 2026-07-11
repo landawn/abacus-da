@@ -2494,6 +2494,9 @@ public final class DynamoDBExecutor {
      * @throws IllegalArgumentException if batchGetItemRequest or targetClass is null
      */
     public <T> Map<String, List<T>> batchGetItem(final BatchGetItemRequest batchGetItemRequest, final Class<T> targetClass) {
+        N.checkArgNotNull(batchGetItemRequest, "batchGetItemRequest");
+        N.checkArgNotNull(targetClass, "targetClass");
+
         return toEntities(dynamoDBClient.batchGetItem(batchGetItemRequest), targetClass);
     }
 
@@ -4222,7 +4225,7 @@ public final class DynamoDBExecutor {
          * users.forEach(user -> System.out.println(user.getUserName()));
          * }</pre>
          *
-         * @param attributesToGet list of attribute names to retrieve; null to get all attributes
+         * @param attributesToGet list of attribute names to retrieve; null or empty to get all attributes
          * @return a Stream of entities from the scan operation
          */
         public Stream<T> scan(final List<String> attributesToGet) {
@@ -4262,7 +4265,7 @@ public final class DynamoDBExecutor {
          * Stream<User> activeUsers = userMapper.scan(attributes, filter);
          * }</pre>
          *
-         * @param attributesToGet list of attribute names to retrieve
+         * @param attributesToGet list of attribute names to retrieve; null or empty to get all attributes
          * @param scanFilter map of attribute names to conditions for filtering results
          * @return a Stream of entities matching the filter with only specified attributes
          */

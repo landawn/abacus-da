@@ -1681,7 +1681,8 @@ public class CosmosContainerExecutor {
      * @param targetClass the class type for deserializing the results (must not be null)
      * @return a Stream of items matching the condition
      * @throws CosmosException if the query fails
-     * @throws NullPointerException if targetClass is null
+     * @throws IllegalArgumentException if targetClass is null (rejected by the query builder
+     *         before any request is sent)
      *
      * @see Condition for condition construction
      * @see com.landawn.abacus.query.Filters for available filter operations
@@ -1725,7 +1726,8 @@ public class CosmosContainerExecutor {
      * @param targetClass the class type for deserializing the results (must not be null)
      * @return a Stream of items matching the condition
      * @throws CosmosException if the query fails
-     * @throws NullPointerException if targetClass is null
+     * @throws IllegalArgumentException if targetClass is null (rejected by the query builder
+     *         before any request is sent)
      */
     @Beta
     public final <T> Stream<T> streamItems(final Condition whereClause, final CosmosQueryRequestOptions options, final Class<T> targetClass) {
@@ -1772,7 +1774,9 @@ public class CosmosContainerExecutor {
      * @param targetClass the class type for deserializing the results (must not be null)
      * @return a Stream of items with only selected properties populated
      * @throws CosmosException if the query fails
-     * @throws NullPointerException if targetClass is null
+     * @throws IllegalArgumentException if targetClass is null while selectPropNames is null or
+     *         empty (rejected by the query builder before any request is sent)
+     * @throws NullPointerException if targetClass is null while selectPropNames is non-empty
      */
     @Beta
     public final <T> Stream<T> streamItems(final Collection<String> selectPropNames, final Condition whereClause, final Class<T> targetClass) {
@@ -1832,7 +1836,9 @@ public class CosmosContainerExecutor {
      * @param targetClass the class type for deserializing the results (must not be null)
      * @return a Stream of items with only selected properties populated
      * @throws CosmosException if the query fails
-     * @throws NullPointerException if targetClass is null
+     * @throws IllegalArgumentException if targetClass is null while selectPropNames is null or
+     *         empty (rejected by the query builder before any request is sent)
+     * @throws NullPointerException if targetClass is null while selectPropNames is non-empty
      *
      * @see NamingPolicy for field name mapping behavior
      * @see com.landawn.abacus.query.Filters for available filter operations
