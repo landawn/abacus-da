@@ -33,6 +33,7 @@ import com.landawn.abacus.annotation.Beta;
 import com.landawn.abacus.logging.Logger;
 import com.landawn.abacus.logging.LoggerFactory;
 import com.landawn.abacus.util.stream.Stream;
+import com.landawn.abacus.util.u.Optional;
 
 /**
  * A thin executor that wraps the <a href="http://neo4j.com/docs/ogm/java/stable/">Neo4j OGM</a>
@@ -112,11 +113,15 @@ import com.landawn.abacus.util.stream.Stream;
  * Collection<Person> pagedResults = executor.loadAll(Person.class, ageFilter, pagination);
  * }</pre>
  *
- * <p><b>Naming convention:</b> this executor mirrors the Neo4j OGM vocabulary ({@code load}/{@code loadAll},
+ * <p><b>Naming convention:</b> this executor stays close to the Neo4j OGM vocabulary ({@code load}/{@code loadAll},
  * {@code save}, {@code delete}/{@code deleteAll}, {@code queryForObject}, {@code count}) so it reads
- * naturally to Neo4j-OGM users. It does <i>not</i> adopt the abacus "house" CRUD vocabulary
+ * naturally to Neo4j-OGM users, rather than adopting the abacus "house" CRUD vocabulary
  * ({@code findFirst}/{@code list}/{@code insert}/{@code update}/{@code delete}) used by the
- * {@code Condition}-based executors such as Cassandra and BigQuery.</p>
+ * {@code Condition}-based executors such as Cassandra and BigQuery. It does, however, apply a few
+ * abacus conventions where they improve the API: {@code queryForObject} returns a {@link com.landawn.abacus.util.u.Optional}
+ * instead of a raw {@code null}, the OGM {@code countEntitiesOfType(Class)} is exposed as a {@code count(Class)}
+ * overload, and OGM's {@code resolveGraphIdFor(Object)} is surfaced as the more conventional
+ * {@code getGraphId(Object)}.</p>
  *
  * @see org.neo4j.ogm.session.SessionFactory
  * @see org.neo4j.ogm.session.Session
@@ -2088,7 +2093,7 @@ public final class Neo4jExecutor {
      * <pre>{@code
      * // Remove every Person node (and its relationships) from the graph
      * executor.deleteAll(Person.class);
-     * assert executor.countEntitiesOfType(Person.class) == 0; // post-state: no Person nodes remain
+     * assert executor.count(Person.class) == 0; // post-state: no Person nodes remain
      *
      * // Typical teardown after a test run
      * executor.deleteAll(Company.class);
@@ -2113,7 +2118,8 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Executes a Cypher query and maps the single result row to an instance of {@code targetClass}.
+     * Executes a Cypher query and returns the single result row mapped to {@code targetClass}, wrapped
+     * in an {@link Optional}.
      * <p>
      * Delegates to {@link Session#queryForObject(Class, String, Map)}. The query must return
      * exactly zero or one row; if multiple rows are returned the underlying OGM session raises a
@@ -2124,16 +2130,16 @@ public final class Neo4jExecutor {
      * <pre>{@code
      * // Query for a single person by name
      * Map<String, Object> params = Map.of("name", "John Doe");
-     * Person person = executor.queryForObject(Person.class,
+     * Optional<Person> person = executor.queryForObject(Person.class,
      *     "MATCH (p:Person {name: $name}) RETURN p", params);
      *
      * // Query for single aggregation result
-     * Long count = executor.queryForObject(Long.class,
+     * Optional<Long> count = executor.queryForObject(Long.class,
      *     "MATCH (p:Person) WHERE p.age > $minAge RETURN count(p) as count",
      *     Map.of("minAge", 25));
      *
      * // Query with LIMIT 1 to guarantee a single row
-     * Person oldest = executor.queryForObject(Person.class,
+     * Optional<Person> oldest = executor.queryForObject(Person.class,
      *     "MATCH (p:Person) RETURN p ORDER BY p.age DESC LIMIT 1",
      *     Collections.emptyMap());
      * }</pre>
@@ -2144,13 +2150,14 @@ public final class Neo4jExecutor {
      * @param cypher the Cypher query string with {@code $name} parameter placeholders
      * @param parameters named parameters bound by the OGM session; may be empty but should not be
      *                   {@code null}
-     * @return the single mapped result, or {@code null} if the query returns no rows
+     * @return an {@link Optional} describing the single mapped result, or an empty {@code Optional} if
+     *         the query returns no rows
      * @throws RuntimeException if the query returns more than one row or the underlying OGM session
      *                          rejects the query
      * @see #stream(Class, String, Map)
      * @see #stream(String, Map)
      */
-    public <T> T queryForObject(final Class<T> targetClass, final String cypher, final Map<String, ?> parameters) {
+    public <T> Optional<T> queryForObject(final Class<T> targetClass, final String cypher, final Map<String, ?> parameters) {
         if (logger.isDebugEnabled()) {
             logger.debug("Executing Cypher: {}", cypher);
         }
@@ -2158,7 +2165,7 @@ public final class Neo4jExecutor {
         final Session session = getSession();
 
         try {
-            return session.queryForObject(targetClass, cypher, parameters);
+            return Optional.ofNullable(session.queryForObject(targetClass, cypher, parameters));
         } finally {
             closeSession(session);
         }
@@ -2347,7 +2354,7 @@ public final class Neo4jExecutor {
      *                an empty iterable to count all nodes of {@code targetClass}
      * @return the number of nodes of {@code targetClass} that satisfy all the supplied filters
      * @throws RuntimeException if the underlying OGM session rejects the request
-     * @see #countEntitiesOfType(Class)
+     * @see #count(Class)
      * @see org.neo4j.ogm.cypher.Filter
      */
     public long count(final Class<?> targetClass, final Iterable<Filter> filters) {
@@ -2369,20 +2376,20 @@ public final class Neo4jExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Count all persons in the database
-     * long totalPersons = executor.countEntitiesOfType(Person.class);
+     * long totalPersons = executor.count(Person.class);
      * System.out.println("Total persons: " + totalPersons);
      *
      * // Count all companies
-     * long totalCompanies = executor.countEntitiesOfType(Company.class);
+     * long totalCompanies = executor.count(Company.class);
      *
      * // Use for database statistics
      * Map<String, Long> stats = new HashMap<>();
-     * stats.put("persons", executor.countEntitiesOfType(Person.class));
-     * stats.put("companies", executor.countEntitiesOfType(Company.class));
-     * stats.put("projects", executor.countEntitiesOfType(Project.class));
+     * stats.put("persons", executor.count(Person.class));
+     * stats.put("companies", executor.count(Company.class));
+     * stats.put("projects", executor.count(Project.class));
      *
      * // Check if database is empty
-     * if (executor.countEntitiesOfType(Person.class) == 0) {
+     * if (executor.count(Person.class) == 0) {
      *     System.out.println("No persons found, initializing data...");
      *     initializeData();
      * }
@@ -2393,7 +2400,7 @@ public final class Neo4jExecutor {
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #count(Class, Iterable)
      */
-    public long countEntitiesOfType(final Class<?> targetClass) {
+    public long count(final Class<?> targetClass) {
         final Session session = getSession();
 
         try {
@@ -2404,7 +2411,7 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Resolves the native Neo4j node ID for {@code possibleEntity}, if it is an OGM-managed
+     * Returns the native Neo4j graph ID for {@code possibleEntity}, if it is an OGM-managed
      * entity.
      * <p>
      * Delegates to {@link Session#resolveGraphIdFor(Object)}. Because the executor borrows a fresh
@@ -2416,12 +2423,12 @@ public final class Neo4jExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Person person = executor.load(Person.class, 123L);
-     * Long graphId = executor.resolveGraphIdFor(person); // 123
+     * Long graphId = executor.getGraphId(person); // 123
      *
      * Person newPerson = new Person("John Doe");
-     * executor.resolveGraphIdFor(newPerson);                // null - not yet saved
-     * executor.save(newPerson);                             // post-state: newPerson now has a generated id
-     * Long savedId = executor.resolveGraphIdFor(newPerson); // assigned by Neo4j
+     * executor.getGraphId(newPerson);                // null - not yet saved
+     * executor.save(newPerson);                      // post-state: newPerson now has a generated id
+     * Long savedId = executor.getGraphId(newPerson); // assigned by Neo4j
      * }</pre>
      *
      * @param possibleEntity an object that may or may not be an OGM-mapped entity
@@ -2429,7 +2436,7 @@ public final class Neo4jExecutor {
      *         is not a mapped/managed entity with an assigned ID
      * @see #load(Class, Serializable)
      */
-    public Long resolveGraphIdFor(final Object possibleEntity) {
+    public Long getGraphId(final Object possibleEntity) {
         final Session session = getSession();
 
         try {

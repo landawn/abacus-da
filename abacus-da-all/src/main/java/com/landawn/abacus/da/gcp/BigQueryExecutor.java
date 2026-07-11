@@ -314,7 +314,7 @@ public class BigQueryExecutor {
 
     /**
      * Converts a BigQuery {@link FieldValueList} (a single result row) to an instance of
-     * {@code entityClass}, mapping column names to bean properties according to the supplied
+     * {@code targetClass}, mapping column names to bean properties according to the supplied
      * {@link Schema}.
      * <p>
      * Convenience overload that immediately extracts {@code schema.getFields()} and delegates to
@@ -343,22 +343,22 @@ public class BigQueryExecutor {
      * @param <T> the entity type
      * @param schema the schema describing {@code fieldValueList}; must not be {@code null}
      * @param fieldValueList the row to convert
-     * @param entityClass the bean class to instantiate; must declare standard getter/setter methods
-     * @return a new {@code entityClass} instance with properties populated from {@code fieldValueList}
-     * @throws IllegalArgumentException if {@code schema} is {@code null} or {@code entityClass} is
+     * @param targetClass the bean class to instantiate; must declare standard getter/setter methods
+     * @return a new {@code targetClass} instance with properties populated from {@code fieldValueList}
+     * @throws IllegalArgumentException if {@code schema} is {@code null} or {@code targetClass} is
      *                                  not a recognised bean class
      * @see #toEntity(FieldList, FieldValueList, Class)
      * @see #toEntity(FieldValueList, Class)
      */
-    public static <T> T toEntity(final Schema schema, final FieldValueList fieldValueList, final Class<T> entityClass) {
+    public static <T> T toEntity(final Schema schema, final FieldValueList fieldValueList, final Class<T> targetClass) {
         N.checkArgNotNull(schema, "schema");
 
-        return toEntity(schema.getFields(), fieldValueList, entityClass);
+        return toEntity(schema.getFields(), fieldValueList, targetClass);
     }
 
     /**
      * Converts a BigQuery {@link FieldValueList} (a single result row) to an instance of
-     * {@code entityClass}, mapping field names to bean properties via the supplied
+     * {@code targetClass}, mapping field names to bean properties via the supplied
      * {@link FieldList}.
      * <p>
      * Column-to-property resolution proceeds in this order: an exact match on the bean's property
@@ -390,20 +390,20 @@ public class BigQueryExecutor {
      * @param <T> the entity type
      * @param fields the field list describing {@code fieldValueList}; must not be {@code null}
      * @param fieldValueList the row to convert; must not be {@code null}
-     * @param entityClass the bean class to instantiate; must declare standard getter/setter methods
-     * @return a new {@code entityClass} instance with properties populated from {@code fieldValueList}
-     * @throws IllegalArgumentException if {@code entityClass} is not a recognised bean class, or if
+     * @param targetClass the bean class to instantiate; must declare standard getter/setter methods
+     * @return a new {@code targetClass} instance with properties populated from {@code fieldValueList}
+     * @throws IllegalArgumentException if {@code targetClass} is not a recognised bean class, or if
      *                                  {@code fields} or {@code fieldValueList} is {@code null}
      * @see #toEntity(Schema, FieldValueList, Class)
      * @see #toEntity(FieldValueList, Class)
      */
-    public static <T> T toEntity(final FieldList fields, final FieldValueList fieldValueList, final Class<T> entityClass) {
-        N.checkArgument(Beans.isBeanClass(entityClass), "{} is not a valid entity class with getter/setter method", entityClass);
+    public static <T> T toEntity(final FieldList fields, final FieldValueList fieldValueList, final Class<T> targetClass) {
+        N.checkArgument(Beans.isBeanClass(targetClass), "{} is not a valid entity class with getter/setter method", targetClass);
         N.checkArgNotNull(fields, "fields");
         N.checkArgNotNull(fieldValueList, "fieldValueList");
 
-        final Map<String, String> column2FieldNameMap = QueryUtil.getColumn2PropNameMap(entityClass);
-        final BeanInfo entityInfo = ParserUtil.getBeanInfo(entityClass);
+        final Map<String, String> column2FieldNameMap = QueryUtil.getColumn2PropNameMap(targetClass);
+        final BeanInfo entityInfo = ParserUtil.getBeanInfo(targetClass);
         final Object entity = entityInfo.createBeanResult();
 
         PropInfo propInfo = null;
@@ -485,7 +485,7 @@ public class BigQueryExecutor {
     }
 
     /**
-     * Converts a {@link FieldValueList} to an instance of {@code entityClass}, extracting the
+     * Converts a {@link FieldValueList} to an instance of {@code targetClass}, extracting the
      * schema from the row itself via {@link #getSchema(FieldValueList)} (reflection-based access
      * to {@code FieldValueList.schema}).
      * <p>
@@ -513,16 +513,16 @@ public class BigQueryExecutor {
      *
      * @param <T> the entity type
      * @param fieldValueList the row to convert
-     * @param entityClass the bean class to instantiate; must declare standard getter/setter methods
-     * @return a new {@code entityClass} instance with properties populated from {@code fieldValueList}
-     * @throws IllegalArgumentException if {@code entityClass} is not a recognised bean class, or if
+     * @param targetClass the bean class to instantiate; must declare standard getter/setter methods
+     * @return a new {@code targetClass} instance with properties populated from {@code fieldValueList}
+     * @throws IllegalArgumentException if {@code targetClass} is not a recognised bean class, or if
      *                                  the schema cannot be retrieved from {@code fieldValueList}
      * @see #toEntity(FieldList, FieldValueList, Class)
      */
-    public static <T> T toEntity(final FieldValueList fieldValueList, final Class<T> entityClass) {
+    public static <T> T toEntity(final FieldValueList fieldValueList, final Class<T> targetClass) {
         N.checkArgNotNull(fieldValueList, "fieldValueList");
 
-        return toEntity(getSchema(fieldValueList), fieldValueList, entityClass);
+        return toEntity(getSchema(fieldValueList), fieldValueList, targetClass);
     }
 
     /**
@@ -1618,25 +1618,25 @@ public class BigQueryExecutor {
 
     private static final Map<Class<?>, Tuple2<ImmutableList<String>, ImmutableSet<String>>> entityKeyNamesMap = new ConcurrentHashMap<>();
 
-    private static ImmutableList<String> getKeyNames(final Class<?> entityClass) {
-        Tuple2<ImmutableList<String>, ImmutableSet<String>> tp = entityKeyNamesMap.get(entityClass);
+    private static ImmutableList<String> getKeyNames(final Class<?> targetClass) {
+        Tuple2<ImmutableList<String>, ImmutableSet<String>> tp = entityKeyNamesMap.get(targetClass);
 
         if (tp == null) {
-            final List<String> idPropNames = QueryUtil.getIdPropNames(entityClass);
+            final List<String> idPropNames = QueryUtil.getIdPropNames(targetClass);
             tp = Tuple.of(ImmutableList.copyOf(idPropNames), ImmutableSet.copyOf(idPropNames));
-            entityKeyNamesMap.put(entityClass, tp);
+            entityKeyNamesMap.put(targetClass, tp);
         }
 
         return tp._1;
     }
 
-    private static Set<String> getKeyNameSet(final Class<?> entityClass) {
-        Tuple2<ImmutableList<String>, ImmutableSet<String>> tp = entityKeyNamesMap.get(entityClass);
+    private static Set<String> getKeyNameSet(final Class<?> targetClass) {
+        Tuple2<ImmutableList<String>, ImmutableSet<String>> tp = entityKeyNamesMap.get(targetClass);
 
         if (tp == null) {
-            final List<String> idPropNames = QueryUtil.getIdPropNames(entityClass);
+            final List<String> idPropNames = QueryUtil.getIdPropNames(targetClass);
             tp = Tuple.of(ImmutableList.copyOf(idPropNames), ImmutableSet.copyOf(idPropNames));
-            entityKeyNamesMap.put(entityClass, tp);
+            entityKeyNamesMap.put(targetClass, tp);
         }
 
         return tp._2;

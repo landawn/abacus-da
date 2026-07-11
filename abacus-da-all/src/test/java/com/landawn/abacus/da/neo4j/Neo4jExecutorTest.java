@@ -38,6 +38,7 @@ import org.neo4j.ogm.session.SessionFactory;
 import org.neo4j.ogm.transaction.Transaction;
 
 import com.landawn.abacus.da.TestBase;
+import com.landawn.abacus.util.u.Optional;
 
 /**
  * Unit tests for {@link Neo4jExecutor}. The executor delegates virtually every
@@ -615,8 +616,9 @@ public class Neo4jExecutorTest extends TestBase {
         params.put("name", "John");
         when(mockSession.queryForObject(Person.class, "MATCH (p:Person {name:$name}) RETURN p", params)).thenReturn(p);
 
-        Person actual = executor.queryForObject(Person.class, "MATCH (p:Person {name:$name}) RETURN p", params);
-        assertSame(p, actual);
+        Optional<Person> actual = executor.queryForObject(Person.class, "MATCH (p:Person {name:$name}) RETURN p", params);
+        assertTrue(actual.isPresent());
+        assertSame(p, actual.get());
     }
 
     @Test
@@ -675,23 +677,23 @@ public class Neo4jExecutorTest extends TestBase {
     }
 
     @Test
-    public void testCountEntitiesOfType() {
+    public void testCount_ByClass() {
         when(mockSession.countEntitiesOfType(Person.class)).thenReturn(123L);
-        assertEquals(123L, executor.countEntitiesOfType(Person.class));
+        assertEquals(123L, executor.count(Person.class));
     }
 
     @Test
-    public void testResolveGraphIdFor() {
+    public void testGetGraphId() {
         Person p = new Person();
         when(mockSession.resolveGraphIdFor(p)).thenReturn(99L);
-        assertEquals(Long.valueOf(99L), executor.resolveGraphIdFor(p));
+        assertEquals(Long.valueOf(99L), executor.getGraphId(p));
     }
 
     @Test
-    public void testResolveGraphIdFor_NotEntity() {
+    public void testGetGraphId_NotEntity() {
         Object obj = new Object();
         when(mockSession.resolveGraphIdFor(obj)).thenReturn(null);
-        assertNull(executor.resolveGraphIdFor(obj));
+        assertNull(executor.getGraphId(obj));
     }
 
     // ---------- Session pool behaviour ----------
