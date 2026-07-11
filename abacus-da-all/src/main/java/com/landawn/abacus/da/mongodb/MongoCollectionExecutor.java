@@ -1122,7 +1122,7 @@ public final class MongoCollectionExecutor {
      * @param count maximum number of documents to return (Integer.MAX_VALUE for all matching)
      * @param rowType an entity class with getter/setter method, <code>Map.class</code> or basic single value type (Primitive/String/Date...)
      * @return a list of documents converted to the specified type, may be empty but never null
-     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported, or if offset or count is negative
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #list(Bson, Bson, Bson, int, int, Class)
      * @see com.mongodb.client.model.Filters
@@ -1193,7 +1193,7 @@ public final class MongoCollectionExecutor {
      * @param count maximum number of documents to return (Integer.MAX_VALUE for all matching)
      * @param rowType an entity class with getter/setter method, <code>Map.class</code> or basic single value type (Primitive/String/Date...)
      * @return a list of documents converted to the specified type, may be empty but never null
-     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
+     * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported, or if offset or count is negative
      * @throws com.mongodb.MongoException if the database operation fails
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Filters

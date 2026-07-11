@@ -58,8 +58,11 @@ import com.mongodb.client.result.InsertOneResult;
 import com.mongodb.client.result.UpdateResult;
 
 /**
- * Asynchronous facade over {@link MongoCollectionExecutor}, providing non-blocking versions of every
- * sync-driver MongoDB operation via the Abacus {@link ContinuableFuture} API.
+ * Asynchronous facade over {@link MongoCollectionExecutor}, providing non-blocking versions of the
+ * sync-driver MongoDB operations via the Abacus {@link ContinuableFuture} API. (A few sync-only
+ * conveniences have no async counterpart: the whole-collection {@code stream()}/{@code stream(Class)}
+ * overloads and the typed {@code groupBy}/{@code groupByAndCount} variants; invoke those on the
+ * underlying sync executor if needed.)
  *
  * <p>This class is a thin wrapper: every method submits the equivalent blocking
  * {@link MongoCollectionExecutor} call to a backing {@link AsyncExecutor} and returns a
