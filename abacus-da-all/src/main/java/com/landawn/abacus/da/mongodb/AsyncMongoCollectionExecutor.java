@@ -341,7 +341,7 @@ public final class AsyncMongoCollectionExecutor {
      * Asynchronously returns an estimate of the number of documents in the collection based on
      * collection metadata, with additional options.
      *
-     * <p>This is faster than {@link #count(Bson)} for large collections because it does not scan
+     * <p>This is faster than {@link #count()} for large collections because it does not scan
      * documents, but the result may be inaccurate after unclean shutdowns or while chunks are
      * being migrated in a sharded cluster.</p>
      *
@@ -2468,7 +2468,7 @@ public final class AsyncMongoCollectionExecutor {
      * <pre>{@code
      * List<Bson> updates = Arrays.asList(
      *     Updates.set("status", "processed"),
-     *     Updates.currentDate("processedAt")
+     *     Updates.set("processedAt", new Date())
      * );
      * async.updateOne(Filters.eq("_id", docId), updates)
      *      .thenRunAsync(result -> System.out.println("Document processed"));
@@ -2495,7 +2495,7 @@ public final class AsyncMongoCollectionExecutor {
      * <pre>{@code
      * List<Bson> updates = Arrays.asList(
      *     Updates.set("status", "processed"),
-     *     Updates.currentDate("processedAt")
+     *     Updates.set("processedAt", new Date())
      * );
      * UpdateOptions options = new UpdateOptions().upsert(true);
      * 
@@ -2586,7 +2586,7 @@ public final class AsyncMongoCollectionExecutor {
      * <pre>{@code
      * List<Bson> updates = Arrays.asList(
      *     Updates.set("status", "processed"),
-     *     Updates.currentDate("processedAt")
+     *     Updates.set("processedAt", new Date())
      * );
      * async.updateMany(Filters.eq("status", "pending"), updates)
      *      .thenRunAsync(result -> System.out.println("Processed " + result.getModifiedCount() + " pending items"));
@@ -2612,7 +2612,7 @@ public final class AsyncMongoCollectionExecutor {
      * <pre>{@code
      * List<Bson> updates = Arrays.asList(
      *     Updates.set("status", "processed"),
-     *     Updates.currentDate("processedAt")
+     *     Updates.set("processedAt", new Date())
      * );
      * UpdateOptions options = new UpdateOptions().upsert(true);
      * 
@@ -3168,7 +3168,7 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * List<Bson> updates = Arrays.asList(Updates.set("status", "active"), Updates.currentDate("modified"));
+     * List<Bson> updates = Arrays.asList(Updates.set("status", "active"), Updates.set("modified", new Date()));
      * async.findOneAndUpdate(Filters.eq("_id", id), updates)
      *      .thenRunAsync(doc -> System.out.println("Updated document: " + doc));
      * }</pre>
@@ -3193,7 +3193,7 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * List<Bson> updates = Arrays.asList(Updates.set("verified", true), Updates.inc("version", 1));
+     * List<Bson> updates = Arrays.asList(Updates.set("verified", true), Updates.set("verifiedAt", new Date()));
      * async.findOneAndUpdate(filter, updates, User.class)
      *      .thenRunAsync(user -> System.out.println("Verified user: " + user.getName()));
      * }</pre>

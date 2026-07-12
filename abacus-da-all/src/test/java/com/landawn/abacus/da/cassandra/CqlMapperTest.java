@@ -235,46 +235,46 @@ public class CqlMapperTest extends TestBase {
 
     @Test
     public void testLoad_String_NullThrows() {
-        assertThrows(IllegalArgumentException.class, () -> CqlMapper.load((String) null));
+        assertThrows(IllegalArgumentException.class, () -> CqlMapper.loadFrom((String) null));
     }
 
     @Test
     public void testLoad_String_EmptyThrows() {
-        assertThrows(IllegalArgumentException.class, () -> CqlMapper.load(""));
+        assertThrows(IllegalArgumentException.class, () -> CqlMapper.loadFrom(""));
     }
 
     @Test
     public void testLoad_String_BlankThrows() {
         // Non-empty but resolves to no paths after splitting/trimming.
-        assertThrows(IllegalArgumentException.class, () -> CqlMapper.load("   "));
+        assertThrows(IllegalArgumentException.class, () -> CqlMapper.loadFrom("   "));
     }
 
     @Test
     public void testLoad_String_MissingFileThrows() {
         // A missing file now fails with a descriptive RuntimeException (was a bare NPE from
         // formatPath(null)).
-        RuntimeException ex = assertThrows(RuntimeException.class, () -> CqlMapper.load("/definitely/not/an/existing/path/cql-mapper-load-missing.xml"));
+        RuntimeException ex = assertThrows(RuntimeException.class, () -> CqlMapper.loadFrom("/definitely/not/an/existing/path/cql-mapper-load-missing.xml"));
         assertTrue(ex.getMessage().contains("File not found"));
     }
 
     @Test
     public void testLoad_Files_NullArrayThrows() {
-        assertThrows(IllegalArgumentException.class, () -> CqlMapper.load((File[]) null));
+        assertThrows(IllegalArgumentException.class, () -> CqlMapper.loadFrom((File[]) null));
     }
 
     @Test
     public void testLoad_Files_EmptyArrayThrows() {
-        assertThrows(IllegalArgumentException.class, () -> CqlMapper.load(new File[0]));
+        assertThrows(IllegalArgumentException.class, () -> CqlMapper.loadFrom(new File[0]));
     }
 
     @Test
     public void testLoad_Files_NullElementThrows() {
-        assertThrows(IllegalArgumentException.class, () -> CqlMapper.load((File) null));
+        assertThrows(IllegalArgumentException.class, () -> CqlMapper.loadFrom((File) null));
     }
 
     @Test
     public void testLoad_InputStream_NullThrows() {
-        assertThrows(IllegalArgumentException.class, () -> CqlMapper.load((InputStream) null));
+        assertThrows(IllegalArgumentException.class, () -> CqlMapper.loadFrom((InputStream) null));
     }
 
     // TODO: round-trip saveTo/loadFrom/load tests skipped — XmlUtil requires jakarta.xml.bind at runtime, which is not on the test classpath.

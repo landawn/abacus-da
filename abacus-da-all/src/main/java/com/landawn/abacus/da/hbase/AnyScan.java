@@ -1693,9 +1693,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * Configures the scan to return at most one row.
      * <p>
      * This is a convenience method equivalent to calling {@code setLimit(1)} and
-     * {@code setReadType(ReadType.PREAD)} — it also switches the read type to pread.
-     * It's useful when you know you only need a single row and want to
-     * optimize the scan accordingly.
+     * {@code setReadType(ReadType.PREAD)}. It's useful when you know you only need a single row
+     * and want to optimize the scan accordingly.
      * </p>
      *
      * <p><b>Usage Examples:</b></p>

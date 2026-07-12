@@ -722,8 +722,9 @@ public final class HBaseExecutor {
      * Result result = table.get(new Get(Bytes.toBytes("user123")));
      * User user = HBaseExecutor.toEntity(result, User.class);   // mapped entity, or null if result is empty
      *
-     * // Single-cell single-value extraction
-     * String name = HBaseExecutor.toEntity(result, String.class);
+     * // Single-cell single-value extraction (the Result must hold exactly one cell)
+     * Result nameCell = table.get(new Get(Bytes.toBytes("user123")).addColumn(Bytes.toBytes("info"), Bytes.toBytes("name")));
+     * String name = HBaseExecutor.toEntity(nameCell, String.class);
      *
      * // An empty Result yields the target type's default value (null for a bean type)
      * User none = HBaseExecutor.toEntity(Result.EMPTY_RESULT, User.class);   // returns null

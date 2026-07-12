@@ -106,7 +106,7 @@ import com.landawn.abacus.util.XmlUtil;
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * // Initialize mapper with XML file
- * CqlMapper mapper = CqlMapper.load("config/cql-config.xml");
+ * CqlMapper mapper = CqlMapper.loadFrom("config/cql-config.xml");
  *
  * // Get parsed CQL statement
  * ParsedCql parsedCql = mapper.get("findAccountById");
@@ -167,7 +167,7 @@ public final class CqlMapper {
      * mapper.add("findProductById", "SELECT * FROM products WHERE id = ?");
      * }</pre>
      *
-     * @see #load(String)
+     * @see #loadFrom(String)
      */
     public CqlMapper() {
     }
@@ -181,12 +181,12 @@ public final class CqlMapper {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * CqlMapper m = CqlMapper.load("config/cql-config.xml");     // single file
-     * CqlMapper both = CqlMapper.load("a.xml,b.xml");            // merges entries from both files
-     * CqlMapper.load((String) null);                            // throws IllegalArgumentException (null path)
-     * CqlMapper.load("");                                       // throws IllegalArgumentException (empty path)
-     * CqlMapper.load("   ");                                    // throws IllegalArgumentException (no paths after splitting)
-     * CqlMapper.load("/no/such/file.xml");                      // throws RuntimeException (file not found)
+     * CqlMapper m = CqlMapper.loadFrom("config/cql-config.xml");     // single file
+     * CqlMapper both = CqlMapper.loadFrom("a.xml,b.xml");            // merges entries from both files
+     * CqlMapper.loadFrom((String) null);                            // throws IllegalArgumentException (null path)
+     * CqlMapper.loadFrom("");                                       // throws IllegalArgumentException (empty path)
+     * CqlMapper.loadFrom("   ");                                    // throws IllegalArgumentException (no paths after splitting)
+     * CqlMapper.loadFrom("/no/such/file.xml");                      // throws RuntimeException (file not found)
      * }</pre>
      *
      * @param filePath single file path or multiple file paths separated by ',' or ';'
@@ -197,9 +197,9 @@ public final class CqlMapper {
      * @throws UncheckedIOException if a file cannot be read
      * @throws ParsingException if any XML file is malformed
      * @throws RuntimeException if a file is not found, or the required {@code <cqlMapper>} root element is missing
-     * @see #load(File...)
+     * @see #loadFrom(File...)
      */
-    public static CqlMapper load(final String filePath) {
+    public static CqlMapper loadFrom(final String filePath) {
         N.checkArgNotEmpty(filePath, "filePath");
 
         final List<String> filePaths = splitFilePaths(filePath);
@@ -232,7 +232,7 @@ public final class CqlMapper {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * CqlMapper m = CqlMapper.load(new File("a.xml"), new File("b.xml"));
+     * CqlMapper m = CqlMapper.loadFrom(new File("a.xml"), new File("b.xml"));
      * }</pre>
      *
      * @param files one or more XML files to load (must be non-empty and contain no null element)
@@ -244,7 +244,7 @@ public final class CqlMapper {
      * @throws ParsingException if any XML file is malformed
      * @throws RuntimeException if the required {@code <cqlMapper>} root element is missing
      */
-    public static CqlMapper load(final File... files) {
+    public static CqlMapper loadFrom(final File... files) {
         N.checkArgNotEmpty(files, "files");
 
         final CqlMapper cqlMapper = new CqlMapper();
@@ -266,7 +266,7 @@ public final class CqlMapper {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * try (InputStream is = new FileInputStream("cql-config.xml")) {
-     *     CqlMapper m = CqlMapper.load(is);
+     *     CqlMapper m = CqlMapper.loadFrom(is);
      * }
      * }</pre>
      *
@@ -279,7 +279,7 @@ public final class CqlMapper {
      * @throws ParsingException if the XML content is malformed
      * @throws RuntimeException if the required {@code <cqlMapper>} root element is missing
      */
-    public static CqlMapper load(final InputStream is) {
+    public static CqlMapper loadFrom(final InputStream is) {
         N.checkArgNotNull(is, "is");
 
         final CqlMapper cqlMapper = new CqlMapper();
@@ -688,7 +688,7 @@ public final class CqlMapper {
      * added CQL statements or creating configuration backups. The generated XML will
      * include all statements with their IDs and attributes.</p>
      *
-     * <p>The output format matches the input format expected by {@link #load(String)}:</p>
+     * <p>The output format matches the input format expected by {@link #loadFrom(String)}:</p>
      * <pre>{@code
      * <?xml version="1.0" encoding="UTF-8"?>
      * <cqlMapper>
@@ -715,7 +715,7 @@ public final class CqlMapper {
      * m.saveTo(new File("target/cql/config.xml")); // writes the XML; missing parent dir "target/cql" is created
      *
      * // round-trips through load:
-     * CqlMapper reloaded = CqlMapper.load("target/cql/config.xml");
+     * CqlMapper reloaded = CqlMapper.loadFrom("target/cql/config.xml");
      * reloaded.ids();                            // contains "findUserById"
      *
      * // an unwritable target surfaces as an UncheckedIOException:
@@ -726,7 +726,7 @@ public final class CqlMapper {
      * @throws UncheckedIOException if the parent directory cannot be created, or if the file
      *         cannot be written
      * @see #saveTo(OutputStream)
-     * @see #load(String)
+     * @see #loadFrom(String)
      */
     public void saveTo(final File file) throws UncheckedIOException {
         final File parentFile = file.getParentFile();
@@ -745,7 +745,7 @@ public final class CqlMapper {
     /**
      * Writes all CQL statements in this mapper to the supplied output stream as XML.
      *
-     * <p>The output format matches the input format expected by {@link #load(String)}. The stream is
+     * <p>The output format matches the input format expected by {@link #loadFrom(String)}. The stream is
      * flushed but <i>not</i> closed by this method; the caller retains ownership and is responsible for
      * closing it.</p>
      *
@@ -765,7 +765,7 @@ public final class CqlMapper {
      * @param os the output stream to write to (not closed by this method)
      * @throws UncheckedIOException if an I/O error occurs while writing to the stream
      * @see #saveTo(File)
-     * @see #load(String)
+     * @see #loadFrom(String)
      */
     public void saveTo(final OutputStream os) throws UncheckedIOException {
         try {

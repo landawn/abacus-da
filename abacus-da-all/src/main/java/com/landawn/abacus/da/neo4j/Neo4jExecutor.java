@@ -114,13 +114,14 @@ import com.landawn.abacus.util.u.Optional;
  * }</pre>
  *
  * <p><b>Naming convention:</b> this executor stays close to the Neo4j OGM vocabulary ({@code load}/{@code loadAll},
- * {@code save}, {@code delete}/{@code deleteAll}, {@code queryForObject}, {@code count}) so it reads
- * naturally to Neo4j-OGM users, rather than adopting the abacus "house" CRUD vocabulary
- * ({@code findFirst}/{@code list}/{@code insert}/{@code update}/{@code delete}) used by the
+ * {@code save}, {@code delete}/{@code deleteAll}, {@code count}) so it reads
+ * naturally to Neo4j-OGM users, rather than wholesale adopting the abacus "house" CRUD vocabulary
+ * ({@code list}/{@code insert}/{@code update}/{@code delete}) used by the
  * {@code Condition}-based executors such as Cassandra and BigQuery. It does, however, apply a few
- * abacus conventions where they improve the API: {@code queryForObject} returns a {@link com.landawn.abacus.util.u.Optional}
- * instead of a raw {@code null}, the OGM {@code countEntitiesOfType(Class)} is exposed as a {@code count(Class)}
- * overload, and OGM's {@code resolveGraphIdFor(Object)} is surfaced as the more conventional
+ * abacus conventions where they improve the API: the single-row reader is exposed as the house-style
+ * {@code findFirst(Class, String, Map)}, which returns a {@link com.landawn.abacus.util.u.Optional}
+ * instead of OGM's {@code queryForObject} raw {@code null}; the OGM {@code countEntitiesOfType(Class)} is exposed as a {@code count(Class)}
+ * overload; and OGM's {@code resolveGraphIdFor(Object)} is surfaced as the more conventional
  * {@code getGraphId(Object)}.</p>
  *
  * @see org.neo4j.ogm.session.SessionFactory
@@ -348,8 +349,8 @@ public final class Neo4jExecutor {
     /**
      * Loads a single node by its native Neo4j ID, populating related entities to the given depth.
      * <p>
-     * Delegates to {@link Session#load(Class, java.io.Serializable, int)}. {@code depth&nbsp;==&nbsp;0}
-     * loads only the node's scalar properties; {@code depth&nbsp;==&nbsp;1} loads it together with
+     * Delegates to {@link Session#load(Class, java.io.Serializable, int)}. {@code depth == 0}
+     * loads only the node's scalar properties; {@code depth == 1} loads it together with
      * immediate relationships; larger depths recurse further; {@code -1} loads the entire connected
      * sub-graph reachable from this node and should be used with care on large graphs.
      *
@@ -2017,7 +2018,7 @@ public final class Neo4jExecutor {
     /**
      * Persists an OGM-mapped entity to Neo4j, traversing related entities to the given depth.
      * <p>
-     * Delegates to {@link Session#save(Object, int)}. {@code depth&nbsp;==&nbsp;0} saves only the
+     * Delegates to {@link Session#save(Object, int)}. {@code depth == 0} saves only the
      * node's scalar properties (no relationships are written); a positive integer recursively
      * saves related entities to that many hops; {@code -1} saves the entire reachable sub-graph.
      *
@@ -2130,16 +2131,16 @@ public final class Neo4jExecutor {
      * <pre>{@code
      * // Query for a single person by name
      * Map<String, Object> params = Map.of("name", "John Doe");
-     * Optional<Person> person = executor.queryForObject(Person.class,
+     * Optional<Person> person = executor.findFirst(Person.class,
      *     "MATCH (p:Person {name: $name}) RETURN p", params);
      *
      * // Query for single aggregation result
-     * Optional<Long> count = executor.queryForObject(Long.class,
+     * Optional<Long> count = executor.findFirst(Long.class,
      *     "MATCH (p:Person) WHERE p.age > $minAge RETURN count(p) as count",
      *     Map.of("minAge", 25));
      *
      * // Query with LIMIT 1 to guarantee a single row
-     * Optional<Person> oldest = executor.queryForObject(Person.class,
+     * Optional<Person> oldest = executor.findFirst(Person.class,
      *     "MATCH (p:Person) RETURN p ORDER BY p.age DESC LIMIT 1",
      *     Collections.emptyMap());
      * }</pre>
@@ -2157,7 +2158,7 @@ public final class Neo4jExecutor {
      * @see #stream(Class, String, Map)
      * @see #stream(String, Map)
      */
-    public <T> Optional<T> queryForObject(final Class<T> targetClass, final String cypher, final Map<String, ?> parameters) {
+    public <T> Optional<T> findFirst(final Class<T> targetClass, final String cypher, final Map<String, ?> parameters) {
         if (logger.isDebugEnabled()) {
             logger.debug("Executing Cypher: {}", cypher);
         }
@@ -2200,7 +2201,7 @@ public final class Neo4jExecutor {
      * @throws RuntimeException if the underlying OGM session rejects the query
      * @see #stream(Class, String, Map)
      * @see #stream(String, Map, boolean)
-     * @see #queryForObject(Class, String, Map)
+     * @see #findFirst(Class, String, Map)
      */
     public Stream<Map<String, Object>> stream(final String cypher, final Map<String, ?> parameters) {
         if (logger.isDebugEnabled()) {
@@ -2302,7 +2303,7 @@ public final class Neo4jExecutor {
      * @return a {@link Stream} over the already-fetched rows mapped to {@code targetClass}; close the
      *         stream to release the underlying session
      * @throws RuntimeException if the underlying OGM session rejects the query
-     * @see #queryForObject(Class, String, Map)
+     * @see #findFirst(Class, String, Map)
      * @see #stream(String, Map)
      */
     public <T> Stream<T> stream(final Class<T> targetClass, final String cypher, final Map<String, ?> parameters) {

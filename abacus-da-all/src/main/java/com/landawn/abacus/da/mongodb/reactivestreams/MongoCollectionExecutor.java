@@ -2195,6 +2195,8 @@ public final class MongoCollectionExecutor {
      * @param options the options to apply to the insert operation; may be null for driver defaults
      * @return a {@code Mono} that, on subscription, emits exactly one {@link InsertOneResult}, then
      *         completes
+     * @throws IllegalArgumentException if obj is null (thrown synchronously at call time, before the
+     *         {@code Mono} is built)
      * @throws com.mongodb.MongoWriteException if the insert violates a unique constraint or
      *         document validation (signalled via {@code Mono})
      */
@@ -2341,6 +2343,8 @@ public final class MongoCollectionExecutor {
      * @param update the update specification (Bson/Document/Map/entity class)
      * @return a Mono that emits the UpdateResult containing details about the operation including
      *         matched count, modified count, and upserted id if applicable
+     * @throws IllegalArgumentException if objectId is null, empty, or not a valid ObjectId hex string,
+     *         or if update is null (thrown synchronously at the call site)
      */
     public Mono<UpdateResult> updateOne(final String objectId, final Object update) {
         return updateOne(createObjectId(objectId), update);
@@ -2363,6 +2367,7 @@ public final class MongoCollectionExecutor {
      * @param update the update specification (Bson/Document/Map/entity class)
      * @return a Mono that emits the UpdateResult containing details about the operation including
      *         matched count, modified count, and upserted id if applicable
+     * @throws IllegalArgumentException if objectId or update is null (thrown synchronously at the call site)
      */
     public Mono<UpdateResult> updateOne(final ObjectId objectId, final Object update) {
         return updateOne(MongoDBBase.objectIdToFilter(objectId), update);
@@ -2418,6 +2423,7 @@ public final class MongoCollectionExecutor {
      * @param update the update specification (Bson/Document/Map/entity class)
      * @param options the options to apply to the update operation
      * @return a Mono that emits the UpdateResult containing operation details
+     * @throws IllegalArgumentException if filter or update is null
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final Object update, final UpdateOptions options) {
         N.checkArgNotNull(filter, "filter");
@@ -2481,6 +2487,7 @@ public final class MongoCollectionExecutor {
      * @param objList the collection of update operations to apply
      * @param options the options to apply to the update operation
      * @return a Mono that emits the UpdateResult containing operation details
+     * @throws IllegalArgumentException if filter or objList is null or empty
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
         N.checkArgNotNull(filter, "filter");

@@ -58,7 +58,7 @@ import com.landawn.abacus.util.Strings;
  * <li><strong>Intelligent Caching:</strong>
  *     <ul>
  *     <li>Automatic caching of parsed CQL statements</li>
- *     <li>Configurable cache eviction and TTL policies</li>
+ *     <li>Built-in cache eviction and TTL policies (see the Caching Strategy section below)</li>
  *     <li>Memory-efficient pooled object management</li>
  *     </ul>
  * </li>

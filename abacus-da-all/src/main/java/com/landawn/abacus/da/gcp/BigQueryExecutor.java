@@ -2683,7 +2683,7 @@ public class BigQueryExecutor {
 
     /**
      * Converts an array of Java values into a list of BigQuery {@link QueryParameterValue}s
-     * suitable for positional parameter binding in {@link QueryJobConfiguration#setPositionalParameters}.
+     * suitable for positional parameter binding in {@code QueryJobConfiguration.Builder#setPositionalParameters}.
      *
      * <p>Conversion rules (applied per element, in order):</p>
      * <ol>

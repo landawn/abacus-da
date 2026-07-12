@@ -616,7 +616,7 @@ public final class DynamoDBExecutor {
      *
      * <p>This method allows creating a map with two attributes, where each attribute
      * name is paired with its corresponding value. The values are automatically converted
-     * to DynamoDB `AttributeValue` objects using the `toAttributeValue` method.</p>
+     * to DynamoDB {@code AttributeValue} objects using the {@code toAttributeValue} method.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -625,10 +625,10 @@ public final class DynamoDBExecutor {
      * }</pre>
      *
      * @param attrName  the name of the first attribute. Must not be null.
-     * @param value     the value of the first attribute, automatically converted to `AttributeValue`.
+     * @param value     the value of the first attribute, automatically converted to {@code AttributeValue}.
      * @param attrName2 the name of the second attribute. Must not be null.
-     * @param value2    the value of the second attribute, automatically converted to `AttributeValue`.
-     * @return an item containing the two attributes as `AttributeValue` objects. Never null.
+     * @param value2    the value of the second attribute, automatically converted to {@code AttributeValue}.
+     * @return an item containing the two attributes as {@code AttributeValue} objects. Never null.
      * @throws IllegalArgumentException if any attribute name is null.
      */
     public static Map<String, AttributeValue> asItem(final String attrName, final Object value, final String attrName2, final Object value2) {
@@ -640,7 +640,7 @@ public final class DynamoDBExecutor {
      *
      * <p>This method allows creating a map with three attributes, where each attribute
      * name is paired with its corresponding value. The values are automatically converted
-     * to DynamoDB `AttributeValue` objects using the `toAttributeValue` method.</p>
+     * to DynamoDB {@code AttributeValue} objects using the {@code toAttributeValue} method.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -649,12 +649,12 @@ public final class DynamoDBExecutor {
      * }</pre>
      *
      * @param attrName  the name of the first attribute. Must not be null.
-     * @param value     the value of the first attribute, automatically converted to `AttributeValue`.
+     * @param value     the value of the first attribute, automatically converted to {@code AttributeValue}.
      * @param attrName2 the name of the second attribute. Must not be null.
-     * @param value2    the value of the second attribute, automatically converted to `AttributeValue`.
+     * @param value2    the value of the second attribute, automatically converted to {@code AttributeValue}.
      * @param attrName3 the name of the third attribute. Must not be null.
-     * @param value3    the value of the third attribute, automatically converted to `AttributeValue`.
-     * @return an item containing the three attributes as `AttributeValue` objects. Never null.
+     * @param value3    the value of the third attribute, automatically converted to {@code AttributeValue}.
+     * @return an item containing the three attributes as {@code AttributeValue} objects. Never null.
      * @throws IllegalArgumentException if any attribute name is null.
      */
     public static Map<String, AttributeValue> asItem(final String attrName, final Object value, final String attrName2, final Object value2,
@@ -667,7 +667,7 @@ public final class DynamoDBExecutor {
      *
      * <p>This method allows creating a map with an arbitrary number of attributes, where each attribute
      * name is paired with its corresponding value. The values are automatically converted to DynamoDB
-     * `AttributeValue` objects using the `toAttributeValue` method.</p>
+     * {@code AttributeValue} objects using the {@code toAttributeValue} method.</p>
      *
      * <p><b>Note:</b> This convenience method may be confused with entity conversion.
      * Use {@link #toItem(Object)} or {@link #toItem(Object, NamingPolicy)} for POJO/Map conversion.</p>
@@ -702,7 +702,7 @@ public final class DynamoDBExecutor {
      *
      * <p>This method creates a Map with a single AttributeValueUpdate, which is commonly used
      * for updating a single attribute in DynamoDB items. The value is automatically converted
-     * to an AttributeValueUpdate using the `toAttributeValueUpdate` method.</p>
+     * to an AttributeValueUpdate using the {@code toAttributeValueUpdate} method.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -731,7 +731,7 @@ public final class DynamoDBExecutor {
      *
      * <p>This method allows creating a map with two attributes, where each attribute
      * name is paired with its corresponding AttributeValueUpdate. The values are automatically converted
-     * to AttributeValueUpdates using the `toAttributeValueUpdate` method.</p>
+     * to AttributeValueUpdates using the {@code toAttributeValueUpdate} method.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -741,10 +741,10 @@ public final class DynamoDBExecutor {
      * }</pre>
      *
      * @param attrName  the name of the first attribute to update. Must not be null.
-     * @param value     the value of the first attribute, automatically converted to `AttributeValueUpdate`.
+     * @param value     the value of the first attribute, automatically converted to {@code AttributeValueUpdate}.
      * @param attrName2 the name of the second attribute to update. Must not be null.
-     * @param value2    the value of the second attribute, automatically converted to `AttributeValueUpdate`.
-     * @return an item containing the two attributes as `AttributeValueUpdate` objects. Never null.
+     * @param value2    the value of the second attribute, automatically converted to {@code AttributeValueUpdate}.
+     * @return an item containing the two attributes as {@code AttributeValueUpdate} objects. Never null.
      * @throws IllegalArgumentException if any attribute name is null.
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final String attrName, final Object value, final String attrName2, final Object value2) {
@@ -756,7 +756,7 @@ public final class DynamoDBExecutor {
      *
      * <p>This method allows creating a map with three attributes, where each attribute
      * name is paired with its corresponding AttributeValueUpdate. The values are automatically converted
-     * to AttributeValueUpdates using the `toAttributeValueUpdate` method.</p>
+     * to AttributeValueUpdates using the {@code toAttributeValueUpdate} method.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -767,12 +767,12 @@ public final class DynamoDBExecutor {
      * }</pre>
      *
      * @param attrName  the name of the first attribute to update. Must not be null.
-     * @param value     the value of the first attribute, automatically converted to `AttributeValueUpdate`.
+     * @param value     the value of the first attribute, automatically converted to {@code AttributeValueUpdate}.
      * @param attrName2 the name of the second attribute to update. Must not be null.
-     * @param value2    the value of the second attribute, automatically converted to `AttributeValueUpdate`.
+     * @param value2    the value of the second attribute, automatically converted to {@code AttributeValueUpdate}.
      * @param attrName3 the name of the third attribute to update. Must not be null.
-     * @param value3    the value of the third attribute, automatically converted to `AttributeValueUpdate`.
-     * @return an item containing the three attributes as `AttributeValueUpdate` objects. Never null.
+     * @param value3    the value of the third attribute, automatically converted to {@code AttributeValueUpdate}.
+     * @return an item containing the three attributes as {@code AttributeValueUpdate} objects. Never null.
      * @throws IllegalArgumentException if any attribute name is null.
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final String attrName, final Object value, final String attrName2, final Object value2,
@@ -786,7 +786,7 @@ public final class DynamoDBExecutor {
      *
      * <p>This method allows creating a map with an arbitrary number of attributes, where each attribute
      * name is paired with its corresponding AttributeValueUpdate. The values are automatically converted
-     * to AttributeValueUpdates using the `toAttributeValueUpdate` method.</p>
+     * to AttributeValueUpdates using the {@code toAttributeValueUpdate} method.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2671,8 +2671,8 @@ public final class DynamoDBExecutor {
      *               {@code Object[]} of alternating name/value pairs; must not be null
      * @return the response from the PutItem operation, containing metadata about the operation
      */
-    // There is no too much benefit to add method for "Object entity"
-    // And it may cause error because the "Object" is ambiguous to any type.
+    // There isn't much benefit to adding a method for "Object entity",
+    // and it may cause errors because "Object" is ambiguous with any type.
     PutItemResponse putItem(final String tableName, final Object entity) {
         PutItemRequest putItemRequest = PutItemRequest.builder().tableName(tableName).item(toItem(entity)).build();
 

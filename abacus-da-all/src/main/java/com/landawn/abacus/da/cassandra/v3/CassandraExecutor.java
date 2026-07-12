@@ -1237,6 +1237,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @return a <i>present</i> {@code Optional<V>} holding the (non-null) column value when at least
      *         one row is returned with a non-null value; {@code Optional.empty()} when the query
      *         returns no rows
+     * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}
      * @throws NullPointerException if a row is returned but the column value (or its conversion) is
      *         {@code null}, because {@link Optional#of(Object)} rejects a null payload
      * @see #queryForSingleValue(Class, String, Object...)

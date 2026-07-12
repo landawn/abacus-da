@@ -686,6 +686,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *        {@code Row.class}, an array class, a collection class, or a basic single-value type)
      * @return a List containing all rows converted to the specified type
      * @throws NullPointerException if resultSet or targetClass is null
+     * @throws IllegalArgumentException if {@code targetClass} is a single-value type but
+     *         the result set has more than one column
      */
     public static <T> List<T> toList(final ResultSet resultSet, final Class<T> targetClass) {
         if (targetClass.isAssignableFrom(Row.class)) {
@@ -2080,6 +2082,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @param userTypeName the name of the User Defined Type (UDT)
          * @param javaClazz the Java class to map the UDT to
          * @return a new instance of {@link UDTCodec} for the specified UDT and Java class
+         * @throws java.util.NoSuchElementException if {@code keySpace} or the named user type cannot be
+         *         found in the session metadata
          */
         public static <T> UDTCodec<T> create(final Session session, final String keySpace, final String userTypeName, final Class<T> javaClazz) {
             return create(session.getMetadata().getKeyspace(keySpace).orElseThrow().getUserDefinedType(userTypeName).orElseThrow(), javaClazz);

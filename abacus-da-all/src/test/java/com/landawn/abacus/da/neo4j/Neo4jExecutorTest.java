@@ -610,13 +610,13 @@ public class Neo4jExecutorTest extends TestBase {
     // ---------- Query methods ----------
 
     @Test
-    public void testQueryForObject() {
+    public void testFindFirst() {
         Person p = new Person();
         Map<String, Object> params = new LinkedHashMap<>();
         params.put("name", "John");
         when(mockSession.queryForObject(Person.class, "MATCH (p:Person {name:$name}) RETURN p", params)).thenReturn(p);
 
-        Optional<Person> actual = executor.queryForObject(Person.class, "MATCH (p:Person {name:$name}) RETURN p", params);
+        Optional<Person> actual = executor.findFirst(Person.class, "MATCH (p:Person {name:$name}) RETURN p", params);
         assertTrue(actual.isPresent());
         assertSame(p, actual.get());
     }

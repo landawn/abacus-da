@@ -2309,8 +2309,8 @@ public final class DynamoDBExecutor {
         return dynamoDBClient.putItem(putItemRequest);
     }
 
-    // There is no too much benefit to add method for "Object entity"
-    // And it may cause error because the "Object" is ambiguous to any type.
+    // There isn't much benefit to adding a method for "Object entity",
+    // and it may cause errors because "Object" is ambiguous with any type.
     PutItemResult putItem(final String tableName, final Object entity) {
         return putItem(tableName, toItem(entity));
     }

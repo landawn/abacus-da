@@ -260,7 +260,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * access (e.g. {@code "SECRET&DEPT_A"}).
      *
      * <p>Unlike {@link #toJson()} — which wraps HBase's {@link java.io.IOException} as an
-     * {@link java.io.UncheckedIOException} because a JSON serialization failure is non-recoverable —
+     * {@link com.landawn.abacus.exception.UncheckedIOException} because a JSON serialization failure is non-recoverable —
      * this method intentionally surfaces the checked {@link DeserializationException}. The exception
      * signals a corrupt or undecodable stored visibility expression, a condition the caller may
      * legitimately want to detect and handle, so it is propagated rather than hidden.</p>
