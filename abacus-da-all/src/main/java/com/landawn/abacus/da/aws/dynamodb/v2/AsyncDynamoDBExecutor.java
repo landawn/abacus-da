@@ -1985,7 +1985,8 @@ public final class AsyncDynamoDBExecutor {
      * common {@link java.util.concurrent.ForkJoinPool}; the wrapped iterator then performs each
      * page fetch synchronously inside the consumer's thread via a blocking
      * {@code dynamoDBClient.query(...).get()}, so terminal operations on the returned stream block
-     * the consuming thread.</p>
+     * the consuming thread. If that wait is interrupted, the stream operation fails with a runtime
+     * exception and the consumer thread's interrupt status is preserved.</p>
      *
      * @param <T> the type of objects in the stream
      * @param queryRequest the QueryRequest with query parameters. Must not be null.
@@ -2013,7 +2014,10 @@ public final class AsyncDynamoDBExecutor {
 
                         try {
                             queryResult = dynamoDBClient.query(newQueryRequest).get();
-                        } catch (final InterruptedException | ExecutionException e) {
+                        } catch (final InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw ExceptionUtil.toRuntimeException(e, true);
+                        } catch (final ExecutionException e) {
                             throw ExceptionUtil.toRuntimeException(e, true);
                         }
 
@@ -2359,7 +2363,8 @@ public final class AsyncDynamoDBExecutor {
      * <p><b>Threading note:</b> identical to {@link #stream(QueryRequest, Class)} — the returned
      * {@code CompletableFuture} completes immediately on {@link java.util.concurrent.ForkJoinPool}
      * with a lazy {@link Stream}; each subsequent page is fetched synchronously inside the consuming
-     * thread, so terminal operations block.</p>
+     * thread, so terminal operations block. If a page wait is interrupted, the stream operation fails
+     * with a runtime exception and the consumer thread's interrupt status is preserved.</p>
      *
      * @param <T> the type of objects in the stream
      * @param scanRequest the complete ScanRequest with all parameters. Must not be null.
@@ -2387,7 +2392,10 @@ public final class AsyncDynamoDBExecutor {
 
                         try {
                             scanResult = dynamoDBClient.scan(newScanRequest).get();
-                        } catch (final InterruptedException | ExecutionException e) {
+                        } catch (final InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw ExceptionUtil.toRuntimeException(e, true);
+                        } catch (final ExecutionException e) {
                             throw ExceptionUtil.toRuntimeException(e, true);
                         }
 
@@ -3430,6 +3438,8 @@ public final class AsyncDynamoDBExecutor {
         }
 
         private Map<String, AttributeValue> createKey(final T entity) {
+            N.checkArgNotNull(entity, "entity");
+
             final Map<String, AttributeValue> key = new HashMap<>(keyPropNames.size());
 
             for (int i = 0, len = keyPropNames.size(); i < len; i++) {
@@ -3440,6 +3450,8 @@ public final class AsyncDynamoDBExecutor {
         }
 
         private Map<String, AttributeValueUpdate> createUpdateItem(final T entity) {
+            N.checkArgNotNull(entity, "entity");
+
             final Map<String, AttributeValueUpdate> attributeUpdates = toUpdateItem(entity, namingPolicy);
 
             for (final String keyPropName : keyPropNames) {
@@ -3450,6 +3462,8 @@ public final class AsyncDynamoDBExecutor {
         }
 
         private Map<String, KeysAndAttributes> createKeys(final Collection<? extends T> entities) {
+            N.checkArgNotNull(entities, "entities");
+
             final List<Map<String, AttributeValue>> keys = new ArrayList<>(entities.size());
 
             for (final T entity : entities) {
@@ -3460,9 +3474,12 @@ public final class AsyncDynamoDBExecutor {
         }
 
         private Map<String, List<WriteRequest>> createBatchPutRequest(final Collection<? extends T> entities) {
+            N.checkArgNotNull(entities, "entities");
+
             final List<WriteRequest> keys = new ArrayList<>(entities.size());
 
             for (final T entity : entities) {
+                N.checkArgNotNull(entity, "entity");
                 keys.add(WriteRequest.builder().putRequest(PutRequest.builder().item(toItem(entity, namingPolicy)).build()).build());
             }
 
@@ -3470,6 +3487,8 @@ public final class AsyncDynamoDBExecutor {
         }
 
         private Map<String, List<WriteRequest>> createBatchDeleteRequest(final Collection<? extends T> entities) {
+            N.checkArgNotNull(entities, "entities");
+
             final List<WriteRequest> keys = new ArrayList<>(entities.size());
 
             for (final T entity : entities) {
@@ -3480,6 +3499,8 @@ public final class AsyncDynamoDBExecutor {
         }
 
         private GetItemRequest checkItem(final GetItemRequest item) {
+            N.checkArgNotNull(item, "getItemRequest");
+
             if (Strings.isEmpty(item.tableName())) {
                 return item.copy(builder -> builder.tableName(tableName));
             } else {
@@ -3490,6 +3511,8 @@ public final class AsyncDynamoDBExecutor {
         }
 
         private BatchGetItemRequest checkItem(final BatchGetItemRequest item) {
+            N.checkArgNotNull(item, "batchGetItemRequest");
+
             if (item.requestItems() != null) {
                 for (final String tableNameInRequest : item.requestItems().keySet()) {
                     checkTableName(tableNameInRequest);
@@ -3501,6 +3524,8 @@ public final class AsyncDynamoDBExecutor {
         }
 
         private BatchWriteItemRequest checkItem(final BatchWriteItemRequest item) {
+            N.checkArgNotNull(item, "batchWriteItemRequest");
+
             if (item.requestItems() != null) {
                 for (final String tableNameInRequest : item.requestItems().keySet()) {
                     checkTableName(tableNameInRequest);
@@ -3511,6 +3536,8 @@ public final class AsyncDynamoDBExecutor {
         }
 
         private PutItemRequest checkItem(final PutItemRequest item) {
+            N.checkArgNotNull(item, "putItemRequest");
+
             if (Strings.isEmpty(item.tableName())) {
                 return item.copy(builder -> builder.tableName(tableName));
             } else {
@@ -3521,6 +3548,8 @@ public final class AsyncDynamoDBExecutor {
         }
 
         private UpdateItemRequest checkItem(final UpdateItemRequest item) {
+            N.checkArgNotNull(item, "updateItemRequest");
+
             if (Strings.isEmpty(item.tableName())) {
                 return item.copy(builder -> builder.tableName(tableName));
             } else {
@@ -3531,6 +3560,8 @@ public final class AsyncDynamoDBExecutor {
         }
 
         private DeleteItemRequest checkItem(final DeleteItemRequest item) {
+            N.checkArgNotNull(item, "deleteItemRequest");
+
             if (Strings.isEmpty(item.tableName())) {
                 return item.copy(builder -> builder.tableName(tableName));
             } else {
@@ -3541,6 +3572,8 @@ public final class AsyncDynamoDBExecutor {
         }
 
         private QueryRequest checkQueryRequest(final QueryRequest queryRequest) {
+            N.checkArgNotNull(queryRequest, "queryRequest");
+
             if (Strings.isEmpty(queryRequest.tableName())) {
                 return queryRequest.copy(builder -> builder.tableName(tableName));
             } else {
@@ -3551,6 +3584,8 @@ public final class AsyncDynamoDBExecutor {
         }
 
         private ScanRequest checkScanRequest(final ScanRequest scanRequest) {
+            N.checkArgNotNull(scanRequest, "scanRequest");
+
             if (Strings.isEmpty(scanRequest.tableName())) {
                 return scanRequest.copy(builder -> builder.tableName(tableName));
             } else {

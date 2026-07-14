@@ -14,10 +14,6 @@
 
 package com.landawn.abacus.da.gcp;
 
-import static com.landawn.abacus.query.Dsl.PAC;
-import static com.landawn.abacus.query.Dsl.PLC;
-import static com.landawn.abacus.query.Dsl.PSC;
-
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -48,9 +44,11 @@ import com.landawn.abacus.parser.ParserUtil;
 import com.landawn.abacus.parser.ParserUtil.BeanInfo;
 import com.landawn.abacus.parser.ParserUtil.PropInfo;
 import com.landawn.abacus.query.AbstractQueryBuilder.SP;
+import com.landawn.abacus.query.Dsl;
 import com.landawn.abacus.query.Filters;
 import com.landawn.abacus.query.QueryUtil;
 import com.landawn.abacus.query.SqlBuilder;
+import com.landawn.abacus.query.SqlDialect.IdentifierQuote;
 import com.landawn.abacus.query.condition.Condition;
 import com.landawn.abacus.type.Type;
 import com.landawn.abacus.util.Beans;
@@ -214,6 +212,10 @@ public class BigQueryExecutor {
 
         N.registerConverter(FieldValueList.class, converter);
     }
+
+    private static final Dsl PSC = Dsl.forDialect(Dsl.PSC.sqlDialect().toBuilder().identifierQuote(IdentifierQuote.BACKTICK).build());
+    private static final Dsl PAC = Dsl.forDialect(Dsl.PAC.sqlDialect().toBuilder().identifierQuote(IdentifierQuote.BACKTICK).build());
+    private static final Dsl PLC = Dsl.forDialect(Dsl.PLC.sqlDialect().toBuilder().identifierQuote(IdentifierQuote.BACKTICK).build());
 
     private final BigQuery bigQuery;
     private final NamingPolicy namingPolicy;
@@ -2623,14 +2625,130 @@ public class BigQueryExecutor {
 
         final SP sp = sqlBuilder.build();
 
-        // BigQuery (GoogleSQL) quotes identifiers with backticks; a double-quoted token is a string literal.
-        // SqlBuilder emits ANSI double-quoted column aliases (e.g. SELECT id AS "id"), which BigQuery rejects
-        // with "Unexpected string literal". Values in the generated SELECT are positional '?' parameters,
-        // so double quotes are normally alias delimiters only. Caveat: a raw-expression condition (e.g.
-        // Filters.expr(...)) can inject a double-quoted string literal, which this blanket rewrite would
-        // also convert — use single-quoted literals in raw expressions.
-        return sp.query().indexOf('"') < 0 ? sp : new SP(sp.query().replace('"', '`'), sp.parameters());
+        // BigQuery (GoogleSQL) quotes identifiers with backticks. SqlBuilder emits ANSI double-quoted
+        // column aliases (for example, SELECT id AS "id"), so rewrite those generated aliases only.
+        // A blanket quote replacement would corrupt legitimate double-quoted string literals supplied
+        // by callers through raw-expression conditions.
+        //    final String query = sp.query();
+        //    final String googleSqlQuery = normalizeColumnAliases(query);
+        //
+        //    return query.equals(googleSqlQuery) ? sp : new SP(googleSqlQuery, sp.parameters());
+
+        return sp;
     }
+
+    //    /**
+    //     * Rewrites ANSI {@code AS "alias"} tokens to GoogleSQL backtick aliases while leaving quoted
+    //     * string/identifier content untouched. The query builder only generates aliases outside a
+    //     * quoted region; raw expressions can contain arbitrary single-, double-, or backtick-quoted
+    //     * text and must survive unchanged.
+    //     */
+    //    private static String normalizeColumnAliases(final String query) {
+    //        StringBuilder result = null;
+    //        char quote = 0;
+    //
+    //        for (int i = 0, len = query.length(); i < len; i++) {
+    //            final char ch = query.charAt(i);
+    //
+    //            if (quote != 0) {
+    //                if (result != null) {
+    //                    result.append(ch);
+    //                }
+    //
+    //                if (ch == '\\' && i + 1 < len) {
+    //                    if (result != null) {
+    //                        result.append(query.charAt(i + 1));
+    //                    }
+    //
+    //                    i++;
+    //                } else if (ch == quote && i + 1 < len && query.charAt(i + 1) == quote) {
+    //                    if (result != null) {
+    //                        result.append(query.charAt(i + 1));
+    //                    }
+    //
+    //                    i++;
+    //                } else if (ch == quote) {
+    //                    quote = 0;
+    //                }
+    //
+    //                continue;
+    //            }
+    //
+    //            if (ch == '\'' || ch == '`') {
+    //                quote = ch;
+    //            } else if (ch == '"') {
+    //                final int aliasEnd = isAnsiAliasStart(query, i) ? findAnsiAliasEnd(query, i + 1) : -1;
+    //
+    //                if (aliasEnd >= 0) {
+    //                    if (result == null) {
+    //                        result = new StringBuilder(query.length());
+    //                        result.append(query, 0, i);
+    //                    }
+    //
+    //                    result.append('`');
+    //                    appendGoogleSqlAlias(result, query, i + 1, aliasEnd);
+    //                    result.append('`');
+    //                    i = aliasEnd;
+    //                    continue;
+    //                }
+    //
+    //                quote = ch;
+    //            }
+    //
+    //            if (result != null) {
+    //                result.append(ch);
+    //            }
+    //        }
+    //
+    //        return result == null ? query : result.toString();
+    //    }
+    //
+    //    private static boolean isAnsiAliasStart(final String query, final int quoteIndex) {
+    //        int i = quoteIndex - 1;
+    //
+    //        while (i >= 0 && Character.isWhitespace(query.charAt(i))) {
+    //            i--;
+    //        }
+    //
+    //        return i >= 1 && (query.charAt(i) == 's' || query.charAt(i) == 'S') && (query.charAt(i - 1) == 'a' || query.charAt(i - 1) == 'A')
+    //                && (i == 1 || !Character.isJavaIdentifierPart(query.charAt(i - 2)));
+    //    }
+    //
+    //    private static int findAnsiAliasEnd(final String query, final int fromIndex) {
+    //        for (int i = fromIndex, len = query.length(); i < len; i++) {
+    //            final char ch = query.charAt(i);
+    //
+    //            if (ch == '\\' && i + 1 < len) {
+    //                i++;
+    //            } else if (ch == '"') {
+    //                if (i + 1 < len && query.charAt(i + 1) == '"') {
+    //                    i++;
+    //                } else {
+    //                    return i;
+    //                }
+    //            }
+    //        }
+    //
+    //        return -1;
+    //    }
+    //
+    //    private static void appendGoogleSqlAlias(final StringBuilder result, final String query, final int fromIndex, final int toIndex) {
+    //        for (int i = fromIndex; i < toIndex; i++) {
+    //            final char ch = query.charAt(i);
+    //
+    //            if (ch == '\\' && i + 1 < toIndex && query.charAt(i + 1) == '"') {
+    //                result.append('"');
+    //                i++;
+    //            } else if (ch == '"' && i + 1 < toIndex && query.charAt(i + 1) == '"') {
+    //                result.append('"');
+    //                i++;
+    //            } else if (ch == '`') {
+    //                result.append("\\`");
+    //            } else {
+    //                result.append(ch);
+    //            }
+    //        }
+    //    }
 
     private static final Function<Object, QueryParameterValue> defaultQueryParameterCreator = value -> {
         final Type<?> type = Type.of(value.getClass());
@@ -2754,7 +2872,8 @@ public class BigQueryExecutor {
      *
      * @param fieldValueList the row whose schema to extract; must not be {@code null}
      * @return the {@link FieldList} describing the columns of {@code fieldValueList}
-     * @throws IllegalArgumentException if the reflective accessor was not available at class-init
+     * @throws IllegalArgumentException if {@code fieldValueList} is {@code null}, or if the
+     *                                  reflective accessor was not available at class-init
      *                                  time (e.g. on a future BigQuery client library version that
      *                                  removes the {@code schema} field)
      * @throws RuntimeException if the accessor was available at class-init but became inaccessible
@@ -2764,6 +2883,7 @@ public class BigQueryExecutor {
      * @see FieldValueList
      */
     static FieldList getSchema(final FieldValueList fieldValueList) {
+        N.checkArgNotNull(fieldValueList, "fieldValueList");
         N.checkArgNotNull(schemaFieldOfFieldList, "Can't get schema of 'FieldValueList' by java reflect api");
 
         FieldList fields = null;

@@ -62,11 +62,11 @@ import com.landawn.abacus.util.Strings;
  *     <li>Memory-efficient pooled object management</li>
  *     </ul>
  * </li>
- * <li><strong>Query Optimization:</strong>
+ * <li><strong>Prepared-statement support:</strong>
  *     <ul>
  *     <li>Automatic parameter normalization</li>
- *     <li>SQL injection prevention through proper parameter binding</li>
- *     <li>Query structure validation and error reporting</li>
+ *     <li>Consistent positional binding for supported placeholder styles</li>
+ *     <li>Validation of malformed or mixed placeholder styles</li>
  *     </ul>
  * </li>
  * </ul>
@@ -146,7 +146,7 @@ public final class ParsedCql {
 
     private static final int MAX_IDLE_TIME = 24 * 60 * 60 * 1000;
 
-    private static final Set<String> opSqlPrefixSet = N.asSet(SK.SELECT, SK.INSERT, SK.UPDATE, SK.DELETE, SK.MERGE);
+    private static final Set<String> opSqlPrefixSet = N.asSet(SK.SELECT, SK.INSERT, SK.UPDATE, SK.DELETE, SK.MERGE, "BEGIN");
 
     private static final KeyedObjectPool<String, PoolableAdapter<ParsedCql>> pool = PoolFactory.createKeyedObjectPool(10000, EVICT_TIME);
 
@@ -181,9 +181,10 @@ public final class ParsedCql {
      *
      * <p>The constructor identifies and processes different types of operations:
      * <ul>
-     * <li><strong>DML Operations:</strong> SELECT, INSERT, UPDATE, DELETE, MERGE (parameter processing applied)</li>
+     * <li><strong>Data operations:</strong> SELECT, INSERT, UPDATE, DELETE, MERGE, and Cassandra
+     *     {@code BEGIN ... BATCH} statements (parameter processing applied)</li>
      * <li><strong>Other statements:</strong> any statement not starting with one of the
-     *     keywords above (for example DDL such as CREATE, ALTER, DROP, or BATCH) is stored
+     *     keywords above (for example DDL such as CREATE, ALTER, or DROP) is stored
      *     as-is with no parameter detection or normalization</li>
      * </ul></p>
      *
@@ -344,8 +345,9 @@ public final class ParsedCql {
     /**
      * Returns {@code true} if the first non-comment, non-whitespace token of the parsed statement is one of the
      * recognized data-operation keywords ({@code SELECT}, {@code INSERT}, {@code UPDATE}, {@code DELETE},
-     * {@code MERGE}). Only such statements have their parameter placeholders detected and normalized; any other
-     * statement (DDL such as {@code CREATE}/{@code ALTER}/{@code DROP}, {@code BATCH}, etc.) is stored as-is.
+     * {@code MERGE}, or {@code BEGIN} for a Cassandra batch). Only such statements have their parameter
+     * placeholders detected and normalized; other statements (DDL such as
+     * {@code CREATE}/{@code ALTER}/{@code DROP}) are stored as-is.
      */
     private static boolean isOpSqlPrefix(final List<String> words) {
         for (final String word : words) {

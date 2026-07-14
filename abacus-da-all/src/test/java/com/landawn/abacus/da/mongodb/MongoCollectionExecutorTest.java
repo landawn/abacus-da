@@ -265,6 +265,27 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
+    public void testFindFirstSingleScalarProjectionDoesNotFallBackToObjectId() {
+        Document filter = new Document("active", true);
+        when(mockFindIterable.first()).thenReturn(new Document("_id", new ObjectId()));
+
+        Optional<String> result = executor.findFirst(Arrays.asList("name"), filter, String.class);
+
+        Assertions.assertFalse(result.isPresent(), "A missing projected value is not the document's _id");
+    }
+
+    @Test
+    public void testFindFirstSingleDottedScalarProjectionReadsNestedValue() {
+        Document filter = new Document("active", true);
+        when(mockFindIterable.first()).thenReturn(new Document("_id", new ObjectId()).append("address", new Document("city", "Paris")));
+
+        Optional<String> result = executor.findFirst(Arrays.asList("address.city"), filter, String.class);
+
+        Assertions.assertTrue(result.isPresent());
+        Assertions.assertEquals("Paris", result.get());
+    }
+
+    @Test
     public void testList() {
         Document filter = new Document("status", "active");
         List<Document> docs = Arrays.asList(new Document("id", 1), new Document("id", 2));
@@ -1243,6 +1264,22 @@ public class MongoCollectionExecutorTest extends TestBase {
 
         UpdateResult result = executor.updateOne(filter, updates);
         Assertions.assertNotNull(result);
+    }
+
+    @Test
+    public void testUpdateOneNormalizesPlainBsonDocumentInPipeline() {
+        Document filter = new Document("id", 1);
+        Document plainUpdate = new Document("status", "active");
+        UpdateResult updateResult = mock(UpdateResult.class);
+        when(mockCollection.updateOne(eq(filter), anyList())).thenReturn(updateResult);
+
+        Assertions.assertSame(updateResult, executor.updateOne(filter, Arrays.asList(plainUpdate)));
+
+        @SuppressWarnings("rawtypes")
+        org.mockito.ArgumentCaptor<List> updatesCaptor = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(mockCollection).updateOne(eq(filter), updatesCaptor.capture());
+        Assertions.assertEquals(Arrays.asList(new Document("$set", new Document("status", "active"))), updatesCaptor.getValue());
+        Assertions.assertEquals(new Document("status", "active"), plainUpdate, "The caller's update document must remain unchanged");
     }
 
     @Test

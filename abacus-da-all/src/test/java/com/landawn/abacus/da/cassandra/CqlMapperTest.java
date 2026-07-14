@@ -15,6 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.File;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
@@ -122,6 +123,18 @@ public class CqlMapperTest extends TestBase {
         final CqlMapper m = new CqlMapper();
         m.add("k1", "SELECT * FROM mapper_test_dup_id WHERE id = ?", null);
         assertThrows(IllegalArgumentException.class, () -> m.add("k1", "SELECT * FROM mapper_test_dup_id_2 WHERE id = ?", null));
+    }
+
+    @Test
+    public void testAdd_RejectsNullOrEmptyId() {
+        final CqlMapper m = new CqlMapper();
+        final ParsedCql parsed = ParsedCql.parse("SELECT * FROM mapper_test_invalid_id");
+
+        assertThrows(IllegalArgumentException.class, () -> m.add(null, parsed));
+        assertThrows(IllegalArgumentException.class, () -> m.add("", parsed));
+        assertThrows(IllegalArgumentException.class, () -> m.add(null, "SELECT * FROM mapper_test_invalid_id"));
+        assertThrows(IllegalArgumentException.class, () -> m.add("", "SELECT * FROM mapper_test_invalid_id"));
+        assertTrue(m.isEmpty());
     }
 
     @Test
@@ -275,6 +288,13 @@ public class CqlMapperTest extends TestBase {
     @Test
     public void testLoad_InputStream_NullThrows() {
         assertThrows(IllegalArgumentException.class, () -> CqlMapper.loadFrom((InputStream) null));
+    }
+
+    @Test
+    public void testSave_NullTargetsThrow() {
+        final CqlMapper m = new CqlMapper();
+        assertThrows(IllegalArgumentException.class, () -> m.saveTo((File) null));
+        assertThrows(IllegalArgumentException.class, () -> m.saveTo((OutputStream) null));
     }
 
     // TODO: round-trip saveTo/loadFrom/load tests skipped — XmlUtil requires jakarta.xml.bind at runtime, which is not on the test classpath.

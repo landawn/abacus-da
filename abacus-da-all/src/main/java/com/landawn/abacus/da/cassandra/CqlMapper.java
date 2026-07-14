@@ -470,9 +470,10 @@ public final class CqlMapper {
      * mapper.add("other", (ParsedCql) null);           // throws IllegalArgumentException (parsedCql is null)
      * }</pre>
      *
-     * @param id the unique identifier for this CQL statement; used as the map key as-is; not validated
+     * @param id the non-empty unique identifier for this CQL statement
      * @param parsedCql the pre-parsed CQL statement object (must not be null)
-     * @throws IllegalArgumentException if the id already exists, or if {@code parsedCql} is null
+     * @throws IllegalArgumentException if {@code id} is null or empty, the id already exists,
+     *         or if {@code parsedCql} is null
      * @see ParsedCql
      * @see #add(String, ParsedCql, Map)
      */
@@ -502,14 +503,16 @@ public final class CqlMapper {
      * mapper.add("bad", (ParsedCql) null, null);             // throws IllegalArgumentException
      * }</pre>
      *
-     * @param id the unique identifier for this CQL statement; used as the map key as-is; not validated
+     * @param id the non-empty unique identifier for this CQL statement
      * @param parsedCql the pre-parsed CQL statement object (must not be null)
      * @param attrs optional attributes map for statement metadata (may be null or empty)
-     * @throws IllegalArgumentException if the id already exists, or if {@code parsedCql} is null
+     * @throws IllegalArgumentException if {@code id} is null or empty, the id already exists,
+     *         or {@code parsedCql} is null
      * @see ParsedCql
      */
     public void add(final String id, final ParsedCql parsedCql, final Map<String, String> attrs) {
         N.checkArgNotNull(parsedCql, "parsedCql");
+        checkId(id);
         checkDuplicateId(id);
 
         cqlMap.put(id, parsedCql);
@@ -528,9 +531,9 @@ public final class CqlMapper {
      * mapper.add("findAll", "SELECT * FROM users");
      * }</pre>
      *
-     * @param id the unique identifier for this CQL statement; used as the map key as-is; not validated
+     * @param id the non-empty unique identifier for this CQL statement
      * @param cql the CQL statement string to be parsed and stored
-     * @throws IllegalArgumentException if the ID already exists, if {@code cql} is null,
+     * @throws IllegalArgumentException if {@code id} is null or empty, the ID already exists, if {@code cql} is null,
      *         or if the CQL is invalid
      */
     public void add(final String id, final String cql) {
@@ -564,13 +567,14 @@ public final class CqlMapper {
      * mapper.add("bad", (String) null, null);          // throws IllegalArgumentException
      * }</pre>
      *
-     * @param id the unique identifier for this CQL statement; used as the map key as-is; not validated
+     * @param id the non-empty unique identifier for this CQL statement
      * @param cql the CQL statement string to be parsed and stored
      * @param attrs optional attributes map for statement metadata (can be null)
-     * @throws IllegalArgumentException if the ID already exists, if {@code cql} is null,
-     *         or if the CQL is invalid
+     * @throws IllegalArgumentException if {@code id} is null or empty, the ID already exists,
+     *         {@code cql} is null, or the CQL is invalid
      */
     public void add(final String id, final String cql, final Map<String, String> attrs) {
+        checkId(id);
         checkDuplicateId(id);
 
         cqlMap.put(id, ParsedCql.parse(cql));
@@ -590,6 +594,11 @@ public final class CqlMapper {
         if (cqlMap.containsKey(id)) {
             throw new IllegalArgumentException(id + " already exists with cql: " + cqlMap.get(id));
         }
+    }
+
+    /** Validates identifiers consistently for programmatic and XML-loaded mappings. */
+    private static void checkId(final String id) {
+        N.checkArgNotEmpty(id, "id");
     }
 
     /**
@@ -723,12 +732,15 @@ public final class CqlMapper {
      * }</pre>
      *
      * @param file the target file where the XML will be written
+     * @throws IllegalArgumentException if {@code file} is null
      * @throws UncheckedIOException if the parent directory cannot be created, or if the file
      *         cannot be written
      * @see #saveTo(OutputStream)
      * @see #loadFrom(String)
      */
     public void saveTo(final File file) throws UncheckedIOException {
+        N.checkArgNotNull(file, "file");
+
         final File parentFile = file.getParentFile();
 
         if (parentFile != null && !parentFile.exists() && !parentFile.mkdirs() && !parentFile.exists()) {
@@ -763,11 +775,14 @@ public final class CqlMapper {
      * }</pre>
      *
      * @param os the output stream to write to (not closed by this method)
+     * @throws IllegalArgumentException if {@code os} is null
      * @throws UncheckedIOException if an I/O error occurs while writing to the stream
      * @see #saveTo(File)
      * @see #loadFrom(String)
      */
     public void saveTo(final OutputStream os) throws UncheckedIOException {
+        N.checkArgNotNull(os, "os");
+
         try {
             final Document doc = XmlUtil.createDOMParser(true, true).newDocument();
             final Element cqlMapperNode = doc.createElement(CqlMapper.CQL_MAPPER);

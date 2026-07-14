@@ -264,7 +264,8 @@ public final class MongoCollectionMapper<T> {
      * // Check if any active users exist:
      * boolean hasActiveUsers = mapper.exists(Filters.eq("status", "active")); // returns true if >=1 match
      * // Filters parsed from JSON must be wrapped in a Bson (Document.parse), not passed as a raw String:
-     * boolean hasRecent = mapper.exists(Document.parse("{ createdAt: { $gte: ISODate('2023-01-01') } }"));
+     * boolean hasRecent = mapper.exists(Document.parse(
+     *     "{ \"createdAt\": { \"$gte\": { \"$date\": \"2023-01-01T00:00:00Z\" } } }"));
      * boolean none = mapper.exists(Filters.eq("status", "no-such-status")); // returns false: empty match set
      * }</pre>
      *
@@ -617,7 +618,8 @@ public final class MongoCollectionMapper<T> {
      * Optional<User> user = mapper.findFirst(Filters.eq("status", "active")); // returns Optional, possibly empty
      * user.ifPresent(u -> process(u));
      * // Using a JSON filter (must be a Bson via Document.parse, not a raw String):
-     * Optional<User> recentUser = mapper.findFirst(Document.parse("{ createdAt: { $gte: ISODate('2023-01-01') } }"));
+     * Optional<User> recentUser = mapper.findFirst(Document.parse(
+     *     "{ \"createdAt\": { \"$gte\": { \"$date\": \"2023-01-01T00:00:00Z\" } } }"));
      * Optional<User> none = mapper.findFirst(Filters.eq("status", "no-such")); // returns Optional.empty()
      * }</pre>
      *
@@ -1733,7 +1735,7 @@ public final class MongoCollectionMapper<T> {
      *
      * // A JSON filter must be a Bson (Document.parse), not a raw String:
      * try (Stream<User> recentUsers = mapper.stream(
-     *         Document.parse("{ createdAt: { $gte: ISODate('2023-01-01') } }"))) {
+     *         Document.parse("{ \"createdAt\": { \"$gte\": { \"$date\": \"2023-01-01T00:00:00Z\" } } }"))) {
      *     long count = recentUsers.count(); // terminal op; 0 when nothing matches
      * }
      * }</pre>

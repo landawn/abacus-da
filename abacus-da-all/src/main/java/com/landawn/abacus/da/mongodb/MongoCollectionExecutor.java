@@ -863,7 +863,10 @@ public final class MongoCollectionExecutor {
      *
      * <p>This method provides comprehensive document finding with field projection, sorting, and automatic
      * type conversion. The sort parameter determines which document is considered "first" when multiple
-     * documents match the filter; only the specified fields are retrieved and the document is converted to the target type.</p>
+     * documents match the filter; only the specified fields are retrieved and the document is converted to the target type.
+     * When exactly one field is selected for a scalar {@code rowType}, that named field is converted
+     * directly; a missing field yields {@link Optional#empty()} rather than converting MongoDB's implicit
+     * {@code _id} projection.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -890,7 +893,7 @@ public final class MongoCollectionExecutor {
 
         final FindIterable<Document> findIterable = query(selectPropNames, filter, sort, 0, 1);
 
-        final T result = toEntity(findIterable, rowType);
+        final T result = toEntity(findIterable.first(), rowType, selectPropNames);
 
         return result == null ? (Optional<T>) Optional.empty() : Optional.of(result);
     }
@@ -2346,7 +2349,7 @@ public final class MongoCollectionExecutor {
         if (rowType.isAssignableFrom(Document.class)) {
             return (Stream<T>) Stream.of(cursor).onClose(Fn.close(cursor));
         } else {
-            return Stream.of(cursor).map(toEntity(rowType)).onClose(Fn.close(cursor));
+            return Stream.of(cursor).map(toEntity(rowType, selectPropNames)).onClose(Fn.close(cursor));
         }
     }
 
@@ -2468,6 +2471,33 @@ public final class MongoCollectionExecutor {
      */
     private static <T> Function<Document, T> toEntity(final Class<T> rowType) {
         return doc -> shouldReturnNullForEmptyDocument(doc, rowType) ? null : MongoDBBase.readRow(doc, rowType);
+    }
+
+    private static <T> Function<Document, T> toEntity(final Class<T> rowType, final Collection<String> selectPropNames) {
+        return doc -> toEntity(doc, rowType, selectPropNames);
+    }
+
+    private static <T> T toEntity(final Document doc, final Class<T> rowType, final Collection<String> selectPropNames) {
+        if (doc == null) {
+            return null;
+        }
+
+        // With a single named projection, a missing value is not the document's _id. readRow's
+        // generic scalar fallback cannot know which field was requested and otherwise converts _id,
+        // producing a fabricated result for findFirst/stream when the projected field is absent.
+        if (selectPropNames != null && selectPropNames.size() == 1 && isSingleValueType(rowType)) {
+            final Object value = getPropValueByPath(doc, selectPropNames.iterator().next());
+
+            return value == null ? null : N.convert(value, rowType);
+        }
+
+        return toEntity(doc, rowType);
+    }
+
+    private static boolean isSingleValueType(final Class<?> rowType) {
+        final Type<?> targetType = N.typeOf(rowType);
+
+        return targetType.isObjectArray() == false && targetType.isCollection() == false && targetType.isMap() == false && targetType.isBean() == false;
     }
 
     private static boolean shouldReturnNullForEmptyDocument(final Document doc, final Class<?> rowType) {
@@ -3133,9 +3163,10 @@ public final class MongoCollectionExecutor {
     /**
      * Converts a collection of update objects to BSON format.
      *
-     * <p>Internal helper that efficiently converts a collection of update
-     * objects to BSON format, optimizing for the case where objects are
-     * already BSON.</p>
+     * <p>Every element is normalized independently. A {@link Document} implements {@link Bson}, but
+     * a plain document such as {@code {status: "active"}} is still an update payload and must be
+     * wrapped as a {@code $set} pipeline stage; treating all BSON values as ready-made stages would
+     * pass invalid pipeline syntax to the driver.</p>
      *
      * @param objList the collection of update objects
      * @return a List of BSON updates
@@ -3143,28 +3174,10 @@ public final class MongoCollectionExecutor {
     private List<Bson> toBson(final Collection<?> objList) {
         N.checkArgNotEmpty(objList, "objList");
 
-        List<Bson> docs = null;
-        boolean allBson = true;
+        final List<Bson> docs = new ArrayList<>(objList.size());
 
-        for (final Object obj : objList) {
-            if (!(obj instanceof Bson)) {
-                allBson = false;
-                break;
-            }
-        }
-
-        if (allBson) {
-            if (objList instanceof List) {
-                docs = (List<Bson>) objList;
-            } else {
-                docs = new ArrayList<>((Collection<Bson>) objList);
-            }
-        } else {
-            docs = new ArrayList<>(objList.size());
-
-            for (final Object entity : objList) {
-                docs.add(toBson(entity));
-            }
+        for (final Object update : objList) {
+            docs.add(toBson(update));
         }
 
         return docs;

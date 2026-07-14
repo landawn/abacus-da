@@ -547,6 +547,12 @@ public class CosmosContainerExecutorTest extends TestBase {
         assertEquals(2, result.size());
     }
 
+    /** Projection and non-projection overloads must reject a null result type consistently. */
+    @Test
+    public void testStreamItemsWithProjectionRejectsNullTargetClass() {
+        assertThrows(IllegalArgumentException.class, () -> executor.streamItems(List.of("id"), null, (Class<TestItem>) null));
+    }
+
     @Test
     public void testStreamItemsWithSelectConditionAndOptions() {
         Collection<String> selectProps = Arrays.asList("id", "name");
@@ -625,6 +631,23 @@ public class CosmosContainerExecutorTest extends TestBase {
         method.setAccessible(true);
         final String result = (String) method.invoke(null, "SELECT * FROM c WHERE c.name = 'a?b' AND c.id = ?", 1);
         assertEquals("SELECT * FROM c WHERE c.name = 'a?b' AND c.id = @p0", result);
+    }
+
+    @Test
+    public void testRewritePositionalParameters_QuestionMarkInsideDoubleQuotes() throws Exception {
+        // Cosmos accepts both quote styles for string literals; neither may be scanned as a placeholder.
+        final Method method = CosmosContainerExecutor.class.getDeclaredMethod("rewritePositionalParameters", String.class, int.class);
+        method.setAccessible(true);
+        final String result = (String) method.invoke(null, "SELECT * FROM c WHERE c.name = \"a?b\" AND c.id = ?", 1);
+        assertEquals("SELECT * FROM c WHERE c.name = \"a?b\" AND c.id = @p0", result);
+    }
+
+    @Test
+    public void testRewritePositionalParameters_BackslashEscapedQuote() throws Exception {
+        final Method method = CosmosContainerExecutor.class.getDeclaredMethod("rewritePositionalParameters", String.class, int.class);
+        method.setAccessible(true);
+        final String result = (String) method.invoke(null, "SELECT * FROM c WHERE c.name = \"a\\\"?b\" AND c.id = ?", 1);
+        assertEquals("SELECT * FROM c WHERE c.name = \"a\\\"?b\" AND c.id = @p0", result);
     }
 
     @Test

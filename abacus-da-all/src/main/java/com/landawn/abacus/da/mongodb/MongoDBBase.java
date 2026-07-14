@@ -927,7 +927,8 @@ public abstract class MongoDBBase {
      * <p>This method converts a MongoDB Document to an instance of the specified entity type,
      * handling automatic mapping between MongoDB's "_id" field and the entity's ID property.
      * The method supports both String and ObjectId ID types and will automatically convert
-     * between them as needed. The conversion preserves the original document structure.</p>
+     * between them as needed. The conversion never mutates the source document, including while
+     * the bean is being populated, so a document can safely be shared with concurrent readers.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -959,25 +960,26 @@ public abstract class MongoDBBase {
 
         final Method idSetMethod = getObjectIdSetMethod(rowType);
         final Class<?> parameterType = idSetMethod == null ? null : idSetMethod.getParameterTypes()[0];
-        final boolean hasObjectId = doc.containsKey(_ID);
         final Object objectId = doc.get(_ID);
-        T entity = null;
+        final Document beanProperties;
 
-        doc.remove(_ID);
+        if (doc.containsKey(_ID)) {
+            // Do not temporarily remove _id from the caller's Document. Apart from surprising callers,
+            // that made this otherwise stateless converter unsafe when the same Document was observed
+            // by another thread while Beans.mapToBean was running.
+            beanProperties = new Document(doc);
+            beanProperties.remove(_ID);
+        } else {
+            beanProperties = doc;
+        }
 
-        try {
-            entity = Beans.mapToBean(doc, rowType);
+        final T entity = Beans.mapToBean(beanProperties, rowType);
 
-            if (objectId != null && parameterType != null && entity != null) {
-                if (parameterType.isAssignableFrom(objectId.getClass()) || !parameterType.isAssignableFrom(String.class)) {
-                    Beans.setPropValue(entity, idSetMethod, objectId);
-                } else {
-                    Beans.setPropValue(entity, idSetMethod, objectId.toString());
-                }
-            }
-        } finally {
-            if (hasObjectId) {
-                doc.put(_ID, objectId);
+        if (objectId != null && parameterType != null && entity != null) {
+            if (parameterType.isAssignableFrom(objectId.getClass()) || !parameterType.isAssignableFrom(String.class)) {
+                Beans.setPropValue(entity, idSetMethod, objectId);
+            } else {
+                Beans.setPropValue(entity, idSetMethod, objectId.toString());
             }
         }
 
@@ -1049,6 +1051,15 @@ public abstract class MongoDBBase {
                         }
                     }
                 } else if (firstNonNull.get() instanceof Map && ((Map<String, Object>) firstNonNull.get()).size() <= 2) {
+                    // The first row alone is not sufficient validation: aggregation/find results can
+                    // have heterogeneous shapes. Silently extracting one field from a later, wider row
+                    // loses data and contradicts readRow's scalar-conversion contract.
+                    for (final Object row : rowList) {
+                        if (row != null && (!(row instanceof Map) || ((Map<String, Object>) row).size() > 2)) {
+                            throw new IllegalArgumentException("Cannot convert document: " + row + " to class: " + ClassUtil.getCanonicalClassName(rowType));
+                        }
+                    }
+
                     // Derive the scalar property name from the first row that actually carries a non-_id key.
                     // A matched document that lacks the projected field comes back as {_id: ...} only; if such
                     // a document happened to be first, every row would silently be read from "_id" instead.
@@ -1078,11 +1089,11 @@ public abstract class MongoDBBase {
 
                     if (sampleValue != null && rowType.isAssignableFrom(sampleValue.getClass())) {
                         for (final Object row : rowList) {
-                            resultList.add(((Map<String, Object>) row).get(propName));
+                            resultList.add(row == null ? null : ((Map<String, Object>) row).get(propName));
                         }
                     } else {
                         for (final Object row : rowList) {
-                            resultList.add(N.convert(((Map<String, Object>) row).get(propName), rowType));
+                            resultList.add(row == null ? null : N.convert(((Map<String, Object>) row).get(propName), rowType));
                         }
                     }
                 } else {

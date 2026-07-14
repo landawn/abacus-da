@@ -15,6 +15,7 @@ import static org.mockito.Mockito.when;
 
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -981,6 +982,30 @@ public class DynamoDBExecutorV2Test extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> {
             executor.mapper(InvalidEntity.class, "TestTable", NamingPolicy.CAMEL_CASE);
         });
+    }
+
+    /**
+     * The v2 mapper promises argument validation just like the v1 mapper. These entry points used
+     * to dereference null inside private request builders and leak implementation-detail NPEs.
+     */
+    @Test
+    public void testMapperNullArgumentsThrowIllegalArgumentException() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+
+        assertThrows(IllegalArgumentException.class, () -> mapper.getItem((TestEntity) null));
+        assertThrows(IllegalArgumentException.class, () -> mapper.batchGetItem((Collection<TestEntity>) null));
+        assertThrows(IllegalArgumentException.class, () -> mapper.batchPutItem((Collection<TestEntity>) null));
+        assertThrows(IllegalArgumentException.class, () -> mapper.batchPutItem(java.util.Arrays.asList((TestEntity) null)));
+        assertThrows(IllegalArgumentException.class, () -> mapper.batchDeleteItem((Collection<TestEntity>) null));
+
+        assertThrows(IllegalArgumentException.class, () -> mapper.getItem((GetItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> mapper.batchGetItem((BatchGetItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> mapper.batchWriteItem((BatchWriteItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> mapper.putItem((PutItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> mapper.updateItem((UpdateItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> mapper.deleteItem((DeleteItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> mapper.list((QueryRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> mapper.scan((ScanRequest) null));
     }
 
     @Test

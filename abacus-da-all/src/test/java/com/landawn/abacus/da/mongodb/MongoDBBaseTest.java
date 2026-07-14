@@ -109,6 +109,28 @@ public class MongoDBBaseTest extends TestBase {
     }
 
     @Test
+    public void testToEntityNeverMutatesSourceDocument() {
+        ObjectId oid = new ObjectId();
+        Document doc = new Document("_id", oid) {
+            @Override
+            public Object remove(final Object key) {
+                if ("_id".equals(key)) {
+                    throw new AssertionError("Source document must not be mutated during conversion");
+                }
+
+                return super.remove(key);
+            }
+        }.append("name", "test");
+
+        TestEntity result = MongoDBBase.toEntity(doc, TestEntity.class);
+
+        assertNotNull(result);
+        assertEquals(oid.toHexString(), result.getId());
+        assertEquals("test", result.getName());
+        assertSame(oid, doc.get("_id"));
+    }
+
+    @Test
     public void testToEntityWithObjectIdField() {
         // Entity with ObjectId field type must assign ObjectId directly
         ObjectId oid = new ObjectId();
@@ -433,6 +455,16 @@ public class MongoDBBaseTest extends TestBase {
     public void testToListLargeDocSingleValueRejected() {
         // A document with more than 2 fields cannot be converted to a primitive type
         List<Document> docs = Arrays.asList(new Document("a", 1).append("b", 2).append("c", 3));
+        when(mockFindIterable.into(any())).thenReturn(docs);
+
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toList(mockFindIterable, Integer.class));
+    }
+
+    @Test
+    public void testToListRejectsLaterWideDocumentForScalarResult() {
+        // Regression: only validating the first row allowed a later heterogeneous row to be
+        // silently reduced to one value even though it cannot represent a scalar projection.
+        List<Document> docs = Arrays.asList(new Document("value", 1), new Document("a", 1).append("b", 2).append("c", 3));
         when(mockFindIterable.into(any())).thenReturn(docs);
 
         assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toList(mockFindIterable, Integer.class));

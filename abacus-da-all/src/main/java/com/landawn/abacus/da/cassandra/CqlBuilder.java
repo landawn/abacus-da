@@ -340,6 +340,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @return this CqlBuilder instance for method chaining
      */
     public CqlBuilder usingTTL(final long ttl) {
+        N.checkArgNotNegative(ttl, "ttl");
+
         return usingTTL(String.valueOf(ttl));
     }
 
@@ -506,6 +508,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
     private void appendUsingOption(final String optionName, final String optionValue) {
         assertNotClosed();
+        N.checkArgument(Strings.isNotBlank(optionValue), "'" + optionName + "' can't be null or blank");
 
         // init(true) (not init(false)): for update(entityClass) the one-shot init is what expands the
         // implicit SET clause; consuming it with false here silently dropped the SET assignments (and
@@ -518,18 +521,13 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         final String option = optionName + _SPACE + optionValue;
 
         if (isBatchInsert()) {
-            final List<Integer> insertionIndexes = new ArrayList<>();
+            final List<Integer> insertionIndexes = findBatchStatementEnds(cql);
             final List<String> prefixes = new ArrayList<>();
             int statementStart = "BEGIN BATCH".length();
-            int statementEnd = cql.indexOf(';', statementStart);
-
-            while (statementEnd >= 0) {
-                final int usingIndex = cql.indexOf(SPACE_USING, statementStart);
-
-                insertionIndexes.add(statementEnd);
+            for (final int statementEnd : insertionIndexes) {
+                final int usingIndex = indexOfOutsideQuotes(cql, SPACE_USING, statementStart, statementEnd);
                 prefixes.add(usingIndex >= 0 && usingIndex < statementEnd ? " AND " : SPACE_USING);
                 statementStart = statementEnd + 1;
-                statementEnd = cql.indexOf(';', statementStart);
             }
 
             for (int i = insertionIndexes.size() - 1; i >= 0; i--) {
@@ -607,16 +605,13 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     private void appendIfClause(final char[] ifClause) {
         if (isBatchInsert()) {
             final String cql = _sb.toString();
-            final List<Integer> insertionIndexes = new ArrayList<>();
+            final List<Integer> insertionIndexes = findBatchStatementEnds(cql);
             int statementStart = "BEGIN BATCH".length();
-            int statementEnd = cql.indexOf(';', statementStart);
-
-            while (statementEnd >= 0) {
-                final int usingIndex = cql.indexOf(SPACE_USING, statementStart);
-
-                insertionIndexes.add(usingIndex >= 0 && usingIndex < statementEnd ? usingIndex : statementEnd);
+            for (int i = 0; i < insertionIndexes.size(); i++) {
+                final int statementEnd = insertionIndexes.get(i);
+                final int usingIndex = indexOfOutsideQuotes(cql, SPACE_USING, statementStart, statementEnd);
+                insertionIndexes.set(i, usingIndex >= 0 ? usingIndex : statementEnd);
                 statementStart = statementEnd + 1;
-                statementEnd = cql.indexOf(';', statementStart);
             }
 
             for (int i = insertionIndexes.size() - 1; i >= 0; i--) {
@@ -638,6 +633,57 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         }
 
         _sb.append(ifClause);
+    }
+
+    /** Returns semicolon indexes that terminate batch statements, ignoring quoted literal content. */
+    private static List<Integer> findBatchStatementEnds(final String cql) {
+        final List<Integer> result = new ArrayList<>();
+
+        for (int i = "BEGIN BATCH".length(), len = cql.length(); i < len; i++) {
+            final char ch = cql.charAt(i);
+
+            if (ch == '\'' || ch == '"') {
+                i = skipQuoted(cql, i, ch);
+            } else if (ch == ';') {
+                result.add(i);
+            }
+        }
+
+        return result;
+    }
+
+    /** Finds a clause token in an unquoted portion of the specified range. */
+    private static int indexOfOutsideQuotes(final String cql, final String token, final int fromIndex, final int toIndex) {
+        for (int i = fromIndex; i + token.length() <= toIndex; i++) {
+            final char ch = cql.charAt(i);
+
+            if (ch == '\'' || ch == '"') {
+                i = skipQuoted(cql, i, ch);
+            } else if (cql.startsWith(token, i)) {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    /** Skips a CQL string/quoted identifier, including doubled and backslash-escaped quotes. */
+    private static int skipQuoted(final String cql, int index, final char quoteChar) {
+        for (index++; index < cql.length(); index++) {
+            final char ch = cql.charAt(index);
+
+            if (ch == '\\') {
+                index++;
+            } else if (ch == quoteChar) {
+                if (index + 1 < cql.length() && cql.charAt(index + 1) == quoteChar) {
+                    index++;
+                } else {
+                    return index;
+                }
+            }
+        }
+
+        return cql.length() - 1;
     }
 
     private boolean isBatchInsert() {

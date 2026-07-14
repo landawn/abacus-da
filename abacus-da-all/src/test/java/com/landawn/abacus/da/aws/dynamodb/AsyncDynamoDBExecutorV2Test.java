@@ -7,11 +7,13 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -97,6 +99,30 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
     public void testMapperWithTableNameAndNamingPolicy() {
         AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class, "TestTable", NamingPolicy.CAMEL_CASE);
         assertNotNull(mapper);
+    }
+
+    /**
+     * Null mapper inputs are caller errors and must fail synchronously with the documented
+     * IllegalArgumentException instead of an incidental NullPointerException.
+     */
+    @Test
+    public void testMapperNullArgumentsThrowIllegalArgumentException() {
+        AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
+
+        assertThrows(IllegalArgumentException.class, () -> mapper.getItem((TestEntity) null));
+        assertThrows(IllegalArgumentException.class, () -> mapper.batchGetItem((Collection<TestEntity>) null));
+        assertThrows(IllegalArgumentException.class, () -> mapper.batchPutItem((Collection<TestEntity>) null));
+        assertThrows(IllegalArgumentException.class, () -> mapper.batchPutItem(java.util.Arrays.asList((TestEntity) null)));
+        assertThrows(IllegalArgumentException.class, () -> mapper.batchDeleteItem((Collection<TestEntity>) null));
+
+        assertThrows(IllegalArgumentException.class, () -> mapper.getItem((GetItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> mapper.batchGetItem((BatchGetItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> mapper.batchWriteItem((BatchWriteItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> mapper.putItem((PutItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> mapper.updateItem((UpdateItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> mapper.deleteItem((DeleteItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> mapper.list((QueryRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> mapper.scan((ScanRequest) null));
     }
 
     @Test
@@ -864,6 +890,47 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
 
         assertNotNull(stream);
         assertEquals(3, stream.count());
+    }
+
+    /**
+     * A lazy query stream blocks in Future.get while loading a page. Java interruption policy
+     * requires code that translates InterruptedException to preserve the interrupt signal.
+     */
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testQueryStreamPreservesInterruptStatus() throws Exception {
+        CompletableFuture<QueryResponse> interruptedFuture = mock(CompletableFuture.class);
+        when(interruptedFuture.get()).thenThrow(new InterruptedException("query page interrupted"));
+        when(mockDynamoDbAsyncClient.query(any(QueryRequest.class))).thenReturn(interruptedFuture);
+
+        Stream<Map<String, Object>> stream = asyncExecutor.stream(QueryRequest.builder().tableName("TestTable").build()).get();
+        Thread.interrupted(); // clear any stale status so this regression test owns the signal
+
+        try {
+            assertThrows(RuntimeException.class, stream::count);
+            assertTrue(Thread.currentThread().isInterrupted());
+        } finally {
+            Thread.interrupted(); // do not leak the interrupt to the JUnit worker
+        }
+    }
+
+    /** Regression coverage for the equivalent lazy scan iterator. */
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testScanStreamPreservesInterruptStatus() throws Exception {
+        CompletableFuture<ScanResponse> interruptedFuture = mock(CompletableFuture.class);
+        when(interruptedFuture.get()).thenThrow(new InterruptedException("scan page interrupted"));
+        when(mockDynamoDbAsyncClient.scan(any(ScanRequest.class))).thenReturn(interruptedFuture);
+
+        Stream<Map> stream = asyncExecutor.scan(ScanRequest.builder().tableName("TestTable").build(), Map.class).get();
+        Thread.interrupted();
+
+        try {
+            assertThrows(RuntimeException.class, stream::count);
+            assertTrue(Thread.currentThread().isInterrupted());
+        } finally {
+            Thread.interrupted();
+        }
     }
 
     @Test

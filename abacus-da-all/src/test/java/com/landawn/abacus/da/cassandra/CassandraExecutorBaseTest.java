@@ -11,6 +11,7 @@ import java.util.Collection;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -48,6 +49,38 @@ public class CassandraExecutorBaseTest extends TestBase {
     public void setUp() {
         CassandraExecutorBase.entityKeyNamesMap.remove(TestEntity.class);
         executor = new TestCassandraExecutor();
+    }
+
+    @Test
+    public void testBatchInsertClausesIgnoreSemicolonsInsideRawValues() {
+        final Map<String, Object> first = new LinkedHashMap<>();
+        first.put("id", 1);
+        first.put("value", "a;b");
+        final Map<String, Object> second = new LinkedHashMap<>();
+        second.put("id", 2);
+        second.put("value", "c USING d");
+
+        final String cql = CqlBuilder.Dsl.SCCB.batchInsert(Arrays.asList(first, second)).into("events").usingTTL(60).ifNotExists().build().query();
+
+        assertEquals("BEGIN BATCH INSERT INTO events (id, value) VALUES (1, 'a;b') IF NOT EXISTS USING TTL 60;"
+                + " INSERT INTO events (id, value) VALUES (2, 'c USING d') IF NOT EXISTS USING TTL 60; APPLY BATCH", cql);
+    }
+
+    @Test
+    public void testUsingTTLRejectsNegativeValue() {
+        assertThrows(IllegalArgumentException.class, () -> CqlBuilder.Dsl.PSC.insert("id").into("events").usingTTL(-1));
+    }
+
+    @Test
+    public void testPrepareBatchMapUpdateValidatesPrimaryKeys() {
+        final Map<String, Object> valid = new HashMap<>();
+        valid.put("id", 7L);
+        valid.put("name", "updated");
+        final SP statement = executor.prepareBatchMapUpdateForTest(TestEntity.class, valid);
+        assertTrue(statement.query().contains("WHERE id = :id"), statement.query());
+
+        assertThrows(IllegalArgumentException.class, () -> executor.prepareBatchMapUpdateForTest(TestEntity.class, Map.of("name", "updated")));
+        assertThrows(IllegalArgumentException.class, () -> executor.prepareBatchMapUpdateForTest(TestEntity.class, Map.of("id", 7L)));
     }
 
     @Test
@@ -1377,6 +1410,10 @@ public class CassandraExecutorBaseTest extends TestBase {
 
         public AsyncCassandraExecutorBase<TestRow, TestResultSet, TestStatement, TestPreparedStatement, TestBatchType> async() {
             return asyncExecutor;
+        }
+
+        SP prepareBatchMapUpdateForTest(final Class<?> targetClass, final Map<String, Object> props) {
+            return prepareBatchMapUpdate(targetClass, props);
         }
 
         @Override

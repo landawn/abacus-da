@@ -1859,9 +1859,7 @@ public class CosmosContainerExecutor {
      * @param targetClass the class type for deserializing the results (must not be null)
      * @return a Stream of items with only selected properties populated
      * @throws CosmosException if the query fails
-     * @throws IllegalArgumentException if targetClass is null while selectPropNames is null or
-     *         empty (rejected by the query builder before any request is sent)
-     * @throws NullPointerException if targetClass is null while selectPropNames is non-empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      */
     @Beta
     public final <T> Stream<T> streamItems(final Collection<String> selectPropNames, final Condition whereClause, final Class<T> targetClass) {
@@ -1921,9 +1919,7 @@ public class CosmosContainerExecutor {
      * @param targetClass the class type for deserializing the results (must not be null)
      * @return a Stream of items with only selected properties populated
      * @throws CosmosException if the query fails
-     * @throws IllegalArgumentException if targetClass is null while selectPropNames is null or
-     *         empty (rejected by the query builder before any request is sent)
-     * @throws NullPointerException if targetClass is null while selectPropNames is non-empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      *
      * @see NamingPolicy for field name mapping behavior
      * @see com.landawn.abacus.query.Filters for available filter operations
@@ -1957,20 +1953,28 @@ public class CosmosContainerExecutor {
         final int len = query.length();
         int replaced = 0;
         int totalPlaceholders = 0;
-        boolean inSingleQuote = false;
+        char quote = 0;
 
         for (int i = 0; i < len; i++) {
             final char ch = query.charAt(i);
 
-            if (ch == '\'') {
+            if (quote != 0) {
                 sb.append(ch);
 
-                if (inSingleQuote && i + 1 < len && query.charAt(i + 1) == '\'') {
+                if (ch == '\\' && i + 1 < len) {
+                    // Cosmos string literals use JSON-style backslash escapes. Copy the escaped
+                    // character verbatim so an escaped quote cannot terminate the literal.
                     sb.append(query.charAt(++i));
-                } else {
-                    inSingleQuote = !inSingleQuote;
+                } else if (ch == quote && i + 1 < len && query.charAt(i + 1) == quote) {
+                    // Also retain SQL-style doubled quotes, which the query language accepts.
+                    sb.append(query.charAt(++i));
+                } else if (ch == quote) {
+                    quote = 0;
                 }
-            } else if (ch == '?' && !inSingleQuote) {
+            } else if (ch == '\'' || ch == '"') {
+                quote = ch;
+                sb.append(ch);
+            } else if (ch == '?') {
                 totalPlaceholders++;
 
                 if (replaced < parameterCount) {
@@ -1995,6 +1999,8 @@ public class CosmosContainerExecutor {
     }
 
     private SP prepareQuery(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause, final int count) {
+        N.checkArgNotNull(targetClass, "targetClass");
+
         final boolean isNonNullCond = whereClause != null;
         SqlBuilder sqlBuilder = null;
 

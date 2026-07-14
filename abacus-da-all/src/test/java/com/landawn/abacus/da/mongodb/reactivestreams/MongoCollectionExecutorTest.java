@@ -346,6 +346,32 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
+    public void testFindFirstSingleScalarProjectionDoesNotFallBackToObjectId() {
+        Collection<String> selectPropNames = Arrays.asList("name");
+        Bson filter = new Document("active", true);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, new Document("_id", new ObjectId()));
+
+        StepVerifier.create(executor.findFirst(selectPropNames, filter, String.class)).verifyComplete();
+    }
+
+    @Test
+    public void testFindFirstSingleDottedScalarProjectionReadsNestedValue() {
+        Collection<String> selectPropNames = Arrays.asList("address.city");
+        Bson filter = new Document("active", true);
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, new Document("_id", new ObjectId()).append("address", new Document("city", "Paris")));
+
+        StepVerifier.create(executor.findFirst(selectPropNames, filter, String.class)).expectNext("Paris").verifyComplete();
+    }
+
+    @Test
     public void testFindFirstWithAllParameters() {
         Collection<String> selectPropNames = Arrays.asList("name");
         Bson filter = new Document("active", true);
@@ -1531,6 +1557,15 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
+    public void testListWithNullRowTypeThrowsIAE() {
+        final Bson filter = new Document("active", true);
+
+        assertThrows(IllegalArgumentException.class, () -> executor.list(filter, (Class<Document>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.list(Arrays.asList("name"), filter, null, 0, 1, (Class<Document>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.list((Bson) new Document("name", 1), filter, null, 0, 1, (Class<Document>) null));
+    }
+
+    @Test
     public void testGroupByWithFieldName() {
         String fieldName = "category";
         List<Document> groupResults = Arrays.asList(new Document("_id", "electronics"), new Document("_id", "books"));
@@ -1881,6 +1916,22 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
+    public void testUpdateOneNormalizesPlainBsonDocumentInPipeline() {
+        Bson filter = new Document("name", "test");
+        Document plainUpdate = new Document("status", "active");
+        UpdateResult updateResult = mock(UpdateResult.class);
+        when(mockCollection.updateOne(eq(filter), anyList())).thenReturn(Mono.just(updateResult));
+
+        StepVerifier.create(executor.updateOne(filter, Arrays.asList(plainUpdate))).expectNext(updateResult).verifyComplete();
+
+        @SuppressWarnings("rawtypes")
+        org.mockito.ArgumentCaptor<List> updatesCaptor = org.mockito.ArgumentCaptor.forClass(List.class);
+        verify(mockCollection).updateOne(eq(filter), updatesCaptor.capture());
+        assertEquals(Arrays.asList(new Document("$set", new Document("status", "active"))), updatesCaptor.getValue());
+        assertEquals(new Document("status", "active"), plainUpdate, "The caller's update document must remain unchanged");
+    }
+
+    @Test
     public void testUpdateManyWithNonBsonCollection() {
         Bson filter = new Document("status", "pending");
         List<Map<String, Object>> updates = new ArrayList<>();
@@ -2206,8 +2257,8 @@ public class MongoCollectionExecutorTest extends TestBase {
         StepVerifier.create(result).expectNext(doc).verifyComplete();
     }
 
-    // Covers toBson(Collection) pass-through path: when ALL elements are already Bson
-    // and the collection IS a List, the list is returned as-is (no copy).
+    // Operator Documents are already complete pipeline stages, so per-element normalization
+    // preserves their values even though the containing list is defensively rebuilt.
     @Test
     public void testUpdateOneWithAllBsonListPassthrough() {
         Bson filter = new Document("name", "test");
@@ -2222,7 +2273,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         verify(mockCollection).updateOne(eq(filter), eq(updates));
     }
 
-    // Covers toBson(Collection) all-Bson-but-non-List path: copies into a new ArrayList.
+    // The same per-element normalization works for a non-List Bson collection.
     @Test
     public void testUpdateOneWithAllBsonNonListCollection() {
         Bson filter = new Document("name", "test");

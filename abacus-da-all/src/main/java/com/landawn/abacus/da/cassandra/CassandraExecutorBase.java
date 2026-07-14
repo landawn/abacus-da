@@ -3126,6 +3126,50 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
     }
 
     /**
+     * Splits a map-based batch-update row into non-key assignments and a validated primary-key condition.
+     * Every registered/annotated key must be present and non-null; otherwise generating the statement could
+     * update an unintended row or produce an invalid CQL predicate.
+     *
+     * @param targetClass entity class defining the table and primary-key properties
+     * @param props key and update properties for one batch row
+     * @return a parameterized UPDATE statement for this row
+     * @throws IllegalArgumentException if the class has no key, a key is absent/null/empty, or no update property remains
+     */
+    protected SP prepareBatchMapUpdate(final Class<?> targetClass, final Map<String, Object> props) {
+        N.checkArgNotNull(targetClass, "targetClass");
+        N.checkArgNotNull(props, "props");
+
+        final Set<String> primaryKeyNames = getKeyNameSet(targetClass);
+
+        if (primaryKeyNames.isEmpty()) {
+            throw new IllegalArgumentException("No key names defined for entity class: " + targetClass.getSimpleName());
+        }
+
+        final Map<String, Object> updateProps = new java.util.HashMap<>(props);
+        final List<Condition> conditions = new ArrayList<>(primaryKeyNames.size());
+
+        for (final String keyName : primaryKeyNames) {
+            if (!updateProps.containsKey(keyName)) {
+                throw new IllegalArgumentException("Missing required key property: " + keyName);
+            }
+
+            final Object keyValue = updateProps.remove(keyName);
+
+            if (keyValue == null || (keyValue instanceof CharSequence && Strings.isEmpty((CharSequence) keyValue))) {
+                throw new IllegalArgumentException("No property value specified for key name: " + keyName);
+            }
+
+            conditions.add(Filters.eq(keyName, keyValue));
+        }
+
+        if (updateProps.isEmpty()) {
+            throw new IllegalArgumentException("No non-key properties specified for batch update");
+        }
+
+        return prepareUpdate(targetClass, updateProps, Filters.and(conditions));
+    }
+
+    /**
      * Prepares a batch UPDATE statement for multiple entities.
      *
      * @param entities collection of entities to update

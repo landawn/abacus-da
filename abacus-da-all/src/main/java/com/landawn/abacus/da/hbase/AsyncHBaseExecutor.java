@@ -35,6 +35,7 @@ import com.google.protobuf.Message;
 import com.google.protobuf.Service;
 import com.landawn.abacus.util.AsyncExecutor;
 import com.landawn.abacus.util.ContinuableFuture;
+import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.stream.Stream;
 
 /**
@@ -106,6 +107,12 @@ import com.landawn.abacus.util.stream.Stream;
  * <li><strong>Error Handling</strong>: Exceptions thrown by the underlying call are propagated through the returned {@code ContinuableFuture}</li>
  * </ul>
  *
+ * <p><strong>Lazy scan exception:</strong> scan methods submit creation of a lazy
+ * {@link Stream}, not execution of the scan itself. The future can therefore complete before a
+ * table or scanner has been opened. Opening the scanner and fetching rows happen when the caller
+ * consumes the returned stream, on the consuming thread, and may block. The caller owns that
+ * stream and must close it.</p>
+ *
  * <p><b>Naming convention:</b> method names are identical to the synchronous {@link HBaseExecutor}
  * (the HBase client vocabulary: {@code get}, {@code scan}, {@code put}, {@code delete}, {@code append},
  * {@code increment}, {@code mutateRow}, {@code exists}); each result is wrapped in a
@@ -131,10 +138,11 @@ public final class AsyncHBaseExecutor {
      * @param hbaseExecutor the synchronous executor this wrapper delegates to; must not be null
      * @param asyncExecutor the thread pool on which every operation in this wrapper is submitted;
      *                      must not be null
+     * @throws IllegalArgumentException if either argument is {@code null}
      */
     AsyncHBaseExecutor(final HBaseExecutor hbaseExecutor, final AsyncExecutor asyncExecutor) {
-        this.hbaseExecutor = hbaseExecutor;
-        this.asyncExecutor = asyncExecutor;
+        this.hbaseExecutor = N.checkArgNotNull(hbaseExecutor, "hbaseExecutor");
+        this.asyncExecutor = N.checkArgNotNull(asyncExecutor, "asyncExecutor");
     }
 
     /**
@@ -1896,8 +1904,9 @@ public final class AsyncHBaseExecutor {
     /**
      * Asynchronously executes a coprocessor call across all regions in a row range.
      *
-     * <p>Invokes a coprocessor service method on every region whose row range overlaps
-     * {@code [startRowKey, endRowKey)}. The {@code callable} is executed on each region server,
+     * <p>Invokes a coprocessor service method on every region from the region containing
+     * {@code startRowKey} through the region containing {@code endRowKey}, inclusive. The
+     * {@code callable} is executed on each selected region,
      * and results are collected into a map keyed by region name bytes. This enables
      * distributed server-side processing across multiple regions. The returned
      * {@link ContinuableFuture} completes with the aggregated map once every region has
@@ -1907,7 +1916,7 @@ public final class AsyncHBaseExecutor {
      * <pre>{@code
      * AsyncHBaseExecutor async = hbaseExecutor.async();
      *
-     * // Typical: run a coprocessor endpoint on every region in [user1, user9) and collect per-region results.
+     * // Typical: run a coprocessor endpoint on every selected region from user1 through user9, inclusive.
      * // MyService is a generated protobuf Service; the Batch.Call invokes one of its methods on each region.
      * Batch.Call<MyService, Long> call = service -> service.countRows();
      * ContinuableFuture<Map<byte[], Long>> future = async.coprocessorService("users", MyService.class, "user1", "user9", call); // returns a ContinuableFuture of the per-region map
@@ -1926,7 +1935,7 @@ public final class AsyncHBaseExecutor {
      * @param tableName the name of the HBase table
      * @param service the coprocessor service class
      * @param startRowKey the starting row key (inclusive) for the range
-     * @param endRowKey the ending row key (exclusive) for the range
+     * @param endRowKey the ending row key (inclusive; {@code null} for unbounded end)
      * @param callable the callable to execute on each region
      * @return a {@link ContinuableFuture} containing a map from region name bytes to the result
      *         returned by {@code callable} for that region. Wraps
@@ -1943,8 +1952,9 @@ public final class AsyncHBaseExecutor {
      * Asynchronously executes a coprocessor call across all regions in a row range, delivering
      * each region's result to a callback as it becomes available.
      *
-     * <p>Invokes a coprocessor service method on every region whose row range overlaps
-     * {@code [startRowKey, endRowKey)}, with each region's result delivered to {@code callback} as
+     * <p>Invokes a coprocessor service method on every region from the region containing
+     * {@code startRowKey} through the region containing {@code endRowKey}, inclusive, with each
+     * region's result delivered to {@code callback} as
      * soon as it returns. This enables streaming processing of results rather than collecting them
      * all in memory. The returned {@link ContinuableFuture} completes with {@code null} once every
      * coprocessor invocation has finished.</p>
@@ -1972,7 +1982,7 @@ public final class AsyncHBaseExecutor {
      * @param tableName the name of the HBase table
      * @param service the coprocessor service class
      * @param startRowKey the starting row key (inclusive) for the range
-     * @param endRowKey the ending row key (exclusive) for the range
+     * @param endRowKey the ending row key (inclusive; {@code null} for unbounded end)
      * @param callable the callable to execute on each region
      * @param callback the callback that receives each region's result
      * @return a {@link ContinuableFuture} that completes with {@code null} when all calls finish.
@@ -1995,7 +2005,8 @@ public final class AsyncHBaseExecutor {
      * Protocol Buffer messages.
      *
      * <p>Invokes the coprocessor method identified by {@code methodDescriptor} on every region
-     * whose row range overlaps {@code [startRowKey, endRowKey)}, passing the supplied
+     * from the region containing {@code startRowKey} through the region containing
+     * {@code endRowKey}, inclusive, passing the supplied
      * {@code request} message and parsing each response against {@code responsePrototype}. The
      * returned {@link ContinuableFuture} completes with a map of region names (byte arrays) to their
      * corresponding response messages once every region has responded.</p>
@@ -2004,7 +2015,7 @@ public final class AsyncHBaseExecutor {
      * <pre>{@code
      * AsyncHBaseExecutor async = hbaseExecutor.async();
      *
-     * // Typical: invoke a protobuf coprocessor method on every region in [user1, user9) and collect responses.
+     * // Typical: invoke a protobuf coprocessor method from the user1 region through the user9 region, inclusive.
      * // methodDescriptor / request / responsePrototype come from your generated protobuf service.
      * Descriptors.MethodDescriptor methodDescriptor = MyService.getDescriptor().findMethodByName("count");
      * Message request = CountRequest.getDefaultInstance();
@@ -2021,7 +2032,7 @@ public final class AsyncHBaseExecutor {
      * @param methodDescriptor the Protocol Buffer method descriptor for the coprocessor method
      * @param request the request message to send to each region
      * @param startRowKey the starting row key (inclusive) for the range
-     * @param endRowKey the ending row key (exclusive) for the range
+     * @param endRowKey the ending row key (inclusive; {@code null} for unbounded end)
      * @param responsePrototype the prototype instance used to parse responses
      * @return a {@link ContinuableFuture} containing a map of region names (byte arrays) to their
      *         corresponding response messages. Wraps {@link HBaseExecutor#batchCoprocessorService(String, Descriptors.MethodDescriptor, Message, Object, Object, Message)}.
@@ -2040,7 +2051,8 @@ public final class AsyncHBaseExecutor {
      * callback, using Protocol Buffer messages.
      *
      * <p>Invokes the coprocessor method identified by {@code methodDescriptor} on every region
-     * whose row range overlaps {@code [startRowKey, endRowKey)}, with each region's response
+     * from the region containing {@code startRowKey} through the region containing
+     * {@code endRowKey}, inclusive, with each region's response
      * delivered to {@code callback} as soon as it is received. This enables streaming processing
      * of results. The returned {@link ContinuableFuture} completes with {@code null} once every
      * coprocessor invocation has finished.</p>
@@ -2069,7 +2081,7 @@ public final class AsyncHBaseExecutor {
      * @param methodDescriptor the Protocol Buffer method descriptor for the coprocessor method
      * @param request the request message to send to each region
      * @param startRowKey the starting row key (inclusive) for the range
-     * @param endRowKey the ending row key (exclusive) for the range
+     * @param endRowKey the ending row key (inclusive; {@code null} for unbounded end)
      * @param responsePrototype the prototype instance used to parse responses
      * @param callback the callback that receives each region's response
      * @return a {@link ContinuableFuture} that completes with {@code null} when all calls finish.

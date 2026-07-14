@@ -818,7 +818,9 @@ public final class MongoCollectionExecutor {
      *
      * <p>Retrieves the first document that matches the filter criteria, with specified field projection
      * and sorting, then converts the result to the target type. The sort parameter determines
-     * which document is considered "first" when multiple documents match.</p>
+     * which document is considered "first" when multiple documents match. For a single named field
+     * and scalar {@code rowType}, the named value is converted directly; if it is absent or BSON null,
+     * the {@code Mono} completes empty instead of converting the implicitly projected {@code _id}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -839,7 +841,7 @@ public final class MongoCollectionExecutor {
     public <T> Mono<T> findFirst(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
         N.checkArgNotNull(rowType, "rowType");
 
-        return query(selectPropNames, filter, sort, 0, 1).next().mapNotNull(toEntity(rowType));
+        return query(selectPropNames, filter, sort, 0, 1).next().mapNotNull(toEntity(rowType, selectPropNames));
     }
 
     /**
@@ -954,7 +956,7 @@ public final class MongoCollectionExecutor {
      * @param count the maximum number of documents to return
      * @param rowType the Class representing the target type for conversion
      * @return a Flux that emits matching documents within the specified range, converted to type T
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site), or if offset or count is negative
+     * @throws IllegalArgumentException if filter or rowType is null (thrown synchronously at the call site), or if offset or count is negative
      */
     public <T> Flux<T> list(final Bson filter, final int offset, final int count, final Class<T> rowType) {
         return list(null, filter, offset, count, rowType);
@@ -1004,7 +1006,7 @@ public final class MongoCollectionExecutor {
      * @param count the maximum number of documents to return
      * @param rowType the Class representing the target type for conversion
      * @return a Flux that emits matching documents within range with projected fields, converted to type T
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site), or if offset or count is negative
+     * @throws IllegalArgumentException if filter or rowType is null (thrown synchronously at the call site), or if offset or count is negative
      */
     public <T> Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count, final Class<T> rowType) {
         return list(selectPropNames, filter, null, offset, count, rowType);
@@ -1062,6 +1064,8 @@ public final class MongoCollectionExecutor {
     @SuppressWarnings("unchecked")
     public <T> Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         // Same short-circuit as the sync executor (MongoDBBase.toList / sync stream): when the caller asks
         // for Document/Map/Object, return the raw documents untouched instead of rebuilding them through
         // readRow (which would throw "Unsupported target type" for Object.class).
@@ -1069,7 +1073,7 @@ public final class MongoCollectionExecutor {
             return (Flux<T>) query(selectPropNames, filter, sort, offset, count);
         }
 
-        return query(selectPropNames, filter, sort, offset, count).mapNotNull(toEntity(rowType));
+        return query(selectPropNames, filter, sort, offset, count).mapNotNull(toEntity(rowType, selectPropNames));
     }
 
     /**
@@ -1122,6 +1126,8 @@ public final class MongoCollectionExecutor {
      */
     @SuppressWarnings("unchecked")
     public <T> Flux<T> list(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         // Same short-circuit as the sync executor: raw documents for Document/Map/Object targets.
         if (rowType.isAssignableFrom(Document.class)) {
             return (Flux<T>) executeQuery(projection, filter, sort, offset, count);
@@ -1970,6 +1976,30 @@ public final class MongoCollectionExecutor {
         return doc -> shouldReturnNullForEmptyDocument(doc, rowType) ? null : MongoDB.readRow(doc, rowType);
     }
 
+    private static <T> Function<Document, T> toEntity(final Class<T> rowType, final Collection<String> selectPropNames) {
+        if (selectPropNames != null && selectPropNames.size() == 1 && isSingleValueType(rowType)) {
+            final String propName = selectPropNames.iterator().next();
+
+            return doc -> {
+                if (doc == null) {
+                    return null;
+                }
+
+                final Object value = getPropValueByPath(doc, propName);
+
+                return value == null ? null : N.convert(value, rowType);
+            };
+        }
+
+        return toEntity(rowType);
+    }
+
+    private static boolean isSingleValueType(final Class<?> rowType) {
+        final Type<?> targetType = N.typeOf(rowType);
+
+        return targetType.isObjectArray() == false && targetType.isCollection() == false && targetType.isMap() == false && targetType.isBean() == false;
+    }
+
     private static boolean shouldReturnNullForEmptyDocument(final Document doc, final Class<?> rowType) {
         if (doc == null) {
             return true;
@@ -2031,7 +2061,7 @@ public final class MongoCollectionExecutor {
     /**
      * Opens a change stream watching for changes in the collection.
      *
-     * <p>Returns a hot, long-lived {@link ChangeStreamPublisher} that emits a
+     * <p>Returns a cold, long-lived {@link ChangeStreamPublisher} that, once subscribed, emits a
      * {@link com.mongodb.client.model.changestream.ChangeStreamDocument}-wrapped {@link Document}
      * for each change event as it occurs in the collection. Unlike the {@code Mono}/{@code Flux}
      * returned by other reactive methods, the change-stream {@code Publisher} does not naturally
@@ -2040,7 +2070,7 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Typical: subscribe and process change events as they arrive (hot, never completes on its own).
+     * // Typical: subscribe and process change events as they arrive (long-lived; normally does not complete on its own).
      * ChangeStreamPublisher<Document> changeStream = executor.watch(); // returned synchronously; never null
      * Disposable sub = Flux.from(changeStream)
      *                      .subscribe(change -> processChange(change)); // runs until cancelled / invalidated
@@ -2062,7 +2092,7 @@ public final class MongoCollectionExecutor {
     /**
      * Creates a typed change stream to watch for changes in the collection.
      *
-     * <p>Returns a hot, long-lived {@link ChangeStreamPublisher} whose
+     * <p>Returns a cold, long-lived {@link ChangeStreamPublisher} whose
      * {@code ChangeStreamDocument.fullDocument} is decoded as {@code rowType} using the configured
      * codec registry. Like {@link #watch()}, the stream does not naturally complete — cancel the
      * subscription to close the cursor.</p>
@@ -2072,7 +2102,7 @@ public final class MongoCollectionExecutor {
      * // Typical: each event's fullDocument is decoded as the given type.
      * ChangeStreamPublisher<UserChangeEvent> userChanges = executor.watch(UserChangeEvent.class); // never null
      * Disposable sub = Flux.from(userChanges)
-     *                      .subscribe(event -> handleUserChange(event)); // hot; runs until cancelled
+     *                      .subscribe(event -> handleUserChange(event)); // runs until cancelled
      *
      * // Edge: nothing is opened until subscription — the call itself performs no I/O.
      * ChangeStreamPublisher<UserChangeEvent> cold = executor.watch(UserChangeEvent.class); // cold until subscribed
@@ -2093,7 +2123,7 @@ public final class MongoCollectionExecutor {
     /**
      * Creates a change stream with an aggregation pipeline to watch filtered changes.
      *
-     * <p>Returns a hot, long-lived {@link ChangeStreamPublisher} that runs each change event through
+     * <p>Returns a cold, long-lived {@link ChangeStreamPublisher} that runs each change event through
      * the supplied aggregation pipeline before publishing it. As with {@link #watch()}, the stream
      * does not naturally complete — cancel the subscription to close the cursor.</p>
      *
@@ -2117,7 +2147,7 @@ public final class MongoCollectionExecutor {
      * Creates a typed change stream with an aggregation pipeline to watch filtered changes.
      *
      * <p>Combines pipeline filtering with type conversion for change events, providing both
-     * selectivity and type-safe full-document decoding. The returned hot publisher does not
+     * selectivity and type-safe full-document decoding. Once subscribed, the publisher does not
      * naturally complete — cancel the subscription to close the server-side cursor.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -2558,28 +2588,13 @@ public final class MongoCollectionExecutor {
     private List<Bson> toBson(final Collection<?> objList) {
         N.checkArgNotEmpty(objList, "objList");
 
-        List<Bson> docs = null;
-        boolean allBson = true;
+        // Document is itself a Bson, but a plain Document is not a complete update-pipeline stage.
+        // Normalize every element so {field: value} becomes {$set: {field: value}}, while driver-built
+        // Bson stages and operator Documents continue to pass through unchanged.
+        final List<Bson> docs = new ArrayList<>(objList.size());
 
-        for (final Object obj : objList) {
-            if (!(obj instanceof Bson)) {
-                allBson = false;
-                break;
-            }
-        }
-
-        if (allBson) {
-            if (objList instanceof List) {
-                docs = (List<Bson>) objList;
-            } else {
-                docs = new ArrayList<>((Collection<Bson>) objList);
-            }
-        } else {
-            docs = new ArrayList<>(objList.size());
-
-            for (final Object entity : objList) {
-                docs.add(toBson(entity));
-            }
+        for (final Object update : objList) {
+            docs.add(toBson(update));
         }
 
         return docs;

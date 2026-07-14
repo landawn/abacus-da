@@ -120,6 +120,17 @@ public class AnyGetTest extends TestBase {
     }
 
     @Test
+    public void testAddFamily_stringDoesNotShareMutableBytesAcrossOperations() {
+        AnyGet first = AnyGet.of("row-1").addFamily("shared_family");
+        byte[] firstFamily = first.familySet().iterator().next();
+        firstFamily[0] = (byte) 'X';
+
+        AnyGet second = AnyGet.of("row-2").addFamily("shared_family");
+
+        assertArrayEquals(Bytes.toBytes("shared_family"), second.familySet().iterator().next());
+    }
+
+    @Test
     public void testAddFamily_multipleFamilies() {
         AnyGet get = AnyGet.of("row").addFamily("cf1").addFamily("cf2");
         assertEquals(2, get.numFamilies());

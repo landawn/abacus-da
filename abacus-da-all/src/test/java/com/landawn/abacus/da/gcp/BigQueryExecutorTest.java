@@ -528,6 +528,38 @@ public class BigQueryExecutorTest extends TestBase {
         assertTrue(sql.contains("`"), "alias must be backtick-quoted for BigQuery: " + sql);
     }
 
+    /**
+     * A raw GoogleSQL expression may legitimately contain a double-quoted string literal. Alias
+     * normalization must therefore target only the generated {@code AS "alias"} tokens.
+     */
+    @Test
+    public void testQueryPreservesDoubleQuotedLiteralInRawCondition() throws Exception {
+        when(mockTableResult.getTotalRows()).thenReturn(0L);
+        when(mockTableResult.getSchema()).thenReturn(Schema.of(FieldList.of(Field.of("id", StandardSQLTypeName.INT64))));
+        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<FieldValueList>());
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        executor.query(TestEntity.class, Filters.expr("name = \"Alice\""));
+
+        final String sql = captureGeneratedSql();
+        assertTrue(sql.contains("\"Alice\""), "double-quoted string literal must be preserved: " + sql);
+        assertTrue(sql.contains("`"), "generated aliases must still use BigQuery backticks: " + sql);
+    }
+
+    @Test
+    public void testQueryDoesNotRewriteAliasLikeTextInsideLiteral() throws Exception {
+        when(mockTableResult.getTotalRows()).thenReturn(0L);
+        when(mockTableResult.getSchema()).thenReturn(Schema.of(FieldList.of(Field.of("id", StandardSQLTypeName.INT64))));
+        when(mockTableResult.iterateAll()).thenReturn(new ArrayList<FieldValueList>());
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        executor.query(TestEntity.class, Filters.expr("note = 'AS \"not_an_alias\"'"));
+
+        final String sql = captureGeneratedSql();
+        assertTrue(sql.contains("'AS \"not_an_alias\"'"), "quoted raw-expression text must be preserved: " + sql);
+        assertTrue(sql.contains("`"), "generated aliases must still be normalized: " + sql);
+    }
+
     @Test
     public void testExistsWithClassAndIds() throws Exception {
         when(mockTableResult.getTotalRows()).thenReturn(1L);
@@ -2135,6 +2167,11 @@ public class BigQueryExecutorTest extends TestBase {
         Map<String, Object> result = BigQueryExecutor.toMap(row);
         assertNotNull(result);
         assertEquals("x", result.get("a"));
+    }
+
+    @Test
+    public void testGetSchema_NullRowThrowsIllegalArgumentException() {
+        assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.getSchema(null));
     }
 
     // ===== Constructor validation =====

@@ -195,8 +195,6 @@ public final class HBaseExecutor {
             N.max(128, IOUtil.CPU_CORES * 16), // maxThreadPoolSize
             180L, TimeUnit.SECONDS);
 
-    private static final Map<String, byte[]> familyQualifierBytesPool = new ConcurrentHashMap<>();
-
     private static final Map<Class<?>, Method> classRowKeySetMethodPool = new ConcurrentHashMap<>();
 
     private static final Map<Class<?>, Map<NamingPolicy, Map<String, Tuple3<String, String, Boolean>>>> classFamilyColumnNamePool = new ConcurrentHashMap<>();
@@ -236,6 +234,7 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param conn the HBase connection to use for database operations
+     * @throws IllegalArgumentException if {@code conn} is {@code null}
      * @throws UncheckedIOException if obtaining the {@link Admin} interface from the
      *         connection fails with an {@link IOException}
      */
@@ -271,10 +270,14 @@ public final class HBaseExecutor {
      * @param conn the HBase connection to use for database operations; not copied — closing
      *        this executor closes the connection
      * @param asyncExecutor the executor that drives the {@link AsyncHBaseExecutor}
+     * @throws IllegalArgumentException if {@code conn} or {@code asyncExecutor} is {@code null}
      * @throws UncheckedIOException if obtaining the {@link Admin} interface from the
      *         connection fails with an {@link IOException}
      */
     public HBaseExecutor(final Connection conn, final AsyncExecutor asyncExecutor) {
+        N.checkArgNotNull(conn, "conn");
+        N.checkArgNotNull(asyncExecutor, "asyncExecutor");
+
         Admin tmpAdmin = null;
         boolean noException = false;
         try {
@@ -623,18 +626,18 @@ public final class HBaseExecutor {
      * @throws UncheckedIOException if reading from {@code resultScanner} fails with an {@link IOException}
      */
     public static <T> List<T> toList(final ResultScanner resultScanner, int offset, int count, final Class<T> targetType) {
-        N.checkArgument(offset >= 0 && count >= 0, "Offset and count can't be negative");
-
-        final Type<T> type = N.typeOf(targetType);
-
-        final BeanInfo entityInfo = type.isBean() ? ParserUtil.getBeanInfo(targetType) : null;
-        final Method rowKeySetMethod = type.isBean() ? getRowKeySetMethod(targetType) : null;
-        final Type<?> rowKeyType = rowKeySetMethod == null ? null : N.typeOf(rowKeySetMethod.getParameterTypes()[0]);
-        final Map<String, Map<String, Tuple2<String, Boolean>>> familyFieldNameMap = type.isBean() ? getFamilyColumnFieldNameMap(targetType)._1 : null;
-
-        final List<T> resultList = new ArrayList<>();
-
         try {
+            N.checkArgument(offset >= 0 && count >= 0, "Offset and count can't be negative");
+
+            final Type<T> type = N.typeOf(targetType);
+
+            final BeanInfo entityInfo = type.isBean() ? ParserUtil.getBeanInfo(targetType) : null;
+            final Method rowKeySetMethod = type.isBean() ? getRowKeySetMethod(targetType) : null;
+            final Type<?> rowKeyType = rowKeySetMethod == null ? null : N.typeOf(rowKeySetMethod.getParameterTypes()[0]);
+            final Map<String, Map<String, Tuple2<String, Boolean>>> familyFieldNameMap = type.isBean() ? getFamilyColumnFieldNameMap(targetType)._1 : null;
+
+            final List<T> resultList = new ArrayList<>();
+
             while (offset-- > 0 && resultScanner.next() != null) { //NOSONAR
             }
 
@@ -644,13 +647,13 @@ public final class HBaseExecutor {
                 resultList.add(toValue(type, entityInfo, rowKeySetMethod, rowKeyType, familyFieldNameMap, result));
             }
 
+            return resultList;
+
         } catch (final IOException e) {
             throw new UncheckedIOException(e);
         } finally {
             IOUtil.closeQuietly(resultScanner);
         }
-
-        return resultList;
     }
 
     /**
@@ -1952,9 +1955,11 @@ public final class HBaseExecutor {
             public ObjIteratorEx<Result> get() {
                 if (internalIter == null) {
                     final Table table = getTable(tableName);
+                    ResultScanner scannerToClose = null;
 
                     try {
                         final ResultScanner resultScanner = table.getScanner(scan);
+                        scannerToClose = resultScanner;
                         final Iterator<Result> iter = resultScanner.iterator();
 
                         internalIter = new ObjIteratorEx<>() {
@@ -1981,7 +1986,11 @@ public final class HBaseExecutor {
                         throw new UncheckedIOException(e);
                     } finally {
                         if (internalIter == null) {
-                            IOUtil.closeQuietly(table);
+                            try {
+                                IOUtil.closeQuietly(scannerToClose);
+                            } finally {
+                                IOUtil.closeQuietly(table);
+                            }
                         }
                     }
                 }
@@ -2728,8 +2737,9 @@ public final class HBaseExecutor {
     }
 
     /**
-     * Invokes a coprocessor {@link Service} on every region whose row range overlaps
-     * {@code [startRowKey, endRowKey)} and returns the per-region results.
+     * Invokes a coprocessor {@link Service} on every region from the region containing
+     * {@code startRowKey} through the region containing {@code endRowKey}, inclusive, and
+     * returns the per-region results.
      *
      * <p>{@code startRowKey} and {@code endRowKey} are converted to bytes via
      * {@link #toRowKeyBytes(Object)}. The underlying {@link Table} is closed in a
@@ -2740,7 +2750,7 @@ public final class HBaseExecutor {
      * Map<byte[], Long> rowCounts = executor.coprocessorService(
      *         "users", MyService.class, "user_a", "user_z",
      *         instance -> instance.countRows());
-     * // one entry per region overlapping [user_a, user_z); key = region name bytes
+     * // one entry per selected region from user_a through user_z, inclusive; key = region name bytes
      * }</pre>
      *
      * @param <T> the service type
@@ -2748,7 +2758,7 @@ public final class HBaseExecutor {
      * @param tableName the name of the HBase table
      * @param service the service interface class
      * @param startRowKey the start row key (inclusive; {@code null} for unbounded start)
-     * @param endRowKey the end row key (exclusive; {@code null} for unbounded end)
+     * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
      * @param callable the per-region callable to execute
      * @return a map from region name bytes to the result returned by {@code callable} for that region
      * @throws UncheckedIOException if the call fails with an {@link IOException}
@@ -2778,9 +2788,9 @@ public final class HBaseExecutor {
     }
 
     /**
-     * Invokes a coprocessor {@link Service} on every region whose row range overlaps
-     * {@code [startRowKey, endRowKey)}, delivering each per-region result to
-     * {@code callback} as it becomes available.
+     * Invokes a coprocessor {@link Service} on every region from the region containing
+     * {@code startRowKey} through the region containing {@code endRowKey}, inclusive,
+     * delivering each per-region result to {@code callback} as it becomes available.
      *
      * <p>{@code startRowKey} and {@code endRowKey} are converted to bytes via
      * {@link #toRowKeyBytes(Object)}. The underlying {@link Table} is closed in a
@@ -2799,7 +2809,7 @@ public final class HBaseExecutor {
      * @param tableName the name of the HBase table
      * @param service the service interface class
      * @param startRowKey the start row key (inclusive; {@code null} for unbounded start)
-     * @param endRowKey the end row key (exclusive; {@code null} for unbounded end)
+     * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
      * @param callable the per-region callable to execute
      * @param callback the callback that receives each region's result
      * @throws UncheckedIOException if the call fails with an {@link IOException}
@@ -2845,7 +2855,7 @@ public final class HBaseExecutor {
      *         MyRequest.getDefaultInstance(),
      *         "user_a", "user_z",
      *         MyResponse.getDefaultInstance());
-     * // one entry per region overlapping [user_a, user_z); key = region name bytes
+     * // one entry per selected region from user_a through user_z, inclusive; key = region name bytes
      * }</pre>
      *
      * @param <R> the response message type
@@ -2853,7 +2863,7 @@ public final class HBaseExecutor {
      * @param methodDescriptor the Protocol Buffers method descriptor
      * @param request the Protocol Buffers request message
      * @param startRowKey the start row key (inclusive; {@code null} for unbounded start)
-     * @param endRowKey the end row key (exclusive; {@code null} for unbounded end)
+     * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
      * @param responsePrototype the prototype for the response message
      * @return a map of region names (byte arrays) to their corresponding response messages
      * @throws UncheckedIOException if an I/O error occurs during the operation
@@ -2906,7 +2916,7 @@ public final class HBaseExecutor {
      * @param methodDescriptor the Protocol Buffers method descriptor
      * @param request the Protocol Buffers request message
      * @param startRowKey the start row key (inclusive; {@code null} for unbounded start)
-     * @param endRowKey the end row key (exclusive; {@code null} for unbounded end)
+     * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
      * @param responsePrototype the prototype for the response message
      * @param callback the callback to receive response messages from each region
      * @throws UncheckedIOException if an I/O error occurs during the operation
@@ -2939,30 +2949,18 @@ public final class HBaseExecutor {
     }
 
     /**
-     * Converts a column-family or qualifier string to its UTF-8 byte representation,
-     * caching the result in a shared {@link ConcurrentHashMap} keyed by the input string.
+     * Converts a column-family or qualifier string to a fresh UTF-8 byte array.
      *
-     * <p>The cache (an unbounded {@link ConcurrentHashMap}) avoids re-encoding hot family
-     * and qualifier names on every call. Returns {@code null} for a {@code null} input.
-     * The returned array is the shared cached instance and must not be mutated by callers.</p>
+     * <p>A new array is returned on each invocation because HBase operations retain the supplied
+     * family and qualifier arrays and expose them through live maps. Sharing a cached array would
+     * allow mutation of one operation's family map to corrupt unrelated operations created later.
+     * Returns {@code null} for a {@code null} input.</p>
      *
      * @param str the family or qualifier name to encode; may be {@code null}
      * @return the UTF-8 bytes for {@code str}, or {@code null} if {@code str} is {@code null}
      */
     static byte[] toFamilyQualifierBytes(final String str) {
-        if (str == null) {
-            return null; // NOSONAR
-        }
-
-        byte[] bytes = familyQualifierBytesPool.get(str);
-
-        if (bytes == null) {
-            bytes = Bytes.toBytes(str);
-
-            familyQualifierBytesPool.put(str, bytes);
-        }
-
-        return bytes;
+        return str == null ? null : Bytes.toBytes(str);
     }
 
     /**
@@ -3063,17 +3061,40 @@ public final class HBaseExecutor {
      * }
      * }</pre>
      *
-     * @throws IOException if closing {@link Admin} or {@link Connection} fails
+     * @throws IOException if closing {@link Admin} or {@link Connection} fails. If both fail,
+     *         the admin failure is thrown and the connection failure is attached as suppressed.
      */
     public void close() throws IOException {
+        Throwable failure = null;
+
         try {
             if (admin != null) {
                 admin.close();
             }
-        } finally {
+        } catch (final Throwable e) { // close the connection even when Admin.close fails
+            failure = e;
+        }
+
+        try {
             if (conn != null && !conn.isClosed()) {
                 conn.close();
             }
+        } catch (final Throwable e) {
+            if (failure == null) {
+                failure = e;
+            } else {
+                failure.addSuppressed(e);
+            }
+        }
+
+        if (failure instanceof IOException e) {
+            throw e;
+        } else if (failure instanceof RuntimeException e) {
+            throw e;
+        } else if (failure instanceof Error e) {
+            throw e;
+        } else if (failure != null) {
+            throw new IOException(failure);
         }
     }
 
@@ -3738,14 +3759,14 @@ public final class HBaseExecutor {
          * Map<byte[], Long> counts = mapper.coprocessorService(
          *         MyService.class, "user_a", "user_z",
          *         instance -> instance.countRows());
-         * // one entry per region overlapping [user_a, user_z)
+         * // one entry per selected region from user_a through user_z, inclusive
          * }</pre>
          *
          * @param <S> the service type
          * @param <R> the result type
          * @param service the service interface class
          * @param startRowKey the start row key (inclusive; {@code null} for unbounded start)
-         * @param endRowKey the end row key (exclusive; {@code null} for unbounded end)
+         * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
          * @param callable the callable to execute on each region
          * @return a map of region names to their corresponding results
          * @throws UncheckedIOException if an I/O error occurs during the operation
@@ -3774,7 +3795,7 @@ public final class HBaseExecutor {
          * @param <R> the result type
          * @param service the service interface class
          * @param startRowKey the start row key (inclusive)
-         * @param endRowKey the end row key (exclusive)
+         * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
          * @param callable the callable to execute on each region
          * @param callback the callback to receive results from each region
          * @throws UncheckedIOException if an I/O error occurs during the operation
@@ -3798,14 +3819,14 @@ public final class HBaseExecutor {
          *         MyRequest.getDefaultInstance(),
          *         "user_a", "user_z",
          *         MyResponse.getDefaultInstance());
-         * // one entry per region overlapping [user_a, user_z)
+         * // one entry per selected region from user_a through user_z, inclusive
          * }</pre>
          *
          * @param <R> the response message type
          * @param methodDescriptor the Protocol Buffers method descriptor
          * @param request the Protocol Buffers request message
          * @param startRowKey the start row key (inclusive)
-         * @param endRowKey the end row key (exclusive)
+         * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
          * @param responsePrototype the prototype for the response message
          * @return a map of region names to their corresponding response messages
          * @throws UncheckedIOException if an I/O error occurs during the operation
@@ -3835,7 +3856,7 @@ public final class HBaseExecutor {
          * @param methodDescriptor the Protocol Buffers method descriptor
          * @param request the Protocol Buffers request message
          * @param startRowKey the start row key (inclusive)
-         * @param endRowKey the end row key (exclusive)
+         * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
          * @param responsePrototype the prototype for the response message
          * @param callback the callback to receive response messages from each region
          * @throws UncheckedIOException if an I/O error occurs during the operation

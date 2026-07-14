@@ -136,6 +136,18 @@ public class ParsedCqlTest extends TestBase {
     }
 
     @Test
+    public void testParse_BatchNamedParameters() {
+        final ParsedCql parsed = ParsedCql.parse(
+                "BEGIN UNLOGGED BATCH INSERT INTO users (id, name) VALUES (:id1, :name1); INSERT INTO users (id, name) VALUES (:id2, :name2); APPLY BATCH;");
+
+        assertEquals("BEGIN UNLOGGED BATCH INSERT INTO users (id, name) VALUES (?, ?); INSERT INTO users (id, name) VALUES (?, ?); APPLY BATCH",
+                parsed.parameterizedCql());
+        assertEquals(4, parsed.parameterCount());
+        assertEquals("id1", parsed.namedParameters().get(0));
+        assertEquals("name2", parsed.namedParameters().get(3));
+    }
+
+    @Test
     public void testParse_NoParameters() {
         final ParsedCql parsed = ParsedCql.parse("SELECT * FROM users");
         assertEquals(0, parsed.parameterCount());

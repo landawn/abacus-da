@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
@@ -19,6 +20,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
 import java.util.Collections;
@@ -143,11 +145,15 @@ public class HBaseExecutorStaticTest extends TestBase {
     }
 
     @Test
-    public void testToFamilyQualifierBytes_pooled_returnsSameInstance() {
-        // Same string twice -> the internal pool should return the same byte[] reference.
-        byte[] first = HBaseExecutor.toFamilyQualifierBytes("pooled_qualifier_unique_x");
-        byte[] second = HBaseExecutor.toFamilyQualifierBytes("pooled_qualifier_unique_x");
-        assertSame(first, second, "Pool should return the cached byte[] instance");
+    public void testToFamilyQualifierBytes_returnsIndependentArrays() {
+        byte[] first = HBaseExecutor.toFamilyQualifierBytes("qualifier");
+        byte[] second = HBaseExecutor.toFamilyQualifierBytes("qualifier");
+
+        assertArrayEquals(first, second);
+        assertNotSame(first, second, "Mutable family/qualifier bytes must not be shared across operations");
+
+        first[0] = (byte) 'X';
+        assertArrayEquals(Bytes.toBytes("qualifier"), second);
     }
 
     // ---------------------------------------------------------------------
@@ -272,12 +278,14 @@ public class HBaseExecutorStaticTest extends TestBase {
     public void testToList_resultScanner_negativeOffset_throws() {
         ResultScanner scanner = mock(ResultScanner.class);
         assertThrows(IllegalArgumentException.class, () -> HBaseExecutor.toList(scanner, -1, 5, Bean.class));
+        verify(scanner).close();
     }
 
     @Test
     public void testToList_resultScanner_negativeCount_throws() {
         ResultScanner scanner = mock(ResultScanner.class);
         assertThrows(IllegalArgumentException.class, () -> HBaseExecutor.toList(scanner, 0, -1, Bean.class));
+        verify(scanner).close();
     }
 
     @Test
@@ -318,6 +326,15 @@ public class HBaseExecutorStaticTest extends TestBase {
     // ---------------------------------------------------------------------
 
     @Test
+    public void testConstructor_rejectsNullDependencies() throws Exception {
+        assertThrows(IllegalArgumentException.class, () -> new HBaseExecutor(null));
+
+        Connection conn = mock(Connection.class);
+        assertThrows(IllegalArgumentException.class, () -> new HBaseExecutor(conn, null));
+        verify(conn, times(0)).getAdmin();
+    }
+
+    @Test
     public void testConstructor_initializesAdminAndConnection() throws Exception {
         Connection conn = mock(Connection.class);
         Admin admin = mock(Admin.class);
@@ -347,6 +364,26 @@ public class HBaseExecutorStaticTest extends TestBase {
         verify(admin, times(1)).close();
         // Connection close happens only if not already closed.
         verify(conn, atLeastOnce()).isClosed();
+    }
+
+    @Test
+    public void testClose_preservesAdminFailureAndSuppressesConnectionFailure() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        IOException adminFailure = new IOException("admin close failed");
+        IOException connectionFailure = new IOException("connection close failed");
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.isClosed()).thenReturn(false);
+        org.mockito.Mockito.doThrow(adminFailure).when(admin).close();
+        org.mockito.Mockito.doThrow(connectionFailure).when(conn).close();
+
+        HBaseExecutor executor = new HBaseExecutor(conn);
+        IOException actual = assertThrows(IOException.class, executor::close);
+
+        assertSame(adminFailure, actual);
+        assertEquals(1, actual.getSuppressed().length);
+        assertSame(connectionFailure, actual.getSuppressed()[0]);
+        verify(conn).close();
     }
 
     @Test
@@ -1115,6 +1152,30 @@ public class HBaseExecutorStaticTest extends TestBase {
     // ---------------------------------------------------------------------
     // Convenience scan overloads: returned Stream is non-null and closable.
     // ---------------------------------------------------------------------
+
+    @Test
+    public void testScan_iteratorInitializationFailure_closesScannerAndTable() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        ResultScanner scanner = mock(ResultScanner.class);
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+        when(table.getScanner(any(org.apache.hadoop.hbase.client.Scan.class))).thenReturn(scanner);
+        when(scanner.iterator()).thenThrow(new IllegalStateException("iterator failed"));
+
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
+            try (var stream = executor.scan("tbl", new org.apache.hadoop.hbase.client.Scan())) {
+                assertThrows(IllegalStateException.class, stream::count);
+            }
+
+            verify(scanner).close();
+            verify(table).close();
+        } finally {
+            executor.close();
+        }
+    }
 
     @Test
     public void testScan_byTableAndFamilyString_returnsStream() throws Exception {

@@ -790,7 +790,7 @@ public class CqlBuilderTest extends TestBase {
     @Test
     public void testNSB_batchInsert() {
         final String cql = NSB.batchInsert(N.asList(N.asMap("firstName", "a"), N.asMap("firstName", "b"))).into("account").build().query();
-        assertTrue(cql.startsWith("INSERT INTO account"), cql);
+        assertTrue(cql.startsWith("BEGIN BATCH INSERT INTO account"), cql);
         assertTrue(cql.contains("firstName"), cql);
     }
 
@@ -1078,7 +1078,7 @@ public class CqlBuilderTest extends TestBase {
     @Test
     public void testPSB_batchInsert() {
         final String cql = PSB.batchInsert(N.asList(N.asMap("firstName", "a"), N.asMap("firstName", "b"))).into("account").build().query();
-        assertTrue(cql.startsWith("INSERT INTO account"), cql);
+        assertTrue(cql.startsWith("BEGIN BATCH INSERT INTO account"), cql);
     }
 
     @Test
@@ -2719,7 +2719,7 @@ public class CqlBuilderTest extends TestBase {
     @Test
     public void testNSC_batchInsert() {
         final String cql = NSC.batchInsert(N.asList(N.asMap("firstName", "a"), N.asMap("firstName", "b"))).into("account").build().query();
-        assertTrue(cql.startsWith("INSERT INTO account"), cql);
+        assertTrue(cql.startsWith("BEGIN BATCH INSERT INTO account"), cql);
         assertTrue(cql.contains("first_name"), cql);
     }
 
@@ -3050,7 +3050,7 @@ public class CqlBuilderTest extends TestBase {
     @Test
     public void testPSC_batchInsert() {
         final String cql = PSC.batchInsert(N.asList(N.asMap("firstName", "a"), N.asMap("firstName", "b"))).into("account").build().query();
-        assertTrue(cql.startsWith("INSERT INTO account"), cql);
+        assertTrue(cql.startsWith("BEGIN BATCH INSERT INTO account"), cql);
         assertTrue(cql.contains("first_name"), cql);
     }
 

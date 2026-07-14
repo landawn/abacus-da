@@ -2,6 +2,7 @@ package com.landawn.abacus.da.cassandra;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -16,6 +17,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.nio.ByteBuffer;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -24,6 +26,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.datastax.oss.driver.api.core.CqlSession;
+import com.datastax.oss.driver.api.core.ProtocolVersion;
 import com.datastax.oss.driver.api.core.cql.AsyncResultSet;
 import com.datastax.oss.driver.api.core.cql.BoundStatement;
 import com.datastax.oss.driver.api.core.cql.ColumnDefinition;
@@ -116,6 +119,30 @@ public class CassandraExecutor01Test extends TestBase {
     @Test
     public void testSession() {
         assertEquals(mockSession, executor.session());
+    }
+
+    @Test
+    public void testPrepareStatementWithoutRequiredParametersThrows() {
+        final String query = "SELECT * FROM users WHERE id = ?";
+
+        final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> executor.prepareStatement(query));
+        assertTrue(ex.getMessage().contains("expected 1"), ex.getMessage());
+    }
+
+    @Test
+    public void testStringCodecHonorsCqlLiteralAndNullContracts() {
+        final CassandraExecutor.StringCodec<TestEntity> codec = new CassandraExecutor.StringCodec<>(TestEntity.class);
+        final TestEntity entity = new TestEntity();
+        entity.setId(11L);
+        entity.setName("O'Brien");
+
+        final String literal = codec.format(entity);
+        assertTrue(literal.startsWith("'") && literal.endsWith("'"), literal);
+        assertEquals(entity.getName(), codec.parse(literal).getName());
+
+        final ByteBuffer encodedNull = codec.encode(null, ProtocolVersion.DEFAULT);
+        assertNull(encodedNull);
+        assertNull(codec.decode(null, ProtocolVersion.DEFAULT));
     }
 
     @Test

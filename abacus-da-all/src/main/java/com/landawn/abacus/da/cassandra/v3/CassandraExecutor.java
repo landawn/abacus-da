@@ -782,7 +782,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * <ul>
      * <li><strong>Direct mapping:</strong> Column names matching property names exactly</li>
      * <li><strong>Naming-policy mapping:</strong> Column-to-property name resolution via
-     *     {@link QueryUtil#getColumn2PropNameMap(Class)} (e.g., snake_case columns to camelCase properties)</li>
+     *     {@link QueryUtil#columnToPropNameMap(Class)} (e.g., snake_case columns to camelCase properties)</li>
      * <li><strong>Nested properties:</strong> Dot-notation property paths (e.g., {@code "address.city"})
      *     when no direct property is found</li>
      * <li><strong>Null values:</strong> {@code null} column values are written through as {@code null}</li>
@@ -1756,18 +1756,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         N.checkArgument(N.notEmpty(propsList), "'propsList' can't be null or empty.");
         N.checkElementNotNull(propsList);
 
-        final Set<String> primaryKeyNames = getKeyNameSet(targetClass);
         final BatchStatement stmt = prepareBatchStatement(type);
 
         for (final Map<String, Object> props : propsList) {
-            final Map<String, Object> tmp = new HashMap<>(props);
-            final List<Condition> conds = new ArrayList<>(primaryKeyNames.size());
-
-            for (final String keyName : primaryKeyNames) {
-                conds.add(Filters.eq(keyName, tmp.remove(keyName)));
-            }
-
-            final SP cp = prepareUpdate(targetClass, tmp, Filters.and(conds));
+            final SP cp = prepareBatchMapUpdate(targetClass, props);
             stmt.add(prepareStatement(cp.query(), cp.parameters().toArray()));
         }
 
@@ -1833,6 +1825,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      */
     @Override
     protected Statement prepareStatement(final String query) {
+        N.checkArgNotNull(query, "query");
+
         Statement stmt = null;
 
         if (query.length() <= POOLABLE_LENGTH) {
@@ -1846,7 +1840,14 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         if (stmt == null) {
             final ParsedCql parseCql = parseCql(query);
             final String cql = parseCql.parameterizedCql();
-            stmt = bind(prepare(cql));
+            final int parameterCount = parseCql.parameterCount();
+
+            if (parameterCount > 0) {
+                throw new IllegalArgumentException("No parameters supplied for parameterized query: expected " + parameterCount + " for query: " + query);
+            }
+
+            final PreparedStatement preparedStatement = prepare(cql);
+            stmt = bind(preparedStatement);
 
             if (query.length() <= POOLABLE_LENGTH) {
                 statementPool.put(query, Poolable.wrap(stmt));
@@ -1928,7 +1929,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             } else if (parameters[0] instanceof List && ((List<Object>) parameters[0]).size() == 1) {
                 final Object tmp = ((List<Object>) parameters[0]).get(0);
 
-                if (tmp == null || (javaClazz.isAssignableFrom(tmp.getClass()) || codecRegistry.codecFor(colType).accepts(tmp))) {
+                if (tmp == null || ((javaClazz != null && javaClazz.isAssignableFrom(tmp.getClass())) || codecRegistry.codecFor(colType).accepts(tmp))) {
                     return bind(preStmt, tmp);
                 }
             }
@@ -2597,9 +2598,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * <p>On encode, the value is converted to JSON via {@code N.toJson(value)}; on
      * decode, the column text is parsed back into {@code T} via {@code N.fromJson(...)}.
-     * A {@code null} reference round-trips as the literal {@code "NULL"}
-     * ({@code TypeCodec#NULL_STR}) for the string forms. This is the codec implementation
-     * used by {@link CassandraExecutor#registerTypeCodec(Class)}.</p>
+     * The driver-facing string methods delegate CQL quoting and escaping to the underlying
+     * {@code varchar} codec. A {@code null} reference is represented by the unquoted
+     * {@code NULL} literal in string form and by a {@code null} buffer in binary form.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2658,56 +2659,55 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
 
         /**
-         * Parses a JSON string into a Java object of type {@code T}.
+         * Parses a CQL {@code varchar} literal into a Java object of type {@code T}.
          *
-         * <p>An empty string or the literal {@code "NULL"} ({@code TypeCodec#NULL_STR}) is
-         * decoded as {@code null}.</p>
+         * <p>The underlying {@code varchar} codec first removes CQL quoting and unescapes the
+         * JSON payload. An empty input or the unquoted {@code NULL} literal is decoded as
+         * {@code null}.</p>
          *
-         * @param value the string to parse
+         * @param value the CQL text literal to parse
          * @return the parsed object, or {@code null} for empty/{@code "NULL"} input
          * @throws InvalidTypeException if the string is not valid JSON for {@code T}
          */
         @Override
         public T parse(final String value) throws InvalidTypeException {
-            return Strings.isEmpty(value) || NULL_STR.equals(value) ? null : N.fromJson(value, javaClazz);
+            return Strings.isEmpty(value) || NULL_STR.equals(value) ? null : deserialize(stringTypeCodec.parse(value));
         }
 
         /**
-         * Formats a Java object as a JSON string.
+         * Formats a Java object as a CQL {@code varchar} literal containing JSON.
          *
-         * <p>A {@code null} value is rendered as the literal {@code "NULL"}
-         * ({@code TypeCodec#NULL_STR}).</p>
+         * <p>The underlying {@code varchar} codec quotes and escapes the serialized JSON. A
+         * {@code null} value is rendered as the unquoted {@code NULL} literal.</p>
          *
          * @param value the value to format
-         * @return the JSON string (or {@code "NULL"} if {@code value} is {@code null})
+         * @return a quoted CQL text literal, or {@code NULL} if {@code value} is {@code null}
          */
         @Override
         public String format(final T value) throws InvalidTypeException {
-            return value == null ? NULL_STR : N.toJson(value);
+            return value == null ? NULL_STR : stringTypeCodec.format(serialize(value));
         }
 
         /**
          * Encodes a Java object to its JSON string form. Equivalent to
-         * {@code N.toJson(value)}; does not apply the {@code "NULL"} sentinel
-         * used by {@link #format(Object)}.
+         * {@code N.toJson(value)}; it does not apply CQL literal quoting.
          *
          * @param value the value to serialize
-         * @return the JSON string representation
+         * @return the JSON payload, or {@code null} for a {@code null} value
          */
         protected String serialize(final T value) {
-            return N.toJson(value);
+            return value == null ? null : N.toJson(value);
         }
 
         /**
          * Decodes a JSON string back into a Java object. Equivalent to
-         * {@code N.fromJson(value, javaClazz)}; does not handle the {@code "NULL"}
-         * sentinel used by {@link #parse(String)}.
+         * {@code N.fromJson(value, javaClazz)}.
          *
          * @param value the JSON string to deserialize
-         * @return the deserialized object
+         * @return the deserialized object, or {@code null} for a {@code null} payload
          */
         protected T deserialize(final String value) {
-            return N.fromJson(value, javaClazz);
+            return value == null ? null : N.fromJson(value, javaClazz);
         }
     }
 

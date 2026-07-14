@@ -4332,6 +4332,8 @@ public final class DynamoDBExecutor {
         }
 
         private Map<String, AttributeValue> createKey(final T entity) {
+            N.checkArgNotNull(entity, "entity");
+
             final Map<String, AttributeValue> key = new HashMap<>(keyPropNames.size());
 
             for (int i = 0, len = keyPropNames.size(); i < len; i++) {
@@ -4342,6 +4344,8 @@ public final class DynamoDBExecutor {
         }
 
         private Map<String, AttributeValueUpdate> createUpdateItem(final T entity) {
+            N.checkArgNotNull(entity, "entity");
+
             final Map<String, AttributeValueUpdate> attributeUpdates = DynamoDBExecutor.toUpdateItem(entity, namingPolicy);
 
             for (final String keyPropName : keyPropNames) {
@@ -4352,6 +4356,8 @@ public final class DynamoDBExecutor {
         }
 
         private Map<String, KeysAndAttributes> createKeys(final Collection<? extends T> entities) {
+            N.checkArgNotNull(entities, "entities");
+
             final List<Map<String, AttributeValue>> keys = new ArrayList<>(entities.size());
 
             for (final T entity : entities) {
@@ -4362,9 +4368,12 @@ public final class DynamoDBExecutor {
         }
 
         private Map<String, List<WriteRequest>> createBatchPutRequest(final Collection<? extends T> entities) {
+            N.checkArgNotNull(entities, "entities");
+
             final List<WriteRequest> keys = new ArrayList<>(entities.size());
 
             for (final T entity : entities) {
+                N.checkArgNotNull(entity, "entity");
                 keys.add(WriteRequest.builder().putRequest(PutRequest.builder().item(toItem(entity, namingPolicy)).build()).build());
             }
 
@@ -4372,6 +4381,8 @@ public final class DynamoDBExecutor {
         }
 
         private Map<String, List<WriteRequest>> createBatchDeleteRequest(final Collection<? extends T> entities) {
+            N.checkArgNotNull(entities, "entities");
+
             final List<WriteRequest> keys = new ArrayList<>(entities.size());
 
             for (final T entity : entities) {
@@ -4382,6 +4393,8 @@ public final class DynamoDBExecutor {
         }
 
         private GetItemRequest checkItem(final GetItemRequest item) {
+            N.checkArgNotNull(item, "getItemRequest");
+
             if (Strings.isEmpty(item.tableName())) {
                 return item.copy(builder -> builder.tableName(tableName));
             } else {
@@ -4392,6 +4405,8 @@ public final class DynamoDBExecutor {
         }
 
         private BatchGetItemRequest checkItem(final BatchGetItemRequest item) {
+            N.checkArgNotNull(item, "batchGetItemRequest");
+
             if (item.requestItems() != null) {
                 for (final String tableNameInRequest : item.requestItems().keySet()) {
                     checkTableName(tableNameInRequest);
@@ -4403,6 +4418,8 @@ public final class DynamoDBExecutor {
         }
 
         private BatchWriteItemRequest checkItem(final BatchWriteItemRequest item) {
+            N.checkArgNotNull(item, "batchWriteItemRequest");
+
             if (item.requestItems() != null) {
                 for (final String tableNameInRequest : item.requestItems().keySet()) {
                     checkTableName(tableNameInRequest);
@@ -4413,6 +4430,8 @@ public final class DynamoDBExecutor {
         }
 
         private PutItemRequest checkItem(final PutItemRequest item) {
+            N.checkArgNotNull(item, "putItemRequest");
+
             if (Strings.isEmpty(item.tableName())) {
                 return item.copy(builder -> builder.tableName(tableName));
             } else {
@@ -4423,6 +4442,8 @@ public final class DynamoDBExecutor {
         }
 
         private UpdateItemRequest checkItem(final UpdateItemRequest item) {
+            N.checkArgNotNull(item, "updateItemRequest");
+
             if (Strings.isEmpty(item.tableName())) {
                 return item.copy(builder -> builder.tableName(tableName));
             } else {
@@ -4433,6 +4454,8 @@ public final class DynamoDBExecutor {
         }
 
         private DeleteItemRequest checkItem(final DeleteItemRequest item) {
+            N.checkArgNotNull(item, "deleteItemRequest");
+
             if (Strings.isEmpty(item.tableName())) {
                 return item.copy(builder -> builder.tableName(tableName));
             } else {
@@ -4443,6 +4466,8 @@ public final class DynamoDBExecutor {
         }
 
         private QueryRequest checkQueryRequest(final QueryRequest queryRequest) {
+            N.checkArgNotNull(queryRequest, "queryRequest");
+
             if (Strings.isEmpty(queryRequest.tableName())) {
                 return queryRequest.copy(builder -> builder.tableName(tableName));
             } else {
@@ -4453,6 +4478,8 @@ public final class DynamoDBExecutor {
         }
 
         private ScanRequest checkScanRequest(final ScanRequest scanRequest) {
+            N.checkArgNotNull(scanRequest, "scanRequest");
+
             if (Strings.isEmpty(scanRequest.tableName())) {
                 return scanRequest.copy(builder -> builder.tableName(tableName));
             } else {
