@@ -41,7 +41,7 @@ import com.landawn.abacus.query.condition.Binary;
 import com.landawn.abacus.query.condition.Cell;
 import com.landawn.abacus.query.condition.ComposableCell;
 import com.landawn.abacus.query.condition.Condition;
-import com.landawn.abacus.query.condition.Expression;
+import com.landawn.abacus.query.condition.SqlExpression;
 import com.landawn.abacus.query.condition.Having;
 import com.landawn.abacus.query.condition.In;
 import com.landawn.abacus.query.condition.InSubQuery;
@@ -194,6 +194,56 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      */
     protected CqlBuilder(final SqlDialect sqlDialect) {
         super(sqlDialect);
+    }
+
+    @Override
+    public CqlBuilder into(final String tableName) {
+        if (N.isEmpty(_propsList)) {
+            return super.into(tableName);
+        }
+
+        N.checkArgNotEmpty(tableName, "tableName");
+
+        final String normalizedTableName = tableName.trim();
+        N.checkArgNotEmpty(normalizedTableName, "tableName");
+
+        if (_op != OperationType.ADD) {
+            throw new IllegalStateException("Invalid operation for batch insert: " + _op);
+        }
+
+        if (!_sb.isEmpty()) {
+            throw new IllegalStateException("into() can only be called once and before any other CQL-emitting method");
+        }
+
+        _tableName = normalizedTableName;
+
+        final Collection<String> insertColumnNames = _propsList.iterator().next().keySet();
+
+        _sb.append("BEGIN BATCH");
+
+        int rowIndex = 0;
+
+        for (final Map<String, Object> props : _propsList) {
+            _sb.append(" INSERT INTO ").append(normalizedTableName).append(" (");
+
+            int columnIndex = 0;
+
+            for (final String columnName : insertColumnNames) {
+                if (columnIndex++ > 0) {
+                    _sb.append(", ");
+                }
+
+                appendColumnName(columnName);
+            }
+
+            _sb.append(") VALUES (");
+            appendInsertProps(props, insertColumnNames, rowIndex++);
+            _sb.append(");");
+        }
+
+        _sb.append(" APPLY BATCH");
+
+        return this;
     }
 
     /**
@@ -354,6 +404,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @throws IllegalArgumentException if timestamp is null
      * @throws ArithmeticException if the timestamp in microseconds overflows a {@code long}
      * @see #usingTimestamp(long)
+     * @see #usingTimestampMicros(long)
      * @see #usingTimestamp(String)
      */
     public CqlBuilder usingTimestamp(final Date timestamp) {
@@ -363,11 +414,12 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     }
 
     /**
-     * Adds a USING TIMESTAMP clause to the CQL statement with the specified timestamp in milliseconds.
+     * Adds a USING TIMESTAMP clause from a timestamp expressed in <strong>milliseconds</strong>.
      *
      * <p>The TIMESTAMP clause allows you to specify the exact timestamp for the operation in microseconds
-     * since the Unix epoch. This method accepts milliseconds and converts them to the appropriate format
-     * for Cassandra by delegating to {@link #usingTimestamp(String)}.</p>
+     * since the Unix epoch. For compatibility with the conventional Java epoch unit, this overload accepts
+     * milliseconds, converts them to microseconds, and delegates to {@link #usingTimestampMicros(long)}.
+     * Call {@code usingTimestampMicros(long)} when the value is already in CQL's native unit.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -380,14 +432,41 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * // Output: UPDATE users USING TIMESTAMP <microseconds> SET last_login = ? WHERE id = ?
      * }</pre>
      *
-     * @param timestamp the timestamp in milliseconds since Unix epoch
+     * @param timestampMillis the timestamp in milliseconds since the Unix epoch; this value is multiplied by 1,000
      * @return this CqlBuilder instance for method chaining
-     * @throws ArithmeticException if the timestamp in microseconds ({@code timestamp * 1000}) overflows a {@code long}
+     * @throws ArithmeticException if {@code timestampMillis * 1000} overflows a {@code long}
+     * @see #usingTimestamp(Date)
+     * @see #usingTimestampMicros(long)
+     * @see #usingTimestamp(String)
+     */
+    public CqlBuilder usingTimestamp(final long timestampMillis) {
+        return usingTimestampMicros(Math.multiplyExact(timestampMillis, 1000L));
+    }
+
+    /**
+     * Adds a USING TIMESTAMP clause from a timestamp expressed in <strong>microseconds</strong>,
+     * the unit required by CQL.
+     *
+     * <p>No unit conversion is performed.</p>
+     *
+     * <p><b>Usage Example:</b></p>
+     * <pre>{@code
+     * long timestampMicros = 1_725_000_000_123_456L;
+     * String cql = PSC.insert("id", "data")
+     *                 .into("events")
+     *                 .usingTimestampMicros(timestampMicros)
+     *                 .build().query();
+     * // Output: INSERT INTO events (id, data) VALUES (?, ?) USING TIMESTAMP 1725000000123456
+     * }</pre>
+     *
+     * @param timestampMicros the timestamp in microseconds since the Unix epoch
+     * @return this CqlBuilder instance for method chaining
+     * @see #usingTimestamp(long)
      * @see #usingTimestamp(Date)
      * @see #usingTimestamp(String)
      */
-    public CqlBuilder usingTimestamp(final long timestamp) {
-        return usingTimestamp(String.valueOf(Math.multiplyExact(timestamp, 1000L)));
+    public CqlBuilder usingTimestampMicros(final long timestampMicros) {
+        return usingTimestamp(String.valueOf(timestampMicros));
     }
 
     /**
@@ -417,6 +496,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @return this CqlBuilder instance for method chaining
      * @see #usingTimestamp(Date)
      * @see #usingTimestamp(long)
+     * @see #usingTimestampMicros(long)
      */
     public CqlBuilder usingTimestamp(final String timestamp) {
         appendUsingOption(TIMESTAMP, timestamp);
@@ -435,9 +515,32 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         checkInsertClauseOrder();
 
         final String cql = _sb.toString();
+        final String option = optionName + _SPACE + optionValue;
+
+        if (isBatchInsert()) {
+            final List<Integer> insertionIndexes = new ArrayList<>();
+            final List<String> prefixes = new ArrayList<>();
+            int statementStart = "BEGIN BATCH".length();
+            int statementEnd = cql.indexOf(';', statementStart);
+
+            while (statementEnd >= 0) {
+                final int usingIndex = cql.indexOf(SPACE_USING, statementStart);
+
+                insertionIndexes.add(statementEnd);
+                prefixes.add(usingIndex >= 0 && usingIndex < statementEnd ? " AND " : SPACE_USING);
+                statementStart = statementEnd + 1;
+                statementEnd = cql.indexOf(';', statementStart);
+            }
+
+            for (int i = insertionIndexes.size() - 1; i >= 0; i--) {
+                _sb.insert(insertionIndexes.get(i), prefixes.get(i) + option);
+            }
+
+            return;
+        }
+
         final int insertionIndex = findUsingInsertionIndex(cql);
         final int usingIndex = cql.indexOf(SPACE_USING);
-        final String option = optionName + _SPACE + optionValue;
 
         if (usingIndex >= 0 && usingIndex < insertionIndex) {
             _sb.insert(insertionIndex, _SPACE_AND_SPACE);
@@ -502,6 +605,27 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     }
 
     private void appendIfClause(final char[] ifClause) {
+        if (isBatchInsert()) {
+            final String cql = _sb.toString();
+            final List<Integer> insertionIndexes = new ArrayList<>();
+            int statementStart = "BEGIN BATCH".length();
+            int statementEnd = cql.indexOf(';', statementStart);
+
+            while (statementEnd >= 0) {
+                final int usingIndex = cql.indexOf(SPACE_USING, statementStart);
+
+                insertionIndexes.add(usingIndex >= 0 && usingIndex < statementEnd ? usingIndex : statementEnd);
+                statementStart = statementEnd + 1;
+                statementEnd = cql.indexOf(';', statementStart);
+            }
+
+            for (int i = insertionIndexes.size() - 1; i >= 0; i--) {
+                _sb.insert(insertionIndexes.get(i), ifClause);
+            }
+
+            return;
+        }
+
         // For INSERT the CQL grammar is "... VALUES (...) [IF NOT EXISTS] [USING ...]": the IF clause
         // must precede any USING clause already emitted.
         if (_op == OperationType.ADD) {
@@ -514,6 +638,10 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         }
 
         _sb.append(ifClause);
+    }
+
+    private boolean isBatchInsert() {
+        return N.notEmpty(_propsList) && _sb.toString().startsWith("BEGIN BATCH");
     }
 
     /**
@@ -795,7 +923,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         //    }
 
         if (cond instanceof final Binary binary) {
-            final String propName = binary.getPropName();
+            final String propName = binary.propName();
 
             appendColumnName(propName);
 
@@ -803,10 +931,10 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             _sb.append(binary.operator().toString());
             _sb.append(_SPACE);
 
-            final Object propValue = binary.getPropValue();
+            final Object propValue = binary.propValue();
             setParameter(propName, propValue);
         } else if (cond instanceof final Between bt) {
-            final String propName = bt.getPropName();
+            final String propName = bt.propName();
 
             appendColumnName(propName);
 
@@ -814,7 +942,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             _sb.append(bt.operator().toString());
             _sb.append(_SPACE);
 
-            final Object minValue = bt.getMinValue();
+            final Object minValue = bt.minValue();
             if (_sqlPolicy == SqlPolicy.NAMED_SQL || _sqlPolicy == SqlPolicy.IBATIS_SQL) {
                 setParameter("min" + Strings.capitalize(sanitizeNamedParameterName(propName)), minValue);
             } else {
@@ -825,14 +953,14 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             _sb.append(SK.AND);
             _sb.append(_SPACE);
 
-            final Object maxValue = bt.getMaxValue();
+            final Object maxValue = bt.maxValue();
             if (_sqlPolicy == SqlPolicy.NAMED_SQL || _sqlPolicy == SqlPolicy.IBATIS_SQL) {
                 setParameter("max" + Strings.capitalize(sanitizeNamedParameterName(propName)), maxValue);
             } else {
                 setParameter(propName, maxValue);
             }
         } else if (cond instanceof final NotBetween nbt) {
-            final String propName = nbt.getPropName();
+            final String propName = nbt.propName();
 
             appendColumnName(propName);
 
@@ -840,7 +968,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             _sb.append(nbt.operator().toString());
             _sb.append(_SPACE);
 
-            final Object minValue = nbt.getMinValue();
+            final Object minValue = nbt.minValue();
             if (_sqlPolicy == SqlPolicy.NAMED_SQL || _sqlPolicy == SqlPolicy.IBATIS_SQL) {
                 setParameter("min" + Strings.capitalize(sanitizeNamedParameterName(propName)), minValue);
             } else {
@@ -851,17 +979,17 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             _sb.append(SK.AND);
             _sb.append(_SPACE);
 
-            final Object maxValue = nbt.getMaxValue();
+            final Object maxValue = nbt.maxValue();
             if (_sqlPolicy == SqlPolicy.NAMED_SQL || _sqlPolicy == SqlPolicy.IBATIS_SQL) {
                 setParameter("max" + Strings.capitalize(sanitizeNamedParameterName(propName)), maxValue);
             } else {
                 setParameter(propName, maxValue);
             }
         } else if (cond instanceof final In in) {
-            final String propName = in.getPropName();
-            // getValues(), not getParameters(): getParameters() splices Condition-typed elements into
+            final String propName = in.propName();
+            // values(), not parameters(): parameters() splices Condition-typed elements into
             // their flattened parameter values, silently changing the placeholder count of the IN list.
-            final List<?> params = in.getValues();
+            final List<?> params = in.values();
 
             appendColumnName(propName);
 
@@ -883,7 +1011,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
             _sb.append(SK._PARENTHESIS_R);
         } else if (cond instanceof final InSubQuery inSubQuery) {
-            final Collection<String> propNames = inSubQuery.getPropNames();
+            final Collection<String> propNames = inSubQuery.propNames();
 
             if (propNames.size() == 1) {
                 appendColumnName(propNames.iterator().next());
@@ -908,13 +1036,13 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
             _sb.append(SK.SPACE_PARENTHESIS_L);
 
-            appendCondition(inSubQuery.getSubQuery());
+            appendCondition(inSubQuery.subQuery());
 
             _sb.append(SK._PARENTHESIS_R);
         } else if (cond instanceof final NotIn notIn) {
-            final String propName = notIn.getPropName();
-            // getValues(), not getParameters(): see the In branch above.
-            final List<?> params = notIn.getValues();
+            final String propName = notIn.propName();
+            // values(), not parameters(): see the In branch above.
+            final List<?> params = notIn.values();
 
             appendColumnName(propName);
 
@@ -936,7 +1064,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
             _sb.append(SK._PARENTHESIS_R);
         } else if (cond instanceof final NotInSubQuery notInSubQuery) {
-            final Collection<String> propNames = notInSubQuery.getPropNames();
+            final Collection<String> propNames = notInSubQuery.propNames();
 
             if (propNames.size() == 1) {
                 appendColumnName(propNames.iterator().next());
@@ -960,7 +1088,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             _sb.append(notInSubQuery.operator().toString());
             _sb.append(SK.SPACE_PARENTHESIS_L);
 
-            appendCondition(notInSubQuery.getSubQuery());
+            appendCondition(notInSubQuery.subQuery());
 
             _sb.append(SK._PARENTHESIS_R);
         } else if (cond instanceof Where || cond instanceof Having) {
@@ -970,14 +1098,14 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             _sb.append(cell.operator().toString());
             _sb.append(_SPACE);
 
-            appendCondition(cell.getCondition());
+            appendCondition(cell.condition());
         } else if (cond instanceof final Cell cell) {
             _sb.append(_SPACE);
             _sb.append(cell.operator().toString());
             _sb.append(_SPACE);
 
             _sb.append(_PARENTHESIS_L);
-            appendCondition(cell.getCondition());
+            appendCondition(cell.condition());
             _sb.append(_PARENTHESIS_R);
         } else if (cond instanceof final ComposableCell cell) {
             // Handles Not / Exists / NotExists / Any / All / Some — these extend ComposableCell, not Cell,
@@ -988,10 +1116,10 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             _sb.append(_SPACE);
 
             _sb.append(_PARENTHESIS_L);
-            appendCondition(cell.getCondition());
+            appendCondition(cell.condition());
             _sb.append(_PARENTHESIS_R);
         } else if (cond instanceof final Junction junction) {
-            final List<Condition> conditionList = junction.getConditions();
+            final List<Condition> conditionList = junction.conditions();
 
             if (N.isEmpty(conditionList)) {
                 throw new IllegalArgumentException("The junction condition(" + junction.operator().toString() + ") doesn't include any element.");
@@ -1031,10 +1159,10 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
                 // sb.append(_PARENTHESIS_R);
             }
         } else if (cond instanceof final SubQuery subQuery) {
-            final Condition subCond = subQuery.getCondition();
+            final Condition subCond = subQuery.condition();
 
-            if (Strings.isNotEmpty(subQuery.sql())) {
-                _sb.append(subQuery.sql());
+            if (Strings.isNotEmpty(subQuery.rawSql())) {
+                _sb.append(subQuery.rawSql());
             } else {
                 // Render through a sub-builder and keep its bind parameters: appending only the query text
                 // dropped the subquery's parameters, leaving '?' placeholders with no bound values (and, for
@@ -1056,9 +1184,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
                     _parameters.addAll(subSP.parameters());
                 }
             }
-        } else if (cond instanceof Expression) {
-            // Note: Any literal written in Expression condition won't be formalized according to naming policy.
-            appendStringExpr(((Expression) cond).getLiteral(), false);
+        } else if (cond instanceof SqlExpression) {
+            // Note: Any literal written in SqlExpression condition won't be formalized according to naming policy.
+            appendStringExpr(((SqlExpression) cond).literal(), false);
         } else {
             throw new IllegalArgumentException("Unsupported condition: " + cond.toString());
         }
@@ -1074,18 +1202,18 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @throws IllegalArgumentException if {@code subQuery} has no selected property/column names
      */
     private CqlBuilder newSubQueryBuilder(final SubQuery subQuery) {
-        final Collection<String> selectPropNames = subQuery.getSelectPropNames();
+        final Collection<String> selectPropNames = subQuery.selectPropNames();
         N.checkArgNotEmpty(selectPropNames, SELECTION_PART_MSG);
 
         final CqlBuilder subBuilder = new CqlBuilder(sqlDialect);
         subBuilder._op = OperationType.QUERY;
         subBuilder._propOrColumnNames = selectPropNames;
 
-        if (subQuery.getEntityClass() != null) {
-            return subBuilder.from(subQuery.getEntityClass());
+        if (subQuery.entityClass() != null) {
+            return subBuilder.from(subQuery.entityClass());
         }
 
-        return subBuilder.from(subQuery.getEntityName());
+        return subBuilder.from(subQuery.entityName());
     }
 
     private static void validateColumnAliases(final Map<String, String> propOrColumnNameAliases) {
@@ -1103,7 +1231,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         // the documented contract for delete(Class). Id props are removed as well because Cassandra
         // rejects DELETE on primary-key columns.
         final List<String> propNames = new ArrayList<>(val[2]);
-        propNames.removeAll(QueryUtil.getIdPropNames(entityClass));
+        propNames.removeAll(QueryUtil.idPropNames(entityClass));
 
         if (N.notEmpty(excludedPropNames)) {
             propNames.removeAll(excludedPropNames);
@@ -1477,7 +1605,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
             instance._op = OperationType.ADD;
             instance.setEntityClass(entityClass);
-            instance._propOrColumnNames = QueryUtil.getInsertPropNames(entityClass, excludedPropNames);
+            instance._propOrColumnNames = QueryUtil.insertPropNames(entityClass, excludedPropNames);
 
             return instance;
         }
@@ -1526,15 +1654,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         }
 
         /**
-         * Generates a multi-row batch INSERT statement.
+         * Generates a Cassandra batch containing one INSERT statement per supplied row.
          *
-         * <p>This method creates a single INSERT statement that contains multiple value sets,
-         * which can be more efficient than issuing multiple individual INSERT statements.</p>
-         *
-         * <p><b>Note:</b> This is a Cassandra {@code CqlBuilder} but the generated SQL form
-         * (a single INSERT with multiple VALUES tuples) is not part of standard CQL; this
-         * method is provided for parity with the SQL builder and is marked {@code @Beta}.
-         * Use Cassandra BATCH statements when batching multiple INSERTs against Cassandra.</p>
+         * <p>The generated CQL uses Cassandra's {@code BEGIN BATCH ... APPLY BATCH} syntax.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -1545,7 +1667,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * );
          *
          * SP cqlPair = PSC.batchInsert(accounts).into("account").build();
-         * // cqlPair.query():      INSERT INTO account (first_name, last_name) VALUES (?, ?), (?, ?), (?, ?)
+         * // cqlPair.query():      BEGIN BATCH INSERT INTO account (first_name, last_name) VALUES (?, ?);
+         * //                       INSERT INTO account (first_name, last_name) VALUES (?, ?);
+         * //                       INSERT INTO account (first_name, last_name) VALUES (?, ?); APPLY BATCH
          * // cqlPair.parameters(): ["John", "Doe", "Jane", "Smith", "Bob", "Johnson"]
          * }</pre>
          *
@@ -1691,7 +1815,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             instance._op = OperationType.UPDATE;
             instance.setEntityClass(entityClass);
             instance._tableName = getTableName(entityClass, instance._namingPolicy);
-            instance._propOrColumnNames = QueryUtil.getUpdatePropNames(entityClass, excludedPropNames);
+            instance._propOrColumnNames = QueryUtil.updatePropNames(entityClass, excludedPropNames);
 
             return instance;
         }
@@ -2175,7 +2299,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
             instance._op = OperationType.QUERY;
             instance.setEntityClass(entityClass);
-            instance._propOrColumnNames = QueryUtil.getSelectPropNames(entityClass, includeSubEntityProperties, excludedPropNames);
+            instance._propOrColumnNames = QueryUtil.selectPropNames(entityClass, includeSubEntityProperties, excludedPropNames);
 
             return instance;
         }
@@ -2349,7 +2473,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @throws IllegalArgumentException if entityClass is null
          */
         public CqlBuilder selectFrom(final Class<?> entityClass, final boolean includeSubEntityProperties, final Set<String> excludedPropNames) {
-            return selectFrom(entityClass, QueryUtil.getTableAlias(entityClass), includeSubEntityProperties, excludedPropNames);
+            return selectFrom(entityClass, QueryUtil.tableAlias(entityClass), includeSubEntityProperties, excludedPropNames);
         }
 
         /**
@@ -2437,7 +2561,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
         /**
          * Creates a condition-only builder for the given condition with entity class mapping —
-         * the CQL counterpart of the parent {@code SqlBuilder}'s {@code fromCondition(Condition, Class)}.
+         * the CQL counterpart of the parent {@code SqlBuilder}'s {@code renderCondition(Condition, Class)}.
          *
          * <p>This method is useful for generating just the WHERE clause portion of a query
          * with proper property-to-column name mapping. The resulting builder is condition-only:
@@ -2451,7 +2575,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *     Filters.like("email", "%@example.com")
          * );
          *
-         * String cql = PSC.fromCondition(cond, Account.class).build().query();
+         * String cql = PSC.renderCondition(cond, Account.class).build().query();
          * // Output: (first_name = ?) AND (email LIKE ?)
          * }</pre>
          *
@@ -2460,7 +2584,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @return a new condition-only CqlBuilder instance containing the rendered condition
          * @throws IllegalArgumentException if cond is null
          */
-        public CqlBuilder fromCondition(final Condition cond, final Class<?> entityClass) {
+        public CqlBuilder renderCondition(final Condition cond, final Class<?> entityClass) {
             N.checkArgNotNull(cond, "cond");
 
             final CqlBuilder instance = createCqlBuilderInstance();

@@ -425,7 +425,7 @@ public final class HBaseExecutor {
         Method rowKeySetMethod = classRowKeySetMethodPool.get(targetType);
 
         if (rowKeySetMethod == null) {
-            final List<String> ids = QueryUtil.getIdPropNames(targetType);
+            final List<String> ids = QueryUtil.idPropNames(targetType);
 
             if (ids.size() > 1) {
                 throw new IllegalArgumentException("Multiple ids: " + ids + " defined/annotated in class: " + ClassUtil.getCanonicalClassName(targetType));
@@ -3116,7 +3116,7 @@ public final class HBaseExecutor {
 
             N.checkArgument(Beans.isBeanClass(targetEntityClass), "{} is not an entity class with getter/setter method", targetEntityClass);
 
-            final List<String> idPropNames = QueryUtil.getIdPropNames(targetEntityClass);
+            final List<String> idPropNames = QueryUtil.idPropNames(targetEntityClass);
 
             if (idPropNames.size() != 1) {
                 throw new IllegalArgumentException(

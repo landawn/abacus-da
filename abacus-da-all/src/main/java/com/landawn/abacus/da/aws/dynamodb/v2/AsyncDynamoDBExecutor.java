@@ -2547,7 +2547,7 @@ public final class AsyncDynamoDBExecutor {
 
             N.checkArgument(Beans.isBeanClass(targetEntityClass), "{} is not an entity class with getter/setter method", targetEntityClass);
 
-            final List<String> idPropNames = QueryUtil.getIdPropNames(targetEntityClass);
+            final List<String> idPropNames = QueryUtil.idPropNames(targetEntityClass);
 
             if (idPropNames.size() != 1) {
                 throw new IllegalArgumentException(

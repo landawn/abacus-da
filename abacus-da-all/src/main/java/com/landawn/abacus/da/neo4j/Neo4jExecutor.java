@@ -118,8 +118,8 @@ import com.landawn.abacus.util.u.Optional;
  * naturally to Neo4j-OGM users, rather than wholesale adopting the abacus "house" CRUD vocabulary
  * ({@code list}/{@code insert}/{@code update}/{@code delete}) used by the
  * {@code Condition}-based executors such as Cassandra and BigQuery. It does, however, apply a few
- * abacus conventions where they improve the API: the single-row reader is exposed as the house-style
- * {@code findFirst(Class, String, Map)}, which returns a {@link com.landawn.abacus.util.u.Optional}
+ * abacus conventions where they improve the API: the single-row reader is exposed as
+ * {@code findOnly(Class, String, Map)}, which returns a {@link com.landawn.abacus.util.u.Optional}
  * instead of OGM's {@code queryForObject} raw {@code null}; the OGM {@code countEntitiesOfType(Class)} is exposed as a {@code count(Class)}
  * overload; and OGM's {@code resolveGraphIdFor(Object)} is surfaced as the more conventional
  * {@code getGraphId(Object)}.</p>
@@ -2124,23 +2124,24 @@ public final class Neo4jExecutor {
      * <p>
      * Delegates to {@link Session#queryForObject(Class, String, Map)}. The query must return
      * exactly zero or one row; if multiple rows are returned the underlying OGM session raises a
-     * {@link RuntimeException}. Add a {@code LIMIT 1} clause or a uniqueness constraint to the
-     * Cypher to guarantee that.
+     * {@link RuntimeException}. The method name reflects this cardinality requirement: it does not
+     * silently select the first row. Add a {@code LIMIT 1} clause or a uniqueness constraint to the
+     * Cypher when the query could otherwise return multiple rows.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Query for a single person by name
      * Map<String, Object> params = Map.of("name", "John Doe");
-     * Optional<Person> person = executor.findFirst(Person.class,
+     * Optional<Person> person = executor.findOnly(Person.class,
      *     "MATCH (p:Person {name: $name}) RETURN p", params);
      *
      * // Query for single aggregation result
-     * Optional<Long> count = executor.findFirst(Long.class,
+     * Optional<Long> count = executor.findOnly(Long.class,
      *     "MATCH (p:Person) WHERE p.age > $minAge RETURN count(p) as count",
      *     Map.of("minAge", 25));
      *
      * // Query with LIMIT 1 to guarantee a single row
-     * Optional<Person> oldest = executor.findFirst(Person.class,
+     * Optional<Person> oldest = executor.findOnly(Person.class,
      *     "MATCH (p:Person) RETURN p ORDER BY p.age DESC LIMIT 1",
      *     Collections.emptyMap());
      * }</pre>
@@ -2158,7 +2159,7 @@ public final class Neo4jExecutor {
      * @see #stream(Class, String, Map)
      * @see #stream(String, Map)
      */
-    public <T> Optional<T> findFirst(final Class<T> targetClass, final String cypher, final Map<String, ?> parameters) {
+    public <T> Optional<T> findOnly(final Class<T> targetClass, final String cypher, final Map<String, ?> parameters) {
         if (logger.isDebugEnabled()) {
             logger.debug("Executing Cypher: {}", cypher);
         }
@@ -2201,7 +2202,7 @@ public final class Neo4jExecutor {
      * @throws RuntimeException if the underlying OGM session rejects the query
      * @see #stream(Class, String, Map)
      * @see #stream(String, Map, boolean)
-     * @see #findFirst(Class, String, Map)
+     * @see #findOnly(Class, String, Map)
      */
     public Stream<Map<String, Object>> stream(final String cypher, final Map<String, ?> parameters) {
         if (logger.isDebugEnabled()) {
@@ -2303,7 +2304,7 @@ public final class Neo4jExecutor {
      * @return a {@link Stream} over the already-fetched rows mapped to {@code targetClass}; close the
      *         stream to release the underlying session
      * @throws RuntimeException if the underlying OGM session rejects the query
-     * @see #findFirst(Class, String, Map)
+     * @see #findOnly(Class, String, Map)
      * @see #stream(String, Map)
      */
     public <T> Stream<T> stream(final Class<T> targetClass, final String cypher, final Map<String, ?> parameters) {

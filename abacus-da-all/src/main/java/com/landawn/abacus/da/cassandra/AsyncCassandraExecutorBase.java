@@ -561,7 +561,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
 
         final Class<?> entityClass = entity.getClass();
         final Set<String> keyNameSet = getKeyNameSet(entityClass);
-        final Collection<String> updatePropNames = QueryUtil.getUpdatePropNames(entityClass, keyNameSet);
+        final Collection<String> updatePropNames = QueryUtil.updatePropNames(entityClass, keyNameSet);
 
         return update(entity, updatePropNames);
     }
@@ -702,7 +702,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
         N.checkArgNotNull(firstEntity, "The first entity in the collection can't be null.");
         final Class<?> entityClass = firstEntity.getClass();
         final Set<String> keyNameSet = getKeyNameSet(entityClass);
-        final Collection<String> updatePropNames = QueryUtil.getUpdatePropNames(entityClass, keyNameSet);
+        final Collection<String> updatePropNames = QueryUtil.updatePropNames(entityClass, keyNameSet);
 
         return batchUpdate(entities, updatePropNames, type);
     }

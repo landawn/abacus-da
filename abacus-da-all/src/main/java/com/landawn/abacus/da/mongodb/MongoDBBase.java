@@ -1579,7 +1579,7 @@ public abstract class MongoDBBase {
         Method idSetMethod = classIdSetMethodPool.get(rowType);
 
         if (idSetMethod == null) {
-            final List<String> idFieldNames = QueryUtil.getIdPropNames(rowType);
+            final List<String> idFieldNames = QueryUtil.idPropNames(rowType);
             Method idPropSetMethod = null;
             Class<?> parameterType = null;
 

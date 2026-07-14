@@ -1325,7 +1325,7 @@ public final class DynamoDBExecutor {
             return null;
         }
 
-        final Map<String, String> column2FieldNameMap = QueryUtil.getColumn2PropNameMap(targetClass);
+        final Map<String, String> column2FieldNameMap = QueryUtil.columnToPropNameMap(targetClass);
         final BeanInfo entityInfo = ParserUtil.getBeanInfo(targetClass);
         final Object entity = entityInfo.createBeanResult();
         PropInfo propInfo = null;
@@ -3455,7 +3455,7 @@ public final class DynamoDBExecutor {
 
             N.checkArgument(Beans.isBeanClass(targetEntityClass), "{} is not an entity class with getter/setter method", targetEntityClass);
 
-            final List<String> idPropNames = QueryUtil.getIdPropNames(targetEntityClass);
+            final List<String> idPropNames = QueryUtil.idPropNames(targetEntityClass);
 
             if (idPropNames.size() != 1) {
                 throw new IllegalArgumentException(

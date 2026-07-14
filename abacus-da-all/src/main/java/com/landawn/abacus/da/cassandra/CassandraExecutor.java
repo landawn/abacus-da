@@ -749,7 +749,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         final ColumnDefinitions columnDefinitions = row.getColumnDefinitions();
         final int columnCount = columnDefinitions.size();
 
-        final Map<String, String> column2FieldNameMap = QueryUtil.getColumn2PropNameMap(entityClass);
+        final Map<String, String> column2FieldNameMap = QueryUtil.columnToPropNameMap(entityClass);
         final BeanInfo entityInfo = ParserUtil.getBeanInfo(entityClass);
         final Object entity = entityInfo.createBeanResult();
         PropInfo propInfo = null;

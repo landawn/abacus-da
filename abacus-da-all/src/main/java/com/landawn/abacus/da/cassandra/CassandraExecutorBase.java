@@ -306,7 +306,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
         Tuple2<ImmutableList<String>, ImmutableSet<String>> tp = entityKeyNamesMap.get(entityClass);
 
         if (tp == null) {
-            final List<String> idPropNames = QueryUtil.getIdPropNames(entityClass);
+            final List<String> idPropNames = QueryUtil.idPropNames(entityClass);
             tp = Tuple.of(ImmutableList.copyOf(idPropNames), ImmutableSet.copyOf(idPropNames));
             final Tuple2<ImmutableList<String>, ImmutableSet<String>> existing = entityKeyNamesMap.putIfAbsent(entityClass, tp);
             if (existing != null) {
@@ -333,7 +333,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
         Tuple2<ImmutableList<String>, ImmutableSet<String>> tp = entityKeyNamesMap.get(entityClass);
 
         if (tp == null) {
-            final List<String> idPropNames = QueryUtil.getIdPropNames(entityClass);
+            final List<String> idPropNames = QueryUtil.idPropNames(entityClass);
             tp = Tuple.of(ImmutableList.copyOf(idPropNames), ImmutableSet.copyOf(idPropNames));
             final Tuple2<ImmutableList<String>, ImmutableSet<String>> existing = entityKeyNamesMap.putIfAbsent(entityClass, tp);
             if (existing != null) {
@@ -898,7 +898,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
         final Class<?> entityClass = entity.getClass();
         final Set<String> keyNameSet = getKeyNameSet(entityClass);
-        final Collection<String> updatePropNames = QueryUtil.getUpdatePropNames(entityClass, keyNameSet);
+        final Collection<String> updatePropNames = QueryUtil.updatePropNames(entityClass, keyNameSet);
 
         return update(entity, updatePropNames);
     }
@@ -1016,7 +1016,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
         N.checkArgNotNull(firstEntity, "The first entity in the collection can't be null.");
         final Class<?> entityClass = firstEntity.getClass();
         final Set<String> keyNameSet = getKeyNameSet(entityClass);
-        final Collection<String> updatePropNames = QueryUtil.getUpdatePropNames(entityClass, keyNameSet);
+        final Collection<String> updatePropNames = QueryUtil.updatePropNames(entityClass, keyNameSet);
 
         return batchUpdate(entities, updatePropNames, type);
     }

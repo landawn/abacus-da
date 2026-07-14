@@ -402,7 +402,7 @@ public class BigQueryExecutor {
         N.checkArgNotNull(fields, "fields");
         N.checkArgNotNull(fieldValueList, "fieldValueList");
 
-        final Map<String, String> column2FieldNameMap = QueryUtil.getColumn2PropNameMap(targetClass);
+        final Map<String, String> column2FieldNameMap = QueryUtil.columnToPropNameMap(targetClass);
         final BeanInfo entityInfo = ParserUtil.getBeanInfo(targetClass);
         final Object entity = entityInfo.createBeanResult();
 
@@ -1071,7 +1071,7 @@ public class BigQueryExecutor {
         final PropInfo[] columnPropInfos = new PropInfo[fieldCount];
         final boolean isEntity = Beans.isBeanClass(targetClass);
         final boolean isMap = targetClass != null && Map.class.isAssignableFrom(targetClass);
-        final Map<String, String> column2FieldNameMap = isEntity ? QueryUtil.getColumn2PropNameMap(targetClass) : null;
+        final Map<String, String> column2FieldNameMap = isEntity ? QueryUtil.columnToPropNameMap(targetClass) : null;
         final BeanInfo entityInfo = isEntity ? ParserUtil.getBeanInfo(targetClass) : null;
         String columnName = null;
         String propName = null;
@@ -1622,7 +1622,7 @@ public class BigQueryExecutor {
         Tuple2<ImmutableList<String>, ImmutableSet<String>> tp = entityKeyNamesMap.get(targetClass);
 
         if (tp == null) {
-            final List<String> idPropNames = QueryUtil.getIdPropNames(targetClass);
+            final List<String> idPropNames = QueryUtil.idPropNames(targetClass);
             tp = Tuple.of(ImmutableList.copyOf(idPropNames), ImmutableSet.copyOf(idPropNames));
             entityKeyNamesMap.put(targetClass, tp);
         }
@@ -1634,7 +1634,7 @@ public class BigQueryExecutor {
         Tuple2<ImmutableList<String>, ImmutableSet<String>> tp = entityKeyNamesMap.get(targetClass);
 
         if (tp == null) {
-            final List<String> idPropNames = QueryUtil.getIdPropNames(targetClass);
+            final List<String> idPropNames = QueryUtil.idPropNames(targetClass);
             tp = Tuple.of(ImmutableList.copyOf(idPropNames), ImmutableSet.copyOf(idPropNames));
             entityKeyNamesMap.put(targetClass, tp);
         }
