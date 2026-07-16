@@ -212,6 +212,36 @@ public class Neo4jExecutorTest extends TestBase {
         verify(mockSessionFactory, times(2)).openSession();
     }
 
+    @Test
+    public void testRun_ClearFailureDoesNotMaskActionFailureAndDiscardsSession() {
+        final RuntimeException actionFailure = new RuntimeException("action failed");
+        doThrow(new RuntimeException("clear failed")).when(mockSession).clear();
+
+        final RuntimeException thrown = assertThrows(RuntimeException.class, () -> executor.run(s -> {
+            throw actionFailure;
+        }));
+
+        assertSame(actionFailure, thrown);
+
+        // A session whose mapping context could not be cleared must never be reused.
+        executor.run(s -> {
+        });
+        verify(mockSessionFactory, times(2)).openSession();
+    }
+
+    @Test
+    public void testRun_TransactionInspectionFailureDoesNotMaskActionFailure() {
+        final RuntimeException actionFailure = new RuntimeException("action failed");
+        when(mockSession.getTransaction()).thenThrow(new RuntimeException("inspection failed"));
+
+        final RuntimeException thrown = assertThrows(RuntimeException.class, () -> executor.run(s -> {
+            throw actionFailure;
+        }));
+
+        assertSame(actionFailure, thrown);
+        verify(mockSession, never()).clear();
+    }
+
     // ---------- load / loadAll delegators ----------
 
     @Test

@@ -335,8 +335,8 @@ public final class AsyncDynamoDBExecutor {
      *                          the supported {@code @Table} annotations. Must not be null.
      * @return a cached async {@link Mapper} instance for the specified entity class, never null
      * @throws IllegalArgumentException if {@code targetEntityClass} is null, is not a bean class, is missing
-     *                                  the {@code @Table} annotation, or does not have exactly one
-     *                                  {@code @Id} field
+     *                                  the {@code @Table} annotation, or does not have one or two
+     *                                  {@code @Id} fields
      */
     public <T> Mapper<T> mapper(final Class<T> targetEntityClass) {
         N.checkArgNotNull(targetEntityClass, "targetEntityClass");
@@ -402,7 +402,9 @@ public final class AsyncDynamoDBExecutor {
      * @param tableName the DynamoDB table name to use for operations. Must not be null or empty.
      * @param namingPolicy the naming policy for converting property names to attribute names. If null, defaults to CAMEL_CASE.
      * @return a new async Mapper instance configured with the specified parameters, never null
-     * @throws IllegalArgumentException if targetEntityClass is null or not a bean class, tableName is null or empty, or the entity does not have exactly one @Id field
+     * @throws IllegalArgumentException if targetEntityClass is null or not a bean class, tableName
+     *                                  is null or empty, or the entity does not have one or two
+     *                                  {@code @Id} fields
      */
     public <T> Mapper<T> mapper(final Class<T> targetEntityClass, final String tableName, final NamingPolicy namingPolicy) {
         return new Mapper<>(targetEntityClass, this, tableName, namingPolicy);
@@ -733,8 +735,10 @@ public final class AsyncDynamoDBExecutor {
      * </ul>
      *
      * <p><b>Unprocessed keys:</b> DynamoDB may return some keys as unprocessed when batch limits
-     * are reached or throttling occurs. This method does NOT automatically retry unprocessed keys —
-     * inspect the underlying {@link BatchGetItemRequest}/response and re-issue if needed.</p>
+     * are reached or throttling occurs. This executor does not automatically retry them, and its
+     * batch-get overloads return only converted response items. Call {@link #dynamoDBAsyncClient()}
+     * directly to inspect {@code BatchGetItemResponse.unprocessedKeys()} and re-issue them (normally
+     * with exponential backoff).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -804,7 +808,8 @@ public final class AsyncDynamoDBExecutor {
      *
      * future.thenAccept(results -> {
      *     System.out.println("Retrieved " + results.get("Products").size() + " products");
-     *     // Note: Consumed capacity info available in underlying response metadata
+     *     // The converted map does not expose consumed-capacity metadata; call the underlying
+     *     // DynamoDbAsyncClient directly when that metadata is required.
      * });
      * }</pre>
      *
@@ -2512,7 +2517,8 @@ public final class AsyncDynamoDBExecutor {
      * }</pre>
      *
      * @param <T> the type of entity this mapper handles. Must be a valid bean class with getter/setter methods
-     *            and exactly one field annotated with {@code @Id}.
+     *            and one field annotated with {@code @Id} for a simple key, or two for a composite
+     *            partition-and-sort key.
      * @author haiyangli
      * @since 1.0
      */
@@ -2529,7 +2535,7 @@ public final class AsyncDynamoDBExecutor {
          * Constructs a new Mapper instance for the specified entity class and DynamoDB table.
          *
          * <p>This constructor validates that the entity class is a proper bean class with
-         * getter/setter methods and exactly one field annotated with @Id for the primary key.
+         * getter/setter methods and one or two fields annotated with {@code @Id} for the primary key.
          * The naming policy determines how Java property names are converted to DynamoDB attribute names.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -2539,13 +2545,13 @@ public final class AsyncDynamoDBExecutor {
          * }</pre>
          *
          * @param targetEntityClass the class of entities this mapper will handle. Must not be null
-         *                         and must be a valid bean class with exactly one @Id field.
+         *                         and must be a valid bean class with one or two {@code @Id} fields.
          * @param dynamoDBExecutor the async executor for DynamoDB operations. Must not be null.
          * @param tableName the name of the DynamoDB table. Must not be null or empty.
          * @param namingPolicy the policy for converting property names to attribute names.
          *                    If null, defaults to CAMEL_CASE.
          * @throws IllegalArgumentException if targetEntityClass is null, not a bean class,
-         *                                 or doesn't have exactly one @Id field; if dynamoDBExecutor
+         *                                 or doesn't have one or two {@code @Id} fields; if dynamoDBExecutor
          *                                 is null; or if tableName is null or empty.
          */
         Mapper(final Class<T> targetEntityClass, final AsyncDynamoDBExecutor dynamoDBExecutor, final String tableName, final NamingPolicy namingPolicy) {
@@ -2557,9 +2563,9 @@ public final class AsyncDynamoDBExecutor {
 
             final List<String> idPropNames = QueryUtil.idPropNames(targetEntityClass);
 
-            if (idPropNames.size() != 1) {
-                throw new IllegalArgumentException(
-                        "No or multiple ids: " + idPropNames + " defined/annotated in class: " + ClassUtil.getCanonicalClassName(targetEntityClass));
+            if (idPropNames.isEmpty() || idPropNames.size() > 2) {
+                throw new IllegalArgumentException("A DynamoDB primary key requires one partition-key property and may have one sort-key property, but found "
+                        + idPropNames.size() + " ID properties " + idPropNames + " in class: " + ClassUtil.getCanonicalClassName(targetEntityClass));
             }
 
             this.dynamoDBExecutor = dynamoDBExecutor;

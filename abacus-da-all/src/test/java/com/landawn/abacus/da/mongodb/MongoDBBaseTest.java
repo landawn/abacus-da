@@ -35,6 +35,7 @@ import com.landawn.abacus.util.stream.Stream;
 import com.mongodb.BasicDBObject;
 import com.mongodb.client.FindIterable;
 import com.mongodb.client.MongoCursor;
+import com.mongodb.client.MongoIterable;
 
 /**
  * Additional tests for MongoDBBase targeting low-coverage branches/methods
@@ -201,6 +202,34 @@ public class MongoDBBaseTest extends TestBase {
 
         assertEquals(1, result.size());
         assertEquals(1, result.get(0).getInteger("a"));
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testToListCopiesMapEntriesWhenConcreteMapTypeDiffers() {
+        // Regression: a HashMap row requested as Document was passed to Beans.beanToMap(...),
+        // which introspected HashMap methods instead of copying the actual MongoDB field entries.
+        MongoIterable<Map<String, Object>> iterable = org.mockito.Mockito.mock(MongoIterable.class);
+        Map<String, Object> row = new LinkedHashMap<>();
+        row.put("name", "alice");
+        row.put("age", 31);
+        when(iterable.into(any())).thenReturn(Arrays.asList(row));
+
+        List<Document> result = MongoDBBase.toList(iterable, Document.class);
+
+        assertEquals(1, result.size());
+        assertEquals("alice", result.get(0).getString("name"));
+        assertEquals(31, result.get(0).getInteger("age"));
+    }
+
+    @Test
+    public void testFromJsonRejectsNullRowTypeWithDocumentedException() {
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.fromJson("{}", null));
+    }
+
+    @Test
+    public void testExtractDataFromIterableRejectsNullRowTypeBeforeReading() {
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.extractData(mockFindIterable, null));
     }
 
     // -- extractData edge cases --
@@ -453,7 +482,7 @@ public class MongoDBBaseTest extends TestBase {
 
     @Test
     public void testToListLargeDocSingleValueRejected() {
-        // A document with more than 2 fields cannot be converted to a primitive type
+        // A document with multiple projected fields cannot be converted to a primitive type.
         List<Document> docs = Arrays.asList(new Document("a", 1).append("b", 2).append("c", 3));
         when(mockFindIterable.into(any())).thenReturn(docs);
 
@@ -468,6 +497,27 @@ public class MongoDBBaseTest extends TestBase {
         when(mockFindIterable.into(any())).thenReturn(docs);
 
         assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toList(mockFindIterable, Integer.class));
+    }
+
+    @Test
+    public void testToListRejectsExactlyTwoNonIdFieldsForScalarResult() {
+        List<Document> docs = Arrays.asList(new Document("a", 1).append("b", 2));
+        when(mockFindIterable.into(any())).thenReturn(docs);
+
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toList(mockFindIterable, Integer.class));
+    }
+
+    @Test
+    public void testToListRejectsInconsistentScalarFieldNames() {
+        List<Document> docs = Arrays.asList(new Document("a", 1), new Document("b", 2));
+        when(mockFindIterable.into(any())).thenReturn(docs);
+
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toList(mockFindIterable, Integer.class));
+    }
+
+    @Test
+    public void testReadRowRejectsExactlyTwoNonIdFieldsForScalarResult() {
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.readRow(new Document("a", 1).append("b", 2), Integer.class));
     }
 
     @Test

@@ -132,8 +132,8 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * which (per HBase) includes the set of column families touched by this mutation but
      * excludes per-cell data such as qualifiers, values, and the row key.
      *
-     * @return the fingerprint map produced by HBase; never {@code null} and always contains a
-     *         {@code "families"} entry (whose list may be empty)
+     * @return the fingerprint map produced by the wrapped HBase mutation; its keys and value
+     *         shapes are defined by the concrete mutation implementation
      * @see AnyOperation#getFingerprint()
      * @see #toMap()
      */
@@ -386,6 +386,8 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      *
      * @param ttl the TTL to apply, in milliseconds
      * @return this mutation instance, to allow fluent method chaining
+     * @throws UnsupportedOperationException if the wrapped mutation is an HBase
+     *         {@link org.apache.hadoop.hbase.client.Delete}, which does not support per-mutation TTLs
      * @see #getTTL()
      */
     public AM setTTL(final long ttl) {

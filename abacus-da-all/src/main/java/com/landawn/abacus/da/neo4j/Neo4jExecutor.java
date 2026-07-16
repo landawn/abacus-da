@@ -32,8 +32,8 @@ import org.neo4j.ogm.transaction.Transaction;
 import com.landawn.abacus.annotation.Beta;
 import com.landawn.abacus.logging.Logger;
 import com.landawn.abacus.logging.LoggerFactory;
-import com.landawn.abacus.util.stream.Stream;
 import com.landawn.abacus.util.u.Optional;
+import com.landawn.abacus.util.stream.Stream;
 
 /**
  * A thin executor that wraps the <a href="http://neo4j.com/docs/ogm/java/stable/">Neo4j OGM</a>
@@ -49,10 +49,12 @@ import com.landawn.abacus.util.u.Optional;
  *       {@link #getSession()} polls the queue without blocking and opens a fresh OGM session via
  *       {@link SessionFactory#openSession()} (a cheap in-memory operation) when the queue is
  *       empty.</li>
- *   <li><b>Release:</b> Any transaction left open on the session is rolled back (a session that
- *       fails to roll back is discarded), then {@link Session#clear()} is invoked before the
+ *   <li><b>Release:</b> Any transaction left open on the session is rolled back, then
+ *       {@link Session#clear()} is invoked before the
  *       session is offered back to the queue. If the queue is full the session is silently dropped
  *       (no {@code close()} call is made; the OGM {@link Session} has no {@code close} operation).
+ *       A runtime failure while inspecting, rolling back, or clearing a returned session is logged
+ *       and the session is discarded, so it cannot replace an exception raised by the database operation itself.
  *       Other session-level state mutated by callers of {@link #run(Consumer)}/{@link #call(Function)}
  *       — registered event listeners, bookmarks, load strategy — is <i>not</i> reset and would leak
  *       into subsequent borrowers; do not mutate such configuration on a pooled session.</li>
@@ -2460,6 +2462,7 @@ public final class Neo4jExecutor {
         return session;
     }
 
+    @SuppressWarnings("resource")
     private void closeSession(final Session session) {
         if (session != null) {
             // A run/call action may have left a transaction open (e.g. it threw between
@@ -2468,9 +2471,23 @@ public final class Neo4jExecutor {
             // ("extended") OGM transaction - beginTransaction() called again on the same session -
             // each rollback()/close() pair only marks ROLLBACK_PENDING and pops one nesting level;
             // only the root-level pair actually rolls back, hence the loop.
-            Transaction tx = null;
+            while (true) {
+                final Transaction tx;
 
-            while ((tx = session.getTransaction()) != null) {
+                try {
+                    tx = session.getTransaction();
+                } catch (final RuntimeException e) {
+                    if (logger.isWarnEnabled()) {
+                        logger.warn("Failed to inspect a returned session's transaction; discarding the session", e);
+                    }
+
+                    return;
+                }
+
+                if (tx == null) {
+                    break;
+                }
+
                 try {
                     tx.rollback();
                     tx.close();
@@ -2483,7 +2500,15 @@ public final class Neo4jExecutor {
                 }
             }
 
-            session.clear();
+            try {
+                session.clear();
+            } catch (final RuntimeException e) {
+                if (logger.isWarnEnabled()) {
+                    logger.warn("Failed to clear a returned session; discarding the session", e);
+                }
+
+                return;
+            }
 
             sessionPool.offer(session); //NOSONAR
         }

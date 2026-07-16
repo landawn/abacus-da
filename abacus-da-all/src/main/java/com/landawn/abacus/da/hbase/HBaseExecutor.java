@@ -153,8 +153,7 @@ import com.landawn.abacus.util.stream.Stream;
  *
  * <h2>Basic usage</h2>
  * <pre>{@code
- * HBaseExecutor executor = new HBaseExecutor(connection);
- * try {
+ * try (HBaseExecutor executor = new HBaseExecutor(connection)) {
  *     boolean exists = executor.exists("users", AnyGet.of("user123"));
  *     Result result  = executor.get("users", AnyGet.of("user123"));
  *     executor.put("users", AnyPut.of("user123").addColumn("info", "name", "John"));
@@ -162,8 +161,6 @@ import com.landawn.abacus.util.stream.Stream;
  *     HBaseMapper<User, String> mapper = executor.mapper(User.class);
  *     User user = mapper.get("user123");
  *     mapper.put(user);
- * } finally {
- *     executor.close();   // closes the wrapped Connection
  * }
  * }</pre>
  *
@@ -178,7 +175,7 @@ import com.landawn.abacus.util.stream.Stream;
  * @see AsyncHBaseExecutor
  * @see <a href="http://hbase.apache.org/devapidocs/index.html">Apache HBase Java API</a>
  */
-public final class HBaseExecutor {
+public final class HBaseExecutor implements AutoCloseable {
 
     static {
         final BiFunction<Result, Class<?>, Object> converter = HBaseExecutor::toValue;
@@ -585,7 +582,8 @@ public final class HBaseExecutor {
      * @param resultScanner the HBase result scanner to drain
      * @param targetType the target class — a JavaBean class or a single-value type
      *                    (e.g. {@code String}, {@code Integer}, {@code Date})
-     * @return a list of converted objects (no rows are skipped)
+     * @return a list of converted objects; empty results, including cursor-only progress
+     *         notifications, are skipped
      * @throws UncheckedIOException if reading from {@code resultScanner} fails with an {@link IOException}
      * @see #toList(ResultScanner, int, int, Class)
      */
@@ -597,8 +595,11 @@ public final class HBaseExecutor {
      * Reads a windowed range of results from {@code resultScanner}, converts each into
      * {@code targetType}, and returns them as a {@link List}.
      *
-     * <p>The first {@code offset} results are read and discarded; up to {@code count}
-     * subsequent results are converted via the per-row mapping for {@code targetType}.
+     * <p>The first {@code offset} data-bearing results are read and discarded; up to
+     * {@code count} subsequent data-bearing results are converted via the per-row mapping for
+     * {@code targetType}. Empty results are ignored. In particular, cursor-only progress
+     * notifications produced by a scan with cursor results enabled neither consume the offset
+     * nor appear in the returned list.
      * The scanner is always closed (via {@link IOUtil#closeQuietly(AutoCloseable)})
      * before this method returns, even on exception.</p>
      *
@@ -617,8 +618,8 @@ public final class HBaseExecutor {
      *
      * @param <T> the target type for conversion
      * @param resultScanner the HBase result scanner to process
-     * @param offset the number of results to skip from the beginning; must be non-negative
-     * @param count the maximum number of results to convert; must be non-negative
+     * @param offset the number of data-bearing results to skip from the beginning; must be non-negative
+     * @param count the maximum number of data-bearing results to convert; must be non-negative
      * @param targetType the target class — a JavaBean class or a single-value type
      *                    (e.g. {@code String}, {@code Integer}, {@code Date})
      * @return a list of converted objects from the requested window
@@ -638,13 +639,19 @@ public final class HBaseExecutor {
 
             final List<T> resultList = new ArrayList<>();
 
-            while (offset-- > 0 && resultScanner.next() != null) { //NOSONAR
-            }
-
             Result result = null;
 
-            while (count-- > 0 && (result = resultScanner.next()) != null) {
-                resultList.add(toValue(type, entityInfo, rowKeySetMethod, rowKeyType, familyFieldNameMap, result));
+            while (offset > 0 && (result = resultScanner.next()) != null) {
+                if (!result.isEmpty()) {
+                    offset--;
+                }
+            }
+
+            while (count > 0 && (result = resultScanner.next()) != null) {
+                if (!result.isEmpty()) {
+                    resultList.add(toValue(type, entityInfo, rowKeySetMethod, rowKeyType, familyFieldNameMap, result));
+                    count--;
+                }
             }
 
             return resultList;
@@ -1219,6 +1226,10 @@ public final class HBaseExecutor {
         return t -> toValue(t, targetType);
     }
 
+    private static <T> Stream<T> mapResults(final Stream<Result> results, final Class<T> targetType) {
+        return results.filter(result -> !result.isEmpty()).map(createRowMapper(targetType));
+    }
+
     // ByteBuffer is special-cased to mirror the write side (toValueBytes stores a ByteBuffer's raw remaining
     // bytes): reading it back through Type.valueOf(String) would base64-decode the UTF-8 string of those raw
     // bytes and silently corrupt the value.
@@ -1443,8 +1454,9 @@ public final class HBaseExecutor {
      * Tests whether the specified Get operations would return any results.
      *
      * <p>This method performs batch server-side existence checks for multiple Get operations
-     * without transferring any data to the client, making it efficient for checking existence
-     * of multiple rows or cells.</p>
+     * without transferring cell values to the client, making it efficient for checking existence
+     * of multiple rows or cells. An empty list returns immediately without acquiring a table
+     * handle.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1460,11 +1472,17 @@ public final class HBaseExecutor {
      * @param tableName the name of the HBase table
      * @param gets the list of Get operations to test for existence
      * @return a list of Boolean values in the same order as {@code gets}, where the i-th entry
-     *         is {@code true} if the i-th Get would match one or more cells, {@code false} otherwise
+     *         is {@code true} if the i-th Get would match one or more cells, {@code false}
+     *         otherwise; an empty input produces an empty list
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see Get
      */
     public List<Boolean> exists(final String tableName, final List<Get> gets) throws UncheckedIOException {
+        if (gets != null && gets.isEmpty()) {
+            TableName.valueOf(tableName); // preserve table-name validation without acquiring a Table
+            return new ArrayList<>();
+        }
+
         final Table table = getTable(tableName);
 
         try {
@@ -1572,7 +1590,8 @@ public final class HBaseExecutor {
      *
      * <p>This method executes multiple Get operations in a single batch call, which is more
      * efficient than executing them individually. The results are returned in the same order
-     * as the input Get operations.</p>
+     * as the input Get operations. An empty list returns immediately without acquiring a table
+     * handle.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1586,12 +1605,18 @@ public final class HBaseExecutor {
      * @param tableName the name of the HBase table
      * @param gets the list of Get operations to execute
      * @return a list of Results in the same order as {@code gets}; entries for rows that
-     *         do not exist are present in the list but are {@linkplain Result#isEmpty() empty}
+     *         do not exist are present in the list but are {@linkplain Result#isEmpty() empty};
+     *         an empty input produces an empty list
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see Get
      * @see Result
      */
     public List<Result> get(final String tableName, final List<Get> gets) throws UncheckedIOException {
+        if (gets != null && gets.isEmpty()) {
+            TableName.valueOf(tableName); // preserve table-name validation without acquiring a Table
+            return new ArrayList<>();
+        }
+
         final Table table = getTable(tableName);
 
         try {
@@ -2024,7 +2049,7 @@ public final class HBaseExecutor {
      */
     public <T> Stream<T> scan(final String tableName, final String family, final Class<T> targetType) {
         //noinspection resource
-        return scan(tableName, family).map(createRowMapper(targetType));
+        return mapResults(scan(tableName, family), targetType);
     }
 
     /**
@@ -2050,7 +2075,7 @@ public final class HBaseExecutor {
      */
     public <T> Stream<T> scan(final String tableName, final String family, final String qualifier, final Class<T> targetType) {
         //noinspection resource
-        return scan(tableName, family, qualifier).map(createRowMapper(targetType));
+        return mapResults(scan(tableName, family, qualifier), targetType);
     }
 
     /**
@@ -2074,7 +2099,7 @@ public final class HBaseExecutor {
      */
     public <T> Stream<T> scan(final String tableName, final byte[] family, final Class<T> targetType) {
         //noinspection resource
-        return scan(tableName, family).map(createRowMapper(targetType));
+        return mapResults(scan(tableName, family), targetType);
     }
 
     /**
@@ -2100,13 +2125,17 @@ public final class HBaseExecutor {
      */
     public <T> Stream<T> scan(final String tableName, final byte[] family, final byte[] qualifier, final Class<T> targetType) {
         //noinspection resource
-        return scan(tableName, family, qualifier).map(createRowMapper(targetType));
+        return mapResults(scan(tableName, family, qualifier), targetType);
     }
 
     /**
      * Scans using AnyScan specification and converts results to the specified target type.
      *
-     * <p>This method combines the fluent AnyScan API with automatic type conversion.</p>
+     * <p>This method combines the fluent AnyScan API with automatic type conversion. Empty
+     * results, including cursor-only progress notifications, are omitted. If partial results or
+     * batching are enabled on the wrapped scan, each partial {@link Result} is converted
+     * independently; use {@link #scan(String, AnyScan)} and assemble complete results first when
+     * one complete entity per row is required.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2127,14 +2156,19 @@ public final class HBaseExecutor {
      */
     public <T> Stream<T> scan(final String tableName, final AnyScan anyScan, final Class<T> targetType) {
         //noinspection resource
-        return scan(tableName, anyScan).map(createRowMapper(targetType));
+        return mapResults(scan(tableName, anyScan), targetType);
     }
 
     /**
      * Scans using a Scan operation and converts results to the specified target type.
      *
      * <p>This method combines scanning with automatic type conversion, providing a stream
-     * of typed objects that can be processed using stream operations.</p>
+     * of typed objects that can be processed using stream operations. Empty results, including
+     * cursor-only progress notifications requested through
+     * {@link Scan#setNeedCursorResult(boolean)}, are omitted; use the raw
+     * {@link #scan(String, Scan)} overload when cursor updates are needed. Partial results and
+     * per-row batches are converted independently rather than combined, so callers requiring one
+     * complete entity per row should assemble complete results before conversion.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2160,7 +2194,7 @@ public final class HBaseExecutor {
      */
     public <T> Stream<T> scan(final String tableName, final Scan scan, final Class<T> targetType) {
         //noinspection resource
-        return scan(tableName, scan).map(createRowMapper(targetType));
+        return mapResults(scan(tableName, scan), targetType);
     }
 
     /**
@@ -2197,8 +2231,10 @@ public final class HBaseExecutor {
     /**
      * Stores multiple rows of data in HBase using a batch of Put operations.
      *
-     * <p>This method executes multiple Put operations in a single batch call, which is more
-     * efficient than executing them individually. All puts are sent to the server in one request.</p>
+     * <p>This method submits multiple Put operations in one client batch call, which is more
+     * efficient than invoking this executor once per put. The HBase client may partition that
+     * batch into multiple server requests based on region placement. An empty list is a no-op and
+     * does not acquire a table handle.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2216,6 +2252,11 @@ public final class HBaseExecutor {
      * @see Put
      */
     public void put(final String tableName, final List<Put> puts) throws UncheckedIOException {
+        if (puts != null && puts.isEmpty()) {
+            TableName.valueOf(tableName); // preserve table-name validation without acquiring a Table
+            return;
+        }
+
         final Table table = getTable(tableName);
 
         try {
@@ -2323,8 +2364,10 @@ public final class HBaseExecutor {
     /**
      * Deletes multiple rows or cells from HBase using a batch of Delete operations.
      *
-     * <p>This method executes multiple Delete operations in a single batch call, which is more
-     * efficient than executing them individually. All deletes are sent to the server in one request.</p>
+     * <p>This method submits multiple Delete operations in one client batch call, which is more
+     * efficient than invoking this executor once per delete. The HBase client may partition that
+     * batch into multiple server requests based on region placement. An empty list is a no-op and
+     * does not acquire a table handle.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2341,6 +2384,11 @@ public final class HBaseExecutor {
      * @see Delete
      */
     public void delete(final String tableName, final List<Delete> deletes) throws UncheckedIOException {
+        if (deletes != null && deletes.isEmpty()) {
+            TableName.valueOf(tableName); // preserve table-name validation without acquiring a Table
+            return;
+        }
+
         final Table table = getTable(tableName);
 
         try {
@@ -3053,17 +3101,17 @@ public final class HBaseExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * HBaseExecutor executor = new HBaseExecutor(connection);
-     * try {
+     * try (HBaseExecutor executor = new HBaseExecutor(connection)) {
      *     // perform HBase operations
-     * } finally {
-     *     executor.close();
      * }
      * }</pre>
      *
-     * @throws IOException if closing {@link Admin} or {@link Connection} fails. If both fail,
-     *         the admin failure is thrown and the connection failure is attached as suppressed.
+     * @throws IOException if closing {@link Admin} or {@link Connection} fails. If both fail with distinct
+     *         exceptions, the admin failure is thrown and the connection failure is attached as suppressed.
+     * @throws RuntimeException if either resource throws a runtime exception while closing
+     * @throws Error if either resource throws an error while closing
      */
+    @Override
     public void close() throws IOException {
         Throwable failure = null;
 
@@ -3082,7 +3130,7 @@ public final class HBaseExecutor {
         } catch (final Throwable e) {
             if (failure == null) {
                 failure = e;
-            } else {
+            } else if (failure != e) {
                 failure.addSuppressed(e);
             }
         }

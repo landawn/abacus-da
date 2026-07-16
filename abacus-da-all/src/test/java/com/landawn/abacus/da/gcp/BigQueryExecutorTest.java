@@ -510,9 +510,9 @@ public class BigQueryExecutorTest extends TestBase {
 
     // ---------------------------------------------------------------------------------------------
     // Regression: SELECT must alias columns with BigQuery backticks (`id`), not ANSI double quotes
-    // ("id"). BigQuery/GoogleSQL parses a double-quoted token as a STRING LITERAL, so the SqlBuilder
-    // default `SELECT id AS "id"` is rejected with "Unexpected string literal". Only a live BigQuery
-    // run surfaced this; prepareQuery now rewrites the identifier quoting to backticks.
+    // ("id"). BigQuery/GoogleSQL parses a double-quoted token as a STRING LITERAL. The BigQuery
+    // SqlBuilder variants are configured with IdentifierQuote.BACKTICK so no fragile SQL text
+    // post-processing is needed.
     // ---------------------------------------------------------------------------------------------
     @Test
     public void testQueryGeneratesBacktickQuotedAliasesNotDoubleQuotes() throws Exception {
@@ -529,8 +529,8 @@ public class BigQueryExecutorTest extends TestBase {
     }
 
     /**
-     * A raw GoogleSQL expression may legitimately contain a double-quoted string literal. Alias
-     * normalization must therefore target only the generated {@code AS "alias"} tokens.
+     * A raw GoogleSQL expression may legitimately contain a double-quoted string literal. Configuring
+     * identifier quoting at builder creation must leave that caller-supplied literal untouched.
      */
     @Test
     public void testQueryPreservesDoubleQuotedLiteralInRawCondition() throws Exception {
@@ -557,7 +557,7 @@ public class BigQueryExecutorTest extends TestBase {
 
         final String sql = captureGeneratedSql();
         assertTrue(sql.contains("'AS \"not_an_alias\"'"), "quoted raw-expression text must be preserved: " + sql);
-        assertTrue(sql.contains("`"), "generated aliases must still be normalized: " + sql);
+        assertTrue(sql.contains("`"), "generated aliases must still use backticks: " + sql);
     }
 
     @Test
@@ -1537,6 +1537,20 @@ public class BigQueryExecutorTest extends TestBase {
     }
 
     @Test
+    public void testExplicitSchemaConversionsRejectMismatchedRowWidth() {
+        final FieldList oneField = FieldList.of(Field.of("id", StandardSQLTypeName.INT64));
+        final FieldList twoFields = FieldList.of(Field.of("id", StandardSQLTypeName.INT64), Field.of("name", StandardSQLTypeName.STRING));
+        final FieldValueList twoValues = FieldValueList
+                .of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1"), FieldValue.of(FieldValue.Attribute.PRIMITIVE, "Alice")), twoFields);
+        final FieldValueList oneValue = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "1")), oneField);
+
+        assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.toMap(oneField, twoValues));
+        assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.toMap(twoFields, oneValue));
+        assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.toEntity(oneField, twoValues, TestEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.toEntity(twoFields, oneValue, TestEntity.class));
+    }
+
+    @Test
     public void testToMap_UnwrapsRepeatedFieldValues() {
         final Field repeated = Field.newBuilder("tags", StandardSQLTypeName.STRING).setMode(Field.Mode.REPEATED).build();
         final FieldList fields = FieldList.of(repeated);
@@ -2172,6 +2186,14 @@ public class BigQueryExecutorTest extends TestBase {
     @Test
     public void testGetSchema_NullRowThrowsIllegalArgumentException() {
         assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.getSchema(null));
+    }
+
+    @Test
+    public void testGetSchema_RowWithoutSchemaThrowsIllegalArgumentException() {
+        final FieldValueList row = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "x")), new Field[0]);
+
+        assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.getSchema(row));
+        assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.toMap(row));
     }
 
     // ===== Constructor validation =====

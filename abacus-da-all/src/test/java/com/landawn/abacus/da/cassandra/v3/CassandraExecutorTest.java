@@ -619,7 +619,7 @@ public class CassandraExecutorTest extends TestBase {
 
         sql = NLC.update("simplex.songs").set("album").where("id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d").build().query();
         N.println(sql);
-        resultSet = cassandraExecutor.execute(sql, "new new new Album", "2cc9ccb7-6221-4ccb-8387-f22b6a1b354d");
+        resultSet = cassandraExecutor.execute(sql, "new new new Album");
         N.println(resultSet);
         N.println(resultSet.one());
         N.println(resultSet.wasApplied());

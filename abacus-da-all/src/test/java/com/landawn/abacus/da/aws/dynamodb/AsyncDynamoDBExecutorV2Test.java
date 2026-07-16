@@ -198,6 +198,24 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
     }
 
     @Test
+    public void testMapperSupportsCompositePrimaryKeyAndRejectsMoreThanTwoIds() throws ExecutionException, InterruptedException {
+        AsyncDynamoDBExecutor.Mapper<CompositeKeyEntity> mapper = asyncExecutor.mapper(CompositeKeyEntity.class);
+        CompositeKeyEntity entity = new CompositeKeyEntity();
+        entity.setPartitionId("partition-1");
+        entity.setSortId("sort-1");
+
+        when(mockDynamoDbAsyncClient.getItem(any(GetItemRequest.class))).thenReturn(CompletableFuture.completedFuture(GetItemResponse.builder().build()));
+
+        mapper.getItem(entity).get();
+
+        ArgumentCaptor<GetItemRequest> requestCaptor = ArgumentCaptor.forClass(GetItemRequest.class);
+        verify(mockDynamoDbAsyncClient).getItem(requestCaptor.capture());
+        assertEquals("partition-1", requestCaptor.getValue().key().get("partitionId").s());
+        assertEquals("sort-1", requestCaptor.getValue().key().get("sortId").s());
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.mapper(ThreeKeyEntity.class));
+    }
+
+    @Test
     public void testBatchGetItem() throws ExecutionException, InterruptedException {
         Map<String, KeysAndAttributes> requestItems = new HashMap<>();
         List<Map<String, AttributeValue>> keys = new ArrayList<>();
@@ -1421,6 +1439,64 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
 
         public void setId(String id) {
             this.id = id;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Table(name = "TestTable")
+    private static class CompositeKeyEntity {
+        @com.landawn.abacus.annotation.Id
+        private String partitionId;
+        @com.landawn.abacus.annotation.Id
+        private String sortId;
+
+        public String getPartitionId() {
+            return partitionId;
+        }
+
+        public void setPartitionId(String partitionId) {
+            this.partitionId = partitionId;
+        }
+
+        public String getSortId() {
+            return sortId;
+        }
+
+        public void setSortId(String sortId) {
+            this.sortId = sortId;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Table(name = "TestTable")
+    private static class ThreeKeyEntity {
+        @com.landawn.abacus.annotation.Id
+        private String firstId;
+        @com.landawn.abacus.annotation.Id
+        private String secondId;
+        @com.landawn.abacus.annotation.Id
+        private String thirdId;
+
+        public String getFirstId() {
+            return firstId;
+        }
+
+        public void setFirstId(String firstId) {
+            this.firstId = firstId;
+        }
+
+        public String getSecondId() {
+            return secondId;
+        }
+
+        public void setSecondId(String secondId) {
+            this.secondId = secondId;
+        }
+
+        public String getThirdId() {
+            return thirdId;
+        }
+
+        public void setThirdId(String thirdId) {
+            this.thirdId = thirdId;
         }
     }
 

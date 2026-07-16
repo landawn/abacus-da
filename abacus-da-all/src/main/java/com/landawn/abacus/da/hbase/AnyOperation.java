@@ -77,10 +77,8 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
      * values, or other potentially high-cardinality identifiers; it is meant to group operations
      * with the same schema for metrics and monitoring rather than to uniquely identify them.
      *
-     * @return the fingerprint map produced by HBase; never {@code null} and always contains a
-     *         {@code "families"} entry — a list of family names (possibly empty) for {@code Get}
-     *         and mutation operations, but the string {@code "ALL"} for a {@code Scan} with no
-     *         families specified
+     * @return the fingerprint map produced by the wrapped HBase operation; its keys and value
+     *         shapes are defined by that concrete HBase operation
      * @see #toMap()
      */
     public Map<String, Object> getFingerprint() {
@@ -89,7 +87,7 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
 
     /**
      * Converts this operation to a {@link Map} representation. Delegates to the underlying HBase
-     * {@link Operation#toMap()}, which applies HBase's built-in per-family column cap (see
+     * {@link Operation#toMap()}, which applies HBase's built-in total-column truncation budget (see
      * {@link #toMap(int)} to specify an explicit limit). The resulting map combines the
      * {@linkplain #getFingerprint() fingerprint} with row-, column-, and value-level details and
      * is intended for debugging, logging, or serialization.
@@ -103,14 +101,13 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
     }
 
     /**
-     * Converts this operation to a {@link Map} representation, capping the number of columns
-     * included per family at {@code maxCols}. This is the explicit-limit counterpart to
+     * Converts this operation to a {@link Map} representation, passing {@code maxCols} as HBase's
+     * total-column truncation budget. This is the explicit-limit counterpart to
      * {@link #toMap()} and is useful for very large operations where the full map would be
      * impractical to log or serialize.
      *
-     * @param maxCols the maximum number of columns to include per family in the map representation
-     * @return a {@code Map} representation of this operation with at most {@code maxCols} columns
-     *         per family; never {@code null}
+     * @param maxCols HBase's total-column truncation budget for the map representation
+     * @return a {@code Map} representation generated with the requested truncation budget; never {@code null}
      * @see #toMap()
      */
     public Map<String, Object> toMap(final int maxCols) {
@@ -119,10 +116,10 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
 
     /**
      * Serializes this operation to a JSON string by delegating to
-     * {@link Operation#toJSON()}. The JSON includes the operation's row key, column families,
-     * qualifiers, values, and other details, and is intended for logging, debugging, or network
-     * transmission. The underlying {@link IOException} thrown by HBase is wrapped as an
-     * {@link UncheckedIOException}.
+     * {@link Operation#toJSON()}. The representation is intended for diagnostics and is subject
+     * to HBase's default total-column truncation budget; it is not HBase's wire format. Use
+     * {@link #toJson(int)} when an explicit limit is required. The underlying
+     * {@link IOException} thrown by HBase is wrapped as an {@link UncheckedIOException}.
      *
      * @return a JSON string representation of this operation; never {@code null}
      * @throws UncheckedIOException if HBase's JSON serialization throws an {@link IOException}
@@ -137,13 +134,12 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
     }
 
     /**
-     * Serializes this operation to a JSON string, capping the number of columns included per
-     * family at {@code maxCols}. The explicit-limit counterpart to {@link #toJson()}; useful for
+     * Serializes this operation to a JSON string using {@code maxCols} as HBase's total-column
+     * truncation budget. The explicit-limit counterpart to {@link #toJson()}; useful for
      * very large operations where the full JSON would be impractical to log.
      *
-     * @param maxCols the maximum number of columns to include per family in the JSON representation
-     * @return a JSON string representation of this operation with at most {@code maxCols} columns
-     *         per family; never {@code null}
+     * @param maxCols HBase's total-column truncation budget for the JSON representation
+     * @return a JSON string representation generated with the requested truncation budget; never {@code null}
      * @throws UncheckedIOException if HBase's JSON serialization throws an {@link IOException}
      * @see #toJson()
      */
@@ -168,13 +164,11 @@ abstract class AnyOperation<AO extends AnyOperation<AO>> {
     }
 
     /**
-     * Returns a human-readable string representation of this operation, capping the number of
-     * columns included per family at {@code maxCols}. Useful for limiting log output for very
-     * large operations.
+     * Returns a human-readable string representation of this operation using {@code maxCols} as
+     * HBase's total-column truncation budget. Useful for limiting log output for very large operations.
      *
-     * @param maxCols the maximum number of columns to include per family in the string representation
-     * @return a string representation of this operation with at most {@code maxCols} columns
-     *         per family; never {@code null}
+     * @param maxCols HBase's total-column truncation budget for the string representation
+     * @return a string representation generated with the requested truncation budget; never {@code null}
      * @see #toString()
      */
     public String toString(final int maxCols) {

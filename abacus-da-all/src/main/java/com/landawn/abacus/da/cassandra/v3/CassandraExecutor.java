@@ -68,7 +68,6 @@ import com.landawn.abacus.pool.PoolFactory;
 import com.landawn.abacus.pool.Poolable;
 import com.landawn.abacus.pool.PoolableAdapter;
 import com.landawn.abacus.query.AbstractQueryBuilder.SP;
-import com.landawn.abacus.query.Filters;
 import com.landawn.abacus.query.QueryUtil;
 import com.landawn.abacus.query.condition.Condition;
 import com.landawn.abacus.type.Type;
@@ -296,8 +295,6 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         namedDataType.put(DataType.Name.BLOB.name(), ByteBuffer.class);
         namedDataType.put(DataType.Name.CUSTOM.name(), ByteBuffer.class);
     }
-
-    private final KeyedObjectPool<String, PoolableAdapter<Statement>> statementPool = PoolFactory.createKeyedObjectPool(1024, 3000);
 
     private final KeyedObjectPool<String, PoolableAdapter<PreparedStatement>> preparedStatementPool = PoolFactory.createKeyedObjectPool(1024, 3000);
 
@@ -1601,7 +1598,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * Closes the executor and releases all associated resources.
      *
      * <p>This method closes, in order: the underlying Cassandra {@link Session}, the
-     * {@link Cluster}, and the internal statement and prepared-statement pools. Sessions
+     * {@link Cluster}, and the prepared-statement pool. Sessions
      * and clusters already closed are skipped. After calling this method, the executor
      * instance must not be used for any further operations.</p>
      *
@@ -1615,7 +1612,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * try {
      *     // Perform database operations
      * } finally {
-     *     executor.close();   // Closes session, cluster, and internal pools
+     *     executor.close();   // Closes the session, cluster, and prepared-statement pool
      * }
      * }</pre>
      *
@@ -1631,11 +1628,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                     cluster.close();
                 }
             } finally {
-                try {
-                    statementPool.close();
-                } finally {
-                    preparedStatementPool.close();
-                }
+                preparedStatementPool.close();
             }
         }
     }
@@ -1815,10 +1808,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     /**
      * Returns an executable {@link Statement} for a parameterless CQL query.
      *
-     * <p>For queries no longer than {@link #POOLABLE_LENGTH} characters, the resulting
-     * {@link BoundStatement} is cached in an internal pool keyed by the query string so
-     * subsequent calls with the same query reuse the prepared/bound form. For longer
-     * queries the statement is always built fresh.</p>
+     * <p>For queries no longer than {@link #POOLABLE_LENGTH} characters, the immutable
+     * {@link PreparedStatement} is cached by resolved CQL text. A fresh {@link BoundStatement}
+     * is created for every call because Driver 3.x bound statements are mutable and must not
+     * be shared between concurrent operations.</p>
      *
      * @param query the CQL query to prepare; must be non-null
      * @return an executable {@link Statement}
@@ -1827,34 +1820,15 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     protected Statement prepareStatement(final String query) {
         N.checkArgNotNull(query, "query");
 
-        Statement stmt = null;
+        final ParsedCql parseCql = parseCql(query);
+        final String cql = parseCql.parameterizedCql();
+        final int parameterCount = parseCql.parameterCount();
 
-        if (query.length() <= POOLABLE_LENGTH) {
-            final PoolableAdapter<Statement> wrapper = statementPool.get(query);
-
-            if (wrapper != null) {
-                stmt = wrapper.value();
-            }
+        if (parameterCount > 0) {
+            throw new IllegalArgumentException("No parameters supplied for parameterized query: expected " + parameterCount + " for query: " + query);
         }
 
-        if (stmt == null) {
-            final ParsedCql parseCql = parseCql(query);
-            final String cql = parseCql.parameterizedCql();
-            final int parameterCount = parseCql.parameterCount();
-
-            if (parameterCount > 0) {
-                throw new IllegalArgumentException("No parameters supplied for parameterized query: expected " + parameterCount + " for query: " + query);
-            }
-
-            final PreparedStatement preparedStatement = prepare(cql);
-            stmt = bind(preparedStatement);
-
-            if (query.length() <= POOLABLE_LENGTH) {
-                statementPool.put(query, Poolable.wrap(stmt));
-            }
-        }
-
-        return stmt;
+        return bind(getOrPrepareStatement(cql));
     }
 
     /**
@@ -1873,14 +1847,14 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * {@link CodecRegistry} and {@code N.convert(...)} where applicable. If
      * {@code parameters} is empty the call is delegated to {@link #prepareStatement(String)}.
      * For queries no longer than {@link #POOLABLE_LENGTH} characters the underlying
-     * {@link PreparedStatement} is cached and reused.</p>
+     * {@link PreparedStatement} is cached by resolved CQL text and reused.</p>
      *
      * @param query the CQL query to prepare; must be non-null
      * @param parameters the parameters to bind, in one of the supported forms
      * @return an executable {@link Statement} with parameters bound
      * @throws IllegalArgumentException if a required parameter is missing, if a named
-     *         parameter cannot be resolved, or if fewer values are supplied than the
-     *         prepared statement requires
+     *         parameter cannot be resolved, or if the number of positional values does
+     *         not exactly match the prepared statement
      */
     @Override
     protected Statement prepareStatement(final String query, final Object... parameters) {
@@ -1890,22 +1864,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
         final ParsedCql parseCql = parseCql(query);
         final String cql = parseCql.parameterizedCql();
-        PreparedStatement preStmt = null;
-
-        if (query.length() <= POOLABLE_LENGTH) {
-            final PoolableAdapter<PreparedStatement> wrapper = preparedStatementPool.get(query);
-            if (wrapper != null && wrapper.value() != null) {
-                preStmt = wrapper.value();
-            }
-        }
-
-        if (preStmt == null) {
-            preStmt = prepare(cql);
-
-            if (query.length() <= POOLABLE_LENGTH) {
-                preparedStatementPool.put(query, Poolable.wrap(preStmt));
-            }
-        }
+        final PreparedStatement preStmt = getOrPrepareStatement(cql);
 
         final ColumnDefinitions columnDefinitions = preStmt.getVariables();
         final int parameterCount = columnDefinitions.size();
@@ -1913,8 +1872,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         Class<?> javaClazz = null;
 
         if (parameterCount == 0) {
-            // bind(preStmt) (not preStmt.bind()) so the configured StatementSettings are still applied.
-            return bind(preStmt);
+            throw new IllegalArgumentException("Too many parameters for parameterless query: expected 0 but got " + parameters.length + " for query: " + query);
         } else if (N.isEmpty(parameters)) {
             throw new IllegalArgumentException("Null or empty parameters for parameterized query: " + query);
         }
@@ -1929,7 +1887,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             } else if (parameters[0] instanceof List && ((List<Object>) parameters[0]).size() == 1) {
                 final Object tmp = ((List<Object>) parameters[0]).get(0);
 
-                if (tmp == null || ((javaClazz != null && javaClazz.isAssignableFrom(tmp.getClass())) || codecRegistry.codecFor(colType).accepts(tmp))) {
+                if (tmp == null || (javaClazz.isAssignableFrom(tmp.getClass()) || codecRegistry.codecFor(colType).accepts(tmp))) {
                     return bind(preStmt, tmp);
                 }
             }
@@ -1983,16 +1941,16 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 }
             }
         } else if ((parameters.length == 1) && (parameters[0] != null)) {
-            if (parameters[0] instanceof Object[] && ((((Object[]) parameters[0]).length) >= parseCql.parameterCount())) {
+            if (parameters[0] instanceof Object[]) {
                 values = (Object[]) parameters[0];
-            } else if (parameters[0] instanceof final Collection<?> c && (c.size() >= parseCql.parameterCount())) {
+            } else if (parameters[0] instanceof final Collection<?> c) {
                 values = c.toArray(new Object[0]);
             }
         }
 
-        if (values.length < parameterCount) {
-            throw new IllegalArgumentException(
-                    "Not enough parameters for parameterized query: expected " + parameterCount + " but got " + values.length + " for query: " + query);
+        if (values.length != parameterCount) {
+            throw new IllegalArgumentException((values.length < parameterCount ? "Not enough" : "Too many") + " parameters for parameterized query: expected "
+                    + parameterCount + " but got " + values.length + " for query: " + query);
         }
 
         // Defensive copy: 'values' may alias the caller's own array (the varargs array itself, or an
@@ -2022,7 +1980,29 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             }
         }
 
-        return bind(preStmt, values.length == parameterCount ? values : N.copyOfRange(values, 0, parameterCount));
+        return bind(preStmt, values);
+    }
+
+    private PreparedStatement getOrPrepareStatement(final String cql) {
+        PreparedStatement preStmt = null;
+
+        if (cql.length() <= POOLABLE_LENGTH) {
+            final PoolableAdapter<PreparedStatement> wrapper = preparedStatementPool.get(cql);
+
+            if (wrapper != null) {
+                preStmt = wrapper.value();
+            }
+        }
+
+        if (preStmt == null) {
+            preStmt = prepare(cql);
+
+            if (cql.length() <= POOLABLE_LENGTH) {
+                preparedStatementPool.put(cql, Poolable.wrap(preStmt));
+            }
+        }
+
+        return preStmt;
     }
 
     /**

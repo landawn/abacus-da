@@ -356,7 +356,9 @@ public final class DynamoDBExecutor {
      * @param <T> the entity type
      * @param targetEntityClass the entity class to create mapper for. Must be annotated with @Table. Must not be null.
      * @return a cached Mapper instance for the specified entity class, never null
-     * @throws IllegalArgumentException if {@code targetEntityClass} is null, is missing a {@code @Table} annotation, or fails the underlying Mapper validation (not a bean class, zero or multiple {@code @Id} fields, etc.)
+     * @throws IllegalArgumentException if {@code targetEntityClass} is null, is missing a {@code @Table}
+     *                                  annotation, or fails the underlying Mapper validation (not a
+     *                                  bean class, zero or more than two {@code @Id} fields, etc.)
      * @see #mapper(Class, String, NamingPolicy)
      */
     public <T> Mapper<T> mapper(final Class<T> targetEntityClass) {
@@ -429,7 +431,9 @@ public final class DynamoDBExecutor {
      * @param tableName the DynamoDB table name to use for operations. Must not be null or empty.
      * @param namingPolicy the naming policy for converting property names to attribute names. If {@code null}, defaults to {@link NamingPolicy#CAMEL_CASE}.
      * @return a new Mapper instance configured with the specified parameters, never null
-     * @throws IllegalArgumentException if {@code targetEntityClass} is null, not a bean class, has zero or multiple {@code @Id} fields, or {@code tableName} is null/empty
+     * @throws IllegalArgumentException if {@code targetEntityClass} is null, not a bean class, has
+     *                                  zero or more than two {@code @Id} fields, or {@code tableName}
+     *                                  is null/empty
      * @see NamingPolicy
      * @see #mapper(Class)
      */
@@ -1768,7 +1772,7 @@ public final class DynamoDBExecutor {
      * // Offset past the end -> empty list
      * List<User> empty = toList(qr, 5, 10, User.class); // returns []
      *
-     * // A null result short-circuits before validation -> empty list (no exception)
+     * // A null result returns an empty list after the offset/count range has been validated.
      * List<User> none = toList((QueryResponse) null, 0, 10, User.class); // returns []
      *
      * List<User> bad = toList(qr, -1, 1, User.class);  // throws IllegalArgumentException
@@ -1783,6 +1787,8 @@ public final class DynamoDBExecutor {
      * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
      */
     public static <T> List<T> toList(final QueryResponse queryResult, final int offset, final int count, final Class<T> targetClass) {
+        N.checkArgument(offset >= 0 && count >= 0, "'offset' and 'count' can't be negative: %s, %s", offset, count);
+
         if (queryResult == null || !queryResult.hasItems()) {
             return new ArrayList<>(0);
         }
@@ -1848,6 +1854,8 @@ public final class DynamoDBExecutor {
      * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
      */
     public static <T> List<T> toList(final ScanResponse scanResult, final int offset, final int count, final Class<T> targetClass) {
+        N.checkArgument(offset >= 0 && count >= 0, "'offset' and 'count' can't be negative: %s, %s", offset, count);
+
         if (scanResult == null || !scanResult.hasItems()) {
             return new ArrayList<>(0);
         }
@@ -2319,8 +2327,9 @@ public final class DynamoDBExecutor {
      * <p><b>Unprocessed Keys:</b> If DynamoDB throttles the request or returns partial results,
      * the keys that could not be processed are returned by the SDK in the
      * {@link BatchGetItemResponse#unprocessedKeys()} field. This wrapper does <i>not</i> auto-retry
-     * unprocessed keys; callers must inspect the underlying response (via the {@code BatchGetItemRequest}
-     * overloads if needed) and re-submit them.</p>
+     * unprocessed keys, and every overload returns only the converted responses map. Call
+     * {@link #dynamoDBClient()} directly when the response metadata must be inspected and the
+     * unprocessed keys re-submitted (normally with exponential backoff).</p>
      *
      * <p><b>AWS SDK v2 Enhancements:</b></p>
      * <ul>
@@ -3625,7 +3634,8 @@ public final class DynamoDBExecutor {
      * }</pre>
      *
      * @param <T> the type of entity this mapper handles. Must be a valid bean class with getter/setter methods
-     *            and exactly one field annotated with {@code @Id}.
+     *            and one field annotated with {@code @Id} for a simple key, or two for a composite
+     *            partition-and-sort key.
      * @author haiyangli
      * @since 1.0
      */
@@ -3642,7 +3652,7 @@ public final class DynamoDBExecutor {
          * Constructs a new Mapper instance for the specified entity class.
          *
          * <p>This constructor validates that the target class is a proper entity class with
-         * getter/setter methods and exactly one ID field defined. It initializes the mapper
+         * getter/setter methods and one or two ID fields defined. It initializes the mapper
          * with the necessary metadata for entity-to-DynamoDB conversions.</p>
          *
          * @param targetEntityClass the class of entities this mapper will handle; must be a valid bean class with ID annotations
@@ -3651,7 +3661,7 @@ public final class DynamoDBExecutor {
          * @param namingPolicy the naming policy for attribute name conversion; uses CAMEL_CASE if null
          * @throws IllegalArgumentException if {@code targetEntityClass} or {@code dynamoDBExecutor} is null,
          *         {@code tableName} is null/empty, {@code targetEntityClass} is not a bean class, or it has
-         *         zero or multiple ID-annotated fields
+         *         zero or more than two ID-annotated fields
          */
         Mapper(final Class<T> targetEntityClass, final DynamoDBExecutor dynamoDBExecutor, final String tableName, final NamingPolicy namingPolicy) {
             N.checkArgNotNull(targetEntityClass, "targetEntityClass");
@@ -3662,9 +3672,9 @@ public final class DynamoDBExecutor {
 
             final List<String> idPropNames = QueryUtil.idPropNames(targetEntityClass);
 
-            if (idPropNames.size() != 1) {
-                throw new IllegalArgumentException(
-                        "No or multiple ids: " + idPropNames + " defined/annotated in class: " + ClassUtil.getCanonicalClassName(targetEntityClass));
+            if (idPropNames.isEmpty() || idPropNames.size() > 2) {
+                throw new IllegalArgumentException("A DynamoDB primary key requires one partition-key property and may have one sort-key property, but found "
+                        + idPropNames.size() + " ID properties " + idPropNames + " in class: " + ClassUtil.getCanonicalClassName(targetEntityClass));
             }
 
             this.dynamoDBExecutor = dynamoDBExecutor;

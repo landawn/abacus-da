@@ -89,6 +89,63 @@ public class ParsedCqlTest extends TestBase {
     }
 
     @Test
+    public void testParse_NamedParametersInUdtLiteralValues() {
+        final ParsedCql parsed = ParsedCql.parse("UPDATE t SET address = {street: :street, zip: :zip} WHERE id = :id");
+
+        assertEquals(3, parsed.parameterCount());
+        assertEquals("street", parsed.namedParameters().get(0));
+        assertEquals("zip", parsed.namedParameters().get(1));
+        assertEquals("id", parsed.namedParameters().get(2));
+        assertEquals("UPDATE t SET address = {street: ?, zip: ?} WHERE id = ?", parsed.parameterizedCql());
+    }
+
+    @Test
+    public void testParse_UnspacedNamedParametersInUdtLiteralValues() {
+        final ParsedCql parsed = ParsedCql.parse("UPDATE t SET address={street::street,zip::zip} WHERE id=:id");
+
+        assertEquals(3, parsed.parameterCount());
+        assertEquals("street", parsed.namedParameters().get(0));
+        assertEquals("zip", parsed.namedParameters().get(1));
+        assertEquals("UPDATE t SET address={street:?,zip:?} WHERE id=?", parsed.parameterizedCql());
+    }
+
+    @Test
+    public void testParse_LeadingDoubleSlashCommentStillParsesParameters() {
+        final ParsedCql parsed = ParsedCql.parse("// lookup by id\nSELECT * FROM users WHERE id = :id");
+
+        assertEquals(1, parsed.parameterCount());
+        assertEquals("id", parsed.namedParameters().get(0));
+        assertTrue(parsed.parameterizedCql().endsWith("WHERE id = ?"), parsed.parameterizedCql());
+    }
+
+    @Test
+    public void testParse_DoubleSlashInsideLeadingBlockCommentIsNotTreatedAsLineComment() {
+        final ParsedCql parsed = ParsedCql.parse("/* comment containing // text\nstill a comment */\nSELECT * FROM users WHERE id = :id");
+
+        assertEquals(1, parsed.parameterCount());
+        assertEquals("id", parsed.namedParameters().get(0));
+        assertTrue(parsed.parameterizedCql().endsWith("WHERE id = ?"), parsed.parameterizedCql());
+    }
+
+    @Test
+    public void testParse_BraceInDollarQuotedStringDoesNotSwallowFollowingParameter() {
+        final ParsedCql parsed = ParsedCql.parse("UPDATE t SET note = $$open { brace$$ WHERE id = :id");
+
+        assertEquals(1, parsed.parameterCount());
+        assertEquals("id", parsed.namedParameters().get(0));
+        assertTrue(parsed.parameterizedCql().endsWith("WHERE id = ?"), parsed.parameterizedCql());
+    }
+
+    @Test
+    public void testParse_ParameterSyntaxInsideDollarQuotedStringIsLiteralText() {
+        final ParsedCql parsed = ParsedCql.parse("UPDATE t SET note = $$literal :named ? #{ibatis}$$ WHERE id = :id");
+
+        assertEquals(1, parsed.parameterCount());
+        assertEquals("id", parsed.namedParameters().get(0));
+        assertEquals("UPDATE t SET note = $$literal :named ? #{ibatis}$$ WHERE id = ?", parsed.parameterizedCql());
+    }
+
+    @Test
     public void testParse_OpenBraceInStringLiteral_doesNotSwallowNamedParam() {
         // Regression: a '{' that appears INSIDE a string literal must not raise the map/UDT-literal brace depth.
         // Before the fix, updateCurlyDepth counted the '{' inside 'a{b', so the depth stayed > 0 and the following

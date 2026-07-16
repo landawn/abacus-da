@@ -865,6 +865,22 @@ public class CassandraExecutorBaseTest extends TestBase {
     }
 
     @Test
+    public void testIdsToCondition_nullCompositeKeyValue_throwsIAE() {
+        final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> TestCassandraExecutor.exposedIdsToCondition(CompositeKeyEntity.class, "u1", null));
+
+        assertTrue(ex.getMessage().contains("sessionId"), ex.getMessage());
+    }
+
+    @Test
+    public void testIdsToCondition_emptyCompositeKeyValue_throwsIAE() {
+        final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class,
+                () -> TestCassandraExecutor.exposedIdsToCondition(CompositeKeyEntity.class, "u1", ""));
+
+        assertTrue(ex.getMessage().contains("sessionId"), ex.getMessage());
+    }
+
+    @Test
     public void testIdsToCondition_idCountMismatch_throwsIAE() {
         // Provide more ids than registered keys (single-key entity) -> IAE
         assertThrows(IllegalArgumentException.class, () -> TestCassandraExecutor.exposedIdsToCondition(TestEntity.class, 1L, 2L));

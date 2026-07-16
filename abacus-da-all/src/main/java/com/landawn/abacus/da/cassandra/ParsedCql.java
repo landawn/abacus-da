@@ -206,7 +206,7 @@ public final class ParsedCql {
         Map<Integer, String> localNamedParameters = new HashMap<>();
         hashCode = Objects.hash(this.cql);
 
-        final List<String> words = SqlParser.parse(this.cql);
+        final List<String> words = SqlParser.parse(removeDoubleSlashComments(this.cql));
         final boolean isOpSqlPrefix = isOpSqlPrefix(words);
 
         int type = 0; // bit mask: 1 - '?', 2 - ':propName', 4 - '#{propName}'
@@ -216,18 +216,19 @@ public final class ParsedCql {
             final StringBuilder sb = Objectory.createStringBuilder();
 
             try {
-                int curlyDepth = 0;
+                // [0] is the current {...} depth; [1] is 1 while scanning a $$...$$ string across tokens.
+                final int[] literalState = new int[2];
 
                 for (int i = 0, size = words.size(); i < size; i++) {
                     String word = words.get(i);
-                    final int prevCurlyDepth = curlyDepth;
-                    curlyDepth = updateCurlyDepth(curlyDepth, word);
+                    final int prevCurlyDepth = literalState[0];
+                    final boolean dollarQuotedToken = updateLiteralState(literalState, word);
 
-                    if (word.equals(SK.QUESTION_MARK)) {
+                    if (!dollarQuotedToken && word.equals(SK.QUESTION_MARK)) {
                         countOfParameter++;
 
                         type |= 1;
-                    } else if (word.startsWith(LEFT_OF_IBATIS_NAMED_PARAMETER)) {
+                    } else if (!dollarQuotedToken && word.startsWith(LEFT_OF_IBATIS_NAMED_PARAMETER)) {
                         // A single tokenized word may carry more than one '#{...}' marker (for example "#{a}#{b}"),
                         // and the closing '}' may even land in a later token, because none of '#', '{', '}' are
                         // guaranteed token separators. Extract every leading '#{...}' marker in turn, pulling in
@@ -244,7 +245,7 @@ public final class ParsedCql {
 
                             while (ibatisTokenBuilder.indexOf(RIGHT_OF_IBATIS_NAMED_PARAMETER) < 0 && i < size - 1) {
                                 final String next = words.get(++i);
-                                curlyDepth = updateCurlyDepth(curlyDepth, next);
+                                updateLiteralState(literalState, next);
                                 ibatisTokenBuilder.append(next);
                             }
 
@@ -272,18 +273,39 @@ public final class ParsedCql {
 
                         rebuilt.append(word);
                         word = rebuilt.toString();
-                    } else if (word.length() >= 1 && word.charAt(0) == _PREFIX_OF_NAMED_PARAMETER) {
-                        // A token starting with ':' is a named parameter ONLY when it is not inside a '{...}' map/UDT
-                        // literal, where ':' is the key/value separator (e.g. {'a':1}). Use prevCurlyDepth (the brace
-                        // depth before this token's own braces are applied) so a token like ":2}" that closes the map
-                        // is still recognized as being inside the literal.
-                        if (prevCurlyDepth == 0) {
+                    } else if (!dollarQuotedToken && (prevCurlyDepth > 0 || literalState[0] > 0) && indexOfEmbeddedLiteralNamedParameter(word) >= 0) {
+                        // Without whitespace, a UDT field separator and its named marker are tokenized together,
+                        // for example "{street::street". Preserve the first ':' and replace only the marker.
+                        final int markerIndex = indexOfEmbeddedLiteralNamedParameter(word);
+                        final int parameterNameEnd = namedParameterNameEnd(word, markerIndex + 2);
+                        final String namedParameter = word.substring(markerIndex + 2, parameterNameEnd);
+
+                        if (Strings.isEmpty(namedParameter)) {
+                            throw new IllegalArgumentException("Invalid named parameter in literal token: " + word);
+                        }
+
+                        localNamedParameters.put(countOfParameter++, namedParameter);
+                        word = word.substring(0, markerIndex + 1) + SK.QUESTION_MARK + word.substring(parameterNameEnd);
+                        type |= 2;
+                    } else if (!dollarQuotedToken && word.length() >= 1 && word.charAt(0) == _PREFIX_OF_NAMED_PARAMETER) {
+                        // Inside a map/UDT literal, a ':' token is normally a key/value or field/value separator.
+                        // A separate ':name' token immediately following that separator is nevertheless a genuine
+                        // value bind marker (valid for UDT fields). Use prevCurlyDepth so a token such as ":2}" that
+                        // closes an unspaced map literal is still treated as literal syntax rather than a parameter.
+                        if (prevCurlyDepth == 0 || followsLiteralValueSeparator(words, i)) {
                             if (word.length() == 1) {
                                 throw new IllegalArgumentException("Invalid named parameter: " + word + ". Parameter name cannot be empty.");
                             } else {
-                                localNamedParameters.put(countOfParameter++, word.substring(1));
+                                final int parameterNameEnd = namedParameterNameEnd(word, 1);
+                                final String namedParameter = word.substring(1, parameterNameEnd);
 
-                                word = SK.QUESTION_MARK;
+                                if (Strings.isEmpty(namedParameter)) {
+                                    throw new IllegalArgumentException("Invalid named parameter: " + word + ". Parameter name cannot be empty.");
+                                }
+
+                                localNamedParameters.put(countOfParameter++, namedParameter);
+
+                                word = SK.QUESTION_MARK + word.substring(parameterNameEnd);
 
                                 type |= 2;
                             }
@@ -310,14 +332,21 @@ public final class ParsedCql {
         this.namedParameters = ImmutableMap.wrap(localNamedParameters);
     }
 
-    private static int updateCurlyDepth(final int currentDepth, final String word) {
-        int result = currentDepth;
+    /** Updates brace/dollar-quote state and reports whether any part of this token is dollar quoted. */
+    private static boolean updateLiteralState(final int[] state, final String word) {
+        boolean dollarQuotedToken = state[1] != 0;
         char quoteChar = 0; // 0 = outside any string/identifier literal; otherwise the opening quote character
 
         for (int i = 0, len = word.length(); i < len; i++) {
             final char ch = word.charAt(i);
 
-            if (quoteChar != 0) {
+            if (state[1] != 0) {
+                if (ch == '$' && i + 1 < len && word.charAt(i + 1) == '$') {
+                    dollarQuotedToken = true;
+                    state[1] = 0;
+                    i++;
+                }
+            } else if (quoteChar != 0) {
                 // Inside a quoted string/identifier literal: '{' and '}' are data, not map/UDT-literal delimiters.
                 // SqlParser keeps a quoted literal as a single token (with its quotes), recognizing both doubled-quote
                 // ('', "") and backslash escaping, so we mirror that here to find the real closing quote.
@@ -332,14 +361,144 @@ public final class ParsedCql {
                 }
             } else if (ch == '\'' || ch == '"') {
                 quoteChar = ch;
+            } else if (ch == '$' && i + 1 < len && word.charAt(i + 1) == '$') {
+                dollarQuotedToken = true;
+                state[1] = 1;
+                i++;
             } else if (ch == '{') {
-                result++;
-            } else if (ch == '}' && result > 0) {
-                result--;
+                state[0]++;
+            } else if (ch == '}' && state[0] > 0) {
+                state[0]--;
             }
         }
 
-        return result;
+        return dollarQuotedToken;
+    }
+
+    /** Returns whether a named marker in braces follows an explicit map/UDT field-value separator. */
+    private static boolean followsLiteralValueSeparator(final List<String> words, final int parameterIndex) {
+        for (int i = parameterIndex - 1; i >= 0; i--) {
+            final String previousWord = words.get(i);
+
+            if (!isCommentOrSpaceToken(previousWord)) {
+                return PREFIX_OF_NAMED_PARAMETER.equals(previousWord) || previousWord.endsWith(PREFIX_OF_NAMED_PARAMETER);
+            }
+        }
+
+        return false;
+    }
+
+    /** Finds the second ':' in an unspaced literal field/value separator plus named marker ({@code field::name}). */
+    private static int indexOfEmbeddedLiteralNamedParameter(final String word) {
+        char quoteChar = 0;
+
+        for (int i = 0, len = word.length() - 1; i < len; i++) {
+            final char ch = word.charAt(i);
+
+            if (quoteChar != 0) {
+                if (ch == '\\') {
+                    i++;
+                } else if (ch == quoteChar) {
+                    if (i + 1 < word.length() && word.charAt(i + 1) == quoteChar) {
+                        i++;
+                    } else {
+                        quoteChar = 0;
+                    }
+                }
+            } else if (ch == '\'' || ch == '"') {
+                quoteChar = ch;
+            } else if (ch == ':' && word.charAt(i + 1) == ':' && i + 2 < word.length() && word.charAt(i + 2) != '}') {
+                return i;
+            }
+        }
+
+        return -1;
+    }
+
+    /** Excludes braces that SqlParser may leave attached to a named marker at the end of a UDT token. */
+    private static int namedParameterNameEnd(final String word, final int parameterNameStart) {
+        int end = word.length();
+
+        while (end > parameterNameStart && word.charAt(end - 1) == '}') {
+            end--;
+        }
+
+        return end;
+    }
+
+    /**
+     * Removes CQL {@code //} line comments before tokenization. SqlParser already removes {@code --} and block
+     * comments, but treats the two slash characters as ordinary tokens, which otherwise hides a leading DML keyword.
+     * Existing quoted literals, {@code --} comments, and block comments are copied verbatim so slash pairs inside
+     * those regions are never mistaken for the start of a {@code //} comment.
+     */
+    private static String removeDoubleSlashComments(final String cql) {
+        if (!cql.contains("//")) {
+            return cql;
+        }
+
+        final StringBuilder result = new StringBuilder(cql.length());
+
+        for (int i = 0, len = cql.length(); i < len; i++) {
+            final char ch = cql.charAt(i);
+
+            if (ch == '\'' || ch == '"') {
+                final char quoteChar = ch;
+                result.append(ch);
+
+                for (i++; i < len; i++) {
+                    final char quotedChar = cql.charAt(i);
+                    result.append(quotedChar);
+
+                    if (quotedChar == '\\' && i + 1 < len) {
+                        result.append(cql.charAt(++i));
+                    } else if (quotedChar == quoteChar) {
+                        if (i + 1 < len && cql.charAt(i + 1) == quoteChar) {
+                            result.append(cql.charAt(++i));
+                        } else {
+                            break;
+                        }
+                    }
+                }
+            } else if (ch == '$' && i + 1 < len && cql.charAt(i + 1) == '$') {
+                final int closingIndex = cql.indexOf("$$", i + 2);
+                final int end = closingIndex < 0 ? len : closingIndex + 2;
+                result.append(cql, i, end);
+                i = end - 1;
+            } else if (ch == '-' && i + 1 < len && cql.charAt(i + 1) == '-') {
+                final int start = i;
+                i += 2;
+
+                while (i < len && cql.charAt(i) != '\r' && cql.charAt(i) != '\n') {
+                    i++;
+                }
+
+                result.append(cql, start, i);
+
+                if (i < len) {
+                    result.append(cql.charAt(i));
+                }
+            } else if (ch == '/' && i + 1 < len && cql.charAt(i + 1) == '*') {
+                final int closingIndex = cql.indexOf("*/", i + 2);
+                final int end = closingIndex < 0 ? len : closingIndex + 2;
+                result.append(cql, i, end);
+                i = end - 1;
+            } else if (ch == '/' && i + 1 < len && cql.charAt(i + 1) == '/') {
+                i += 2;
+
+                while (i < len && cql.charAt(i) != '\r' && cql.charAt(i) != '\n') {
+                    i++;
+                }
+
+                if (i < len) {
+                    result.append(cql.charAt(i));
+                }
+            } else {
+                result.append(ch);
+            }
+        }
+
+        return result.toString();
     }
 
     /**
@@ -375,7 +534,7 @@ public final class ParsedCql {
     }
 
     private static boolean isCommentOrSpaceToken(final String word) {
-        return Strings.isEmpty(word) || " ".equals(word) || word.startsWith("--") || word.startsWith("/*");
+        return Strings.isEmpty(word) || word.trim().isEmpty() || word.startsWith("--") || word.startsWith("//") || word.startsWith("/*");
     }
 
     /**

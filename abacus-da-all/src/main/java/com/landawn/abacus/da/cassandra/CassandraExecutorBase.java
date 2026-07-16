@@ -366,8 +366,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param targetClass the entity class whose primary-key column names are used
      * @param ids the ID values in the same order as the key fields
      * @return a Condition representing the primary key equality check
-     * @throws IllegalArgumentException if {@code ids} is null or empty, or if its length does not
-     *         match the number of registered/annotated key columns on {@code targetClass}
+     * @throws IllegalArgumentException if {@code ids} is null or empty, contains a {@code null} or empty
+     *         character-sequence key value, or its length does not match the number of registered/annotated
+     *         key columns on {@code targetClass}
      */
     protected static Condition idsToCondition(final Class<?> targetClass, final Object... ids) {
         N.checkArgNotEmpty(ids, "ids");
@@ -375,19 +376,29 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
         final ImmutableList<String> keyNames = getKeyNames(targetClass);
 
         if (keyNames.size() == 1 && ids.length == 1) {
+            checkIdValue(keyNames.get(0), ids[0]);
+
             return Filters.eq(keyNames.get(0), ids[0]);
         } else if (ids.length == keyNames.size()) {
             final Iterator<String> iter = keyNames.iterator();
             final List<Condition> conds = new ArrayList<>();
 
             for (final Object id : ids) {
-                conds.add(Filters.eq(iter.next(), id));
+                final String keyName = iter.next();
+                checkIdValue(keyName, id);
+                conds.add(Filters.eq(keyName, id));
             }
 
             return Filters.and(conds);
         } else {
             throw new IllegalArgumentException("The number: " + ids.length + " of input ids doesn't match the (registered) key names: "
                     + (N.isEmpty(keyNames) ? "[id]" : N.toString(keyNames)) + " in class: " + ClassUtil.getCanonicalClassName(targetClass));
+        }
+    }
+
+    private static void checkIdValue(final String keyName, final Object id) {
+        if (id == null || id instanceof CharSequence && Strings.isEmpty((CharSequence) id)) {
+            throw new IllegalArgumentException("No id value specified for key name: " + keyName);
         }
     }
 

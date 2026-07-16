@@ -618,7 +618,7 @@ public class BigQueryExecutorTest2 extends TestBase {
 
     @Test
     public void testEntityToCondition_NullEntityThrows() {
-        assertThrows(NullPointerException.class, () -> executor.delete((Object) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.delete((Object) null));
     }
 
     @Test

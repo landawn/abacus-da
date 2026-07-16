@@ -575,7 +575,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * }</pre>
      *
      * @param putToCopy the existing HBase Put object to copy; must not be null
-     * @return a new AnyPut instance that is a deep copy of the specified put
+     * @return a new AnyPut instance with independent collection structure; contained
+     *         {@link Cell} instances are shared with the specified put
      * @throws NullPointerException if {@code putToCopy} is null (raised by the wrapped
      *         {@link Put#Put(Put)} constructor)
      * @see Put

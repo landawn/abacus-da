@@ -186,7 +186,7 @@ public class BigQueryExecutor {
 
         try {
             tmp = FieldValueList.class.getDeclaredField("schema");
-        } catch (final Throwable e) {
+        } catch (final NoSuchFieldException | SecurityException e) {
             // ignore: schema-from-row access is disabled; getSchema(FieldValueList) will then fail and
             // callers must use the overloads that take an explicit FieldList/Schema.
             if (logger.isDebugEnabled()) {
@@ -347,7 +347,8 @@ public class BigQueryExecutor {
      * @param fieldValueList the row to convert
      * @param targetClass the bean class to instantiate; must declare standard getter/setter methods
      * @return a new {@code targetClass} instance with properties populated from {@code fieldValueList}
-     * @throws IllegalArgumentException if {@code schema} is {@code null} or {@code targetClass} is
+     * @throws IllegalArgumentException if {@code schema} or {@code fieldValueList} is {@code null},
+     *                                  the schema and row widths differ, or {@code targetClass} is
      *                                  not a recognised bean class
      * @see #toEntity(FieldList, FieldValueList, Class)
      * @see #toEntity(FieldValueList, Class)
@@ -394,8 +395,9 @@ public class BigQueryExecutor {
      * @param fieldValueList the row to convert; must not be {@code null}
      * @param targetClass the bean class to instantiate; must declare standard getter/setter methods
      * @return a new {@code targetClass} instance with properties populated from {@code fieldValueList}
-     * @throws IllegalArgumentException if {@code targetClass} is not a recognised bean class, or if
-     *                                  {@code fields} or {@code fieldValueList} is {@code null}
+     * @throws IllegalArgumentException if {@code targetClass} is not a recognised bean class, if
+     *                                  {@code fields} or {@code fieldValueList} is {@code null}, or
+     *                                  if the number of fields differs from the number of row values
      * @see #toEntity(Schema, FieldValueList, Class)
      * @see #toEntity(FieldValueList, Class)
      */
@@ -403,6 +405,7 @@ public class BigQueryExecutor {
         N.checkArgument(Beans.isBeanClass(targetClass), "{} is not a valid entity class with getter/setter method", targetClass);
         N.checkArgNotNull(fields, "fields");
         N.checkArgNotNull(fieldValueList, "fieldValueList");
+        checkFieldCount(fields, fieldValueList);
 
         final Map<String, String> column2FieldNameMap = QueryUtil.columnToPropNameMap(targetClass);
         final BeanInfo entityInfo = ParserUtil.getBeanInfo(targetClass);
@@ -554,7 +557,8 @@ public class BigQueryExecutor {
      * @param schema the schema describing {@code fieldValueList}; must not be {@code null}
      * @param fieldValueList the row to convert
      * @return a new {@code HashMap} with one entry per field in {@code schema}
-     * @throws IllegalArgumentException if {@code schema} or {@code fieldValueList} is {@code null}
+     * @throws IllegalArgumentException if {@code schema} or {@code fieldValueList} is {@code null},
+     *                                  or if the schema and row widths differ
      * @see #toMap(FieldList, FieldValueList)
      */
     public static Map<String, Object> toMap(final Schema schema, final FieldValueList fieldValueList) {
@@ -589,7 +593,8 @@ public class BigQueryExecutor {
      * @param fields the BigQuery field list defining field structure and names
      * @param fieldValueList the row data from BigQuery containing the values
      * @return a HashMap containing column names as keys and corresponding values
-     * @throws IllegalArgumentException if fields or fieldValueList is null
+     * @throws IllegalArgumentException if {@code fields} or {@code fieldValueList} is {@code null},
+     *                                  or if their sizes differ
      * @see #toMap(FieldList, FieldValueList, IntFunction)
      */
     public static Map<String, Object> toMap(final FieldList fields, final FieldValueList fieldValueList) {
@@ -627,7 +632,8 @@ public class BigQueryExecutor {
      * @param mapSupplier creates the outer {@link Map} instance given the expected size; must not be
      *                    {@code null}
      * @return the map produced by {@code mapSupplier}, populated with one entry per field
-     * @throws IllegalArgumentException if any argument is {@code null}
+     * @throws IllegalArgumentException if any argument is {@code null}, or if the number of fields
+     *                                  differs from the number of row values
      * @see IntFunctions#ofMap()
      * @see IntFunctions#ofLinkedHashMap()
      */
@@ -636,6 +642,7 @@ public class BigQueryExecutor {
         N.checkArgNotNull(fields, "fields");
         N.checkArgNotNull(fieldValueList, "fieldValueList");
         N.checkArgNotNull(mapSupplier, "mapSupplier");
+        checkFieldCount(fields, fieldValueList);
 
         final Map<String, Object> map = mapSupplier.apply(fieldValueList.size());
 
@@ -644,6 +651,16 @@ public class BigQueryExecutor {
         }
 
         return map;
+    }
+
+    /**
+     * Verifies that an explicitly supplied schema has the same number of fields as the row. A
+     * width mismatch would otherwise either omit trailing schema fields or fail later with an
+     * unrelated index exception.
+     */
+    private static void checkFieldCount(final FieldList fields, final FieldValueList fieldValueList) {
+        N.checkArgument(fields.size() == fieldValueList.size(), "Schema field count ({}) does not match row value count ({})", fields.size(),
+                fieldValueList.size());
     }
 
     private static Object toMapValue(final Field field, final FieldValue fieldValue, final IntFunction<? extends Map<String, Object>> mapSupplier) {
@@ -2625,130 +2642,10 @@ public class BigQueryExecutor {
 
         final SP sp = sqlBuilder.build();
 
-        // BigQuery (GoogleSQL) quotes identifiers with backticks. SqlBuilder emits ANSI double-quoted
-        // column aliases (for example, SELECT id AS "id"), so rewrite those generated aliases only.
-        // A blanket quote replacement would corrupt legitimate double-quoted string literals supplied
-        // by callers through raw-expression conditions.
-        //    final String query = sp.query();
-        //    final String googleSqlQuery = normalizeColumnAliases(query);
-        //
-        //    return query.equals(googleSqlQuery) ? sp : new SP(googleSqlQuery, sp.parameters());
-
+        // PSC/PAC/PLC are configured with IdentifierQuote.BACKTICK, so generated aliases already
+        // use GoogleSQL syntax while quote characters inside caller-supplied expressions are untouched.
         return sp;
     }
-
-    //    /**
-    //     * Rewrites ANSI {@code AS "alias"} tokens to GoogleSQL backtick aliases while leaving quoted
-    //     * string/identifier content untouched. The query builder only generates aliases outside a
-    //     * quoted region; raw expressions can contain arbitrary single-, double-, or backtick-quoted
-    //     * text and must survive unchanged.
-    //     */
-    //    private static String normalizeColumnAliases(final String query) {
-    //        StringBuilder result = null;
-    //        char quote = 0;
-    //
-    //        for (int i = 0, len = query.length(); i < len; i++) {
-    //            final char ch = query.charAt(i);
-    //
-    //            if (quote != 0) {
-    //                if (result != null) {
-    //                    result.append(ch);
-    //                }
-    //
-    //                if (ch == '\\' && i + 1 < len) {
-    //                    if (result != null) {
-    //                        result.append(query.charAt(i + 1));
-    //                    }
-    //
-    //                    i++;
-    //                } else if (ch == quote && i + 1 < len && query.charAt(i + 1) == quote) {
-    //                    if (result != null) {
-    //                        result.append(query.charAt(i + 1));
-    //                    }
-    //
-    //                    i++;
-    //                } else if (ch == quote) {
-    //                    quote = 0;
-    //                }
-    //
-    //                continue;
-    //            }
-    //
-    //            if (ch == '\'' || ch == '`') {
-    //                quote = ch;
-    //            } else if (ch == '"') {
-    //                final int aliasEnd = isAnsiAliasStart(query, i) ? findAnsiAliasEnd(query, i + 1) : -1;
-    //
-    //                if (aliasEnd >= 0) {
-    //                    if (result == null) {
-    //                        result = new StringBuilder(query.length());
-    //                        result.append(query, 0, i);
-    //                    }
-    //
-    //                    result.append('`');
-    //                    appendGoogleSqlAlias(result, query, i + 1, aliasEnd);
-    //                    result.append('`');
-    //                    i = aliasEnd;
-    //                    continue;
-    //                }
-    //
-    //                quote = ch;
-    //            }
-    //
-    //            if (result != null) {
-    //                result.append(ch);
-    //            }
-    //        }
-    //
-    //        return result == null ? query : result.toString();
-    //    }
-    //
-    //    private static boolean isAnsiAliasStart(final String query, final int quoteIndex) {
-    //        int i = quoteIndex - 1;
-    //
-    //        while (i >= 0 && Character.isWhitespace(query.charAt(i))) {
-    //            i--;
-    //        }
-    //
-    //        return i >= 1 && (query.charAt(i) == 's' || query.charAt(i) == 'S') && (query.charAt(i - 1) == 'a' || query.charAt(i - 1) == 'A')
-    //                && (i == 1 || !Character.isJavaIdentifierPart(query.charAt(i - 2)));
-    //    }
-    //
-    //    private static int findAnsiAliasEnd(final String query, final int fromIndex) {
-    //        for (int i = fromIndex, len = query.length(); i < len; i++) {
-    //            final char ch = query.charAt(i);
-    //
-    //            if (ch == '\\' && i + 1 < len) {
-    //                i++;
-    //            } else if (ch == '"') {
-    //                if (i + 1 < len && query.charAt(i + 1) == '"') {
-    //                    i++;
-    //                } else {
-    //                    return i;
-    //                }
-    //            }
-    //        }
-    //
-    //        return -1;
-    //    }
-    //
-    //    private static void appendGoogleSqlAlias(final StringBuilder result, final String query, final int fromIndex, final int toIndex) {
-    //        for (int i = fromIndex; i < toIndex; i++) {
-    //            final char ch = query.charAt(i);
-    //
-    //            if (ch == '\\' && i + 1 < toIndex && query.charAt(i + 1) == '"') {
-    //                result.append('"');
-    //                i++;
-    //            } else if (ch == '"' && i + 1 < toIndex && query.charAt(i + 1) == '"') {
-    //                result.append('"');
-    //                i++;
-    //            } else if (ch == '`') {
-    //                result.append("\\`");
-    //            } else {
-    //                result.append(ch);
-    //            }
-    //        }
-    //    }
 
     private static final Function<Object, QueryParameterValue> defaultQueryParameterCreator = value -> {
         final Type<?> type = Type.of(value.getClass());
@@ -2860,8 +2757,8 @@ public class BigQueryExecutor {
      *
      * <p>The reflective accessor is resolved once in a static initialiser; if the BigQuery client
      * library hides or removes the field, that initialiser silently disables the optimisation and
-     * <i>this method then fails</i> with {@link IllegalArgumentException} on the
-     * {@code N.checkArgNotNull(schemaFieldOfFieldList, ...)} guard.</p>
+     * <i>this method then fails</i> with {@link IllegalArgumentException} when it validates the
+     * captured accessor.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2875,7 +2772,8 @@ public class BigQueryExecutor {
      * @throws IllegalArgumentException if {@code fieldValueList} is {@code null}, or if the
      *                                  reflective accessor was not available at class-init
      *                                  time (e.g. on a future BigQuery client library version that
-     *                                  removes the {@code schema} field)
+     *                                  removes the {@code schema} field), or if the row has no
+     *                                  schema attached
      * @throws RuntimeException if the accessor was available at class-init but became inaccessible
      *                          at call time (the accessor is also disabled for subsequent calls in
      *                          that case)
@@ -2884,17 +2782,24 @@ public class BigQueryExecutor {
      */
     static FieldList getSchema(final FieldValueList fieldValueList) {
         N.checkArgNotNull(fieldValueList, "fieldValueList");
-        N.checkArgNotNull(schemaFieldOfFieldList, "Can't get schema of 'FieldValueList' by java reflect api");
+        // Capture the volatile accessor once. Another thread may disable the shared accessor after
+        // an IllegalAccessException; reading the field twice could otherwise pass the null check and
+        // then dereference null.
+        final java.lang.reflect.Field schemaField = schemaFieldOfFieldList;
+        N.checkArgNotNull(schemaField, "Can't get schema of 'FieldValueList' by java reflect api");
 
         FieldList fields = null;
 
         try {
-            fields = (FieldList) schemaFieldOfFieldList.get(fieldValueList);
+            fields = (FieldList) schemaField.get(fieldValueList);
         } catch (final IllegalAccessException e) {
             logger.warn("Unexpected: schema field of 'FieldValueList' became inaccessible; disabling reflection-based schema access", e);
             schemaFieldOfFieldList = null;
             throw ExceptionUtil.toRuntimeException(e, true);
         }
+
+        N.checkArgNotNull(fields, "No schema is attached to the supplied FieldValueList; use an overload that takes an explicit FieldList or Schema");
+
         return fields;
     }
 

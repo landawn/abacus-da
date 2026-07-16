@@ -29,7 +29,6 @@ import java.util.Objects;
 
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
-import org.w3c.dom.NodeList;
 import org.w3c.dom.Text;
 import org.xml.sax.SAXException;
 
@@ -343,13 +342,9 @@ public final class CqlMapper {
     private void loadStream(final InputStream is, final String sourceLabel) {
         try {
             final Document doc = XmlUtil.createDOMParser(true, true).parse(is);
-            final NodeList cqlMapperEle = doc.getElementsByTagName(CqlMapper.CQL_MAPPER);
+            final Element cqlMapperElement = requireCqlMapperRoot(doc, sourceLabel);
 
-            if (0 == cqlMapperEle.getLength()) {
-                throw new RuntimeException("Missing required 'cqlMapper' root element in: " + sourceLabel);
-            }
-
-            final List<Element> cqlElementList = XmlUtil.getElementsByTagName((Element) cqlMapperEle.item(0), CQL);
+            final List<Element> cqlElementList = XmlUtil.getElementsByTagName(cqlMapperElement, CQL);
 
             for (final Element cqlElement : cqlElementList) {
                 final Map<String, String> attrMap = XmlUtil.readAttributes(cqlElement);
@@ -370,6 +365,17 @@ public final class CqlMapper {
         } catch (final SAXException e) {
             throw new ParsingException(e);
         }
+    }
+
+    /** Returns the document root after verifying that it is the required {@code <cqlMapper>} element. */
+    static Element requireCqlMapperRoot(final Document doc, final String sourceLabel) {
+        final Element rootElement = doc.getDocumentElement();
+
+        if (rootElement == null || !CqlMapper.CQL_MAPPER.equals(rootElement.getTagName())) {
+            throw new RuntimeException("Missing required 'cqlMapper' root element in: " + sourceLabel);
+        }
+
+        return rootElement;
     }
 
     /**

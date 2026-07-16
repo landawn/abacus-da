@@ -76,7 +76,8 @@ final class ResultSets {
      * this wrapper and always throws {@link UnsupportedOperationException}.</li>
      * <li>Checked exceptions raised while fetching the next page (e.g.
      * {@link java.util.concurrent.ExecutionException} or {@link InterruptedException}) are
-     * converted into runtime exceptions via {@link com.landawn.abacus.util.ExceptionUtil}.</li>
+     * converted into runtime exceptions via {@link com.landawn.abacus.util.ExceptionUtil}.
+     * If the wait is interrupted, the current thread's interrupt status is restored first.</li>
      * </ul>
      *
      * <h2>Usage Example</h2>
@@ -114,7 +115,10 @@ final class ResultSets {
                         try {
                             currentResultSet = currentResultSet.fetchNextPage().toCompletableFuture().get();
                             executionInfos.add(currentResultSet.getExecutionInfo());
-                        } catch (ExecutionException | InterruptedException e) {
+                        } catch (final InterruptedException e) {
+                            Thread.currentThread().interrupt();
+                            throw ExceptionUtil.toRuntimeException(e, true);
+                        } catch (final ExecutionException e) {
                             throw ExceptionUtil.toRuntimeException(e, true);
                         }
 

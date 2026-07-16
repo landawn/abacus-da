@@ -304,6 +304,24 @@ public class HBaseExecutorStaticTest extends TestBase {
         assertEquals("r2", beans.get(0).getId());
     }
 
+    @Test
+    public void testToList_resultScanner_cursorResultsDoNotConsumeWindow() throws Exception {
+        Cell c1 = new KeyValue(Bytes.toBytes("r1"), Bytes.toBytes("info"), Bytes.toBytes("user_name"), Bytes.toBytes("A"));
+        Cell c2 = new KeyValue(Bytes.toBytes("r2"), Bytes.toBytes("info"), Bytes.toBytes("user_name"), Bytes.toBytes("B"));
+        Result cursor = Result.createCursorResult(mock(org.apache.hadoop.hbase.client.Cursor.class));
+        Result first = Result.create(Arrays.<Cell> asList(c1));
+        Result second = Result.create(Arrays.<Cell> asList(c2));
+
+        ResultScanner scanner = mock(ResultScanner.class);
+        when(scanner.next()).thenReturn(cursor, first, cursor, second, (Result) null);
+
+        List<Bean> beans = HBaseExecutor.toList(scanner, 1, 1, Bean.class);
+
+        assertEquals(1, beans.size());
+        assertEquals("r2", beans.get(0).getId());
+        verify(scanner).close();
+    }
+
     // ---------------------------------------------------------------------
     // registerRowKeyProperty
     // ---------------------------------------------------------------------
@@ -383,6 +401,40 @@ public class HBaseExecutorStaticTest extends TestBase {
         assertSame(adminFailure, actual);
         assertEquals(1, actual.getSuppressed().length);
         assertSame(connectionFailure, actual.getSuppressed()[0]);
+        verify(conn).close();
+    }
+
+    @Test
+    public void testExecutor_isAutoCloseable() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        when(conn.getAdmin()).thenReturn(admin);
+
+        assertTrue(AutoCloseable.class.isAssignableFrom(HBaseExecutor.class));
+
+        try (HBaseExecutor ignored = new HBaseExecutor(conn)) {
+            // try-with-resources must be available for the resources owned by HBaseExecutor.
+        }
+
+        verify(admin).close();
+        verify(conn).close();
+    }
+
+    @Test
+    public void testClose_sameFailureFromBothResourcesDoesNotMaskOriginal() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        IOException closeFailure = new IOException("shared close failure");
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.isClosed()).thenReturn(false);
+        org.mockito.Mockito.doThrow(closeFailure).when(admin).close();
+        org.mockito.Mockito.doThrow(closeFailure).when(conn).close();
+
+        HBaseExecutor executor = new HBaseExecutor(conn);
+        IOException actual = assertThrows(IOException.class, executor::close);
+
+        assertSame(closeFailure, actual);
+        assertEquals(0, actual.getSuppressed().length);
         verify(conn).close();
     }
 
@@ -625,18 +677,33 @@ public class HBaseExecutorStaticTest extends TestBase {
     public void testPut_emptyCollection_doesNotCallTable() throws Exception {
         Connection conn = mock(Connection.class);
         Admin admin = mock(Admin.class);
-        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
         when(conn.getAdmin()).thenReturn(admin);
-        when(conn.getTable(any(TableName.class))).thenReturn(table);
 
         final HBaseExecutor executor = new HBaseExecutor(conn);
         try {
-            // Empty AnyPut collection - should be a no-op (no put call to table).
             executor.put("tbl", Collections.<AnyPut> emptyList());
-            // Cannot assert table.put was NOT called without knowing the impl;
-            // simply verify no exception was thrown.
+            verify(conn, times(0)).getTable(any(TableName.class));
         } finally {
             executor.close();
+        }
+    }
+
+    @Test
+    public void testEmptyNativeBatches_doNotAcquireTable() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        when(conn.getAdmin()).thenReturn(admin);
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            assertEquals(Collections.emptyList(), executor.exists("tbl", Collections.<org.apache.hadoop.hbase.client.Get> emptyList()));
+            assertEquals(Collections.emptyList(), executor.get("tbl", Collections.<org.apache.hadoop.hbase.client.Get> emptyList()));
+            assertEquals(Collections.emptyList(), executor.exists("tbl", Collections.<AnyGet> emptyList()));
+            assertEquals(Collections.emptyList(), executor.get("tbl", Collections.<AnyGet> emptyList()));
+            executor.put("tbl", Collections.<org.apache.hadoop.hbase.client.Put> emptyList());
+            executor.delete("tbl", Collections.<org.apache.hadoop.hbase.client.Delete> emptyList());
+            executor.delete("tbl", Collections.<AnyDelete> emptyList());
+
+            verify(conn, times(0)).getTable(any(TableName.class));
         }
     }
 
@@ -1175,6 +1242,33 @@ public class HBaseExecutorStaticTest extends TestBase {
         } finally {
             executor.close();
         }
+    }
+
+    @Test
+    public void testTypedScan_omitsCursorOnlyResults() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        org.apache.hadoop.hbase.client.Table table = mock(org.apache.hadoop.hbase.client.Table.class);
+        ResultScanner scanner = mock(ResultScanner.class);
+        Result cursor = Result.createCursorResult(mock(org.apache.hadoop.hbase.client.Cursor.class));
+        Cell cell = new KeyValue(Bytes.toBytes("r1"), Bytes.toBytes("info"), Bytes.toBytes("user_name"), Bytes.toBytes("A"));
+        Result row = Result.create(Arrays.<Cell> asList(cell));
+
+        when(conn.getAdmin()).thenReturn(admin);
+        when(conn.getTable(any(TableName.class))).thenReturn(table);
+        when(table.getScanner(any(org.apache.hadoop.hbase.client.Scan.class))).thenReturn(scanner);
+        when(scanner.iterator()).thenReturn(Arrays.asList(cursor, row).iterator());
+
+        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+            List<Bean> beans = executor.scan("tbl", new org.apache.hadoop.hbase.client.Scan().setNeedCursorResult(true), Bean.class).toList();
+
+            assertEquals(1, beans.size());
+            assertEquals("r1", beans.get(0).getId());
+            assertEquals("A", beans.get(0).getName());
+        }
+
+        verify(scanner).close();
+        verify(table).close();
     }
 
     @Test

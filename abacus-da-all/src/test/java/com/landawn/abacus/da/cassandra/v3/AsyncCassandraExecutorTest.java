@@ -6,7 +6,9 @@ package com.landawn.abacus.da.cassandra.v3;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -29,6 +31,13 @@ import org.junit.jupiter.api.Test;
 import com.landawn.abacus.util.function.Function;
 
 import com.datastax.driver.core.ColumnDefinitions;
+import com.datastax.driver.core.BoundStatement;
+import com.datastax.driver.core.Cluster;
+import com.datastax.driver.core.CodecRegistry;
+import com.datastax.driver.core.Configuration;
+import com.datastax.driver.core.PreparedStatement;
+import com.datastax.driver.core.ProtocolOptions;
+import com.datastax.driver.core.ProtocolVersion;
 import com.datastax.driver.core.ResultSet;
 import com.datastax.driver.core.ResultSetFuture;
 import com.datastax.driver.core.Row;
@@ -36,6 +45,7 @@ import com.datastax.driver.core.Session;
 import com.datastax.driver.core.SimpleStatement;
 import com.datastax.driver.core.Statement;
 import com.landawn.abacus.da.TestBase;
+import com.landawn.abacus.da.cassandra.CqlMapper;
 import com.landawn.abacus.util.ContinuableFuture;
 import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.u.Optional;
@@ -330,5 +340,72 @@ public class AsyncCassandraExecutorTest extends TestBase {
         Iterator<String> it = stream.iterator();
         assertTrue(it.hasNext());
         assertEquals("X", it.next());
+    }
+
+    @Test
+    public void testSyncExecutorCachesResolvedCqlButReturnsFreshMutableBoundStatements() {
+        final Session session = mock(Session.class);
+        final Cluster cluster = mock(Cluster.class);
+        final Configuration configuration = mock(Configuration.class);
+        final CodecRegistry codecRegistry = mock(CodecRegistry.class);
+        final ProtocolOptions protocolOptions = mock(ProtocolOptions.class);
+        when(session.init()).thenReturn(session);
+        when(session.getCluster()).thenReturn(cluster);
+        when(cluster.getConfiguration()).thenReturn(configuration);
+        when(configuration.getCodecRegistry()).thenReturn(codecRegistry);
+        when(configuration.getProtocolOptions()).thenReturn(protocolOptions);
+        when(protocolOptions.getProtocolVersion()).thenReturn(ProtocolVersion.V4);
+
+        final String firstCql = "SELECT * FROM v3_mapper_cache_first";
+        final String secondCql = "SELECT * FROM v3_mapper_cache_second";
+        final CqlMapper mapper = new CqlMapper();
+        mapper.add("lookup", firstCql);
+
+        final PreparedStatement firstPrepared = mock(PreparedStatement.class);
+        final PreparedStatement secondPrepared = mock(PreparedStatement.class);
+        final BoundStatement firstBound = mock(BoundStatement.class);
+        final BoundStatement nextFirstBound = mock(BoundStatement.class);
+        final BoundStatement secondBound = mock(BoundStatement.class);
+        when(session.prepare(firstCql)).thenReturn(firstPrepared);
+        when(session.prepare(secondCql)).thenReturn(secondPrepared);
+        when(firstPrepared.bind(any(Object[].class))).thenReturn(firstBound, nextFirstBound);
+        when(secondPrepared.bind(any(Object[].class))).thenReturn(secondBound);
+
+        final CassandraExecutor realExecutor = new CassandraExecutor(session, null, mapper);
+        assertSame(firstBound, realExecutor.prepareStatement("lookup"));
+        assertSame(nextFirstBound, realExecutor.prepareStatement("lookup"));
+        assertNotSame(firstBound, nextFirstBound);
+
+        mapper.remove("lookup");
+        mapper.add("lookup", secondCql);
+
+        assertSame(secondBound, realExecutor.prepareStatement("lookup"));
+        verify(session).prepare(firstCql);
+        verify(session).prepare(secondCql);
+    }
+
+    @Test
+    public void testSyncExecutorRejectsParametersForParameterlessQuery() {
+        final Session session = mock(Session.class);
+        final Cluster cluster = mock(Cluster.class);
+        final Configuration configuration = mock(Configuration.class);
+        final ProtocolOptions protocolOptions = mock(ProtocolOptions.class);
+        when(session.init()).thenReturn(session);
+        when(session.getCluster()).thenReturn(cluster);
+        when(cluster.getConfiguration()).thenReturn(configuration);
+        when(configuration.getCodecRegistry()).thenReturn(mock(CodecRegistry.class));
+        when(configuration.getProtocolOptions()).thenReturn(protocolOptions);
+        when(protocolOptions.getProtocolVersion()).thenReturn(ProtocolVersion.V4);
+
+        final String query = "SELECT * FROM v3_parameterless_query";
+        final PreparedStatement preparedStatement = mock(PreparedStatement.class);
+        final ColumnDefinitions variables = mock(ColumnDefinitions.class);
+        when(session.prepare(query)).thenReturn(preparedStatement);
+        when(preparedStatement.getVariables()).thenReturn(variables);
+        when(variables.size()).thenReturn(0);
+
+        final CassandraExecutor realExecutor = new CassandraExecutor(session);
+        final IllegalArgumentException ex = assertThrows(IllegalArgumentException.class, () -> realExecutor.prepareStatement(query, 1L));
+        assertTrue(ex.getMessage().contains("expected 0 but got 1"), ex.getMessage());
     }
 }

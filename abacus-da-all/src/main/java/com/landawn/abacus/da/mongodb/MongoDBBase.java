@@ -319,12 +319,14 @@ public abstract class MongoDBBase {
      * @param rowType the target class - must be one of: {@link Bson}, {@link Document},
      *                {@link BasicBSONObject}, or {@link BasicDBObject}
      * @return an instance of the specified type populated with the JSON data
-     * @throws IllegalArgumentException if {@code rowType} is not one of the supported BSON types
+     * @throws IllegalArgumentException if {@code rowType} is {@code null} or is not one of the supported BSON types
      * @see Document
      * @see org.bson.BasicBSONObject
      * @see com.mongodb.BasicDBObject
      */
     public static <T> T fromJson(final String json, final Class<T> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         if (rowType.equals(Bson.class) || rowType.equals(Document.class)) {
             final Document doc = new Document();
             jsonParser.parse(json, doc);
@@ -1008,16 +1010,20 @@ public abstract class MongoDBBase {
      * List<String> names = MongoDB.toList(collection.find().projection(Projections.include("name")), String.class);
      *
      * // No matching documents yields an empty list.
-     * // A document with more than two fields cannot be read into a scalar:
-     * //     MongoDB.toList(threeFieldDocs, Integer.class)  ->  throws IllegalArgumentException
+     * // A scalar row may contain one projected field plus the optional MongoDB _id field.
+     * // Two projected fields cannot be read into a scalar:
+     * //     MongoDB.toList(twoProjectedFieldDocs, Integer.class)  ->  throws IllegalArgumentException
      * }</pre>
      *
      * @param <T> the target type for list elements
      * @param findIterable the MongoDB query result to convert
      * @param rowType the target class - can be an entity class with getter/setter methods, Map.class, or basic single value type (Primitive/String/Date...)
-     * @return a List containing all results converted to the specified type (empty list if no results)
+     * @return a List containing all results converted to the specified type (empty list if no results).
+     *         When a result is a non-{@link Document} {@link Map} and a different concrete map type is
+     *         requested, its entries are copied directly rather than being interpreted as bean properties.
      * @throws NullPointerException if findIterable is null
-     * @throws IllegalArgumentException if {@code rowType} is null, or if a result document cannot be projected onto {@code rowType} (e.g. a document with more than two fields targeted at a primitive/String/Date scalar)
+     * @throws IllegalArgumentException if {@code rowType} is null, or if a result document cannot be projected onto {@code rowType}
+     *         (for example, a document with more than one non-{@code _id} field targeted at a primitive/String/Date scalar)
      * @see com.mongodb.client.MongoIterable
      * @see #toEntity(Document, Class)
      */
@@ -1039,10 +1045,20 @@ public abstract class MongoDBBase {
                             resultList.add(readRow((Document) row, rowType));
                         }
                     } else if (targetType.isMap()) {
-                        Map<String, Object> rowMap = null;
                         for (final Object row : rowList) {
-                            rowMap = N.newMap((Class<Map>) rowType);
-                            Beans.beanToMap(row, rowMap);
+                            if (row == null) {
+                                resultList.add(null);
+                                continue;
+                            }
+
+                            final Map<String, Object> rowMap = N.newMap((Class<Map>) rowType);
+
+                            if (row instanceof Map) {
+                                rowMap.putAll((Map<String, Object>) row);
+                            } else {
+                                Beans.beanToMap(row, rowMap);
+                            }
+
                             resultList.add(rowMap);
                         }
                     } else {
@@ -1050,27 +1066,26 @@ public abstract class MongoDBBase {
                             resultList.add(Beans.copyAs(row, rowType));
                         }
                     }
-                } else if (firstNonNull.get() instanceof Map && ((Map<String, Object>) firstNonNull.get()).size() <= 2) {
-                    // The first row alone is not sufficient validation: aggregation/find results can
-                    // have heterogeneous shapes. Silently extracting one field from a later, wider row
-                    // loses data and contradicts readRow's scalar-conversion contract.
-                    for (final Object row : rowList) {
-                        if (row != null && (!(row instanceof Map) || ((Map<String, Object>) row).size() > 2)) {
-                            throw new IllegalArgumentException("Cannot convert document: " + row + " to class: " + ClassUtil.getCanonicalClassName(rowType));
-                        }
-                    }
-
-                    // Derive the scalar property name from the first row that actually carries a non-_id key.
-                    // A matched document that lacks the projected field comes back as {_id: ...} only; if such
-                    // a document happened to be first, every row would silently be read from "_id" instead.
+                } else if (firstNonNull.get() instanceof Map) {
+                    // The first row alone is not sufficient validation: aggregation/find results can have
+                    // heterogeneous shapes. Silently extracting one of several projected fields loses data.
                     String propName = null;
 
                     for (final Object row : rowList) {
-                        if (row instanceof Map) {
-                            propName = N.findFirst(((Map<String, Object>) row).keySet(), Fn.notEqual(_ID)).orElse(null);
+                        if (row != null && !(row instanceof Map)) {
+                            throw new IllegalArgumentException("Cannot convert document: " + row + " to class: " + ClassUtil.getCanonicalClassName(rowType));
+                        }
 
-                            if (propName != null) {
-                                break;
+                        if (row instanceof Map) {
+                            final String rowPropName = singleValuePropName((Map<String, Object>) row, rowType);
+
+                            if (rowPropName != null) {
+                                if (propName == null) {
+                                    propName = rowPropName;
+                                } else if (!propName.equals(rowPropName)) {
+                                    throw new IllegalArgumentException("Cannot convert documents with inconsistent scalar fields '" + propName + "' and '"
+                                            + rowPropName + "' to class: " + ClassUtil.getCanonicalClassName(rowType));
+                                }
                             }
                         }
                     }
@@ -1118,8 +1133,8 @@ public abstract class MongoDBBase {
      *   <li>A {@link Collection} type &rarr; a new collection of that type containing the row's values.</li>
      *   <li>A {@link Map} type &rarr; a new map of that type populated via {@link #toMap(Document, IntFunction)}.</li>
      *   <li>A bean class &rarr; delegated to {@link #toEntity(Document, Class)}.</li>
-     *   <li>Any other type when the row has at most two fields &rarr; the non-{@code _id} field value is
-     *       converted to {@code rowType} via {@code N.convert}.</li>
+     *   <li>Any other type when the row has at most one non-{@code _id} field &rarr; that field value is
+     *       converted to {@code rowType} via {@code N.convert}; an {@code _id}-only row uses its id value.</li>
      * </ul>
      *
      * @param <T> the target type
@@ -1157,13 +1172,33 @@ public abstract class MongoDBBase {
             return (T) toMap(row, IntFunctions.ofMap((Class<Map>) rowType));
         } else if (targetType.isBean()) {
             return toEntity(row, rowType);
-        } else if (row.size() <= 2) {
-            final String propName = N.findFirst(row.keySet(), Fn.notEqual(_ID)).orElse(_ID);
+        } else {
+            final String propName = N.defaultIfNull(singleValuePropName(row, rowType), _ID);
 
             return N.convert(row.get(propName), rowType);
-        } else {
-            throw new IllegalArgumentException("Cannot read a document with " + columnCount + " fields into single-value type: " + rowType);
         }
+    }
+
+    /**
+     * Returns the sole non-{@code _id} property name, or {@code null} for an id-only/empty row.
+     *
+     * @throws IllegalArgumentException if the row contains multiple projected value fields
+     */
+    private static String singleValuePropName(final Map<String, Object> row, final Class<?> rowType) {
+        String propName = null;
+
+        for (final String candidate : row.keySet()) {
+            if (!_ID.equals(candidate)) {
+                if (propName != null) {
+                    throw new IllegalArgumentException("Cannot convert document with multiple non-_id fields to single-value type "
+                            + ClassUtil.getCanonicalClassName(rowType) + ": " + row);
+                }
+
+                propName = candidate;
+            }
+        }
+
+        return propName;
     }
 
     /**
@@ -1216,9 +1251,9 @@ public abstract class MongoDBBase {
      * }</pre>
      *
      * @param findIterable the MongoDB query result to extract data from
-     * @param rowType the target type for each row in the Dataset; must be an entity class with getter/setter methods or assignable to Map
+     * @param rowType the target type for each row in the Dataset; must be non-null and be an entity class with getter/setter methods or assignable to Map
      * @return a Dataset containing the query results with typed rows
-     * @throws IllegalArgumentException if rowType is unsupported (not a bean class and not assignable to Map)
+     * @throws IllegalArgumentException if rowType is null or unsupported (not a bean class and not assignable to Map)
      * @throws NullPointerException if findIterable is null
      * @see Dataset
      * @see #extractData(MongoIterable)
@@ -1251,9 +1286,9 @@ public abstract class MongoDBBase {
      *
      * @param selectPropNames collection of property names to include in the Dataset; null to include all
      * @param findIterable the MongoDB query result to extract data from
-     * @param rowType the target type for each row in the Dataset; must be an entity class with getter/setter methods or assignable to Map
+     * @param rowType the target type for each row in the Dataset; must be non-null and be an entity class with getter/setter methods or assignable to Map
      * @return a Dataset containing the selected properties with typed rows
-     * @throws IllegalArgumentException if rowType is unsupported (not a bean class and not assignable to Map)
+     * @throws IllegalArgumentException if rowType is null or unsupported (not a bean class and not assignable to Map)
      * @throws NullPointerException if findIterable is null
      * @see Dataset
      * @see #extractData(MongoIterable, Class)
@@ -1663,6 +1698,8 @@ public abstract class MongoDBBase {
     }
 
     private static void checkResultClass(final Class<?> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         if (!(Beans.isBeanClass(rowType) || Map.class.isAssignableFrom(rowType))) {
             throw new IllegalArgumentException("The target class must be an entity class with getter/setter methods or Map.class/Document.class. But it is: "
                     + ClassUtil.getCanonicalClassName(rowType));

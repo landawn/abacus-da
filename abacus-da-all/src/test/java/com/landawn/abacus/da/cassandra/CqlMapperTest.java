@@ -13,14 +13,19 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Set;
 
+import javax.xml.parsers.DocumentBuilderFactory;
+
 import org.junit.jupiter.api.Test;
+import org.w3c.dom.Document;
 
 import com.landawn.abacus.da.TestBase;
 
@@ -288,6 +293,16 @@ public class CqlMapperTest extends TestBase {
     @Test
     public void testLoad_InputStream_NullThrows() {
         assertThrows(IllegalArgumentException.class, () -> CqlMapper.loadFrom((InputStream) null));
+    }
+
+    @Test
+    public void testRequireCqlMapperRoot_RejectsNestedCqlMapperAsNonRoot() throws Exception {
+        final String xml = "<wrapper><cqlMapper><cql id=\"findAll\">SELECT * FROM users</cql></cqlMapper></wrapper>";
+        final InputStream input = new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8));
+        final Document document = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(input);
+
+        final RuntimeException ex = assertThrows(RuntimeException.class, () -> CqlMapper.requireCqlMapperRoot(document, "test input"));
+        assertTrue(ex.getMessage().contains("Missing required 'cqlMapper' root element"), ex.getMessage());
     }
 
     @Test

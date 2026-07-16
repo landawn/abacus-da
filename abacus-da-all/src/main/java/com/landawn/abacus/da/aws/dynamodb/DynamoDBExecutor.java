@@ -412,8 +412,9 @@ public final class DynamoDBExecutor {
      * CAMEL_CASE naming policy by default for attribute name conversion.</p>
      *
      * <p>Entity classes must be annotated with @Table, @javax.persistence.Table, or @jakarta.persistence.Table
-     * to specify the DynamoDB table name. Exactly one ID property (annotated with @Id or equivalent) is required;
-     * mapping fails with {@link IllegalArgumentException} if no ID or multiple IDs are declared.</p>
+     * to specify the DynamoDB table name. One ID property represents a simple partition key; two ID
+     * properties represent a composite partition-and-sort key. Mapping fails if no ID or more than
+     * two IDs are declared.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -477,15 +478,15 @@ public final class DynamoDBExecutor {
      * }</pre>
      *
      * @param <T> the entity type
-     * @param targetEntityClass the entity class to create mapper for. Must be a valid bean class with exactly one
-     *                          ID property. Must not be null.
+     * @param targetEntityClass the entity class to create mapper for. Must be a valid bean class with
+     *                          one or two ID properties. Must not be null.
      * @param tableName the DynamoDB table name to use for operations. Must not be null or empty.
      * @param namingPolicy the naming policy for converting property names to attribute names; if {@code null},
      *                     {@link NamingPolicy#CAMEL_CASE} is used.
      * @return a new Mapper instance configured with the specified parameters, never null
      * @throws IllegalArgumentException if {@code targetEntityClass} is {@code null}, if {@code tableName} is
      *                                  null or empty, if {@code targetEntityClass} is not a bean class, or if it
-     *                                  does not declare exactly one ID property
+     *                                  does not declare one or two ID properties
      */
     public <T> Mapper<T> mapper(final Class<T> targetEntityClass, final String tableName, final NamingPolicy namingPolicy) {
         return new Mapper<>(targetEntityClass, this, tableName, namingPolicy);
@@ -1583,10 +1584,11 @@ public final class DynamoDBExecutor {
      * }</pre>
      *
      * @param <T> the target entity type
-     * @param queryResult the QueryResult from a DynamoDB query operation
+     * @param queryResult the QueryResult from a DynamoDB query operation; may be {@code null}
      * @param targetClass entity class with getter/setter methods, a {@code Map} class, an object array
      *                    class, a {@code Collection} class, or a single-value type for single-column rows
-     * @return list of converted entities from this response page only; empty when the response has no items
+     * @return list of converted entities from this response page only; empty when the response is
+     *         {@code null} or has no items
      */
     public static <T> List<T> toList(final QueryResult queryResult, final Class<T> targetClass) {
         return toList(queryResult, 0, Integer.MAX_VALUE, targetClass);
@@ -1601,10 +1603,13 @@ public final class DynamoDBExecutor {
      * QueryResult result = dynamoDBClient.query(queryRequest);
      * // Get items 10-19 (skip first 10, take next 10)
      * List<User> users = DynamoDBExecutor.toList(result, 10, 10, User.class);
+     *
+     * // A null response is treated like a response with no items
+     * List<User> none = DynamoDBExecutor.toList((QueryResult) null, 0, 10, User.class);
      * }</pre>
      *
      * @param <T> the target entity type
-     * @param queryResult the QueryResult from a DynamoDB query operation
+     * @param queryResult the QueryResult from a DynamoDB query operation; may be {@code null}
      * @param offset number of items to skip from the beginning
      * @param count maximum number of items to return
      * @param targetClass entity classes with getter/setter methods or basic single value type (Primitive/String/Date...)
@@ -1612,6 +1617,12 @@ public final class DynamoDBExecutor {
      * @throws IllegalArgumentException if offset or count is negative
      */
     public static <T> List<T> toList(final QueryResult queryResult, final int offset, final int count, final Class<T> targetClass) {
+        N.checkArgument(offset >= 0 && count >= 0, "'offset' and 'count' can't be negative: %s, %s", offset, count);
+
+        if (queryResult == null) {
+            return new ArrayList<>(0);
+        }
+
         return toList(queryResult.getItems(), offset, count, targetClass);
     }
 
@@ -1629,10 +1640,11 @@ public final class DynamoDBExecutor {
      * }</pre>
      *
      * @param <T> the target entity type
-     * @param scanResult the ScanResult from a DynamoDB scan operation
+     * @param scanResult the ScanResult from a DynamoDB scan operation; may be {@code null}
      * @param targetClass entity class with getter/setter methods, a {@code Map} class, an object array
      *                    class, a {@code Collection} class, or a single-value type for single-column rows
-     * @return list of converted entities from this response page only; empty when the response has no items
+     * @return list of converted entities from this response page only; empty when the response is
+     *         {@code null} or has no items
      */
     public static <T> List<T> toList(final ScanResult scanResult, final Class<T> targetClass) {
         return toList(scanResult, 0, Integer.MAX_VALUE, targetClass);
@@ -1647,10 +1659,13 @@ public final class DynamoDBExecutor {
      * ScanResult result = dynamoDBClient.scan(scanRequest);
      * // Get items 20-39 (skip first 20, take next 20)
      * List<Product> products = DynamoDBExecutor.toList(result, 20, 20, Product.class);
+     *
+     * // A null response is treated like a response with no items
+     * List<Product> none = DynamoDBExecutor.toList((ScanResult) null, 0, 20, Product.class);
      * }</pre>
      *
      * @param <T> the target entity type
-     * @param scanResult the ScanResult from a DynamoDB scan operation
+     * @param scanResult the ScanResult from a DynamoDB scan operation; may be {@code null}
      * @param offset number of items to skip from the beginning
      * @param count maximum number of items to return
      * @param targetClass entity classes with getter/setter methods or basic single value type (Primitive/String/Date...)
@@ -1658,6 +1673,12 @@ public final class DynamoDBExecutor {
      * @throws IllegalArgumentException if offset or count is negative
      */
     public static <T> List<T> toList(final ScanResult scanResult, final int offset, final int count, final Class<T> targetClass) {
+        N.checkArgument(offset >= 0 && count >= 0, "'offset' and 'count' can't be negative: %s, %s", offset, count);
+
+        if (scanResult == null) {
+            return new ArrayList<>(0);
+        }
+
         return toList(scanResult.getItems(), offset, count, targetClass);
     }
 
@@ -3398,7 +3419,8 @@ public final class DynamoDBExecutor {
      *
      * <p>Each {@code Mapper} captures:</p>
      * <ul>
-     *   <li>the target entity class (which must be a bean and declare exactly one ID property);</li>
+     *   <li>the target entity class (which must be a bean and declare one ID property for a simple
+     *       key, or two for a composite partition-and-sort key);</li>
      *   <li>the DynamoDB table name to operate on;</li>
      *   <li>the {@link NamingPolicy} used both to translate entity property names to attribute
      *       names when writing items and to compute the key attribute name(s) used by
@@ -3431,14 +3453,14 @@ public final class DynamoDBExecutor {
          * Package-private constructor invoked by
          * {@link DynamoDBExecutor#mapper(Class, String, NamingPolicy)}; not part of the public API.
          *
-         * <p>Resolves the entity's single ID property via
-         * {@link QueryUtil#getIdPropNames(Class)} (failing fast if zero or more than one is declared)
+         * <p>Resolves the entity's one or two ID properties via
+         * {@link QueryUtil#getIdPropNames(Class)} (failing fast if zero or more than two are declared)
          * and caches the corresponding {@link PropInfo}s and DynamoDB key attribute names. Key
          * attribute names are computed by passing each ID {@code PropInfo} through {@code namingPolicy}
          * so they match what {@link DynamoDBExecutor#toItem(Object, NamingPolicy)} writes when the
          * same property is serialised.</p>
          *
-         * @param targetEntityClass the entity class; must be a bean with exactly one ID property
+         * @param targetEntityClass the entity class; must be a bean with one or two ID properties
          * @param dynamoDBExecutor the enclosing executor used for all I/O; must not be {@code null}
          * @param tableName the DynamoDB table name; must not be {@code null} or empty
          * @param namingPolicy the naming policy applied to property names; {@code null} defaults to
@@ -3446,7 +3468,7 @@ public final class DynamoDBExecutor {
          * @throws IllegalArgumentException if {@code targetEntityClass} or {@code dynamoDBExecutor}
          *                                  is {@code null}, {@code tableName} is null/empty,
          *                                  {@code targetEntityClass} is not a bean class, or it does
-         *                                  not declare exactly one ID property
+         *                                  not declare one or two ID properties
          */
         Mapper(final Class<T> targetEntityClass, final DynamoDBExecutor dynamoDBExecutor, final String tableName, final NamingPolicy namingPolicy) {
             N.checkArgNotNull(targetEntityClass, "targetEntityClass");
@@ -3457,9 +3479,9 @@ public final class DynamoDBExecutor {
 
             final List<String> idPropNames = QueryUtil.idPropNames(targetEntityClass);
 
-            if (idPropNames.size() != 1) {
-                throw new IllegalArgumentException(
-                        "No or multiple ids: " + idPropNames + " defined/annotated in class: " + ClassUtil.getCanonicalClassName(targetEntityClass));
+            if (idPropNames.isEmpty() || idPropNames.size() > 2) {
+                throw new IllegalArgumentException("A DynamoDB primary key requires one partition-key property and may have one sort-key property, but found "
+                        + idPropNames.size() + " ID properties " + idPropNames + " in class: " + ClassUtil.getCanonicalClassName(targetEntityClass));
             }
 
             this.dynamoDBExecutor = dynamoDBExecutor;

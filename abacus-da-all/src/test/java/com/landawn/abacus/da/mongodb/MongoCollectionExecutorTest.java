@@ -2033,6 +2033,97 @@ public class MongoCollectionExecutorTest extends TestBase {
         verify(mockCollection, never()).aggregate(anyList(), eq(Document.class));
     }
 
+    @Test
+    public void testListSingleDottedProjectionReadsNestedScalarValue() {
+        // A projection of "address.city" is returned as {address: {city: ...}}. Treating the
+        // top-level address document as the scalar produced a JSON-like String instead of "Berlin".
+        Document filter = new Document("active", true);
+        Document row = new Document("_id", new ObjectId()).append("address", new Document("city", "Berlin"));
+        when(mockFindIterable.into(any())).thenReturn(Arrays.asList(row));
+
+        List<String> result = executor.list(Arrays.asList("address.city"), filter, String.class);
+
+        Assertions.assertEquals(Arrays.asList("Berlin"), result);
+    }
+
+    @Test
+    public void testListSingleMissingProjectionDoesNotReturnImplicitId() {
+        Document filter = new Document("active", true);
+        Document row = new Document("_id", new ObjectId());
+        when(mockFindIterable.into(any())).thenReturn(Arrays.asList(row));
+
+        List<String> result = executor.list(Arrays.asList("nickname"), filter, String.class);
+
+        Assertions.assertEquals(Arrays.asList((String) null), result);
+    }
+
+    @Test
+    public void testListSingleProjectionPreservesRawDocumentForDocumentSupertypes() {
+        Document filter = new Document("active", true);
+        Document row = new Document("name", "alice");
+        when(mockFindIterable.into(any())).thenReturn(Arrays.asList(row));
+
+        List<Object> objects = executor.list(Arrays.asList("name"), filter, Object.class);
+        List<Bson> bsons = executor.list(Arrays.asList("name"), filter, Bson.class);
+
+        Assertions.assertSame(row, objects.get(0));
+        Assertions.assertSame(row, bsons.get(0));
+    }
+
+    @Test
+    public void testUpdateRejectsMixedOperatorAndOrdinaryFieldsBeforeDriverCall() {
+        Document filter = new Document("active", true);
+        Document invalidUpdate = new Document("$set", new Document("name", "alice")).append("status", "active");
+        com.mongodb.BasicDBObject reversedInvalidUpdate = new com.mongodb.BasicDBObject("status", "active").append("$set",
+                new com.mongodb.BasicDBObject("name", "alice"));
+
+        IllegalArgumentException ex = Assertions.assertThrows(IllegalArgumentException.class, () -> executor.updateOne(filter, invalidUpdate));
+
+        Assertions.assertTrue(ex.getMessage().contains("cannot mix"));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.updateOne(filter, reversedInvalidUpdate));
+        verify(mockCollection, never()).updateOne(any(Bson.class), any(Bson.class));
+    }
+
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    @Test
+    public void testInsertManyPreservesDocumentInstancesInHeterogeneousBatch() {
+        // The driver populates generated _id values into the supplied Document. A mixed batch used
+        // to copy that Document while converting the non-Document rows, so the caller never saw it.
+        Document callerDocument = new Document("name", "document-row");
+        List<Object> rows = Arrays.asList(callerDocument, java.util.Map.of("name", "map-row"));
+        InsertManyResult insertResult = mock(InsertManyResult.class);
+        org.mockito.ArgumentCaptor<List> captor = org.mockito.ArgumentCaptor.forClass(List.class);
+        when(mockCollection.insertMany(anyList())).thenReturn(insertResult);
+
+        executor.insertMany(rows);
+
+        verify(mockCollection).insertMany(captor.capture());
+        Assertions.assertSame(callerDocument, captor.getValue().get(0));
+        Assertions.assertTrue(captor.getValue().get(1) instanceof Document);
+    }
+
+    @Test
+    public void testSingleValueQueriesRejectNullValueTypeBeforeQuery() {
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleValue("name", new Document("active", true), null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleNonNull("name", new Document("active", true), null));
+
+        verify(mockCollection, never()).find(any(Bson.class));
+    }
+
+    @Test
+    public void testDriverFactoriesRejectNullArgumentsBeforeOpeningPublishersOrCursors() {
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.watch((Class<Document>) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.watch((List<? extends Bson>) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.watch(List.of(), null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.distinct("category", (Class<String>) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.aggregate(null, Document.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.mapReduce("", "function(k, v) { return 1; }", Document.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> executor.mapReduce("function() { emit(1, 1); }", "", Document.class));
+
+        verify(mockCollection, never()).watch((Class<Document>) any());
+        verify(mockCollection, never()).aggregate(anyList(), eq(Document.class));
+    }
+
     public static class GroupRow {
         private String department;
         private int count;

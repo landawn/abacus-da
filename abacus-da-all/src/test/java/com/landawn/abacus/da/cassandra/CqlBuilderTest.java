@@ -520,13 +520,13 @@ public class CqlBuilderTest extends TestBase {
         assertTrue(tsDateCql.contains("UPDATE account USING TIMESTAMP 1234567890123000 SET"), tsDateCql);
         assertTrue(tsDateCql.contains(" WHERE id = ?"), tsDateCql);
 
-        // IF EXISTS vs IF NOT EXISTS (not swapped) + leading space (must not yield "?IF EXISTS").
+        // IF EXISTS vs IF NOT EXISTS on their valid statement types (not swapped) + leading spacing.
         final String ifExistsCql = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).ifExists().build().query();
         N.println(ifExistsCql);
         assertTrue(ifExistsCql.endsWith(" IF EXISTS"), ifExistsCql);
         assertTrue(!ifExistsCql.contains("IF NOT EXISTS"), ifExistsCql);
 
-        final String ifNotExistsCql = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).ifNotExists().build().query();
+        final String ifNotExistsCql = PSC.insert("id", "firstName").into("account").ifNotExists().build().query();
         N.println(ifNotExistsCql);
         assertTrue(ifNotExistsCql.endsWith(" IF NOT EXISTS"), ifNotExistsCql);
 
@@ -662,48 +662,12 @@ public class CqlBuilderTest extends TestBase {
         assertTrue(cql.contains(" WHERE id = ?"), cql);
     }
 
-    /**
-     * Regression guard for the missing {@code ComposableCell} branch in
-     * {@code CqlBuilder.appendCondition}. {@code Filters.not(...)} returns a {@code Not} which
-     * extends {@code ComposableCell} (NOT {@code Cell}); before the fix, {@code Not} (and the
-     * other {@code ComposableCell} subclasses: {@code Exists}, {@code NotExists}, {@code Any},
-     * {@code All}, {@code Some}) fell through to the final {@code else} branch of
-     * {@code appendCondition} and raised {@code IllegalArgumentException("Unsupported condition: ...")}.
-     *
-     * <p>Asserted via {@code contains(...)} on a whitespace-normalized form: the underlying
-     * {@code Cell}/{@code ComposableCell} rendering pattern in both {@code CqlBuilder} and the
-     * sister {@code SqlBuilder} prepends a defensive leading space (needed when invoked inside a
-     * {@code (...)} junction element); when invoked directly via {@code where(Not)} this yields a
-     * cosmetic double-space before {@code NOT}, which CQL/SQL parsers tolerate. The asserted
-     * substring captures the load-bearing token ordering and parenthesization, not the cosmetic
-     * spacing.</p>
-     */
     @Test
-    public void test_composable_cell_not_is_supported() {
-        // Filters.not(Binary) — must render "NOT (binary)" rather than throwing.
-        final String pscNot = PSC.select("id").from("account").where(Filters.not(Filters.eq("status", "X"))).build().query();
-        N.println(pscNot);
-        assertTrue(pscNot.startsWith("SELECT id FROM account WHERE"), pscNot);
-        assertTrue(normalizeWs(pscNot).contains("WHERE NOT (status = ?)"), pscNot);
+    public void testComposableCellPredicatesAreRejected() {
+        final IllegalArgumentException error = assertThrows(IllegalArgumentException.class,
+                () -> PSC.select("id").from("account").where(Filters.not(Filters.eq("status", "X"))));
 
-        // Snake-case formalization of the inner column must still apply inside the NOT wrapper.
-        final String pscNotSnake = PSC.select("id").from("account").where(Filters.not(Filters.eq("firstName", "X"))).build().query();
-        N.println(pscNotSnake);
-        assertTrue(normalizeWs(pscNotSnake).contains("WHERE NOT (first_name = ?)"), pscNotSnake);
-
-        // Inline-value (RAW_SQL) variant must also work and inline the value, not throw.
-        final String sccbNot = SCCB.select("id").from("account").where(Filters.not(Filters.eq("status", "X"))).build().query();
-        N.println(sccbNot);
-        assertTrue(normalizeWs(sccbNot).contains("WHERE NOT (status = 'X')"), sccbNot);
-
-        // Named-parameter (NSC) variant must also work.
-        final String nscNot = NSC.select("id").from("account").where(Filters.not(Filters.eq("status", "X"))).build().query();
-        N.println(nscNot);
-        assertTrue(normalizeWs(nscNot).contains("WHERE NOT (status = :status)"), nscNot);
-    }
-
-    private static String normalizeWs(final String s) {
-        return s.replaceAll("\\s+", " ").trim();
+        assertTrue(error.getMessage().contains("does not support composable predicate"), error.getMessage());
     }
 
     // ---------------------------------------------------------------------------------------------
@@ -3949,16 +3913,64 @@ public class CqlBuilderTest extends TestBase {
         assertEquals(expected, usingFirst);
     }
 
-    /**
-     * Regression guard for {@code checkInsertClauseOrder}: appending USING/IF/ALLOW FILTERING
-     * clauses to an INSERT before {@code into()} used to insert the clause into the empty buffer
-     * (silently prepending it before the INSERT keyword); it must throw IllegalStateException.
-     */
     @Test
-    public void test_insert_usingOrIf_beforeInto_throwsIllegalStateException() {
+    public void testUsingOptionsRejectUnsupportedStatementTypes() {
+        assertThrows(IllegalStateException.class, () -> PSC.select("id").from("account").usingTTL(60));
+        assertThrows(IllegalStateException.class, () -> PSC.select("id").from("account").usingTimestamp("42"));
+        assertThrows(IllegalStateException.class, () -> PSC.deleteFrom("account").usingTTL(60));
+
+        assertEquals("DELETE FROM account USING TIMESTAMP 42 WHERE id = ?",
+                PSC.deleteFrom("account").usingTimestamp("42").where(Filters.eq("id", 1)).build().query());
+    }
+
+    @Test
+    public void test_insert_rawLiteralContainingClauseKeywords_doesNotCorruptUsingOrIfPlacement() {
+        final String cql = SCCB.insert(N.asMap("note", "text USING marker WHERE marker")).into("events").usingTTL(60).ifNotExists().build().query();
+
+        assertEquals("INSERT INTO events (note) VALUES ('text USING marker WHERE marker') IF NOT EXISTS USING TTL 60", cql);
+    }
+
+    @Test
+    public void test_batchInsert_rejectsRowsWithDifferentPropertySets() {
+        assertThrows(IllegalArgumentException.class,
+                () -> PSC.batchInsert(N.asList(N.asMap("id", 1, "name", "a"), N.asMap("id", 2, "email", "b"))).into("account"));
+    }
+
+    @Test
+    public void test_batchInsert_rejectsEmptyRows() {
+        assertThrows(IllegalArgumentException.class, () -> PSC.batchInsert(N.asList(N.<String, Object> newHashMap())).into("account"));
+    }
+
+    /** Regression guard for operation-specific trailing clauses and required FROM/INTO ordering. */
+    @Test
+    public void testTrailingClausesRejectInvalidOperationOrMissingTable() {
         assertThrows(IllegalStateException.class, () -> PSC.insert("id").usingTTL(60));
         assertThrows(IllegalStateException.class, () -> PSC.insert("id").ifNotExists());
         assertThrows(IllegalStateException.class, () -> PSC.insert("id").onlyIf(Filters.isNull("name")));
+        assertThrows(IllegalStateException.class, () -> PSC.update("account").set("name").ifNotExists());
+        assertThrows(IllegalStateException.class, () -> PSC.select("id").from("account").ifExists());
+        assertThrows(IllegalStateException.class, () -> PSC.deleteFrom("account").allowFiltering());
+        assertThrows(IllegalStateException.class, () -> PSC.select("id").allowFiltering());
+        assertThrows(IllegalStateException.class, () -> PSC.delete("name").usingTimestamp("42"));
+        assertThrows(IllegalStateException.class, () -> PSC.delete("name").onlyIf("name = 'old'"));
+        assertThrows(IllegalStateException.class, () -> PSC.update("account").set("name").ifExists());
+        assertThrows(IllegalStateException.class, () -> PSC.deleteFrom("account").onlyIf("name = 'old'"));
+    }
+
+    @Test
+    public void testTrailingClausesRejectDuplicates() {
+        assertThrows(IllegalStateException.class, () -> PSC.insert("id").into("account").usingTTL(60).usingTTL(120));
+        assertThrows(IllegalStateException.class, () -> PSC.update("account").set("name").usingTimestamp("1").usingTimestamp("2"));
+        assertThrows(IllegalStateException.class, () -> PSC.update("account").set("name").where(Filters.eq("id", 1)).ifExists().onlyIf("name = 'old'"));
+        assertThrows(IllegalStateException.class, () -> PSC.insert("id").into("account").ifNotExists().ifNotExists());
+        assertThrows(IllegalStateException.class, () -> PSC.select("id").from("account").allowFiltering().allowFiltering());
+    }
+
+    @Test
+    public void testOnlyIfRejectsMissingCondition() {
+        assertThrows(IllegalArgumentException.class, () -> PSC.update("account").set("name").where(Filters.eq("id", 1)).onlyIf((String) null));
+        assertThrows(IllegalArgumentException.class, () -> PSC.update("account").set("name").where(Filters.eq("id", 1)).onlyIf("   "));
+        assertThrows(IllegalArgumentException.class, () -> PSC.update("account").set("name").where(Filters.eq("id", 1)).onlyIf((Condition) null));
     }
 
     /**
@@ -4130,5 +4142,26 @@ public class CqlBuilderTest extends TestBase {
 
         // Non-regression: modifier before from() keeps working.
         assertEquals("SELECT DISTINCT name FROM account", PSC.select("name").distinct().from("account").build().query());
+    }
+
+    /**
+     * Cassandra rejects client-supplied timestamps on lightweight transactions. Guard both method orders so the
+     * builder fails locally instead of generating CQL that the server will reject.
+     */
+    @Test
+    public void test_usingTimestamp_cannotBeCombinedWithIfClause() {
+        assertThrows(IllegalStateException.class, () -> PSC.insert("id", "name").into("account").usingTimestampMicros(1).ifNotExists());
+        assertThrows(IllegalStateException.class, () -> PSC.insert("id", "name").into("account").ifNotExists().usingTimestampMicros(1));
+
+        assertThrows(IllegalStateException.class,
+                () -> PSC.update("account").set("name").where(Filters.eq("id", 1)).usingTimestampMicros(1).onlyIf(Filters.eq("name", "old")));
+        assertThrows(IllegalStateException.class, () -> PSC.update("account").set("name").where(Filters.eq("id", 1)).ifExists().usingTimestampMicros(1));
+
+        assertThrows(IllegalStateException.class, () -> PSC.deleteFrom("account").where(Filters.eq("id", 1)).usingTimestampMicros(1).ifExists());
+        assertThrows(IllegalStateException.class, () -> PSC.deleteFrom("account").where(Filters.eq("id", 1)).onlyIf("name = 'old'").usingTimestampMicros(1));
+
+        // TTL remains valid on a conditional INSERT.
+        assertEquals("INSERT INTO account (id, name) VALUES (?, ?) IF NOT EXISTS USING TTL 60",
+                PSC.insert("id", "name").into("account").ifNotExists().usingTTL(60).build().query());
     }
 }

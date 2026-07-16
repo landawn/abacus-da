@@ -1108,7 +1108,12 @@ public final class MongoCollectionExecutor {
      *
      * <p>This method provides comprehensive query capabilities including field selection (projection),
      * filtering criteria, result ordering, and result pagination. It's ideal for retrieving specific
-     * data subsets efficiently while minimizing network bandwidth and memory usage through projection.</p>
+     * data subsets efficiently while minimizing network bandwidth and memory usage through projection.
+     * When exactly one field is selected into a scalar type, that requested value is extracted directly;
+     * dotted paths such as {@code address.city} resolve the nested value, and a missing value becomes
+     * {@code null} instead of being mistaken for MongoDB's implicitly projected {@code _id}.
+     * Result types that can directly hold a {@link Document} (such as {@code Object} or {@link Bson})
+     * continue to receive the raw projected document.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1133,7 +1138,20 @@ public final class MongoCollectionExecutor {
      */
     public <T> List<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         final FindIterable<Document> findIterable = query(selectPropNames, filter, sort, offset, count);
+
+        if (selectPropNames != null && selectPropNames.size() == 1 && !rowType.isAssignableFrom(Document.class) && isSingleValueType(rowType)) {
+            final List<Document> rowList = findIterable.into(new ArrayList<>());
+            final List<T> result = new ArrayList<>(rowList.size());
+
+            for (final Document row : rowList) {
+                result.add(toEntity(row, rowType, selectPropNames));
+            }
+
+            return result;
+        }
 
         return MongoDBBase.toList(findIterable, rowType);
     }
@@ -1203,6 +1221,8 @@ public final class MongoCollectionExecutor {
      * @see com.mongodb.client.model.Sorts
      */
     public <T> List<T> list(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         final FindIterable<Document> findIterable = executeQuery(projection, filter, sort, offset, count);
 
         return MongoDBBase.toList(findIterable, rowType);
@@ -1602,9 +1622,8 @@ public final class MongoCollectionExecutor {
      * itself may be {@code null} when the field is absent on the matched document or the stored value is
      * BSON null ({@code Nullable.of(null)}). {@link Nullable} therefore preserves the distinction between
      * "no document matched" and "document matched but value is null"; use
-     * {@link #queryForSingleNonNull(String, Bson, Class)} when you want {@code null} field values to be
-     * collapsed into {@code Optional.empty()} (note that {@code queryForSingleNonNull} throws NPE on a
-     * matched-but-null payload — see that method for details).</p>
+     * {@link #queryForSingleNonNull(String, Bson, Class)} when a matched value is required to be
+     * non-null (that method throws {@link NullPointerException} for a matched-but-null payload).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1621,13 +1640,14 @@ public final class MongoCollectionExecutor {
      * @return a <i>present</i> {@code Nullable<V>} holding the converted field value (possibly
      *         {@code null} for a missing/null field) when a document is matched; {@code Nullable.empty()}
      *         when no document matches the filter
-     * @throws IllegalArgumentException if filter is null, or if propName is null or empty
+     * @throws IllegalArgumentException if filter or valueType is null, or if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForSingleNonNull(String, Bson, Class)
      * @see com.landawn.abacus.util.u.Nullable
      */
     public <V> Nullable<V> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType) {
         N.checkArgNotEmpty(propName, "propName");
+        N.checkArgNotNull(valueType, "valueType");
 
         final FindIterable<Document> findIterable = query(N.asList(propName), filter, null, 0, 1);
 
@@ -1674,7 +1694,7 @@ public final class MongoCollectionExecutor {
      * @return a <i>present</i> {@code Optional<V>} holding the converted non-null value when a
      *         document is matched and the field carries a non-null value; {@code Optional.empty()}
      *         when no document matches the filter
-     * @throws IllegalArgumentException if filter is null, or if propName is null or empty
+     * @throws IllegalArgumentException if filter or valueType is null, or if propName is null or empty
      * @throws NullPointerException if a document is matched but the field is absent, the raw value is
      *         {@code null}, or the conversion to {@code valueType} yields {@code null}, because
      *         {@link Optional#of(Object)} rejects a null payload
@@ -1684,6 +1704,7 @@ public final class MongoCollectionExecutor {
      */
     public <V> Optional<V> queryForSingleNonNull(final String propName, final Bson filter, final Class<V> valueType) {
         N.checkArgNotEmpty(propName, "propName");
+        N.checkArgNotNull(valueType, "valueType");
 
         final FindIterable<Document> findIterable = query(N.asList(propName), filter, null, 0, 1);
 
@@ -2629,6 +2650,8 @@ public final class MongoCollectionExecutor {
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> ChangeStreamIterable<T> watch(final Class<T> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         return coll.watch(rowType);
     }
 
@@ -2653,6 +2676,8 @@ public final class MongoCollectionExecutor {
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public ChangeStreamIterable<Document> watch(final List<? extends Bson> pipeline) {
+        N.checkArgNotNull(pipeline, "pipeline");
+
         return coll.watch(pipeline);
     }
 
@@ -2679,6 +2704,9 @@ public final class MongoCollectionExecutor {
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> ChangeStreamIterable<T> watch(final List<? extends Bson> pipeline, final Class<T> rowType) {
+        N.checkArgNotNull(pipeline, "pipeline");
+        N.checkArgNotNull(rowType, "rowType");
+
         return coll.watch(pipeline, rowType);
     }
 
@@ -2798,7 +2826,9 @@ public final class MongoCollectionExecutor {
      *
      * <p>This method provides fine-grained control over the bulk insert operation through InsertManyOptions,
      * allowing specification of ordered/unordered inserts, write concerns, and document validation settings.
-     * All objects are automatically converted to BSON documents before insertion.</p>
+     * Non-Document objects are converted to BSON documents before insertion. Caller-supplied
+     * {@link Document} instances are passed through even in a heterogeneous batch, allowing the driver
+     * to populate generated {@code _id} values on those same instances.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2878,7 +2908,9 @@ public final class MongoCollectionExecutor {
             docs = new ArrayList<>(objList.size());
 
             for (final Object entity : objList) {
-                docs.add(MongoDBBase.toDocument(entity));
+                // Preserve caller-supplied Documents even in a heterogeneous batch. The driver may
+                // populate their generated _id values, just as it does for an all-Document batch.
+                docs.add(toDocument(entity));
             }
         }
 
@@ -2894,8 +2926,9 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Conversion path:</b> The update is converted via {@link #toBson(Object)}. When the update is
      * already a driver-built {@code Bson} (e.g. produced by {@link com.mongodb.client.model.Updates}), it
-     * is passed through unchanged. When the update is a {@link Document} or {@link BasicDBObject} whose
-     * first key already starts with {@code $}, it is also passed through unchanged. Otherwise:</p>
+     * is passed through unchanged. A {@link Document} or {@link BasicDBObject} containing only
+     * top-level operator keys (keys starting with {@code $}) is also passed through unchanged; mixing
+     * operator keys with ordinary field names is rejected. Otherwise:</p>
      * <ul>
      *   <li>Entity beans are flattened via {@link MongoDBBase#toDocument(Object)}, which <i>skips
      *       properties whose getter returns {@code null}</i> — meaning entity nulls cannot be used to clear
@@ -2928,7 +2961,8 @@ public final class MongoCollectionExecutor {
      * @param update the update operations - can be Bson, Document with update operators, {@code Map<String, Object>}, or entity class with getter/setter methods
      * @return UpdateResult containing information about the update operation
      * @throws IllegalArgumentException if objectId or update is null, objectId format is invalid, or the
-     *         converted update payload is empty (no non-null updatable properties besides {@code _id})
+     *         converted update payload is empty (no non-null updatable properties besides {@code _id}),
+     *         or a document mixes top-level operator keys with ordinary field names
      * @throws com.mongodb.MongoWriteException if the update operation fails
      * @throws com.mongodb.MongoException if the database operation fails
      * @see UpdateResult
@@ -2971,8 +3005,8 @@ public final class MongoCollectionExecutor {
      *
      * <p>Updates the first document that matches the filter criteria. See {@link #updateOne(String, Object)}
      * for the full description of how the {@code update} argument is converted (driver-built {@code Bson}
-     * pass-through, documents whose first key starts with {@code $} pass-through, otherwise wrap in
-     * {@code $set}; entity null properties are dropped, map nulls are preserved).</p>
+     * pass-through, documents containing only operator keys pass-through, mixed operator/ordinary keys
+     * are rejected, otherwise wrap in {@code $set}; entity null properties are dropped, map nulls are preserved).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3105,7 +3139,8 @@ public final class MongoCollectionExecutor {
      *
      * <p>Internal helper that converts various update formats to BSON.
      * If the update doesn't contain MongoDB operators (starting with $),
-     * it's automatically wrapped in a $set operation.</p>
+     * it's automatically wrapped in a $set operation. Operator keys and ordinary field keys may
+     * not be mixed in the same top-level document.</p>
      *
      * @param update the update object to convert
      * @return BSON representation of the update
@@ -3123,7 +3158,7 @@ public final class MongoCollectionExecutor {
         final Bson bsonToUse;
 
         if (bson instanceof final Document doc) {
-            if (!doc.isEmpty() && doc.keySet().iterator().next().startsWith(_$)) {
+            if (isOperatorUpdate(doc.keySet())) {
                 return doc;
             }
 
@@ -3132,7 +3167,7 @@ public final class MongoCollectionExecutor {
             docToUse.remove(MongoDBBase._ID);
             bsonToUse = docToUse;
         } else if (bson instanceof final BasicDBObject dbObject) { //NOSONAR
-            if (!dbObject.isEmpty() && dbObject.keySet().iterator().next().startsWith(_$)) {
+            if (isOperatorUpdate(dbObject.keySet())) {
                 return dbObject;
             }
 
@@ -3158,6 +3193,34 @@ public final class MongoCollectionExecutor {
         }
 
         return new Document(_$SET, bsonToUse);
+    }
+
+    /**
+     * Determines whether the top-level keys form an operator update and rejects MongoDB's invalid
+     * mixed form (for example, {@code {$set: {...}, status: "active"}}).
+     */
+    private static boolean isOperatorUpdate(final Collection<String> keys) {
+        if (keys.isEmpty()) {
+            return false;
+        }
+
+        final String firstKey = keys.iterator().next();
+
+        if (firstKey == null) {
+            throw new IllegalArgumentException("An update document cannot contain a null field name");
+        }
+
+        final boolean operatorUpdate = firstKey.startsWith(_$);
+
+        for (final String key : keys) {
+            if (key == null) {
+                throw new IllegalArgumentException("An update document cannot contain a null field name");
+            } else if (key.startsWith(_$) != operatorUpdate) {
+                throw new IllegalArgumentException("An update document cannot mix operator keys (for example, $set) with ordinary field names: " + keys);
+            }
+        }
+
+        return operatorUpdate;
     }
 
     /**
@@ -3188,8 +3251,9 @@ public final class MongoCollectionExecutor {
      *
      * <p>This method updates every document that matches the given filter. The update is converted via
      * {@link #toBson(Object)}; see {@link #updateOne(String, Object)} for the full description (driver-built
-     * {@code Bson} pass-through, documents whose first key starts with {@code $} pass-through, otherwise
-     * wrap in {@code $set}; entity null properties are dropped, map nulls are preserved).</p>
+     * {@code Bson} pass-through, documents containing only operator keys pass-through, mixed
+     * operator/ordinary keys are rejected, otherwise wrap in {@code $set}; entity null properties are
+     * dropped, map nulls are preserved).</p>
      *
      * <p><b>Note:</b> This is an update of many documents in a single server call but it is <i>not</i>
      * an atomic operation across documents — MongoDB applies the update to each matching document in
@@ -4170,11 +4234,12 @@ public final class MongoCollectionExecutor {
      * @param fieldName the field to get distinct values for
      * @param rowType the class of the field values
      * @return a Stream of distinct values
-     * @throws IllegalArgumentException if fieldName is null or empty
+     * @throws IllegalArgumentException if fieldName is null or empty, or rowType is null
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> Stream<T> distinct(final String fieldName, final Class<T> rowType) {
         N.checkArgNotEmpty(fieldName, "fieldName");
+        N.checkArgNotNull(rowType, "rowType");
 
         final MongoCursor<T> cursor = coll.distinct(fieldName, rowType).iterator();
 
@@ -4198,12 +4263,13 @@ public final class MongoCollectionExecutor {
      * @param filter BSON filter to apply before getting distinct values (must not be null)
      * @param rowType the class of the field values
      * @return a Stream of distinct values from filtered documents
-     * @throws IllegalArgumentException if fieldName is null or empty, or filter is null
+     * @throws IllegalArgumentException if fieldName is null or empty, or filter or rowType is null
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> Stream<T> distinct(final String fieldName, final Bson filter, final Class<T> rowType) {
         N.checkArgNotEmpty(fieldName, "fieldName");
         N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(rowType, "rowType");
 
         final MongoCursor<T> cursor = coll.distinct(fieldName, filter, rowType).iterator();
 
@@ -4257,6 +4323,7 @@ public final class MongoCollectionExecutor {
      * @throws com.mongodb.MongoException if the database operation fails
      */
     public <T> Stream<T> aggregate(final List<? extends Bson> pipeline, final Class<T> rowType) {
+        N.checkArgNotNull(pipeline, "pipeline");
         N.checkArgNotNull(rowType, "rowType");
 
         final MongoCursor<Document> cursor = coll.aggregate(pipeline, Document.class).iterator();
@@ -4527,7 +4594,7 @@ public final class MongoCollectionExecutor {
      * @param mapFunction JavaScript map function as string
      * @param reduceFunction JavaScript reduce function as string
      * @return a Stream of map-reduce results
-     * @throws IllegalArgumentException if functions are null
+     * @throws IllegalArgumentException if either function is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @deprecated Map-reduce is deprecated in MongoDB 5.0+. Use aggregate() instead.
      */
@@ -4553,12 +4620,14 @@ public final class MongoCollectionExecutor {
      * @param reduceFunction JavaScript reduce function as string
      * @param rowType the class to convert results to
      * @return a Stream of typed map-reduce results
-     * @throws IllegalArgumentException if parameters are null
+     * @throws IllegalArgumentException if either function is null or empty, or rowType is null
      * @throws com.mongodb.MongoException if the database operation fails
      * @deprecated Map-reduce is deprecated in MongoDB 5.0+. Use aggregate() instead.
      */
     @Deprecated
     public <T> Stream<T> mapReduce(final String mapFunction, final String reduceFunction, final Class<T> rowType) {
+        N.checkArgNotEmpty(mapFunction, "mapFunction");
+        N.checkArgNotEmpty(reduceFunction, "reduceFunction");
         N.checkArgNotNull(rowType, "rowType");
 
         final MongoCursor<Document> cursor = coll.mapReduce(mapFunction, reduceFunction, Document.class).iterator();

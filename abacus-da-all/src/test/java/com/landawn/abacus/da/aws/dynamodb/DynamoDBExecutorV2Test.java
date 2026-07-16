@@ -978,6 +978,23 @@ public class DynamoDBExecutorV2Test extends TestBase {
     }
 
     @Test
+    public void testMapperSupportsCompositePrimaryKeyAndRejectsMoreThanTwoIds() {
+        final DynamoDBExecutor.Mapper<CompositeKeyEntity> mapper = executor.mapper(CompositeKeyEntity.class);
+        final CompositeKeyEntity entity = new CompositeKeyEntity();
+        entity.setPartitionId("tenant-1");
+        entity.setSortId("item-9");
+        when(mockDynamoDbClient.getItem(any(GetItemRequest.class))).thenReturn(GetItemResponse.builder().build());
+
+        mapper.getItem(entity);
+
+        final ArgumentCaptor<GetItemRequest> requestCaptor = ArgumentCaptor.forClass(GetItemRequest.class);
+        verify(mockDynamoDbClient).getItem(requestCaptor.capture());
+        assertEquals("tenant-1", requestCaptor.getValue().key().get("partitionId").s());
+        assertEquals("item-9", requestCaptor.getValue().key().get("sortId").s());
+        assertThrows(IllegalArgumentException.class, () -> executor.mapper(ThreeKeyEntity.class));
+    }
+
+    @Test
     public void testMapperWithInvalidEntity() {
         assertThrows(IllegalArgumentException.class, () -> {
             executor.mapper(InvalidEntity.class, "TestTable", NamingPolicy.CAMEL_CASE);
@@ -2543,6 +2560,14 @@ public class DynamoDBExecutorV2Test extends TestBase {
     }
 
     @Test
+    public void testToList_QueryResponseValidatesRangeBeforeEmptyResult() {
+        final QueryResponse empty = QueryResponse.builder().build();
+
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toList(empty, -1, 1, TestEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toList((QueryResponse) null, 0, -1, TestEntity.class));
+    }
+
+    @Test
     public void testToList_ScanResponseOffsetCount() {
         ScanResponse sr = ScanResponse.builder()
                 .items(List.of(Map.of("id", AttributeValue.builder().s("a").build()), Map.of("id", AttributeValue.builder().s("b").build()),
@@ -2551,6 +2576,14 @@ public class DynamoDBExecutorV2Test extends TestBase {
         List<TestEntity> result = DynamoDBExecutor.toList(sr, 1, 1, TestEntity.class);
         assertEquals(1, result.size());
         assertEquals("b", result.get(0).getId());
+    }
+
+    @Test
+    public void testToList_ScanResponseValidatesRangeBeforeEmptyResult() {
+        final ScanResponse empty = ScanResponse.builder().build();
+
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toList(empty, -1, 1, TestEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toList((ScanResponse) null, 0, -1, TestEntity.class));
     }
 
     // TODO: toList(List<Map>, offset, count, Class) is package-private in v2
@@ -2607,6 +2640,64 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
         public void setFirstName(String firstName) {
             this.firstName = firstName;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Table(name = "TestTable")
+    private static class CompositeKeyEntity {
+        @com.landawn.abacus.annotation.Id
+        private String partitionId;
+        @com.landawn.abacus.annotation.Id
+        private String sortId;
+
+        public String getPartitionId() {
+            return partitionId;
+        }
+
+        public void setPartitionId(final String partitionId) {
+            this.partitionId = partitionId;
+        }
+
+        public String getSortId() {
+            return sortId;
+        }
+
+        public void setSortId(final String sortId) {
+            this.sortId = sortId;
+        }
+    }
+
+    @com.landawn.abacus.annotation.Table(name = "TestTable")
+    private static class ThreeKeyEntity {
+        @com.landawn.abacus.annotation.Id
+        private String firstId;
+        @com.landawn.abacus.annotation.Id
+        private String secondId;
+        @com.landawn.abacus.annotation.Id
+        private String thirdId;
+
+        public String getFirstId() {
+            return firstId;
+        }
+
+        public void setFirstId(final String firstId) {
+            this.firstId = firstId;
+        }
+
+        public String getSecondId() {
+            return secondId;
+        }
+
+        public void setSecondId(final String secondId) {
+            this.secondId = secondId;
+        }
+
+        public String getThirdId() {
+            return thirdId;
+        }
+
+        public void setThirdId(final String thirdId) {
+            this.thirdId = thirdId;
         }
     }
 

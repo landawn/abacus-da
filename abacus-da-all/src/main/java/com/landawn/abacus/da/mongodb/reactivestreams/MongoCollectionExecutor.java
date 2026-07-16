@@ -734,7 +734,7 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the first matching document on subscription, or completes
      *         empty when no documents match the filter
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if filter or rowType is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see Document
      * @see Bson
@@ -980,7 +980,7 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to match documents against (must not be null)
      * @param rowType the Class representing the target type for conversion
      * @return a Flux that emits all matching documents with projected fields, converted to type T
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if filter or rowType is null (thrown synchronously at the call site)
      */
     public <T> Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) {
         return list(selectPropNames, filter, 0, Integer.MAX_VALUE, rowType);
@@ -1031,7 +1031,7 @@ public final class MongoCollectionExecutor {
      * @param sort the sort criteria to determine document order
      * @param rowType the Class representing the target type for conversion
      * @return a Flux that emits sorted matching documents with projected fields, converted to type T
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if filter or rowType is null (thrown synchronously at the call site)
      */
     public <T> Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
         return list(selectPropNames, filter, sort, 0, Integer.MAX_VALUE, rowType);
@@ -1042,7 +1042,9 @@ public final class MongoCollectionExecutor {
      *
      * <p>Provides complete control over the query with field projection, filtering, sorting,
      * and pagination. This is the most comprehensive list method, suitable for complex
-     * query requirements in reactive applications.</p>
+     * query requirements in reactive applications. When exactly one field is selected into a
+     * scalar type, dotted paths are resolved and documents missing that value are not emitted
+     * (Reactive Streams does not permit {@code null} elements).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1059,7 +1061,7 @@ public final class MongoCollectionExecutor {
      * @param count the maximum number of documents to return
      * @param rowType an entity class with getter/setter methods, Map.class, or basic single value type
      * @return a Flux that emits matching documents with all specified constraints, converted to type T
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site), or if offset or count is negative
+     * @throws IllegalArgumentException if filter or rowType is null (thrown synchronously at the call site), or if offset or count is negative
      */
     @SuppressWarnings("unchecked")
     public <T> Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
@@ -1094,7 +1096,7 @@ public final class MongoCollectionExecutor {
      * @param sort the sort criteria to determine document order
      * @param rowType the Class representing the target type for conversion
      * @return a Flux that emits all matching sorted documents with projection, converted to type T
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if filter or rowType is null (thrown synchronously at the call site)
      */
     public <T> Flux<T> list(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
         return list(projection, filter, sort, 0, Integer.MAX_VALUE, rowType);
@@ -1122,7 +1124,7 @@ public final class MongoCollectionExecutor {
      * @param count the maximum number of documents to return
      * @param rowType an entity class with getter/setter methods, Map.class, or basic single value type
      * @return a Flux that emits matching documents with all specified constraints, converted to type T
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site), or if offset or count is negative
+     * @throws IllegalArgumentException if filter or rowType is null (thrown synchronously at the call site), or if offset or count is negative
      */
     @SuppressWarnings("unchecked")
     public <T> Flux<T> list(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType) {
@@ -1770,10 +1772,10 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param filter the query filter to match documents against (must not be null)
-     * @param rowType the Class representing the row type for the Dataset; must not be null
+     * @param rowType a non-null bean or Map class representing the row type for the Dataset
      * @return a {@code Mono} that, on subscription, emits exactly one {@code Dataset} (possibly
      *         empty) and then completes
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if filter or rowType is null, or rowType is not a bean/Map class
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      */
     public Mono<Dataset> query(final Bson filter, final Class<?> rowType) {
@@ -1794,9 +1796,10 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to match documents against (must not be null)
      * @param offset the number of documents to skip before returning results
      * @param count the maximum number of documents to return
-     * @param rowType the Class representing the row type for the Dataset
+     * @param rowType a non-null bean or Map class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with typed rows within the specified range
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site), or if offset or count is negative
+     * @throws IllegalArgumentException if filter or rowType is null, rowType is not a bean/Map class,
+     *                                  or offset or count is negative (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      */
     public Mono<Dataset> query(final Bson filter, final int offset, final int count, final Class<?> rowType) {
@@ -1817,9 +1820,9 @@ public final class MongoCollectionExecutor {
      *
      * @param selectPropNames the collection of field names to include in the projection
      * @param filter the query filter to match documents against (must not be null)
-     * @param rowType the Class representing the row type for the Dataset
+     * @param rowType a non-null bean or Map class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with projected fields and typed rows
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if filter or rowType is null, or rowType is not a bean/Map class
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      */
     public Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Class<?> rowType) {
@@ -1842,9 +1845,10 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to match documents against (must not be null)
      * @param offset the number of documents to skip before returning results
      * @param count the maximum number of documents to return
-     * @param rowType the Class representing the row type for the Dataset
+     * @param rowType a non-null bean or Map class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with projected fields and typed rows within range
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site), or if offset or count is negative
+     * @throws IllegalArgumentException if filter or rowType is null, rowType is not a bean/Map class,
+     *                                  or offset or count is negative (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      */
     public Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count, final Class<?> rowType) {
@@ -1867,9 +1871,9 @@ public final class MongoCollectionExecutor {
      * @param selectPropNames the collection of field names to include in the projection
      * @param filter the query filter to match documents against (must not be null)
      * @param sort the sort criteria to determine document order
-     * @param rowType the Class representing the row type for the Dataset
+     * @param rowType a non-null bean or Map class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with projected fields and sorted typed rows
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if filter or rowType is null, or rowType is not a bean/Map class
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      */
     public Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<?> rowType) {
@@ -1894,9 +1898,10 @@ public final class MongoCollectionExecutor {
      * @param sort the sort criteria to determine document order
      * @param offset the number of documents to skip before returning results
      * @param count the maximum number of documents to return
-     * @param rowType the Class representing the row type for the Dataset
+     * @param rowType a non-null bean or Map class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with all specified constraints applied
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site), or if offset or count is negative
+     * @throws IllegalArgumentException if filter or rowType is null, rowType is not a bean/Map class,
+     *                                  or offset or count is negative
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      */
     public Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
@@ -1925,9 +1930,9 @@ public final class MongoCollectionExecutor {
      * @param projection the Bson projection specification for fields to include/exclude
      * @param filter the query filter to match documents against (must not be null)
      * @param sort the sort criteria to determine document order
-     * @param rowType the Class representing the row type for the Dataset
+     * @param rowType a non-null bean or Map class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with projected and sorted typed rows
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if filter or rowType is null, or rowType is not a bean/Map class
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      */
     public Mono<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final Class<?> rowType) {
@@ -1951,9 +1956,10 @@ public final class MongoCollectionExecutor {
      * @param sort the sort criteria to determine document order
      * @param offset the number of documents to skip before returning results
      * @param count the maximum number of documents to return
-     * @param rowType the Class representing the row type for the Dataset
+     * @param rowType a non-null bean or Map class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with all specified constraints applied
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site), or if offset or count is negative
+     * @throws IllegalArgumentException if filter or rowType is null, rowType is not a bean/Map class,
+     *                                  or offset or count is negative
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      */
     public Mono<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<?> rowType) {
@@ -1966,6 +1972,8 @@ public final class MongoCollectionExecutor {
     // side, so an invalid rowType fails fast with the same IllegalArgumentException instead of producing a
     // malformed Dataset on subscription.
     private static void checkResultClass(final Class<?> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         if (!(Beans.isBeanClass(rowType) || Map.class.isAssignableFrom(rowType))) {
             throw new IllegalArgumentException("The target class must be an entity class with getter/setter methods or Map.class/Document.class. But it is: "
                     + ClassUtil.getCanonicalClassName(rowType));
@@ -2114,9 +2122,12 @@ public final class MongoCollectionExecutor {
      * @param <T> the type to decode each change event's full document into
      * @param rowType the Class representing the target type for change events; must not be null
      * @return a {@link ChangeStreamPublisher} that emits typed change events as they occur
+     * @throws IllegalArgumentException if {@code rowType} is null
      * @see com.mongodb.reactivestreams.client.MongoCollection#watch(Class)
      */
     public <T> ChangeStreamPublisher<T> watch(final Class<T> rowType) {
+        N.checkArgNotNull(rowType, "rowType");
+
         return coll.watch(rowType);
     }
 
@@ -2137,9 +2148,12 @@ public final class MongoCollectionExecutor {
      *
      * @param pipeline the aggregation pipeline applied to change events; must not be null
      * @return a {@link ChangeStreamPublisher} emitting filtered change events as {@link Document}
+     * @throws IllegalArgumentException if {@code pipeline} is null
      * @see com.mongodb.reactivestreams.client.MongoCollection#watch(List)
      */
     public ChangeStreamPublisher<Document> watch(final List<? extends Bson> pipeline) {
+        N.checkArgNotNull(pipeline, "pipeline");
+
         return coll.watch(pipeline);
     }
 
@@ -2162,9 +2176,13 @@ public final class MongoCollectionExecutor {
      * @param pipeline the aggregation pipeline applied to change events; must not be null
      * @param rowType the Class representing the target type for change events; must not be null
      * @return a {@link ChangeStreamPublisher} emitting filtered and typed change events
+     * @throws IllegalArgumentException if {@code pipeline} or {@code rowType} is null
      * @see com.mongodb.reactivestreams.client.MongoCollection#watch(List, Class)
      */
     public <T> ChangeStreamPublisher<T> watch(final List<? extends Bson> pipeline, final Class<T> rowType) {
+        N.checkArgNotNull(pipeline, "pipeline");
+        N.checkArgNotNull(rowType, "rowType");
+
         return coll.watch(pipeline, rowType);
     }
 
@@ -2283,7 +2301,9 @@ public final class MongoCollectionExecutor {
      *
      * <p>Batch inserts a collection of objects with custom insert options, such as
      * ordered/unordered insertion. With {@code ordered(false)}, the driver continues after
-     * per-document failures and reports them in the resulting bulk-write exception.</p>
+     * per-document failures and reports them in the resulting bulk-write exception. Caller-supplied
+     * {@link Document} instances are passed through even when the batch also contains Maps or beans,
+     * so driver-generated {@code _id} values are visible on those same instances.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2336,7 +2356,9 @@ public final class MongoCollectionExecutor {
             docs = new ArrayList<>(objList.size());
 
             for (final Object entity : objList) {
-                docs.add(MongoDBBase.toDocument(entity));
+                // Preserve caller-supplied Documents even in a heterogeneous batch. The driver may
+                // populate their generated _id values, just as it does for an all-Document batch.
+                docs.add(toDocument(entity));
             }
         }
 
@@ -2347,8 +2369,9 @@ public final class MongoCollectionExecutor {
      * Updates a single document by string ObjectId reactively.
      *
      * <p>Updates the document with the specified ObjectId using the provided update object. The update
-     * object (Bson/Document/Map/entity class) is converted to a Bson update; if it does not already
-     * begin with an update operator, it is automatically wrapped in a {@code $set} operator.</p>
+     * object (Bson/Document/Map/entity class) is converted to a Bson update. Documents containing only
+     * top-level operator keys are passed through, documents mixing operator and ordinary keys are
+     * rejected, and ordinary field documents are wrapped in a {@code $set} operator.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2550,7 +2573,7 @@ public final class MongoCollectionExecutor {
         final Bson bsonToUse;
 
         if (bson instanceof final Document doc) {
-            if (!doc.isEmpty() && doc.keySet().iterator().next().startsWith(_$)) {
+            if (isOperatorUpdate(doc.keySet())) {
                 return doc;
             }
 
@@ -2559,7 +2582,7 @@ public final class MongoCollectionExecutor {
             docToUse.remove(MongoDBBase._ID);
             bsonToUse = docToUse;
         } else if (bson instanceof final BasicDBObject dbObject) { //NOSONAR
-            if (!dbObject.isEmpty() && dbObject.keySet().iterator().next().startsWith(_$)) {
+            if (isOperatorUpdate(dbObject.keySet())) {
                 return dbObject;
             }
 
@@ -2585,6 +2608,34 @@ public final class MongoCollectionExecutor {
         return new Document(_$SET, bsonToUse);
     }
 
+    /**
+     * Determines whether the top-level keys form an operator update and rejects MongoDB's invalid
+     * mixed form (for example, {@code {$set: {...}, status: "active"}}).
+     */
+    private static boolean isOperatorUpdate(final Collection<String> keys) {
+        if (keys.isEmpty()) {
+            return false;
+        }
+
+        final String firstKey = keys.iterator().next();
+
+        if (firstKey == null) {
+            throw new IllegalArgumentException("An update document cannot contain a null field name");
+        }
+
+        final boolean operatorUpdate = firstKey.startsWith(_$);
+
+        for (final String key : keys) {
+            if (key == null) {
+                throw new IllegalArgumentException("An update document cannot contain a null field name");
+            } else if (key.startsWith(_$) != operatorUpdate) {
+                throw new IllegalArgumentException("An update document cannot mix operator keys (for example, $set) with ordinary field names: " + keys);
+            }
+        }
+
+        return operatorUpdate;
+    }
+
     private List<Bson> toBson(final Collection<?> objList) {
         N.checkArgNotEmpty(objList, "objList");
 
@@ -2604,9 +2655,9 @@ public final class MongoCollectionExecutor {
      * Updates all documents matching the filter reactively.
      *
      * <p>Updates all documents that match the filter criteria with the provided update
-     * specification. The update (Bson/Document/Map/entity class) is converted to a Bson update; if it
-     * does not already begin with an update operator, it is automatically wrapped in a {@code $set}
-     * operator. This method is useful for bulk updates where you need to modify multiple documents
+     * specification. The update (Bson/Document/Map/entity class) is converted to a Bson update;
+     * operator-only documents are passed through, mixed operator/ordinary documents are rejected, and
+     * ordinary field documents are wrapped in a {@code $set} operator. This method is useful for bulk updates where you need to modify multiple documents
      * with the same update operations.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -3219,7 +3270,8 @@ public final class MongoCollectionExecutor {
      *
      * @param filter the query filter to find the document; must not be null
      * @param update the update specification (Bson/Document/Map/entity class); must not be null.
-     *               If it does not already begin with an update operator, it is wrapped in {@code $set}.
+     *               Operator-only documents pass through, mixed operator/ordinary documents are rejected,
+     *               and ordinary field documents are wrapped in {@code $set}.
      * @return a {@code Mono} that emits the matched document (before update) on subscription, or
      *         completes empty when no document matches the filter
      * @throws IllegalArgumentException if filter or update is null
@@ -3737,12 +3789,13 @@ public final class MongoCollectionExecutor {
      * @param rowType the class type of the distinct values; must not be null
      * @return a cold {@code Flux} that, on subscription, emits each distinct value of the field
      *         (deduplicated by the server), then completes
-     * @throws IllegalArgumentException if fieldName is null or empty
+     * @throws IllegalArgumentException if fieldName is null or empty, or rowType is null
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
      * @see #distinct(String, Bson, Class)
      */
     public <T> Flux<T> distinct(final String fieldName, final Class<T> rowType) {
         N.checkArgNotEmpty(fieldName, "fieldName");
+        N.checkArgNotNull(rowType, "rowType");
 
         return Flux.from(coll.distinct(fieldName, rowType));
     }
@@ -3765,12 +3818,13 @@ public final class MongoCollectionExecutor {
      * @param rowType the class type of the distinct values; must not be null
      * @return a cold {@code Flux} that, on subscription, emits each distinct value found among the
      *         filtered documents, then completes
-     * @throws IllegalArgumentException if fieldName is null or empty, or filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if fieldName is null or empty, or filter or rowType is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
      */
     public <T> Flux<T> distinct(final String fieldName, final Bson filter, final Class<T> rowType) {
         N.checkArgNotEmpty(fieldName, "fieldName");
         N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(rowType, "rowType");
 
         return Flux.from(coll.distinct(fieldName, filter, rowType));
     }
@@ -3842,6 +3896,7 @@ public final class MongoCollectionExecutor {
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
      */
     public <T> Flux<T> aggregate(final List<? extends Bson> pipeline, final Class<T> rowType) {
+        N.checkArgNotNull(pipeline, "pipeline");
         N.checkArgNotNull(rowType, "rowType");
 
         return Flux.from(coll.aggregate(pipeline, Document.class)).mapNotNull(toEntity(rowType));
@@ -4128,9 +4183,10 @@ public final class MongoCollectionExecutor {
      * // Note: prefer the aggregate pipeline — server-side map-reduce is deprecated in MongoDB 5.0+.
      * }</pre>
      *
-     * @param mapFunction the JavaScript map function; must not be null
-     * @param reduceFunction the JavaScript reduce function; must not be null
+     * @param mapFunction the JavaScript map function; must not be null or empty
+     * @param reduceFunction the JavaScript reduce function; must not be null or empty
      * @return a cold {@code Flux} that, on subscription, emits each result document, then completes
+     * @throws IllegalArgumentException if either function is null or empty
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
      * @deprecated Map-reduce is deprecated in MongoDB 5.0+. Use {@link #aggregate(List)} instead.
      * @see #aggregate(List)
@@ -4155,17 +4211,19 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type of the map-reduce results
-     * @param mapFunction the JavaScript map function; must not be null
-     * @param reduceFunction the JavaScript reduce function; must not be null
+     * @param mapFunction the JavaScript map function; must not be null or empty
+     * @param reduceFunction the JavaScript reduce function; must not be null or empty
      * @param rowType the class to deserialize results into; must not be null
      * @return a cold {@code Flux} that, on subscription, emits each result document decoded as
      *         {@code T}, then completes
-     * @throws IllegalArgumentException if {@code rowType} is null
+     * @throws IllegalArgumentException if either function is null or empty, or {@code rowType} is null
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
      * @deprecated Map-reduce is deprecated in MongoDB 5.0+. Use {@link #aggregate(List, Class)} instead.
      */
     @Deprecated
     public <T> Flux<T> mapReduce(final String mapFunction, final String reduceFunction, final Class<T> rowType) {
+        N.checkArgNotEmpty(mapFunction, "mapFunction");
+        N.checkArgNotEmpty(reduceFunction, "reduceFunction");
         N.checkArgNotNull(rowType, "rowType");
 
         return Flux.from(coll.mapReduce(mapFunction, reduceFunction, Document.class)).mapNotNull(toEntity(rowType));

@@ -7,6 +7,7 @@ package com.landawn.abacus.da.cassandra;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -86,6 +87,26 @@ public class AsyncCassandraExecutorTest extends TestBase {
         assertSame(first, iterator.next());
         assertSame(iterator, resultSet.iterator());
         assertEquals(Arrays.asList(second), resultSet.all());
+    }
+
+    @Test
+    public void testWrappedResultSetRestoresInterruptWhenFetchingNextPage() {
+        final AsyncResultSet asyncResultSet = mock(AsyncResultSet.class);
+        when(asyncResultSet.currentPage()).thenReturn(Collections.emptyList());
+        when(asyncResultSet.hasMorePages()).thenReturn(true);
+        when(asyncResultSet.fetchNextPage()).thenReturn(new CompletableFuture<>());
+
+        final ResultSet resultSet = ResultSets.wrap(asyncResultSet);
+
+        Thread.currentThread().interrupt();
+
+        try {
+            assertThrows(RuntimeException.class, () -> resultSet.iterator().hasNext());
+            assertTrue(Thread.currentThread().isInterrupted());
+        } finally {
+            // Do not leak the deliberately-set interrupt into subsequent tests.
+            Thread.interrupted();
+        }
     }
 
     @Test

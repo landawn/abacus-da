@@ -28,7 +28,9 @@ import org.apache.hadoop.hbase.client.OperationWithAttributes;
  * {@link AnyPut}, {@link AnyDelete}, {@link AnyAppend}, {@link AnyIncrement}). Attribute
  * values supplied to {@link #setAttribute(String, Object)} are converted to byte arrays via
  * {@link HBaseExecutor#toValueBytes(Object)} before being stored on the underlying HBase
- * operation.</p>
+ * operation. That conversion preserves {@code byte[]} values and the remaining bytes of a
+ * {@link java.nio.ByteBuffer}; strings use HBase's UTF-8 encoding and other objects use their
+ * Abacus string representation. It is not a general-purpose object serialization format.</p>
  *
  * <p>Key features:</p>
  * <ul>
@@ -38,7 +40,7 @@ import org.apache.hadoop.hbase.client.OperationWithAttributes;
  *     tracing facilities</li>
  * <li><strong>Priority Control</strong>: hint the region server's request scheduler about the
  *     relative importance of this operation</li>
- * <li><strong>Automatic Conversion</strong>: Java {@link Object}s are serialized to byte arrays
+ * <li><strong>Automatic Conversion</strong>: supported Java values are encoded as byte arrays
  *     by {@link HBaseExecutor}</li>
  * </ul>
  *
@@ -103,9 +105,10 @@ abstract class AnyOperationWithAttributes<AOWA extends AnyOperationWithAttribute
 
     /**
      * Returns the full attribute map for this operation. Keys are attribute names; values are the
-     * raw byte-array payloads. The returned map is a read-only view of the operation's attributes;
-     * callers must mutate attributes through {@link #setAttribute(String, Object)} rather than via
-     * the returned map.
+     * raw byte-array payloads. The returned map does not permit structural changes, but its array
+     * values are the live arrays held by HBase; mutating an array changes the operation. Callers
+     * should treat both the map and its values as read-only and use
+     * {@link #setAttribute(String, Object)} for updates.
      *
      * @return a {@link Map} of attribute name to byte-array value; never {@code null} but may be
      *         empty when no attributes have been set
@@ -118,9 +121,9 @@ abstract class AnyOperationWithAttributes<AOWA extends AnyOperationWithAttribute
 
     /**
      * Sets or replaces an attribute on this operation. The {@code value} is converted to a byte
-     * array via {@link HBaseExecutor#toValueBytes(Object)} before being stored, so any type
-     * supported by that helper (including {@link String}, primitive wrappers, and arbitrary
-     * {@link Object}s serialized by the configured codec) is accepted.
+     * array via {@link HBaseExecutor#toValueBytes(Object)} before being stored. Byte arrays are
+     * passed through, {@link java.nio.ByteBuffer} values contribute their remaining bytes,
+     * strings use UTF-8, and other values are encoded from their Abacus string representation.
      *
      * <p><strong>Common use cases:</strong></p>
      * <ul>
@@ -209,14 +212,11 @@ abstract class AnyOperationWithAttributes<AOWA extends AnyOperationWithAttribute
      * region-server request scheduler may use the value to order or throttle operations when
      * resources are constrained. The actual interpretation depends on server configuration.
      *
-     * <p><strong>Suggested priority bands:</strong></p>
-     * <ul>
-     * <li><strong>High Priority (100+)</strong>: Critical operations, user-facing requests</li>
-     * <li><strong>Normal Priority (0-99)</strong>: Standard operations</li>
-     * <li><strong>Low Priority (&lt;0)</strong>: Background tasks, bulk operations</li>
-     * </ul>
+     * <p>Priority values share HBase's scheduler namespace; applications should use values that
+     * are compatible with the target cluster's scheduler configuration rather than assuming
+     * application-specific numeric bands.</p>
      *
-     * @param priority the priority value to assign; higher means higher priority
+     * @param priority the HBase priority value to assign; higher values generally indicate higher priority
      * @return this instance, to allow fluent method chaining
      * @see #getPriority()
      */
