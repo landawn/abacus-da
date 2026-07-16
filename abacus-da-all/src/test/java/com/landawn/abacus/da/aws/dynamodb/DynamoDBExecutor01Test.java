@@ -134,6 +134,9 @@ public class DynamoDBExecutor01Test extends TestBase {
         AttributeValue result = DynamoDBExecutor.toAttributeValue(123);
         assertNotNull(result);
         assertEquals("123", result.getN());
+
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toAttributeValue(Double.NaN));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toAttributeValue(Float.POSITIVE_INFINITY));
     }
 
     @Test
@@ -191,12 +194,7 @@ public class DynamoDBExecutor01Test extends TestBase {
 
     @Test
     public void testAsKeyWithThreeParameters() {
-        Map<String, AttributeValue> result = DynamoDBExecutor.asKey("id", "123", "name", "test", "age", 25);
-        assertNotNull(result);
-        assertEquals(3, result.size());
-        assertEquals("123", result.get("id").getS());
-        assertEquals("test", result.get("name").getS());
-        assertEquals("25", result.get("age").getN());
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", "123", "name", "test", "age", 25));
     }
 
     @Test
@@ -211,6 +209,23 @@ public class DynamoDBExecutor01Test extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> {
             DynamoDBExecutor.asKey("id", "123", "name");
         });
+    }
+
+    /** DynamoDB keys must be complete, scalar, non-empty, and contain at most two distinct attributes. */
+    @Test
+    public void testAsKeyRejectsInvalidDynamoDBKeys() {
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("", "123"));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", null));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", ""));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", true));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", List.of("nested")));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", Map.of("nested", "value")));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", Double.NaN));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", ByteBuffer.allocate(0)));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", "1", "id", "2"));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey((Object[]) null));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey(new Object[0]));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey(new Object[] { "a", 1, "b", 2, "c", 3 }));
     }
 
     @Test
@@ -898,6 +913,7 @@ public class DynamoDBExecutor01Test extends TestBase {
         assertEquals("tenant-1", keyCaptor.getValue().get("partitionId").getS());
         assertEquals("item-9", keyCaptor.getValue().get("sortId").getS());
         assertThrows(IllegalArgumentException.class, () -> executor.mapper(ThreeKeyEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.mapper(CompositeKeyNameCollisionEntity.class, "TestTable", NamingPolicy.SNAKE_CASE));
     }
 
     @Test
@@ -1207,6 +1223,24 @@ public class DynamoDBExecutor01Test extends TestBase {
         // not the raw field name "userId". Before the fix, the captured key was "userId".
         assertTrue(capturedKey.containsKey("user_id"), "Expected snake_case key attribute 'user_id' but got: " + capturedKey.keySet());
         assertEquals("u123", capturedKey.get("user_id").getS());
+    }
+
+    /** Invalid entity IDs must fail locally instead of producing a rejected DynamoDB request. */
+    @Test
+    public void testMapperRejectsMissingAndEmptyKeyValues() {
+        DynamoDBExecutor.Mapper<TestEntity> mapper = executor.mapper(TestEntity.class);
+        TestEntity entity = new TestEntity();
+
+        assertThrows(IllegalArgumentException.class, () -> mapper.getItem(entity));
+        assertThrows(IllegalArgumentException.class, () -> mapper.putItem(entity));
+        assertThrows(IllegalArgumentException.class, () -> mapper.batchPutItem(List.of(entity)));
+
+        entity.setId("");
+        assertThrows(IllegalArgumentException.class, () -> mapper.getItem(entity));
+        assertThrows(IllegalArgumentException.class, () -> mapper.putItem(entity));
+
+        entity.setId("valid-id");
+        assertThrows(IllegalArgumentException.class, () -> mapper.updateItem(entity));
     }
 
     // -- Additional coverage tests below --
@@ -2738,6 +2772,29 @@ public class DynamoDBExecutor01Test extends TestBase {
 
         public void setFirstName(String firstName) {
             this.firstName = firstName;
+        }
+    }
+
+    private static class CompositeKeyNameCollisionEntity {
+        @com.landawn.abacus.annotation.Id
+        private String partitionKey;
+        @com.landawn.abacus.annotation.Id
+        private String partition_key;
+
+        public String getPartitionKey() {
+            return partitionKey;
+        }
+
+        public void setPartitionKey(final String partitionKey) {
+            this.partitionKey = partitionKey;
+        }
+
+        public String getPartition_key() {
+            return partition_key;
+        }
+
+        public void setPartition_key(final String partition_key) {
+            this.partition_key = partition_key;
         }
     }
 }

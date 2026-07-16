@@ -213,6 +213,7 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
         assertEquals("partition-1", requestCaptor.getValue().key().get("partitionId").s());
         assertEquals("sort-1", requestCaptor.getValue().key().get("sortId").s());
         assertThrows(IllegalArgumentException.class, () -> asyncExecutor.mapper(ThreeKeyEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.mapper(CompositeKeyNameCollisionEntity.class, "TestTable", NamingPolicy.SNAKE_CASE));
     }
 
     @Test
@@ -1004,6 +1005,24 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
         assertEquals("u-1", key.get("user_id").s());
     }
 
+    /** Invalid entity IDs fail synchronously, before an async SDK request is created. */
+    @Test
+    public void testMapperRejectsMissingAndEmptyKeyValues() {
+        AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
+        TestEntity entity = new TestEntity();
+
+        assertThrows(IllegalArgumentException.class, () -> mapper.getItem(entity));
+        assertThrows(IllegalArgumentException.class, () -> mapper.putItem(entity));
+        assertThrows(IllegalArgumentException.class, () -> mapper.batchPutItem(List.of(entity)));
+
+        entity.setId("");
+        assertThrows(IllegalArgumentException.class, () -> mapper.getItem(entity));
+        assertThrows(IllegalArgumentException.class, () -> mapper.putItem(entity));
+
+        entity.setId("valid-id");
+        assertThrows(IllegalArgumentException.class, () -> mapper.updateItem(entity));
+    }
+
     // Additional coverage for v2 async overloads.
     @Test
     public void testGetItemWithConsistentReadAndTargetClass() throws ExecutionException, InterruptedException {
@@ -1262,6 +1281,7 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
         AsyncDynamoDBExecutor.Mapper<TestEntity> mapper = asyncExecutor.mapper(TestEntity.class);
         TestEntity entity = new TestEntity();
         entity.setId("1");
+        entity.setName("Updated");
 
         when(mockDynamoDbAsyncClient.updateItem(any(UpdateItemRequest.class)))
                 .thenReturn(CompletableFuture.completedFuture(UpdateItemResponse.builder().build()));
@@ -1541,6 +1561,29 @@ public class AsyncDynamoDBExecutorV2Test extends TestBase {
 
         public void setUserName(String userName) {
             this.userName = userName;
+        }
+    }
+
+    private static class CompositeKeyNameCollisionEntity {
+        @com.landawn.abacus.annotation.Id
+        private String partitionKey;
+        @com.landawn.abacus.annotation.Id
+        private String partition_key;
+
+        public String getPartitionKey() {
+            return partitionKey;
+        }
+
+        public void setPartitionKey(final String partitionKey) {
+            this.partitionKey = partitionKey;
+        }
+
+        public String getPartition_key() {
+            return partition_key;
+        }
+
+        public void setPartition_key(final String partition_key) {
+            this.partition_key = partition_key;
         }
     }
 }

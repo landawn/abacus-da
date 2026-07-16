@@ -486,7 +486,7 @@ public final class DynamoDBExecutor {
      * @return a new Mapper instance configured with the specified parameters, never null
      * @throws IllegalArgumentException if {@code targetEntityClass} is {@code null}, if {@code tableName} is
      *                                  null or empty, if {@code targetEntityClass} is not a bean class, or if it
-     *                                  does not declare one or two ID properties
+     *                                  does not declare one or two ID properties, or if two IDs map to the same attribute name
      */
     public <T> Mapper<T> mapper(final Class<T> targetEntityClass, final String tableName, final NamingPolicy namingPolicy) {
         return new Mapper<>(targetEntityClass, this, tableName, namingPolicy);
@@ -531,13 +531,17 @@ public final class DynamoDBExecutor {
      * // Results in a map of one entry: "userId" -> AttributeValue with S = "user123"
      * }</pre>
      *
-     * @param keyName the name of the key attribute (usually partition key). Must not be null.
-     * @param value the value for the key attribute, can be null
+     * @param keyName the non-empty name of the key attribute (usually the partition key)
+     * @param value the non-null, non-empty scalar key value; DynamoDB keys support String, Number,
+     *              and binary values only
      * @return a Map containing the single key-value pair as AttributeValue, never null
+     * @throws IllegalArgumentException if the name is empty or the value is not a valid DynamoDB key value
      * @see #asKey(String, Object, String, Object)
      */
     public static Map<String, AttributeValue> asKey(final String keyName, final Object value) {
-        return asItem(keyName, value);
+        final Map<String, AttributeValue> key = N.newLinkedHashMap(1);
+        key.put(keyName, toKeyAttributeValue(keyName, value));
+        return key;
     }
 
     /**
@@ -554,70 +558,80 @@ public final class DynamoDBExecutor {
      * //                         "timestamp" -> AttributeValue with N = "1640995200"
      * }</pre>
      *
-     * @param keyName the name of the partition key attribute. Must not be null.
-     * @param value the value for the partition key, can be null
-     * @param keyName2 the name of the sort key attribute. Must not be null.
-     * @param value2 the value for the sort key, can be null
+     * @param keyName the non-empty name of the partition key attribute
+     * @param value the non-null, non-empty scalar partition-key value
+     * @param keyName2 the non-empty name of the sort key attribute
+     * @param value2 the non-null, non-empty scalar sort-key value
      * @return a Map containing both key-value pairs as AttributeValues, never null
+     * @throws IllegalArgumentException if a name is empty, the names are equal, or a value is not a valid DynamoDB key value
      * @see #asKey(String, Object)
      */
     public static Map<String, AttributeValue> asKey(final String keyName, final Object value, final String keyName2, final Object value2) {
-        return asItem(keyName, value, keyName2, value2);
+        N.checkArgNotEmpty(keyName, "keyName");
+        N.checkArgNotEmpty(keyName2, "keyName2");
+        N.checkArgument(!keyName.equals(keyName2), "Partition-key and sort-key names must be different: %s", keyName);
+
+        final Map<String, AttributeValue> key = N.newLinkedHashMap(2);
+        key.put(keyName, toKeyAttributeValue(keyName, value));
+        key.put(keyName2, toKeyAttributeValue(keyName2, value2));
+        return key;
     }
 
     /**
-     * Creates a three-attribute key map for complex DynamoDB operations.
+     * Unsupported legacy overload retained for source compatibility.
      *
-     * <p>This method creates a key map with three attributes, useful for complex queries
-     * involving Global Secondary Indexes (GSI) or when building filter conditions.
-     * All values are automatically converted to AttributeValues.</p>
+     * <p>A DynamoDB primary key contains exactly one partition-key attribute and, optionally,
+     * one sort-key attribute. Consequently a three-attribute map can never be a valid primary
+     * key. Use {@link #asItem(String, Object, String, Object, String, Object)} for an arbitrary
+     * three-attribute item or condition-value map.</p>
      *
-     * <p><b>Usage Examples:</b></p>
-     * <pre>{@code
-     * Map<String, AttributeValue> key = asKey(
-     *     "partitionKey", "value1",
-     *     "sortKey", "value2",
-     *     "gsiKey", "value3"
-     * );
-     * }</pre>
-     *
-     * @param keyName the name of the first key attribute. Must not be null.
-     * @param value the value for the first key, can be null
-     * @param keyName2 the name of the second key attribute. Must not be null.
-     * @param value2 the value for the second key, can be null
-     * @param keyName3 the name of the third key attribute. Must not be null.
-     * @param value3 the value for the third key, can be null
-     * @return a Map containing all three key-value pairs as AttributeValues, never null
+     * @param keyName ignored
+     * @param value ignored
+     * @param keyName2 ignored
+     * @param value2 ignored
+     * @param keyName3 ignored
+     * @param value3 ignored
+     * @return never returns normally
+     * @throws IllegalArgumentException always, because DynamoDB keys contain at most two attributes
+     * @deprecated DynamoDB does not support three-attribute primary keys; use {@code asItem(...)}
      */
+    @Deprecated
     public static Map<String, AttributeValue> asKey(final String keyName, final Object value, final String keyName2, final Object value2, final String keyName3,
             final Object value3) {
-        return asItem(keyName, value, keyName2, value2, keyName3, value3);
+        throw new IllegalArgumentException("A DynamoDB primary key must contain one or two attributes, not three");
     }
 
     /**
-     * Creates a key map from variable arguments in name-value pairs.
+     * Creates a one- or two-attribute key map from name-value pairs.
      *
-     * <p>This flexible method accepts alternating attribute names and values to create
-     * a key map. Arguments must be provided in pairs (name1, value1, name2, value2, ...).
-     * All values are automatically converted to AttributeValues.</p>
+     * <p>The array must contain one or two name-value pairs. DynamoDB primary keys contain
+     * one partition key and, optionally, one sort key; use {@link #asItem(Object...)} for
+     * maps containing any other number of attributes.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, AttributeValue> key = asKey(
      *     "userId", "user123",
-     *     "timestamp", System.currentTimeMillis(),
-     *     "type", "MESSAGE"
+     *     "timestamp", System.currentTimeMillis()
      * );
      * }</pre>
      *
-     * @param a variable arguments in name-value pairs. Must have an even number of arguments and the
-     *          even-indexed elements (the keys) must be Strings.
-     * @return a Map containing all key-value pairs as AttributeValues, never null
-     * @throws IllegalArgumentException if argument count is not even
+     * @param a one or two name-value pairs; the even-indexed elements must be Strings
+     * @return a Map containing one or two valid key attributes, never null
+     * @throws IllegalArgumentException if {@code a} is null, does not contain one or two pairs,
+     *                                  contains duplicate/empty names, or contains an invalid key value
      * @throws ClassCastException if an even-indexed argument is not a String
      */
     public static Map<String, AttributeValue> asKey(final Object... a) {
-        return asItem(a);
+        N.checkArgNotNull(a, "nameValuePairs");
+
+        if (a.length == 2) {
+            return asKey((String) a[0], a[1]);
+        } else if (a.length == 4) {
+            return asKey((String) a[0], a[1], (String) a[2], a[3]);
+        }
+
+        throw new IllegalArgumentException("A DynamoDB primary key requires one or two name-value pairs; received " + a.length + " arguments");
     }
 
     /**
@@ -916,6 +930,7 @@ public final class DynamoDBExecutor {
      *
      * @param value the Java object to convert; may be {@code null}
      * @return a new {@link AttributeValue} representing {@code value}; never {@code null}
+     * @throws IllegalArgumentException if {@code value} is a non-finite floating-point number
      */
     public static AttributeValue toAttributeValue(final Object value) {
         final AttributeValue attrVal = new AttributeValue();
@@ -926,6 +941,8 @@ public final class DynamoDBExecutor {
             final Type<Object> type = N.typeOf(value.getClass());
 
             if (type.isNumber()) {
+                N.checkArgument(!(value instanceof Double) || Double.isFinite((Double) value), "DynamoDB numbers must be finite: %s", value);
+                N.checkArgument(!(value instanceof Float) || Float.isFinite((Float) value), "DynamoDB numbers must be finite: %s", value);
                 attrVal.setN(type.stringOf(value));
             } else if (type.isBoolean()) {
                 attrVal.setBOOL((Boolean) value);
@@ -937,6 +954,25 @@ public final class DynamoDBExecutor {
         }
 
         return attrVal;
+    }
+
+    /**
+     * Converts and validates a primary-key value. DynamoDB accepts only non-empty String,
+     * Number, or binary values for partition and sort keys.
+     */
+    static AttributeValue toKeyAttributeValue(final String keyName, final Object value) {
+        N.checkArgNotEmpty(keyName, "keyName");
+        N.checkArgument(value != null, "DynamoDB key attribute '%s' must not be null", keyName);
+        N.checkArgument(!(value instanceof Collection) && !(value instanceof Map) && !value.getClass().isArray(),
+                "DynamoDB key attribute '%s' must be scalar, not %s", keyName, value.getClass().getName());
+
+        final AttributeValue attrVal = toAttributeValue(value);
+        if (Strings.isNotEmpty(attrVal.getS()) || Strings.isNotEmpty(attrVal.getN()) || attrVal.getB() != null && attrVal.getB().hasRemaining()) {
+            return attrVal;
+        }
+
+        throw new IllegalArgumentException("DynamoDB key attribute '" + keyName
+                + "' must be a non-empty String, finite Number, or non-empty binary value; received " + value.getClass().getName());
     }
 
     /**
@@ -3434,6 +3470,10 @@ public final class DynamoDBExecutor {
      * table name is the request-items map key, so those requests are validated only — the mapper
      * rejects entries naming a different table but does not fill anything in.</p>
      *
+     * <p>Entity-based key operations validate every ID before contacting DynamoDB. Each ID must
+     * convert to a non-empty String, finite Number, or non-empty binary value; null, Boolean,
+     * collection, map, and empty String/binary IDs are rejected with {@link IllegalArgumentException}.</p>
+     *
      * <p>Instances are thread-safe and intended to be cached and reused; obtain them via
      * {@link DynamoDBExecutor#mapper(Class)} or
      * {@link DynamoDBExecutor#mapper(Class, String, NamingPolicy)}.</p>
@@ -3454,7 +3494,7 @@ public final class DynamoDBExecutor {
          * {@link DynamoDBExecutor#mapper(Class, String, NamingPolicy)}; not part of the public API.
          *
          * <p>Resolves the entity's one or two ID properties via
-         * {@link QueryUtil#getIdPropNames(Class)} (failing fast if zero or more than two are declared)
+         * {@link QueryUtil#idPropNames(Class)} (failing fast if zero or more than two are declared)
          * and caches the corresponding {@link PropInfo}s and DynamoDB key attribute names. Key
          * attribute names are computed by passing each ID {@code PropInfo} through {@code namingPolicy}
          * so they match what {@link DynamoDBExecutor#toItem(Object, NamingPolicy)} writes when the
@@ -3468,7 +3508,8 @@ public final class DynamoDBExecutor {
          * @throws IllegalArgumentException if {@code targetEntityClass} or {@code dynamoDBExecutor}
          *                                  is {@code null}, {@code tableName} is null/empty,
          *                                  {@code targetEntityClass} is not a bean class, or it does
-         *                                  not declare one or two ID properties
+         *                                  not declare one or two ID properties, or if two IDs map
+         *                                  to the same DynamoDB attribute name
          */
         Mapper(final Class<T> targetEntityClass, final DynamoDBExecutor dynamoDBExecutor, final String tableName, final NamingPolicy namingPolicy) {
             N.checkArgNotNull(targetEntityClass, "targetEntityClass");
@@ -3494,6 +3535,11 @@ public final class DynamoDBExecutor {
             // otherwise getItem/updateItem/deleteItem/batchGetItem/batchDeleteItem will look up the wrong
             // attribute when a non-CAMEL_CASE NamingPolicy renames the id field (e.g. "userId" -> "user_id").
             keyPropNames = Stream.of(keyPropInfos).map(it -> getAttrName(it, this.namingPolicy)).toList();
+
+            if (keyPropNames.size() == 2 && keyPropNames.get(0).equals(keyPropNames.get(1))) {
+                throw new IllegalArgumentException("ID properties " + idPropNames + " in " + ClassUtil.getCanonicalClassName(targetEntityClass)
+                        + " both map to DynamoDB key attribute '" + keyPropNames.get(0) + "'");
+            }
         }
 
         /**
@@ -3514,7 +3560,7 @@ public final class DynamoDBExecutor {
          *
          * @param entity the entity containing the key values to search for, must not be {@code null}
          * @return the retrieved entity from DynamoDB, or {@code null} if not found
-         * @throws IllegalArgumentException if entity is {@code null}
+         * @throws IllegalArgumentException if entity is {@code null} or an ID is null, empty, or not a supported scalar key value
          */
         public T getItem(final T entity) {
             return dynamoDBExecutor.getItem(tableName, createKey(entity), targetEntityClass);
@@ -3539,7 +3585,7 @@ public final class DynamoDBExecutor {
          * @param entity the entity containing the key values to search for, must not be {@code null}
          * @param consistentRead if true, performs a strongly consistent read; if false or {@code null}, uses eventual consistency
          * @return the retrieved entity from DynamoDB, or {@code null} if not found
-         * @throws IllegalArgumentException if entity is {@code null}
+         * @throws IllegalArgumentException if entity is {@code null} or an ID is null, empty, or not a supported scalar key value
          */
         public T getItem(final T entity, final Boolean consistentRead) {
             return dynamoDBExecutor.getItem(tableName, createKey(entity), consistentRead, targetEntityClass);
@@ -3695,11 +3741,10 @@ public final class DynamoDBExecutor {
          *
          * @param entity the entity to save to DynamoDB, must not be {@code null}
          * @return the PutItemResult containing operation metadata, never {@code null}
-         * @throws IllegalArgumentException if entity is {@code null}
+         * @throws IllegalArgumentException if entity is {@code null} or an ID is null, empty, or not a supported scalar key value
          */
         public PutItemResult putItem(final T entity) {
-            N.checkArgNotNull(entity, "entity");
-
+            createKey(entity); // Validate that the item contains a complete, service-compatible primary key.
             return dynamoDBExecutor.putItem(tableName, DynamoDBExecutor.toItem(entity, namingPolicy));
         }
 
@@ -3716,11 +3761,10 @@ public final class DynamoDBExecutor {
          * @param entity the entity to save to DynamoDB, must not be {@code null}
          * @param returnValues specifies which attributes to return (e.g., "ALL_OLD", "NONE")
          * @return the PutItemResult containing operation metadata and optionally old values
-         * @throws IllegalArgumentException if entity is {@code null}
+         * @throws IllegalArgumentException if entity is {@code null} or an ID is null, empty, or not a supported scalar key value
          */
         public PutItemResult putItem(final T entity, final String returnValues) {
-            N.checkArgNotNull(entity, "entity");
-
+            createKey(entity); // Validate that the item contains a complete, service-compatible primary key.
             return dynamoDBExecutor.putItem(tableName, DynamoDBExecutor.toItem(entity, namingPolicy), returnValues);
         }
 
@@ -3780,7 +3824,7 @@ public final class DynamoDBExecutor {
          *
          * @param entity the entity containing updated values and key information, must not be {@code null}
          * @return the UpdateItemResult containing operation metadata, never {@code null}
-         * @throws IllegalArgumentException if entity is {@code null}
+         * @throws IllegalArgumentException if entity is {@code null}, an ID is invalid, or no non-key attributes are populated
          */
         public UpdateItemResult updateItem(final T entity) {
             return dynamoDBExecutor.updateItem(tableName, createKey(entity), createUpdateItem(entity));
@@ -3801,7 +3845,7 @@ public final class DynamoDBExecutor {
          * @param entity the entity containing updated values and key information, must not be {@code null}
          * @param returnValues specifies which attributes to return (e.g., "ALL_NEW", "ALL_OLD", "UPDATED_NEW")
          * @return the UpdateItemResult containing operation metadata and optionally attribute values
-         * @throws IllegalArgumentException if entity is {@code null}
+         * @throws IllegalArgumentException if entity is {@code null}, an ID is invalid, or no non-key attributes are populated
          */
         public UpdateItemResult updateItem(final T entity, final String returnValues) {
             return dynamoDBExecutor.updateItem(tableName, createKey(entity), createUpdateItem(entity), returnValues);
@@ -3846,7 +3890,7 @@ public final class DynamoDBExecutor {
          *
          * @param entity the entity containing the key values for deletion, must not be {@code null}
          * @return the DeleteItemResult containing operation metadata, never {@code null}
-         * @throws IllegalArgumentException if entity is {@code null}
+         * @throws IllegalArgumentException if entity is {@code null} or an ID is null, empty, or not a supported scalar key value
          */
         public DeleteItemResult deleteItem(final T entity) {
             return dynamoDBExecutor.deleteItem(tableName, createKey(entity));
@@ -3874,7 +3918,7 @@ public final class DynamoDBExecutor {
          * @param returnValues specifies which attributes to return: "ALL_OLD" returns all attributes
          *                    of the deleted item, "NONE" returns nothing (default)
          * @return the DeleteItemResult containing operation metadata and optionally the deleted item's attributes
-         * @throws IllegalArgumentException if entity is {@code null}
+         * @throws IllegalArgumentException if entity is {@code null} or an ID is null, empty, or not a supported scalar key value
          */
         public DeleteItemResult deleteItem(final T entity, final String returnValues) {
             return dynamoDBExecutor.deleteItem(tableName, createKey(entity), returnValues);
@@ -4277,7 +4321,8 @@ public final class DynamoDBExecutor {
             final Map<String, AttributeValue> key = new HashMap<>(keyPropNames.size());
 
             for (int i = 0, len = keyPropNames.size(); i < len; i++) {
-                key.put(keyPropNames.get(i), toAttributeValue(keyPropInfos.get(i).getPropValue(entity)));
+                final String keyPropName = keyPropNames.get(i);
+                key.put(keyPropName, toKeyAttributeValue(keyPropName, keyPropInfos.get(i).getPropValue(entity)));
             }
 
             return key;
@@ -4289,6 +4334,8 @@ public final class DynamoDBExecutor {
             for (final String keyPropName : keyPropNames) {
                 attributeUpdates.remove(keyPropName);
             }
+
+            N.checkArgument(N.notEmpty(attributeUpdates), "No non-key attributes to update for table '%s'", tableName);
 
             return attributeUpdates;
         }
@@ -4311,7 +4358,7 @@ public final class DynamoDBExecutor {
             final List<WriteRequest> keys = new ArrayList<>(entities.size());
 
             for (final T entity : entities) {
-                N.checkArgNotNull(entity, "entity");
+                createKey(entity); // Validate every item before constructing the batch request.
                 keys.add(new WriteRequest().withPutRequest(new PutRequest().withItem(toItem(entity, namingPolicy))));
             }
 

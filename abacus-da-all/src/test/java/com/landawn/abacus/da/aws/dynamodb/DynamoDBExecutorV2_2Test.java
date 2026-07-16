@@ -288,12 +288,7 @@ public class DynamoDBExecutorV2_2Test extends TestBase {
 
     @Test
     public void testAsKeyWithThreeParameters() {
-        Map<String, AttributeValue> result = DynamoDBExecutor.asKey("id", "123", "name", "test", "age", 25);
-        assertNotNull(result);
-        assertEquals(3, result.size());
-        assertEquals("123", result.get("id").s());
-        assertEquals("test", result.get("name").s());
-        assertEquals("25", result.get("age").n());
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asKey("id", "123", "name", "test", "age", 25));
     }
 
     @Test

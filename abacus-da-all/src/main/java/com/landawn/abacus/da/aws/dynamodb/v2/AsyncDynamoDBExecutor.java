@@ -21,6 +21,7 @@ import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.readRow;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toAttributeValue;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toEntities;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toItem;
+import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toKeyAttributeValue;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toList;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toUpdateItem;
 
@@ -403,8 +404,8 @@ public final class AsyncDynamoDBExecutor {
      * @param namingPolicy the naming policy for converting property names to attribute names. If null, defaults to CAMEL_CASE.
      * @return a new async Mapper instance configured with the specified parameters, never null
      * @throws IllegalArgumentException if targetEntityClass is null or not a bean class, tableName
-     *                                  is null or empty, or the entity does not have one or two
-     *                                  {@code @Id} fields
+     *                                  is null or empty, the entity does not have one or two
+     *                                  {@code @Id} fields, or two IDs map to the same attribute name
      */
     public <T> Mapper<T> mapper(final Class<T> targetEntityClass, final String tableName, final NamingPolicy namingPolicy) {
         return new Mapper<>(targetEntityClass, this, tableName, namingPolicy);
@@ -2495,6 +2496,11 @@ public final class AsyncDynamoDBExecutor {
      *       batch-write, 100 items per batch-get)</li>
      * </ul>
      *
+     * <p>Entity-based key operations validate every ID before creating a future or contacting
+     * DynamoDB. Each ID must convert to a non-empty String, finite Number, or non-empty binary
+     * value; null, Boolean, collection, map, and empty String/binary IDs are rejected with
+     * {@link IllegalArgumentException}.</p>
+     *
      * <p><b>Thread Safety:</b> instances of this class are thread-safe and can be shared
      * across multiple threads.</p>
      *
@@ -2578,6 +2584,11 @@ public final class AsyncDynamoDBExecutor {
             // otherwise getItem/updateItem/deleteItem/batchGetItem/batchDeleteItem will look up the wrong
             // attribute when a non-CAMEL_CASE NamingPolicy renames the id field (e.g. "userId" -> "user_id").
             keyPropNames = Stream.of(keyPropInfos).map(it -> getAttrName(it, this.namingPolicy)).toList();
+
+            if (keyPropNames.size() == 2 && keyPropNames.get(0).equals(keyPropNames.get(1))) {
+                throw new IllegalArgumentException("ID properties " + idPropNames + " in " + ClassUtil.getCanonicalClassName(targetEntityClass)
+                        + " both map to DynamoDB key attribute '" + keyPropNames.get(0) + "'");
+            }
         }
 
         /**
@@ -2602,7 +2613,7 @@ public final class AsyncDynamoDBExecutor {
          *
          * @param entity the entity instance with key attributes set. Must not be null.
          * @return a CompletableFuture containing the retrieved entity, or null if not found
-         * @throws NullPointerException if {@code entity} is null
+         * @throws IllegalArgumentException if {@code entity} is null or an ID is null, empty, or not a supported scalar key value
          */
         public CompletableFuture<T> getItem(final T entity) {
             return dynamoDBExecutor.getItem(tableName, createKey(entity), targetEntityClass);
@@ -2629,7 +2640,7 @@ public final class AsyncDynamoDBExecutor {
          * @param consistentRead true for strongly consistent reads, {@code false} for eventually consistent,
          *                      null to use AWS-default behavior
          * @return a CompletableFuture containing the retrieved entity, or null if not found
-         * @throws NullPointerException if {@code entity} is null
+         * @throws IllegalArgumentException if {@code entity} is null or an ID is null, empty, or not a supported scalar key value
          */
         public CompletableFuture<T> getItem(final T entity, final Boolean consistentRead) {
             return dynamoDBExecutor.getItem(tableName, createKey(entity), consistentRead, targetEntityClass);
@@ -2832,9 +2843,10 @@ public final class AsyncDynamoDBExecutor {
          *
          * @param entity the entity to save. Must not be null and must have all required attributes.
          * @return a CompletableFuture containing the PutItemResponse with operation metadata
-         * @throws NullPointerException if {@code entity} is null
+         * @throws IllegalArgumentException if {@code entity} is null or an ID is null, empty, or not a supported scalar key value
          */
         public CompletableFuture<PutItemResponse> putItem(final T entity) {
+            createKey(entity); // Validate that the item contains a complete, service-compatible primary key.
             return dynamoDBExecutor.putItem(tableName, toItem(entity, namingPolicy));
         }
 
@@ -2861,9 +2873,10 @@ public final class AsyncDynamoDBExecutor {
          * @param returnValues specifies which attributes to return. Valid values:
          *                    "NONE" (default), "ALL_OLD"
          * @return a CompletableFuture containing the PutItemResponse with specified return values
-         * @throws NullPointerException if {@code entity} is null
+         * @throws IllegalArgumentException if {@code entity} is null or an ID is null, empty, or not a supported scalar key value
          */
         public CompletableFuture<PutItemResponse> putItem(final T entity, final String returnValues) {
+            createKey(entity); // Validate that the item contains a complete, service-compatible primary key.
             return dynamoDBExecutor.putItem(tableName, toItem(entity, namingPolicy), returnValues);
         }
 
@@ -2972,7 +2985,7 @@ public final class AsyncDynamoDBExecutor {
          *
          * @param entity the entity instance with key and updated attributes set. Must not be null.
          * @return a CompletableFuture containing the UpdateItemResponse with operation metadata
-         * @throws NullPointerException if {@code entity} is null
+         * @throws IllegalArgumentException if {@code entity} is null, an ID is invalid, or no non-key attributes are populated
          */
         public CompletableFuture<UpdateItemResponse> updateItem(final T entity) {
             return dynamoDBExecutor.updateItem(tableName, createKey(entity), createUpdateItem(entity));
@@ -3002,7 +3015,7 @@ public final class AsyncDynamoDBExecutor {
          * @param returnValues specifies which attributes to return. Valid values:
          *                    "NONE", "ALL_OLD", "UPDATED_OLD", "ALL_NEW", "UPDATED_NEW"
          * @return a CompletableFuture containing the UpdateItemResponse with specified return values
-         * @throws NullPointerException if {@code entity} is null
+         * @throws IllegalArgumentException if {@code entity} is null, an ID is invalid, or no non-key attributes are populated
          */
         public CompletableFuture<UpdateItemResponse> updateItem(final T entity, final String returnValues) {
             return dynamoDBExecutor.updateItem(tableName, createKey(entity), createUpdateItem(entity), returnValues);
@@ -3057,7 +3070,7 @@ public final class AsyncDynamoDBExecutor {
          *
          * @param entity the entity instance with key attributes set. Must not be null.
          * @return a CompletableFuture containing the DeleteItemResponse with operation metadata
-         * @throws NullPointerException if {@code entity} is null
+         * @throws IllegalArgumentException if {@code entity} is null or an ID is null, empty, or not a supported scalar key value
          */
         public CompletableFuture<DeleteItemResponse> deleteItem(final T entity) {
             return dynamoDBExecutor.deleteItem(tableName, createKey(entity));
@@ -3087,7 +3100,7 @@ public final class AsyncDynamoDBExecutor {
          * @param returnValues specifies which attributes to return. Valid values:
          *                    "NONE" (default), "ALL_OLD"
          * @return a CompletableFuture containing the DeleteItemResponse with specified return values
-         * @throws NullPointerException if {@code entity} is null
+         * @throws IllegalArgumentException if {@code entity} is null or an ID is null, empty, or not a supported scalar key value
          */
         public CompletableFuture<DeleteItemResponse> deleteItem(final T entity, final String returnValues) {
             return dynamoDBExecutor.deleteItem(tableName, createKey(entity), returnValues);
@@ -3449,7 +3462,8 @@ public final class AsyncDynamoDBExecutor {
             final Map<String, AttributeValue> key = new HashMap<>(keyPropNames.size());
 
             for (int i = 0, len = keyPropNames.size(); i < len; i++) {
-                key.put(keyPropNames.get(i), toAttributeValue(keyPropInfos.get(i).getPropValue(entity)));
+                final String keyPropName = keyPropNames.get(i);
+                key.put(keyPropName, toKeyAttributeValue(keyPropName, keyPropInfos.get(i).getPropValue(entity)));
             }
 
             return key;
@@ -3463,6 +3477,8 @@ public final class AsyncDynamoDBExecutor {
             for (final String keyPropName : keyPropNames) {
                 attributeUpdates.remove(keyPropName);
             }
+
+            N.checkArgument(N.notEmpty(attributeUpdates), "No non-key attributes to update for table '%s'", tableName);
 
             return attributeUpdates;
         }
@@ -3485,7 +3501,7 @@ public final class AsyncDynamoDBExecutor {
             final List<WriteRequest> keys = new ArrayList<>(entities.size());
 
             for (final T entity : entities) {
-                N.checkArgNotNull(entity, "entity");
+                createKey(entity); // Validate every item before constructing the batch request.
                 keys.add(WriteRequest.builder().putRequest(PutRequest.builder().item(toItem(entity, namingPolicy)).build()).build());
             }
 
