@@ -959,9 +959,9 @@ public final class AsyncDynamoDBExecutor {
      *
      * <p>The entity is converted to a map of {@link AttributeValue}s by the underlying
      * {@link DynamoDBExecutor} before being written. This method is package-private
-     * because the {@code Object} parameter would overload-clash with the
-     * {@link #putItem(String, Map)} entry point and create resolution ambiguity for
-     * callers passing {@code Map}-typed entities; public callers should serialize their
+     * because a public {@code Object} overload would let {@code Map}-typed arguments
+     * silently bind to the more specific {@link #putItem(String, Map)} entry point,
+     * bypassing entity conversion; public callers should serialize their
      * entity to a {@code Map<String, AttributeValue>} and use the public overload, or
      * obtain the wrapper through other API entry points.</p>
      *

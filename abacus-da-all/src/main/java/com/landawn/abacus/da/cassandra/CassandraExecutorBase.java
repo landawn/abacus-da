@@ -224,7 +224,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     protected CassandraExecutorBase(final CqlMapper cqlMapper, final NamingPolicy namingPolicy) {
         // Fail fast: the prepare* methods support only these three policies; without this check an
-        // unsupported policy would surface as an IllegalStateException on the first Condition-based operation.
+        // unsupported policy would surface as a RuntimeException on the first Condition-based operation.
         if (namingPolicy != null && namingPolicy != NamingPolicy.SNAKE_CASE && namingPolicy != NamingPolicy.SCREAMING_SNAKE_CASE
                 && namingPolicy != NamingPolicy.CAMEL_CASE) {
             throw new IllegalArgumentException(
@@ -1465,10 +1465,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Optional<User> user = executor.findFirst(User.class,
-     *     CF.eq("email", "user@example.com")); // returns present Optional<User> for the first match
+     *     Filters.eq("email", "user@example.com")); // returns present Optional<User> for the first match
      *
      * Optional<User> none = executor.findFirst(User.class,
-     *     CF.eq("email", "missing@example.com")); // returns Optional.empty() when no row matches
+     *     Filters.eq("email", "missing@example.com")); // returns Optional.empty() when no row matches
      * }</pre>
      *
      * @param <T> the entity type to map the result row to
@@ -1499,10 +1499,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <pre>{@code
      * Optional<User> user = executor.findFirst(User.class,
      *     Arrays.asList("userId", "name"),
-     *     CF.eq("status", "active")); // returns present Optional<User> (only userId/name set) for the first match
+     *     Filters.eq("status", "active")); // returns present Optional<User> (only userId/name set) for the first match
      *
      * Optional<User> all = executor.findFirst(User.class, null,
-     *     CF.eq("status", "active")); // returns present Optional with all properties, or empty when no row matches
+     *     Filters.eq("status", "active")); // returns present Optional with all properties, or empty when no row matches
      * }</pre>
      *
      * @param <T> the entity type to map the result row to
@@ -1635,7 +1635,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalBoolean isActive = executor.queryForBoolean(User.class, "is_active",
-     *     CF.eq("id", userId)); // returns present OptionalBoolean (false when the column is NULL); empty when no row matches
+     *     Filters.eq("id", userId)); // returns present OptionalBoolean (false when the column is NULL); empty when no row matches
      * }</pre>
      *
      * @param targetClass the entity class used to derive the table/column mapping
@@ -1669,7 +1669,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalChar grade = executor.queryForChar(Student.class, "grade",
-     *     CF.eq("student_id", studentId)); // returns present OptionalChar ((char) 0 when NULL); empty when no row matches
+     *     Filters.eq("student_id", studentId)); // returns present OptionalChar ((char) 0 when NULL); empty when no row matches
      * }</pre>
      *
      * @param targetClass the entity class used to derive the table/column mapping
@@ -1703,7 +1703,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalByte statusCode = executor.queryForByte(Request.class, "status_code",
-     *     CF.eq("request_id", requestId)); // returns present OptionalByte (0 when NULL); empty when no row matches
+     *     Filters.eq("request_id", requestId)); // returns present OptionalByte (0 when NULL); empty when no row matches
      * }</pre>
      *
      * @param targetClass the entity class used to derive the table/column mapping
@@ -1737,7 +1737,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalShort port = executor.queryForShort(Server.class, "port",
-     *     CF.eq("server_name", "web-01")); // returns present OptionalShort (0 when NULL); empty when no row matches
+     *     Filters.eq("server_name", "web-01")); // returns present OptionalShort (0 when NULL); empty when no row matches
      * }</pre>
      *
      * @param targetClass the entity class used to derive the table/column mapping
@@ -1771,7 +1771,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalInt count = executor.queryForInt(Product.class, "quantity",
-     *     CF.eq("product_id", productId)); // returns present OptionalInt (0 when NULL); empty when no row matches
+     *     Filters.eq("product_id", productId)); // returns present OptionalInt (0 when NULL); empty when no row matches
      * }</pre>
      *
      * @param targetClass the entity class used to derive the table/column mapping
@@ -1805,7 +1805,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalLong timestamp = executor.queryForLong(Event.class, "timestamp",
-     *     CF.eq("event_id", eventId)); // returns present OptionalLong (0L when NULL); empty when no row matches
+     *     Filters.eq("event_id", eventId)); // returns present OptionalLong (0L when NULL); empty when no row matches
      * }</pre>
      *
      * @param targetClass the entity class used to derive the table/column mapping
@@ -1839,7 +1839,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalFloat rating = executor.queryForFloat(Product.class, "rating",
-     *     CF.eq("product_id", productId)); // returns present OptionalFloat (0.0f when NULL); empty when no row matches
+     *     Filters.eq("product_id", productId)); // returns present OptionalFloat (0.0f when NULL); empty when no row matches
      * }</pre>
      *
      * @param targetClass the entity class used to derive the table/column mapping
@@ -1873,7 +1873,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * OptionalDouble price = executor.queryForDouble(Product.class, "price",
-     *     CF.eq("product_id", productId)); // returns present OptionalDouble (0.0d when NULL); empty when no row matches
+     *     Filters.eq("product_id", productId)); // returns present OptionalDouble (0.0d when NULL); empty when no row matches
      * }</pre>
      *
      * @param targetClass the entity class used to derive the table/column mapping
@@ -1906,7 +1906,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Nullable<String> email = executor.queryForString(User.class, "email",
-     *     CF.eq("username", "john")); // returns present Nullable (may hold null when the column is NULL); empty when no row matches
+     *     Filters.eq("username", "john")); // returns present Nullable (may hold null when the column is NULL); empty when no row matches
      * }</pre>
      *
      * @param targetClass the entity class used to derive the table/column mapping
@@ -1939,7 +1939,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Nullable<Date> created = executor.queryForDate(User.class, "created_at",
-     *     CF.eq("user_id", userId)); // returns present Nullable (may hold null when the column is NULL); empty when no row matches
+     *     Filters.eq("user_id", userId)); // returns present Nullable (may hold null when the column is NULL); empty when no row matches
      * }</pre>
      *
      * @param targetClass the entity class used to derive the table/column mapping
@@ -1973,7 +1973,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <pre>{@code
      * Nullable<java.sql.Timestamp> lastLogin = executor.queryForDate(
      *     User.class, java.sql.Timestamp.class, "last_login",
-     *     CF.eq("user_id", userId)); // returns present Nullable (may hold null when the column is NULL); empty when no row matches
+     *     Filters.eq("user_id", userId)); // returns present Nullable (may hold null when the column is NULL); empty when no row matches
      * }</pre>
      *
      * @param <E> the specific {@link Date} subtype to return (for example, {@link java.sql.Timestamp})
@@ -2012,7 +2012,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <pre>{@code
      * Nullable<BigDecimal> price = executor.queryForSingleValue(
      *     Product.class, BigDecimal.class, "price",
-     *     CF.eq("id", productId)); // returns present Nullable (may hold null when the column is NULL); empty when no row matches
+     *     Filters.eq("id", productId)); // returns present Nullable (may hold null when the column is NULL); empty when no row matches
      * }</pre>
      *
      * @param <V> the value type to return
@@ -2055,7 +2055,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <pre>{@code
      * Optional<String> email = executor.queryForSingleNonNull(
      *     User.class, String.class, "email",
-     *     CF.eq("username", "john")); // returns present Optional with the value; empty when no row matches; throws NullPointerException if the matched value is NULL
+     *     Filters.eq("username", "john")); // returns present Optional with the value; empty when no row matches; throws NullPointerException if the matched value is NULL
      * }</pre>
      *
      * @param <V> the value type to return
@@ -2857,7 +2857,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param query the CQL statement to execute
      * @return the result set from the query execution
-     * @throws NullPointerException if query is null
+     * @throws IllegalArgumentException if query is null
      */
     public abstract RS execute(final String query);
 

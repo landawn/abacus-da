@@ -1599,7 +1599,7 @@ public final class MongoCollectionExecutor {
      * @return a <i>present</i> {@code Nullable<T>} holding the converted field value (possibly
      *         {@code null} for a missing/null field) when a document is matched; {@code Nullable.empty()}
      *         when no document matches the filter
-     * @throws IllegalArgumentException if filter is null, or if propName is null or empty
+     * @throws IllegalArgumentException if filter or valueType is null, or if propName is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @see #queryForDate(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)

@@ -106,13 +106,14 @@ import lombok.experimental.Accessors;
  * intentionally not exposed; contrast the driver-passthrough executors (HBase, DynamoDB, Cosmos, Neo4j),
  * which keep their underlying driver's vocabulary.</p>
  *
- * <h2>Prepared Statement &amp; Bound Statement Caching</h2>
+ * <h2>Prepared Statement Caching</h2>
  * <p>Parameterized queries are parsed once via {@link ParsedCql} (which also extracts {@code :name}
- * named-parameter positions) and prepared on first use. Both the {@link PreparedStatement} and the
- * resulting {@link BoundStatement} are pooled (keyed by query text) up to {@code POOLABLE_LENGTH}
- * characters of query text, so subsequent identical CQL strings reuse the cached server-side
- * preparation. Bind values are positionally bound after parameter-name resolution and best-effort
- * type conversion against the prepared statement's metadata.</p>
+ * named-parameter positions) and prepared on first use. The {@link PreparedStatement} is pooled
+ * (keyed by the resolved CQL text) up to {@code POOLABLE_LENGTH} characters of query text, so
+ * subsequent identical CQL strings reuse the cached server-side preparation; a fresh
+ * {@link BoundStatement} is created from the cached preparation on every call. Bind values are
+ * positionally bound after parameter-name resolution and best-effort type conversion against the
+ * prepared statement's metadata.</p>
  *
  * <h2>Batch Semantics</h2>
  * <p>Batch helpers accept a {@link BatchType}: {@link BatchType#LOGGED LOGGED} (the default applied
@@ -1332,7 +1333,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * @param query the CQL statement to execute
      * @return the raw ResultSet from Cassandra
-     * @throws NullPointerException if query is null
+     * @throws IllegalArgumentException if query is null
      * @throws com.datastax.oss.driver.api.core.AllNodesFailedException if all contact points are unreachable
      */
     @Override

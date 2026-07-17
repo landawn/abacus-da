@@ -7,6 +7,7 @@ package com.landawn.abacus.da.hbase;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -405,16 +406,17 @@ public class HBaseExecutorStaticTest extends TestBase {
     }
 
     @Test
-    public void testExecutor_isAutoCloseable() throws Exception {
+    public void testExecutor_isNotAutoCloseable_explicitCloseReleasesResources() throws Exception {
         Connection conn = mock(Connection.class);
         Admin admin = mock(Admin.class);
         when(conn.getAdmin()).thenReturn(admin);
 
-        assertTrue(AutoCloseable.class.isAssignableFrom(HBaseExecutor.class));
+        // Like the other executor families, HBaseExecutor deliberately does NOT implement
+        // AutoCloseable; resources are released via an explicit close() call.
+        assertFalse(AutoCloseable.class.isAssignableFrom(HBaseExecutor.class));
 
-        try (HBaseExecutor ignored = new HBaseExecutor(conn)) {
-            // try-with-resources must be available for the resources owned by HBaseExecutor.
-        }
+        HBaseExecutor executor = new HBaseExecutor(conn);
+        executor.close();
 
         verify(admin).close();
         verify(conn).close();
@@ -694,7 +696,8 @@ public class HBaseExecutorStaticTest extends TestBase {
         Admin admin = mock(Admin.class);
         when(conn.getAdmin()).thenReturn(admin);
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             assertEquals(Collections.emptyList(), executor.exists("tbl", Collections.<org.apache.hadoop.hbase.client.Get> emptyList()));
             assertEquals(Collections.emptyList(), executor.get("tbl", Collections.<org.apache.hadoop.hbase.client.Get> emptyList()));
             assertEquals(Collections.emptyList(), executor.exists("tbl", Collections.<AnyGet> emptyList()));
@@ -704,6 +707,8 @@ public class HBaseExecutorStaticTest extends TestBase {
             executor.delete("tbl", Collections.<AnyDelete> emptyList());
 
             verify(conn, times(0)).getTable(any(TableName.class));
+        } finally {
+            executor.close();
         }
     }
 
@@ -1259,12 +1264,15 @@ public class HBaseExecutorStaticTest extends TestBase {
         when(table.getScanner(any(org.apache.hadoop.hbase.client.Scan.class))).thenReturn(scanner);
         when(scanner.iterator()).thenReturn(Arrays.asList(cursor, row).iterator());
 
-        try (HBaseExecutor executor = new HBaseExecutor(conn)) {
+        HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
             List<Bean> beans = executor.scan("tbl", new org.apache.hadoop.hbase.client.Scan().setNeedCursorResult(true), Bean.class).toList();
 
             assertEquals(1, beans.size());
             assertEquals("r1", beans.get(0).getId());
             assertEquals("A", beans.get(0).getName());
+        } finally {
+            executor.close();
         }
 
         verify(scanner).close();

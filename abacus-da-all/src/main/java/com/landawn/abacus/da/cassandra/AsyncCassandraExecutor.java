@@ -342,8 +342,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * // malformed query throws directly from async.execute(...) (not from a later get()).
      * async.execute("SELECT FROM");                       // throws the driver parse failure synchronously
      *
-     * // Edge: a null query throws NullPointerException synchronously from async.execute(...).
-     * async.execute((String) null);                       // throws NullPointerException
+     * // Edge: a null query throws IllegalArgumentException synchronously from async.execute(...).
+     * async.execute((String) null);                       // throws IllegalArgumentException
      * }</pre>
      *
      * @param query the CQL query to execute

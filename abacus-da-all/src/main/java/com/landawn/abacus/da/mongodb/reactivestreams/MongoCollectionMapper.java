@@ -3011,8 +3011,9 @@ public final class MongoCollectionMapper<T> {
      *
      * @param fieldName the name of the field to get distinct values for
      * @return a cold {@code Flux} that, on subscription, emits each distinct value of the field
-     *         surfaced on an entity of type {@code T}, then completes; completes empty when no
-     *         distinct values are found (no documents, or the field is absent from all of them)
+     *         surfaced on an entity of type {@code T}, then completes; completes empty when the
+     *         collection has no documents (documents that all lack the field produce a single
+     *         entity whose field value is {@code null})
      * @throws IllegalArgumentException if fieldName is null or empty (thrown synchronously at the call site)
      * @see #distinct(String, Bson)
      * @see #groupBy(String)

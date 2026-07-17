@@ -3386,8 +3386,7 @@ public final class MongoCollectionMapper<T> {
      * @param mapFunction JavaScript map function as a string
      * @param reduceFunction JavaScript reduce function as a string
      * @return a Stream of entities representing the MapReduce results
-     * @throws IllegalArgumentException if mapFunction or reduceFunction is null (an empty string
-     *         fails server-side via {@code MongoException})
+     * @throws IllegalArgumentException if mapFunction or reduceFunction is null or empty
      * @throws com.mongodb.MongoException if the database operation fails
      * @deprecated Use {@link #aggregate(List)} with aggregation pipeline instead.
      * @see #aggregate(List)

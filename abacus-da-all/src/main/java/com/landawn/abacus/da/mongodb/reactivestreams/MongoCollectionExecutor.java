@@ -87,8 +87,9 @@ import reactor.core.publisher.Mono;
  *       request is sent to MongoDB until the Publisher is subscribed to, and each new subscription executes
  *       the operation again (and opens a new cursor for find/aggregate). Re-subscribing a write operation
  *       therefore re-issues the write.</li>
- *   <li><strong>Hot Streams:</strong> {@link #watch()} returns a long-lived {@link ChangeStreamPublisher}
- *       that does not naturally complete; cancel the subscription to close the cursor.</li>
+ *   <li><strong>Long-lived Streams:</strong> {@link #watch()} returns a cold but long-lived
+ *       {@link ChangeStreamPublisher} that opens its change-stream cursor on subscription and does not
+ *       naturally complete; cancel the subscription to close the cursor.</li>
  *   <li><strong>Single-Value Operations:</strong> {@code Mono} for at-most-one result; empty Mono indicates
  *       "no match"</li>
  *   <li><strong>Multi-Value Streams:</strong> {@code Flux} for result sets, backed by a server-side cursor</li>
@@ -734,7 +735,7 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the first matching document on subscription, or completes
      *         empty when no documents match the filter
-     * @throws IllegalArgumentException if filter or rowType is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see Document
      * @see Bson
@@ -769,7 +770,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion; must not be null
      * @return a {@code Mono} that emits the first matching document converted to {@code T} on
      *         subscription, or completes empty when no documents match
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if filter or rowType is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see Bson
      * @see com.mongodb.client.model.Filters
@@ -803,7 +804,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion; must not be null
      * @return a {@code Mono} that emits the first matching projected document converted to {@code T}
      *         on subscription, or completes empty when no documents match
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if filter or rowType is null (thrown synchronously at the call site)
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
      * @see Bson
      * @see com.mongodb.client.model.Filters

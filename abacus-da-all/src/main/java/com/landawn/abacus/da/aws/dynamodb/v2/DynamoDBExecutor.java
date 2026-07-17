@@ -3828,7 +3828,7 @@ public final class DynamoDBExecutor {
          *
          * @param entities collection of entities with populated key fields
          * @return list of retrieved entities; may be smaller than input if some items don't exist
-         * @throws NullPointerException if {@code entities} (or any element in it) is null
+         * @throws IllegalArgumentException if {@code entities} (or any element in it) is null
          */
         public List<T> batchGetItem(final Collection<? extends T> entities) {
             final Map<String, List<T>> map = dynamoDBExecutor.batchGetItem(createKeys(entities), targetEntityClass);
@@ -3856,7 +3856,7 @@ public final class DynamoDBExecutor {
          * @param entities collection of entities with populated key fields
          * @param returnConsumedCapacity specify "INDEXES", "TOTAL", or "NONE" for capacity details
          * @return list of retrieved entities; may be smaller than input if some items don't exist
-         * @throws NullPointerException if {@code entities} (or any element in it) is null
+         * @throws IllegalArgumentException if {@code entities} (or any element in it) is null
          */
         public List<T> batchGetItem(final Collection<? extends T> entities, final String returnConsumedCapacity) {
             final Map<String, List<T>> map = dynamoDBExecutor.batchGetItem(createKeys(entities), returnConsumedCapacity, targetEntityClass);
@@ -3991,7 +3991,7 @@ public final class DynamoDBExecutor {
          *
          * @param entities collection of entities to save
          * @return the response containing information about unprocessed items if any
-         * @throws NullPointerException if {@code entities} (or any element in it) is null
+         * @throws IllegalArgumentException if {@code entities} (or any element in it) is null
          */
         public BatchWriteItemResponse batchPutItem(final Collection<? extends T> entities) {
             return dynamoDBExecutor.batchWriteItem(createBatchPutRequest(entities));
@@ -4180,7 +4180,7 @@ public final class DynamoDBExecutor {
          *
          * @param entities collection of entities with populated key fields to delete
          * @return the response containing information about unprocessed items if any
-         * @throws NullPointerException if {@code entities} (or any element in it) is null
+         * @throws IllegalArgumentException if {@code entities} (or any element in it) is null
          */
         public BatchWriteItemResponse batchDeleteItem(final Collection<? extends T> entities) {
             return dynamoDBExecutor.batchWriteItem(createBatchDeleteRequest(entities));

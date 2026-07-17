@@ -1429,7 +1429,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * @param query the CQL query to execute
      * @return the ResultSet containing query results
-     * @throws NullPointerException if query is null
+     * @throws IllegalArgumentException if query is null
      * @throws com.datastax.driver.core.exceptions.NoHostAvailableException if all contact points are unreachable
      */
     @Override

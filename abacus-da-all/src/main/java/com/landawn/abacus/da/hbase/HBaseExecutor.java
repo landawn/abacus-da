@@ -153,7 +153,8 @@ import com.landawn.abacus.util.stream.Stream;
  *
  * <h2>Basic usage</h2>
  * <pre>{@code
- * try (HBaseExecutor executor = new HBaseExecutor(connection)) {
+ * HBaseExecutor executor = new HBaseExecutor(connection);
+ * try {
  *     boolean exists = executor.exists("users", AnyGet.of("user123"));
  *     Result result  = executor.get("users", AnyGet.of("user123"));
  *     executor.put("users", AnyPut.of("user123").addColumn("info", "name", "John"));
@@ -161,6 +162,8 @@ import com.landawn.abacus.util.stream.Stream;
  *     HBaseMapper<User, String> mapper = executor.mapper(User.class);
  *     User user = mapper.get("user123");
  *     mapper.put(user);
+ * } finally {
+ *     executor.close();
  * }
  * }</pre>
  *
@@ -175,7 +178,7 @@ import com.landawn.abacus.util.stream.Stream;
  * @see AsyncHBaseExecutor
  * @see <a href="http://hbase.apache.org/devapidocs/index.html">Apache HBase Java API</a>
  */
-public final class HBaseExecutor implements AutoCloseable {
+public final class HBaseExecutor {
 
     static {
         final BiFunction<Result, Class<?>, Object> converter = HBaseExecutor::toValue;
@@ -2627,7 +2630,7 @@ public final class HBaseExecutor implements AutoCloseable {
      *
      * <p>{@code rowKey} is converted to bytes via {@link #toRowKeyBytes(Object)} (so it may be
      * any of the types accepted by that helper); {@code family} and {@code qualifier} are
-     * encoded via the cached {@link #toFamilyQualifierBytes(String)}. If the cell does not
+     * encoded via {@link #toFamilyQualifierBytes(String)}. If the cell does not
      * exist it is treated as zero before incrementing. {@code amount} may be negative to
      * decrement.</p>
      *
@@ -2681,9 +2684,8 @@ public final class HBaseExecutor implements AutoCloseable {
     /**
      * Byte-array variant of {@link #incrementColumnValue(String, Object, String, String, long)}.
      *
-     * <p>{@code family} and {@code qualifier} are passed through to HBase unchanged (no
-     * encoding cache is consulted); {@code rowKey} is still converted via
-     * {@link #toRowKeyBytes(Object)}.</p>
+     * <p>{@code family} and {@code qualifier} are passed through to HBase unchanged;
+     * {@code rowKey} is still converted via {@link #toRowKeyBytes(Object)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3101,8 +3103,11 @@ public final class HBaseExecutor implements AutoCloseable {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * try (HBaseExecutor executor = new HBaseExecutor(connection)) {
+     * HBaseExecutor executor = new HBaseExecutor(connection);
+     * try {
      *     // perform HBase operations
+     * } finally {
+     *     executor.close();
      * }
      * }</pre>
      *
@@ -3111,7 +3116,6 @@ public final class HBaseExecutor implements AutoCloseable {
      * @throws RuntimeException if either resource throws a runtime exception while closing
      * @throws Error if either resource throws an error while closing
      */
-    @Override
     public void close() throws IOException {
         Throwable failure = null;
 

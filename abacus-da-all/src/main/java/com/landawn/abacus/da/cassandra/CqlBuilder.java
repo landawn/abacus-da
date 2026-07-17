@@ -569,7 +569,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         final String cql = _sb.toString();
         final String option = optionName + _SPACE + optionValue;
 
-        if (isBatchInsert()) {
+        if (isBatchInsert(cql)) {
             final List<Integer> insertionIndexes = findBatchStatementEnds(cql);
             final List<String> prefixes = new ArrayList<>();
             int statementStart = "BEGIN BATCH".length();
@@ -686,8 +686,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     }
 
     private void appendIfClause(final char[] ifClause) {
-        if (isBatchInsert()) {
-            final String cql = _sb.toString();
+        final String cql = _sb.toString();
+
+        if (isBatchInsert(cql)) {
             final List<Integer> insertionIndexes = findBatchStatementEnds(cql);
             int statementStart = "BEGIN BATCH".length();
             for (int i = 0; i < insertionIndexes.size(); i++) {
@@ -707,7 +708,6 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         // For INSERT the CQL grammar is "... VALUES (...) [IF NOT EXISTS] [USING ...]": the IF clause
         // must precede any USING clause already emitted.
         if (_op == OperationType.ADD) {
-            final String cql = _sb.toString();
             final int usingIndex = indexOfOutsideQuotes(cql, SPACE_USING, 0, cql.length());
 
             if (usingIndex >= 0) {
@@ -801,8 +801,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         return closingIndex < 0 || closingIndex + 1 >= toIndex ? toIndex - 1 : closingIndex + 1;
     }
 
-    private boolean isBatchInsert() {
-        return N.notEmpty(_propsList) && _sb.toString().startsWith("BEGIN BATCH");
+    private boolean isBatchInsert(final String cql) {
+        return N.notEmpty(_propsList) && cql.startsWith("BEGIN BATCH");
     }
 
     /**

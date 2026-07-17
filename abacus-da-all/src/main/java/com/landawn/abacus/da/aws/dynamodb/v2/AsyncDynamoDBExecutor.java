@@ -2738,7 +2738,7 @@ public final class AsyncDynamoDBExecutor {
          *
          * @param entities collection of entity instances with key attributes set. Must not be null.
          * @return a CompletableFuture containing a list of retrieved entities (may be fewer than requested)
-         * @throws NullPointerException if {@code entities} (or any element in it) is null
+         * @throws IllegalArgumentException if {@code entities} (or any element in it) is null
          */
         public CompletableFuture<List<T>> batchGetItem(final Collection<? extends T> entities) {
             return dynamoDBExecutor.batchGetItem(createKeys(entities), targetEntityClass).thenApply(batchGetItemResponse -> {
@@ -2773,7 +2773,7 @@ public final class AsyncDynamoDBExecutor {
          * @param returnConsumedCapacity specifies the level of detail for consumed capacity.
          *                              Valid values: "INDEXES", "TOTAL", "NONE"
          * @return a CompletableFuture containing a list of retrieved entities
-         * @throws NullPointerException if {@code entities} (or any element in it) is null
+         * @throws IllegalArgumentException if {@code entities} (or any element in it) is null
          */
         public CompletableFuture<List<T>> batchGetItem(final Collection<? extends T> entities, final String returnConsumedCapacity) {
             return dynamoDBExecutor.batchGetItem(createKeys(entities), returnConsumedCapacity, targetEntityClass).thenApply(batchGetItemResponse -> {
@@ -2948,7 +2948,7 @@ public final class AsyncDynamoDBExecutor {
          * @param entities collection of entities to save. Must not be null and the caller is
          *                 responsible for keeping the batch within DynamoDB's 25-item limit.
          * @return a CompletableFuture containing the BatchWriteItemResponse with unprocessed items if any
-         * @throws NullPointerException if {@code entities} (or any element in it) is null
+         * @throws IllegalArgumentException if {@code entities} (or any element in it) is null
          */
         public CompletableFuture<BatchWriteItemResponse> batchPutItem(final Collection<? extends T> entities) {
             return dynamoDBExecutor.batchWriteItem(createBatchPutRequest(entities));
@@ -3194,7 +3194,7 @@ public final class AsyncDynamoDBExecutor {
          *
          * @param entities collection of entities with key attributes set. Must not be null.
          * @return a CompletableFuture containing the BatchWriteItemResponse with unprocessed items if any
-         * @throws NullPointerException if {@code entities} (or any element in it) is null
+         * @throws IllegalArgumentException if {@code entities} (or any element in it) is null
          */
         public CompletableFuture<BatchWriteItemResponse> batchDeleteItem(final Collection<? extends T> entities) {
             return dynamoDBExecutor.batchWriteItem(createBatchDeleteRequest(entities));
