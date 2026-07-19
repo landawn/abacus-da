@@ -26,7 +26,7 @@ ContinuableFuture<List<User>> future = db.async().list(User.class, "SELECT * FRO
 - [Installation](#installation)
 - [Quick start](#quick-start)
 - [Design notes](#design-notes)
-- [API docs & guides](#api-docs--guides)
+- [API docs & guides](#api-docs-guides)
 - [Functional programming background](#functional-programming-background)
 - [Related projects](#related-projects)
 - [License](#license)
