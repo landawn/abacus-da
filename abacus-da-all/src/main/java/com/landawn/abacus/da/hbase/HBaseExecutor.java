@@ -718,9 +718,10 @@ public final class HBaseExecutor {
      * {@code Map<?, HBaseColumn>} are populated cell-by-cell with versioned values.</p>
      *
      * <p>For single-value target types the {@link Result} must contain exactly one cell,
-     * whose value is decoded via {@link Type#valueOf(String)} into {@code T}; a result
-     * with more cells triggers {@link IllegalArgumentException}. Map target types are
-     * explicitly rejected.</p>
+     * whose value is decoded into {@code T} — via {@link Type#valueOf(String)} for text-decoded
+     * types, while {@code byte[]} and {@link ByteBuffer} targets receive a copy of the raw cell
+     * bytes; a result with more cells triggers {@link IllegalArgumentException}. Map target types
+     * are explicitly rejected.</p>
      *
      * <p>Entity-class requirements:</p>
      * <ul>
@@ -3846,7 +3847,7 @@ public final class HBaseExecutor {
          * @param <S> the service type
          * @param <R> the result type
          * @param service the service interface class
-         * @param startRowKey the start row key (inclusive)
+         * @param startRowKey the start row key (inclusive; {@code null} for unbounded start)
          * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
          * @param callable the callable to execute on each region
          * @param callback the callback to receive results from each region
@@ -3877,7 +3878,7 @@ public final class HBaseExecutor {
          * @param <R> the response message type
          * @param methodDescriptor the Protocol Buffers method descriptor
          * @param request the Protocol Buffers request message
-         * @param startRowKey the start row key (inclusive)
+         * @param startRowKey the start row key (inclusive; {@code null} for unbounded start)
          * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
          * @param responsePrototype the prototype for the response message
          * @return a map of region names to their corresponding response messages
@@ -3907,7 +3908,7 @@ public final class HBaseExecutor {
          * @param <R> the response message type
          * @param methodDescriptor the Protocol Buffers method descriptor
          * @param request the Protocol Buffers request message
-         * @param startRowKey the start row key (inclusive)
+         * @param startRowKey the start row key (inclusive; {@code null} for unbounded start)
          * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
          * @param responsePrototype the prototype for the response message
          * @param callback the callback to receive response messages from each region

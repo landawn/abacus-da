@@ -206,6 +206,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
     @Override
     public CqlBuilder into(final String tableName) {
+        assertNotClosed();
+
         if (N.isEmpty(_propsList)) {
             return super.into(tableName);
         }
@@ -548,7 +550,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         N.checkArgument(Strings.isNotBlank(optionValue), "'" + optionName + "' can't be null or blank");
 
         if (_op == OperationType.QUERY || TTL.equals(optionName) && _op == OperationType.DELETE) {
-            throw new IllegalStateException("USING " + optionName + " is not valid for a " + _op + " statement");
+            throw new IllegalStateException("USING " + optionName + " is not valid for a " + opCqlKeyword() + " statement");
         }
 
         if (TTL.equals(optionName) ? _ttlSpecified : _timestampSpecified) {
@@ -643,8 +645,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         // from(...) is called; INSERT similarly needs into(...). Emitting a trailing clause earlier
         // lets the later FROM/INTO text land after that clause and creates malformed CQL.
         if ((_op == OperationType.ADD || _op == OperationType.DELETE || _op == OperationType.QUERY) && Strings.isBlank(_tableName)) {
-            throw new IllegalStateException(
-                    (_op == OperationType.ADD ? "into()" : "from()") + " must be called before appending a trailing clause to a " + _op + " statement");
+            throw new IllegalStateException((_op == OperationType.ADD ? "into()" : "from()") + " must be called before appending a trailing clause to the "
+                    + opCqlKeyword() + " statement");
         }
     }
 
@@ -652,7 +654,19 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         final String cql = _sb.toString();
 
         if (indexOfOutsideQuotes(cql, SPACE_WHERE, 0, cql.length()) < 0) {
-            throw new IllegalStateException("where() must be called before appending an IF clause to a " + _op + " statement");
+            throw new IllegalStateException("where() must be called before appending an IF clause to the " + opCqlKeyword() + " statement");
+        }
+    }
+
+    // The internal OperationType names (ADD/QUERY) are not CQL vocabulary; error messages use the
+    // statement keyword the caller actually wrote, matching the sibling INSERT/SELECT/UPDATE/DELETE messages.
+    private String opCqlKeyword() {
+        if (_op == OperationType.ADD) {
+            return "INSERT";
+        } else if (_op == OperationType.QUERY) {
+            return "SELECT";
+        } else {
+            return _op.name();
         }
     }
 
@@ -1086,10 +1100,114 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         return this;
     }
 
+    /**
+     * Sets the FROM clause using an entity class.
+     * <p>The table name is derived from the entity class per the builder's naming policy.</p>
+     *
+     * <p>Overridden because the parent SQL builder restricts {@code from(...)} to SELECT statements,
+     * while CQL also supports a column list on DELETE ({@code DELETE col1, col2 FROM tbl}), so this
+     * builder accepts {@code delete(...).from(...)} chains as well.</p>
+     *
+     * <p><b>Usage Examples:</b></p>
+     * <pre>{@code
+     * String cql = PSC.delete("firstName", "lastName").from(Account.class).where(Filters.eq("id", 1)).build().query();
+     * // Output: DELETE first_name, last_name FROM account WHERE id = ?
+     * }</pre>
+     *
+     * @param entityClass the entity class representing the table
+     * @return this CqlBuilder instance for method chaining
+     * @throws IllegalArgumentException if {@code entityClass} is {@code null}
+     * @throws IllegalStateException if the current operation is not SELECT or DELETE, if no columns have
+     *         been set for a SELECT, or if {@code from(...)} was already called
+     */
+    @Override
+    public CqlBuilder from(final Class<?> entityClass) {
+        return from(entityClass, tableAlias(entityClass));
+    }
+
+    /**
+     * Sets the FROM clause using an entity class with an alias.
+     *
+     * <p>Overridden because the parent SQL builder restricts {@code from(...)} to SELECT statements,
+     * while CQL also supports a column list on DELETE ({@code DELETE col1, col2 FROM tbl}), so this
+     * builder accepts {@code delete(...).from(...)} chains as well.</p>
+     *
+     * @param entityClass the entity class representing the table
+     * @param alias the table alias
+     * @return this CqlBuilder instance for method chaining
+     * @throws IllegalArgumentException if {@code entityClass} is {@code null}
+     * @throws IllegalStateException if the current operation is not SELECT or DELETE, if no columns have
+     *         been set for a SELECT, or if {@code from(...)} was already called
+     */
+    @Override
+    public CqlBuilder from(final Class<?> entityClass, final String alias) {
+        N.checkArgNotNull(entityClass, "entityClass");
+        checkCanAppendCqlFrom();
+        setEntityClass(entityClass);
+
+        if (Strings.isEmpty(alias)) {
+            return from(getTableName(entityClass, _namingPolicy));
+        }
+
+        return from(getTableName(entityClass, _namingPolicy) + " " + alias);
+    }
+
+    /**
+     * Sets the FROM clause with an expression and associates it with an entity class.
+     *
+     * <p>Overridden because the parent SQL builder restricts {@code from(...)} to SELECT statements,
+     * while CQL also supports a column list on DELETE ({@code DELETE col1, col2 FROM tbl}), so this
+     * builder accepts {@code delete(...).from(...)} chains as well.</p>
+     *
+     * @param expr the FROM clause expression
+     * @param entityClass the entity class for property mapping (may be {@code null}, in which case no
+     *        entity-class association is performed)
+     * @return this CqlBuilder instance for method chaining
+     * @throws IllegalArgumentException if {@code expr} is {@code null}, empty, or blank
+     * @throws IllegalStateException if the current operation is not SELECT or DELETE, if no columns have
+     *         been set for a SELECT, or if {@code from(...)} was already called
+     */
+    @Override
+    public CqlBuilder from(final String expr, final Class<?> entityClass) {
+        N.checkArgNotEmpty(expr, "expr");
+        checkCanAppendCqlFrom();
+
+        if (entityClass != null) {
+            setEntityClass(entityClass);
+        }
+
+        return from(expr);
+    }
+
+    /**
+     * Validates the structural preconditions for the overridden {@code from(...)} entry points.
+     * Mirrors the parent builder's checks except that DELETE is also accepted: CQL supports
+     * {@code DELETE col1, col2 FROM tbl}, while the parent treats {@code from(...)} as SELECT-only.
+     */
+    private void checkCanAppendCqlFrom() {
+        assertNotClosed();
+
+        if (_op != OperationType.QUERY && _op != OperationType.DELETE) {
+            throw new IllegalStateException("Invalid operation for from(): " + opCqlKeyword() + ". Expected SELECT or DELETE");
+        }
+
+        if (_hasFromBeenSet) {
+            throw new IllegalStateException("from() has already been called for the current query segment");
+        }
+
+        if (_op == OperationType.QUERY && N.isEmpty(_propOrColumnNames) && N.isEmpty(_propOrColumnNameAliases) && N.isEmpty(_multiSelects)) {
+            throw new IllegalStateException("Column names must be set by select() before calling from()");
+        }
+    }
+
     @Override
     protected void appendOperationBeforeFrom(final String tableName) {
         if (_op != OperationType.QUERY && _op != OperationType.DELETE) {
-            throw new IllegalStateException("Invalid operation: " + _op);
+            throw new IllegalStateException("Invalid operation for from(): " + opCqlKeyword() + ". Expected SELECT or DELETE");
+        }
+
+        if (_hasFromBeenSet) {
+            throw new IllegalStateException("from() has already been called for the current query segment");
         }
 
         if (_op == OperationType.QUERY && N.isEmpty(_propOrColumnNames) && N.isEmpty(_propOrColumnNameAliases) && N.isEmpty(_multiSelects)) {
@@ -1399,7 +1517,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
                 }
             }
         } else if (cond instanceof SqlExpression) {
-            // Note: Any literal written in SqlExpression condition won't be formalized according to naming policy.
+            // Identifier tokens in the expression ARE normalized per the naming policy (appendStringExpr);
+            // quoted string literals, numbers, and function names are kept as-is.
             appendStringExpr(((SqlExpression) cond).literal(), false);
         } else {
             throw new IllegalArgumentException("Unsupported condition: " + cond.toString());

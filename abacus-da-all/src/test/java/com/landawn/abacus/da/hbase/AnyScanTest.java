@@ -362,6 +362,14 @@ public class AnyScanTest extends TestBase {
     }
 
     @Test
+    public void testReadVersions_lessThanOne_storedAsIs() {
+        // Documented divergence from AnyGet.readVersions, which throws IAE for versions < 1:
+        // AnyScan mirrors the HBase client and stores the value unchanged.
+        assertEquals(0, AnyScan.create().readVersions(0).getMaxVersions());
+        assertEquals(-1, AnyScan.create().readVersions(-1).getMaxVersions());
+    }
+
+    @Test
     public void testReadAllVersions_returnsSelf() {
         AnyScan scan = AnyScan.create();
         AnyScan returned = scan.readAllVersions();

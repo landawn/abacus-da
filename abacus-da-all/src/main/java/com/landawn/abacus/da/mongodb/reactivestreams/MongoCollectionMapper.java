@@ -1044,7 +1044,7 @@ public final class MongoCollectionMapper<T> {
      * @param offset the number of documents to skip (must be >= 0)
      * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
      * @return a Flux that emits the fully controlled query results with projection
-     * @throws IllegalArgumentException if filter is null
+     * @throws IllegalArgumentException if filter is null, offset is negative, or count is negative
      */
     public Flux<T> list(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count) {
         return collectionExecutor.list(projection, filter, sort, offset, count, rowType);
@@ -1907,7 +1907,7 @@ public final class MongoCollectionMapper<T> {
      * @param offset the number of documents to skip (must be >= 0)
      * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
      * @return a Mono that emits a fully controlled Dataset with projection
-     * @throws IllegalArgumentException if filter is null
+     * @throws IllegalArgumentException if filter is null, offset is negative, or count is negative
      */
     public Mono<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count) {
         return collectionExecutor.query(projection, filter, sort, offset, count, rowType);
@@ -2665,9 +2665,11 @@ public final class MongoCollectionMapper<T> {
     /**
      * Executes multiple write operations in a single bulk request.
      *
-     * <p>Performs a batch of mixed write operations (inserts, updates, deletes) atomically.
-     * This method provides maximum flexibility for complex bulk operations and ensures
-     * optimal performance when multiple different operations need to be executed.</p>
+     * <p>Performs a batch of mixed write operations (inserts, updates, deletes) in a single bulk
+     * request. Each individual write is atomic on its target document, but the bulk as a whole is
+     * <b>not</b> atomic across documents — it is not a transaction. This method provides maximum
+     * flexibility for complex bulk operations and ensures optimal performance when multiple
+     * different operations need to be executed.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

@@ -1,6 +1,7 @@
 package com.landawn.abacus.da.mongodb.reactivestreams;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -1093,6 +1094,19 @@ public class MongoCollectionMapperTest extends TestBase {
         // First stage matches the filter, then $group on the field, then $project surfacing the value.
         assertEquals(new Document("$group", new Document("_id", "$" + fieldName)), pipeline.get(1));
         assertEquals(new Document("$project", new Document("_id", 0).append(fieldName, "$_id")), pipeline.get(2));
+    }
+
+    @Test
+    public void testDistinct_nullOrEmptyFieldName_throwsSynchronously() {
+        // The documented IAE is thrown at the call site, before any Flux is built or subscribed.
+        assertThrows(IllegalArgumentException.class, () -> mapper.distinct(null));
+        assertThrows(IllegalArgumentException.class, () -> mapper.distinct(""));
+    }
+
+    @Test
+    public void testDistinctWithFilter_nullArgs_throwSynchronously() {
+        assertThrows(IllegalArgumentException.class, () -> mapper.distinct(null, new Document("active", true)));
+        assertThrows(IllegalArgumentException.class, () -> mapper.distinct("type", null));
     }
 
     @Test

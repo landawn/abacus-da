@@ -129,7 +129,6 @@ import com.landawn.abacus.util.Tuple.Tuple3;
  * <li><strong>Batch Support</strong>: Efficient processing of collections of entities</li>
  * <li><strong>Versioning Control</strong>: Support for timestamped data with version management</li>
  * <li><strong>Naming Policies</strong>: Configurable property-to-column name mapping strategies</li>
- * <li><strong>Performance Optimization</strong>: Reuses common family/qualifier byte arrays through {@link HBaseExecutor}'s internal pool</li>
  * </ul>
  *
  * <h3>Entity Mapping Rules:</h3>
@@ -152,7 +151,8 @@ import com.landawn.abacus.util.Tuple.Tuple3;
  * <ul>
  * <li><strong>Batch Operations</strong>: Use {@code create(Collection)} for multiple entities</li>
  * <li><strong>Selective Mapping</strong>: Specify only needed properties to reduce data transfer</li>
- * <li><strong>Byte Array Pooling</strong>: Family/qualifier strings are converted via {@link HBaseExecutor}'s shared interning cache</li>
+ * <li><strong>Byte Array Allocation</strong>: Family/qualifier strings are freshly encoded to bytes on every call — never
+ *     pooled or interned, because HBase operations retain the arrays and expose them through live maps</li>
  * <li><strong>Entity Validation</strong>: Entity structure is validated when {@code create} is first called for a class</li>
  * </ul>
  *
@@ -477,8 +477,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param rowIsImmutable {@code true} if the row-key byte array is guaranteed not to be
      *                       modified after this Put is created
      * @return a new AnyPut with timestamp and immutability control
-     * @throws IllegalArgumentException if {@code timestamp} is negative (validated by the
-     *         underlying {@link Put} constructor)
+     * @throws IllegalArgumentException if {@code timestamp} is negative, or if the converted row
+     *         key is {@code null} or empty (validated by the underlying {@link Put} constructor)
      * @see #of(Object, boolean)
      * @see #of(Object, long)
      */

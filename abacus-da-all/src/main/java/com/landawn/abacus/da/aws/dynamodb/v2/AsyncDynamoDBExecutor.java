@@ -18,7 +18,6 @@ import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.createRowMa
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.extractData;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.getAttrName;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.readRow;
-import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toAttributeValue;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toEntities;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toItem;
 import static com.landawn.abacus.da.aws.dynamodb.v2.DynamoDBExecutor.toKeyAttributeValue;

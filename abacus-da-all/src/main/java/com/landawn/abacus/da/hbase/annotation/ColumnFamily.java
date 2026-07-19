@@ -84,7 +84,7 @@ import java.lang.annotation.Target;
  *     private String guid;  // Maps to HBase: "basic_info:user_guid"
  *
  *     @ColumnFamily("personal")
- *     private Name name;  // Maps to HBase: "personal:firstName", "personal:lastName"
+ *     private Name name;  // Maps to HBase: "personal:given_name", "personal:lastName"
  *
  *     @ColumnFamily("contact")
  *     private String emailAddress;  // Maps to HBase: "contact:emailAddress"

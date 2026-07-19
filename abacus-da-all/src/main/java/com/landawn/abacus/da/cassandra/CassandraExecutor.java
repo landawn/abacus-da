@@ -926,7 +926,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             }
 
         } else {
-            throw new IllegalArgumentException("Unsupported row/column type: " + ClassUtil.getCanonicalClassName(rowClass));
+            throw new IllegalArgumentException("Column count must be 1 to map a row to the single-value type: " + ClassUtil.getCanonicalClassName(rowClass)
+                    + ", but the row has " + columnCount + " columns");
         }
 
         return (T) res;
@@ -1008,7 +1009,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                 }
             };
         } else {
-            throw new IllegalArgumentException("Unsupported row/column type: " + ClassUtil.getCanonicalClassName(rowClass));
+            throw new IllegalArgumentException("Column count must be 1 to map a row to the single-value type: " + ClassUtil.getCanonicalClassName(rowClass)
+                    + ", but the row has " + columnCount + " columns");
         }
 
         return mapper;

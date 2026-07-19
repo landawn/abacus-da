@@ -821,7 +821,9 @@ public final class MongoCollectionExecutor {
      * and sorting, then converts the result to the target type. The sort parameter determines
      * which document is considered "first" when multiple documents match. For a single named field
      * and scalar {@code rowType}, the named value is converted directly; if it is absent or BSON null,
-     * the {@code Mono} completes empty instead of converting the implicitly projected {@code _id}.</p>
+     * the {@code Mono} completes empty instead of converting the implicitly projected {@code _id}.
+     * Result types that can directly hold a {@link Document} (such as {@code Object} or {@link Bson})
+     * receive the raw projected document, matching {@code list}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -839,8 +841,14 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if filter or rowType is null (thrown synchronously at the call site)
      * @see com.mongodb.client.model.Sorts
      */
+    @SuppressWarnings("unchecked")
     public <T> Mono<T> findFirst(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
         N.checkArgNotNull(rowType, "rowType");
+
+        // Same short-circuit as list: raw documents for Document/Map/Object/Bson targets.
+        if (rowType.isAssignableFrom(Document.class)) {
+            return (Mono<T>) query(selectPropNames, filter, sort, 0, 1).next();
+        }
 
         return query(selectPropNames, filter, sort, 0, 1).next().mapNotNull(toEntity(rowType, selectPropNames));
     }
@@ -850,7 +858,8 @@ public final class MongoCollectionExecutor {
      *
      * <p>Provides full control over the projection by accepting a Bson projection object directly,
      * useful for complex projections like exclusions or computed fields. Results are converted
-     * to the specified type.</p>
+     * to the specified type. Result types that can directly hold a {@link Document} (such as
+     * {@code Object} or {@link Bson}) receive the raw document, matching {@code list}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -867,8 +876,14 @@ public final class MongoCollectionExecutor {
      * @return a Mono that emits the first matching document converted to type T, or empty if no match
      * @throws IllegalArgumentException if filter or rowType is null (thrown synchronously at the call site)
      */
+    @SuppressWarnings("unchecked")
     public <T> Mono<T> findFirst(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
         N.checkArgNotNull(rowType, "rowType");
+
+        // Same short-circuit as list: raw documents for Document/Map/Object/Bson targets.
+        if (rowType.isAssignableFrom(Document.class)) {
+            return (Mono<T>) executeQuery(projection, filter, sort, 0, 1).next();
+        }
 
         return executeQuery(projection, filter, sort, 0, 1).next().mapNotNull(toEntity(rowType));
     }
@@ -2454,7 +2469,7 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to identify the document to update
      * @param update the update specification (Bson/Document/Map/entity class)
      * @return a Mono that emits the UpdateResult containing operation details
-     * @throws IllegalArgumentException if filter is null
+     * @throws IllegalArgumentException if filter or update is null
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final Object update) {
         return updateOne(filter, update, null);
@@ -2517,7 +2532,7 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to identify the document to update; must not be null
      * @param objList the pipeline of update stages to apply; must not be null or empty
      * @return a {@code Mono} that emits the {@link UpdateResult} containing operation details
-     * @throws IllegalArgumentException if {@code objList} is null or empty
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final Collection<?> objList) {
         return updateOne(filter, objList, null);

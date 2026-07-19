@@ -1,7 +1,7 @@
 # abacus-da
 
-[![Maven Central](https://img.shields.io/maven-central/v/com.landawn.abacus/abacus-da-all.svg)](https://central.sonatype.com/artifact/com.landawn.abacus/abacus-da-all/2.8.2)
-[![Javadocs](https://img.shields.io/badge/javadoc-2.8.2-brightgreen.svg)](https://www.javadoc.io/doc/com.landawn.abacus/abacus-da-all/2.8.2/index.html)
+[![Maven Central](https://img.shields.io/maven-central/v/com.landawn.abacus/abacus-da-all.svg)](https://central.sonatype.com/artifact/com.landawn.abacus/abacus-da-all/2.8.3)
+[![Javadocs](https://img.shields.io/badge/javadoc-2.8.3-brightgreen.svg)](https://www.javadoc.io/doc/com.landawn.abacus/abacus-da-all/2.8.3/index.html)
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](./LICENSE.txt)
 
 **abacus-da** is a data-access toolkit for NoSQL databases, search engines, cloud data services, and big-data
@@ -70,21 +70,21 @@ Pick `abacus-da-all` for everything, or a slim per-backend artifact that ships o
 <dependency>
     <groupId>com.landawn.abacus</groupId>
     <artifactId>abacus-da-mongodb</artifactId>
-    <version>2.8.2</version>
+    <version>2.8.3</version>
 </dependency>
 ```
 
 **Gradle:**
 
 ```gradle
-implementation 'com.landawn.abacus:abacus-da-all:2.8.2'
+implementation 'com.landawn.abacus:abacus-da-all:2.8.3'
 // or a single backend:
-implementation 'com.landawn.abacus:abacus-da-mongodb:2.8.2'
-implementation 'com.landawn.abacus:abacus-da-cassandra:2.8.2'
-implementation 'com.landawn.abacus:abacus-da-aws:2.8.2'
-implementation 'com.landawn.abacus:abacus-da-gcp:2.8.2'
-implementation 'com.landawn.abacus:abacus-da-azure:2.8.2'
-implementation 'com.landawn.abacus:abacus-da-hbase:2.8.2'
+implementation 'com.landawn.abacus:abacus-da-mongodb:2.8.3'
+implementation 'com.landawn.abacus:abacus-da-cassandra:2.8.3'
+implementation 'com.landawn.abacus:abacus-da-aws:2.8.3'
+implementation 'com.landawn.abacus:abacus-da-gcp:2.8.3'
+implementation 'com.landawn.abacus:abacus-da-azure:2.8.3'
+implementation 'com.landawn.abacus:abacus-da-hbase:2.8.3'
 ```
 
 > **Bring your own drivers.** The vendor SDKs (MongoDB driver, DataStax driver, AWS SDK, HBase client, …) — along
@@ -190,7 +190,7 @@ and MongoDB additionally offers a reactive-streams (`Publisher`-based) variant u
 
 ## API docs & guides
 
-- **Javadoc:** [javadoc.io/doc/com.landawn.abacus/abacus-da-all](https://www.javadoc.io/doc/com.landawn.abacus/abacus-da-all/2.8.2/index.html)
+- **Javadoc:** [javadoc.io/doc/com.landawn.abacus/abacus-da-all](https://www.javadoc.io/doc/com.landawn.abacus/abacus-da-all/2.8.3/index.html)
 - **User guide / wiki:** [github.com/landawn/abacus-da/wiki](https://github.com/landawn/abacus-da/wiki)
 - **HTML API previews:** [MongoCollectionExecutor](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/MongoCollectionExecutor_view.html) ·
   [CassandraExecutor](https://htmlpreview.github.io/?https://github.com/landawn/abacus-da/master/docs/CassandraExecutor_view.html) ·

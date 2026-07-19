@@ -867,7 +867,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      */
     public ContinuableFuture<RS> delete(final Object entity, final Collection<String> propNamesToDelete) {
         N.checkArgNotNull(entity, "entity");
-        N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be null or empty");
+        N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be empty (pass null to delete the entire row)");
 
         return delete(entity.getClass(), propNamesToDelete, CassandraExecutorBase.entityToCondition(entity));
     }
@@ -930,7 +930,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws IllegalArgumentException if {@code propNamesToDelete} is non-{@code null} and empty
      */
     public final ContinuableFuture<RS> delete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Object... ids) {
-        N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be null or empty");
+        N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be empty (pass null to delete the entire row)");
 
         return delete(targetClass, propNamesToDelete, CassandraExecutorBase.idsToCondition(targetClass, ids));
     }
@@ -996,7 +996,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws IllegalArgumentException if {@code propNamesToDelete} is non-{@code null} and empty
      */
     public ContinuableFuture<RS> delete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Condition whereClause) {
-        N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be null or empty");
+        N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be empty (pass null to delete the entire row)");
 
         return execute(cassandraExecutor.prepareDelete(targetClass, propNamesToDelete, whereClause));
     }
@@ -1070,7 +1070,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      */
     public ContinuableFuture<RS> batchDelete(final Collection<?> entities, final Collection<String> propNamesToDelete) {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
-        N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be null or empty");
+        N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be empty (pass null to delete the entire row)");
 
         final Object firstEntity = N.firstOrNullIfEmpty(entities);
         N.checkArgNotNull(firstEntity, "The first entity in the collection can't be null.");

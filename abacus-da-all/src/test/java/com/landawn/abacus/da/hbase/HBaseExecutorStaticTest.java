@@ -248,6 +248,21 @@ public class HBaseExecutorStaticTest extends TestBase {
     }
 
     @Test
+    public void testToEntity_singleCellResult_byteArrayAndByteBufferGetRawCellBytes() {
+        // byte[]/ByteBuffer single-value targets bypass Type#valueOf(String) and receive a copy of
+        // the raw cell bytes — decoding through the UTF-8 string would corrupt binary values.
+        final byte[] binary = new byte[] { 0, 1, (byte) 0xFE, (byte) 0xFF, 42 };
+        Cell cell = new KeyValue(Bytes.toBytes("rk"), Bytes.toBytes("cf"), Bytes.toBytes("q"), binary);
+        Result result = Result.create(Arrays.<Cell> asList(cell));
+
+        byte[] bytes = HBaseExecutor.toEntity(result, byte[].class);
+        org.junit.jupiter.api.Assertions.assertArrayEquals(binary, bytes);
+
+        java.nio.ByteBuffer buffer = HBaseExecutor.toEntity(result, java.nio.ByteBuffer.class);
+        org.junit.jupiter.api.Assertions.assertArrayEquals(binary, Bytes.toBytes(buffer));
+    }
+
+    @Test
     public void testToEntity_mapType_throws() {
         Result result = Result.create(Collections.<Cell> emptyList());
         // Map type is explicitly unsupported.

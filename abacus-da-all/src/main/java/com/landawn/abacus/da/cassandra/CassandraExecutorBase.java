@@ -1184,7 +1184,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     public RS delete(final Object entity, final Collection<String> propNamesToDelete) {
         N.checkArgNotNull(entity, "entity");
-        N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be null or empty");
+        N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be empty (pass null to delete the entire row)");
 
         return delete(entity.getClass(), propNamesToDelete, entityToCondition(entity));
     }
@@ -1242,7 +1242,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         {@code propNamesToDelete} is non-null but empty
      */
     public final RS delete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Object... ids) {
-        N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be null or empty");
+        N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be empty (pass null to delete the entire row)");
 
         return delete(targetClass, propNamesToDelete, idsToCondition(targetClass, ids));
     }
@@ -1296,7 +1296,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         null), or if whereClause is null
      */
     public RS delete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Condition whereClause) {
-        N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be null or empty");
+        N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be empty (pass null to delete the entire row)");
 
         final SP cp = prepareDelete(targetClass, propNamesToDelete, whereClause);
 
@@ -1359,7 +1359,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     public RS batchDelete(final Collection<?> entities, final Collection<String> propNamesToDelete) {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
-        N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be null or empty");
+        N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be empty (pass null to delete the entire row)");
 
         final Object firstEntity = N.firstOrNullIfEmpty(entities);
         N.checkArgNotNull(firstEntity, "The first entity in the collection can't be null.");

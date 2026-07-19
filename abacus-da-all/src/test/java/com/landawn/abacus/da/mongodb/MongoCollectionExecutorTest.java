@@ -286,6 +286,30 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
+    public void testFindFirstSingleProjectionObjectRowTypeReturnsRawDocument() {
+        Document filter = new Document("active", true);
+        Document doc = new Document("_id", new ObjectId()).append("email", "a@b.c");
+        when(mockFindIterable.first()).thenReturn(doc);
+
+        Optional<Object> result = executor.findFirst(Arrays.asList("email"), filter, Object.class);
+
+        Assertions.assertTrue(result.isPresent());
+        Assertions.assertSame(doc, result.get(), "Document-assignable rowType receives the raw projected document, matching list/stream");
+    }
+
+    @Test
+    public void testFindFirstBsonProjectionObjectRowTypeReturnsRawDocument() {
+        Document filter = new Document("active", true);
+        Document doc = new Document("_id", new ObjectId()).append("email", "a@b.c").append("name", "John");
+        when(mockFindIterable.first()).thenReturn(doc);
+
+        Optional<Object> result = executor.findFirst(new Document("email", 1), filter, null, Object.class);
+
+        Assertions.assertTrue(result.isPresent());
+        Assertions.assertSame(doc, result.get(), "Document-assignable rowType receives the raw document instead of readRow's scalar fallback");
+    }
+
+    @Test
     public void testList() {
         Document filter = new Document("status", "active");
         List<Document> docs = Arrays.asList(new Document("id", 1), new Document("id", 2));
@@ -780,6 +804,30 @@ public class MongoCollectionExecutorTest extends TestBase {
         Assertions.assertEquals(1, rows.size());
         Assertions.assertEquals("sales", rows.get(0).getDepartment());
         Assertions.assertEquals(2, rows.get(0).getCount());
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    public void testAggregateDefaultDocumentRowTypePreservesRowContent() {
+        // The default aggregate(pipeline) decodes to Document and maps each row through
+        // toEntity/readRow (no raw-Document short-circuit like stream()); this pins the
+        // content-preserving pass-through of multi-field aggregate rows for the default rowType.
+        final AggregateIterable<Document> aggregateIterable = mock(AggregateIterable.class);
+        final MongoCursor<Document> cursor = mock(MongoCursor.class);
+
+        final Document row = new Document("_id", "sales").append("count", 2).append("region", "east");
+
+        when(mockCollection.aggregate(anyList(), eq(Document.class))).thenReturn(aggregateIterable);
+        when(aggregateIterable.iterator()).thenReturn(cursor);
+        when(cursor.hasNext()).thenReturn(true, false);
+        when(cursor.next()).thenReturn(row);
+
+        final List<Document> pipeline = Arrays
+                .asList(new Document("$group", new Document("_id", "$department").append("count", new Document("$sum", 1))));
+        final List<Document> rows = executor.aggregate(pipeline).toList();
+
+        Assertions.assertEquals(1, rows.size());
+        Assertions.assertEquals(row, rows.get(0));
     }
 
     @Test

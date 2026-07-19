@@ -955,6 +955,17 @@ public class CassandraExecutorBaseTest extends TestBase {
     }
 
     @Test
+    public void testEntityToCondition_collection_nullNonFirstEntity_throwsIAE() {
+        // batchDelete validates only the first element eagerly; the per-element guard inside
+        // entityToCondition must still reject a null later in the collection.
+        TestEntity a = new TestEntity();
+        a.setId(1L);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> TestCassandraExecutor.exposedEntityToConditionCollection(TestEntity.class, Arrays.asList(a, null)));
+    }
+
+    @Test
     public void testPrepareInsert_entity_snakeCase() {
         TestEntity e = new TestEntity();
         e.setId(1L);

@@ -95,7 +95,7 @@ import com.landawn.abacus.util.stream.Stream;
  * <h3>Key Features:</h3>
  * <ul>
  * <li><b>Complete CRUD Operations</b> - Create, read, update, and delete items with support for conditional operations</li>
- * <li><b>Batch Operations</b> - Efficient batch get/write operations with automatic handling of 25-item limits</li>
+ * <li><b>Batch Operations</b> - Efficient batch get/write helpers (caller must respect the 25-item write / 100-item read service limits; this wrapper does not auto-split)</li>
  * <li><b>Query &amp; Scan</b> - Flexible querying with support for GSI/LSI, filtering, and pagination</li>
  * <li><b>Object Mapping</b> - Automatic conversion between Java objects and DynamoDB AttributeValues</li>
  * <li><b>Stream Processing</b> - Memory-efficient streaming for large result sets with automatic pagination</li>
@@ -595,6 +595,7 @@ public final class DynamoDBExecutor {
      * @throws IllegalArgumentException always, because DynamoDB keys contain at most two attributes
      * @deprecated DynamoDB does not support three-attribute primary keys; use {@code asItem(...)}
      */
+    @SuppressWarnings("unused")
     @Deprecated
     public static Map<String, AttributeValue> asKey(final String keyName, final Object value, final String keyName2, final Object value2, final String keyName3,
             final Object value3) {
@@ -960,6 +961,7 @@ public final class DynamoDBExecutor {
      * Converts and validates a primary-key value. DynamoDB accepts only non-empty String,
      * Number, or binary values for partition and sort keys.
      */
+    @SuppressWarnings("null")
     static AttributeValue toKeyAttributeValue(final String keyName, final Object value) {
         N.checkArgNotEmpty(keyName, "keyName");
         N.checkArgument(value != null, "DynamoDB key attribute '%s' must not be null", keyName);
@@ -1464,7 +1466,8 @@ public final class DynamoDBExecutor {
         } else if (columnCount == 1) {
             return toValue(row.values().iterator().next(), rowClass);
         } else {
-            throw new IllegalArgumentException("Unsupported row/column type: " + ClassUtil.getCanonicalClassName(rowClass));
+            throw new IllegalArgumentException("Column count must be 1 to map a row to the single-value type: " + ClassUtil.getCanonicalClassName(rowClass)
+                    + ", but the row has " + columnCount + " columns");
         }
     }
 
@@ -1505,7 +1508,8 @@ public final class DynamoDBExecutor {
         } else {
             return row -> {
                 if (row.size() != 1) {
-                    throw new IllegalArgumentException("Unsupported row/column type: " + ClassUtil.getCanonicalClassName(rowClass));
+                    throw new IllegalArgumentException("Column count must be 1 to map a row to the single-value type: "
+                            + ClassUtil.getCanonicalClassName(rowClass) + ", but the row has " + row.size() + " columns");
                 }
 
                 return toValue(row.values().iterator().next(), rowClass);
@@ -1792,10 +1796,11 @@ public final class DynamoDBExecutor {
      * Dataset dataset = DynamoDBExecutor.extractData(result, 5, 10);
      * }</pre>
      *
-     * @param queryResult the QueryResult to extract data from
+     * @param queryResult the QueryResult to extract data from. Must not be {@code null}.
      * @param offset number of items to skip from the beginning
      * @param count maximum number of items to include
      * @return a Dataset containing the specified range of results
+     * @throws NullPointerException if {@code queryResult} is {@code null}
      * @throws IllegalArgumentException if offset or count is negative
      */
     public static Dataset extractData(final QueryResult queryResult, final int offset, final int count) {
@@ -1838,10 +1843,11 @@ public final class DynamoDBExecutor {
      * Dataset dataset = DynamoDBExecutor.extractData(result, 0, 100);
      * }</pre>
      *
-     * @param scanResult the ScanResult to extract data from
+     * @param scanResult the ScanResult to extract data from. Must not be {@code null}.
      * @param offset number of items to skip from the beginning
      * @param count maximum number of items to include
      * @return a Dataset containing the specified range of results
+     * @throws NullPointerException if {@code scanResult} is {@code null}
      * @throws IllegalArgumentException if offset or count is negative
      */
     public static Dataset extractData(final ScanResult scanResult, final int offset, final int count) {

@@ -4088,6 +4088,63 @@ public class CqlBuilderTest extends TestBase {
     }
 
     /**
+     * Regression guard for the {@code from(...)} overrides added for abacus-query 4.8.9, whose parent
+     * builder made {@code from()} SELECT-only: CQL's DELETE-with-columns chain
+     * {@code delete(...).from(...)} must keep working through the Class-typed overloads too.
+     */
+    @Test
+    public void test_delete_from_classTypedOverloads_supportDelete() {
+        // from(Class)
+        final String byClass = PSC.delete("firstName").from(Account.class).where(Filters.eq("id", 1)).build().query();
+        assertEquals("DELETE first_name FROM account WHERE id = ?", byClass);
+
+        // from(String, Class): the entity class association still maps property names in WHERE
+        final String byExprAndClass = PSC.delete("firstName").from("account", Account.class).where(Filters.eq("id", 1)).build().query();
+        assertEquals("DELETE first_name FROM account WHERE id = ?", byExprAndClass);
+    }
+
+    /**
+     * A second {@code from(...)} in the same statement would silently emit a second operation
+     * fragment; the builder must reject it up front (mirrors the parent builder's 4.8.9 guard).
+     */
+    @Test
+    public void test_from_calledTwice_throwsIllegalStateException() {
+        final CqlBuilder selectBuilder = PSC.select("firstName").from("account");
+        assertThrows(IllegalStateException.class, () -> selectBuilder.from("account2"));
+
+        final CqlBuilder deleteBuilder = PSC.delete("firstName").from(Account.class);
+        assertThrows(IllegalStateException.class, () -> deleteBuilder.from(Account.class));
+    }
+
+    /**
+     * {@code from()} on an INSERT builder is invalid; the error must use the CQL keyword INSERT
+     * (not the internal OperationType name ADD), on both the String- and Class-typed overloads.
+     */
+    @Test
+    public void test_insert_from_throwsIllegalStateException_withCqlKeyword() {
+        final IllegalStateException e1 = assertThrows(IllegalStateException.class, () -> PSC.insert("firstName").from("account"));
+        assertTrue(e1.getMessage().contains("INSERT"), e1.getMessage());
+        assertFalse(e1.getMessage().contains("ADD"), e1.getMessage());
+
+        final IllegalStateException e2 = assertThrows(IllegalStateException.class, () -> PSC.insert("firstName").from(Account.class));
+        assertTrue(e2.getMessage().contains("INSERT"), e2.getMessage());
+        assertFalse(e2.getMessage().contains("ADD"), e2.getMessage());
+    }
+
+    /**
+     * Regression guard: the batch-insert {@code into()} override dereferences the internal buffer
+     * directly ({@code _propsList} survives {@code build()}), so without an up-front
+     * {@code assertNotClosed()} a closed batch builder threw NullPointerException instead of the
+     * documented closed-state IllegalStateException.
+     */
+    @Test
+    public void test_batchInsert_intoAfterBuild_throwsIllegalStateException() {
+        final CqlBuilder builder = PSC.batchInsert(N.asList(N.asMap("id", 1), N.asMap("id", 2))).into("account");
+        builder.build();
+        assertThrows(IllegalStateException.class, () -> builder.into("account2"));
+    }
+
+    /**
      * Regression guard for {@code assertNotClosed}: after {@code build()} releases the internal
      * buffer, calling clause methods must throw IllegalStateException (not NullPointerException).
      */

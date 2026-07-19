@@ -537,6 +537,7 @@ public final class DynamoDBExecutor {
      * @throws IllegalArgumentException always, because DynamoDB keys contain at most two attributes
      * @deprecated DynamoDB does not support three-attribute primary keys; use {@code asItem(...)}
      */
+    @SuppressWarnings("unused")
     @Deprecated
     public static Map<String, AttributeValue> asKey(final String keyName, final Object value, final String keyName2, final Object value2, final String keyName3,
             final Object value3) {
@@ -608,7 +609,6 @@ public final class DynamoDBExecutor {
      * @param attrName the name of the attribute. Must not be null.
      * @param value the value for the attribute, automatically converted to AttributeValue
      * @return a Map containing the single attribute as AttributeValue, never null
-     * @throws IllegalArgumentException if attrName is null
      */
     public static Map<String, AttributeValue> asItem(final String attrName, final Object value) {
         return N.newLinkedHashMap(N.asMap(attrName, toAttributeValue(value)));
@@ -632,7 +632,6 @@ public final class DynamoDBExecutor {
      * @param attrName2 the name of the second attribute. Must not be null.
      * @param value2    the value of the second attribute, automatically converted to {@code AttributeValue}.
      * @return an item containing the two attributes as {@code AttributeValue} objects. Never null.
-     * @throws IllegalArgumentException if any attribute name is null.
      */
     public static Map<String, AttributeValue> asItem(final String attrName, final Object value, final String attrName2, final Object value2) {
         return N.newLinkedHashMap(N.asMap(attrName, toAttributeValue(value), attrName2, toAttributeValue(value2)));
@@ -658,7 +657,6 @@ public final class DynamoDBExecutor {
      * @param attrName3 the name of the third attribute. Must not be null.
      * @param value3    the value of the third attribute, automatically converted to {@code AttributeValue}.
      * @return an item containing the three attributes as {@code AttributeValue} objects. Never null.
-     * @throws IllegalArgumentException if any attribute name is null.
      */
     public static Map<String, AttributeValue> asItem(final String attrName, final Object value, final String attrName2, final Object value2,
             final String attrName3, final Object value3) {
@@ -723,7 +721,6 @@ public final class DynamoDBExecutor {
      * @param attrName the name of the attribute to update. Must not be null.
      * @param value the value for the attribute, automatically converted to AttributeValueUpdate
      * @return a Map containing the single AttributeValueUpdate, never null
-     * @throws IllegalArgumentException if attrName is null
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final String attrName, final Object value) {
         return N.newLinkedHashMap(N.asMap(attrName, toAttributeValueUpdate(value)));
@@ -748,7 +745,6 @@ public final class DynamoDBExecutor {
      * @param attrName2 the name of the second attribute to update. Must not be null.
      * @param value2    the value of the second attribute, automatically converted to {@code AttributeValueUpdate}.
      * @return an item containing the two attributes as {@code AttributeValueUpdate} objects. Never null.
-     * @throws IllegalArgumentException if any attribute name is null.
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final String attrName, final Object value, final String attrName2, final Object value2) {
         return N.newLinkedHashMap(N.asMap(attrName, toAttributeValueUpdate(value), attrName2, toAttributeValueUpdate(value2)));
@@ -776,7 +772,6 @@ public final class DynamoDBExecutor {
      * @param attrName3 the name of the third attribute to update. Must not be null.
      * @param value3    the value of the third attribute, automatically converted to {@code AttributeValueUpdate}.
      * @return an item containing the three attributes as {@code AttributeValueUpdate} objects. Never null.
-     * @throws IllegalArgumentException if any attribute name is null.
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final String attrName, final Object value, final String attrName2, final Object value2,
             final String attrName3, final Object value3) {
@@ -886,6 +881,7 @@ public final class DynamoDBExecutor {
      * Converts and validates a primary-key value. DynamoDB accepts only non-empty String,
      * Number, or binary values for partition and sort keys.
      */
+    @SuppressWarnings("null")
     static AttributeValue toKeyAttributeValue(final String keyName, final Object value) {
         N.checkArgNotEmpty(keyName, "keyName");
         N.checkArgument(value != null, "DynamoDB key attribute '%s' must not be null", keyName);
@@ -1556,7 +1552,8 @@ public final class DynamoDBExecutor {
         } else if (columnCount == 1) {
             return toValue(row.values().iterator().next(), rowClass);
         } else {
-            throw new IllegalArgumentException("Unsupported row/column type: " + ClassUtil.getCanonicalClassName(rowClass));
+            throw new IllegalArgumentException("Column count must be 1 to map a row to the single-value type: " + ClassUtil.getCanonicalClassName(rowClass)
+                    + ", but the row has " + columnCount + " columns");
         }
     }
 
@@ -1597,7 +1594,8 @@ public final class DynamoDBExecutor {
         } else {
             return row -> {
                 if (row.size() != 1) {
-                    throw new IllegalArgumentException("Unsupported row/column type: " + ClassUtil.getCanonicalClassName(rowClass));
+                    throw new IllegalArgumentException("Column count must be 1 to map a row to the single-value type: "
+                            + ClassUtil.getCanonicalClassName(rowClass) + ", but the row has " + row.size() + " columns");
                 }
 
                 return toValue(row.values().iterator().next(), rowClass);

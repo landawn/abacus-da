@@ -372,6 +372,36 @@ public class MongoCollectionExecutorTest extends TestBase {
     }
 
     @Test
+    public void testFindFirstSingleProjectionObjectRowTypeReturnsRawDocument() {
+        Collection<String> selectPropNames = Arrays.asList("email");
+        Bson filter = new Document("active", true);
+        Document doc = new Document("_id", new ObjectId()).append("email", "a@b.c");
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(any(Bson.class))).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        StepVerifier.create(executor.findFirst(selectPropNames, filter, Object.class)).expectNext(doc).verifyComplete();
+    }
+
+    @Test
+    public void testFindFirstBsonProjectionObjectRowTypeReturnsRawDocument() {
+        Bson projection = Projections.include("email");
+        Bson filter = new Document("active", true);
+        Bson sort = new Document("name", 1);
+        Document doc = new Document("_id", new ObjectId()).append("email", "a@b.c").append("name", "John");
+
+        when(mockCollection.find(filter)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.projection(projection)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.sort(sort)).thenReturn(mockFindPublisher);
+        when(mockFindPublisher.limit(1)).thenReturn(mockFindPublisher);
+        stubEmits(mockFindPublisher, doc);
+
+        StepVerifier.create(executor.findFirst(projection, filter, sort, Object.class)).expectNext(doc).verifyComplete();
+    }
+
+    @Test
     public void testFindFirstWithAllParameters() {
         Collection<String> selectPropNames = Arrays.asList("name");
         Bson filter = new Document("active", true);

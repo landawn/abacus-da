@@ -866,7 +866,8 @@ public final class MongoCollectionExecutor {
      * documents match the filter; only the specified fields are retrieved and the document is converted to the target type.
      * When exactly one field is selected for a scalar {@code rowType}, that named field is converted
      * directly; a missing field yields {@link Optional#empty()} rather than converting MongoDB's implicit
-     * {@code _id} projection.</p>
+     * {@code _id} projection. Result types that can directly hold a {@link Document} (such as
+     * {@code Object} or {@link Bson}) receive the raw projected document, matching {@code list}/{@code stream}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -893,7 +894,10 @@ public final class MongoCollectionExecutor {
 
         final FindIterable<Document> findIterable = query(selectPropNames, filter, sort, 0, 1);
 
-        final T result = toEntity(findIterable.first(), rowType, selectPropNames);
+        // Same short-circuit as list/stream: result types that can directly hold a Document
+        // (Object, Bson, Map, Document) receive the raw projected document instead of the
+        // single-value extraction below or readRow's scalar fallback.
+        final T result = rowType.isAssignableFrom(Document.class) ? (T) findIterable.first() : toEntity(findIterable.first(), rowType, selectPropNames);
 
         return result == null ? (Optional<T>) Optional.empty() : Optional.of(result);
     }
@@ -903,7 +907,9 @@ public final class MongoCollectionExecutor {
      *
      * <p>This method provides comprehensive document finding with BSON-based projection, sorting, and
      * automatic type conversion. BSON projection allows for more advanced field selection including
-     * computed fields and array operations.</p>
+     * computed fields and array operations. Result types that can directly hold a {@link Document}
+     * (such as {@code Object} or {@link Bson}) receive the raw projected document, matching
+     * {@code list}/{@code stream}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -933,7 +939,8 @@ public final class MongoCollectionExecutor {
 
         final FindIterable<Document> findIterable = executeQuery(projection, filter, sort, 0, 1);
 
-        final T result = toEntity(findIterable, rowType);
+        // Same short-circuit as list/stream: raw document for Document-assignable result types.
+        final T result = rowType.isAssignableFrom(Document.class) ? (T) findIterable.first() : toEntity(findIterable, rowType);
 
         return result == null ? (Optional<T>) Optional.empty() : Optional.of(result);
     }
@@ -3148,11 +3155,10 @@ public final class MongoCollectionExecutor {
     private static Bson toBson(final Object update) {
         N.checkArgNotNull(update, "update");
 
-        // Note: the second argument (isForUpdate) on MongoDBBase.toDocument is a dead flag, AND
-        // MongoCollectionExecutor cannot see the protected (Object, boolean) overload from this
-        // package — passing it silently resolved to the public Object... varargs and treated
-        // (update, true) as a name/value pair, casting update to String -> ClassCastException
-        // for Map/entity updates. Call the public single-arg overload directly.
+        // Note: the isForUpdate flag on MongoDBBase.toDocument(Object, boolean) is dead, so the
+        // public single-arg overload is called directly. (This also keeps the call identical to
+        // the reactive sibling, where that protected overload is inaccessible cross-package and
+        // passing (update, true) would silently bind to the Object... varargs instead.)
         final Bson bson = update instanceof Bson ? (Bson) update : MongoDBBase.toDocument(update);
 
         final Bson bsonToUse;

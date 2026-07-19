@@ -1411,26 +1411,6 @@ public abstract class MongoDBBase {
         final Optional<Object> first = N.firstNonNull(rowList);
 
         if (first.isPresent()) {
-            /*
-            if (Map.class.isAssignableFrom(first.get().getClass())) {
-                if (N.isEmpty(selectPropNames)) {
-                    final Set<String> columnNames = N.newLinkedHashSet();
-                    @SuppressWarnings("rawtypes")
-                    final List<Map<String, Object>> tmp = (List) rowList;
-            
-                    for (Map<String, Object> row : tmp) {
-                        columnNames.addAll(row.keySet());
-                    }
-            
-                    return N.newDataset(columnNames, rowList);
-                } else {
-                    return N.newDataset(selectPropNames, rowList);
-                }
-            } else {
-                return N.newDataset(rowList);
-            }
-            */
-
             if (Map.class.isAssignableFrom(rowType) && Map.class.isAssignableFrom(first.get().getClass())) {
                 if (N.isEmpty(selectPropNames)) {
                     final Set<String> columnNames = N.newLinkedHashSet();
@@ -1644,10 +1624,6 @@ public abstract class MongoDBBase {
                 idPropSetMethod = Beans.getPropSetter(rowType, ID);
                 parameterType = idPropSetMethod == null ? null : idPropSetMethod.getParameterTypes()[0];
 
-                //            if (parameterType != null && (ObjectId.class.isAssignableFrom(parameterType) || String.class.isAssignableFrom(parameterType))) {
-                //                idSetMethod = idPropSetMethod;
-                //            }
-
                 if (parameterType != null && (String.class.isAssignableFrom(parameterType) || ObjectId.class.isAssignableFrom(parameterType))) {
                     idSetMethod = idPropSetMethod;
                 }
@@ -1748,12 +1724,6 @@ public abstract class MongoDBBase {
          */
         @Override
         public <T> Codec<T> get(final Class<T> clazz, final CodecRegistry registry) {
-            //    final Codec<T> codec = registry.get(clazz);
-            //
-            //    if (codec != null) {
-            //        return codec;
-            //    }
-
             return get(clazz);
         }
     }

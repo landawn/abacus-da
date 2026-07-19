@@ -96,7 +96,7 @@ import com.landawn.abacus.util.stream.Stream;
  *   <li>Is governed by BigQuery's per-table DML concurrency limits.</li>
  *   <li>Blocks the calling thread until the job completes; an {@link InterruptedException} during
  *       the wait is rethrown as a {@link RuntimeException} after the thread's interrupt flag is
- *       reset.</li>
+ *       restored.</li>
  * </ul>
  * <p>This executor <b>does not</b> wrap the BigQuery <i>streaming insert</i> API
  * ({@code tabledata.insertAll}), the load-job API, the dataset/table administrative API, or
@@ -1637,7 +1637,7 @@ public class BigQueryExecutor {
 
     private static final Map<Class<?>, Tuple2<ImmutableList<String>, ImmutableSet<String>>> entityKeyNamesMap = new ConcurrentHashMap<>();
 
-    private static ImmutableList<String> getKeyNames(final Class<?> targetClass) {
+    private static Tuple2<ImmutableList<String>, ImmutableSet<String>> getKeyTuple(final Class<?> targetClass) {
         Tuple2<ImmutableList<String>, ImmutableSet<String>> tp = entityKeyNamesMap.get(targetClass);
 
         if (tp == null) {
@@ -1646,19 +1646,15 @@ public class BigQueryExecutor {
             entityKeyNamesMap.put(targetClass, tp);
         }
 
-        return tp._1;
+        return tp;
+    }
+
+    private static ImmutableList<String> getKeyNames(final Class<?> targetClass) {
+        return getKeyTuple(targetClass)._1;
     }
 
     private static Set<String> getKeyNameSet(final Class<?> targetClass) {
-        Tuple2<ImmutableList<String>, ImmutableSet<String>> tp = entityKeyNamesMap.get(targetClass);
-
-        if (tp == null) {
-            final List<String> idPropNames = QueryUtil.idPropNames(targetClass);
-            tp = Tuple.of(ImmutableList.copyOf(idPropNames), ImmutableSet.copyOf(idPropNames));
-            entityKeyNamesMap.put(targetClass, tp);
-        }
-
-        return tp._2;
+        return getKeyTuple(targetClass)._2;
     }
 
     /**
