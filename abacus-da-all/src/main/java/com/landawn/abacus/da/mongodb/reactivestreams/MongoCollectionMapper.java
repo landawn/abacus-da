@@ -3108,7 +3108,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.aggregate(Arrays.asList(Aggregates.match(Filters.gte("age", 1000))))
      *     .count().subscribe(n -> System.out.println("groups: " + n));   // emits 0
      *
-     * // Negative: the driver validates the pipeline eagerly, so a null pipeline throws
+     * // Negative: the pipeline is validated eagerly, so a null pipeline throws
      * // IllegalArgumentException synchronously at the call site (before any Flux is returned).
      * userMapper.aggregate((List<Bson>) null);   // throws IllegalArgumentException
      * }</pre>
