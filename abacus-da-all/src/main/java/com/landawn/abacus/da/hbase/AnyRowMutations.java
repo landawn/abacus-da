@@ -46,10 +46,20 @@ import com.landawn.abacus.annotation.SuppressFBWarnings;
  * {@code Table#mutateRow(RowMutations)}-style APIs, pass the wrapped {@link RowMutations}
  * obtained from {@link #val()}.</p>
  *
- * <p>Only {@link Put} and {@link Delete} mutations are accepted here. HBase's {@code mutateRow} and
- * {@code checkAndMutate} request builders reject any other {@link Mutation} subtype (such as
- * {@code Increment} or {@code Append}) with a {@code DoNotRetryIOException} while the request is being
- * built client-side, so this wrapper rejects it up front at {@code add(...)} time instead.</p>
+ * <p>Any {@link Mutation} subtype accepted by {@link RowMutations} may be added here, but which
+ * subtypes the server accepts depends on how the batch is submitted:</p>
+ * <ul>
+ *   <li>{@code Table.mutateRow(RowMutations)} and {@code checkAndMutate(...).thenMutate(RowMutations)}
+ *       support {@link Put}, {@link Delete}, {@code Increment} and {@code Append}
+ *       ({@code RequestConverter.buildMultiRequest} converts each of them, attaching a nonce for
+ *       {@code Increment}/{@code Append}).</li>
+ *   <li>Submitting a {@code RowMutations} as one element of {@code Table.batch(List<Row>)} supports
+ *       only {@link Put} and {@link Delete}; {@code RequestConverter.buildRegionAction} raises
+ *       {@code DoNotRetryIOException("RowMutations supports only put and delete, ...")} for any other
+ *       subtype while the request is built client-side.</li>
+ * </ul>
+ * <p>This wrapper therefore does not restrict the mutation type at {@code add(...)} time; use only
+ * {@link Put} and {@link Delete} when the batch is destined for {@code Table.batch(...)}.</p>
  *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
@@ -235,7 +245,7 @@ public final class AnyRowMutations implements Row {
     }
 
     /**
-     * Appends a {@link Put} or {@link Delete} mutation to the batch. All mutations in the batch
+     * Appends a mutation to the batch. All mutations in the batch
      * must share the row key this {@code AnyRowMutations} was created with; HBase rejects a
      * mismatched row key with an {@link IOException}. When this batch is later submitted to the
      * server, the appended mutation participates in the row-level atomic apply described in the
@@ -263,24 +273,27 @@ public final class AnyRowMutations implements Row {
      * mutations.add(other);                     // throws IOException
      * }</pre>
      *
-     * @param mutation the {@link Put} or {@link Delete} to add
+     * @param mutation the mutation to add; {@link Put}, {@link Delete}, {@link org.apache.hadoop.hbase.client.Increment}
+     *        and {@link org.apache.hadoop.hbase.client.Append} are all accepted by {@link RowMutations}
      * @return this AnyRowMutations instance, to allow fluent method chaining
-     * @throws IllegalArgumentException if {@code mutation} is null or is not a {@link Put} or
-     *         {@link Delete}
+     * @throws IllegalArgumentException if {@code mutation} is null
      * @throws IOException if {@code mutation}'s row key does not match this batch's row key
      * @see Put
      * @see Delete
      * @see #add(List)
      */
     public AnyRowMutations add(final Mutation mutation) throws IOException {
-        checkSupportedMutation(mutation);
+        if (mutation == null) {
+            throw new IllegalArgumentException("mutation cannot be null");
+        }
+
         rowMutations.add(mutation);
 
         return this;
     }
 
     /**
-     * Appends multiple {@link Put} / {@link Delete} mutations to the batch in a single call.
+     * Appends multiple mutations to the batch in a single call.
      * All mutations must share the row key this {@code AnyRowMutations} was created with. When
      * this batch is later submitted to the server, every appended mutation participates in the
      * row-level atomic apply described in the {@linkplain AnyRowMutations class-level javadoc}.
@@ -313,10 +326,11 @@ public final class AnyRowMutations implements Row {
      * m.add(bad);                                  // throws IOException
      * }</pre>
      *
-     * @param mutations the list of {@link Put} / {@link Delete} mutations to add
+     * @param mutations the list of mutations to add; {@link Put}, {@link Delete},
+     *        {@link org.apache.hadoop.hbase.client.Increment} and {@link org.apache.hadoop.hbase.client.Append}
+     *        are all accepted by {@link RowMutations}
      * @return this AnyRowMutations instance, to allow fluent method chaining
-     * @throws IllegalArgumentException if {@code mutations} is null or contains a null or
-     *         unsupported mutation
+     * @throws IllegalArgumentException if {@code mutations} is null or contains a null element
      * @throws IOException if any mutation's row key does not match this batch's row key
      * @see Put
      * @see Delete
@@ -328,7 +342,9 @@ public final class AnyRowMutations implements Row {
         }
 
         for (final Mutation mutation : mutations) {
-            checkSupportedMutation(mutation);
+            if (mutation == null) {
+                throw new IllegalArgumentException("mutation cannot be null");
+            }
         }
 
         rowMutations.add(mutations);
@@ -450,16 +466,6 @@ public final class AnyRowMutations implements Row {
         }
 
         return false;
-    }
-
-    private static void checkSupportedMutation(final Mutation mutation) {
-        if (mutation == null) {
-            throw new IllegalArgumentException("mutation cannot be null");
-        }
-
-        if (!(mutation instanceof Put) && !(mutation instanceof Delete)) {
-            throw new IllegalArgumentException("Only Put and Delete mutations are supported: " + mutation.getClass().getName());
-        }
     }
 
     /**

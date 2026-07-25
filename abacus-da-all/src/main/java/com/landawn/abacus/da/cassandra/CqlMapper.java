@@ -518,7 +518,7 @@ public final class CqlMapper {
      */
     public void add(final String id, final ParsedCql parsedCql, final Map<String, String> attrs) {
         N.checkArgNotNull(parsedCql, "parsedCql");
-        checkId(id);
+        N.checkArgNotEmpty(id, "id");
         checkDuplicateId(id);
 
         cqlMap.put(id, parsedCql);
@@ -580,7 +580,7 @@ public final class CqlMapper {
      *         {@code cql} is null, or the CQL is invalid
      */
     public void add(final String id, final String cql, final Map<String, String> attrs) {
-        checkId(id);
+        N.checkArgNotEmpty(id, "id");
         checkDuplicateId(id);
 
         cqlMap.put(id, ParsedCql.parse(cql));
@@ -600,11 +600,6 @@ public final class CqlMapper {
         if (cqlMap.containsKey(id)) {
             throw new IllegalArgumentException(id + " already exists with cql: " + cqlMap.get(id));
         }
-    }
-
-    /** Validates identifiers consistently for programmatic and XML-loaded mappings. */
-    private static void checkId(final String id) {
-        N.checkArgNotEmpty(id, "id");
     }
 
     /**

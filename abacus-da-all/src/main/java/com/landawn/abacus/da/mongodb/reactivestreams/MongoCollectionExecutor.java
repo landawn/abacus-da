@@ -2034,10 +2034,7 @@ public final class MongoCollectionExecutor {
             return false;
         }
 
-        final Type<?> targetType = rowType == null ? null : N.typeOf(rowType);
-
-        return targetType != null && targetType.isObjectArray() == false && targetType.isCollection() == false && targetType.isMap() == false
-                && targetType.isBean() == false;
+        return rowType != null && isSingleValueType(rowType);
     }
 
     private Flux<Document> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count) {

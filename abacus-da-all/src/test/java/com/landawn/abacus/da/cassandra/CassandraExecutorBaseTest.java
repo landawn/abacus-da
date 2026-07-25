@@ -961,8 +961,7 @@ public class CassandraExecutorBaseTest extends TestBase {
         TestEntity a = new TestEntity();
         a.setId(1L);
 
-        assertThrows(IllegalArgumentException.class,
-                () -> TestCassandraExecutor.exposedEntityToConditionCollection(TestEntity.class, Arrays.asList(a, null)));
+        assertThrows(IllegalArgumentException.class, () -> TestCassandraExecutor.exposedEntityToConditionCollection(TestEntity.class, Arrays.asList(a, null)));
     }
 
     @Test
@@ -1043,8 +1042,7 @@ public class CassandraExecutorBaseTest extends TestBase {
 
     @Test
     public void testPrepareUpdate_classMapRejectsPrimaryKeyProperty() {
-        assertThrows(IllegalArgumentException.class,
-                () -> executor.exposedPrepareUpdate(TestEntity.class, Map.of("id", 2L), Filters.eq("id", 1L)));
+        assertThrows(IllegalArgumentException.class, () -> executor.exposedPrepareUpdate(TestEntity.class, Map.of("id", 2L), Filters.eq("id", 1L)));
     }
 
     @Test
@@ -1063,8 +1061,7 @@ public class CassandraExecutorBaseTest extends TestBase {
 
     @Test
     public void testPrepareDelete_rejectsPrimaryKeyProperty() {
-        assertThrows(IllegalArgumentException.class,
-                () -> executor.exposedPrepareDelete(TestEntity.class, Arrays.asList("id"), Filters.eq("id", 1L)));
+        assertThrows(IllegalArgumentException.class, () -> executor.exposedPrepareDelete(TestEntity.class, Arrays.asList("id"), Filters.eq("id", 1L)));
     }
 
     @Test

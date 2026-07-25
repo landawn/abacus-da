@@ -930,8 +930,8 @@ public class CosmosContainerExecutor2Test extends TestBase {
         final TestItem item = itemIn(newPartition(), "cond-by-id-pk");
         executor.createItem(item);
 
-        final List<TestItem> results = executor.streamItems(Arrays.asList("id"), Filters.and(Filters.eq("id", item.id), Filters.eq("name", item.name)),
-                TestItem.class)
+        final List<TestItem> results = executor
+                .streamItems(Arrays.asList("id"), Filters.and(Filters.eq("id", item.id), Filters.eq("name", item.name)), TestItem.class)
                 .toList();
 
         assertEquals(1, results.size());

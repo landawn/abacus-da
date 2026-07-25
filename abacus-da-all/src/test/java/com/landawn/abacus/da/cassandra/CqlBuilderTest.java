@@ -141,7 +141,8 @@ public class CqlBuilderTest extends TestBase {
         N.println(NAC.select("firstName", "lastName").from("account").where(Filters.eq("id", 1)).build().query());
         N.println(NLC.select("firstName", "lastName").from("account").where(Filters.eq("id", 1)).build().query());
 
-        N.println(LCCB.select("firstName", "last_name").from("account").where(Filters.and(Filters.eq("id", 1), Filters.ne("first_name", "fn"))).build().query());
+        N.println(
+                LCCB.select("firstName", "last_name").from("account").where(Filters.and(Filters.eq("id", 1), Filters.ne("first_name", "fn"))).build().query());
         N.println(PLC.select("firstName", "last_name").from("account").where(Filters.and(Filters.eq("id", 1), Filters.ne("first_name", "fn"))).build().query());
         N.println(NLC.select("firstName", "last_name").from("account").where(Filters.and(Filters.eq("id", 1), Filters.ne("first_name", "fn"))).build().query());
     }
@@ -563,11 +564,7 @@ public class CqlBuilderTest extends TestBase {
                 .query();
         assertEquals("UPDATE account SET first_name = 'updated' WHERE id = 1 IF deleted_at = null", onlyIfNullCql);
 
-        final SP onlyIfNullSp = PSC.update("account")
-                .set("firstName")
-                .where(Filters.eq("id", 1))
-                .onlyIf(Filters.eq("deletedAt", null))
-                .build();
+        final SP onlyIfNullSp = PSC.update("account").set("firstName").where(Filters.eq("id", 1)).onlyIf(Filters.eq("deletedAt", null)).build();
         assertEquals("UPDATE account SET first_name = ? WHERE id = ? IF deleted_at = ?", onlyIfNullSp.query());
         assertNull(onlyIfNullSp.parameters().get(onlyIfNullSp.parameters().size() - 1));
 
@@ -4155,8 +4152,7 @@ public class CqlBuilderTest extends TestBase {
     /** BETWEEN is SQL syntax, not a Cassandra CQL relation. */
     @Test
     public void test_between_namedParams_areRejected() {
-        assertThrows(IllegalArgumentException.class,
-                () -> NSC.select("firstName").from("account").where(Filters.between("o.orderDate", "a", "b")).build());
+        assertThrows(IllegalArgumentException.class, () -> NSC.select("firstName").from("account").where(Filters.between("o.orderDate", "a", "b")).build());
         assertThrows(IllegalArgumentException.class, () -> NSC.select("id").from("account").where(Filters.between("age", 18, 65)).build());
     }
 
@@ -4246,8 +4242,7 @@ public class CqlBuilderTest extends TestBase {
         assertEquals(expected, afterBetween.build().query());
 
         final CqlBuilder afterNullInJunction = PSC.update("account").set("firstName").where(Filters.eq("id", 1));
-        assertThrows(IllegalArgumentException.class,
-                () -> afterNullInJunction.onlyIf(Filters.and(Filters.eq("status", "x"), Filters.gt("version", null))));
+        assertThrows(IllegalArgumentException.class, () -> afterNullInJunction.onlyIf(Filters.and(Filters.eq("status", "x"), Filters.gt("version", null))));
         assertEquals(expected, afterNullInJunction.build().query());
 
         final CqlBuilder afterNullInElement = PSC.update("account").set("firstName").where(Filters.eq("id", 1));

@@ -18,6 +18,7 @@ import java.util.Arrays;
 
 import org.apache.hadoop.hbase.client.Append;
 import org.apache.hadoop.hbase.client.Delete;
+import org.apache.hadoop.hbase.client.Increment;
 import org.apache.hadoop.hbase.client.Mutation;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.RowMutations;
@@ -112,11 +113,16 @@ public class AnyRowMutationsTest extends TestBase {
     }
 
     @Test
-    public void testAdd_unsupportedMutation_throwsBeforeSubmission() {
+    public void testAdd_incrementAndAppend_areAccepted() throws IOException {
+        // RowMutations itself accepts any Mutation, and Table.mutateRow / checkAndMutate support
+        // Increment and Append (RequestConverter.buildMultiRequest converts both). Only the
+        // Table.batch(List<Row>) path is Put/Delete-only, so this wrapper must not reject them here.
         AnyRowMutations rm = AnyRowMutations.of("row");
 
-        assertThrows(IllegalArgumentException.class, () -> rm.add(new Append(Bytes.toBytes("row"))));
-        assertEquals(0, rm.val().getMutations().size());
+        rm.add(new Append(Bytes.toBytes("row")).addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v")));
+        rm.add(new Increment(Bytes.toBytes("row")).addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), 1L));
+
+        assertEquals(2, rm.val().getMutations().size());
     }
 
     @Test
@@ -149,12 +155,21 @@ public class AnyRowMutationsTest extends TestBase {
     }
 
     @Test
-    public void testAdd_listWithUnsupportedMutation_isRejectedWithoutPartialAdd() {
+    public void testAdd_listWithIncrementAndAppend_isAccepted() throws IOException {
         AnyRowMutations rm = AnyRowMutations.of("row");
         Put put = new Put(Bytes.toBytes("row")).addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
 
-        assertThrows(IllegalArgumentException.class,
-                () -> rm.add(Arrays.<Mutation> asList(put, new Append(Bytes.toBytes("row")))));
+        rm.add(Arrays.<Mutation> asList(put, new Append(Bytes.toBytes("row")).addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"))));
+
+        assertEquals(2, rm.val().getMutations().size());
+    }
+
+    @Test
+    public void testAdd_listWithNullElement_isRejectedWithoutPartialAdd() {
+        AnyRowMutations rm = AnyRowMutations.of("row");
+        Put put = new Put(Bytes.toBytes("row")).addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
+
+        assertThrows(IllegalArgumentException.class, () -> rm.add(Arrays.<Mutation> asList(put, null)));
         assertEquals(0, rm.val().getMutations().size());
     }
 

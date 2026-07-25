@@ -19,8 +19,8 @@ package com.landawn.abacus.da.search;
  *
  * <p>This class is reserved for a future implementation that will wrap a Lucene
  * {@code IndexSearcher}/{@code IndexWriter} pair and expose convenience methods for
- * indexing and querying documents. It currently exposes no API and is not visible outside this
- * package.</p>
+ * indexing and querying documents. It currently exposes no API and is not visible
+ * outside this package.</p>
  *
  * @see SolrExecutor
  */

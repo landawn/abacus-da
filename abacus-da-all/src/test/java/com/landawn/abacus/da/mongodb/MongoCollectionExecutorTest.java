@@ -822,8 +822,7 @@ public class MongoCollectionExecutorTest extends TestBase {
         when(cursor.hasNext()).thenReturn(true, false);
         when(cursor.next()).thenReturn(row);
 
-        final List<Document> pipeline = Arrays
-                .asList(new Document("$group", new Document("_id", "$department").append("count", new Document("$sum", 1))));
+        final List<Document> pipeline = Arrays.asList(new Document("$group", new Document("_id", "$department").append("count", new Document("$sum", 1))));
         final List<Document> rows = executor.aggregate(pipeline).toList();
 
         Assertions.assertEquals(1, rows.size());

@@ -21,6 +21,7 @@ import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.NSC;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Date;
+import java.util.HashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -3180,7 +3181,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
             throw new IllegalArgumentException("No key names defined for entity class: " + targetClass.getSimpleName());
         }
 
-        final Map<String, Object> updateProps = new java.util.HashMap<>(props);
+        final Map<String, Object> updateProps = new HashMap<>(props);
         final List<Condition> conditions = new ArrayList<>(primaryKeyNames.size());
 
         for (final String keyName : primaryKeyNames) {
