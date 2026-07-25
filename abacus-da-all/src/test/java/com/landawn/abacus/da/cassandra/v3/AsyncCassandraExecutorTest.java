@@ -100,6 +100,11 @@ public class AsyncCassandraExecutorTest extends TestBase {
     }
 
     @Test
+    public void testConstructor_rejectsNullExecutor() {
+        assertThrows(NullPointerException.class, () -> new AsyncCassandraExecutor(null));
+    }
+
+    @Test
     public void testExecute_StringOnly_DelegatesToSession() {
         when(mockExecutor.prepareStatement("SELECT * FROM t")).thenReturn(mockStatement);
         when(mockSession.executeAsync(mockStatement)).thenReturn(mockFuture);

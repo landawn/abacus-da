@@ -195,6 +195,27 @@ public class AnyMutationTest extends TestBase {
     }
 
     @Test
+    public void testInspectingMissingFamily_doesNotMutateMutation() {
+        AnyPut put = AnyPut.of("row");
+        byte[] family = Bytes.toBytes("missing-family");
+        byte[] qualifier = Bytes.toBytes("qualifier");
+        byte[] value = Bytes.toBytes("value");
+
+        assertTrue(put.get("missing-family", "qualifier").isEmpty());
+        assertTrue(put.get(family, qualifier).isEmpty());
+        assertFalse(put.has("missing-family", "qualifier"));
+        assertFalse(put.has("missing-family", "qualifier", 1L));
+        assertFalse(put.has("missing-family", "qualifier", "value"));
+        assertFalse(put.has("missing-family", "qualifier", 1L, "value"));
+        assertFalse(put.has(family, qualifier));
+        assertFalse(put.has(family, qualifier, 1L));
+        assertFalse(put.has(family, qualifier, value));
+        assertFalse(put.has(family, qualifier, 1L, value));
+        assertTrue(put.isEmpty());
+        assertEquals(0, put.numFamilies());
+    }
+
+    @Test
     public void testHas_stringFamilyQualifier_true() {
         AnyPut put = AnyPut.of("row").addColumn("cf", "q", "v");
         assertTrue(put.has("cf", "q"));

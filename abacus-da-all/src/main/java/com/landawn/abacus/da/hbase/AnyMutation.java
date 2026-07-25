@@ -16,6 +16,7 @@ package com.landawn.abacus.da.hbase;
 
 import static com.landawn.abacus.da.hbase.HBaseExecutor.toFamilyQualifierBytes;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.NavigableMap;
@@ -87,7 +88,7 @@ import org.apache.hadoop.hbase.security.visibility.CellVisibility;
  * @see AnyDelete
  * @see AnyAppend
  * @see AnyIncrement
- * @see <a href="http://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
+ * @see <a href="https://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
  */
 abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithAttributes<AM> implements Row {
 
@@ -421,7 +422,9 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @see Cell
      */
     public List<Cell> get(final String family, final String qualifier) {
-        return mutation.get(toFamilyQualifierBytes(family), toFamilyQualifierBytes(qualifier));
+        final byte[] familyBytes = toFamilyQualifierBytes(family);
+
+        return containsFamily(familyBytes) ? mutation.get(familyBytes, toFamilyQualifierBytes(qualifier)) : new ArrayList<>();
     }
 
     /**
@@ -435,7 +438,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @see Cell
      */
     public List<Cell> get(final byte[] family, final byte[] qualifier) {
-        return mutation.get(family, qualifier);
+        return containsFamily(family) ? mutation.get(family, qualifier) : new ArrayList<>();
     }
 
     /**
@@ -461,7 +464,9 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @see #get(String, String)
      */
     public boolean has(final String family, final String qualifier) {
-        return mutation.has(toFamilyQualifierBytes(family), toFamilyQualifierBytes(qualifier));
+        final byte[] familyBytes = toFamilyQualifierBytes(family);
+
+        return containsFamily(familyBytes) && mutation.has(familyBytes, toFamilyQualifierBytes(qualifier));
     }
 
     /**
@@ -488,7 +493,9 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @see #has(String, String, long, Object)
      */
     public boolean has(final String family, final String qualifier, final long ts) {
-        return mutation.has(toFamilyQualifierBytes(family), toFamilyQualifierBytes(qualifier), ts);
+        final byte[] familyBytes = toFamilyQualifierBytes(family);
+
+        return containsFamily(familyBytes) && mutation.has(familyBytes, toFamilyQualifierBytes(qualifier), ts);
     }
 
     /**
@@ -518,7 +525,9 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @see #has(String, String, long, Object)
      */
     public boolean has(final String family, final String qualifier, final Object value) {
-        return mutation.has(toFamilyQualifierBytes(family), toFamilyQualifierBytes(qualifier), HBaseExecutor.toValueBytes(value));
+        final byte[] familyBytes = toFamilyQualifierBytes(family);
+
+        return containsFamily(familyBytes) && mutation.has(familyBytes, toFamilyQualifierBytes(qualifier), HBaseExecutor.toValueBytes(value));
     }
 
     /**
@@ -550,7 +559,9 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @see #has(String, String, Object)
      */
     public boolean has(final String family, final String qualifier, final long ts, final Object value) {
-        return mutation.has(toFamilyQualifierBytes(family), toFamilyQualifierBytes(qualifier), ts, HBaseExecutor.toValueBytes(value));
+        final byte[] familyBytes = toFamilyQualifierBytes(family);
+
+        return containsFamily(familyBytes) && mutation.has(familyBytes, toFamilyQualifierBytes(qualifier), ts, HBaseExecutor.toValueBytes(value));
     }
 
     /**
@@ -563,7 +574,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @see #has(byte[], byte[], long)
      */
     public boolean has(final byte[] family, final byte[] qualifier) {
-        return mutation.has(family, qualifier);
+        return containsFamily(family) && mutation.has(family, qualifier);
     }
 
     /**
@@ -577,7 +588,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @see #has(byte[], byte[], long, byte[])
      */
     public boolean has(final byte[] family, final byte[] qualifier, final long ts) {
-        return mutation.has(family, qualifier, ts);
+        return containsFamily(family) && mutation.has(family, qualifier, ts);
     }
 
     /**
@@ -591,7 +602,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @see #has(byte[], byte[], long, byte[])
      */
     public boolean has(final byte[] family, final byte[] qualifier, final byte[] value) {
-        return mutation.has(family, qualifier, value);
+        return containsFamily(family) && mutation.has(family, qualifier, value);
     }
 
     /**
@@ -606,7 +617,15 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @see #has(byte[], byte[])
      */
     public boolean has(final byte[] family, final byte[] qualifier, final long ts, final byte[] value) {
-        return mutation.has(family, qualifier, ts, value);
+        return containsFamily(family) && mutation.has(family, qualifier, ts, value);
+    }
+
+    /*
+     * Mutation#get and Mutation#has create an empty family entry when the requested family is
+     * absent. Guarding their calls keeps these read-only wrapper methods from changing the mutation.
+     */
+    private boolean containsFamily(final byte[] family) {
+        return mutation.getFamilyCellMap().containsKey(family);
     }
 
     /**

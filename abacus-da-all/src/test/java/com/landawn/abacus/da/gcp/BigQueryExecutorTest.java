@@ -599,6 +599,26 @@ public class BigQueryExecutorTest extends TestBase {
 
         assertTrue(result.isPresent());
         assertEquals("TestName", result.get());
+
+        final ArgumentCaptor<QueryJobConfiguration> captor = ArgumentCaptor.forClass(QueryJobConfiguration.class);
+        verify(mockBigQuery).query(captor.capture());
+        assertTrue(captor.getValue().getQuery().contains("LIMIT 1"), captor.getValue().getQuery());
+    }
+
+    @Test
+    public void testQueryForSingleNonNullWithTargetClassUsesLimitOne() throws Exception {
+        final FieldList fields = FieldList.of(Field.of("name", StandardSQLTypeName.STRING));
+        final FieldValueList row = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "TestName")), fields);
+
+        when(mockTableResult.getTotalRows()).thenReturn(1L);
+        when(mockTableResult.getValues()).thenReturn(Arrays.asList(row));
+        when(mockBigQuery.query(any(QueryJobConfiguration.class))).thenReturn(mockTableResult);
+
+        assertEquals("TestName", executor.queryForSingleNonNull(TestEntity.class, String.class, "name", Filters.eq("id", 1)).get());
+
+        final ArgumentCaptor<QueryJobConfiguration> captor = ArgumentCaptor.forClass(QueryJobConfiguration.class);
+        verify(mockBigQuery).query(captor.capture());
+        assertTrue(captor.getValue().getQuery().contains("LIMIT 1"), captor.getValue().getQuery());
     }
 
     @Test

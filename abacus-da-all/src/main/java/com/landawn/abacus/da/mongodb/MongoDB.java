@@ -53,10 +53,6 @@ import com.mongodb.client.MongoDatabase;
  */
 public final class MongoDB extends MongoDBBase {
 
-    //    private final Map<String, MongoCollectionExecutor> collectionExecutorPool = new ConcurrentHashMap<>();
-    //
-    //    private final Map<Class<?>, MongoCollectionMapper<?>> collectionMapperPool = new ConcurrentHashMap<>();
-
     private final MongoDatabase mongoDatabase;
 
     private final AsyncExecutor asyncExecutor;
@@ -232,15 +228,6 @@ public final class MongoDB extends MongoDBBase {
     public MongoCollectionExecutor collectionExecutor(final String collectionName) {
         N.checkArgNotNull(collectionName, "collectionName");
 
-        //    MongoCollectionExecutor collectionExecutor = collectionExecutorPool.get(collectionName);
-        //
-        //    if (collectionExecutor == null) {
-        //        collectionExecutor = new MongoCollectionExecutor(mongoDatabase.getCollection(collectionName), asyncExecutor);
-        //        collectionExecutorPool.put(collectionName, collectionExecutor);
-        //    }
-        //
-        //    return collectionExecutor;
-
         return new MongoCollectionExecutor(mongoDatabase.getCollection(collectionName), asyncExecutor);
     }
 
@@ -268,15 +255,6 @@ public final class MongoDB extends MongoDBBase {
      */
     public MongoCollectionExecutor collectionExecutor(final MongoCollection<Document> collection) {
         N.checkArgNotNull(collection, "collection");
-
-        //    MongoCollectionExecutor collectionExecutor = collectionExecutorPool.get(collectionName);
-        //
-        //    if (collectionExecutor == null) {
-        //        collectionExecutor = new MongoCollectionExecutor(mongoDatabase.getCollection(collectionName), asyncExecutor);
-        //        collectionExecutorPool.put(collectionName, collectionExecutor);
-        //    }
-        //
-        //    return collectionExecutor;
 
         return new MongoCollectionExecutor(collection, asyncExecutor);
     }
@@ -345,16 +323,6 @@ public final class MongoDB extends MongoDBBase {
         N.checkArgNotNull(collectionName, "collectionName");
         N.checkArgNotNull(rowType, "rowType");
 
-        //    MongoCollectionMapper collectionMapper = collectionMapperPool.get(rowType);
-        //
-        //    if (collectionMapper == null) {
-        //        collectionMapper = new MongoCollectionMapper(collectionExecutor(collectionName), rowType);
-        //
-        //        collectionMapperPool.put(rowType, collectionMapper);
-        //    }
-        //
-        //    return collectionMapper;
-
         return new MongoCollectionMapper(collectionExecutor(collectionName), rowType);
     }
 
@@ -391,16 +359,6 @@ public final class MongoDB extends MongoDBBase {
     public <T> MongoCollectionMapper<T> collectionMapper(final MongoCollection<Document> collection, final Class<T> rowType) {
         N.checkArgNotNull(collection, "collection");
         N.checkArgNotNull(rowType, "rowType");
-
-        //    MongoCollectionMapper collectionMapper = collectionMapperPool.get(rowType);
-        //
-        //    if (collectionMapper == null) {
-        //        collectionMapper = new MongoCollectionMapper(collectionExecutor(collectionName), rowType);
-        //
-        //        collectionMapperPool.put(rowType, collectionMapper);
-        //    }
-        //
-        //    return collectionMapper;
 
         return new MongoCollectionMapper(collectionExecutor(collection), rowType);
     }

@@ -563,7 +563,7 @@ public class CassandraExecutorBaseTest extends TestBase {
         ContinuableFuture<TestResultSet> asyncUpdate2 = executor.async().update(entity, Arrays.asList("name"));
         assertNotNull(asyncUpdate2);
 
-        ContinuableFuture<TestResultSet> asyncUpdate3 = executor.async().update(TestEntity.class, props, Filters.eq("id", 1L));
+        ContinuableFuture<TestResultSet> asyncUpdate3 = executor.async().update(TestEntity.class, Map.of("name", "test"), Filters.eq("id", 1L));
         assertNotNull(asyncUpdate3);
 
         ContinuableFuture<TestResultSet> asyncUpdate4 = executor.async().update("UPDATE test SET name = ? WHERE id = ?", "updated", 1L);
@@ -966,6 +966,18 @@ public class CassandraExecutorBaseTest extends TestBase {
     }
 
     @Test
+    public void testEntityToCondition_collection_wrongEntityType_throwsIAE() {
+        TestEntity entity = new TestEntity();
+        entity.setId(1L);
+        CompositeKeyEntity wrongType = new CompositeKeyEntity();
+        wrongType.setUserId("u1");
+        wrongType.setSessionId("s1");
+
+        assertThrows(IllegalArgumentException.class,
+                () -> TestCassandraExecutor.exposedEntityToConditionCollection(TestEntity.class, Arrays.asList(entity, wrongType)));
+    }
+
+    @Test
     public void testPrepareInsert_entity_snakeCase() {
         TestEntity e = new TestEntity();
         e.setId(1L);
@@ -1005,6 +1017,14 @@ public class CassandraExecutorBaseTest extends TestBase {
     }
 
     @Test
+    public void testPrepareUpdate_entityRejectsPrimaryKeyProperty() {
+        TestEntity e = new TestEntity();
+        e.setId(1L);
+
+        assertThrows(IllegalArgumentException.class, () -> executor.exposedPrepareUpdate(e, Arrays.asList("id")));
+    }
+
+    @Test
     public void testPrepareUpdate_classMapCondition() {
         Map<String, Object> props = new HashMap<>();
         props.put("name", "x");
@@ -1022,6 +1042,12 @@ public class CassandraExecutorBaseTest extends TestBase {
     }
 
     @Test
+    public void testPrepareUpdate_classMapRejectsPrimaryKeyProperty() {
+        assertThrows(IllegalArgumentException.class,
+                () -> executor.exposedPrepareUpdate(TestEntity.class, Map.of("id", 2L), Filters.eq("id", 1L)));
+    }
+
+    @Test
     public void testPrepareDelete_withPropNames() {
         SP sp = executor.exposedPrepareDelete(TestEntity.class, Arrays.asList("name"), Filters.eq("id", 1L));
         assertNotNull(sp);
@@ -1033,6 +1059,12 @@ public class CassandraExecutorBaseTest extends TestBase {
         SP sp = executor.exposedPrepareDelete(TestEntity.class, null, Filters.eq("id", 1L));
         assertNotNull(sp);
         assertTrue(sp.query().toUpperCase().contains("DELETE"));
+    }
+
+    @Test
+    public void testPrepareDelete_rejectsPrimaryKeyProperty() {
+        assertThrows(IllegalArgumentException.class,
+                () -> executor.exposedPrepareDelete(TestEntity.class, Arrays.asList("id"), Filters.eq("id", 1L)));
     }
 
     @Test

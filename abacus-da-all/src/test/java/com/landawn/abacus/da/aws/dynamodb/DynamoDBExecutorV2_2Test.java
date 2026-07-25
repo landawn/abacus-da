@@ -980,10 +980,7 @@ public class DynamoDBExecutorV2_2Test extends TestBase {
 
     @Test
     public void testFiltersInCollection_Empty() {
-        Map<String, Condition> result = Filters.in("status", List.of());
-        assertNotNull(result);
-        assertEquals(ComparisonOperator.IN, result.get("status").comparisonOperator());
-        assertEquals(0, result.get("status").attributeValueList().size());
+        assertThrows(IllegalArgumentException.class, () -> Filters.in("status", List.of()));
     }
 
     @Test

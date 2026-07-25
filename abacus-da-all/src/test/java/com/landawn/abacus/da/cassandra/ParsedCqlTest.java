@@ -359,4 +359,58 @@ public class ParsedCqlTest extends TestBase {
         assertTrue(s.contains("[parameterizedCql]"), s);
         assertTrue(s.contains("tostring_test"), s);
     }
+
+    @Test
+    public void testParse_SingleFieldUnspacedUdtLiteral_NamedParameterIsConverted() {
+        // Regression: a single-field literal such as {street::street} is ONE token whose braces balance, so the
+        // depth before and after the token are both 0. Gating the embedded-marker scan on those depths dropped
+        // the parameter, leaving a native ':street' marker mixed with '?' — which Cassandra rejects. The depth
+        // is now tracked WITHIN the token, so this behaves like the multi-field form.
+        final ParsedCql parsed = ParsedCql.parse("UPDATE t SET u = {street::street} WHERE id = :id");
+
+        assertEquals("UPDATE t SET u = {street:?} WHERE id = ?", parsed.parameterizedCql());
+        assertEquals(2, parsed.parameterCount());
+        assertEquals("street", parsed.namedParameters().get(0));
+        assertEquals("id", parsed.namedParameters().get(1));
+    }
+
+    @Test
+    public void testParse_NestedSingleFieldUdtLiteral_NamedParameterIsConverted() {
+        final ParsedCql parsed = ParsedCql.parse("UPDATE t SET u = {a:{b::inner}} WHERE id = :id");
+
+        assertEquals("UPDATE t SET u = {a:{b:?}} WHERE id = ?", parsed.parameterizedCql());
+        assertEquals(2, parsed.parameterCount());
+        assertEquals("inner", parsed.namedParameters().get(0));
+        assertEquals("id", parsed.namedParameters().get(1));
+    }
+
+    @Test
+    public void testParse_MultiFieldUnspacedUdtLiteral_StillConverted() {
+        // The multi-token form (first token leaves an unbalanced '{') must keep working after the depth change.
+        final ParsedCql parsed = ParsedCql.parse("UPDATE t SET u = {street::street, city::city} WHERE id = :id");
+
+        assertEquals("UPDATE t SET u = {street:?, city:?} WHERE id = ?", parsed.parameterizedCql());
+        assertEquals(3, parsed.parameterCount());
+    }
+
+    @Test
+    public void testParse_DoubleColonOutsideLiteral_IsNotTreatedAsEmbeddedMarker() {
+        // The embedded-marker scan requires brace depth > 0 at the marker, so a cast-like '::' at depth 0 is
+        // left alone rather than being rewritten.
+        final ParsedCql parsed = ParsedCql.parse("SELECT a::text FROM t WHERE id = :id");
+
+        assertEquals("SELECT a::text FROM t WHERE id = ?", parsed.parameterizedCql());
+        assertEquals(1, parsed.parameterCount());
+        assertEquals("id", parsed.namedParameters().get(0));
+    }
+
+    @Test
+    public void testParse_DoubleColonInsideQuotedKey_IsNotTreatedAsEmbeddedMarker() {
+        // Braces inside quoted literals must not raise the depth, and a '::' inside a quoted key must not match.
+        final ParsedCql parsed = ParsedCql.parse("UPDATE t SET m = {'a::b':1} WHERE id = :id");
+
+        assertEquals("UPDATE t SET m = {'a::b':1} WHERE id = ?", parsed.parameterizedCql());
+        assertEquals(1, parsed.parameterCount());
+        assertEquals("id", parsed.namedParameters().get(0));
+    }
 }

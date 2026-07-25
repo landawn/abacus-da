@@ -135,6 +135,7 @@ public class AnyPutTest extends TestBase {
         ByteBuffer rowBuf = ByteBuffer.wrap(Bytes.toBytes("row-bb"));
         AnyPut put = AnyPut.of(rowBuf);
         assertArrayEquals(Bytes.toBytes("row-bb"), put.getRow());
+        assertEquals(rowBuf.limit(), rowBuf.position());
     }
 
     @Test
@@ -144,6 +145,7 @@ public class AnyPutTest extends TestBase {
         AnyPut put = AnyPut.of(rowBuf, ts);
         assertArrayEquals(Bytes.toBytes("row-bb-ts"), put.getRow());
         assertEquals(ts, put.getTimestamp());
+        assertEquals(rowBuf.limit(), rowBuf.position());
     }
 
     @Test
@@ -362,6 +364,8 @@ public class AnyPutTest extends TestBase {
         long ts = 7L;
         AnyPut put = AnyPut.of("row").addColumn(fam, qual, ts, val);
         assertTrue(put.has(Bytes.toBytes("cf"), Bytes.toBytes("q"), ts));
+        assertEquals(qual.limit(), qual.position());
+        assertEquals(val.limit(), val.position());
     }
 
     @Test
@@ -369,6 +373,14 @@ public class AnyPutTest extends TestBase {
         AnyPut put = AnyPut.of("row").addColumn("cf1", "q1", "v1").addColumn("cf1", "q2", "v2").addColumn("cf2", "q3", "v3");
         assertEquals(3, put.size());
         assertEquals(2, put.numFamilies());
+    }
+
+    @Test
+    public void testAddColumn_duplicateCoordinateQueuesBothCells() {
+        AnyPut put = AnyPut.of("row", 100L).addColumn("cf", "q", "first").addColumn("cf", "q", "second");
+
+        assertEquals(2, put.size());
+        assertEquals(2, put.get("cf", "q").size());
     }
 
     @Test

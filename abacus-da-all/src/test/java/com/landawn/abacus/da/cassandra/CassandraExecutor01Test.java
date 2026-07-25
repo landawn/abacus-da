@@ -39,8 +39,10 @@ import com.datastax.oss.driver.api.core.cql.Row;
 import com.datastax.oss.driver.api.core.cql.Statement;
 import com.datastax.oss.driver.api.core.type.DataType;
 import com.datastax.oss.driver.api.core.type.codec.TypeCodec;
+import com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry;
 import com.datastax.oss.driver.api.core.type.codec.registry.MutableCodecRegistry;
 import com.datastax.oss.protocol.internal.ProtocolConstants;
+import com.landawn.abacus.annotation.Column;
 import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.da.cassandra.CassandraExecutor.StatementSettings;
 import com.landawn.abacus.exception.DuplicateResultException;
@@ -124,6 +126,20 @@ public class CassandraExecutor01Test extends TestBase {
         // Test constructor with NamingPolicy
         CassandraExecutor executor4 = new CassandraExecutor(mockSession, settings, mapper, NamingPolicy.SNAKE_CASE);
         assertNotNull(executor4);
+
+        assertThrows(NullPointerException.class, () -> new CassandraExecutor(null));
+    }
+
+    @Test
+    public void testReadOnlyCodecRegistryIsAcceptedUntilRegistrationIsRequested() {
+        final CqlSession session = mock(CqlSession.class);
+        final com.datastax.oss.driver.api.core.context.DriverContext context = mock(com.datastax.oss.driver.api.core.context.DriverContext.class);
+        final CodecRegistry readOnlyRegistry = mock(CodecRegistry.class);
+        when(session.getContext()).thenReturn(context);
+        when(context.getCodecRegistry()).thenReturn(readOnlyRegistry);
+
+        final CassandraExecutor readOnlyExecutor = new CassandraExecutor(session);
+        assertThrows(IllegalStateException.class, () -> readOnlyExecutor.registerTypeCodec(TestEntity.class));
     }
 
     @Test
@@ -227,6 +243,20 @@ public class CassandraExecutor01Test extends TestBase {
         // Test with target class
         Dataset dataset2 = CassandraExecutor.extractData(mockResultSet, TestEntity.class);
         assertNotNull(dataset2);
+    }
+
+    @Test
+    public void testExtractDataUsesColumnToPropertyMappingForTypeConversion() {
+        final ColumnDefinition column = mock(ColumnDefinition.class);
+        when(mockResultSet.getColumnDefinitions()).thenReturn(mockColumnDefinitions);
+        when(mockColumnDefinitions.size()).thenReturn(1);
+        when(mockColumnDefinitions.get(0)).thenReturn(column);
+        when(column.getName()).thenReturn(com.datastax.oss.driver.api.core.CqlIdentifier.fromInternal("order_count"));
+        when(mockResultSet.all()).thenReturn(Arrays.asList(mockRow));
+        when(mockRow.getObject(0)).thenReturn(7L);
+
+        final Dataset dataset = CassandraExecutor.extractData(mockResultSet, TestEntity.class);
+        assertEquals(Integer.valueOf(7), dataset.getColumn("order_count").get(0));
     }
 
     /**
@@ -662,6 +692,8 @@ public class CassandraExecutor01Test extends TestBase {
     public static class TestEntity {
         private Long id;
         private String name;
+        @Column("order_count")
+        private Integer orderCount;
 
         public Long getId() {
             return id;
@@ -677,6 +709,14 @@ public class CassandraExecutor01Test extends TestBase {
 
         public void setName(String name) {
             this.name = name;
+        }
+
+        public Integer getOrderCount() {
+            return orderCount;
+        }
+
+        public void setOrderCount(Integer orderCount) {
+            this.orderCount = orderCount;
         }
     }
 }

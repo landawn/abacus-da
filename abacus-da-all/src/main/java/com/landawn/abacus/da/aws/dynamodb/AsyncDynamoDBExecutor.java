@@ -134,7 +134,9 @@ public final class AsyncDynamoDBExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * AsyncDynamoDBExecutor asyncExecutor = ...;
+     * // Wrap an already configured AWS SDK v1 client.
+     * DynamoDBExecutor dynamoExecutor = new DynamoDBExecutor(dynamoDBClient);
+     * AsyncDynamoDBExecutor asyncExecutor = dynamoExecutor.async();
      *
      * // Switch to synchronous operations when needed
      * DynamoDBExecutor syncExecutor = asyncExecutor.sync();            // returns the wrapped (non-null) executor instance
@@ -597,7 +599,8 @@ public final class AsyncDynamoDBExecutor {
      *         Map.of("userId", new AttributeValue("user1")),
      *         Map.of("userId", new AttributeValue("user2"))
      *     ))
-     *     .withProjectionExpression("userId, name, email")
+     *     .withProjectionExpression("userId, #name, email")
+     *     .withExpressionAttributeNames(Map.of("#name", "name"))
      *     .withConsistentRead(true);
      *
      * KeysAndAttributes orderKeys = new KeysAndAttributes()
@@ -605,7 +608,8 @@ public final class AsyncDynamoDBExecutor {
      *         Map.of("orderId", new AttributeValue("order1")),
      *         Map.of("orderId", new AttributeValue("order2"))
      *     ))
-     *     .withProjectionExpression("orderId, status, total");
+     *     .withProjectionExpression("orderId, #status, #total")
+     *     .withExpressionAttributeNames(Map.of("#status", "status", "#total", "total"));
      *
      * BatchGetItemRequest request = new BatchGetItemRequest()
      *     .withRequestItems(Map.of(
@@ -666,7 +670,8 @@ public final class AsyncDynamoDBExecutor {
      *         Map.of("orderId", new AttributeValue("ORDER-001")),
      *         Map.of("orderId", new AttributeValue("ORDER-002"))
      *     ))
-     *     .withProjectionExpression("orderId, customerId, total, status");
+     *     .withProjectionExpression("orderId, customerId, #total, #status")
+     *     .withExpressionAttributeNames(Map.of("#total", "total", "#status", "status"));
      *
      * Map<String, KeysAndAttributes> requestItems = Map.of("Orders", orderKeys);
      *
@@ -769,7 +774,8 @@ public final class AsyncDynamoDBExecutor {
      *     .withRequestItems(Map.of(
      *         "Users", new KeysAndAttributes()
      *             .withKeys(Map.of("userId", new AttributeValue("user123")))
-     *             .withProjectionExpression("userId, name, age")
+     *             .withProjectionExpression("userId, #name, age")
+     *             .withExpressionAttributeNames(Map.of("#name", "name"))
      *     ));
      *
      * // Typical: callback over per-table lists of converted POJOs
@@ -1474,12 +1480,13 @@ public final class AsyncDynamoDBExecutor {
     }
 
     /**
-     * Asynchronously executes a DynamoDB query and returns all matching items as a list.
+     * Asynchronously executes a DynamoDB query and returns matching items as a list.
      *
      * <p>This method performs a query operation using the specified key conditions and optional
      * filter expressions. Query operations are efficient for retrieving items with a specific
-     * partition key value and optional sort key conditions. All matching items are collected
-     * into a list, handling pagination automatically.</p>
+     * partition key value and optional sort key conditions. When the request does not specify an
+     * exclusive start key, all pages are collected automatically; otherwise only the requested
+     * page is returned.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1491,7 +1498,7 @@ public final class AsyncDynamoDBExecutor {
      *     ))
      *     .withScanIndexForward(false);   // Sort descending
      *
-     * // Typical: callback over all matching rows (pagination handled internally)
+     * // Typical: callback over all matching rows (when the request has no exclusive start key)
      * asyncExecutor.list(request)
      *     .thenRunAsync(orders -> {
      *         System.out.println("Found " + orders.size() + " orders");
@@ -1511,8 +1518,8 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param queryRequest the {@link QueryRequest} specifying table name, key conditions,
      *                    filter expressions, and other query parameters, must not be {@code null}
-     * @return a {@link ContinuableFuture} containing a list of all items matching the query,
-     *         where each item is represented as a Map of attribute names to values
+     * @return a {@link ContinuableFuture} containing the items materialized according to the
+     *         pagination behavior above, represented as Maps of attribute names to values
      * @throws NullPointerException if queryRequest is {@code null} (surfaced through the future)
      * @see #stream(QueryRequest)
      */
@@ -1521,11 +1528,11 @@ public final class AsyncDynamoDBExecutor {
     }
 
     /**
-     * Asynchronously executes a query and returns all matching items as a typed list.
+     * Asynchronously executes a query and returns matching items as a typed list.
      *
      * <p>This method performs a Query operation that retrieves items with the same partition key,
      * applies any specified filter conditions, and converts each item to the specified target type.
-     * It automatically handles pagination to return ALL matching items in a single list.</p>
+     * It automatically handles pagination when the request does not specify an exclusive start key.</p>
      *
      * <p><b>Type Conversion Benefits:</b></p>
      * <ul>
@@ -1537,7 +1544,7 @@ public final class AsyncDynamoDBExecutor {
      *
      * <p><b>Important Notes:</b></p>
      * <ul>
-     * <li>Automatically handles pagination - retrieves ALL results</li>
+     * <li>Automatically retrieves all pages when no exclusive start key is supplied</li>
      * <li>May perform multiple synchronous API calls internally</li>
      * <li>Results are loaded entirely into memory</li>
      * <li>Consider using stream() for very large result sets</li>
@@ -1549,13 +1556,11 @@ public final class AsyncDynamoDBExecutor {
      *     .withTableName("Orders")
      *     .withKeyConditionExpression("customerId = :customerId")
      *     .withExpressionAttributeValues(Map.of(
-     *         ":customerId", new AttributeValue("CUSTOMER123")
+     *         ":customerId", new AttributeValue("CUSTOMER123"),
+     *         ":status", new AttributeValue("SHIPPED")
      *     ))
      *     .withFilterExpression("#status = :status")
-     *     .withExpressionAttributeNames(Map.of("#status", "status"))
-     *     .withExpressionAttributeValues(Map.of(
-     *         ":status", new AttributeValue("SHIPPED")
-     *     ));
+     *     .withExpressionAttributeNames(Map.of("#status", "status"));
      *
      * ContinuableFuture<List<Order>> future = asyncExecutor.list(queryRequest, Order.class); // returns immediately; work runs on the AsyncExecutor
      *
@@ -1584,7 +1589,8 @@ public final class AsyncDynamoDBExecutor {
      * @param <T> the type to convert each item to
      * @param queryRequest the QueryRequest with all parameters configured. Must not be null.
      * @param targetClass the class to convert each item to. Must not be null.
-     * @return a ContinuableFuture containing a list of all matching items converted to type T
+     * @return a ContinuableFuture containing the matching items materialized according to the
+     *         pagination behavior above and converted to type T
      * @throws NullPointerException if queryRequest is {@code null} (surfaced through the future)
      * @throws IllegalArgumentException if targetClass is {@code null} or unsupported (surfaced through the future)
      * @see #list(QueryRequest)
@@ -1634,8 +1640,8 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param queryRequest the {@link QueryRequest} specifying table name, key conditions,
      *                    filter expressions, and other query parameters, must not be {@code null}
-     * @return a {@link ContinuableFuture} containing a {@link Dataset} with all query results
-     *         organized in a tabular format for easy analysis
+     * @return a {@link ContinuableFuture} containing a {@link Dataset} with the query results
+     *         materialized according to the pagination behavior above
      * @throws NullPointerException if queryRequest is {@code null} (surfaced through the future)
      * @see #list(QueryRequest)
      */
@@ -1729,7 +1735,8 @@ public final class AsyncDynamoDBExecutor {
      * <pre>{@code
      * QueryRequest request = new QueryRequest()
      *     .withTableName("Logs")
-     *     .withKeyConditionExpression("userId = :uid AND timestamp > :ts")
+     *     .withKeyConditionExpression("userId = :uid AND #timestamp > :ts")
+     *     .withExpressionAttributeNames(Map.of("#timestamp", "timestamp"))
      *     .withExpressionAttributeValues(Map.of(
      *         ":uid", new AttributeValue("user123"),
      *         ":ts", new AttributeValue().withN("1609459200")
@@ -2005,12 +2012,12 @@ public final class AsyncDynamoDBExecutor {
      * ScanRequest request = new ScanRequest()
      *     .withTableName("Users")
      *     .withFilterExpression("#status = :active AND #age > :minAge")
-     *     .withExpressionAttributeNames(Map.of("#status", "status", "#age", "age"))
+     *     .withExpressionAttributeNames(Map.of("#status", "status", "#age", "age", "#name", "name"))
      *     .withExpressionAttributeValues(Map.of(
      *         ":active", new AttributeValue("ACTIVE"),
      *         ":minAge", new AttributeValue().withN("18")
      *     ))
-     *     .withProjectionExpression("userId, name, email, age")
+     *     .withProjectionExpression("userId, #name, email, age")
      *     .withReturnConsumedCapacity(ReturnConsumedCapacity.TOTAL);
      *
      * // Typical: callback over the filtered scan

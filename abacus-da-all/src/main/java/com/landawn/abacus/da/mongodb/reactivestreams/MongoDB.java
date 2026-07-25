@@ -28,11 +28,12 @@ import com.mongodb.reactivestreams.client.MongoDatabase;
  * <p>This class extends {@link MongoDBBase} and integrates with MongoDB's
  * <strong>reactive streams</strong> driver
  * ({@link com.mongodb.reactivestreams.client.MongoDatabase}) to provide
- * Publisher-Subscriber based database operations. Every collection, executor, and mapper produced
- * by this class returns {@link org.reactivestreams.Publisher Publisher}-valued results rather than
- * blocking on the calling thread, which makes it suitable for reactive programming patterns,
- * backpressure handling, and integration with frameworks such as Project Reactor, RxJava, and
- * Akka Streams.</p>
+ * Publisher-Subscriber based database operations. Database-operation methods on the produced
+ * executors and mappers return {@link org.reactivestreams.Publisher Publisher}-valued results rather
+ * than blocking on the calling thread; this facade's database/collection accessors and factories
+ * return configured handles synchronously. The resulting API is suitable for reactive programming
+ * patterns, backpressure handling, and integration with frameworks such as Project Reactor, RxJava,
+ * and Akka Streams.</p>
  *
  * <p>For a blocking, synchronous variant built on the standard MongoDB driver, see
  * {@link com.landawn.abacus.da.mongodb.MongoDB}.</p>
@@ -41,11 +42,14 @@ import com.mongodb.reactivestreams.client.MongoDatabase;
  * <h3>Core Capabilities:</h3>
  * <ul>
  *   <li><strong>Reactive Streams:</strong> Full Publisher-Subscriber pattern support with backpressure</li>
- *   <li><strong>Non-blocking I/O:</strong> All operations return Publishers for asynchronous execution</li>
+ *   <li><strong>Non-blocking I/O:</strong> Driver I/O operations are represented as Publishers for
+ *       asynchronous execution</li>
  *   <li><strong>Framework Integration:</strong> Compatible with Reactor, RxJava, and other reactive libraries</li>
  *   <li><strong>Stream Processing:</strong> Natural integration with stream processing pipelines</li>
- *   <li><strong>Resource Management:</strong> Automatic connection and cursor lifecycle management</li>
- *   <li><strong>Error Propagation:</strong> Reactive error handling through Publisher error signals</li>
+ *   <li><strong>Resource Management:</strong> The driver manages cursor and connection-pool behavior;
+ *       the caller remains responsible for the owning MongoDB client</li>
+ *   <li><strong>Error Propagation:</strong> Driver failures use Publisher error signals; factory argument
+ *       validation can fail synchronously</li>
  * </ul>
  *
  * <h3>Reactive Patterns:</h3>
@@ -63,7 +67,8 @@ import com.mongodb.reactivestreams.client.MongoDatabase;
  *
  * <h3>Performance Considerations:</h3>
  * <ul>
- *   <li>Publishers are lazy - no work is done until subscription</li>
+ *   <li>MongoDB I/O represented by a Publisher starts on subscription; handle creation and argument
+ *       validation happen immediately</li>
  *   <li>Backpressure prevents memory overflow with large result sets</li>
  *   <li>Connection pooling is managed by the MongoDB reactive driver</li>
  *   <li>Use proper Scheduler for computational work to avoid blocking I/O threads</li>
@@ -114,10 +119,6 @@ import com.mongodb.reactivestreams.client.MongoDatabase;
  * @see <a href="https://www.reactive-streams.org/">Reactive Streams Specification</a>
  */
 public final class MongoDB extends MongoDBBase {
-
-    //    private final Map<String, MongoCollectionExecutor> collectionExecutorPool = new ConcurrentHashMap<>();
-    //
-    //    private final Map<Class<?>, MongoCollectionMapper<?>> collectionMapperPool = new ConcurrentHashMap<>();
 
     private final MongoDatabase mongoDatabase;
 
@@ -177,11 +178,12 @@ public final class MongoDB extends MongoDBBase {
     }
 
     /**
-     * Returns a reactive MongoDB collection as a Document-based Publisher collection.
+     * Returns a reactive MongoDB collection for {@link Document} values.
      *
-     * <p>This method returns a reactive collection that works with MongoDB's {@code Document} type
-     * and returns Publishers for all operations. This provides maximum flexibility for dynamic
-     * document structures and reactive processing pipelines.</p>
+     * <p>This method returns a reactive collection that works with MongoDB's {@code Document} type.
+     * Its database-I/O methods return Publishers, while metadata and configuration accessors remain
+     * synchronous. This provides flexibility for dynamic document structures and reactive processing
+     * pipelines.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -217,8 +219,8 @@ public final class MongoDB extends MongoDBBase {
      * Returns a reactive MongoDB collection configured for a specific Java type with automatic POJO mapping.
      *
      * <p>This method returns a strongly-typed reactive collection that automatically converts between
-     * MongoDB documents and Java objects using Publishers. The codec registry handles reactive
-     * serialization and deserialization of POJOs with backpressure support.</p>
+     * MongoDB documents and Java objects. Driver publishers serialize and deserialize values through
+     * the configured codec registry and honour downstream demand.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -259,8 +261,8 @@ public final class MongoDB extends MongoDBBase {
      * Creates a reactive MongoCollectionExecutor for performing Publisher-based operations on the specified collection.
      *
      * <p>The reactive MongoCollectionExecutor provides a higher-level API for common MongoDB reactive operations
-     * including CRUD operations, aggregation pipelines, and bulk operations. All methods return Publishers
-     * that integrate seamlessly with reactive streams frameworks.</p>
+     * including CRUD operations, aggregation pipelines, and bulk operations. Its database-operation methods
+     * return Publishers that integrate with reactive streams frameworks; {@code coll()} is a synchronous accessor.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -292,15 +294,6 @@ public final class MongoDB extends MongoDBBase {
      */
     public MongoCollectionExecutor collectionExecutor(final String collectionName) {
         N.checkArgNotNull(collectionName, "collectionName");
-
-        //    MongoCollectionExecutor collectionExecutor = collectionExecutorPool.get(collectionName);
-        //
-        //    if (collectionExecutor == null) {
-        //        collectionExecutor = new MongoCollectionExecutor(mongoDatabase.getCollection(collectionName), asyncExecutor);
-        //        collectionExecutorPool.put(collectionName, collectionExecutor);
-        //    }
-        //
-        //    return collectionExecutor;
 
         return new MongoCollectionExecutor(mongoDatabase.getCollection(collectionName));
     }
@@ -339,15 +332,6 @@ public final class MongoDB extends MongoDBBase {
      */
     public MongoCollectionExecutor collectionExecutor(final MongoCollection<Document> collection) {
         N.checkArgNotNull(collection, "collection");
-
-        //    MongoCollectionExecutor collectionExecutor = collectionExecutorPool.get(collectionName);
-        //
-        //    if (collectionExecutor == null) {
-        //        collectionExecutor = new MongoCollectionExecutor(mongoDatabase.getCollection(collectionName), asyncExecutor);
-        //        collectionExecutorPool.put(collectionName, collectionExecutor);
-        //    }
-        //
-        //    return collectionExecutor;
 
         return new MongoCollectionExecutor(collection);
     }
@@ -432,16 +416,6 @@ public final class MongoDB extends MongoDBBase {
         N.checkArgNotNull(collectionName, "collectionName");
         N.checkArgNotNull(rowType, "rowType");
 
-        //    MongoCollectionMapper collectionMapper = collectionMapperPool.get(rowType);
-        //
-        //    if (collectionMapper == null) {
-        //        collectionMapper = new MongoCollectionMapper(collectionExecutor(collectionName), rowType);
-        //
-        //        collectionMapperPool.put(rowType, collectionMapper);
-        //    }
-        //
-        //    return collectionMapper;
-
         return new MongoCollectionMapper(collectionExecutor(collectionName), rowType);
     }
 
@@ -486,16 +460,6 @@ public final class MongoDB extends MongoDBBase {
     public <T> MongoCollectionMapper<T> collectionMapper(final MongoCollection<Document> collection, final Class<T> rowType) {
         N.checkArgNotNull(collection, "collection");
         N.checkArgNotNull(rowType, "rowType");
-
-        //    MongoCollectionMapper collectionMapper = collectionMapperPool.get(rowType);
-        //
-        //    if (collectionMapper == null) {
-        //        collectionMapper = new MongoCollectionMapper(collectionExecutor(collectionName), rowType);
-        //
-        //        collectionMapperPool.put(rowType, collectionMapper);
-        //    }
-        //
-        //    return collectionMapper;
 
         return new MongoCollectionMapper(collectionExecutor(collection), rowType);
     }

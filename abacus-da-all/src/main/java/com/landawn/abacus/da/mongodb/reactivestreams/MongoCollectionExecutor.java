@@ -63,18 +63,18 @@ import reactor.core.publisher.Mono;
  * Reactive MongoDB collection executor providing Publisher-based database operations with full reactive streams support.
  *
  * <p>This class provides a comprehensive reactive interface for MongoDB collection operations, returning
- * Publishers for all database interactions. It integrates seamlessly with reactive frameworks like Project Reactor,
+ * Publishers for database operations. It integrates seamlessly with reactive frameworks like Project Reactor,
  * RxJava, and supports the full reactive streams specification including backpressure, error handling,
  * and completion semantics.</p>
  *
  * <h2>Key Features</h2>
  * <h3>Core Capabilities:</h3>
  * <ul>
- *   <li><strong>Publisher-Based Operations:</strong> All methods return Publishers (typically {@link Mono} or
- *       {@link Flux}) for reactive composition</li>
+ *   <li><strong>Publisher-Based Operations:</strong> Database-operation methods return Publishers (typically
+ *       {@link Mono} or {@link Flux}) for reactive composition; {@link #coll()} is a synchronous accessor</li>
  *   <li><strong>Backpressure Support:</strong> Honours reactive-streams backpressure via the underlying driver</li>
- *   <li><strong>Error Propagation:</strong> Database failures surface as Publisher {@code onError} signals
- *       rather than thrown exceptions</li>
+ *   <li><strong>Error Propagation:</strong> Database failures surface as Publisher {@code onError} signals;
+ *       argument validation and write-value conversion can fail synchronously while a publisher is built</li>
  *   <li><strong>Cursor Lifecycle:</strong> The driver's {@link FindPublisher} cursor is opened on subscription
  *       and closed automatically on completion, cancellation, or error</li>
  *   <li><strong>Integration Ready:</strong> Direct compatibility with Reactor, RxJava, and any other library
@@ -101,7 +101,8 @@ import reactor.core.publisher.Mono;
  *
  * <h3>Performance Considerations:</h3>
  * <ul>
- *   <li>Publishers are lazy — computation starts only on subscription</li>
+ *   <li>Database I/O starts only on subscription; argument validation and write-value conversion may
+ *       happen when a publisher is built</li>
  *   <li>Use appropriate schedulers to avoid blocking reactive threads</li>
  *   <li>Honour backpressure when consuming large result sets to avoid unbounded buffering</li>
  *   <li>Consider connection-pool settings for high-concurrency scenarios</li>
@@ -522,12 +523,12 @@ public final class MongoCollectionExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Typical: subscribe with all three handlers; the completion handler fires when not found.
+     * // Subscribe with all three handlers; completion follows either a value or an empty result.
      * Mono<Document> docMono = executor.get("507f1f77bcf86cd799439011"); // cold Mono
      * docMono.subscribe(
      *     doc -> System.out.println("Found: " + doc.toJson()),
      *     error -> System.err.println("Error: " + error),
-     *     () -> System.out.println("Document not found"));       // fires only when empty
+     *     () -> System.out.println("Lookup complete"));          // fires after present or empty
      *
      * // Typical: block for the document (null if absent).
      * Document doc = executor.get("507f1f77bcf86cd799439011").block(); // null when no match
@@ -2219,10 +2220,15 @@ public final class MongoCollectionExecutor {
      * // Typical: a raw Document is inserted as-is (no conversion).
      * executor.insertOne(new Document("name", "Jane")).block();   // emits one InsertOneResult
      *
-     * // Edge: cold publisher — re-subscribing re-issues the insert (a second document is written).
+     * // Edge: cold publisher — re-subscribing re-issues the SAME insert. The driver builds the write
+     * // operation eagerly and stamps a generated _id onto the supplied Document, so the retry carries
+     * // that same _id and fails on the mandatory unique _id index rather than writing a second document.
      * Mono<InsertOneResult> twice = executor.insertOne(new Document("name", "Dup"));
      * twice.block();                                              // insert #1
-     * twice.block();                                              // insert #2 (separate write)
+     * twice.block();                                              // MongoWriteException: E11000 duplicate key
+     *
+     * // To write repeatedly, build a fresh document per subscription:
+     * Mono.defer(() -> executor.insertOne(new Document("name", "Dup"))).repeat(1).blockLast();
      *
      * // Edge/Negative: a duplicate unique key surfaces as a MongoWriteException via onError,
      * // not as a thrown exception at call time.
@@ -2511,6 +2517,12 @@ public final class MongoCollectionExecutor {
      * (server requires MongoDB 4.2+). Each element is converted via {@link #toBson(Object)}; any
      * non-operator object is wrapped in a {@code $set}.</p>
      *
+     * <p><b>Pipeline restrictions:</b> {@code objList} is sent as an aggregation-update pipeline.
+     * Only {@code $set}/{@code $addFields}, {@code $project}/{@code $unset}, and
+     * {@code $replaceRoot}/{@code $replaceWith} stages are permitted. A plain entity, map, or
+     * non-operator document is converted to a {@code $set} stage. Classic update operators such as
+     * {@code $inc}, {@code $push}, and {@code $currentDate} are not valid pipeline stages.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Typical: a pipeline-style update (MongoDB 4.2+).
@@ -2545,10 +2557,14 @@ public final class MongoCollectionExecutor {
      * This corresponds to MongoDB's pipeline-style update form, enabling complex field transformations
      * with upsert and other update behaviors.</p>
      *
+     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
+     * documented by {@link #updateOne(Bson, Collection)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * UpdateOptions options = new UpdateOptions().upsert(true);
-     * List<Bson> pipeline = Arrays.asList(Updates.addFields(new Field("modified", "$$NOW")));
+     * List<Bson> pipeline = Arrays.asList(
+     *     new Document("$set", new Document("modified", "$$NOW")));
      * Mono<UpdateResult> result = executor.updateOne(filter, pipeline, options);
      * }</pre>
      *
@@ -2746,21 +2762,23 @@ public final class MongoCollectionExecutor {
     /**
      * Updates all documents matching the filter using a collection of update operations.
      *
-     * <p>Applies multiple update operations from a collection to all matching documents.
-     * This method is useful when you need to apply a pipeline of update operations or
-     * multiple field updates in a specific order.</p>
+     * <p><b>Pipeline restrictions:</b> {@code objList} is sent as an aggregation-update pipeline.
+     * Only {@code $set}/{@code $addFields}, {@code $project}/{@code $unset}, and
+     * {@code $replaceRoot}/{@code $replaceWith} stages are permitted. A plain entity, map, or
+     * non-operator document is converted to a {@code $set} stage. Classic update operators such as
+     * {@code $inc}, {@code $push}, and {@code $currentDate} are not valid pipeline stages.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<Bson> updates = Arrays.asList(
-     *     Updates.set("status", "processed"),
-     *     Updates.currentDate("lastModified")
+     *     new Document("$set", new Document("status", "processed")),
+     *     new Document("$set", new Document("lastModified", "$$NOW"))
      * );
      * Mono<UpdateResult> result = executor.updateMany(filter, updates);
      * }</pre>
      *
      * @param filter the query filter to identify documents to update; must not be null
-     * @param objList collection of update operations to apply; must not be null or empty
+     * @param objList aggregation update pipeline stages to apply; must not be null or empty
      * @return a Mono that emits the UpdateResult containing operation details
      * @throws IllegalArgumentException if filter or objList is null or empty
      * @see #updateMany(Bson, Collection, UpdateOptions)
@@ -2772,22 +2790,23 @@ public final class MongoCollectionExecutor {
     /**
      * Updates all documents matching the filter using a collection of update operations with options.
      *
-     * <p>Applies multiple update operations from a collection to all matching documents with
-     * custom update options. This provides maximum flexibility for complex bulk update scenarios
-     * where multiple operations need to be applied in sequence with specific behaviors.</p>
+     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
+     * documented by {@link #updateMany(Bson, Collection)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * UpdateOptions options = new UpdateOptions().upsert(true);
      * List<Bson> updates = Arrays.asList(
-     *     Updates.inc("count", 1),
-     *     Updates.addToSet("tags", "processed")
+     *     new Document("$set", new Document("count", new Document("$add", Arrays.asList(
+     *         new Document("$ifNull", Arrays.asList("$count", 0)), 1)))),
+     *     new Document("$set", new Document("tags", new Document("$setUnion", Arrays.asList(
+     *         new Document("$ifNull", Arrays.asList("$tags", Collections.emptyList())), List.of("processed")))))
      * );
      * Mono<UpdateResult> result = executor.updateMany(filter, updates, options);
      * }</pre>
      *
      * @param filter the query filter to identify documents to update; must not be null
-     * @param objList collection of update operations to apply; must not be null or empty
+     * @param objList aggregation update pipeline stages to apply; must not be null or empty
      * @param options the options to apply to the update operation; may be null for defaults
      * @return a Mono that emits the UpdateResult containing operation details
      * @throws IllegalArgumentException if filter or objList is null or empty
@@ -2809,8 +2828,9 @@ public final class MongoCollectionExecutor {
      * Replaces a single document identified by its ObjectId string reactively.
      *
      * <p>Completely replaces the document with the specified ObjectId with a new document in a reactive manner.
-     * Unlike update operations, replace operations replace the entire document except for
-     * the _id field. This is useful when you need to completely overwrite a document's content. Returns a Mono.</p>
+     * Unlike update operations, replace operations replace the entire document. MongoDB retains the matched
+     * document's {@code _id} when the replacement omits it; a supplied value must equal the existing
+     * {@code _id}. This is useful when you need to completely overwrite a document's content. Returns a Mono.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2869,8 +2889,9 @@ public final class MongoCollectionExecutor {
      * Replaces a single document matching the filter reactively.
      *
      * <p>Replaces the first document that matches the filter with the replacement document in a reactive manner.
-     * If multiple documents match the filter, only the first one encountered is replaced.
-     * The _id field is preserved from the original document. Returns a Mono.</p>
+     * If multiple documents match the filter, only the first one encountered is replaced. MongoDB
+     * retains the matched document's {@code _id} when the replacement omits it; a supplied value must
+     * equal the existing {@code _id}. Returns a Mono.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3145,9 +3166,9 @@ public final class MongoCollectionExecutor {
      * Performs bulk insert of multiple documents with custom options.
      *
      * <p>Inserts multiple documents with custom bulk write options. This method provides
-     * control over the bulk operation including ordered/unordered execution, validation
-     * bypass, and write concern settings. Unordered operations can continue after errors
-     * and may perform better.</p>
+     * control over the bulk operation including ordered/unordered execution and validation
+     * bypass. Write concern is configured on the underlying collection, not on BulkWriteOptions.
+     * Unordered operations can continue after errors and may perform better.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3394,16 +3415,18 @@ public final class MongoCollectionExecutor {
     /**
      * Atomically finds and updates a document using multiple update operations.
      *
-     * <p>Applies a collection of update operations atomically to a single document.
-     * This is useful when multiple update operations need to be applied in a specific
-     * order as an atomic operation.</p>
+     * <p><b>Pipeline restrictions:</b> {@code objList} is sent as an aggregation-update pipeline.
+     * Only {@code $set}/{@code $addFields}, {@code $project}/{@code $unset}, and
+     * {@code $replaceRoot}/{@code $replaceWith} stages are permitted. A plain entity, map, or
+     * non-operator document is converted to a {@code $set} stage. Classic update operators such as
+     * {@code $inc}, {@code $push}, and {@code $currentDate} are not valid pipeline stages.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Typical: apply a pipeline-style atomic update; emits the prior document by default.
      * List<Bson> updates = Arrays.asList(
-     *     Updates.set("status", "processing"),
-     *     Updates.currentDate("lastModified")
+     *     new Document("$set", new Document("status", "processing")),
+     *     new Document("$set", new Document("lastModified", "$$NOW"))
      * );
      * Mono<Document> result = executor.findOneAndUpdate(filter, updates);         // cold; runs on subscription
      * result.subscribe(before -> System.out.println(before.getString("status"))); // pre-update status
@@ -3420,7 +3443,7 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param filter the query filter to find the document; must not be null
-     * @param objList collection of update operations to apply; must not be null or empty
+     * @param objList aggregation update pipeline stages to apply; must not be null or empty
      * @return a Mono that emits the found document, or completes empty when no document matches the filter
      * @throws IllegalArgumentException if filter or objList is null or empty
      * @see #findOneAndUpdate(Bson, Collection, FindOneAndUpdateOptions)
@@ -3434,6 +3457,9 @@ public final class MongoCollectionExecutor {
      *
      * <p>Applies multiple update operations atomically and returns the result as the specified type.
      * Combines pipeline updates with type-safe deserialization.</p>
+     *
+     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
+     * documented by {@link #findOneAndUpdate(Bson, Collection)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3461,13 +3487,17 @@ public final class MongoCollectionExecutor {
      * This method is useful for complex atomic updates that require multiple operations
      * to be applied in sequence.</p>
      *
+     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
+     * documented by {@link #findOneAndUpdate(Bson, Collection)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * FindOneAndUpdateOptions options = new FindOneAndUpdateOptions()
      *     .returnDocument(ReturnDocument.AFTER);
      * List<Bson> pipeline = Arrays.asList(
      *     new Document("$set", new Document("status", "processed")),
-     *     new Document("$inc", new Document("processCount", 1))
+     *     new Document("$set", new Document("processCount",
+     *         new Document("$add", Arrays.asList("$processCount", 1))))
      * );
      * Mono<Document> result = executor.findOneAndUpdate(filter, pipeline, options);
      * }</pre>
@@ -3498,6 +3528,9 @@ public final class MongoCollectionExecutor {
      * <p>The most flexible find-and-update method combining pipeline updates, custom options,
      * and type-safe deserialization. Ideal for complex atomic operations with typed results.</p>
      *
+     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
+     * documented by {@link #findOneAndUpdate(Bson, Collection)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * FindOneAndUpdateOptions options = new FindOneAndUpdateOptions()
@@ -3527,8 +3560,9 @@ public final class MongoCollectionExecutor {
      * Atomically finds and replaces a single document in a reactive manner.
      *
      * <p>Finds a document matching the filter and replaces it entirely with the replacement
-     * document. The operation is atomic, preventing race conditions. The {@code _id} field is
-     * preserved from the original document.</p>
+     * document. The operation is atomic, preventing race conditions. MongoDB retains the matched
+     * document's {@code _id} when the replacement omits it; a supplied value must equal the existing
+     * {@code _id}.</p>
      *
      * <p><b>Empty vs. present semantics:</b> on subscription, the returned {@code Mono} emits the
      * matched document <i>before</i> replacement (the default for this overload) and then
@@ -3548,7 +3582,7 @@ public final class MongoCollectionExecutor {
      * executor.findOneAndReplace(Filters.eq("_id", "missing"), replacement)
      *         .subscribe(d -> {}, e -> {}, () -> System.out.println("no match")); // prints "no match"
      *
-     * // Edge: the _id of the original document is preserved across the replacement.
+     * // Edge: omitting _id retains the original value; supplying a different _id fails.
      * }</pre>
      *
      * @param filter the query filter to find the document; must not be null
@@ -4244,38 +4278,5 @@ public final class MongoCollectionExecutor {
 
         return Flux.from(coll.mapReduce(mapFunction, reduceFunction, Document.class)).mapNotNull(toEntity(rowType));
     }
-
-    //
-    //    private String getCollectionName(final Class<?> cls) {
-    //        final String collectionName = classCollectionMapper.get(cls);
-    //
-    //        if (N.isEmpty(collectionName)) {
-    //            throw new IllegalArgumentException("No collection is mapped to class: " + cls);
-    //        }
-    //        return collectionName;
-    //    }
-
-    //
-    //    private String getObjectId(Object obj) {
-    //        String objectId = null;
-    //
-    //        try {
-    //            objectId = N.convert(String.class, Beans.getPropValue(obj, "id"));
-    //        } catch (Exception e) {
-    //            // ignore
-    //
-    //            try {
-    //                objectId = N.convert(String.class, Beans.getPropValue(obj, "objectId"));
-    //            } catch (Exception e2) {
-    //                // ignore
-    //            }
-    //        }
-    //
-    //        if (N.isEmpty(objectId)) {
-    //            throw new IllegalArgumentException("Property value of 'id' or 'objectId' can't be null or empty for update or delete");
-    //        }
-    //
-    //        return objectId;
-    //    }
 
 }

@@ -955,10 +955,16 @@ public class DynamoDBExecutorV2Test extends TestBase {
 
     @Test
     public void testFiltersInCollection_Empty() {
-        Map<String, Condition> result = Filters.in("status", List.of());
-        assertNotNull(result);
-        assertEquals(ComparisonOperator.IN, result.get("status").comparisonOperator());
-        assertEquals(0, result.get("status").attributeValueList().size());
+        assertThrows(IllegalArgumentException.class, () -> Filters.in("status", List.of()));
+    }
+
+    @Test
+    public void testFiltersInRejectsInvalidVarargsAndAttributeNames() {
+        assertThrows(IllegalArgumentException.class, () -> Filters.in("status", new Object[0]));
+        assertThrows(IllegalArgumentException.class, () -> Filters.in("status", (Object[]) null));
+        assertThrows(IllegalArgumentException.class, () -> Filters.in((String) null, "active"));
+        assertThrows(IllegalArgumentException.class, () -> Filters.in("", "active"));
+        assertThrows(IllegalArgumentException.class, () -> Filters.in("status", (java.util.Collection<?>) null));
     }
 
     @Test

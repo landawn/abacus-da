@@ -79,18 +79,18 @@ import com.mongodb.client.result.UpdateResult;
  *
  * <h2>Property &harr; Field Mapping</h2>
  * <ul>
- *   <li>Java property names map 1:1 to BSON field names by default; an annotation supported by the
- *       configured parser (e.g. {@code @Column}) can override the BSON field name.</li>
- *   <li>Conversion is delegated to the codec registry configured on the underlying
- *       {@code MongoCollection}, so any custom codecs registered there are honored.</li>
- *   <li>Embedded objects, collections and maps are converted recursively. BSON {@code null} and
- *       missing fields both surface as Java {@code null} in the mapped entity.</li>
+ *   <li>Top-level JavaBean property names are used verbatim as BSON field names, apart from the
+ *       special id mapping described above.</li>
+ *   <li>The framework's {@link MongoDBBase} mapping helpers convert the outer entity to and from a
+ *       {@link Document}. The collection's codec registry remains responsible for BSON values stored
+ *       inside that document.</li>
+ *   <li>BSON {@code null} and missing fields both surface as Java {@code null} in the mapped entity.</li>
  * </ul>
  *
  * <h2>Projection / Sort / Limit Semantics</h2>
  * <ul>
- *   <li>{@code selectPropNames} is a collection of <i>property</i> names (not BSON field names);
- *       it is translated to a projection on the corresponding mapped fields. Passing {@code null}
+ *   <li>{@code selectPropNames} is passed directly to MongoDB as a collection of BSON field names.
+ *       Passing {@code null}
  *       selects every field. The {@code _id} field is always returned unless explicitly excluded
  *       via the {@link Bson}-projection overloads.</li>
  *   <li>{@link Bson}-projection overloads pass the projection through unchanged, so any
@@ -140,7 +140,10 @@ import com.mongodb.client.result.UpdateResult;
  * MongoCollectionMapper<User> userMapper = mongoDB.collectionMapper(User.class);
  *
  * // Type-safe operations:
- * User newUser = new User("John Doe", "john@example.com", new Date());
+ * User newUser = new User();
+ * newUser.setName("John Doe");
+ * newUser.setEmail("john@example.com");
+ * newUser.setCreatedAt(new Date());
  * userMapper.insertOne(newUser);
  *
  * Optional<User> user = userMapper.findFirst(Filters.eq("email", "john@example.com"));
@@ -1304,14 +1307,16 @@ public final class MongoCollectionMapper<T> {
      * document or the stored value is BSON {@code null}, the returned {@code Nullable} is
      * <i>present-but-null</i> ({@code Nullable.of(null)}). {@link Nullable}
      * preserves this distinction: callers can use {@link Nullable#isPresent()} to check for "document
-     * found" and {@link Nullable#isNotNull()} (or {@link Nullable#orElse(Object) orElse(...)}) to check
-     * for a non-null value.</p>
+     * found" and {@link Nullable#isNotNull()} (or {@link Nullable#orElseIfNull(Object) orElseIfNull(...)})
+     * to check for, or substitute, a non-null value. Note that {@link Nullable#orElse(Object) orElse(...)}
+     * substitutes only when the {@code Nullable} is <i>empty</i>; a present-but-null value is returned
+     * as {@code null}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * MongoCollectionMapper<User> mapper = mongoDB.collectionMapper(User.class);
      * Nullable<String> email = mapper.queryForString("email", Filters.eq("userId", "user456"));
-     * String addr = email.orElse("unknown@example.com"); // value if non-null; fallback if empty OR present-but-null
+     * String addr = email.orElseIfNull("unknown@example.com"); // fallback if empty OR present-but-null
      * // No match yields empty; a matched doc with a null/absent "email" yields present-but-null:
      * Nullable<String> none = mapper.queryForString("email", Filters.eq("userId", "missing"));
      * boolean isEmpty = none.isPresent() == false; // isEmpty == true (no document matched)
@@ -1431,7 +1436,7 @@ public final class MongoCollectionMapper<T> {
      * MongoCollectionMapper<Product> mapper = mongoDB.collectionMapper(Product.class);
      * Nullable<BigDecimal> price = mapper.queryForSingleValue("price",
      *     Filters.eq("productId", "PROD999"), BigDecimal.class);
-     * BigDecimal value = price.orElse(BigDecimal.ZERO); // value if present-and-non-null; ZERO otherwise
+     * BigDecimal value = price.orElseIfNull(BigDecimal.ZERO); // ZERO if empty OR present-but-null
      * // No match yields empty; a matched doc whose "price" is null/absent yields present-but-null:
      * Nullable<BigDecimal> none = mapper.queryForSingleValue("price",
      *     Filters.eq("productId", "missing"), BigDecimal.class);
@@ -1551,7 +1556,7 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * MongoCollectionMapper<Customer> mapper = mongoDB.collectionMapper(Customer.class);
      * Collection<String> fields = Arrays.asList("name", "email", "city");
-     * // The Dataset has one column per selected field (plus _id):
+     * // The Dataset has exactly one column per selected field (no _id column):
      * Dataset ds = mapper.query(fields, Filters.eq("status", "active")); // returns a Dataset, possibly 0 rows
      * List<String> columns = ds.columnNames();
      * }</pre>
@@ -2059,8 +2064,8 @@ public final class MongoCollectionMapper<T> {
      * Inserts a single entity into the collection with additional options.
      *
      * <p>This method inserts a single entity with fine-grained control over the insert operation
-     * through InsertOneOptions. Options allow specification of write concern, bypass document
-     * validation, and other advanced insertion behaviors.</p>
+     * through InsertOneOptions, including bypassing document validation and attaching a command
+     * comment. Write concern is configured on the underlying collection, not on InsertOneOptions.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2126,8 +2131,9 @@ public final class MongoCollectionMapper<T> {
      * Inserts multiple entities into the collection with additional options.
      * 
      * <p>This method inserts multiple entities in a batch operation with fine-grained control
-     * through InsertManyOptions. Options allow configuration of ordered/unordered inserts,
-     * bypass document validation, and custom write concerns for advanced bulk insertion scenarios.</p>
+     * through InsertManyOptions. Options allow configuration of ordered/unordered inserts and
+     * bypass document validation. Write concern is configured on the underlying collection, not
+     * on InsertManyOptions.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2255,7 +2261,8 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p>This method provides fine-grained control over single entity updates through UpdateOptions.
      * Options enable upsert operations (insert if not found), array filters for nested updates,
-     * collation for language-specific matching, and custom write concerns.</p>
+     * and collation for language-specific matching. Write concern is configured on the underlying
+     * collection, not on UpdateOptions.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2287,17 +2294,24 @@ public final class MongoCollectionMapper<T> {
     /**
      * Updates a single entity using multiple update entities as a pipeline.
      * 
-     * <p>This method applies multiple update entities in sequence as an aggregation pipeline
-     * update. Each supplied item becomes a pipeline stage; plain entities contribute literal field
-     * assignments, while driver-built {@link Bson} stages may reference existing values, compute, or
-     * conditionally modify documents.</p>
+     * <p>This method applies multiple mapped entities in sequence as an aggregation-update
+     * pipeline. Each ordinary entity is converted to a literal {@code $set} stage. If the mapper's
+     * row type itself implements {@link Bson}, an operator document may pass through and must obey
+     * the stage restrictions below.</p>
+     *
+     * <p><b>Pipeline restrictions:</b> {@code objList} is sent as an aggregation-update pipeline.
+     * Only {@code $set}/{@code $addFields}, {@code $project}/{@code $unset}, and
+     * {@code $replaceRoot}/{@code $replaceWith} stages are permitted. A plain entity is converted
+     * to a {@code $set} stage. Classic update operators such as {@code $inc}, {@code $push}, and
+     * {@code $currentDate} are not valid pipeline stages.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * List<User> updatePipeline = Arrays.asList(
-     *     new User().setProcessed(true),
-     *     new User().setUpdatedAt(new Date())
-     * );
+     * User processedUpdate = new User();
+     * processedUpdate.setProcessed(true);
+     * User timestampUpdate = new User();
+     * timestampUpdate.setUpdatedAt(new Date());
+     * List<User> updatePipeline = Arrays.asList(processedUpdate, timestampUpdate);
      * UpdateResult result = mapper.updateOne(
      *     Filters.eq("status", "pending"), updatePipeline); // returns UpdateResult; getModifiedCount() in {0,1}
      * }</pre>
@@ -2320,6 +2334,9 @@ public final class MongoCollectionMapper<T> {
      * <p>This method combines pipeline-based updates with UpdateOptions for maximum flexibility.
      * Pipeline updates allow complex transformations while options provide control over upsert
      * behavior, validation, and other advanced update features.</p>
+     *
+     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
+     * documented by {@link #updateOne(Bson, Collection)}.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2381,8 +2398,8 @@ public final class MongoCollectionMapper<T> {
      * Updates all entities matching the filter with additional update options.
      * 
      * <p>This method provides fine-grained control over bulk updates through UpdateOptions.
-     * Options enable upsert operations for all matches, array filters for nested updates,
-     * and custom write concerns for consistency requirements.</p>
+     * Options enable upsert operations, array filters for nested updates, validation bypass, and
+     * collation. Write concern is configured on the underlying collection, not on UpdateOptions.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2411,17 +2428,23 @@ public final class MongoCollectionMapper<T> {
     /**
      * Updates all entities matching the filter using multiple update entities as a pipeline.
      * 
-     * <p>This method applies a pipeline of update operations to all matching documents.
-     * Each supplied item becomes a pipeline stage; plain entities contribute literal field
-     * assignments, while driver-built {@link Bson} stages may reference existing values, compute, or
-     * conditionally modify documents.</p>
+     * <p>This method applies a pipeline of mapped entities to all matching documents. Each ordinary
+     * entity is converted to a literal {@code $set} stage. If the mapper's row type itself implements
+     * {@link Bson}, an operator document may pass through and must obey the stage restrictions below.</p>
+     *
+     * <p><b>Pipeline restrictions:</b> {@code objList} is sent as an aggregation-update pipeline.
+     * Only {@code $set}/{@code $addFields}, {@code $project}/{@code $unset}, and
+     * {@code $replaceRoot}/{@code $replaceWith} stages are permitted. A plain entity is converted
+     * to a {@code $set} stage. Classic update operators such as {@code $inc}, {@code $push}, and
+     * {@code $currentDate} are not valid pipeline stages.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * List<Order> pipeline = Arrays.asList(
-     *     new Order().setProcessed(true),
-     *     new Order().setProcessedDate(new Date())
-     * );
+     * Order processedUpdate = new Order();
+     * processedUpdate.setProcessed(true);
+     * Order timestampUpdate = new Order();
+     * timestampUpdate.setProcessedDate(new Date());
+     * List<Order> pipeline = Arrays.asList(processedUpdate, timestampUpdate);
      * UpdateResult result = mapper.updateMany(
      *     Filters.eq("status", "pending"), pipeline); // returns UpdateResult; getModifiedCount() may be > 1
      * }</pre>
@@ -2444,6 +2467,9 @@ public final class MongoCollectionMapper<T> {
      * <p>This method combines pipeline-based bulk updates with UpdateOptions for maximum control.
      * It enables complex multi-stage transformations across multiple documents with fine-grained
      * control over the update behavior.</p>
+     *
+     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
+     * documented by {@link #updateMany(Bson, Collection)}.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2472,8 +2498,10 @@ public final class MongoCollectionMapper<T> {
      * Replaces a single entity identified by ObjectId string with a new entity.
      * 
      * <p>This method completely replaces an existing entity with a new one, removing all
-     * existing fields and replacing them with the fields from the replacement entity.
-     * The _id field is preserved. This differs from update operations which modify specific fields.</p>
+     * existing fields and replacing them with the fields from the replacement entity. MongoDB retains
+     * the matched document's {@code _id} when the replacement omits it; a supplied id must equal the
+     * existing value or the server rejects the replacement. This differs from update operations which
+     * modify specific fields.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2481,7 +2509,7 @@ public final class MongoCollectionMapper<T> {
      * User newUserData = new User("John Updated", "john.new@example.com", 31);
      * // Replaces the whole document (keeping _id); fields absent from newUserData are removed:
      * UpdateResult result = mapper.replaceOne(userId, newUserData); // returns UpdateResult; never null
-     * long modified = result.getModifiedCount();                    // 1 if the doc existed, else 0
+     * long modified = result.getModifiedCount();                    // 1 if the doc existed and changed, else 0
      *
      * mapper.replaceOne("bad-id", newUserData);                     // throws IllegalArgumentException
      * }</pre>
@@ -2511,7 +2539,7 @@ public final class MongoCollectionMapper<T> {
      * ObjectId id = new ObjectId("507f1f77bcf86cd799439011");
      * Product newProduct = createUpdatedProduct();
      * UpdateResult result = mapper.replaceOne(id, newProduct); // returns UpdateResult; never null
-     * long modified = result.getModifiedCount();               // 1 if the doc existed, else 0
+     * long modified = result.getModifiedCount();               // 1 if the doc existed and changed, else 0
      * }</pre>
      *
      * @param objectId the ObjectId identifying the entity to replace
@@ -2795,8 +2823,8 @@ public final class MongoCollectionMapper<T> {
      * Performs a bulk insert of entities with additional bulk write options.
      * 
      * <p>This method provides fine-grained control over bulk insert operations through
-     * BulkWriteOptions. Options enable ordered/unordered execution, bypass validation,
-     * and custom write concerns for maximum performance and flexibility.</p>
+     * BulkWriteOptions. Options enable ordered/unordered execution and validation bypass. Write
+     * concern is configured on the underlying collection, not on BulkWriteOptions.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2854,8 +2882,9 @@ public final class MongoCollectionMapper<T> {
      * Executes a bulk write operation with mixed write models and additional options.
      * 
      * <p>This method combines the flexibility of mixed bulk operations with fine-grained
-     * control through BulkWriteOptions. It enables complex batch processing with custom
-     * ordering, validation bypass, and write concern configuration.</p>
+     * control through BulkWriteOptions. It enables complex batch processing with custom ordering
+     * and validation bypass. Write concern is configured on the underlying collection, not on
+     * BulkWriteOptions.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2925,7 +2954,7 @@ public final class MongoCollectionMapper<T> {
      * User updates = new User();
      * updates.setLastSeen(new Date());
      * User updatedUser = mapper.findOneAndUpdate(
-     *     Filters.eq("email", "user@example.com"), updates, options); // returns the AFTER entity, or null if no match
+     *     Filters.eq("email", "user@example.com"), updates, options); // returns the AFTER entity; upsert(true) guarantees non-null
      * }</pre>
      *
      * @param filter the query filter to match the entity to update
@@ -2945,17 +2974,24 @@ public final class MongoCollectionMapper<T> {
     /**
      * Finds and updates a single entity atomically using a pipeline of update operations.
      *
-     * <p>This method performs atomic find-and-update using an aggregation pipeline for complex
-     * transformations. Each supplied item becomes a pipeline stage; plain entities contribute literal
-     * field assignments, while driver-built {@link Bson} stages may reference existing values, compute,
-     * or conditionally modify documents.</p>
+     * <p>This method performs atomic find-and-update using an aggregation-update pipeline. Each
+     * ordinary mapped entity is converted to a literal {@code $set} stage. If the mapper's row type
+     * itself implements {@link Bson}, an operator document may pass through and must obey the stage
+     * restrictions below.</p>
+     *
+     * <p><b>Pipeline restrictions:</b> {@code objList} is sent as an aggregation-update pipeline.
+     * Only {@code $set}/{@code $addFields}, {@code $project}/{@code $unset}, and
+     * {@code $replaceRoot}/{@code $replaceWith} stages are permitted. A plain entity is converted
+     * to a {@code $set} stage. Classic update operators such as {@code $inc}, {@code $push}, and
+     * {@code $currentDate} are not valid pipeline stages.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * List<User> updatePipeline = Arrays.asList(
-     *     new User().setVisitCount(5),  // Set visit count (literal $set assignment)
-     *     new User().setLastUpdated(new Date())
-     * );
+     * User visitUpdate = new User();
+     * visitUpdate.setVisitCount(5);  // Set visit count (literal $set assignment)
+     * User timestampUpdate = new User();
+     * timestampUpdate.setLastUpdated(new Date());
+     * List<User> updatePipeline = Arrays.asList(visitUpdate, timestampUpdate);
      * // Pre-update entity by default (ReturnDocument.BEFORE):
      * User user = mapper.findOneAndUpdate(
      *     Filters.eq("userId", "USER123"), updatePipeline); // returns the matched entity, or null if none matched
@@ -2980,6 +3016,9 @@ public final class MongoCollectionMapper<T> {
      * <p>This method combines pipeline-based updates with FindOneAndUpdateOptions for maximum
      * flexibility in atomic operations. It enables complex transformations with precise control
      * over return behavior, upsert operations, and field projections.</p>
+     *
+     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
+     * documented by {@link #findOneAndUpdate(Bson, Collection)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

@@ -53,6 +53,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * direct use.
      *
      * @param cassandraExecutor the synchronous executor to delegate to; must not be {@code null}
+     * @throws NullPointerException if {@code cassandraExecutor} is {@code null}
      */
     AsyncCassandraExecutor(final CassandraExecutor cassandraExecutor) {
         super(cassandraExecutor);

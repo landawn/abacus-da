@@ -46,9 +46,10 @@ import com.landawn.abacus.annotation.SuppressFBWarnings;
  * {@code Table#mutateRow(RowMutations)}-style APIs, pass the wrapped {@link RowMutations}
  * obtained from {@link #val()}.</p>
  *
- * <p>Only {@link Put} and {@link Delete} mutations are supported by the underlying HBase
- * {@link RowMutations}; other {@link Mutation} subtypes (such as {@code Increment} or
- * {@code Append}) should not be added.</p>
+ * <p>Only {@link Put} and {@link Delete} mutations are accepted here. HBase's {@code mutateRow} and
+ * {@code checkAndMutate} request builders reject any other {@link Mutation} subtype (such as
+ * {@code Increment} or {@code Append}) with a {@code DoNotRetryIOException} while the request is being
+ * built client-side, so this wrapper rejects it up front at {@code add(...)} time instead.</p>
  *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
@@ -57,7 +58,7 @@ import com.landawn.abacus.annotation.SuppressFBWarnings;
  * mutations.add(new Delete(Bytes.toBytes("user123")).addColumn(family, qualifier));
  * }</pre>
  *
- * @see <a href="http://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
+ * @see <a href="https://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
  * @see org.apache.hadoop.hbase.client.RowMutations
  * @see org.apache.hadoop.hbase.client.Put
  * @see org.apache.hadoop.hbase.client.Delete
@@ -221,7 +222,7 @@ public final class AnyRowMutations implements Row {
      * rm.getRow();                         // returns Bytes.toBytes("user123")
      *
      * // The same live instance is returned on every call (no defensive copy)
-     * mutations.val() == mutations.val();  // returns true
+     * assert mutations.val() == mutations.val();  // true
      *
      * // Pass the native type to an HBase API
      * // table.mutateRow(mutations.val()); // submits the batch atomically
@@ -264,12 +265,15 @@ public final class AnyRowMutations implements Row {
      *
      * @param mutation the {@link Put} or {@link Delete} to add
      * @return this AnyRowMutations instance, to allow fluent method chaining
+     * @throws IllegalArgumentException if {@code mutation} is null or is not a {@link Put} or
+     *         {@link Delete}
      * @throws IOException if {@code mutation}'s row key does not match this batch's row key
      * @see Put
      * @see Delete
      * @see #add(List)
      */
     public AnyRowMutations add(final Mutation mutation) throws IOException {
+        checkSupportedMutation(mutation);
         rowMutations.add(mutation);
 
         return this;
@@ -311,12 +315,22 @@ public final class AnyRowMutations implements Row {
      *
      * @param mutations the list of {@link Put} / {@link Delete} mutations to add
      * @return this AnyRowMutations instance, to allow fluent method chaining
+     * @throws IllegalArgumentException if {@code mutations} is null or contains a null or
+     *         unsupported mutation
      * @throws IOException if any mutation's row key does not match this batch's row key
      * @see Put
      * @see Delete
      * @see #add(Mutation)
      */
     public AnyRowMutations add(final List<? extends Mutation> mutations) throws IOException {
+        if (mutations == null) {
+            throw new IllegalArgumentException("mutations cannot be null");
+        }
+
+        for (final Mutation mutation : mutations) {
+            checkSupportedMutation(mutation);
+        }
+
         rowMutations.add(mutations);
 
         return this;
@@ -386,7 +400,7 @@ public final class AnyRowMutations implements Row {
      * mutations.hashCode();                        // returns mutations.val().hashCode()
      *
      * // Delegates to the wrapped RowMutations, so the values match exactly
-     * mutations.hashCode() == mutations.val().hashCode(); // returns true
+     * assert mutations.hashCode() == mutations.val().hashCode(); // true
      * }</pre>
      *
      * @return a hash code value for this object
@@ -412,7 +426,7 @@ public final class AnyRowMutations implements Row {
      * AnyRowMutations b = AnyRowMutations.of("user123");
      *
      * a.equals(a);                         // returns true (same instance)
-     * a.equals(b);                         // returns a.val().equals(b.val())
+     * a.equals(b);                         // returns true (the row keys are equal)
      *
      * // Edge: non-AnyRowMutations objects (including null) are never equal
      * a.equals("user123");                 // returns false
@@ -420,7 +434,7 @@ public final class AnyRowMutations implements Row {
      * }</pre>
      *
      * @param obj the reference object with which to compare
-     * @return {@code true} if this object is the same as the obj argument;
+     * @return {@code true} if {@code obj} is an {@code AnyRowMutations} for the same row key;
      *         {@code false} otherwise
      */
     @SuppressFBWarnings
@@ -436,6 +450,16 @@ public final class AnyRowMutations implements Row {
         }
 
         return false;
+    }
+
+    private static void checkSupportedMutation(final Mutation mutation) {
+        if (mutation == null) {
+            throw new IllegalArgumentException("mutation cannot be null");
+        }
+
+        if (!(mutation instanceof Put) && !(mutation instanceof Delete)) {
+            throw new IllegalArgumentException("Only Put and Delete mutations are supported: " + mutation.getClass().getName());
+        }
     }
 
     /**

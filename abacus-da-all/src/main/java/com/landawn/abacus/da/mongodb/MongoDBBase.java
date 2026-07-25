@@ -870,7 +870,7 @@ public abstract class MongoDBBase {
      * map.get("age");                                     // returns Integer 30
      *
      * // The copy is shallow: a nested Document stays a Document (which is itself a Map):
-     * map.get("address") instanceof Document;             // returns true
+     * assert map.get("address") instanceof Document;      // true
      * }</pre>
      *
      * @param doc the MongoDB Document to convert; must not be null
@@ -900,7 +900,7 @@ public abstract class MongoDBBase {
      *
      * // Preserve insertion order with a LinkedHashMap:
      * Map<String, Object> ordered = MongoDB.toMap(doc, IntFunctions.ofMap(LinkedHashMap.class));
-     * ordered instanceof LinkedHashMap;                   // returns true
+     * assert ordered instanceof LinkedHashMap;            // true
      *
      * // Sort keys with a TreeMap (this supplier ignores the size hint):
      * Map<String, Object> sorted = MongoDB.toMap(doc, size -> new TreeMap<>());
@@ -1003,7 +1003,7 @@ public abstract class MongoDBBase {
      * List<User> users = MongoDB.toList(userDocs, User.class);
      *
      * // Documents requested as Map are returned unchanged (a Document is a Map):
-     * List<Map<String, Object>> userMaps = MongoDB.toList(userDocs, Map.class);
+     * List<Map> userMaps = MongoDB.toList(userDocs, Map.class);   // Map.class is a raw Class<Map>
      *
      * // A single-field projection can be read straight into scalars:
      * // documents [{"name": "alice"}, {"name": "bob"}]  ->  ["alice", "bob"]
@@ -1217,7 +1217,7 @@ public abstract class MongoDBBase {
      * userData.getColumn("name");                         // the "name" column, one value per row
      *
      * userData.println();        // prints the data as a table
-     * userData.toCsv("users.csv");
+     * userData.toCsv(new File("users.csv"));
      * }</pre>
      *
      * @param findIterable the MongoDB query result to extract data from
@@ -1578,7 +1578,7 @@ public abstract class MongoDBBase {
      * firstAdmin.isPresent();   // true if a matching user was found
      *
      * // Convert rows to Maps:
-     * try (Stream<Map<String, Object>> mapStream = MongoDB.stream(collection.find().iterator(), Map.class)) {
+     * try (Stream<Map> mapStream = MongoDB.stream(collection.find().iterator(), Map.class)) {
      *     long premium = mapStream.filter(map -> "premium".equals(map.get("tier"))).count();
      * }
      *

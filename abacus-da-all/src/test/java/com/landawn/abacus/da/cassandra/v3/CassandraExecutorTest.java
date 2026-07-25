@@ -103,6 +103,11 @@ public class CassandraExecutorTest extends TestBase {
     }
 
     @Test
+    public void test_constructor_rejectsNullSession() {
+        assertThrows(NullPointerException.class, () -> new CassandraExecutor(null));
+    }
+
+    @Test
     public void test_sync() {
         Users user = createUser();
 
@@ -1236,24 +1241,27 @@ public class CassandraExecutorTest extends TestBase {
     }
 
     @Test
-    public void test_v3_UDTCodec_format_value_returnsJson() {
+    public void test_v3_UDTCodec_format_value_returnsCqlLiteral() {
         UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
         Users.Name n = new Users.Name();
         n.setFirstName("a3");
         n.setLastName("b3");
-        String json = codec.format(n);
-        assertNotNull(json);
-        assertTrue(json.contains("a3"));
+        String literal = codec.format(n);
+        assertNotNull(literal);
+        assertTrue(literal.startsWith("{") && literal.endsWith("}"), literal);
+        assertTrue(literal.contains("a3"));
     }
 
     @Test
-    public void test_v3_UDTCodec_parse_json_returnsObject() {
+    public void test_v3_UDTCodec_parse_cqlLiteral_returnsObject() {
         UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
-        String json = "{\"firstname\":\"x3\",\"lastname\":\"y3\"}";
-        Users.Name n = codec.parse(json);
+        Users.Name source = new Users.Name();
+        source.setFirstName("x3");
+        source.setLastName("y3");
+        Users.Name n = codec.parse(codec.format(source));
         assertNotNull(n);
-        // Field names may or may not match depending on JSON parser case sensitivity.
-        // Just verify the parse did not return null.
+        assertEquals("x3", n.getFirstName());
+        assertEquals("y3", n.getLastName());
     }
 
     @Test

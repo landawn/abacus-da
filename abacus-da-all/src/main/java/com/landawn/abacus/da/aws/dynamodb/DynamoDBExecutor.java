@@ -224,17 +224,17 @@ public final class DynamoDBExecutor {
     /**
      * Constructs a new DynamoDBExecutor with specified DynamoDB client and mapper configuration.
      *
-     * <p>This constructor allows customization of DynamoDB mapping behavior including naming conventions,
-     * table name overrides, and other mapper-specific settings while using the default async executor.
+     * <p>This constructor allows customization of DynamoDB mapping behavior including save behavior,
+     * read consistency, table-name resolution, and other mapper-specific settings while using the default async executor.
      * The configuration controls how Java objects are mapped to and from DynamoDB items.</p>
      *
      * <p><b>Configuration Options:</b></p>
      * <ul>
-     * <li>Naming policy for attribute name conversion</li>
-     * <li>Table name overrides and prefixes</li>
-     * <li>Consistent read settings</li>
-     * <li>Pagination and batch size limits</li>
-     * <li>Type converter customization</li>
+     * <li>Save behavior and consistent-read settings</li>
+     * <li>Table-name overrides, prefixes, and resolvers</li>
+     * <li>Pagination loading strategy</li>
+     * <li>Conversion schema and type-converter factory</li>
+     * <li>Request metrics and batch load/write retry strategies</li>
      * </ul>
      *
      * <p><b>Usage Examples:</b></p>
@@ -317,7 +317,7 @@ public final class DynamoDBExecutor {
      * <ul>
      * <li>Advanced table management operations (create, delete, describe tables)</li>
      * <li>Index management and global secondary index operations</li>
-     * <li>Stream processing and change data capture</li>
+     * <li>Low-level conditional, batch, and transactional requests</li>
      * <li>Custom request configurations not supported by executor</li>
      * <li>AWS SDK v1 specific features and optimizations</li>
      * </ul>
@@ -354,8 +354,8 @@ public final class DynamoDBExecutor {
      * <ul>
      * <li>Object-to-item mapping using annotations</li>
      * <li>Automatic type conversion for primitives, collections, and custom types</li>
-     * <li>Support for inheritance and polymorphism</li>
-     * <li>Batch operations with automatic pagination</li>
+     * <li>Annotated nested/document type mapping</li>
+     * <li>Paginated query/scan result lists and batch load/write helpers</li>
      * <li>Optimistic locking with version fields</li>
      * </ul>
      *
@@ -367,8 +367,10 @@ public final class DynamoDBExecutor {
      * User user = mapper.load(User.class, "userId123");
      * mapper.save(user);
      *
-     * // Batch operations
-     * List<User> users = mapper.batchLoad(userIds);
+     * // Batch operations take annotated key objects and group results by table name
+     * User key = new User();
+     * key.setUserId("userId123");
+     * Map<String, List<Object>> usersByTable = mapper.batchLoad(List.of(key));
      * }</pre>
      *
      * @return the DynamoDBMapper instance configured with this executor's settings, never null
@@ -707,7 +709,7 @@ public final class DynamoDBExecutor {
      * );
      * // Results in three entries:
      * //   "userId"    -> AttributeValue with S = "user123"
-     * //   "timestamp" -> AttributeValue with N = "1640995200000"
+     * //   "timestamp" -> AttributeValue with N = the current epoch-millisecond value
      * //   "status"    -> AttributeValue with S = "ACTIVE"
      * }</pre>
      *
@@ -1251,7 +1253,9 @@ public final class DynamoDBExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Map<String, AttributeValue> item = // from DynamoDB
+     * Map<String, AttributeValue> item = new HashMap<>();
+     * item.put("name", new AttributeValue().withS("Alice"));
+     * item.put("age", new AttributeValue().withN("30"));
      * Map<String, Object> map = toMap(item);
      * String name = (String) map.get("name");
      * int age = Integer.parseInt((String) map.get("age")); // numbers are returned as Strings
@@ -1272,8 +1276,9 @@ public final class DynamoDBExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Map<String, AttributeValue> item = // from DynamoDB
-     * Map<String, Object> treeMap = toMap(item, TreeMap::new);
+     * Map<String, AttributeValue> item = new HashMap<>();
+     * item.put("name", new AttributeValue().withS("Alice"));
+     * Map<String, Object> treeMap = toMap(item, IntFunctions.ofTreeMap());
      * }</pre>
      *
      * @param item the DynamoDB item to convert
@@ -1991,7 +1996,8 @@ public final class DynamoDBExecutor {
      *     .withTableName("Users")
      *     .withKey(asKey("userId", "user123"))
      *     .withConsistentRead(true)
-     *     .withProjectionExpression("userId, name, email");
+     *     .withProjectionExpression("userId, #name, email")
+     *     .withExpressionAttributeNames(Map.of("#name", "name"));
      * Map<String, Object> item = executor.getItem(request);
      * }</pre>
      *
@@ -2698,7 +2704,8 @@ public final class DynamoDBExecutor {
      * <pre>{@code
      * QueryRequest request = new QueryRequest()
      *     .withTableName("Sales")
-     *     .withKeyConditionExpression("region = :region")
+     *     .withKeyConditionExpression("#region = :region")
+     *     .withExpressionAttributeNames(Map.of("#region", "region"))
      *     .withExpressionAttributeValues(Map.of(
      *         ":region", toAttributeValue("US-WEST")
      *     ));
@@ -2708,7 +2715,8 @@ public final class DynamoDBExecutor {
      * }</pre>
      *
      * @param queryRequest the query parameters. Must not be {@code null}.
-     * @return a list of maps representing all query results, never {@code null}
+     * @return the query items materialized according to the pagination behavior of
+     *         {@link #list(QueryRequest, Class)}, never {@code null}
      */
     public List<Map<String, Object>> list(final QueryRequest queryRequest) {
         return list(queryRequest, Clazz.PROPS_MAP);
@@ -2733,7 +2741,8 @@ public final class DynamoDBExecutor {
      * <pre>{@code
      * QueryRequest request = new QueryRequest()
      *     .withTableName("Sales")
-     *     .withKeyConditionExpression("region = :region")
+     *     .withKeyConditionExpression("#region = :region")
+     *     .withExpressionAttributeNames(Map.of("#region", "region"))
      *     .withExpressionAttributeValues(Map.of(
      *         ":region", toAttributeValue("US-WEST")
      *     ));
@@ -2766,53 +2775,6 @@ public final class DynamoDBExecutor {
         return res;
     }
 
-    //    /**
-    //     *
-    //     * @param targetClass <code>Map</code> or entity class with getter/setter method.
-    //     * @param queryRequest
-    //     * @param pageOffset
-    //     * @param pageCount
-    //     * @return
-    //     * @see <a href="http://docs.aws.amazon.com/amazondynamodb/latest/developerguide/Query.html#Query.Pagination">Query.Pagination</a>
-    //     */
-    //    public <T> List<T> list(final QueryRequest queryRequest, int pageOffset, int pageCount, final Class<T> targetClass) {
-    //        N.checkArgument(pageOffset >= 0 && pageCount >= 0, "'pageOffset' and 'pageCount' can't be negative");
-    //
-    //        final List<T> res = new ArrayList<>();
-    //        QueryRequest newQueryRequest = queryRequest;
-    //        QueryResult queryResult = null;
-    //
-    //        do {
-    //            if (queryResult != null && N.notEmpty(queryResult.getLastEvaluatedKey())) {
-    //                if (newQueryRequest == queryRequest) {
-    //                    newQueryRequest = queryRequest.clone();
-    //                }
-    //
-    //                newQueryRequest.setExclusiveStartKey(queryResult.getLastEvaluatedKey());
-    //            }
-    //
-    //            queryResult = dynamoDB.query(newQueryRequest);
-    //        } while (pageOffset-- > 0 && N.notEmpty(queryResult.getItems()) && N.notEmpty(queryResult.getLastEvaluatedKey()));
-    //
-    //        if (pageOffset >= 0 || pageCount-- <= 0) {
-    //            return res;
-    //        } else {
-    //            res.addAll(toList(targetClass, queryResult));
-    //        }
-    //
-    //        while (pageCount-- > 0 && N.notEmpty(queryResult.getLastEvaluatedKey())) {
-    //            if (newQueryRequest == queryRequest) {
-    //                newQueryRequest = queryRequest.clone();
-    //            }
-    //
-    //            newQueryRequest.setExclusiveStartKey(queryResult.getLastEvaluatedKey());
-    //            queryResult = dynamoDB.query(newQueryRequest);
-    //            res.addAll(toList(targetClass, queryResult));
-    //        }
-    //
-    //        return res;
-    //    }
-
     /**
      * Executes a DynamoDB query and returns results as a Dataset for tabular analysis.
      *
@@ -2833,7 +2795,8 @@ public final class DynamoDBExecutor {
      * <pre>{@code
      * QueryRequest request = new QueryRequest()
      *     .withTableName("Sales")
-     *     .withKeyConditionExpression("region = :region")
+     *     .withKeyConditionExpression("#region = :region")
+     *     .withExpressionAttributeNames(Map.of("#region", "region"))
      *     .withExpressionAttributeValues(Map.of(
      *         ":region", toAttributeValue("US-WEST")
      *     ));
@@ -2856,8 +2819,8 @@ public final class DynamoDBExecutor {
      * materialized.</p>
      *
      * @param queryRequest the query parameters. Must not be {@code null}.
-     * @return a {@link Dataset} containing all query results in tabular format, never {@code null};
-     *         empty when the query matches nothing
+     * @return a {@link Dataset} containing the query results materialized according to the
+     *         pagination behavior above, never {@code null}; empty when the query matches nothing
      * @throws NullPointerException if queryRequest is null
      * @see #query(QueryRequest, Class)
      */
@@ -2871,14 +2834,16 @@ public final class DynamoDBExecutor {
      * <p>This method performs a Query operation and converts results to a {@link Dataset} of the
      * specified target class. It supports both maps and entity classes with getter/setter methods
      * for attribute access, allowing you to work with structured data in a tabular format.
-     * Note that a {@code Limit} set on the request acts as a page size only — auto-pagination
-     * still fetches ALL matching rows.</p>
+     * Note that, when the caller has not supplied an {@code exclusiveStartKey}, a {@code Limit}
+     * acts as a page size only and auto-pagination still fetches all matching rows. Supplying an
+     * exclusive start key requests one page.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * QueryRequest request = new QueryRequest()
      *     .withTableName("Sales")
-     *     .withKeyConditionExpression("region = :region")
+     *     .withKeyConditionExpression("#region = :region")
+     *     .withExpressionAttributeNames(Map.of("#region", "region"))
      *     .withExpressionAttributeValues(Map.of(
      *         ":region", toAttributeValue("US-WEST")
      *     ));
@@ -2890,7 +2855,8 @@ public final class DynamoDBExecutor {
      * @param queryRequest the query parameters. Must not be {@code null}.
      * @param targetClass the class to convert retrieved items to; if {@code null} or a {@link Map} type,
      *                    results are extracted as raw attribute maps
-     * @return a {@link Dataset} containing all query results in tabular format
+     * @return a {@link Dataset} containing query results in tabular format; all pages are
+     *         materialized only when the request has no exclusive start key
      * @throws NullPointerException if queryRequest is null
      */
     public Dataset query(final QueryRequest queryRequest, final Class<?> targetClass) {
@@ -2920,48 +2886,6 @@ public final class DynamoDBExecutor {
         }
     }
 
-    //    public Dataset query(final QueryRequest queryRequest, int pageOffset, int pageCount, final Class<?> targetClass) {
-    //        return N.newDataset(find(targetClass, queryRequest, pageOffset, pageCount));
-    //    }
-
-    //    public <T> List<T> scan(final ScanRequest scanRequest, int pageOffset, int pageCount, final Class<T> targetClass) {
-    //        N.checkArgument(pageOffset >= 0 && pageCount >= 0, "'pageOffset' and 'pageCount' can't be negative");
-    //
-    //        final List<T> res = new ArrayList<>();
-    //        ScanRequest newQueryRequest = scanRequest;
-    //        ScanResult queryResult = null;
-    //
-    //        do {
-    //            if (queryResult != null && N.notEmpty(queryResult.getLastEvaluatedKey())) {
-    //                if (newQueryRequest == scanRequest) {
-    //                    newQueryRequest = scanRequest.clone();
-    //                }
-    //
-    //                newQueryRequest.setExclusiveStartKey(queryResult.getLastEvaluatedKey());
-    //            }
-    //
-    //            queryResult = dynamoDB.scan(newQueryRequest);
-    //        } while (pageOffset-- > 0 && N.notEmpty(queryResult.getItems()) && N.notEmpty(queryResult.getLastEvaluatedKey()));
-    //
-    //        if (pageOffset >= 0 || pageCount-- <= 0) {
-    //            return res;
-    //        } else {
-    //            res.addAll(toList(targetClass, queryResult));
-    //        }
-    //
-    //        while (pageCount-- > 0 && N.notEmpty(queryResult.getLastEvaluatedKey())) {
-    //            if (newQueryRequest == scanRequest) {
-    //                newQueryRequest = scanRequest.clone();
-    //            }
-    //
-    //            newQueryRequest.setExclusiveStartKey(queryResult.getLastEvaluatedKey());
-    //            queryResult = dynamoDB.scan(newQueryRequest);
-    //            res.addAll(toList(targetClass, queryResult));
-    //        }
-    //
-    //        return res;
-    //    }
-
     /**
      * Creates a Stream of maps for DynamoDB query results with automatic pagination.
      *
@@ -2982,7 +2906,8 @@ public final class DynamoDBExecutor {
      * <pre>{@code
      * QueryRequest request = new QueryRequest()
      *     .withTableName("Sales")
-     *     .withKeyConditionExpression("region = :region")
+     *     .withKeyConditionExpression("#region = :region")
+     *     .withExpressionAttributeNames(Map.of("#region", "region"))
      *     .withExpressionAttributeValues(Map.of(
      *         ":region", toAttributeValue("US-WEST")
      *     ));
@@ -3024,7 +2949,8 @@ public final class DynamoDBExecutor {
      * <pre>{@code
      * QueryRequest request = new QueryRequest()
      *     .withTableName("Users")
-     *     .withKeyConditionExpression("status = :status")
+     *     .withKeyConditionExpression("#status = :status")
+     *     .withExpressionAttributeNames(Map.of("#status", "status"))
      *     .withExpressionAttributeValues(Map.of(
      *         ":status", toAttributeValue("ACTIVE")
      *     ));
@@ -3361,7 +3287,8 @@ public final class DynamoDBExecutor {
      *         ":low", toAttributeValue(100),
      *         ":high", toAttributeValue(500)
      *     ))
-     *     .withProjectionExpression("productId, name, price")
+     *     .withProjectionExpression("productId, #name, price")
+     *     .withExpressionAttributeNames(Map.of("#name", "name"))
      *     .withLimit(50);   // Page size
      *
      * try (Stream<Product> products = executor.scan(request, Product.class)) {
@@ -3632,7 +3559,8 @@ public final class DynamoDBExecutor {
          * GetItemRequest request = new GetItemRequest()
          *     .withKey(key)
          *     .withConsistentRead(true)
-         *     .withProjectionExpression("userId, name, email")
+         *     .withProjectionExpression("userId, #name, email")
+         *     .withExpressionAttributeNames(Map.of("#name", "name"))
          *     .withReturnConsumedCapacity(ReturnConsumedCapacity.TOTAL);
          * User retrieved = mapper.getItem(request);
          * }</pre>
@@ -4065,12 +3993,12 @@ public final class DynamoDBExecutor {
         }
 
         /**
-         * Executes a query operation and returns all matching items as a list.
+         * Executes a query operation and returns matching items as a list.
          *
          * <p>This method performs a Query operation to find items based on primary key and optionally
-         * sort key conditions. All matching items are automatically loaded into memory, making this
-         * suitable for results that fit comfortably in memory. For large result sets, consider using
-         * the {@link #stream(QueryRequest)} method instead.</p>
+         * sort key conditions. When the request has no exclusive start key, all pages are loaded
+         * into memory; an explicit exclusive start key materializes one page. For large result sets,
+         * consider using the {@link #stream(QueryRequest)} method instead.</p>
          *
          * <p>If no table name is specified in the request, the mapper's configured table name is used.</p>
          *
@@ -4299,12 +4227,12 @@ public final class DynamoDBExecutor {
          * ScanRequest request = new ScanRequest()
          *     .withLimit(100)
          *     .withFilterExpression("age > :min AND #status = :active")
-         *     .withExpressionAttributeNames(Map.of("#status", "status"))
+         *     .withExpressionAttributeNames(Map.of("#status", "status", "#name", "name"))
          *     .withExpressionAttributeValues(Map.of(
          *         ":min", new AttributeValue().withN("18"),
          *         ":active", new AttributeValue("ACTIVE")
          *     ))
-         *     .withProjectionExpression("id, name, email")
+         *     .withProjectionExpression("id, #name, email")
          *     .withReturnConsumedCapacity(ReturnConsumedCapacity.TOTAL);
          *
          * try (Stream<User> stream = mapper.scan(request)) {
@@ -4750,6 +4678,7 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to check
          * @param attrValues variable number of values to match against
          * @return a Map containing the IN condition for use in DynamoDB operations
+         * @throws IllegalArgumentException if {@code attrName} or {@code attrValues} is null or empty
          */
         public static Map<String, Condition> in(final String attrName, final Object... attrValues) {
             final Map<String, Condition> result = new LinkedHashMap<>(1);
@@ -4773,6 +4702,7 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to check
          * @param attrValues collection of values to match against
          * @return a Map containing the IN condition for use in DynamoDB operations
+         * @throws IllegalArgumentException if {@code attrName} or {@code attrValues} is null or empty
          */
         public static Map<String, Condition> in(final String attrName, final Collection<?> attrValues) {
             final Map<String, Condition> result = new LinkedHashMap<>(1);
@@ -4783,6 +4713,9 @@ public final class DynamoDBExecutor {
         }
 
         static void in(final Map<String, Condition> output, final String attrName, final Object... attrValues) {
+            N.checkArgNotEmpty(attrName, "attrName");
+            N.checkArgNotEmpty(attrValues, "attrValues");
+
             final AttributeValue[] attributeValueList = new AttributeValue[attrValues.length];
 
             for (int i = 0, len = attrValues.length; i < len; i++) {
@@ -4795,6 +4728,9 @@ public final class DynamoDBExecutor {
         }
 
         static void in(final Map<String, Condition> output, final String attrName, final Collection<?> attrValues) {
+            N.checkArgNotEmpty(attrName, "attrName");
+            N.checkArgNotEmpty(attrValues, "attrValues");
+
             final AttributeValue[] attributeValueList = new AttributeValue[attrValues.size()];
 
             int i = 0;
@@ -5128,14 +5064,14 @@ public final class DynamoDBExecutor {
          * Map<String, Condition> filter = Filters.builder().in("status", "active", "pending").build();
          * // filter.get("status") -> Condition with IN operator and two values ["active", "pending"]
          *
-         * // Passing no values yields an IN condition with an empty value list.
-         * Map<String, Condition> empty = Filters.builder().in("status").build();
-         * // empty.get("status").getAttributeValueList() is an empty list
+         * // DynamoDB requires at least one operand for IN.
+         * Filters.builder().in("status"); // throws IllegalArgumentException
          * }</pre>
          *
          * @param attrName the name of the attribute to check
          * @param attrValues variable number of values to match against
          * @return this builder for method chaining
+         * @throws IllegalArgumentException if {@code attrName} or {@code attrValues} is null or empty
          */
         public ConditionBuilder in(final String attrName, final Object... attrValues) {
             Filters.in(condMap, attrName, attrValues);
@@ -5157,6 +5093,7 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to check
          * @param attrValues collection of values to match against
          * @return this builder for method chaining
+         * @throws IllegalArgumentException if {@code attrName} or {@code attrValues} is null or empty
          */
         public ConditionBuilder in(final String attrName, final Collection<?> attrValues) {
             Filters.in(condMap, attrName, attrValues);

@@ -1690,7 +1690,7 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(dataset -> exportToCSV(dataset));
      * }</pre>
      *
-     * @param selectPropNames the collection of property names to include in the projection
+     * @param selectPropNames the collection of BSON field names to include in the projection
      * @param filter the query filter to match documents (must not be null)
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing projected results
@@ -1715,7 +1715,7 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(dataset -> displayBookList(dataset));
      * }</pre>
      *
-     * @param selectPropNames the collection of property names to include in the projection
+     * @param selectPropNames the collection of BSON field names to include in the projection
      * @param filter the query filter to match documents (must not be null)
      * @param offset the number of documents to skip
      * @param count the maximum number of documents to return
@@ -1743,7 +1743,7 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(dataset -> displayTopStudents(dataset));
      * }</pre>
      *
-     * @param selectPropNames the collection of property names to include in the projection
+     * @param selectPropNames the collection of BSON field names to include in the projection
      * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification
      * @param rowType the Class object representing the row type
@@ -1770,7 +1770,7 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(dataset -> displayProductCatalog(dataset));
      * }</pre>
      *
-     * @param selectPropNames the collection of property names to include in the projection
+     * @param selectPropNames the collection of BSON field names to include in the projection
      * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification
      * @param offset the number of documents to skip
@@ -1936,7 +1936,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to map each document to
-     * @param selectPropNames the collection of property names to include in the projection
+     * @param selectPropNames the collection of BSON field names to include in the projection
      * @param filter the query filter to match documents (must not be null)
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a projected typed Stream
@@ -1962,7 +1962,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to map each document to
-     * @param selectPropNames the collection of property names to include in the projection
+     * @param selectPropNames the collection of BSON field names to include in the projection
      * @param filter the query filter to match documents (must not be null)
      * @param offset the number of documents to skip
      * @param count the maximum number of documents to stream
@@ -1991,7 +1991,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to map each document to
-     * @param selectPropNames the collection of property names to include in the projection
+     * @param selectPropNames the collection of BSON field names to include in the projection
      * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification
      * @param rowType the Class object representing the row type
@@ -2019,7 +2019,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to map each document to
-     * @param selectPropNames the collection of property names to include in the projection
+     * @param selectPropNames the collection of BSON field names to include in the projection
      * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification
      * @param offset the number of documents to skip
@@ -2218,7 +2218,7 @@ public final class AsyncMongoCollectionExecutor {
      * async.insertOne(userDoc)
      *      .thenRunAsync(result -> {
      *          System.out.println("User inserted successfully");
-     *          // The server-assigned _id is exposed via the result
+     *          // The generated _id (created by the driver when absent) is exposed via the result
      *          BsonValue userId = result.getInsertedId();
      *      });
      *
@@ -2331,8 +2331,9 @@ public final class AsyncMongoCollectionExecutor {
      * Asynchronously updates a single document identified by ObjectId string.
      *
      * <p>This method performs a non-blocking update operation on the document with the specified
-     * ObjectId. The update can be a replacement document or contain update operators like $set,
-     * $push, $inc, etc. Only the first matching document is updated.</p>
+     * ObjectId. A plain document is wrapped in {@code $set}; an explicit update document can contain
+     * operators such as {@code $set}, {@code $push}, or {@code $inc}. Only the first matching document
+     * is updated. Use {@code replaceOne} to replace the entire document.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2349,7 +2350,9 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param objectId the string representation of the ObjectId to identify the document
-     * @param update the update specification (can be update operators or replacement document)
+     * @param update the update specification; can be Bson/Document/{@code Map<String, Object>}/entity class
+     *               with getter/setter methods. A non-operator payload is wrapped in {@code $set} (use
+     *               {@code replaceOne} to replace the whole document)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if {@code objectId} is null, empty, or not a valid hex ObjectId, or {@code update} is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
@@ -2365,8 +2368,10 @@ public final class AsyncMongoCollectionExecutor {
      * Asynchronously updates a single document identified by ObjectId.
      *
      * <p>This method performs a non-blocking update operation on the document with the specified
-     * ObjectId. The update can be a replacement document or contain update operators. This variant
-     * uses the native ObjectId type for better performance compared to string conversion.</p>
+     * ObjectId. A plain document is wrapped in {@code $set}; an explicit update document can contain
+     * operators such as {@code $set}, {@code $push}, or {@code $inc}. Use {@code replaceOne} to replace
+     * the entire document. This variant uses the native ObjectId type for better performance compared
+     * to string conversion.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2385,7 +2390,9 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param objectId the ObjectId to identify the document to update
-     * @param update the update specification (can be update operators or replacement document)
+     * @param update the update specification; can be Bson/Document/{@code Map<String, Object>}/entity class
+     *               with getter/setter methods. A non-operator payload is wrapped in {@code $set} (use
+     *               {@code replaceOne} to replace the whole document)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if objectId or update is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
@@ -2419,7 +2426,9 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param filter the query filter to select the document to update
-     * @param update the update specification (can be update operators or replacement document)
+     * @param update the update specification; can be Bson/Document/{@code Map<String, Object>}/entity class
+     *               with getter/setter methods. A non-operator payload is wrapped in {@code $set} (use
+     *               {@code replaceOne} to replace the whole document)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if filter or update is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
@@ -2464,6 +2473,12 @@ public final class AsyncMongoCollectionExecutor {
      * <p>Applies multiple update operations from a collection to the first matching document.
      * Useful for building dynamic updates from multiple sources.</p>
      *
+     * <p><b>Pipeline restrictions:</b> {@code objList} is sent as an aggregation-update pipeline.
+     * Only {@code $set}/{@code $addFields}, {@code $project}/{@code $unset}, and
+     * {@code $replaceRoot}/{@code $replaceWith} stages are permitted. A plain entity, map, or
+     * non-operator document is converted to a {@code $set} stage. Classic update operators such as
+     * {@code $inc}, {@code $push}, and {@code $currentDate} are not valid pipeline stages.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<Bson> updates = Arrays.asList(
@@ -2490,6 +2505,9 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>Applies multiple update operations from a collection to the first matching document,
      * allowing for additional options like upsert or collation.</p>
+     *
+     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
+     * documented by {@link #updateOne(Bson, Collection)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2538,7 +2556,9 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param filter the query filter to select documents to update
-     * @param update the update specification (can be update operators or replacement document)
+     * @param update the update specification; can be Bson/Document/{@code Map<String, Object>}/entity class
+     *               with getter/setter methods. A non-operator payload is wrapped in {@code $set} (use
+     *               {@code replaceOne} to replace the whole document)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if filter or update is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
@@ -2555,7 +2575,8 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method performs a non-blocking update operation on all documents that match the
      * provided filter criteria, allowing for additional options such as upsert, collation,
-     * and write concern.</p>
+     * validation bypass, and array filters. Write concern is configured on the underlying
+     * collection, not on UpdateOptions.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2565,7 +2586,9 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param filter the query filter to select documents to update
-     * @param update the update specification (can be update operators or replacement document)
+     * @param update the update specification; can be Bson/Document/{@code Map<String, Object>}/entity class
+     *               with getter/setter methods. A non-operator payload is wrapped in {@code $set} (use
+     *               {@code replaceOne} to replace the whole document)
      * @param options the options to apply to the update operation (null uses defaults)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if filter or update is null (propagated through future)
@@ -2581,6 +2604,12 @@ public final class AsyncMongoCollectionExecutor {
      * <p>Applies multiple update operations from a collection to all matching documents.
      * This is useful for bulk updates where the same set of operations needs to be applied
      * to multiple documents.</p>
+     *
+     * <p><b>Pipeline restrictions:</b> {@code objList} is sent as an aggregation-update pipeline.
+     * Only {@code $set}/{@code $addFields}, {@code $project}/{@code $unset}, and
+     * {@code $replaceRoot}/{@code $replaceWith} stages are permitted. A plain entity, map, or
+     * non-operator document is converted to a {@code $set} stage. Classic update operators such as
+     * {@code $inc}, {@code $push}, and {@code $currentDate} are not valid pipeline stages.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2607,6 +2636,9 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>Applies multiple update operations from a collection to all matching documents, allowing
      * for additional options like upsert or collation settings.</p>
+     *
+     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
+     * documented by {@link #updateMany(Bson, Collection)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2635,8 +2667,9 @@ public final class AsyncMongoCollectionExecutor {
      * Asynchronously replaces a single document by its ObjectId string representation.
      *
      * <p>This method performs a non-blocking replace operation on the document with the specified
-     * ObjectId. The entire document (except the _id field) is replaced with the new document.
-     * If no document exists with the given ObjectId, no operation is performed.</p>
+     * ObjectId. The entire document is replaced. When the replacement omits {@code _id}, MongoDB
+     * retains the matched document's value; a supplied {@code _id} must equal that value. If no
+     * document exists with the given ObjectId, no operation is performed.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2646,7 +2679,8 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param objectId the string representation of the ObjectId to identify the document
-     * @param replacement the replacement document (will preserve the original _id)
+     * @param replacement the replacement document; an omitted {@code _id} is retained, while a supplied
+     *                    value must equal the matched document's {@code _id}
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if objectId is null, empty, or not a valid hex ObjectId (propagated through future)
      * @throws IllegalArgumentException if replacement is null (propagated through future)
@@ -2663,8 +2697,9 @@ public final class AsyncMongoCollectionExecutor {
      * Asynchronously replaces a single document by its ObjectId.
      *
      * <p>This method performs a non-blocking replace operation on the document with the specified
-     * ObjectId. The entire document (except the _id field) is replaced with the new document.
-     * If no document exists with the given ObjectId, no operation is performed.</p>
+     * ObjectId. The entire document is replaced. When the replacement omits {@code _id}, MongoDB
+     * retains the matched document's value; a supplied {@code _id} must equal that value. If no
+     * document exists with the given ObjectId, no operation is performed.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2674,7 +2709,8 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param objectId the ObjectId to identify the document for replacement
-     * @param replacement the replacement document (will preserve the original _id)
+     * @param replacement the replacement document; an omitted {@code _id} is retained, while a supplied
+     *                    value must equal the matched document's {@code _id}
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if objectId is null (propagated through future)
      * @throws IllegalArgumentException if replacement is null (propagated through future)
@@ -2692,7 +2728,8 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method performs a non-blocking replace operation on the first document that matches
      * the provided filter criteria. Unlike update operations that modify specific fields, replace
-     * operations substitute the entire document (except for the _id field) with the new document.</p>
+     * operations substitute the entire document. An omitted {@code _id} is retained; a supplied value
+     * must equal the matched document's {@code _id}.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2715,7 +2752,8 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param filter the query filter to select the document to replace
-     * @param replacement the replacement document (will preserve the original _id)
+     * @param replacement the replacement document; an omitted {@code _id} is retained, while a supplied
+     *                    value must equal the matched document's {@code _id}
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if filter or replacement is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
@@ -2732,7 +2770,8 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method performs a non-blocking replace operation with additional control through
      * ReplaceOptions. You can specify whether to upsert (insert if no match found) and set
-     * other replacement behaviors. The operation replaces the entire document except the _id field.</p>
+     * other replacement behaviors. The operation replaces the entire document. For a matched document,
+     * an omitted {@code _id} is retained and a supplied value must equal the existing {@code _id}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2743,7 +2782,8 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @param filter the query filter to select the document to replace
-     * @param replacement the replacement document (will preserve the original _id)
+     * @param replacement the replacement document; for a match, an omitted {@code _id} is retained while
+     *                    a supplied value must equal the matched document's {@code _id}
      * @param options the options to apply to the replace operation (null uses defaults)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if filter or replacement is null (propagated through future)
@@ -3166,6 +3206,12 @@ public final class AsyncMongoCollectionExecutor {
      * update operations are combined from a collection. Useful when building dynamic updates
      * from multiple sources or conditions.</p>
      *
+     * <p><b>Pipeline restrictions:</b> {@code objList} is sent as an aggregation-update pipeline.
+     * Only {@code $set}/{@code $addFields}, {@code $project}/{@code $unset}, and
+     * {@code $replaceRoot}/{@code $replaceWith} stages are permitted. A plain entity, map, or
+     * non-operator document is converted to a {@code $set} stage. Classic update operators such as
+     * {@code $inc}, {@code $push}, and {@code $currentDate} are not valid pipeline stages.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * List<Bson> updates = Arrays.asList(Updates.set("status", "active"), Updates.set("modified", new Date()));
@@ -3190,6 +3236,9 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method performs a non-blocking atomic find-and-update operation with multiple
      * update operations and automatic deserialization to the specified type.</p>
+     *
+     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
+     * documented by {@link #findOneAndUpdate(Bson, Collection)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3216,6 +3265,9 @@ public final class AsyncMongoCollectionExecutor {
      *
      * <p>This method provides full control over an atomic find-and-update operation with
      * multiple update operations combined from a collection and custom options.</p>
+     *
+     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
+     * documented by {@link #findOneAndUpdate(Bson, Collection)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3244,6 +3296,9 @@ public final class AsyncMongoCollectionExecutor {
      * <p>This method provides the most comprehensive control over an atomic find-and-update
      * operation, combining multiple update operations, custom options, and automatic
      * deserialization to the specified type.</p>
+     *
+     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
+     * documented by {@link #findOneAndUpdate(Bson, Collection)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

@@ -355,11 +355,11 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Single key entity
-     * Condition cond = idsToCondition(User.class, "user123");
+     * Condition singleKeyCondition = idsToCondition(User.class, "user123");
      * // Result: WHERE user_id = ?
      *
      * // Composite key entity
-     * Condition cond = idsToCondition(UserSession.class, "user123", "session456");
+     * Condition compositeKeyCondition = idsToCondition(UserSession.class, "user123", "session456");
      * // Result: WHERE user_id = ? AND session_id = ?
      * }</pre>
      *
@@ -492,7 +492,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return a Condition that matches any entity in the collection by primary key
      * @throws IllegalArgumentException if {@code entityClass} is null, if {@code entities} is null or empty,
      *         if the entity declares no key names, if it has a composite (multi-column) primary key, if any
-     *         entity in the collection is null, or if any entity has no value for the key property
+     *         entity in the collection is null or not an instance of {@code entityClass}, or if any
+     *         entity has no value for the key property
      */
     protected static Condition entityToCondition(final Class<?> entityClass, final Collection<?> entities) {
         N.checkArgNotNull(entityClass, "entityClass");
@@ -508,10 +509,11 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
 
         if (keyNameSet.size() == 1) {
             final String keyName = keyNameSet.iterator().next();
-            final List<Object> keys = Stream.of(entities)
-                    .peek(it -> N.checkArgNotNull(it, "Entity in collection can't be null."))
-                    .map(it -> Beans.getPropValue(it, keyName))
-                    .toList();
+            final List<Object> keys = Stream.of(entities).peek(it -> {
+                N.checkArgNotNull(it, "Entity in collection can't be null.");
+                N.checkArgument(entityClass.isInstance(it), "Entity in collection must be an instance of {}: {}", entityClass.getName(),
+                        it.getClass().getName());
+            }).map(it -> Beans.getPropValue(it, keyName)).toList();
 
             for (final Object key : keys) {
                 if (key == null || (key instanceof CharSequence && Strings.isEmpty((CharSequence) key))) {
@@ -629,7 +631,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Condition cond = Filters.and(Filters.eq("status", "active"), Filters.gte("age", 18));
+     * Condition cond = Filters.and(Filters.eq("status", "active"), Filters.ge("age", 18));
      * Optional<User> user = executor.get(User.class,
      *     Arrays.asList("name", "email"), cond);                       // returns present Optional (name/email only) when a row matches
      *
@@ -937,7 +939,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param entity the entity containing the values to update
      * @param propNamesToUpdate the property names to update
      * @return the result set from the UPDATE operation
-     * @throws IllegalArgumentException if entity is null, or if propNamesToUpdate is null or empty
+     * @throws IllegalArgumentException if entity is null, if propNamesToUpdate is null or empty,
+     *         or if a primary-key property is requested for update
      */
     public RS update(final Object entity, final Collection<String> propNamesToUpdate) {
         N.checkArgument(N.notEmpty(propNamesToUpdate), "'propNamesToUpdate' can't be null or empty");
@@ -970,7 +973,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param props the properties to update
      * @param whereClause the WHERE condition
      * @return the result set from the UPDATE operation
-     * @throws IllegalArgumentException if targetClass is null, if props is null or empty, or if whereClause is null
+     * @throws IllegalArgumentException if targetClass is null, if props is null or empty, if whereClause
+     *         is null, or if {@code props} contains a primary-key property
      */
     public RS update(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause) {
         N.checkArgument(N.notEmpty(props), "'props' can't be null or empty.");
@@ -1018,7 +1022,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param entities the collection of entities to update
      * @param type the batch type
      * @return the result set from the batch UPDATE operation
-     * @throws IllegalArgumentException if entities is null or empty, or if its first element is null
+     * @throws IllegalArgumentException if entities is null or empty, if any element is null, if an entity's
+     *         class declares no key, or if a key value is missing
      */
     public RS batchUpdate(final Collection<?> entities, final BT type) {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
@@ -1053,7 +1058,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param propNamesToUpdate the property names to update
      * @param type the batch type
      * @return the result set from the batch UPDATE operation
-     * @throws IllegalArgumentException if entities or propNamesToUpdate is null or empty
+     * @throws IllegalArgumentException if entities or propNamesToUpdate is null or empty, if any element is
+     *         null, or if propNamesToUpdate contains a primary-key property
      */
     public RS batchUpdate(final Collection<?> entities, final Collection<String> propNamesToUpdate, final BT type) {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
@@ -1180,7 +1186,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param entity the entity identifying the row to delete from
      * @param propNamesToDelete the property names to delete (null for entire row)
      * @return the result set from the DELETE operation
-     * @throws IllegalArgumentException if entity is null, or if propNamesToDelete is empty (but not null)
+     * @throws IllegalArgumentException if entity is null, if propNamesToDelete is empty (but not null),
+     *         or if a primary-key property is requested for deletion
      */
     public RS delete(final Object entity, final Collection<String> propNamesToDelete) {
         N.checkArgNotNull(entity, "entity");
@@ -1239,7 +1246,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return the result set from the DELETE operation
      * @throws IllegalArgumentException if {@code ids} is null or empty, if its length does not
      *         match the registered/annotated key columns of {@code targetClass}, or if
-     *         {@code propNamesToDelete} is non-null but empty
+     *         {@code propNamesToDelete} is non-null but empty or contains a primary-key property
      */
     public final RS delete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Object... ids) {
         N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be empty (pass null to delete the entire row)");
@@ -1293,7 +1300,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param whereClause the WHERE condition
      * @return the result set from the DELETE operation
      * @throws IllegalArgumentException if targetClass is null, if propNamesToDelete is empty (but not
-     *         null), or if whereClause is null
+     *         null) or contains a primary-key property, or if whereClause is null
      */
     public RS delete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Condition whereClause) {
         N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be empty (pass null to delete the entire row)");
@@ -1320,7 +1327,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param entities the collection of entities to delete
      * @return the result set from the batch DELETE operation
-     * @throws IllegalArgumentException if entities is null or empty, or if its first element is null
+     * @throws IllegalArgumentException if entities is null or empty, if any element is null or is not an
+     *         instance of the first entity's class, if the entity has no single-column key, or if a key
+     *         value is missing
      */
     public RS batchDelete(final Collection<?> entities) {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
@@ -1354,8 +1363,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param entities the collection of entities to delete from
      * @param propNamesToDelete the property names to delete (null for entire rows)
      * @return the result set from the batch DELETE operation
-     * @throws IllegalArgumentException if entities is empty or its first element is null, or if
-     *         propNamesToDelete is empty (but not null)
+     * @throws IllegalArgumentException if entities is null or empty, if any element is null or is not an
+     *         instance of the first entity's class, if the entity has no single-column key, if a key value is missing,
+     *         or if propNamesToDelete is empty (but not null) or contains a primary-key property
      */
     public RS batchDelete(final Collection<?> entities, final Collection<String> propNamesToDelete) {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
@@ -1551,7 +1561,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Condition where = Filters.gte("age", 18);
+     * Condition where = Filters.ge("age", 18);
      * List<User> adults = executor.list(User.class,
      *     Arrays.asList("userId", "name", "age"), where); // returns a (possibly empty) List with only those 3 props set
      *
@@ -1578,9 +1588,9 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Condition where = Filters.between("age", 25, 35);
+     * Condition where = Filters.and(Filters.ge("age", 25), Filters.le("age", 35));
      * Dataset dataset = executor.query(User.class, where); // returns a (possibly empty) Dataset of matching rows
-     * dataset.groupBy("department").aggregate("salary", Collectors.averagingDouble());
+     * ImmutableList<String> departments = dataset.getColumn("department");
      *
      * Dataset all = executor.query(User.class, (Condition) null); // returns a Dataset of every row in the table
      * }</pre>
@@ -3093,6 +3103,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
         N.checkArgument(N.notEmpty(propNamesToUpdate), "'propNamesToUpdate' can't be null or empty.");
 
         final Class<?> targetClass = entity.getClass();
+        checkNoPrimaryKeyProperties(targetClass, propNamesToUpdate, "propNamesToUpdate");
         final Condition cond = entityToCondition(entity);
 
         switch (namingPolicy) {
@@ -3110,6 +3121,16 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
         }
     }
 
+    private static void checkNoPrimaryKeyProperties(final Class<?> targetClass, final Collection<String> propNames, final String argumentName) {
+        final Set<String> keyNames = getKeyNameSet(targetClass);
+
+        for (final String propName : propNames) {
+            if (keyNames.contains(propName)) {
+                throw new IllegalArgumentException("'" + argumentName + "' must not contain primary-key property: " + propName);
+            }
+        }
+    }
+
     /**
      * Prepares an UPDATE statement with a WHERE clause.
      *
@@ -3119,7 +3140,10 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return the prepared statement with parameters
      */
     protected SP prepareUpdate(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause) {
+        N.checkArgNotNull(targetClass, "targetClass");
+        N.checkArgument(N.notEmpty(props), "'props' can't be null or empty.");
         N.checkArgNotNull(whereClause, "whereClause");
+        checkNoPrimaryKeyProperties(targetClass, props.keySet(), "props");
 
         switch (namingPolicy) {
             case SNAKE_CASE:
@@ -3219,7 +3243,12 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return the prepared statement with parameters
      */
     protected SP prepareDelete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Condition whereClause) {
+        N.checkArgNotNull(targetClass, "targetClass");
         N.checkArgNotNull(whereClause, "whereClause");
+
+        if (N.notEmpty(propNamesToDelete)) {
+            checkNoPrimaryKeyProperties(targetClass, propNamesToDelete, "propNamesToDelete");
+        }
 
         switch (namingPolicy) {
             case SNAKE_CASE:
@@ -3277,13 +3306,13 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Select specific properties with condition and limit
-     * SP statement = prepareQuery(User.class,
+     * SP limitedStatement = prepareQuery(User.class,
      *     Arrays.asList("name", "email"),
      *     Filters.eq("status", "active"),
      *     10);
      *
      * // Select all properties without condition
-     * SP statement = prepareQuery(User.class, null, null, 0);
+     * SP allStatement = prepareQuery(User.class, null, null, 0);
      * }</pre>
      *
      * @param targetClass the entity class

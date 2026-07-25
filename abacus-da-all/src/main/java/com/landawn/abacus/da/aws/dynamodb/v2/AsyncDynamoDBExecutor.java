@@ -97,10 +97,13 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
  * <li><b>Complete CRUD Support</b> — async get/put/update/delete (including {@code returnValues})</li>
  * <li><b>Batch Operations</b> — efficient async batch get/write; unprocessed items must be retried
  *     by the caller (not automatic)</li>
- * <li><b>Query &amp; Scan</b> — async queries that auto-paginate when the caller has not set
- *     {@code exclusiveStartKey}</li>
+ * <li><b>Query &amp; Scan</b> — async queries with transparent {@code lastEvaluatedKey} pagination: the
+ *     eager {@code list}/{@code query} methods stop after one page when the caller sets
+ *     {@code exclusiveStartKey}, while {@code stream}/{@code scan} resume from it and continue through
+ *     the remaining pages</li>
  * <li><b>Stream Processing</b> — {@code CompletableFuture<Stream<T>>} for memory-efficient processing of
- *     large result sets via lazy page fetching</li>
+ *     large result sets via lazy page fetching; consuming the returned stream performs blocking
+ *     page waits on the consumer thread</li>
  * <li><b>Object Mapping</b> — automatic conversion between Java beans and DynamoDB {@link AttributeValue}s</li>
  * <li><b>Type Safety</b> — {@link Mapper Mapper&lt;T&gt;} for entity-specific operations</li>
  * </ul>
@@ -110,8 +113,10 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
  * {@link DynamoDbAsyncClient} dispatches its asynchronous responses on (typically the SDK's
  * Netty event-loop or the executor configured via
  * {@code DynamoDbAsyncClientBuilder.asyncConfiguration(...)}). The auto-paginating
- * {@code list}/{@code query}/{@code stream}/{@code scan} methods instead complete on the common
- * {@code ForkJoinPool} (see the threading notes on those methods). Continuations attached with
+ * {@code list}/{@code query}/{@code stream}/{@code scan} methods instead deliver their result on the
+ * common {@code ForkJoinPool} (see the threading notes on those methods). For stream and scan,
+ * only the lazy stream is delivered there; its page fetches block the thread that consumes it.
+ * Continuations attached with
  * {@code thenApply}/{@code thenAccept} therefore run on the completing pool — push CPU-heavy or
  * blocking work onto your own executor with the {@code *Async} variants (e.g.
  * {@code thenApplyAsync(fn, myExecutor)}) to avoid blocking I/O threads.</p>
@@ -376,6 +381,7 @@ public final class AsyncDynamoDBExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * public class Product {
+     *     @Id
      *     private String productId;
      *     private String name;
      *     // getters and setters...
@@ -678,7 +684,7 @@ public final class AsyncDynamoDBExecutor {
      * <pre>{@code
      * public class ProductSummary {
      *     private String productId;
-     *     private String name;
+     *     private String productName;
      *     private Boolean inStock;
      *     // getters and setters...
      * }
@@ -686,7 +692,7 @@ public final class AsyncDynamoDBExecutor {
      * GetItemRequest request = GetItemRequest.builder()
      *     .tableName("Products")
      *     .key(Map.of("productId", AttributeValue.builder().s("PROD-123").build()))
-     *     .projectionExpression("productId, productName, inStock")
+     *     .projectionExpression("productId, #name, inStock")
      *     .expressionAttributeNames(Map.of("#name", "productName"))
      *     .consistentRead(false)
      *     .build();
@@ -695,7 +701,7 @@ public final class AsyncDynamoDBExecutor {
      *     executor.getItem(request, ProductSummary.class);
      *
      * productFuture.thenCompose(product -> {
-     *     if (product != null && product.getInStock()) {
+     *     if (product != null && Boolean.TRUE.equals(product.getInStock())) {
      *         return processAvailableProduct(product);
      *     } else {
      *         return CompletableFuture.completedFuture(null);
@@ -747,7 +753,8 @@ public final class AsyncDynamoDBExecutor {
      *         Map.of("userId", AttributeValue.builder().s("user1").build()),
      *         Map.of("userId", AttributeValue.builder().s("user2").build())
      *     ))
-     *     .projectionExpression("userId, name, email")
+     *     .projectionExpression("userId, #name, email")
+     *     .expressionAttributeNames(Map.of("#name", "name"))
      *     .build();
      *
      * Map<String, KeysAndAttributes> requestItems = Map.of("Users", userKeys);
@@ -852,7 +859,8 @@ public final class AsyncDynamoDBExecutor {
      *                 Map.of("orderId", AttributeValue.builder().s("ORD-001").build()),
      *                 Map.of("orderId", AttributeValue.builder().s("ORD-002").build())
      *             ))
-     *             .projectionExpression("orderId, customerId, total, status")
+     *             .projectionExpression("orderId, customerId, #total, #status")
+     *             .expressionAttributeNames(Map.of("#total", "total", "#status", "status"))
      *             .consistentRead(true)
      *             .build(),
      *         "OrderItems", KeysAndAttributes.builder()
@@ -1627,7 +1635,7 @@ public final class AsyncDynamoDBExecutor {
     }
 
     /**
-     * Asynchronously executes a query and returns all matching items as a list of Maps.
+     * Asynchronously executes a query and returns matching items as a list of Maps.
      *
      * <p>This method performs a Query operation that retrieves items matching the partition key
      * and any specified filter conditions. When the caller has not set
@@ -1654,7 +1662,7 @@ public final class AsyncDynamoDBExecutor {
      *     ))
      *     .build();
      *
-     * // Typical: every matching item as a Map (all pages concatenated)
+     * // Typical: every matching item as a Map (when no exclusive start key is supplied)
      * CompletableFuture<List<Map<String, Object>>> future = executor.list(queryRequest);
      * List<Map<String, Object>> orders = future.get();   // e.g. [{orderId=ORD-1}, ...]; blocks
      *
@@ -1669,7 +1677,8 @@ public final class AsyncDynamoDBExecutor {
      * }</pre>
      *
      * @param queryRequest the QueryRequest with all parameters configured. Must not be null.
-     * @return a CompletableFuture containing a list of all matching items as Maps
+     * @return a CompletableFuture containing the matching items materialized under the pagination
+     *         behavior above, represented as Maps
      * @throws IllegalArgumentException if queryRequest is null
      * @see #list(QueryRequest, Class)
      * @see #stream(QueryRequest)
@@ -1679,11 +1688,11 @@ public final class AsyncDynamoDBExecutor {
     }
 
     /**
-     * Asynchronously executes a query and returns all matching items as a list of typed objects.
+     * Asynchronously executes a query and returns matching items as a list of typed objects.
      *
      * <p>This method performs a Query operation and converts the results to instances of the
-     * specified target class. It automatically handles pagination to retrieve all matching items.
-     * This provides type safety and automatic object mapping for entity classes.</p>
+     * specified target class. It automatically handles pagination when no exclusive start key is
+     * supplied. This provides type safety and automatic object mapping for entity classes.</p>
      *
      * <p><b>Pagination Behavior:</b></p>
      * <ul>
@@ -1721,7 +1730,8 @@ public final class AsyncDynamoDBExecutor {
      * @param <T> the type of objects to return
      * @param queryRequest the QueryRequest with query parameters. Must not be null.
      * @param targetClass the class to convert results to. Must not be null.
-     * @return a CompletableFuture containing a list of all matching items as typed objects
+     * @return a CompletableFuture containing the matching items materialized under the pagination
+     *         behavior above as typed objects
      * @throws IllegalArgumentException if queryRequest or targetClass is null
      */
     public <T> CompletableFuture<List<T>> list(final QueryRequest queryRequest, final Class<T> targetClass) {
@@ -1798,7 +1808,8 @@ public final class AsyncDynamoDBExecutor {
      * requests without blocking a worker thread.</p>
      *
      * @param queryRequest the QueryRequest with query parameters. Must not be null.
-     * @return a CompletableFuture containing a Dataset with all query results
+     * @return a CompletableFuture containing a Dataset with results materialized under the same
+     *         pagination behavior as {@link #list(QueryRequest)}
      * @throws IllegalArgumentException if queryRequest is null
      * @see #query(QueryRequest, Class)
      */
@@ -1921,8 +1932,6 @@ public final class AsyncDynamoDBExecutor {
      *
      * // Typical: a lazy Stream; terminal ops drive page fetches and block the consuming thread
      * CompletableFuture<Stream<Map<String, Object>>> future = executor.stream(queryRequest);
-     * List<Map<String, Object>> all = future.get().toList();   // materialize every matching item (abacus Stream)
-     *
      * future.thenAccept(eventStream -> {
      *     long recentEvents = eventStream
      *         .filter(event -> "ERROR".equals(event.get("level")))
@@ -1931,6 +1940,9 @@ public final class AsyncDynamoDBExecutor {
      *         .count();
      *     System.out.println("Processed " + recentEvents + " error events");
      * });
+     *
+     * // Blocking alternative: create and consume a fresh one-shot Stream
+     * List<Map<String, Object>> all = executor.stream(queryRequest).get().toList();
      * }</pre>
      *
      * @param queryRequest the QueryRequest with all parameters configured. Must not be null.
@@ -2069,14 +2081,15 @@ public final class AsyncDynamoDBExecutor {
      *
      * // Typical: lazy Stream of projected items; terminal ops fetch pages and block the consuming thread
      * CompletableFuture<Stream<Map<String, Object>>> future = executor.scan("Users", attributes);
-     * List<Map<String, Object>> rows = future.get().toList();   // every scanned item, projected to the given attributes
-     *
      * future.thenAccept(stream -> {
      *         long activeUsers = stream
      *             .filter(user -> "ACTIVE".equals(user.get("status")))
      *             .count();
      *         System.out.println("Active users: " + activeUsers);
      *     });
+     *
+     * // Blocking alternative: create and consume a fresh one-shot Stream
+     * List<Map<String, Object>> rows = executor.scan("Users", attributes).get().toList();
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
@@ -2353,7 +2366,8 @@ public final class AsyncDynamoDBExecutor {
      * <pre>{@code
      * ScanRequest scanRequest = ScanRequest.builder()
      *     .tableName("Orders")
-     *     .filterExpression("status = :status")
+     *     .filterExpression("#status = :status")
+     *     .expressionAttributeNames(Map.of("#status", "status"))
      *     .expressionAttributeValues(Map.of(
      *         ":status", AttributeValue.fromS("PENDING")
      *     ))
@@ -2686,8 +2700,11 @@ public final class AsyncDynamoDBExecutor {
          *     .projectionExpression("userId, email, lastLogin")
          *     .build();
          *
-         * userMapper.getItem(request)
-         *     .thenAccept(user -> System.out.println("User email: " + user.getEmail()));   // user is null if absent
+         * userMapper.getItem(request).thenAccept(user -> {
+         *     if (user != null) {
+         *         System.out.println("User email: " + user.getEmail());
+         *     }
+         * });
          *
          * // Edge: a request naming a different table is rejected before any call
          * GetItemRequest wrong = GetItemRequest.builder()
@@ -3242,8 +3259,10 @@ public final class AsyncDynamoDBExecutor {
          * Asynchronously executes a query and returns results as a list.
          *
          * <p>This method performs a query operation on the table using the specified query request
-         * and returns all matching items as a list. Queries are efficient for retrieving items
-         * with a specific partition key value and optional sort key conditions.</p>
+         * and returns matching items as a list. All pages are returned when the request has no
+         * exclusive start key; otherwise only the requested page is materialized. Queries are
+         * efficient for retrieving items with a specific partition key value and optional sort key
+         * conditions.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3261,7 +3280,8 @@ public final class AsyncDynamoDBExecutor {
          * }</pre>
          *
          * @param queryRequest the QueryRequest specifying query parameters. Must not be null.
-         * @return a CompletableFuture containing a list of all matching entities
+         * @return a CompletableFuture containing entities materialized according to the pagination
+         *         behavior above
          * @throws IllegalArgumentException if the request specifies a different table name
          */
         public CompletableFuture<List<T>> list(final QueryRequest queryRequest) {
@@ -3311,7 +3331,8 @@ public final class AsyncDynamoDBExecutor {
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * QueryRequest request = QueryRequest.builder()
-         *     .keyConditionExpression("status = :status")
+         *     .keyConditionExpression("#status = :status")
+         *     .expressionAttributeNames(Map.of("#status", "status"))
          *     .expressionAttributeValues(Map.of(
          *         ":status", AttributeValue.builder().s("ACTIVE").build()
          *     ))
@@ -3435,7 +3456,8 @@ public final class AsyncDynamoDBExecutor {
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * ScanRequest request = ScanRequest.builder()
-         *     .filterExpression("age > :minAge AND status = :status")
+         *     .filterExpression("age > :minAge AND #status = :status")
+         *     .expressionAttributeNames(Map.of("#status", "status"))
          *     .expressionAttributeValues(Map.of(
          *         ":minAge", AttributeValue.builder().n("21").build(),
          *         ":status", AttributeValue.builder().s("ACTIVE").build()

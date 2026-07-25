@@ -510,14 +510,123 @@ public class CosmosContainerExecutorTest extends TestBase {
         when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
         // default executor uses NamingPolicy.SNAKE_CASE -> table name "test_item"
-        executor.streamItems(Filters.eq("id", "1").and(Filters.eq("name", "a")), TestItem.class).toList();
+        executor.streamItems(Filters.and(Filters.eq("id", "1"), Filters.eq("name", "a")), TestItem.class).toList();
 
         final String sql = specCaptor.getValue().getQueryText();
+        assertEquals("SELECT * FROM test_item c WHERE (c.id = @p0) AND (c.name = @p1)", sql);
         assertTrue(sql.contains("FROM test_item c"), "FROM clause must declare the alias 'c': " + sql);
         assertTrue(sql.contains("c.id"), "id must be alias-qualified: " + sql);
         assertTrue(sql.contains("c.name"), "name must be alias-qualified: " + sql);
         // Old broken form had the table immediately followed by WHERE with unqualified columns.
         assertTrue(!sql.contains("FROM test_item WHERE"), "WHERE columns must be alias-qualified: " + sql);
+
+        assertEquals(2, specCaptor.getValue().getParameters().size());
+        assertEquals("@p0", specCaptor.getValue().getParameters().get(0).getName());
+        assertEquals("1", specCaptor.getValue().getParameters().get(0).getValue(String.class));
+        assertEquals("@p1", specCaptor.getValue().getParameters().get(1).getName());
+        assertEquals("a", specCaptor.getValue().getParameters().get(1).getValue(String.class));
+    }
+
+    @Test
+    public void testStreamItemsWithFunctionExpressionNullConditionUsesCosmosSyntax() {
+        when(mockPagedIterable.stream()).thenAnswer(invocation -> java.util.stream.Stream.empty());
+        final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
+        when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
+
+        executor.streamItems(Filters.isNull("ARRAY_LENGTH(tags)"), TestItem.class).toList();
+
+        assertEquals("SELECT * FROM test_item c WHERE IS_NULL(ARRAY_LENGTH(c.tags))", specCaptor.getValue().getQueryText());
+    }
+
+    @Test
+    public void testStreamItemsWithArithmeticNullExpressionsUsesCosmosSyntax() {
+        when(mockPagedIterable.stream()).thenAnswer(invocation -> java.util.stream.Stream.empty());
+        final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
+        when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
+
+        executor.streamItems(Filters.expr("price + tax IS NULL"), TestItem.class).toList();
+        executor.streamItems(Filters.expr("price + tax IS NOT NULL"), TestItem.class).toList();
+
+        assertEquals("SELECT * FROM test_item c WHERE IS_NULL(c.price + c.tax)", specCaptor.getAllValues().get(0).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE NOT IS_NULL(c.price + c.tax)", specCaptor.getAllValues().get(1).getQueryText());
+    }
+
+    @Test
+    public void testStreamItemsWithNullExpressionAsFunctionArgumentUsesCosmosSyntax() {
+        when(mockPagedIterable.stream()).thenReturn(java.util.stream.Stream.empty());
+        final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
+        when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
+
+        executor.streamItems(Filters.expr("IIF(flag, value IS NULL, false)"), TestItem.class).toList();
+
+        assertEquals("SELECT * FROM test_item c WHERE IIF(c.flag, IS_NULL(c.value), false)", specCaptor.getValue().getQueryText());
+    }
+
+    @Test
+    public void testRawExpressionQualifiesFieldsAfterLogicalKeywordsAndPreservesExponent() {
+        when(mockPagedIterable.stream()).thenReturn(java.util.stream.Stream.empty());
+        final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
+        when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
+
+        executor.streamItems(Filters.expr("active AND score > 1e2"), TestItem.class).toList();
+
+        assertEquals("SELECT * FROM test_item c WHERE c.active AND c.score > 1e2", specCaptor.getValue().getQueryText());
+    }
+
+    @Test
+    public void testKeywordNamedPropertiesAreStillAliasQualified() {
+        when(mockPagedIterable.stream()).thenAnswer(invocation -> java.util.stream.Stream.empty());
+        final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
+        when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
+
+        executor.streamItems(Filters.eq("order", 1), TestItem.class).toList();
+        executor.streamItems(Filters.isNull("group"), TestItem.class).toList();
+        executor.streamItems(Filters.expr("score > order"), TestItem.class).toList();
+        executor.streamItems(Filters.expr("order NOT IN (1, 2)"), TestItem.class).toList();
+        executor.streamItems(Filters.eq("c", 1), TestItem.class).toList();
+        executor.streamItems(Filters.expr("score = in"), TestItem.class).toList();
+        executor.streamItems(Filters.expr("score = null"), TestItem.class).toList();
+        executor.streamItems(Filters.expr("IS_DEFINED(order)"), TestItem.class).toList();
+        executor.streamItems(Filters.expr("order AND active"), TestItem.class).toList();
+        executor.streamItems(Filters.expr("value is null"), TestItem.class).toList();
+
+        assertEquals("SELECT * FROM test_item c WHERE c.order = @p0", specCaptor.getAllValues().get(0).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE IS_NULL(c.group)", specCaptor.getAllValues().get(1).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE c.score > c.order", specCaptor.getAllValues().get(2).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE c.order NOT IN (1, 2)", specCaptor.getAllValues().get(3).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE c.c = @p0", specCaptor.getAllValues().get(4).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE c.score = c.in", specCaptor.getAllValues().get(5).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE c.score = null", specCaptor.getAllValues().get(6).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE IS_DEFINED(c.order)", specCaptor.getAllValues().get(7).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE c.order AND c.active", specCaptor.getAllValues().get(8).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE IS_NULL(c.value)", specCaptor.getAllValues().get(9).getQueryText());
+    }
+
+    @Test
+    public void testIsNullOperandScanHonoursLowercaseKeywordsAndNot() {
+        when(mockPagedIterable.stream()).thenAnswer(invocation -> java.util.stream.Stream.empty());
+        final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
+        when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
+
+        // Clause boundaries must be recognized case-insensitively: a lower/mixed-case "and"/"or" in a
+        // caller-supplied raw expression must not let the operand scan swallow the preceding predicate.
+        executor.streamItems(Filters.expr("score = 1 or group IS NULL"), TestItem.class).toList();
+        executor.streamItems(Filters.expr("score is null or group is null"), TestItem.class).toList();
+        executor.streamItems(Filters.expr("score is null And group is null"), TestItem.class).toList();
+        // "NOT" is a boundary too, so the negation stays outside IS_NULL(...).
+        executor.streamItems(Filters.expr("NOT group IS NULL"), TestItem.class).toList();
+        executor.streamItems(Filters.expr("score > 1 AND NOT group IS NULL"), TestItem.class).toList();
+        // The whole-token "IS NOT NULL" form is unaffected.
+        executor.streamItems(Filters.expr("group IS NOT NULL"), TestItem.class).toList();
+
+        assertEquals("SELECT * FROM test_item c WHERE c.score = 1 or IS_NULL(c.group)", specCaptor.getAllValues().get(0).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE IS_NULL(c.score) or IS_NULL(c.group)", specCaptor.getAllValues().get(1).getQueryText());
+        // The query builder normalizes the identifier-like "And" token to lower case before the Cosmos
+        // rewrite runs; the point of the assertion is that the boundary is still recognized.
+        assertEquals("SELECT * FROM test_item c WHERE IS_NULL(c.score) and IS_NULL(c.group)", specCaptor.getAllValues().get(2).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE NOT IS_NULL(c.group)", specCaptor.getAllValues().get(3).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE c.score > 1 AND NOT IS_NULL(c.group)", specCaptor.getAllValues().get(4).getQueryText());
+        assertEquals("SELECT * FROM test_item c WHERE NOT IS_NULL(c.group)", specCaptor.getAllValues().get(5).getQueryText());
     }
 
     @Test
@@ -538,13 +647,16 @@ public class CosmosContainerExecutorTest extends TestBase {
         Collection<String> selectProps = Arrays.asList("id", "name");
         List<TestItem> items = Arrays.asList(new TestItem("1", "Item1"), new TestItem("2", "Item2"));
         when(mockPagedIterable.stream()).thenReturn(items.stream());
-        when(mockCosmosContainer.queryItems(any(SqlQuerySpec.class), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
+        final org.mockito.ArgumentCaptor<SqlQuerySpec> specCaptor = org.mockito.ArgumentCaptor.forClass(SqlQuerySpec.class);
+        when(mockCosmosContainer.queryItems(specCaptor.capture(), any(), eq(TestItem.class))).thenReturn(mockPagedIterable);
 
         Stream<TestItem> stream = executor.streamItems(selectProps, Filters.eq("id", "1"), TestItem.class);
 
         assertNotNull(stream);
         List<TestItem> result = stream.toList();
         assertEquals(2, result.size());
+        assertEquals("SELECT VALUE { " + '"' + "id" + '"' + ": c.id, " + '"' + "name" + '"' + ": c.name } FROM test_item c WHERE c.id = @p0",
+                specCaptor.getValue().getQueryText());
     }
 
     /** Projection and non-projection overloads must reject a null result type consistently. */

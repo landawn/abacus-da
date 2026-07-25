@@ -25,6 +25,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.BiFunction;
@@ -252,11 +253,6 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         N.registerConverter(Row.class, converter);
     }
 
-    //    static final AsyncExecutor DEFAULT_ASYNC_EXECUTOR = new AsyncExecutor(//
-    //            N.max(64, IOUtil.CPU_CORES * 8), // coreThreadPoolSize
-    //            N.max(128, IOUtil.CPU_CORES * 16), // maxThreadPoolSize
-    //            180L, TimeUnit.SECONDS);
-
     static final int POOLABLE_LENGTH = 1024;
 
     private static final Logger logger = LoggerFactory.getLogger(CassandraExecutor.class);
@@ -364,7 +360,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * CqlMapper cqlMapper = new CqlMapper("queries.xml");
+     * CqlMapper cqlMapper = CqlMapper.loadFrom("queries.xml");
      * CassandraExecutor executor = new CassandraExecutor(session, settings, cqlMapper);
      * // Pass the mapper KEY (id) as the query; the executor resolves it via the CqlMapper:
      * ResultSet rs = executor.execute("findUserById", userId); // "findUserById" is looked up in cqlMapper
@@ -422,10 +418,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      */
     public CassandraExecutor(final Session session, final StatementSettings settings, final CqlMapper cqlMapper, final NamingPolicy namingPolicy) {
         super(cqlMapper, namingPolicy);
-        cluster = session.getCluster();
-        this.session = session;
+        this.session = Objects.requireNonNull(session, "session");
+        cluster = this.session.getCluster();
         codecRegistry = cluster.getConfiguration().getCodecRegistry();
-        mappingManager = new MappingManager(session);
+        mappingManager = new MappingManager(this.session);
 
         if (settings == null) {
             this.settings = null;
@@ -672,12 +668,20 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         final List<String> columnNameList = new ArrayList<>(columnCount);
         final List<List<Object>> columnList = new ArrayList<>(columnCount);
         final Class<?>[] columnClasses = new Class<?>[columnCount];
+        final Map<String, String> columnToPropNameMap = isEntity ? QueryUtil.columnToPropNameMap(targetClass) : null;
 
         for (int i = 0; i < columnCount; i++) {
             columnNameList.add(columnDefinitions.getName(i));
             columnList.add(new ArrayList<>(rowCount));
             if (isEntity) {
-                final Method method = Beans.getPropGetter(targetClass, columnNameList.get(i));
+                final String columnName = columnNameList.get(i);
+                Method method = Beans.getPropGetter(targetClass, columnName);
+
+                if (method == null) {
+                    final String propName = columnToPropNameMap.get(columnName);
+                    method = propName == null ? null : Beans.getPropGetter(targetClass, propName);
+                }
+
                 columnClasses[i] = method != null ? method.getReturnType() : null;
             } else {
                 // null = no per-column conversion (raw driver values), per the documented contract for
@@ -809,7 +813,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * ResultSet allUsers = session.execute("SELECT * FROM users");
      * for (Row userRow : allUsers) {
      *     User user = CassandraExecutor.toEntity(userRow, User.class);
-     *     processUser(user);
+     *     System.out.println(user);
      * }
      *
      * // Edge case: a null row throws NullPointerException
@@ -1326,7 +1330,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *     "engineering")) {
      *
      *     stream.filter(user -> user.getEmail().endsWith("@company.com"))
-     *           .forEach(user -> processUser(user));
+     *           .forEach(System.out::println);
      * }
      *
      * // Dynamic column mapping based on column definitions
@@ -1386,11 +1390,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *     .setFetchSize(5000)
      *     .setConsistencyLevel(ConsistencyLevel.ONE);
      *
-     * try (Stream<Record> stream = executor.stream(stmt,
-     *     (columns, row) -> mapToRecord(row))) {
+     * try (Stream<Row> stream = executor.stream(stmt, (columns, row) -> row)) {
      *
-     *     long count = stream.filter(record -> record.isValid()).count();
-     *     System.out.println("Valid records: " + count);
+     *     long count = stream.filter(row -> !row.isNull("id")).count();
+     *     System.out.println("Rows with an id: " + count);
      * }
      * }</pre>
      *
@@ -2231,6 +2234,25 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
     }
 
+    @SuppressWarnings("unchecked")
+    private static void setUdtField(final UDTValue udtValue, final int index, final Object value) {
+        if (value == null) {
+            udtValue.setToNull(index);
+        } else if (value instanceof final List<?> list) {
+            udtValue.setList(index, (List<Object>) list);
+        } else if (value instanceof final Set<?> set) {
+            udtValue.setSet(index, (Set<Object>) set);
+        } else if (value instanceof final Map<?, ?> map) {
+            udtValue.setMap(index, (Map<Object, Object>) map);
+        } else if (value instanceof final UDTValue nestedUdt) {
+            udtValue.setUDTValue(index, nestedUdt);
+        } else if (value instanceof final TupleValue tuple) {
+            udtValue.setTupleValue(index, tuple);
+        } else {
+            udtValue.set(index, value, (Class<Object>) value.getClass());
+        }
+    }
+
     /**
      * Abstract base class for codecs that translate between Cassandra User Defined Type
      * (UDT) values and Java objects (Driver 3.x).
@@ -2242,8 +2264,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * UDT field layout and the Java type {@code T}. Supported Java types are
      * {@link Collection}, {@link Map}, and JavaBean classes.</p>
      *
-     * <p>String-form serialization (used by {@link #format(Object)}/{@link #parse(String)})
-     * goes through {@code N.toJson(...)}/{@code N.fromJson(...)}.</p>
+     * <p>Collection values are mapped positionally in UDT field order. A collection may omit
+     * trailing fields, which remain {@code null}; a collection with more elements than UDT fields
+     * is rejected.</p>
+     *
+     * <p>String-form serialization through {@link #format(Object)} and {@link #parse(String)}
+     * uses the driver's CQL UDT-literal representation, not JSON.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2269,7 +2295,6 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     public abstract static class UDTCodec<T> extends TypeCodec<T> {
 
         private final UserType userType;
-        private final Class<T> javaClazz;
         private final TypeCodec<UDTValue> udtValueTypeCodec;
 
         /**
@@ -2282,7 +2307,6 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         protected UDTCodec(final UserType userType, final Class<T> javaClazz) {
             super(userType, javaClazz);
             this.userType = userType;
-            this.javaClazz = javaClazz;
             udtValueTypeCodec = TypeCodec.userType(userType);
         }
 
@@ -2345,11 +2369,17 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
                     } else if (Beans.isBeanClass(javaClazz)) {
                         final BeanInfo beanInfo = ParserUtil.getBeanInfo(javaClazz);
                         final Collection<String> fieldNames = userType.getFieldNames();
+                        final Map<String, String> columnToPropNameMap = QueryUtil.columnToPropNameMap(javaClazz);
                         Object targetBean = beanInfo.createBeanResult();
                         PropInfo propInfo = null;
 
                         for (final String fieldName : fieldNames) {
                             propInfo = beanInfo.getPropInfo(fieldName);
+
+                            if (propInfo == null) {
+                                final String propName = columnToPropNameMap.get(fieldName);
+                                propInfo = propName == null ? null : beanInfo.getPropInfo(propName);
+                            }
 
                             if (propInfo != null) {
                                 propInfo.setPropValue(targetBean, udtValue.getObject(fieldName));
@@ -2374,49 +2404,43 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
 
                     if (value instanceof Collection) {
                         final Collection<Object> coll = (Collection<Object>) value;
+
+                        if (coll.size() > userType.size()) {
+                            throw new IllegalArgumentException(
+                                    "Collection size cannot exceed UDT field count: expected at most " + userType.size() + " but got " + coll.size());
+                        }
+
                         int idx = 0;
 
                         for (final Object val : coll) {
-                            if (val == null) {
-                                udtValue.setToNull(idx++);
-                            } else {
-                                udtValue.set(idx++, val, (Class<Object>) val.getClass());
-                            }
+                            setUdtField(udtValue, idx++, val);
                         }
                     } else if (value instanceof Map) {
                         final Map<String, Object> map = (Map<String, Object>) value;
                         final Collection<String> fieldNames = userType.getFieldNames();
-                        Object propValue;
+                        int idx = 0;
 
                         for (final String fieldName : fieldNames) {
-                            propValue = map.get(fieldName);
-
-                            if (propValue == null) {
-                                udtValue.setToNull(fieldName);
-                            } else {
-                                udtValue.set(fieldName, propValue, (Class<Object>) propValue.getClass());
-                            }
+                            setUdtField(udtValue, idx++, map.get(fieldName));
                         }
                     } else if (Beans.isBeanClass(javaClazz)) {
                         final BeanInfo beanInfo = ParserUtil.getBeanInfo(javaClazz);
                         //noinspection UnnecessaryLocalVariable
                         final Object bean = value;
                         final Collection<String> fieldNames = userType.getFieldNames();
+                        final Map<String, String> columnToPropNameMap = QueryUtil.columnToPropNameMap(javaClazz);
                         PropInfo propInfo = null;
-                        Object propValue = null;
+                        int idx = 0;
 
                         for (final String fieldName : fieldNames) {
                             propInfo = beanInfo.getPropInfo(fieldName);
 
-                            if (propInfo != null) {
-                                propValue = propInfo.getPropValue(bean);
-
-                                if (propValue == null) {
-                                    udtValue.setToNull(fieldName);
-                                } else {
-                                    udtValue.set(fieldName, propValue, (Class<Object>) propValue.getClass());
-                                }
+                            if (propInfo == null) {
+                                final String propName = columnToPropNameMap.get(fieldName);
+                                propInfo = propName == null ? null : beanInfo.getPropInfo(propName);
                             }
+
+                            setUdtField(udtValue, idx++, propInfo == null ? null : propInfo.getPropValue(bean));
                         }
                     } else {
                         throw new IllegalArgumentException("Invalid Java class type: " + javaClazz + ". Expected: Collection, Map, or Bean class");
@@ -2501,51 +2525,52 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         }
 
         /**
-         * Parses a JSON string into a Java object of type {@code T}.
+         * Parses a CQL UDT literal into a Java object of type {@code T}.
          *
-         * <p>An empty string or the literal {@code "NULL"} ({@code TypeCodec#NULL_STR}) is
-         * decoded as {@code null}.</p>
+         * <p>The driver UDT codec validates and decodes the literal first. An empty string or the
+         * literal {@code "NULL"} ({@link CassandraExecutorBase#NULL_STR}) is decoded as {@code null}. The
+         * accepted representation is a CQL literal, not JSON.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * UDTCodec<Address> codec = UDTCodec.create(addressType, Address.class);
          *
-         * Address a = codec.parse("{\"street\":\"123 Main St\",\"city\":\"Springfield\"}"); // returns the parsed Address
+         * Address a = codec.parse("{street:'123 Main St',city:'Springfield'}"); // returns the parsed Address
          *
          * Address empty = codec.parse("");     // returns null (empty input)
          * Address nullS = codec.parse("NULL"); // returns null (the "NULL" sentinel)
          * }</pre>
          *
-         * @param value the string to parse
+         * @param value the CQL UDT literal to parse
          * @return the parsed object, or {@code null} for empty/{@code "NULL"} input
-         * @throws InvalidTypeException if the string is not valid JSON for {@code T}
+         * @throws InvalidTypeException if the string is not a valid CQL literal for this UDT
          */
         @Override
         public T parse(final String value) throws InvalidTypeException {
-            return Strings.isEmpty(value) || NULL_STR.equals(value) ? null : N.fromJson(value, javaClazz);
+            return Strings.isEmpty(value) || NULL_STR.equalsIgnoreCase(value) ? null : deserialize(udtValueTypeCodec.parse(value));
         }
 
         /**
-         * Formats a Java object as a JSON string.
+         * Formats a Java object as a CQL UDT literal.
          *
          * <p>A {@code null} value is rendered as the literal {@code "NULL"}
-         * ({@code TypeCodec#NULL_STR}).</p>
+         * ({@link CassandraExecutorBase#NULL_STR}). The returned representation is a CQL literal, not JSON.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * UDTCodec<Address> codec = UDTCodec.create(addressType, Address.class);
          *
-         * String json = codec.format(new Address("123 Main St", "Springfield")); // returns a JSON string, e.g. {"street":"123 Main St",...}
+         * String literal = codec.format(new Address("123 Main St", "Springfield")); // e.g. {street:'123 Main St',city:'Springfield'}
          *
          * String nullStr = codec.format(null); // returns "NULL"
          * }</pre>
          *
          * @param value the value to format
-         * @return the JSON string (or {@code "NULL"} if {@code value} is {@code null})
+         * @return the CQL UDT literal (or {@code "NULL"} if {@code value} is {@code null})
          */
         @Override
         public String format(final T value) throws InvalidTypeException {
-            return value == null ? NULL_STR : N.toJson(value);
+            return value == null ? NULL_STR : udtValueTypeCodec.format(serialize(value));
         }
 
         /**

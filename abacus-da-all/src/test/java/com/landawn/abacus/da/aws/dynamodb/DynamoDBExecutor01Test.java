@@ -851,10 +851,16 @@ public class DynamoDBExecutor01Test extends TestBase {
     // Filters in() with empty collection edge case.
     @Test
     public void testFiltersInCollection_Empty() {
-        Map<String, Condition> result = Filters.in("status", List.of());
-        assertNotNull(result);
-        assertEquals(ComparisonOperator.IN.toString(), result.get("status").getComparisonOperator());
-        assertEquals(0, result.get("status").getAttributeValueList().size());
+        assertThrows(IllegalArgumentException.class, () -> Filters.in("status", List.of()));
+    }
+
+    @Test
+    public void testFiltersInRejectsInvalidVarargsAndAttributeNames() {
+        assertThrows(IllegalArgumentException.class, () -> Filters.in("status", new Object[0]));
+        assertThrows(IllegalArgumentException.class, () -> Filters.in("status", (Object[]) null));
+        assertThrows(IllegalArgumentException.class, () -> Filters.in((String) null, "active"));
+        assertThrows(IllegalArgumentException.class, () -> Filters.in("", "active"));
+        assertThrows(IllegalArgumentException.class, () -> Filters.in("status", (java.util.Collection<?>) null));
     }
 
     @Test

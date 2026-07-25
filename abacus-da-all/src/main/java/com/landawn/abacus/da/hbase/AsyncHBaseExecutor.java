@@ -39,9 +39,9 @@ import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.stream.Stream;
 
 /**
- * Asynchronous wrapper for HBase database operations that provides non-blocking access to Apache HBase.
- * This executor returns {@link ContinuableFuture} instances for all operations, enabling high-performance,
- * concurrent access patterns and reactive programming models.
+ * Thread-offloading wrapper for the blocking {@link HBaseExecutor} API. Each operation is submitted
+ * to an {@link AsyncExecutor} and represented by a {@link ContinuableFuture}; it does not use HBase's
+ * native asynchronous client.
  *
  * <p>All methods in this class are asynchronous counterparts to the synchronous methods in {@link HBaseExecutor}.
  * Each method submits a task that invokes the corresponding synchronous method on the {@link AsyncExecutor}
@@ -60,7 +60,7 @@ import com.landawn.abacus.util.stream.Stream;
  *
  * <h2>Key Features</h2>
  * <ul>
- * <li><strong>Non-blocking Operations</strong>: All methods return immediately with a {@code ContinuableFuture}</li>
+ * <li><strong>Caller-side offloading</strong>: Operations run on worker threads and return a {@code ContinuableFuture}; resolving a future may still block</li>
  * <li><strong>Thread Pool Management</strong>: A single, configurable {@link AsyncExecutor} backs every method</li>
  * <li><strong>Row Key Operations</strong>: Async existence checks, gets, puts, deletes with row key support</li>
  * <li><strong>Batch Operations</strong>: Async batch gets, puts, and deletes for high throughput</li>
@@ -92,18 +92,20 @@ import com.landawn.abacus.util.stream.Stream;
  * ContinuableFuture<Stream<Result>> scanFuture =
  *     async.scan("users", AnyScan.create().withStartRow("user1").withStopRow("user2"));
  *
- * // Chain async operations: each step is dispatched back to the same AsyncExecutor.
+ * // Handle the mapped entity on the same AsyncExecutor.
  * async.get("users", AnyGet.of("user123"), User.class)
- *      .thenCallAsync(user -> { user.setLastLogin(new Date()); return user; })
- *      .thenRunAsync(user -> async.sync().put("users", AnyPut.create(user)))
- *      .thenRunAsync(() -> System.out.println("User updated"));
+ *      .thenRunAsync(user -> {
+ *          if (user != null) {
+ *              System.out.println(user);
+ *          }
+ *      });
  * }</pre>
  *
  * <h3>Performance Considerations:</h3>
  * <ul>
  * <li><strong>Thread Pool Sizing</strong>: Default pool size scales with CPU cores (8-16x)</li>
  * <li><strong>Connection Sharing</strong>: Shares the underlying HBase {@code Connection} with the wrapped {@link HBaseExecutor}</li>
- * <li><strong>Memory Management</strong>: Streams returned by {@code scan} are lazy and own the underlying HBase {@code ResultScanner}; close them after use</li>
+ * <li><strong>Resource Management</strong>: Scan streams open and own an HBase {@code ResultScanner} when consumed; close them after use</li>
  * <li><strong>Error Handling</strong>: Exceptions thrown by the underlying call are propagated through the returned {@code ContinuableFuture}</li>
  * </ul>
  *
@@ -122,7 +124,7 @@ import com.landawn.abacus.util.stream.Stream;
  * @see HBaseExecutor#async()
  * @see ContinuableFuture
  * @see AsyncExecutor
- * @see <a href="http://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
+ * @see <a href="https://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
  * @see org.apache.hadoop.hbase.client.Table
  */
 public final class AsyncHBaseExecutor {
@@ -184,7 +186,7 @@ public final class AsyncHBaseExecutor {
      *
      * // Typical: chain a follow-up action only when present
      * async.exists("users", new Get(Bytes.toBytes("user123")))
-     *      .thenRunAsync(exists -> { if (exists) load("user123"); }); // returns ContinuableFuture<Void>
+     *      .thenRunAsync(exists -> { if (exists) System.out.println("user123 exists"); }); // returns ContinuableFuture<Void>
      *
      * // Edge: a row that does not exist yields false
      * Boolean missing = async.exists("users", new Get(Bytes.toBytes("nope"))).get(); // returns Boolean.FALSE
@@ -242,25 +244,6 @@ public final class AsyncHBaseExecutor {
     public ContinuableFuture<List<Boolean>> exists(final String tableName, final List<Get> gets) {
         return asyncExecutor.execute(() -> hbaseExecutor.exists(tableName, gets));
     }
-
-    //    /**
-    //     * Test for the existence of columns in the table, as specified by the Gets.
-    //     * This will return an array of booleans. Each value will be true if the related Get matches
-    //     * one or more keys, {@code false} if not.
-    //     * This is a server-side call so it prevents any data from being transferred to
-    //     * the client.
-    //     *
-    //     * @param tableName
-    //     * @param gets
-    //     * @return Array of boolean.  True if the specified Get matches one or more keys, {@code false} if not.
-    //     * @deprecated since 2.0 version and will be removed in 3.0 version.
-    //     *             use {@code exists(List)}
-    //     */
-    //    @SuppressWarnings("deprecation")
-    //    @Deprecated
-    //    public ContinuableFuture<List<Boolean>> existsAll(final String tableName, final List<Get> gets) {
-    //        return asyncExecutor.execute((Callable<List<Boolean>>) () -> hbaseExecutor.existsAll(tableName, gets));
-    //    }
 
     /**
      * Asynchronously checks if a row exists using an {@link AnyGet} operation builder.
@@ -336,12 +319,6 @@ public final class AsyncHBaseExecutor {
         return asyncExecutor.execute(() -> hbaseExecutor.exists(tableName, anyGets));
     }
 
-    //    @SuppressWarnings("deprecation")
-    //    @Deprecated
-    //    public ContinuableFuture<List<Boolean>> existsAll(final String tableName, final Collection<AnyGet> anyGets) {
-    //        return asyncExecutor.execute((Callable<List<Boolean>>) () -> hbaseExecutor.existsAll(tableName, anyGets));
-    //    }
-
     /**
      * Asynchronously retrieves a single row from the specified HBase table.
      *
@@ -360,7 +337,7 @@ public final class AsyncHBaseExecutor {
      *
      * // Typical: process the Result asynchronously
      * async.get("users", new Get(Bytes.toBytes("user123")))
-     *      .thenRunAsync(r -> { if (!r.isEmpty()) handle(r); }); // returns ContinuableFuture<Void>
+     *      .thenRunAsync(r -> { if (!r.isEmpty()) System.out.println(r); }); // returns ContinuableFuture<Void>
      *
      * // Edge: a missing row resolves to an empty Result, not null
      * Result missing = async.get("users", new Get(Bytes.toBytes("nope"))).get(); // returns a Result where isEmpty() == true
@@ -492,8 +469,8 @@ public final class AsyncHBaseExecutor {
      * Asynchronously retrieves a row and converts it to the specified target type.
      *
      * <p>The {@link Result} returned by HBase is converted to {@code T} using the entity-mapping
-     * facilities of {@link HBaseExecutor}. If the row does not exist, the resulting object may be
-     * {@code null} or an empty instance depending on the target type.</p>
+     * facilities of {@link HBaseExecutor}. If the row does not exist, the conversion returns the
+     * target type's default value (for example, {@code null} for a bean type).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -504,7 +481,7 @@ public final class AsyncHBaseExecutor {
      *
      * // Typical: continue processing on the async pool
      * async.get("users", new Get(Bytes.toBytes("user123")), User.class)
-     *      .thenRunAsync(u -> { if (u != null) cache(u); }); // returns ContinuableFuture<Void>
+     *      .thenRunAsync(u -> { if (u != null) System.out.println(u); }); // returns ContinuableFuture<Void>
      *
      * // Edge: a missing row maps to null (for bean target types)
      * User missing = async.get("users", new Get(Bytes.toBytes("nope")), User.class).get(); // returns null
@@ -578,7 +555,7 @@ public final class AsyncHBaseExecutor {
      *
      * // Typical: continue on the async pool
      * async.get("users", AnyGet.of("user123"), User.class)
-     *      .thenRunAsync(u -> { if (u != null) cache(u); }); // returns ContinuableFuture<Void>
+     *      .thenRunAsync(u -> { if (u != null) System.out.println(u); }); // returns ContinuableFuture<Void>
      *
      * // Edge: a missing row maps to null (for bean target types)
      * User missing = async.get("users", AnyGet.of("nope"), User.class).get(); // returns null
@@ -643,9 +620,9 @@ public final class AsyncHBaseExecutor {
      *
      * <p>Performs a full table scan retrieving all cells from the specified column family.
      * The returned {@link ContinuableFuture} completes with a lazy {@link Stream} of {@link Result}
-     * objects backed by an open HBase {@code ResultScanner}.</p>
+     * objects; the stream opens its HBase {@code ResultScanner} only when consumed.</p>
      *
-     * <p><b>Important:</b> the returned Stream owns an open HBase scanner and must be closed
+     * <p><b>Important:</b> the returned Stream opens and owns an HBase scanner when consumed and must be closed
      * (e.g., via try-with-resources or by exhausting it with a terminal operation that closes it)
      * to release server-side resources.</p>
      *
@@ -687,7 +664,7 @@ public final class AsyncHBaseExecutor {
      * <p>Performs a full table scan retrieving only the specified column (family:qualifier). This
      * is more efficient than scanning the entire family when only specific columns are needed.</p>
      *
-     * <p><b>Important:</b> the returned Stream owns an open HBase scanner and must be closed
+     * <p><b>Important:</b> the returned Stream opens and owns an HBase scanner when consumed and must be closed
      * after use to release server-side resources.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -695,10 +672,15 @@ public final class AsyncHBaseExecutor {
      * AsyncHBaseExecutor async = hbaseExecutor.async();
      *
      * // Typical: map each row's single column to a value on the async pool.
-     * // toList() is a terminal op that closes the underlying scanner.
+     * // Close the stream explicitly even though toList() exhausts it.
      * List<String> names = async.scan("users", "info", "name")
-     *      .thenCallAsync(stream -> stream.map(r -> Bytes.toString(r.getValue(Bytes.toBytes("info"), Bytes.toBytes("name")))).toList())
-     *      .get(); // returns the list of names // throws InterruptedException, ExecutionException
+     *      .thenCallAsync(stream -> {
+     *          try (stream) {
+     *              return stream.map(r -> Bytes.toString(r.getValue(
+     *                      Bytes.toBytes("info"), Bytes.toBytes("name")))).toList();
+     *          }
+     *      })
+     *      .get(); // returns the names; may throw InterruptedException or ExecutionException
      *
      * // Edge: a column with no matching rows yields an empty stream
      * try (Stream<Result> empty = async.scan("users", "info", "missingCol").get()) {
@@ -726,7 +708,7 @@ public final class AsyncHBaseExecutor {
      * <p>Performs a full table scan retrieving all cells from the specified column family. The
      * byte-array variant avoids string-to-bytes conversion when the bytes are already available.</p>
      *
-     * <p><b>Important:</b> the returned Stream owns an open HBase scanner and must be closed
+     * <p><b>Important:</b> the returned Stream opens and owns an HBase scanner when consumed and must be closed
      * after use.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -769,7 +751,7 @@ public final class AsyncHBaseExecutor {
      * <p>Performs a full table scan retrieving only the specified column (family:qualifier). The
      * byte-array variant avoids string-to-bytes conversion when the bytes are already available.</p>
      *
-     * <p><b>Important:</b> the returned Stream owns an open HBase scanner and must be closed
+     * <p><b>Important:</b> the returned Stream opens and owns an HBase scanner when consumed and must be closed
      * after use.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -815,7 +797,7 @@ public final class AsyncHBaseExecutor {
      * a fluent API for configuring start/stop rows, filters, column families, time ranges, and
      * result limits.</p>
      *
-     * <p><b>Important:</b> the returned Stream owns an open HBase scanner and must be closed
+     * <p><b>Important:</b> the returned Stream opens and owns an HBase scanner when consumed and must be closed
      * after use.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -857,7 +839,7 @@ public final class AsyncHBaseExecutor {
      * providing direct access to all HBase scan capabilities including filters, column selection,
      * time ranges, caching, and batching.</p>
      *
-     * <p><b>Important:</b> the returned Stream owns an open HBase scanner and must be closed
+     * <p><b>Important:</b> the returned Stream opens and owns an HBase scanner when consumed and must be closed
      * after use.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -899,7 +881,7 @@ public final class AsyncHBaseExecutor {
      * <p>Performs a full table scan of the specified column family and automatically converts each
      * {@link Result} to {@code T} using {@link HBaseExecutor}'s entity-mapping facilities.</p>
      *
-     * <p><b>Important:</b> the returned Stream owns an open HBase scanner and must be closed
+     * <p><b>Important:</b> the returned Stream opens and owns an HBase scanner when consumed and must be closed
      * after use.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -942,7 +924,7 @@ public final class AsyncHBaseExecutor {
      * automatically converts each Result to {@code T}. This is efficient when each row maps to a
      * single value.</p>
      *
-     * <p><b>Important:</b> the returned Stream owns an open HBase scanner and must be closed
+     * <p><b>Important:</b> the returned Stream opens and owns an HBase scanner when consumed and must be closed
      * after use.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -987,7 +969,7 @@ public final class AsyncHBaseExecutor {
      * <p>The byte-array variant avoids string-to-bytes conversion when the bytes are already
      * available.</p>
      *
-     * <p><b>Important:</b> the returned Stream owns an open HBase scanner and must be closed
+     * <p><b>Important:</b> the returned Stream opens and owns an HBase scanner when consumed and must be closed
      * after use.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -1032,7 +1014,7 @@ public final class AsyncHBaseExecutor {
      * <p>The byte-array variant avoids string-to-bytes conversion when the bytes are already
      * available.</p>
      *
-     * <p><b>Important:</b> the returned Stream owns an open HBase scanner and must be closed
+     * <p><b>Important:</b> the returned Stream opens and owns an HBase scanner when consumed and must be closed
      * after use.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -1079,7 +1061,7 @@ public final class AsyncHBaseExecutor {
      * <p>Combines the flexibility of {@link AnyScan} configuration (start/stop rows, filters,
      * column families, time ranges, limits) with automatic object mapping.</p>
      *
-     * <p><b>Important:</b> the returned Stream owns an open HBase scanner and must be closed
+     * <p><b>Important:</b> the returned Stream opens and owns an HBase scanner when consumed and must be closed
      * after use.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -1088,7 +1070,7 @@ public final class AsyncHBaseExecutor {
      *
      * // Typical: a bounded scan mapped to entities and processed on the async pool (close the stream).
      * async.scan("users", AnyScan.create().withStartRow("user1").setLimit(50), User.class)
-     *      .thenRunAsync(stream -> { try (stream) { stream.forEach(user -> processUser(user)); } }); // returns ContinuableFuture<Void>
+     *      .thenRunAsync(stream -> { try (stream) { stream.forEach(System.out::println); } }); // returns ContinuableFuture<Void>
      *
      * // Typical: block for the stream, then collect entities
      * try (Stream<User> s = async.scan("users", AnyScan.create().setLimit(50), User.class).get()) {
@@ -1122,7 +1104,7 @@ public final class AsyncHBaseExecutor {
      * <p>Provides full access to HBase scan capabilities (filters, column selection, time ranges,
      * caching, batching) combined with automatic object mapping.</p>
      *
-     * <p><b>Important:</b> the returned Stream owns an open HBase scanner and must be closed
+     * <p><b>Important:</b> the returned Stream opens and owns an HBase scanner when consumed and must be closed
      * after use.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -1137,7 +1119,7 @@ public final class AsyncHBaseExecutor {
      *
      * // Typical: process on the async pool
      * async.scan("users", new Scan(), User.class)
-     *      .thenRunAsync(stream -> { try (stream) { stream.forEach(u -> processUser(u)); } }); // returns ContinuableFuture<Void>
+     *      .thenRunAsync(stream -> { try (stream) { stream.forEach(System.out::println); } }); // returns ContinuableFuture<Void>
      *
      * // Negative: the scan stream is lazy, so get() returns a stream successfully even for a bad
      * // table; the underlying table is opened on consumption, surfacing an UncheckedIOException then.
@@ -1568,9 +1550,9 @@ public final class AsyncHBaseExecutor {
      *
      * <p>Atomically concatenates the supplied bytes to the end of each targeted cell's existing
      * value. If a target cell does not yet exist, it is created with the supplied value. This is
-     * useful for maintaining log-like or counter-like columns. The returned
+     * useful for maintaining log-like columns. With the default return-results setting, the
      * {@link ContinuableFuture} completes with a {@link Result} containing the new (post-append)
-     * cell values.</p>
+     * cell values. If return-results is disabled, HBase may return {@code null}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1590,8 +1572,9 @@ public final class AsyncHBaseExecutor {
      *
      * @param tableName the name of the HBase table
      * @param append the AnyAppend builder specifying the row and values to append
-     * @return a {@link ContinuableFuture} containing the Result with new cell values after the
-     *         append. Wraps {@link HBaseExecutor#append(String, AnyAppend)}.
+     * @return a {@link ContinuableFuture} containing post-append values when return-results is
+     *         enabled; it may contain {@code null} when disabled. Wraps
+     *         {@link HBaseExecutor#append(String, AnyAppend)}.
      * @see HBaseExecutor#append(String, AnyAppend)
      * @see AnyAppend
      * @see Result
@@ -1606,8 +1589,9 @@ public final class AsyncHBaseExecutor {
      *
      * <p>Atomically concatenates the supplied bytes to the end of each targeted cell's existing
      * value via the HBase native {@link Append} API. If a target cell does not yet exist, it is
-     * created with the supplied value. The returned {@link ContinuableFuture} completes with a
-     * {@link Result} containing the new (post-append) cell values.</p>
+     * created with the supplied value. With return-results enabled (the default), the returned
+     * {@link ContinuableFuture} completes with the new values; HBase may return {@code null} when
+     * {@link Append#setReturnResults(boolean)} is set to {@code false}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1626,8 +1610,9 @@ public final class AsyncHBaseExecutor {
      *
      * @param tableName the name of the HBase table
      * @param append the Append object specifying the row and values to append
-     * @return a {@link ContinuableFuture} containing the Result with new cell values after the
-     *         append. Wraps {@link HBaseExecutor#append(String, Append)}.
+     * @return a {@link ContinuableFuture} containing post-append values when return-results is
+     *         enabled; it may contain {@code null} when disabled. Wraps
+     *         {@link HBaseExecutor#append(String, Append)}.
      * @see HBaseExecutor#append(String, Append)
      * @see Append
      * @see Result
@@ -1642,8 +1627,9 @@ public final class AsyncHBaseExecutor {
      *
      * <p>Atomically increments one or more long-valued cells by the specified amounts. This is
      * ideal for maintaining counters without race conditions. If a target cell does not yet exist,
-     * it is initialised to the increment amount. The returned {@link ContinuableFuture} completes
-     * with a {@link Result} containing the post-increment cell values.</p>
+     * it is initialised to the increment amount. With return-results enabled (the default), the
+     * returned {@link ContinuableFuture} contains the post-increment cell values; callers that
+     * disable return-results must not rely on its value.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1663,8 +1649,9 @@ public final class AsyncHBaseExecutor {
      *
      * @param tableName the name of the HBase table
      * @param increment the AnyIncrement builder specifying the row and increment amounts
-     * @return a {@link ContinuableFuture} containing the Result with new cell values after the
-     *         increment. Wraps {@link HBaseExecutor#increment(String, AnyIncrement)}.
+     * @return a {@link ContinuableFuture} containing post-increment values when return-results is
+     *         enabled; callers that disable return-results must not rely on its value. Wraps
+     *         {@link HBaseExecutor#increment(String, AnyIncrement)}.
      * @see HBaseExecutor#increment(String, AnyIncrement)
      * @see AnyIncrement
      * @see Result
@@ -1678,8 +1665,9 @@ public final class AsyncHBaseExecutor {
      *
      * <p>Atomically increments one or more long-valued cells by the specified amounts using the
      * HBase native {@link Increment} API. If a target cell does not yet exist, it is initialised
-     * to the increment amount. The returned {@link ContinuableFuture} completes with a
-     * {@link Result} containing the post-increment cell values.</p>
+     * to the increment amount. With return-results enabled (the default), the returned
+     * {@link ContinuableFuture} contains the post-increment cell values; callers that set
+     * {@link Increment#setReturnResults(boolean)} to {@code false} must not rely on its value.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1699,8 +1687,9 @@ public final class AsyncHBaseExecutor {
      *
      * @param tableName the name of the HBase table
      * @param increment the Increment object specifying the row and increment amounts
-     * @return a {@link ContinuableFuture} containing the Result with new cell values after the
-     *         increment. Wraps {@link HBaseExecutor#increment(String, Increment)}.
+     * @return a {@link ContinuableFuture} containing post-increment values when return-results is
+     *         enabled; callers that disable return-results must not rely on its value. Wraps
+     *         {@link HBaseExecutor#increment(String, Increment)}.
      * @see HBaseExecutor#increment(String, Increment)
      * @see Increment
      * @see Result
@@ -1884,7 +1873,7 @@ public final class AsyncHBaseExecutor {
      *
      * // Typical: use the channel once it is available, on the async pool
      * async.coprocessorService("users", "user123")
-     *      .thenRunAsync(ch -> invokeEndpoint(ch)); // returns ContinuableFuture<Void>
+     *      .thenRunAsync(channel -> System.out.println(channel)); // returns ContinuableFuture<Void>
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
      * async.coprocessorService("badTable", "user123").get(); // throws InterruptedException, ExecutionException
@@ -2065,7 +2054,8 @@ public final class AsyncHBaseExecutor {
      * Descriptors.MethodDescriptor methodDescriptor = MyService.getDescriptor().findMethodByName("count");
      * Message request = CountRequest.getDefaultInstance();
      * CountResponse responsePrototype = CountResponse.getDefaultInstance();
-     * Batch.Callback<CountResponse> callback = (region, row, response) -> accumulate(response);
+     * Batch.Callback<CountResponse> callback =
+     *         (region, row, response) -> System.out.println(response);
      * Object done = async.batchCoprocessorService("users", methodDescriptor, request, "user1", "user9", responsePrototype, callback).get(); // returns null when all regions have responded
      *
      * // Typical: run a follow-up only after every region has been processed

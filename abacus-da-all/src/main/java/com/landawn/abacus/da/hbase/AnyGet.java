@@ -105,7 +105,7 @@ import com.landawn.abacus.util.N;
  * @see Get
  * @see AnyQuery
  * @see HBaseExecutor
- * @see <a href="http://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
+ * @see <a href="https://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
  */
 public final class AnyGet extends AnyQuery<AnyGet> implements Row {
 
@@ -200,9 +200,9 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
     /**
      * Creates a new AnyGet instance for a partial row key slice.
      *
-     * <p>This method allows for more precise control over row key matching by specifying
-     * an offset and length within the converted row key byte array. This is useful for
-     * prefix-based row key schemes or when working with composite keys.</p>
+     * <p>This method constructs an exact row key from an offset/length slice of the converted
+     * byte array. It is useful for composite or fixed-width key layouts; it does not perform
+     * prefix matching.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1011,12 +1011,12 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyGet a = AnyGet.of("rowKey");
-     * a.hashCode() == a.hashCode();   // returns true (stable; delegates to the wrapped HBase Get)
+     * assert a.hashCode() == a.hashCode();   // true (stable; delegates to the wrapped HBase Get)
      *
      * // Consistent with the value-based equals: two Gets on the same row are equal and share a hash:
      * AnyGet b = AnyGet.of("rowKey");
      * a.equals(b);                    // returns true
-     * a.hashCode() == b.hashCode();   // returns true
+     * assert a.hashCode() == b.hashCode();   // true
      * }</pre>
      *
      * @return the hash code value for this AnyGet

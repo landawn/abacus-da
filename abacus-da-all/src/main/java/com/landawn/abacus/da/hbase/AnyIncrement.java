@@ -51,7 +51,7 @@ import com.landawn.abacus.annotation.SuppressFBWarnings;
  *     .setReturnResults(true);
  * }</pre>
  *
- * @see <a href="http://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
+ * @see <a href="https://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
  * @see org.apache.hadoop.hbase.client.Increment
  * @see AnyMutation
  */
@@ -329,7 +329,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * AnyIncrement extended = AnyIncrement.of(existingIncrement)
      *                                     .addColumn("additional", "counter", 5L)
      *                                     .setReturnResults(true);
-     * extended.val() == existingIncrement;            // false (a fresh copy is wrapped)
+     * assert extended.val() != existingIncrement;     // true (a fresh copy is wrapped)
      * extended.getFamilyMapOfLongs().size();          // returns 2
      * existingIncrement.getFamilyMapOfLongs().size(); // returns 1 (source map is unchanged)
      *
@@ -359,7 +359,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *                                         .addColumn("stats", "count", 1L);
      * Increment hbaseIncrement = anyIncrement.val();
      * hbaseIncrement.getRow();                 // returns Bytes.toBytes("user123")
-     * anyIncrement.val() == hbaseIncrement;    // true (same wrapped instance every call)
+     * assert anyIncrement.val() == hbaseIncrement;    // true (same wrapped instance every call)
      * table.increment(hbaseIncrement);         // Use with native HBase API
      * }</pre>
      *
@@ -385,7 +385,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * Cell cell = CellUtil.createCell(Bytes.toBytes("row1"), Bytes.toBytes("cf"),
      *         Bytes.toBytes("q"), 0L, KeyValue.Type.Put.getCode(), Bytes.toBytes(1L));
      * AnyIncrement same = increment.add(cell); // succeeds: cell row matches this increment's row
-     * same == increment;                       // true (returns this for chaining)
+     * assert same == increment;                // true (returns this for chaining)
      * increment.hasFamilies();                 // returns true
      *
      * // Edge: a cell whose row key differs from this increment's row is rejected
@@ -423,7 +423,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *
      * AnyIncrement increment = AnyIncrement.of("user123");
      * AnyIncrement same = increment.addColumn(familyBytes, qualifierBytes, 1L);
-     * same == increment;         // true (returns this for chaining)
+     * assert same == increment;  // true (returns this for chaining)
      * increment.hasFamilies();   // returns true
      *
      * // Edge: a null family is rejected
@@ -458,7 +458,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *
      * // Increment page view counter (returns the same builder for chaining)
      * AnyIncrement same = anyIncrement.addColumn("stats", "pageViews", 1L);
-     * same == anyIncrement; // true
+     * assert same == anyIncrement; // true
      *
      * // Increment multiple counters
      * anyIncrement.addColumn("metrics", "sessions", 1L)
@@ -598,7 +598,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *
      * // Returns the same builder for chaining
      * AnyIncrement inc = AnyIncrement.of("row");
-     * inc.setReturnResults(true) == inc;     // true
+     * assert inc.setReturnResults(true) == inc;     // true
      * }</pre>
      *
      * @param returnResults {@code true} to return the post-increment values (HBase's historical
@@ -674,14 +674,13 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * the outer map keys are column family names (as byte arrays) and the values are
      * NavigableMap instances containing qualifier-to-increment-value mappings.
      * This is useful for inspecting the queued increment data programmatically.
-     * The returned map is a snapshot rebuilt on each call; modifying it does not
-     * affect this increment.
+     * The returned map is a structural snapshot rebuilt on each call, so adding or removing map
+     * entries does not affect this increment. Qualifier keys are cloned, but outer family-key
+     * byte arrays are shared with the underlying mutation and must not be modified.
      * </p>
      *
-     * <p><b>Structure:</b></p>
-     * <pre>{@code
-     * Map<family_bytes, Map<qualifier_bytes, Long_increment_value>>
-     * }</pre>
+     * <p><b>Structure:</b> {@code Map<byte[], NavigableMap<byte[], Long>>}, where the outer key is
+     * a family and each nested key is a qualifier.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -763,13 +762,13 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyIncrement increment = AnyIncrement.of("row");
-     * increment.hashCode() == increment.val().hashCode(); // true (delegates to the wrapped Increment)
+     * assert increment.hashCode() == increment.val().hashCode(); // true (delegates to the wrapped Increment)
      *
      * // Increments with the same row key share the same hash code (columns are not considered)
      * AnyIncrement a = AnyIncrement.of("row").addColumn("cf", "q", 1L);
      * AnyIncrement b = AnyIncrement.of("row").addColumn("cf", "q", 1L);
      * a.equals(b);                         // true
-     * a.hashCode() == b.hashCode();        // true
+     * assert a.hashCode() == b.hashCode(); // true
      * }</pre>
      *
      * @return the hash code value for this AnyIncrement

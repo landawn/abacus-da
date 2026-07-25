@@ -16,6 +16,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.util.Arrays;
 
+import org.apache.hadoop.hbase.client.Append;
 import org.apache.hadoop.hbase.client.Delete;
 import org.apache.hadoop.hbase.client.Mutation;
 import org.apache.hadoop.hbase.client.Put;
@@ -110,6 +111,21 @@ public class AnyRowMutationsTest extends TestBase {
         assertThrows(IOException.class, () -> rm.add(put));
     }
 
+    @Test
+    public void testAdd_unsupportedMutation_throwsBeforeSubmission() {
+        AnyRowMutations rm = AnyRowMutations.of("row");
+
+        assertThrows(IllegalArgumentException.class, () -> rm.add(new Append(Bytes.toBytes("row"))));
+        assertEquals(0, rm.val().getMutations().size());
+    }
+
+    @Test
+    public void testAdd_nullMutation_throws() {
+        AnyRowMutations rm = AnyRowMutations.of("row");
+
+        assertThrows(IllegalArgumentException.class, () -> rm.add((Mutation) null));
+    }
+
     // ---------------------------------------------------------------------
     // add(List<Mutation>)
     // ---------------------------------------------------------------------
@@ -130,6 +146,23 @@ public class AnyRowMutationsTest extends TestBase {
         Put put = new Put(Bytes.toBytes("row")).addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
         AnyRowMutations returned = rm.add(Arrays.<Mutation> asList(put));
         assertSame(rm, returned);
+    }
+
+    @Test
+    public void testAdd_listWithUnsupportedMutation_isRejectedWithoutPartialAdd() {
+        AnyRowMutations rm = AnyRowMutations.of("row");
+        Put put = new Put(Bytes.toBytes("row")).addColumn(Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> rm.add(Arrays.<Mutation> asList(put, new Append(Bytes.toBytes("row")))));
+        assertEquals(0, rm.val().getMutations().size());
+    }
+
+    @Test
+    public void testAdd_nullList_throws() {
+        AnyRowMutations rm = AnyRowMutations.of("row");
+
+        assertThrows(IllegalArgumentException.class, () -> rm.add((java.util.List<Mutation>) null));
     }
 
     // ---------------------------------------------------------------------

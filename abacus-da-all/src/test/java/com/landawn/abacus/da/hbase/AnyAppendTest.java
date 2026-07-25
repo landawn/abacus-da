@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -140,6 +141,20 @@ public class AnyAppendTest extends TestBase {
         AnyAppend returned = a.add(cell);
         assertSame(a, returned);
         assertTrue(a.has("cf", "q"));
+    }
+
+    @Test
+    public void testAdd_cellWithDifferentRow_throwsInsteadOfSilentlyDroppingCell() {
+        Cell cell = new KeyValue(Bytes.toBytes("other-row"), Bytes.toBytes("cf"), Bytes.toBytes("q"), Bytes.toBytes("v"));
+        AnyAppend append = AnyAppend.of("row");
+
+        assertThrows(IllegalArgumentException.class, () -> append.add(cell));
+        assertEquals(0, append.size());
+    }
+
+    @Test
+    public void testAdd_nullCell_throws() {
+        assertThrows(IllegalArgumentException.class, () -> AnyAppend.of("row").add(null));
     }
 
     // ---------------------------------------------------------------------

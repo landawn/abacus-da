@@ -85,7 +85,7 @@ import org.apache.hadoop.hbase.security.visibility.Authorizations;
  * @see AnyScan
  * @see Filter
  * @see Consistency
- * @see <a href="http://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
+ * @see <a href="https://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
  */
 abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttributes<AQ> {
 
@@ -359,8 +359,8 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * writes are visible.
      * <ul>
      * <li><strong>READ_COMMITTED</strong>: only committed data is visible — stronger guarantee.</li>
-     * <li><strong>READ_UNCOMMITTED</strong>: also includes in-flight writes — may see data that
-     *     is subsequently rolled back.</li>
+     * <li><strong>READ_UNCOMMITTED</strong>: also includes in-progress modifications and may expose
+     *     a state that a committed read would not yet observe.</li>
      * </ul>
      *
      * @param level the isolation level to apply

@@ -676,7 +676,7 @@ public final class CqlMapper {
      * CqlMapper m1 = new CqlMapper();
      * m1.add("findUserById", "SELECT * FROM users WHERE id = ?", null);
      * CqlMapper m2 = m1.copy();
-     * (m2 == m1);                                       // false (distinct instances)
+     * boolean distinct = m2 != m1;                      // true (distinct instances)
      * m1.equals(m2);                                    // true (same mappings)
      * m2.remove("findUserById");
      * m1.get("findUserById");                           // still non-null (m1 unaffected by m2's change)
@@ -877,10 +877,10 @@ public final class CqlMapper {
      * <pre>{@code
      * CqlMapper m1 = new CqlMapper();
      * CqlMapper m2 = new CqlMapper();
-     * (m1.hashCode() == m2.hashCode());                 // true (two empty mappers share a hash code)
+     * boolean sameEmptyHash = m1.hashCode() == m2.hashCode(); // true
      * m1.add("k", "SELECT 1 FROM t", null);
      * m2.add("k", "SELECT 1 FROM t", null);
-     * (m1.hashCode() == m2.hashCode());                 // true (equal mappers share a hash code)
+     * boolean samePopulatedHash = m1.hashCode() == m2.hashCode(); // true
      * }</pre>
      *
      * @return hash code value for this object

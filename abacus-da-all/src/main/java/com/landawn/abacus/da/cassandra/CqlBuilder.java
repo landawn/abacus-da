@@ -16,8 +16,6 @@
 
 package com.landawn.abacus.da.cassandra;
 
-import static com.landawn.abacus.util.SK._PARENTHESIS_L;
-import static com.landawn.abacus.util.SK._PARENTHESIS_R;
 import static com.landawn.abacus.util.SK._SPACE;
 
 import java.util.ArrayList;
@@ -49,6 +47,7 @@ import com.landawn.abacus.query.condition.Junction;
 import com.landawn.abacus.query.condition.NotBetween;
 import com.landawn.abacus.query.condition.NotIn;
 import com.landawn.abacus.query.condition.NotInSubQuery;
+import com.landawn.abacus.query.condition.Operator;
 import com.landawn.abacus.query.condition.SubQuery;
 import com.landawn.abacus.query.condition.Where;
 import com.landawn.abacus.util.Array;
@@ -159,8 +158,6 @@ import com.landawn.abacus.util.u.Optional;
  */
 public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
-    // TODO performance goal: 80% cases (or maybe CQL.length < 1024?) can be composed in 0.1 millisecond. 0.01 millisecond will be fantastic if possible.
-
     protected static final Logger logger = LoggerFactory.getLogger(CqlBuilder.class);
 
     private static final String SPACE_USING = " USING ";
@@ -183,15 +180,13 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
     static final char[] _SPACE_ALLOW_FILTERING = " ALLOW FILTERING".toCharArray();
 
-    // True while onlyIf(Condition) renders its condition: Cassandra's LWT IF grammar rejects parenthesized
-    // members, so Junction members are rendered without parentheses in that context.
-    private boolean _appendingIfClause; //NOSONAR
-
     private boolean _ttlSpecified;
 
     private boolean _timestampSpecified;
 
     private boolean _ifClauseSpecified;
+
+    private boolean _renderingIfCondition;
 
     private boolean _allowFilteringSpecified;
 
@@ -204,18 +199,25 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         super(sqlDialect);
     }
 
+    /**
+     * Sets the target table for an INSERT or batch INSERT statement.
+     *
+     * @param tableName one table name, optionally keyspace-qualified
+     * @return this CqlBuilder instance for method chaining
+     * @throws IllegalArgumentException if {@code tableName} is not exactly one CQL table reference
+     * @throws IllegalStateException if the builder is closed, or — for a batch INSERT — if the operation is
+     *         not INSERT or a target was already emitted
+     */
     @Override
     public CqlBuilder into(final String tableName) {
         assertNotClosed();
+        checkCqlTableReference(tableName, "tableName");
 
         if (N.isEmpty(_propsList)) {
             return super.into(tableName);
         }
 
-        N.checkArgNotEmpty(tableName, "tableName");
-
         final String normalizedTableName = tableName.trim();
-        N.checkArgNotEmpty(normalizedTableName, "tableName");
 
         if (_op != OperationType.ADD) {
             throw new IllegalStateException("Invalid operation for batch insert: " + _op);
@@ -347,14 +349,14 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Insert with TTL of 3600 seconds (1 hour)
-     * String cql = PSC.insert("name", "email")
+     * String insertCql = PSC.insert("name", "email")
      *                 .into("users")
      *                 .usingTTL(3600)
      *                 .build().query();
      * // Output: INSERT INTO users (name, email) VALUES (?, ?) USING TTL 3600
      *
      * // Update with TTL
-     * String cql = PSC.update("users")
+     * String updateCql = PSC.update("users")
      *                 .set("status")
      *                 .where(Filters.eq("id", 123))
      *                 .usingTTL(7200)
@@ -385,15 +387,15 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * <pre>{@code
      * // Insert with TTL from configuration
      * String ttlConfig = "7200";  // 2 hours
-     * String cql = PSC.insert("name", "email")
+     * String insertCql = PSC.insert("name", "email")
      *                 .into("users")
      *                 .usingTTL(ttlConfig)
      *                 .build().query();
      * // Output: INSERT INTO users (name, email) VALUES (?, ?) USING TTL 7200
      *
      * // Update with dynamic TTL
-     * String dynamicTTL = String.valueOf(System.currentTimeMillis() / 1000 + 3600);
-     * String cql = PSC.update("users")
+     * String dynamicTTL = String.valueOf(java.time.Duration.ofHours(1).toSeconds());
+     * String updateCql = PSC.update("users")
      *                 .set("status")
      *                 .where(Filters.eq("id", 123))
      *                 .usingTTL(dynamicTTL)
@@ -458,7 +460,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * long specificTime = System.currentTimeMillis() - 3600000;  // 1 hour ago
-     * String cql = PSC.update("users")
+     * String updateCql = PSC.update("users")
      *                 .set("lastLogin")
      *                 .where(Filters.eq("id", 123))
      *                 .usingTimestamp(specificTime)
@@ -840,7 +842,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * // Output: UPDATE users SET status = ? WHERE id = ? IF status = 'inactive'
      *
      * // DELETE with a raw expression
-     * String cql = PSC.deleteFrom("users")
+     * String deleteCql = PSC.deleteFrom("users")
      *                 .where(Filters.eq("id", 123))
      *                 .onlyIf("version = 1")
      *                 .build().query();
@@ -887,14 +889,14 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // DELETE with a single condition
-     * String cql = PSC.deleteFrom("users")
+     * String deleteCql = PSC.deleteFrom("users")
      *                 .where(Filters.eq("id", 123))
      *                 .onlyIf(Filters.eq("version", 1))
      *                 .build().query();
      * // Output: DELETE FROM users WHERE id = ? IF version = ?
      *
      * // UPDATE with a compound condition (operands are NOT parenthesized, per Cassandra's LWT grammar)
-     * String cql = PSC.update("users")
+     * String updateCql = PSC.update("users")
      *                 .set("status")
      *                 .where(Filters.eq("id", 123))
      *                 .onlyIf(Filters.and(Filters.eq("status", "inactive"), Filters.lt("retryCount", 3)))
@@ -925,17 +927,31 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         checkWhereSpecifiedForIfClause();
         checkIfClauseNotSpecified();
 
+        // Render the IF clause atomically: appendCondition rejects the many constructs CQL has no
+        // syntax for (BETWEEN, NOT IN, sub-queries, OR, null comparisons, ...), and without this
+        // rollback a rejected condition would leave the half-emitted clause behind — build() would
+        // then silently return corrupt CQL such as "... IF " or "... IF s IN (?, ".
+        final int cqlLengthBeforeIfClause = _sb.length();
+        final int parameterCountBeforeIfClause = _parameters.size();
+
         _sb.append(_SPACE_IF_SPACE);
 
-        // Cassandra's LWT grammar is "IF columnCondition (AND columnCondition)*"; parenthesized members
-        // are a syntax error there (unlike WHERE relations), so the Junction branch of appendCondition
-        // renders without per-member parentheses while this flag is set.
-        _appendingIfClause = true;
+        // While set, this flag relaxes/tightens two LWT-specific rules in appendCondition: LIKE is
+        // rejected inside an IF clause, and a null value is allowed with '=' / '!=' only there.
+        _renderingIfCondition = true;
 
         try {
             appendCondition(cond);
+        } catch (final RuntimeException | Error e) {
+            _sb.setLength(cqlLengthBeforeIfClause);
+
+            while (_parameters.size() > parameterCountBeforeIfClause) {
+                _parameters.remove(_parameters.size() - 1);
+            }
+
+            throw e;
         } finally {
-            _appendingIfClause = false;
+            _renderingIfCondition = false;
         }
 
         _ifClauseSpecified = true;
@@ -953,7 +969,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // UPDATE only if row exists
-     * String cql = PSC.update("users")
+     * String updateCql = PSC.update("users")
      *                 .set("lastLogin")
      *                 .where(Filters.eq("id", 123))
      *                 .ifExists()
@@ -961,7 +977,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * // Output: UPDATE users SET last_login = ? WHERE id = ? IF EXISTS
      *
      * // DELETE only if row exists
-     * String cql = PSC.deleteFrom("users")
+     * String deleteCql = PSC.deleteFrom("users")
      *                 .where(Filters.eq("id", 123))
      *                 .ifExists()
      *                 .build().query();
@@ -1001,7 +1017,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * <p>The IF NOT EXISTS clause is used with INSERT operations to ensure the operation only
      * executes if the target row does not already exist. This provides a lightweight transaction
      * that prevents duplicate insertions and can be useful for ensuring data uniqueness. Note that
-     * {@code IF NOT EXISTS} is valid only on INSERT statements — for conditional UPDATE/DELETE use
+     * {@code IF NOT EXISTS} is valid only on INSERT statements; for conditional UPDATE/DELETE use
      * {@link #ifExists()} or {@link #onlyIf(Condition)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -1057,7 +1073,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Query with filtering on non-indexed column
-     * String cql = PSC.select("id", "name", "age")
+     * String ageQuery = PSC.select("id", "name", "age")
      *                 .from("users")
      *                 .where(Filters.gt("age", 18))
      *                 .allowFiltering()
@@ -1065,12 +1081,12 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * // Output: SELECT id, name, age FROM users WHERE age > ? ALLOW FILTERING
      *
      * // Complex query requiring filtering
-     * String cql = PSC.select("*")
+     * String eventQuery = PSC.select("*")
      *                 .from("events")
-     *                 .where(Filters.and(Filters.eq("type", "login"), Filters.gte("timestamp", yesterday)))
+     *                 .where(Filters.and(Filters.eq("type", "login"), Filters.ge("timestamp", yesterday)))
      *                 .allowFiltering()
      *                 .build().query();
-     * // Output: SELECT * FROM events WHERE (type = ?) AND (timestamp >= ?) ALLOW FILTERING
+     * // Output: SELECT * FROM events WHERE type = ? AND timestamp >= ? ALLOW FILTERING
      * }</pre>
      *
      * <p><b>Performance Warning:</b> Use this clause sparingly as it can cause full table scans
@@ -1101,6 +1117,73 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
     }
 
     /**
+     * Sets the FROM clause to one Cassandra table.
+     *
+     * <p>CQL SELECT and column-DELETE statements operate on exactly one table. The table may be
+     * keyspace-qualified and may use quoted identifiers, but table aliases, joins, subqueries, and
+     * comma-separated tables are not supported.</p>
+     *
+     * <p><b>Usage Example:</b></p>
+     * <pre>{@code
+     * String cql = PSC.select("id", "name").from("app.users").build().query();
+     * // Output: SELECT id, name FROM app.users
+     * }</pre>
+     *
+     * @param expr one table name, optionally keyspace-qualified
+     * @return this CqlBuilder instance for method chaining
+     * @throws IllegalArgumentException if {@code expr} is not exactly one CQL table reference
+     * @throws IllegalStateException if the current operation is not SELECT or DELETE, if no columns have
+     *         been set for a SELECT, or if {@code from(...)} was already called
+     */
+    @Override
+    public CqlBuilder from(final String expr) {
+        checkCqlTableReference(expr, "expr");
+        return super.from(expr);
+    }
+
+    /**
+     * Compatibility overload for the parent SQL API. Cassandra CQL permits exactly one table in a
+     * FROM clause, so {@code tableNames} must contain one element.
+     *
+     * @param tableNames an array containing exactly one table name
+     * @return this CqlBuilder instance for method chaining
+     * @throws IllegalArgumentException if the array does not contain exactly one CQL table reference
+     * @throws IllegalStateException if the current operation is not SELECT or DELETE, if no columns have
+     *         been set for a SELECT, or if {@code from(...)} was already called
+     */
+    @Override
+    public CqlBuilder from(final String... tableNames) {
+        N.checkArgNotEmpty(tableNames, "tableNames");
+
+        if (tableNames.length != 1) {
+            throw new IllegalArgumentException("Cassandra CQL FROM requires exactly one table; received: " + tableNames.length);
+        }
+
+        return from(tableNames[0]);
+    }
+
+    /**
+     * Compatibility overload for the parent SQL API. Cassandra CQL permits exactly one table in a
+     * FROM clause, so {@code tableNames} must contain one element.
+     *
+     * @param tableNames a collection containing exactly one table name
+     * @return this CqlBuilder instance for method chaining
+     * @throws IllegalArgumentException if the collection does not contain exactly one CQL table reference
+     * @throws IllegalStateException if the current operation is not SELECT or DELETE, if no columns have
+     *         been set for a SELECT, or if {@code from(...)} was already called
+     */
+    @Override
+    public CqlBuilder from(final Collection<String> tableNames) {
+        N.checkArgNotEmpty(tableNames, "tableNames");
+
+        if (tableNames.size() != 1) {
+            throw new IllegalArgumentException("Cassandra CQL FROM requires exactly one table; received: " + tableNames.size());
+        }
+
+        return from(tableNames.iterator().next());
+    }
+
+    /**
      * Sets the FROM clause using an entity class.
      * <p>The table name is derived from the entity class per the builder's naming policy.</p>
      *
@@ -1122,54 +1205,56 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      */
     @Override
     public CqlBuilder from(final Class<?> entityClass) {
-        return from(entityClass, tableAlias(entityClass));
+        return from(entityClass, (String) null);
     }
 
     /**
-     * Sets the FROM clause using an entity class with an alias.
+     * Sets the FROM clause using an entity class. Cassandra CQL does not support table aliases;
+     * this compatibility overload therefore rejects every non-empty {@code alias}.
      *
      * <p>Overridden because the parent SQL builder restricts {@code from(...)} to SELECT statements,
      * while CQL also supports a column list on DELETE ({@code DELETE col1, col2 FROM tbl}), so this
      * builder accepts {@code delete(...).from(...)} chains as well.</p>
      *
      * @param entityClass the entity class representing the table
-     * @param alias the table alias
+     * @param alias must be {@code null} or empty
      * @return this CqlBuilder instance for method chaining
-     * @throws IllegalArgumentException if {@code entityClass} is {@code null}
+     * @throws IllegalArgumentException if {@code entityClass} is {@code null} or {@code alias} is non-empty
      * @throws IllegalStateException if the current operation is not SELECT or DELETE, if no columns have
      *         been set for a SELECT, or if {@code from(...)} was already called
      */
     @Override
     public CqlBuilder from(final Class<?> entityClass, final String alias) {
         N.checkArgNotNull(entityClass, "entityClass");
+
+        if (Strings.isNotEmpty(alias)) {
+            throw new IllegalArgumentException("Cassandra CQL does not support table aliases: " + alias);
+        }
+
         checkCanAppendCqlFrom();
         setEntityClass(entityClass);
 
-        if (Strings.isEmpty(alias)) {
-            return from(getTableName(entityClass, _namingPolicy));
-        }
-
-        return from(getTableName(entityClass, _namingPolicy) + " " + alias);
+        return from(getTableName(entityClass, _namingPolicy));
     }
 
     /**
-     * Sets the FROM clause with an expression and associates it with an entity class.
+     * Sets the FROM clause to one table and associates that table with an entity class for property mapping.
      *
      * <p>Overridden because the parent SQL builder restricts {@code from(...)} to SELECT statements,
      * while CQL also supports a column list on DELETE ({@code DELETE col1, col2 FROM tbl}), so this
      * builder accepts {@code delete(...).from(...)} chains as well.</p>
      *
-     * @param expr the FROM clause expression
+     * @param expr one table name, optionally keyspace-qualified
      * @param entityClass the entity class for property mapping (may be {@code null}, in which case no
      *        entity-class association is performed)
      * @return this CqlBuilder instance for method chaining
-     * @throws IllegalArgumentException if {@code expr} is {@code null}, empty, or blank
+     * @throws IllegalArgumentException if {@code expr} is not exactly one CQL table reference
      * @throws IllegalStateException if the current operation is not SELECT or DELETE, if no columns have
      *         been set for a SELECT, or if {@code from(...)} was already called
      */
     @Override
     public CqlBuilder from(final String expr, final Class<?> entityClass) {
-        N.checkArgNotEmpty(expr, "expr");
+        checkCqlTableReference(expr, "expr");
         checkCanAppendCqlFrom();
 
         if (entityClass != null) {
@@ -1177,6 +1262,97 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         }
 
         return from(expr);
+    }
+
+    /**
+     * Validates the separate primary-table and complete-FROM arguments used by the parent SQL
+     * builder. Keeping this check at the protected hook also covers calls made by subclasses.
+     *
+     * @param tableName the primary table used for column resolution
+     * @param fromClause the complete text to emit after FROM
+     * @return this CqlBuilder instance for method chaining
+     * @throws IllegalArgumentException if either argument is not the same single CQL table reference
+     */
+    @Override
+    protected CqlBuilder from(final String tableName, final String fromClause) {
+        checkCqlTableReference(tableName, "tableName");
+        checkCqlTableReference(fromClause, "fromClause");
+
+        if (!tableName.trim().equals(fromClause.trim())) {
+            throw new IllegalArgumentException("Cassandra CQL FROM requires the primary table and complete FROM clause to identify the same single table");
+        }
+
+        return super.from(tableName, fromClause);
+    }
+
+    private static void checkCqlTableReference(final String tableReference, final String argName) {
+        N.checkArgNotEmpty(tableReference, argName);
+
+        final int len = tableReference.length();
+        int index = skipWhitespace(tableReference, 0);
+        index = skipCqlTableNamePart(tableReference, index);
+
+        if (index >= 0) {
+            index = skipWhitespace(tableReference, index);
+
+            if (index < len && tableReference.charAt(index) == '.') {
+                index = skipWhitespace(tableReference, index + 1);
+                index = skipCqlTableNamePart(tableReference, index);
+
+                if (index >= 0) {
+                    index = skipWhitespace(tableReference, index);
+                }
+            }
+        }
+
+        if (index != len) {
+            throw new IllegalArgumentException(
+                    argName + " must be one CQL table name (optionally keyspace-qualified); aliases, joins, subqueries, and multiple tables are not supported: "
+                            + tableReference);
+        }
+    }
+
+    private static int skipWhitespace(final String str, int index) {
+        while (index < str.length() && Character.isWhitespace(str.charAt(index))) {
+            index++;
+        }
+
+        return index;
+    }
+
+    private static int skipCqlTableNamePart(final String tableReference, final int startIndex) {
+        if (startIndex >= tableReference.length()) {
+            return -1;
+        }
+
+        if (tableReference.charAt(startIndex) == '"') {
+            boolean hasContent = false;
+
+            for (int index = startIndex + 1; index < tableReference.length(); index++) {
+                if (tableReference.charAt(index) != '"') {
+                    hasContent = true;
+                } else if (index + 1 < tableReference.length() && tableReference.charAt(index + 1) == '"') {
+                    hasContent = true;
+                    index++;
+                } else {
+                    return hasContent ? index + 1 : -1;
+                }
+            }
+
+            return -1;
+        }
+
+        int index = startIndex;
+
+        while (index < tableReference.length() && isCqlUnquotedNameChar(tableReference.charAt(index))) {
+            index++;
+        }
+
+        return index == startIndex ? -1 : index;
+    }
+
+    private static boolean isCqlUnquotedNameChar(final char ch) {
+        return ch >= 'a' && ch <= 'z' || ch >= 'A' && ch <= 'Z' || ch >= '0' && ch <= '9' || ch == '_';
     }
 
     /**
@@ -1214,26 +1390,10 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             throw new IllegalStateException("No columns selected. Call select() to specify columns before building query");
         }
 
-        final int idx = tableName.indexOf(' ');
-
-        if (idx > 0) {
-            _tableName = tableName.substring(0, idx).trim();
-
-            String alias = tableName.substring(idx + 1).trim();
-
-            // "account AS a" => alias "a", matching the parent builder's alias normalization.
-            if (Strings.startsWithIgnoreCase(alias, "AS ")) {
-                alias = alias.substring(3).trim();
-            }
-
-            _tableAlias = alias;
-        } else {
-            _tableName = tableName.trim();
-        }
-
-        if (_entityClass != null && Strings.isNotEmpty(_tableAlias)) {
-            addPropColumnMapForAlias(_entityClass, _tableAlias);
-        }
+        // CQL has no table aliases. from(...) validates the complete reference before rendering, so
+        // quoted identifiers containing spaces must remain intact rather than being split as aliases.
+        _tableName = tableName.trim();
+        _tableAlias = null;
 
         if (_op == OperationType.DELETE) {
             _sb.append(_DELETE);
@@ -1256,12 +1416,24 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
     @Override
     protected void appendCondition(final Condition cond) {
-        //    if (sb.charAt(sb.length() - 1) != _SPACE) {
-        //        sb.append(_SPACE);
-        //    }
-
         if (cond instanceof final Binary binary) {
             final String propName = binary.propName();
+            final Operator operator = binary.operator();
+
+            if (operator != Operator.EQUAL && operator != Operator.NOT_EQUAL && operator != Operator.GREATER_THAN && operator != Operator.LIKE
+                    && operator != Operator.GREATER_THAN_OR_EQUAL && operator != Operator.LESS_THAN && operator != Operator.LESS_THAN_OR_EQUAL) {
+                throw new IllegalArgumentException("Cassandra CQL does not support binary operator: " + operator);
+            }
+
+            if (_renderingIfCondition && operator == Operator.LIKE) {
+                throw new IllegalArgumentException("Cassandra CQL lightweight-transaction IF conditions do not support LIKE");
+            }
+
+            if (binary.propValue() == null && (!_renderingIfCondition || operator != Operator.EQUAL && operator != Operator.NOT_EQUAL)) {
+                throw new IllegalArgumentException(
+                        _renderingIfCondition ? "Cassandra CQL lightweight-transaction IF conditions support null only with = or !=: " + propName
+                                : "Cassandra CQL WHERE relations cannot compare a column to null: " + propName);
+            }
 
             appendColumnName(propName);
 
@@ -1271,63 +1443,17 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
             final Object propValue = binary.propValue();
             setParameter(propName, propValue);
-        } else if (cond instanceof final Between bt) {
-            final String propName = bt.propName();
-
-            appendColumnName(propName);
-
-            _sb.append(_SPACE);
-            _sb.append(bt.operator().toString());
-            _sb.append(_SPACE);
-
-            final Object minValue = bt.minValue();
-            if (_sqlPolicy == SqlPolicy.NAMED_SQL || _sqlPolicy == SqlPolicy.IBATIS_SQL) {
-                setParameter("min" + Strings.capitalize(sanitizeNamedParameterName(propName)), minValue);
-            } else {
-                setParameter(propName, minValue);
-            }
-
-            _sb.append(_SPACE);
-            _sb.append(SK.AND);
-            _sb.append(_SPACE);
-
-            final Object maxValue = bt.maxValue();
-            if (_sqlPolicy == SqlPolicy.NAMED_SQL || _sqlPolicy == SqlPolicy.IBATIS_SQL) {
-                setParameter("max" + Strings.capitalize(sanitizeNamedParameterName(propName)), maxValue);
-            } else {
-                setParameter(propName, maxValue);
-            }
-        } else if (cond instanceof final NotBetween nbt) {
-            final String propName = nbt.propName();
-
-            appendColumnName(propName);
-
-            _sb.append(_SPACE);
-            _sb.append(nbt.operator().toString());
-            _sb.append(_SPACE);
-
-            final Object minValue = nbt.minValue();
-            if (_sqlPolicy == SqlPolicy.NAMED_SQL || _sqlPolicy == SqlPolicy.IBATIS_SQL) {
-                setParameter("min" + Strings.capitalize(sanitizeNamedParameterName(propName)), minValue);
-            } else {
-                setParameter(propName, minValue);
-            }
-
-            _sb.append(_SPACE);
-            _sb.append(SK.AND);
-            _sb.append(_SPACE);
-
-            final Object maxValue = nbt.maxValue();
-            if (_sqlPolicy == SqlPolicy.NAMED_SQL || _sqlPolicy == SqlPolicy.IBATIS_SQL) {
-                setParameter("max" + Strings.capitalize(sanitizeNamedParameterName(propName)), maxValue);
-            } else {
-                setParameter(propName, maxValue);
-            }
+        } else if (cond instanceof Between || cond instanceof NotBetween) {
+            throw new IllegalArgumentException("Cassandra CQL does not support BETWEEN or NOT BETWEEN; compose >= and <= relations with Filters.and instead");
         } else if (cond instanceof final In in) {
             final String propName = in.propName();
             // values(), not parameters(): parameters() splices Condition-typed elements into
             // their flattened parameter values, silently changing the placeholder count of the IN list.
             final List<?> params = in.values();
+
+            if (N.isEmpty(params)) {
+                throw new IllegalArgumentException("A Cassandra CQL IN relation requires at least one value");
+            }
 
             appendColumnName(propName);
 
@@ -1340,57 +1466,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
                     _sb.append(SK.COMMA_SPACE);
                 }
 
-                if (_sqlPolicy == SqlPolicy.NAMED_SQL || _sqlPolicy == SqlPolicy.IBATIS_SQL) {
-                    setParameter(propName + (i + 1), params.get(i));
-                } else {
-                    setParameter(propName, params.get(i));
-                }
-            }
-
-            _sb.append(SK._PARENTHESIS_R);
-        } else if (cond instanceof final InSubQuery inSubQuery) {
-            final Collection<String> propNames = inSubQuery.propNames();
-
-            if (propNames.size() == 1) {
-                appendColumnName(propNames.iterator().next());
-            } else {
-                _sb.append(SK._PARENTHESIS_L);
-
-                int idx = 0;
-
-                for (final String e : propNames) {
-                    if (idx++ > 0) {
-                        _sb.append(_COMMA_SPACE);
-                    }
-
-                    appendColumnName(e);
-                }
-
-                _sb.append(SK._PARENTHESIS_R);
-            }
-
-            _sb.append(_SPACE);
-            _sb.append(inSubQuery.operator().toString());
-
-            _sb.append(SK.SPACE_PARENTHESIS_L);
-
-            appendCondition(inSubQuery.subQuery());
-
-            _sb.append(SK._PARENTHESIS_R);
-        } else if (cond instanceof final NotIn notIn) {
-            final String propName = notIn.propName();
-            // values(), not parameters(): see the In branch above.
-            final List<?> params = notIn.values();
-
-            appendColumnName(propName);
-
-            _sb.append(_SPACE);
-            _sb.append(notIn.operator().toString());
-            _sb.append(SK.SPACE_PARENTHESIS_L);
-
-            for (int i = 0, len = params.size(); i < len; i++) {
-                if (i > 0) {
-                    _sb.append(SK.COMMA_SPACE);
+                if (params.get(i) == null) {
+                    throw new IllegalArgumentException("A Cassandra CQL IN relation cannot contain null values");
                 }
 
                 if (_sqlPolicy == SqlPolicy.NAMED_SQL || _sqlPolicy == SqlPolicy.IBATIS_SQL) {
@@ -1401,54 +1478,20 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             }
 
             _sb.append(SK._PARENTHESIS_R);
-        } else if (cond instanceof final NotInSubQuery notInSubQuery) {
-            final Collection<String> propNames = notInSubQuery.propNames();
-
-            if (propNames.size() == 1) {
-                appendColumnName(propNames.iterator().next());
-            } else {
-                _sb.append(SK._PARENTHESIS_L);
-
-                int idx = 0;
-
-                for (final String e : propNames) {
-                    if (idx++ > 0) {
-                        _sb.append(_COMMA_SPACE);
-                    }
-
-                    appendColumnName(e);
-                }
-
-                _sb.append(SK._PARENTHESIS_R);
-            }
+        } else if (cond instanceof InSubQuery || cond instanceof NotIn || cond instanceof NotInSubQuery || cond instanceof SubQuery) {
+            throw new IllegalArgumentException("Cassandra CQL does not support NOT IN or sub-queries: " + cond.operator());
+        } else if (cond instanceof final Where where) {
 
             _sb.append(_SPACE);
-            _sb.append(notInSubQuery.operator().toString());
-            _sb.append(SK.SPACE_PARENTHESIS_L);
-
-            appendCondition(notInSubQuery.subQuery());
-
-            _sb.append(SK._PARENTHESIS_R);
-        } else if (cond instanceof Where || cond instanceof Having) {
-            final Cell cell = (Cell) cond;
-
-            _sb.append(_SPACE);
-            _sb.append(cell.operator().toString());
+            _sb.append(where.operator().toString());
             _sb.append(_SPACE);
 
-            appendCondition(cell.condition());
-        } else if (cond instanceof final Cell cell) {
-            _sb.append(_SPACE);
-            _sb.append(cell.operator().toString());
-            _sb.append(_SPACE);
-
-            _sb.append(_PARENTHESIS_L);
-            appendCondition(cell.condition());
-            _sb.append(_PARENTHESIS_R);
+            appendCondition(where.condition());
+        } else if (cond instanceof Having || cond instanceof Cell) {
+            throw new IllegalArgumentException("Cassandra CQL does not support SQL clause condition: " + cond.operator());
         } else if (cond instanceof final ComposableCell cell) {
             // SQL-style unary predicates (Not / Exists / NotExists / Any / All / Some) are not
-            // part of Cassandra's WHERE grammar. Specific CQL operators such as NOT IN are handled
-            // by their dedicated condition types above.
+            // part of Cassandra's WHERE grammar.
             throw new IllegalArgumentException("Cassandra CQL does not support composable predicate: " + cell.operator());
         } else if (cond instanceof final Junction junction) {
             final List<Condition> conditionList = junction.conditions();
@@ -1464,10 +1507,6 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             if (conditionList.size() == 1) {
                 appendCondition(conditionList.get(0));
             } else {
-                // Parenthesized junction members such as ((id = :id) AND (gui = :gui)) are not supported by Cassandra.
-                // only (id = :id) AND (gui = :gui) works.
-                // sb.append(_PARENTHESIS_L);
-
                 for (int i = 0, size = conditionList.size(); i < size; i++) {
                     if (i > 0) {
                         _sb.append(_SPACE);
@@ -1475,46 +1514,11 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
                         _sb.append(_SPACE);
                     }
 
-                    // The LWT IF grammar is "IF columnCondition (AND columnCondition)*" — parenthesized
-                    // members are rejected there, unlike WHERE relations.
-                    if (_appendingIfClause) {
-                        appendCondition(conditionList.get(i));
-                    } else {
-                        _sb.append(_PARENTHESIS_L);
-
-                        appendCondition(conditionList.get(i));
-
-                        _sb.append(_PARENTHESIS_R);
-                    }
+                    // CQL uses "relation AND relation" in both WHERE and LWT IF clauses; SQL-style
+                    // parentheses around each complete relation are not part of that grammar.
+                    appendCondition(conditionList.get(i));
                 }
 
-                // sb.append(_PARENTHESIS_R);
-            }
-        } else if (cond instanceof final SubQuery subQuery) {
-            final Condition subCond = subQuery.condition();
-
-            if (Strings.isNotEmpty(subQuery.rawSql())) {
-                _sb.append(subQuery.rawSql());
-            } else {
-                // Render through a sub-builder and keep its bind parameters: appending only the query text
-                // dropped the subquery's parameters, leaving '?' placeholders with no bound values (and, for
-                // named builders, colliding placeholder names between the outer and inner statements).
-                final CqlBuilder subBuilder = newSubQueryBuilder(subQuery);
-                seedNamedParameterOccurrences(subBuilder);
-
-                // The SubQuery contract allows a null condition (select without a WHERE clause).
-                if (subCond != null) {
-                    subBuilder.append(subCond);
-                }
-
-                final SP subSP = subBuilder.build();
-                adoptNamedParameterOccurrences(subBuilder);
-
-                _sb.append(subSP.query());
-
-                if (N.notEmpty(subSP.parameters())) {
-                    _parameters.addAll(subSP.parameters());
-                }
             }
         } else if (cond instanceof SqlExpression) {
             // Identifier tokens in the expression ARE normalized per the naming policy (appendStringExpr);
@@ -1523,30 +1527,6 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         } else {
             throw new IllegalArgumentException("Unsupported condition: " + cond.toString());
         }
-    }
-
-    /**
-     * Allocates a fresh sub-query builder for a {@link SubQuery} condition, carrying over this builder's
-     * {@link SqlDialect} so the sub-query is rendered with the same naming and parameter policy as the
-     * enclosing statement.
-     *
-     * @param subQuery the sub-query condition being rendered
-     * @return a fresh sub-query builder bound to the same {@link SqlDialect} as {@code this}
-     * @throws IllegalArgumentException if {@code subQuery} has no selected property/column names
-     */
-    private CqlBuilder newSubQueryBuilder(final SubQuery subQuery) {
-        final Collection<String> selectPropNames = subQuery.selectPropNames();
-        N.checkArgNotEmpty(selectPropNames, SELECTION_PART_MSG);
-
-        final CqlBuilder subBuilder = new CqlBuilder(sqlDialect);
-        subBuilder._op = OperationType.QUERY;
-        subBuilder._propOrColumnNames = selectPropNames;
-
-        if (subQuery.entityClass() != null) {
-            return subBuilder.from(subQuery.entityClass());
-        }
-
-        return subBuilder.from(subQuery.entityName());
     }
 
     private static void validateColumnAliases(final Map<String, String> propOrColumnNameAliases) {
@@ -1560,7 +1540,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
     private static Collection<String> getDeletePropNamesByClass(final Class<?> entityClass, final Set<String> excludedPropNames) {
         final Collection<String>[] val = loadPropNamesByClass(entityClass);
-        // val[2] (writable props: @ReadOnly/@ReadOnlyId/@Transient removed, no dotted sub-entity props) —
+        // val[2] (writable props: @ReadOnly/@ReadOnlyId/@Transient removed, no dotted sub-entity props):
         // the documented contract for delete(Class). Id props are removed as well because Cassandra
         // rejects DELETE on primary-key columns.
         final List<String> propNames = new ArrayList<>(val[2]);
@@ -2050,10 +2030,11 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *
          * @param tableName the name of the table to update
          * @return a new CqlBuilder instance for method chaining
-         * @throws IllegalArgumentException if tableName is null or empty
+         * @throws IllegalArgumentException if {@code tableName} is not exactly one CQL table reference
          */
         public CqlBuilder update(final String tableName) {
             N.checkArgNotEmpty(tableName, UPDATE_PART_MSG);
+            checkCqlTableReference(tableName, "tableName");
 
             final CqlBuilder instance = createCqlBuilderInstance();
 
@@ -2083,11 +2064,12 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @param tableName the name of the table to update
          * @param entityClass the entity class for property mapping
          * @return a new CqlBuilder instance for method chaining
-         * @throws IllegalArgumentException if tableName is null or empty, or entityClass is null
+         * @throws IllegalArgumentException if {@code tableName} is not exactly one CQL table reference, or {@code entityClass} is null
          */
         public CqlBuilder update(final String tableName, final Class<?> entityClass) {
             N.checkArgNotEmpty(tableName, UPDATE_PART_MSG);
             N.checkArgNotNull(entityClass, UPDATE_PART_MSG);
+            checkCqlTableReference(tableName, "tableName");
 
             final CqlBuilder instance = createCqlBuilderInstance();
 
@@ -2320,10 +2302,11 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *
          * @param tableName the name of the table to delete from
          * @return a new CqlBuilder instance for method chaining
-         * @throws IllegalArgumentException if tableName is null or empty
+         * @throws IllegalArgumentException if {@code tableName} is not exactly one CQL table reference
          */
         public CqlBuilder deleteFrom(final String tableName) {
             N.checkArgNotEmpty(tableName, DELETION_PART_MSG);
+            checkCqlTableReference(tableName, "tableName");
 
             final CqlBuilder instance = createCqlBuilderInstance();
 
@@ -2351,11 +2334,12 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @param tableName the name of the table to delete from
          * @param entityClass the entity class for property mapping
          * @return a new CqlBuilder instance for method chaining
-         * @throws IllegalArgumentException if tableName is null or empty, or entityClass is null
+         * @throws IllegalArgumentException if {@code tableName} is not exactly one CQL table reference, or {@code entityClass} is null
          */
         public CqlBuilder deleteFrom(final String tableName, final Class<?> entityClass) {
             N.checkArgNotEmpty(tableName, DELETION_PART_MSG);
             N.checkArgNotNull(entityClass, DELETION_PART_MSG);
+            checkCqlTableReference(tableName, "tableName");
 
             final CqlBuilder instance = createCqlBuilderInstance();
 
@@ -2413,10 +2397,10 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *                 .build().query();
          * // Output: SELECT COUNT(*) FROM account WHERE status = ?
          *
-         * String cql2 = PSC.select("firstName || ' ' || lastName AS fullName")
+         * String cql2 = PSC.select("WRITETIME(lastUpdateTime) AS lastUpdatedAt")
          *                  .from("account")
          *                  .build().query();
-         * // Output: SELECT first_name || ' ' || last_name AS fullName FROM account
+         * // Output: SELECT WRITETIME(last_update_time) AS lastUpdatedAt FROM account
          * }</pre>
          *
          * @param selectPart the select expression
@@ -2664,24 +2648,20 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         }
 
         /**
-         * Creates a SELECT FROM statement for an entity class with table alias.
+         * Compatibility overload for callers that supply a table alias.
          *
-         * <p>This method creates a SELECT FROM statement where columns are prefixed with the table
-         * alias. Cassandra CQL does not support JOIN; the alias applies only to the single
-         * FROM table and is used to qualify column references.</p>
+         * <p>Cassandra CQL does not support table aliases or alias-qualified column references.
+         * Consequently, a non-empty {@code alias} is rejected instead of emitting invalid CQL.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = PSC.selectFrom(Account.class, "a")
-         *                 .where(Filters.eq("a.status", "active"))
-         *                 .build().query();
-         * // Output: SELECT a.id AS "id", a.first_name AS "firstName", a.last_name AS "lastName", a.email AS "email" FROM account a WHERE a.status = ?
+         * PSC.selectFrom(Account.class, "a"); // throws IllegalArgumentException
          * }</pre>
          *
          * @param entityClass the entity class
-         * @param alias the table alias
+         * @param alias unsupported table alias; must be {@code null} or empty
          * @return a new CqlBuilder instance for method chaining
-         * @throws IllegalArgumentException if entityClass is null
+         * @throws IllegalArgumentException if entityClass is null or alias is non-empty
          */
         public CqlBuilder selectFrom(final Class<?> entityClass, final String alias) {
             return selectFrom(entityClass, alias, false);
@@ -2691,48 +2671,41 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * Creates a SELECT FROM statement with optional sub-entity properties.
          *
          * <p>This convenience method combines SELECT and FROM operations with control over
-         * sub-entity inclusion. <b>Caution:</b> when the entity declares sub-entity properties and
-         * {@code includeSubEntityProperties} is {@code true}, this mirrors the parent SQL builder
-         * and emits a comma-separated multi-table FROM clause — which Cassandra CQL does not
-         * support (CQL has no JOIN and no multi-table FROM). Use it with sub-entities only for
-         * SQL-parity/offline rendering, not for statements to be executed against Cassandra.</p>
+         * sub-entity inclusion. Cassandra has no JOIN or multi-table FROM, so requesting nested
+         * entity tables is rejected instead of producing SQL-shaped text that Cassandra cannot execute.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = PSC.selectFrom(Order.class, true)
+         * String cql = PSC.selectFrom(Order.class, false)
          *                 .where(Filters.gt("total", 100))
          *                 .build().query();
-         * // Includes properties from nested entities like customer, items, etc.
          * }</pre>
          *
          * @param entityClass the entity class
          * @param includeSubEntityProperties Whether to include properties of nested entity objects
          * @return a new CqlBuilder instance for method chaining
-         * @throws IllegalArgumentException if entityClass is null
+         * @throws IllegalArgumentException if entityClass is null, or nested entity tables would be required
          */
         public CqlBuilder selectFrom(final Class<?> entityClass, final boolean includeSubEntityProperties) {
             return selectFrom(entityClass, includeSubEntityProperties, null);
         }
 
         /**
-         * Creates a SELECT FROM statement with alias and sub-entity option.
+         * Compatibility overload accepting an alias and a sub-entity option.
          *
-         * <p>This method combines table aliasing with sub-entity property inclusion for
-         * complex queries involving related entities.</p>
+         * <p>Cassandra CQL supports neither table aliases nor multi-table FROM clauses. A non-empty
+         * alias, or a request that would require nested entity tables, is rejected.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * String cql = PSC.selectFrom(Order.class, "o", true)
-         *                 .where(Filters.eq("o.status", "pending"))
-         *                 .build().query();
-         * // Selects from orders with alias 'o' including sub-entity properties
+         * PSC.selectFrom(Order.class, "o", true); // throws IllegalArgumentException
          * }</pre>
          *
          * @param entityClass the entity class
-         * @param alias the table alias
+         * @param alias unsupported table alias; must be {@code null} or empty
          * @param includeSubEntityProperties Whether to include properties of nested entity objects
          * @return a new CqlBuilder instance for method chaining
-         * @throws IllegalArgumentException if entityClass is null
+         * @throws IllegalArgumentException if entityClass is null, alias is non-empty, or nested entity tables would be required
          */
         public CqlBuilder selectFrom(final Class<?> entityClass, final String alias, final boolean includeSubEntityProperties) {
             return selectFrom(entityClass, alias, includeSubEntityProperties, null);
@@ -2763,25 +2736,21 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         }
 
         /**
-         * Creates a SELECT FROM statement with alias and excluded properties.
+         * Compatibility overload accepting an alias and excluded properties.
          *
-         * <p>This method combines table aliasing with property exclusion for precise control
-         * over the generated SELECT statement.</p>
+         * <p>Cassandra CQL does not support table aliases, so a non-empty alias is rejected.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = N.asSet("password");
-         * String cql = PSC.selectFrom(Account.class, "a", excluded)
-         *                 .where(Filters.eq("a.id", 1))
-         *                 .build().query();
-         * // Selects from account with alias 'a', excluding password
+         * PSC.selectFrom(Account.class, "a", excluded); // throws IllegalArgumentException
          * }</pre>
          *
          * @param entityClass the entity class
-         * @param alias the table alias
+         * @param alias unsupported table alias; must be {@code null} or empty
          * @param excludedPropNames properties to exclude from selection
          * @return a new CqlBuilder instance for method chaining
-         * @throws IllegalArgumentException if entityClass is null
+         * @throws IllegalArgumentException if entityClass is null or alias is non-empty
          */
         public CqlBuilder selectFrom(final Class<?> entityClass, final String alias, final Set<String> excludedPropNames) {
             return selectFrom(entityClass, alias, false, excludedPropNames);
@@ -2791,59 +2760,60 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * Creates a SELECT FROM statement with sub-entities and exclusions.
          *
          * <p>This method provides control over both sub-entity inclusion and property exclusion
-         * while automatically determining the appropriate table alias.</p>
+         * without introducing a table alias.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = N.asSet("internalData");
-         * String cql = PSC.selectFrom(Order.class, true, excluded)
-         *                 .where(Filters.between("orderDate", startDate, endDate))
+         * String cql = PSC.selectFrom(Order.class, false, excluded)
+         *                 .where(Filters.and(Filters.ge("orderDate", startDate), Filters.le("orderDate", endDate)))
          *                 .build().query();
-         * // Includes sub-entities but excludes internalData
+         * // Excludes internalData and uses CQL-supported range relations
          * }</pre>
          *
          * @param entityClass the entity class
          * @param includeSubEntityProperties Whether to include properties of nested entity objects
          * @param excludedPropNames properties to exclude from selection
          * @return a new CqlBuilder instance for method chaining
-         * @throws IllegalArgumentException if entityClass is null
+         * @throws IllegalArgumentException if entityClass is null, or nested entity tables would be required
          */
         public CqlBuilder selectFrom(final Class<?> entityClass, final boolean includeSubEntityProperties, final Set<String> excludedPropNames) {
-            return selectFrom(entityClass, QueryUtil.tableAlias(entityClass), includeSubEntityProperties, excludedPropNames);
+            return selectFrom(entityClass, null, includeSubEntityProperties, excludedPropNames);
         }
 
         /**
          * Creates a complete SELECT FROM statement with all options.
          *
-         * <p>This method provides maximum flexibility by allowing control over table alias,
-         * sub-entity inclusion, and property exclusion.</p>
+         * <p>This compatibility overload allows callers to pass all legacy options, but Cassandra
+         * CQL supports neither table aliases nor multi-table FROM clauses. Unsupported combinations
+         * are rejected rather than rendered.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * Set<String> excluded = N.asSet("password", "internalNotes");
-         * String cql = PSC.selectFrom(Account.class, "a", true, excluded)
-         *                 .where(Filters.gt("a.balance", 1000))
-         *                 .build().query();
-         * // Complex query with full control over selection
+         * PSC.selectFrom(Account.class, "a", true, excluded); // throws IllegalArgumentException
          * }</pre>
          *
          * @param entityClass the entity class
-         * @param alias the table alias
+         * @param alias unsupported table alias; must be {@code null} or empty
          * @param includeSubEntityProperties Whether to include properties of nested entity objects
          * @param excludedPropNames properties to exclude from selection
          * @return a new CqlBuilder instance for method chaining
-         * @throws IllegalArgumentException if entityClass is null
+         * @throws IllegalArgumentException if entityClass is null, alias is non-empty, or nested entity tables would be required
          */
         public CqlBuilder selectFrom(final Class<?> entityClass, final String alias, final boolean includeSubEntityProperties,
                 final Set<String> excludedPropNames) {
             N.checkArgNotNull(entityClass, SELECTION_PART_MSG);
 
-            if (hasSubEntityToInclude(entityClass, includeSubEntityProperties)) {
-                final List<String> selectTableNames = getSelectTableNames(entityClass, alias, excludedPropNames, namingPolicy);
-                return select(entityClass, includeSubEntityProperties, excludedPropNames).from(entityClass, selectTableNames);
+            if (Strings.isNotEmpty(alias)) {
+                throw new IllegalArgumentException("Cassandra CQL does not support table aliases: " + alias);
             }
 
-            return select(entityClass, includeSubEntityProperties, excludedPropNames).from(entityClass, alias);
+            if (hasSubEntityToInclude(entityClass, includeSubEntityProperties)) {
+                throw new IllegalArgumentException("Cassandra CQL does not support the multi-table FROM clause required by nested entity properties");
+            }
+
+            return select(entityClass, includeSubEntityProperties, excludedPropNames).from(entityClass);
         }
 
         /**
@@ -2880,9 +2850,9 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = PSC.count(Account.class)
-         *                 .where(Filters.isNotNull("email"))
+         *                 .where(Filters.eq("status", "active"))
          *                 .build().query();
-         * // Output: SELECT count(*) FROM account WHERE email IS NOT NULL
+         * // Output: SELECT count(*) FROM account WHERE status = ?
          * }</pre>
          *
          * @param entityClass the entity class
@@ -2908,11 +2878,11 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * <pre>{@code
          * Condition cond = Filters.and(
          *     Filters.eq("firstName", "John"),
-         *     Filters.like("email", "%@example.com")
+         *     Filters.ge("loginCount", 10)
          * );
          *
          * String cql = PSC.renderCondition(cond, Account.class).build().query();
-         * // Output: (first_name = ?) AND (email LIKE ?)
+         * // Output: first_name = ? AND login_count >= ?
          * }</pre>
          *
          * @param cond the condition to render

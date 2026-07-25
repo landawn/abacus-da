@@ -61,7 +61,7 @@ import org.apache.hadoop.hbase.client.OperationWithAttributes;
  *               setters can return {@code AOWA} and preserve the concrete type during chaining
  * @see AnyOperation
  * @see OperationWithAttributes
- * @see <a href="http://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
+ * @see <a href="https://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
  */
 abstract class AnyOperationWithAttributes<AOWA extends AnyOperationWithAttributes<AOWA>> extends AnyOperation<AOWA> {
 

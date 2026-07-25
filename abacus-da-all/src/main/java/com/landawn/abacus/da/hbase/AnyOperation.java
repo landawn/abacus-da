@@ -42,7 +42,7 @@ import com.landawn.abacus.exception.UncheckedIOException;
  * @param <AO> the concrete subtype of {@code AnyOperation}; declared so subclasses (such as
  *             {@link AnyOperationWithAttributes}) can return {@code AO} from fluent setters and
  *             preserve the concrete type during method chaining
- * @see <a href="http://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
+ * @see <a href="https://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
  * @see org.apache.hadoop.hbase.client.Operation
  */
 abstract class AnyOperation<AO extends AnyOperation<AO>> {

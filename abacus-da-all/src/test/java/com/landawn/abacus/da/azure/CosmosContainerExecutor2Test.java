@@ -66,10 +66,10 @@ import com.landawn.abacus.util.NamingPolicy;
  * emulator endpoint when the host is {@code localhost} (see
  * {@code com.azure.cosmos.implementation.Configs#isEmulatorServerCertValidationDisabled}).</p>
  *
- * <p>This class is intentionally <i>not</i> named {@code *Test}, so a normal {@code mvn test} run does not
- * pick it up. Run it explicitly once the emulator is up:</p>
+ * <p>The repository's Surefire configuration runs only {@code AbacusDATestSuite} by default, so a normal
+ * {@code mvn test} run does not pick up this integration test. Run it explicitly once the emulator is up:</p>
  * <pre>{@code
- * mvn -pl abacus-da-all test -Dtest=CosmosContainerExecutor2
+ * mvn -pl abacus-da-all test -Dtest=CosmosContainerExecutor2Test
  * }</pre>
  *
  * <h2>Graceful skips for emulator gaps</h2>
@@ -786,7 +786,7 @@ public class CosmosContainerExecutor2Test extends TestBase {
         final TestItem item = itemIn(newPartition(), "alias-" + UUID.randomUUID());
         executor.createItem(item);
 
-        final List<TestItem> result = executor.streamItems(Filters.eq("id", item.id).and(Filters.eq("name", item.name)), TestItem.class).toList();
+        final List<TestItem> result = executor.streamItems(Filters.and(Filters.eq("id", item.id), Filters.eq("name", item.name)), TestItem.class).toList();
 
         assertEquals(1, result.size());
         assertEquals(item.id, result.get(0).id);
@@ -911,7 +911,8 @@ public class CosmosContainerExecutor2Test extends TestBase {
         final TestItem item = itemIn(newPartition(), "cond-by-id");
         executor.createItem(item);
 
-        // Projecting only the indexed "id" -> generated SQL "SELECT c.id FROM test_item c WHERE c.id = @p0".
+        // Projecting only the indexed "id" -> generated SQL
+        // SELECT VALUE { "id": c.id } FROM test_item c WHERE c.id = @p0.
         final List<TestItem> results = executor.streamItems(Arrays.asList("id"), Filters.eq("id", item.id), TestItem.class).toList();
 
         assertEquals(1, results.size());
@@ -923,13 +924,14 @@ public class CosmosContainerExecutor2Test extends TestBase {
     public void testStreamItemsConditionByIdAndPartitionKeyRunsOnEmulator() {
         // The real-execution counterpart of testStreamItemsWithConditionUsesAliasQualifiedCosmosSql: both
         // predicate paths ("id" and partition key "name") are indexed and only "id" is projected, so the
-        // alias-qualified SQL "SELECT c.id FROM test_item c WHERE c.id = @p0 AND c.name = @p1" runs on the
+        // alias-qualified SQL SELECT VALUE { "id": c.id } FROM test_item c WHERE c.id = @p0 AND c.name = @p1 runs on the
         // emulator and proves the generated query is accepted by a real Cosmos query engine.
         assumeCosmosAvailable();
         final TestItem item = itemIn(newPartition(), "cond-by-id-pk");
         executor.createItem(item);
 
-        final List<TestItem> results = executor.streamItems(Arrays.asList("id"), Filters.eq("id", item.id).and(Filters.eq("name", item.name)), TestItem.class)
+        final List<TestItem> results = executor.streamItems(Arrays.asList("id"), Filters.and(Filters.eq("id", item.id), Filters.eq("name", item.name)),
+                TestItem.class)
                 .toList();
 
         assertEquals(1, results.size());

@@ -38,6 +38,7 @@ import org.neo4j.ogm.session.SessionFactory;
 import org.neo4j.ogm.transaction.Transaction;
 
 import com.landawn.abacus.da.TestBase;
+import com.landawn.abacus.util.stream.Stream;
 import com.landawn.abacus.util.u.Optional;
 
 /**
@@ -660,8 +661,16 @@ public class Neo4jExecutorTest extends TestBase {
         when(mockResult.iterator()).thenReturn(rowIter);
         when(mockSession.query("MATCH (n) RETURN n", Collections.emptyMap())).thenReturn(mockResult);
 
-        long count = executor.stream("MATCH (n) RETURN n", Collections.emptyMap()).count();
-        assertEquals(1L, count);
+        Stream<Map<String, Object>> rows = executor.stream("MATCH (n) RETURN n", Collections.emptyMap());
+
+        // OGM materializes query results eagerly, so the executor can return the session before
+        // the stream is consumed. A second operation must therefore reuse the same session.
+        verify(mockSession).clear();
+        executor.run(s -> {
+        });
+        verify(mockSessionFactory, times(1)).openSession();
+
+        assertEquals(1L, rows.count());
     }
 
     @Test
@@ -671,8 +680,9 @@ public class Neo4jExecutorTest extends TestBase {
         when(mockResult.iterator()).thenReturn(rowIter);
         when(mockSession.query("MATCH (n) RETURN n", Collections.emptyMap(), true)).thenReturn(mockResult);
 
-        long count = executor.stream("MATCH (n) RETURN n", Collections.emptyMap(), true).count();
-        assertEquals(0L, count);
+        Stream<Map<String, Object>> rows = executor.stream("MATCH (n) RETURN n", Collections.emptyMap(), true);
+        verify(mockSession).clear();
+        assertEquals(0L, rows.count());
     }
 
     @Test
@@ -684,8 +694,9 @@ public class Neo4jExecutorTest extends TestBase {
         when(iterable.iterator()).thenReturn(people.iterator());
         when(mockSession.query(Person.class, "MATCH (p:Person) RETURN p", Collections.emptyMap())).thenReturn(iterable);
 
-        long count = executor.stream(Person.class, "MATCH (p:Person) RETURN p", Collections.emptyMap()).count();
-        assertEquals(2L, count);
+        Stream<Person> peopleStream = executor.stream(Person.class, "MATCH (p:Person) RETURN p", Collections.emptyMap());
+        verify(mockSession).clear();
+        assertEquals(2L, peopleStream.count());
     }
 
     @Test

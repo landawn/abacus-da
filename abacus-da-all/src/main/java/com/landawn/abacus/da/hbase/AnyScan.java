@@ -56,9 +56,9 @@ import com.landawn.abacus.util.N;
  *
  * <h2>Throughput tuning</h2>
  * <ul>
- *   <li>{@link #setCaching(int)} controls how many <em>rows</em> are pre-fetched per RPC.</li>
- *   <li>{@link #setBatch(int)} controls how many <em>columns</em> are returned per RPC for
- *       wide rows (use with {@link #setAllowPartialResults(boolean)} for very wide rows).</li>
+ *   <li>{@link #setCaching(int)} controls the target number of <em>rows</em> fetched in a scanner request.</li>
+ *   <li>{@link #setBatch(int)} caps the number of <em>cells</em> in each {@code Result}, splitting
+ *       wide rows across results when necessary.</li>
  *   <li>{@link #setMaxResultSize(long)} caps the total bytes transferred per RPC, providing an
  *       OOM safeguard independent of row/column counts.</li>
  *   <li>{@link #setLimit(int)} bounds the total number of rows returned by the scan.</li>
@@ -94,7 +94,7 @@ import com.landawn.abacus.util.N;
  *   <li>Easy configuration of scan parameters like caching, batching, and limits</li>
  * </ul>
  *
- * @see <a href="http://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
+ * @see <a href="https://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
  * @see org.apache.hadoop.hbase.client.Scan
  * @see AnyQuery
  */
@@ -223,42 +223,45 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     }
 
     /**
-     * Creates a new AnyScan instance from a cursor position.
+     * Creates a new AnyScan whose inclusive start row is the row recorded by a cursor.
      * <p>
-     * This method allows resuming a scan from a previously saved cursor position,
-     * which is useful for implementing pagination or resuming interrupted scans.
-     * The cursor must have been obtained from a previous scan that had cursor
-     * results enabled via {@link #setNeedCursorResult(boolean)}.
+     * HBase emits cursor-only results to report server progress when a scanner response cannot
+     * otherwise return a normal result (for example, on a heartbeat). This factory copies only
+     * that row position; column families, filters, stop row, limit, and all other settings must be
+     * applied again. Because the generated start row is inclusive, the cursor row can be visited
+     * again and this method is not an exact, duplicate-free pagination checkpoint.
      * </p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // First scan: enable cursor results
+     * // Enable progress cursors on a scan.
      * AnyScan initialScan = AnyScan.create()
      *                              .setNeedCursorResult(true)
-     *                              .setLimit(100);
+     *                              .withStopRow("user_999")
+     *                              .addFamily("data");
      *
      * ResultScanner scanner = table.getScanner(initialScan.val());
-     * Cursor lastCursor = null;
+     * Cursor progress = null;
      * for (Result result : scanner) {
-     *     // Process result
-     *     if (result.getCursor() != null) {
-     *         lastCursor = result.getCursor();
+     *     if (result.isCursor()) {
+     *         progress = result.getCursor();
+     *         break;
      *     }
+     *     // Process a normal data result.
      * }
      *
-     * // Resume from cursor
-     * if (lastCursor != null) {
-     *     AnyScan resumedScan = AnyScan.createScanFromCursor(lastCursor);
-     *     // Continue scanning from where we left off
+     * if (progress != null) {
+     *     AnyScan resumedScan = AnyScan.createScanFromCursor(progress)
+     *                                    .withStopRow("user_999")
+     *                                    .addFamily("data"); // reapply every required setting
      * }
      *
      * // A null cursor is rejected.
      * AnyScan.createScanFromCursor((Cursor) null);   // throws NullPointerException
      * }</pre>
      *
-     * @param cursor the cursor position from which to resume scanning; must not be null
-     * @return a new AnyScan instance configured to start from the cursor position
+     * @param cursor the non-null server-progress cursor whose row becomes the inclusive start row
+     * @return a new AnyScan configured only with the cursor row as its start row
      * @throws NullPointerException if {@code cursor} is null (raised by the wrapped {@link Scan#createScanFromCursor(Cursor)})
      * @see #setNeedCursorResult(boolean)
      */
@@ -873,29 +876,6 @@ public final class AnyScan extends AnyQuery<AnyScan> {
         return this;
     }
 
-    //    /**
-    //     * Get versions of columns with the specified timestamp. Note, default maximum
-    //     * versions to return is 1.  If your time range spans more than one version
-    //     * and you want all versions returned, up the number of versions beyond the default.
-    //     *
-    //     * @param timestamp version timestamp
-    //     * @return this
-    //     * @see Scan#setMaxVersions()
-    //     * @see Scan#setMaxVersions(int)
-    //     * @deprecated As of release 2.0.0, this will be removed in HBase 3.0.0.
-    //     *             Use {@code setTimestamp(long)} instead
-    //     */
-    //    @Deprecated
-    //    public AnyScan setTimeStamp(long timestamp) {
-    //        try {
-    //            scan.setTimeStamp(timestamp);
-    //        } catch (IOException e) {
-    //            throw new IllegalArgumentException(e);
-    //        }
-    //
-    //        return this;
-    //    }
-
     /**
      * Returns whether the start row is included in this scan.
      * <p>
@@ -945,25 +925,6 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     public byte[] getStartRow() {
         return scan.getStartRow();
     }
-
-    //    /**
-    //     * Set the start row of the scan.
-    //     * <p>
-    //     * If the specified row does not exist, the Scanner will start from the next closest row after the
-    //     * specified row.
-    //     * @param startRow row to start scanner at or after
-    //     * @return this
-    //     * @throws IllegalArgumentException if startRow does not meet criteria for a row key (when length
-    //     *           exceeds {@link HConstants#MAX_ROW_LENGTH})
-    //     * @deprecated use {@code withStartRow(byte[])} instead. This method may change the inclusive of
-    //     *             the stop row to keep compatible with the old behavior.
-    //     */
-    //    @Deprecated
-    //    public AnyScan setStartRow(final Object startRow) {
-    //        scan.setStartRow(toRowKeyBytes(startRow));
-    //
-    //        return this;
-    //    }
 
     /**
      * Sets the start row for the scan with inclusive behavior by default.
@@ -1072,28 +1033,6 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     public byte[] getStopRow() {
         return scan.getStopRow();
     }
-
-    //    /**
-    //     * Set the stop row of the scan.
-    //     * <p>
-    //     * The scan will include rows that are lexicographically less than the provided stopRow.
-    //     * <p>
-    //     * <b>Note:</b> When doing a filter for a rowKey <u>Prefix</u> use
-    //     * {@code setRowPrefixFilter(byte[])}. The 'trailing 0' will not yield the desired result.
-    //     * </p>
-    //     * @param stopRow row to end at (exclusive)
-    //     * @return this
-    //     * @throws IllegalArgumentException if stopRow does not meet criteria for a row key (when length
-    //     *           exceeds {@link HConstants#MAX_ROW_LENGTH})
-    //     * @deprecated use {@code withStopRow(byte[])} instead. This method may change the inclusive of
-    //     *             the stop row to keep compatible with the old behavior.
-    //     */
-    //    @Deprecated
-    //    public AnyScan setStopRow(final Object stopRow) {
-    //        scan.setStopRow(toRowKeyBytes(stopRow));
-    //
-    //        return this;
-    //    }
 
     /**
      * Sets the stop row for the scan with exclusive behavior by default.
@@ -1234,34 +1173,6 @@ public final class AnyScan extends AnyQuery<AnyScan> {
         return scan.getMaxVersions();
     }
 
-    //    /**
-    //     * Get all available versions.
-    //     *
-    //     * @param maxVersions
-    //     * @return this
-    //     * @deprecated It is easy to misunderstand with column family's max versions, so use
-    //     *             {@code readAllVersions()} instead.
-    //     */
-    //    @Deprecated
-    //    public AnyScan setMaxVersions(int maxVersions) {
-    //        scan.setMaxVersions(maxVersions);
-    //
-    //        return this;
-    //    }
-    //
-    //    /**
-    //     * Get all available versions.
-    //     * @return this
-    //     * @deprecated It is easy to misunderstand with column family's max versions, so use
-    //     *             {@code readAllVersions()} instead.
-    //     */
-    //    @Deprecated
-    //    public AnyScan setMaxVersions() {
-    //        scan.setMaxVersions();
-    //
-    //        return this;
-    //    }
-
     /**
      * Sets the maximum number of versions to retrieve for each column.
      * <p>
@@ -1316,10 +1227,11 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     }
 
     /**
-     * Returns the batch size for this scan operation.
+     * Returns the maximum number of cells placed in each result for this scan.
      * <p>
-     * The batch size controls how many columns are retrieved per RPC call.
-     * This is different from caching, which controls how many rows are retrieved.
+     * A positive batch size can split a wide row across multiple {@code Result} objects returned
+     * by {@code ResultScanner.next()}. This is different from caching, which controls the target
+     * number of rows fetched from the server per scanner request.
      * </p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -1340,16 +1252,17 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     }
 
     /**
-     * Sets the batch size for this scan operation.
+     * Sets the maximum number of cells in each result for this scan operation.
      * <p>
-     * The batch size determines the maximum number of columns to retrieve per RPC call.
-     * This can help manage memory usage when scanning rows with many columns.
-     * Set to -1 for unlimited batch size (default).
+     * A positive value splits rows containing more cells across multiple {@code Result} objects.
+     * Callers can use {@code Result.mayHaveMoreCellsInRow()} to recognize such fragments. This
+     * setting is incompatible with a filter whose {@link Filter#hasFilterRow()} returns true.
+     * A value of {@code -1} means no explicit batch limit (the default).
      * </p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * AnyScan scan = AnyScan.create().setBatch(100);   // returns this scan (max 100 columns per RPC)
+     * AnyScan scan = AnyScan.create().setBatch(100);   // returns this scan (max 100 cells per Result)
      * int batch = scan.getBatch();                     // returns 100
      *
      * // -1 means unlimited (the default).
@@ -1357,8 +1270,10 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * int b = unlimited.getBatch();  // returns -1
      * }</pre>
      *
-     * @param batch the batch size (number of columns per RPC)
+     * @param batch the maximum number of cells in each result; {@code -1} removes the explicit limit
      * @return this AnyScan instance for method chaining
+     * @throws org.apache.hadoop.hbase.filter.IncompatibleFilterException if the current filter
+     *         requires whole-row processing ({@link Filter#hasFilterRow()} returns {@code true})
      * @see #getBatch()
      * @see #setCaching(int)
      */
@@ -1401,7 +1316,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * // Limit to 10 most recent columns per family
+     * // Limit each family to 10 cells/qualifiers, one version each
      * AnyScan scan = AnyScan.create()
      *                      .setMaxResultsPerColumnFamily(10)   // returns this scan
      *                      .readVersions(1);
@@ -1673,7 +1588,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * AnyScan scan = AnyScan.create().setLimit(100);   // returns this scan (at most 100 rows)
      * int limit = scan.getLimit();                     // returns 100
      *
-     * // A limit of 0 is stored as-is (an immediately-exhausted scan).
+     * // A limit of 0 is stored as-is; this wrapper performs no range validation.
      * AnyScan none = AnyScan.create().setLimit(0);
      * int zero = none.getLimit();    // returns 0
      * }</pre>
@@ -1904,43 +1819,6 @@ public final class AnyScan extends AnyQuery<AnyScan> {
         return this;
     }
 
-    //    /**
-    //     * Get whether this scan is a small scan.
-    //     *
-    //     * @return {@code true} if small scan
-    //     * @deprecated since 2.0.0. See the comment of {@code setSmall(boolean)}
-    //     */
-    //    @Deprecated
-    //    public boolean isSmall() {
-    //        return scan.isSmall();
-    //    }
-    //
-    //    /**
-    //     * Set whether this scan is a small scan
-    //     * <p>
-    //     * Small scan should use pread and big scan can use seek + read seek + read is fast but can cause
-    //     * two problem (1) resource contention (2) cause too much network io [89-fb] Using pread for
-    //     * non-compaction read request https://issues.apache.org/jira/browse/HBASE-7266 On the other hand,
-    //     * if setting it true, we would do openScanner,next,closeScanner in one RPC call. It means the
-    //     * better performance for small scan. [HBASE-9488]. Generally, if the scan range is within one
-    //     * data block(64KB), it could be considered as a small scan.
-    //     *
-    //     * @param small
-    //     * @return
-    //     * @see Scan#setLimit(int)
-    //     * @see Scan#setReadType(ReadType)
-    //     * @deprecated since 2.0.0. Use {@code setLimit(int)} and {@code setReadType(ReadType)} instead.
-    //     *             And for the one rpc optimization, now we will also fetch data when openScanner, and
-    //     *             if the number of rows reaches the limit then we will close the scanner
-    //     *             automatically which means we will fall back to one rpc.
-    //     */
-    //    @Deprecated
-    //    public AnyScan setSmall(boolean small) {
-    //        scan.setSmall(small);
-    //
-    //        return this;
-    //    }
-
     /**
      * Returns whether scan metrics collection is enabled for this scan.
      * <p>
@@ -1988,20 +1866,6 @@ public final class AnyScan extends AnyQuery<AnyScan> {
 
         return this;
     }
-
-    //    /**
-    //     * Gets the scan metrics.
-    //     *
-    //     * @return Metrics on this Scan, if metrics were enabled.
-    //     * @see Scan#setScanMetricsEnabled(boolean)
-    //     * @deprecated Use {@link ResultScanner#getScanMetrics()} instead. And notice that, please do not
-    //     *             use this method and {@link ResultScanner#getScanMetrics()} together, the metrics
-    //     *             will be messed up.
-    //     */
-    //    @Deprecated
-    //    public ScanMetrics getScanMetrics() {
-    //        return scan.getScanMetrics();
-    //    }
 
     /**
      * Returns whether asynchronous prefetching is enabled for this scan.
@@ -2120,11 +1984,10 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     }
 
     /**
-     * Returns whether cursor results are needed for this scan.
+     * Returns whether server-progress cursor results are requested for this scan.
      * <p>
-     * Cursor results provide position information that can be used to resume a scan
-     * from a specific point, which is useful for implementing pagination or handling
-     * interrupted scans.
+     * When enabled, HBase may return a special cursor-only {@code Result} when a server response
+     * cannot otherwise yield a normal data result. It does not attach a cursor to every row.
      * </p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -2145,19 +2008,19 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     }
 
     /**
-     * Sets whether cursor results are needed for this scan.
+     * Sets whether server-progress cursor results are needed for this scan.
      * <p>
-     * When enabled, scan results will include cursor information that can be used
-     * to resume the scan from that exact position later. This is particularly useful
-     * for implementing pagination where you want to continue scanning from where you
-     * left off without re-scanning previous rows.
+     * When enabled, HBase may expose a special cursor-only {@code Result} for responses such as
+     * heartbeats where the server made progress but cannot return a normal data result. The cursor
+     * reports a row-level position; it is not an exact cell checkpoint and is not included with
+     * every ordinary result.
      * </p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyScan scan = AnyScan.create().setNeedCursorResult(true);   // returns this scan
      * boolean on = scan.isNeedCursorResult();                      // returns true
-     * // Later, use the cursor to resume scanning
+     * // Check Result.isCursor() before calling Result.getCursor().
      * }</pre>
      *
      * @param needCursorResult {@code true} to enable cursor results, {@code false} to disable

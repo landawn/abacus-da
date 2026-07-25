@@ -32,16 +32,16 @@ import org.neo4j.ogm.transaction.Transaction;
 import com.landawn.abacus.annotation.Beta;
 import com.landawn.abacus.logging.Logger;
 import com.landawn.abacus.logging.LoggerFactory;
-import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.stream.Stream;
+import com.landawn.abacus.util.u.Optional;
 
 /**
- * A thin executor that wraps the <a href="http://neo4j.com/docs/ogm/java/stable/">Neo4j OGM</a>
+ * A thin executor that wraps the <a href="https://neo4j.com/docs/ogm-manual/current/">Neo4j OGM</a>
  * {@link Session} API, adding lightweight session pooling and {@link Stream}-based result handling
  * on top of it. Each public operation borrows a {@link Session} from an internal pool, delegates to
- * the equivalent method on the OGM session, and either returns the session immediately (for eager
- * methods) or transfers ownership of session release to the returned {@link Stream}'s
- * {@code onClose} handler (for the streaming {@code stream} overloads).
+ * the equivalent method on the OGM session, and returns the cleared session to the pool before the
+ * operation returns. The OGM query methods used by the {@code stream} overloads materialize their
+ * results eagerly, so the returned {@link Stream} does not retain a session.
  *
  * <h2>Session and Transaction Semantics</h2>
  * <ul>
@@ -58,9 +58,9 @@ import com.landawn.abacus.util.stream.Stream;
  *       Other session-level state mutated by callers of {@link #run(Consumer)}/{@link #call(Function)}
  *       — registered event listeners, bookmarks, load strategy — is <i>not</i> reset and would leak
  *       into subsequent borrowers; do not mutate such configuration on a pooled session.</li>
- *   <li><b>Transactions:</b> Each operation runs against an auto-commit OGM session unless callers
- *       use {@link #run(Consumer)} or {@link #call(Function)} to open a multi-statement transaction
- *       explicitly via {@link Session#beginTransaction()}. Read/write routing is the OGM/driver's
+ *   <li><b>Transactions:</b> Each operation uses Neo4j-OGM's per-call transaction handling unless
+ *       callers use {@link #run(Consumer)} or {@link #call(Function)} to open a multi-statement
+ *       transaction explicitly via {@link Session#beginTransaction()}. Read/write routing is the OGM/driver's
  *       responsibility; the {@code readOnly} flag accepted by
  *       {@link #stream(String, Map, boolean)} is forwarded to the underlying driver as a routing
  *       hint.</li>
@@ -79,14 +79,18 @@ import com.landawn.abacus.util.stream.Stream;
  * <h2>Result Streaming</h2>
  * <p>The {@link #stream(String, Map)}, {@link #stream(String, Map, boolean)}, and
  * {@link #stream(Class, String, Map)} overloads execute the Cypher immediately and fully fetch the
- * result rows; the returned {@link Stream} lazily iterates the already-fetched rows and owns a
- * pooled session for its lifetime. The session is returned to the pool when the stream is closed
- * (either explicitly via {@link Stream#close()} or via try-with-resources). Failing to close such a
- * stream means the session is never returned to the pool for reuse.</p>
+ * result rows. The borrowed session is cleared and returned to the pool before the method returns;
+ * the returned {@link Stream} lazily iterates only the already-materialized rows. Because the session
+ * is already released, these streams hold no resource — closing them is optional and merely
+ * conventional.</p>
  *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
- * // Initialize executor
+ * // Initialize executor (the Bolt driver must also be present at runtime)
+ * Configuration configuration = new Configuration.Builder()
+ *         .uri("bolt://localhost")
+ *         .credentials("neo4j", "password")
+ *         .build();
  * SessionFactory sessionFactory = new SessionFactory(configuration, "com.example.model");
  * Neo4jExecutor executor = new Neo4jExecutor(sessionFactory);
  *
@@ -128,7 +132,7 @@ import com.landawn.abacus.util.stream.Stream;
  *
  * @see org.neo4j.ogm.session.SessionFactory
  * @see org.neo4j.ogm.session.Session
- * @see <a href="http://neo4j.com/docs/ogm/java/stable/">Neo4j OGM Documentation</a>
+ * @see <a href="https://neo4j.com/docs/ogm-manual/current/">Neo4j OGM Documentation</a>
  */
 public final class Neo4jExecutor {
 
@@ -149,6 +153,10 @@ public final class Neo4jExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * Configuration configuration = new Configuration.Builder()
+     *         .uri("bolt://localhost")
+     *         .credentials("neo4j", "password")
+     *         .build();
      * SessionFactory factory = new SessionFactory(configuration, "com.example.model");
      * Neo4jExecutor executor = new Neo4jExecutor(factory);   // ready to use; no session opened yet
      * assert executor.sessionFactory() == factory;           // factory is retained
@@ -178,6 +186,10 @@ public final class Neo4jExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
+     * Configuration configuration = new Configuration.Builder()
+     *         .uri("bolt://localhost")
+     *         .credentials("neo4j", "password")
+     *         .build();
      * SessionFactory factory = new SessionFactory(configuration, "com.example.model");
      * Neo4jExecutor executor = new Neo4jExecutor(factory);
      *
@@ -253,6 +265,8 @@ public final class Neo4jExecutor {
      * });
      *
      * // Multi-statement transaction
+     * Person personA = new Person("Alice", 30);
+     * Person personB = new Person("Bob", 32);
      * executor.run(session -> {
      *     try (org.neo4j.ogm.transaction.Transaction tx = session.beginTransaction()) {
      *         session.save(personA);
@@ -281,11 +295,10 @@ public final class Neo4jExecutor {
      * releases the session back to the pool when {@code action} completes (whether normally or
      * exceptionally).
      * <p>
-     * <b>Important:</b> {@code action} must not leak references to entities or to the {@link Session}
-     * itself outside the lambda, because the session is cleared (see {@link Session#clear()}) before
-     * it is returned to the pool, which severs the identity map of any loaded entities. Convert
-     * results to detached forms (e.g. collect into a {@code List}, copy fields, or convert to
-     * {@code String}) inside the lambda.
+     * <b>Important:</b> {@code action} must not return or otherwise retain the {@link Session}
+     * itself because it is cleared (see {@link Session#clear()}) and returned to the pool when this
+     * method completes. Entity objects may be returned, but they are detached from that cleared
+     * session and subsequent persistence work must use another executor operation or session.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -296,7 +309,7 @@ public final class Neo4jExecutor {
      * List<String> names = executor.call(session ->
      *     session.loadAll(Person.class).stream()
      *         .map(Person::getName)
-     *         .collect(Collectors.toList()));
+     *         .toList());
      * }</pre>
      *
      * @param <T> the type returned by {@code action}
@@ -316,7 +329,7 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Loads a single node by its native Neo4j ID using the OGM session's default depth.
+     * Loads a single mapped entity by its OGM identifier using the default load depth.
      * <p>
      * Delegates to {@link Session#load(Class, java.io.Serializable)}. The session's default load
      * depth is&nbsp;1, so immediate relationships are typically also loaded; use
@@ -332,7 +345,8 @@ public final class Neo4jExecutor {
      *
      * @param <T> the entity type mapped by OGM
      * @param targetClass the OGM-mapped class to load
-     * @param id the native Neo4j node ID
+     * @param id the configured primary-index value, or a native graph ID for an entity class
+     *           without a primary index
      * @return the loaded entity, or {@code null} if no node with that ID exists
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #load(Class, Serializable, int)
@@ -349,7 +363,8 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Loads a single node by its native Neo4j ID, populating related entities to the given depth.
+     * Loads a single mapped entity by its OGM identifier, populating related entities to the given
+     * depth.
      * <p>
      * Delegates to {@link Session#load(Class, java.io.Serializable, int)}. {@code depth == 0}
      * loads only the node's scalar properties; {@code depth == 1} loads it together with
@@ -365,7 +380,8 @@ public final class Neo4jExecutor {
      *
      * @param <T> the entity type mapped by OGM
      * @param targetClass the OGM-mapped class to load
-     * @param id the native Neo4j node ID
+     * @param id the configured primary-index value, or a native graph ID for an entity class
+     *           without a primary index
      * @param depth the depth of relationships to traverse: {@code 0} for the node only, a positive
      *              integer for that many hops, or {@code -1} for unlimited
      * @return the loaded entity, or {@code null} if no node with that ID exists
@@ -384,7 +400,7 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Loads multiple nodes from Neo4j by their unique IDs.
+     * Loads multiple mapped entities from Neo4j by their identifiers.
      * <p>
      * This method efficiently retrieves multiple nodes in a single database operation.
      * Uses the OGM default load depth of 1, so immediate relationships are loaded along with node
@@ -408,7 +424,7 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type
-     * @param ids collection of unique Neo4j node IDs to load
+     * @param ids primary-index values, or native graph IDs for a class without a primary index
      * @return collection of loaded node entities, empty collection if no nodes found
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Collection, int)
@@ -425,7 +441,8 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Loads multiple nodes from Neo4j by their unique IDs with specified relationship depth.
+     * Loads multiple mapped entities from Neo4j by their identifiers with a specified relationship
+     * depth.
      * <p>
      * This method efficiently retrieves multiple nodes and their relationships in a single
      * database operation. The depth parameter controls how deeply connected nodes are loaded.
@@ -445,7 +462,7 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type
-     * @param ids collection of unique Neo4j node IDs to load
+     * @param ids primary-index values, or native graph IDs for a class without a primary index
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of loaded node entities with relationships, may be empty if no nodes found
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -463,7 +480,7 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Loads multiple nodes from Neo4j by their unique IDs with specified sort order.
+     * Loads multiple mapped entities from Neo4j by their identifiers with a specified sort order.
      * <p>
      * This method retrieves multiple nodes and applies the specified sorting to the results.
      * The OGM default load depth of 1 applies: immediate relationships are loaded along with node properties.
@@ -486,7 +503,7 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type
-     * @param ids collection of unique Neo4j node IDs to load
+     * @param ids primary-index values, or native graph IDs for a class without a primary index
      * @param sortOrder the sort order specification for results
      * @return collection of loaded node entities sorted as specified, may be empty if no nodes found
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -504,7 +521,8 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Loads multiple nodes from Neo4j by their unique IDs with specified sort order and relationship depth.
+     * Loads multiple mapped entities from Neo4j by their identifiers with a specified sort order
+     * and relationship depth.
      * <p>
      * This method retrieves multiple nodes and their relationships, applying the specified sorting
      * to the results. The depth parameter controls how deeply connected nodes are loaded.
@@ -524,7 +542,7 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type
-     * @param ids collection of unique Neo4j node IDs to load
+     * @param ids primary-index values, or native graph IDs for a class without a primary index
      * @param sortOrder the sort order specification for results
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of loaded node entities with relationships, sorted as specified
@@ -543,7 +561,7 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Loads multiple nodes from Neo4j by their unique IDs with pagination.
+     * Loads multiple mapped entities from Neo4j by their identifiers with pagination.
      * <p>
      * This method retrieves a subset of nodes based on pagination settings, allowing
      * efficient handling of large result sets. The OGM default load depth of 1 applies (immediate relationships are loaded too).
@@ -564,8 +582,8 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type
-     * @param ids collection of unique Neo4j node IDs to load
-     * @param pagination pagination settings (page offset and size)
+     * @param ids primary-index values, or native graph IDs for a class without a primary index
+     * @param pagination pagination settings (page number and size, or an explicit offset)
      * @return collection of loaded node entities for the specified page, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Collection, Pagination, int)
@@ -582,7 +600,8 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Loads multiple nodes from Neo4j by their unique IDs with pagination and relationship depth.
+     * Loads multiple mapped entities from Neo4j by their identifiers with pagination and
+     * relationship depth.
      * <p>
      * This method retrieves a subset of nodes and their relationships based on pagination settings,
      * allowing efficient handling of large result sets with related data.
@@ -602,8 +621,8 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type
-     * @param ids collection of unique Neo4j node IDs to load
-     * @param pagination pagination settings (page offset and size)
+     * @param ids primary-index values, or native graph IDs for a class without a primary index
+     * @param pagination pagination settings (page number and size, or an explicit offset)
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of loaded node entities with relationships for the specified page
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -621,7 +640,8 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Loads multiple nodes from Neo4j by their unique IDs with sort order and pagination.
+     * Loads multiple mapped entities from Neo4j by their identifiers with sort order and
+     * pagination.
      * <p>
      * This method retrieves a subset of sorted nodes based on pagination settings.
      * The combination of sorting and pagination provides efficient navigation through
@@ -642,9 +662,9 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type
-     * @param ids collection of unique Neo4j node IDs to load
+     * @param ids primary-index values, or native graph IDs for a class without a primary index
      * @param sortOrder the sort order specification for results
-     * @param pagination pagination settings (page offset and size)
+     * @param pagination pagination settings (page number and size, or an explicit offset)
      * @return collection of loaded, sorted node entities for the specified page
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Collection, SortOrder, Pagination, int)
@@ -663,7 +683,8 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Loads multiple nodes from Neo4j by their unique IDs with sort order, pagination, and relationship depth.
+     * Loads multiple mapped entities from Neo4j by their identifiers with sort order, pagination,
+     * and relationship depth.
      * <p>
      * This is the most comprehensive loadAll method, providing full control over sorting,
      * pagination, and relationship loading. Ideal for building complex data views with
@@ -686,9 +707,9 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type
-     * @param ids collection of unique Neo4j node IDs to load
+     * @param ids primary-index values, or native graph IDs for a class without a primary index
      * @param sortOrder the sort order specification for results
-     * @param pagination pagination settings (page offset and size)
+     * @param pagination pagination settings (page number and size, or an explicit offset)
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of loaded, sorted node entities with relationships for the specified page
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -710,14 +731,14 @@ public final class Neo4jExecutor {
     /**
      * Reloads a collection of existing node entities from Neo4j.
      * <p>
-     * This method refreshes the provided entities from the database, updating their
-     * properties to the current state in Neo4j. The entities must already have IDs.
-     * The OGM default load depth of 1 applies: immediate relationships are reloaded along with node properties.
+     * This method extracts the identifiers from the provided entities and returns entities loaded
+     * in the borrowed session; it does not mutate the supplied instances or collection. The
+     * entities must already have identifiers. The OGM default load depth of 1 applies.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Collection<Person> stale = executor.loadAll(Person.class, Arrays.asList(1L, 2L));
-     * Collection<Person> fresh = executor.loadAll(stale);   // re-reads current state from the graph
+     * Collection<Person> fresh = executor.loadAll(stale);   // newly loaded results; stale is unchanged
      *
      * // A null collection is passed straight through and returned as-is
      * Collection<Person> nil = executor.loadAll((Collection<Person>) null); // returns null
@@ -884,7 +905,7 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param objects collection of node entities to reload
-     * @param pagination pagination settings (page offset and size)
+     * @param pagination pagination settings (page number and size, or an explicit offset)
      * @return paginated collection of reloaded node entities with current database state
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Collection, Pagination, int)
@@ -923,7 +944,7 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param objects collection of node entities to reload
-     * @param pagination pagination settings (page offset and size)
+     * @param pagination pagination settings (page number and size, or an explicit offset)
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of reloaded node entities with relationships
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -966,7 +987,7 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param objects collection of node entities to reload
      * @param sortOrder the sort order specification for results
-     * @param pagination pagination settings (page offset and size)
+     * @param pagination pagination settings (page number and size, or an explicit offset)
      * @return paginated collection of reloaded, sorted node entities
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Collection, SortOrder, Pagination, int)
@@ -1009,7 +1030,7 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param objects collection of node entities to reload
      * @param sortOrder the sort order specification for results
-     * @param pagination pagination settings (page offset and size)
+     * @param pagination pagination settings (page number and size, or an explicit offset)
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of reloaded, sorted node entities with relationships
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -1196,7 +1217,7 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param pagination pagination settings (page offset and size)
+     * @param pagination pagination settings (page number and size, or an explicit offset)
      * @return paginated collection of nodes of the specified type, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Pagination, int)
@@ -1231,7 +1252,7 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param pagination pagination settings (page offset and size)
+     * @param pagination pagination settings (page number and size, or an explicit offset)
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of nodes with relationships, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -1270,7 +1291,7 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param sortOrder the sort order specification for results
-     * @param pagination pagination settings (page offset and size)
+     * @param pagination pagination settings (page number and size, or an explicit offset)
      * @return paginated collection of sorted nodes of the specified type, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, SortOrder, Pagination, int)
@@ -1309,7 +1330,7 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param sortOrder the sort order specification for results
-     * @param pagination pagination settings (page offset and size)
+     * @param pagination pagination settings (page number and size, or an explicit offset)
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of sorted nodes with relationships, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -1505,7 +1526,7 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filter the filter criteria to apply when loading nodes
-     * @param pagination pagination settings (page offset and size)
+     * @param pagination pagination settings (page number and size, or an explicit offset)
      * @return paginated collection of filtered nodes, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filter, Pagination, int)
@@ -1543,7 +1564,7 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filter the filter criteria to apply when loading nodes
-     * @param pagination pagination settings (page offset and size)
+     * @param pagination pagination settings (page number and size, or an explicit offset)
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of filtered nodes with relationships, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -1586,7 +1607,7 @@ public final class Neo4jExecutor {
      * @param targetClass the class representing the node type to load
      * @param filter the filter criteria to apply when loading nodes
      * @param sortOrder the sort order specification for results
-     * @param pagination pagination settings (page offset and size)
+     * @param pagination pagination settings (page number and size, or an explicit offset)
      * @return paginated collection of filtered, sorted nodes, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filter, SortOrder, Pagination, int)
@@ -1628,7 +1649,7 @@ public final class Neo4jExecutor {
      * @param targetClass the class representing the node type to load
      * @param filter the filter criteria to apply when loading nodes
      * @param sortOrder the sort order specification for results
-     * @param pagination pagination settings (page offset and size)
+     * @param pagination pagination settings (page number and size, or an explicit offset)
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of filtered, sorted nodes with relationships, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -1650,15 +1671,16 @@ public final class Neo4jExecutor {
     /**
      * Loads nodes of the specified type from Neo4j that match the given multiple filter criteria.
      * <p>
-     * This method retrieves nodes that satisfy all the specified filter conditions.
-     * The Filters object allows combining multiple filter criteria with logical operators.
+     * This method retrieves entities that satisfy the logical expression encoded by the
+     * {@link Filters} object. Use {@link Filters#and(Filter)} and {@link Filters#or(Filter)} to
+     * specify how each filter after the first is joined to the preceding expression.
      * The OGM default load depth of 1 applies: immediate relationships are loaded along with node properties.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Filters filters = new Filters()
      *         .add(new Filter("status", ComparisonOperator.EQUALS, "active"))
-     *         .add(new Filter("age", ComparisonOperator.GREATER_THAN, 18));
+     *         .and(new Filter("age", ComparisonOperator.GREATER_THAN, 18));
      * Collection<Person> activeAdults = executor.loadAll(Person.class, filters); // matches every supplied condition
      *
      * // An empty Filters object matches everything (equivalent to loadAll(Person.class))
@@ -1672,7 +1694,7 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes
-     * @return collection of nodes matching all filter criteria, may be empty
+     * @return collection of entities matching the combined filter expression, possibly empty
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filters, int)
      * @see #loadAll(Class, Filter)
@@ -1691,7 +1713,7 @@ public final class Neo4jExecutor {
     /**
      * Loads nodes of the specified type that match the multiple filter criteria with relationship depth.
      * <p>
-     * This method retrieves nodes that satisfy all the filter conditions and loads their
+     * This method retrieves entities that satisfy the combined filter expression and loads their
      * relationships up to the specified depth. Combines complex filtering with relationship
      * loading for comprehensive data retrieval with multiple criteria.
      *
@@ -1699,7 +1721,7 @@ public final class Neo4jExecutor {
      * <pre>{@code
      * Filters filters = new Filters()
      *         .add(new Filter("status", ComparisonOperator.EQUALS, "active"))
-     *         .add(new Filter("age", ComparisonOperator.GREATER_THAN, 18));
+     *         .and(new Filter("age", ComparisonOperator.GREATER_THAN, 18));
      * Collection<Person> withRels = executor.loadAll(Person.class, filters, 1); // matches, with immediate relationships
      * Collection<Person> flat = executor.loadAll(Person.class, filters, 0);     // matches, properties only
      *
@@ -1730,7 +1752,7 @@ public final class Neo4jExecutor {
     /**
      * Loads nodes of the specified type that match multiple filter criteria with sort order.
      * <p>
-     * This method retrieves nodes that satisfy all the filter conditions and sorts them
+     * This method retrieves entities that satisfy the combined filter expression and sorts them
      * according to the specified order. Combines complex filtering with sorting for
      * organized data retrieval with multiple criteria. The OGM default load depth of 1 applies (immediate relationships are loaded too).
      *
@@ -1738,7 +1760,7 @@ public final class Neo4jExecutor {
      * <pre>{@code
      * Filters filters = new Filters()
      *         .add(new Filter("status", ComparisonOperator.EQUALS, "active"))
-     *         .add(new Filter("age", ComparisonOperator.GREATER_THAN, 18));
+     *         .and(new Filter("age", ComparisonOperator.GREATER_THAN, 18));
      * SortOrder byName = new SortOrder().add("name");
      * Collection<Person> sorted = executor.loadAll(Person.class, filters, byName); // matches, ordered by name
      *
@@ -1773,7 +1795,7 @@ public final class Neo4jExecutor {
     /**
      * Loads nodes of the specified type that match multiple filter criteria with sort order and relationship depth.
      * <p>
-     * This method retrieves nodes that satisfy all the filter conditions, loads their
+     * This method retrieves entities that satisfy the combined filter expression, loads their
      * relationships to the specified depth, and sorts the results. Provides comprehensive
      * filtered data retrieval with complete relationship information and multiple criteria.
      *
@@ -1781,7 +1803,7 @@ public final class Neo4jExecutor {
      * <pre>{@code
      * Filters filters = new Filters()
      *         .add(new Filter("status", ComparisonOperator.EQUALS, "active"))
-     *         .add(new Filter("age", ComparisonOperator.GREATER_THAN, 18));
+     *         .and(new Filter("age", ComparisonOperator.GREATER_THAN, 18));
      * SortOrder byName = new SortOrder().add("name");
      * Collection<Person> sortedWithRels = executor.loadAll(Person.class, filters, byName, 1); // filtered, sorted, with relationships
      * Collection<Person> sortedFlat = executor.loadAll(Person.class, filters, byName, 0);     // filtered, sorted, properties only
@@ -1815,7 +1837,7 @@ public final class Neo4jExecutor {
     /**
      * Loads a paginated subset of nodes that match multiple filter criteria.
      * <p>
-     * This method retrieves a specific page of nodes that satisfy all the filter conditions.
+     * This method retrieves a specific page of entities that satisfy the combined filter expression.
      * Combines complex filtering with pagination for efficient handling of large filtered
      * datasets with multiple criteria. The OGM default load depth of 1 applies (immediate relationships are loaded too).
      *
@@ -1835,7 +1857,7 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes
-     * @param pagination pagination settings (page offset and size)
+     * @param pagination pagination settings (page number and size, or an explicit offset)
      * @return paginated collection of filtered nodes, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filters, Pagination, int)
@@ -1855,7 +1877,7 @@ public final class Neo4jExecutor {
     /**
      * Loads a paginated subset of nodes that match multiple filter criteria with relationship depth.
      * <p>
-     * This method retrieves a specific page of nodes that satisfy all the filter conditions
+     * This method retrieves a specific page of entities that satisfy the combined filter expression
      * and loads their relationships to the specified depth. Combines complex filtering,
      * pagination, and relationship loading for comprehensive data management.
      *
@@ -1874,7 +1896,7 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes
-     * @param pagination pagination settings (page offset and size)
+     * @param pagination pagination settings (page number and size, or an explicit offset)
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of filtered nodes with relationships, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -1895,7 +1917,7 @@ public final class Neo4jExecutor {
     /**
      * Loads a paginated, sorted subset of nodes that match multiple filter criteria.
      * <p>
-     * This method retrieves a specific page of nodes that satisfy all the filter conditions
+     * This method retrieves a specific page of entities that satisfy the combined filter expression
      * and sorts them according to the specified order. Combines complex filtering, sorting,
      * and pagination for building sophisticated, navigable data views with multiple criteria.
      *
@@ -1918,7 +1940,7 @@ public final class Neo4jExecutor {
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes
      * @param sortOrder the sort order specification for results
-     * @param pagination pagination settings (page offset and size)
+     * @param pagination pagination settings (page number and size, or an explicit offset)
      * @return paginated collection of filtered, sorted nodes, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filters, SortOrder, Pagination, int)
@@ -1947,7 +1969,7 @@ public final class Neo4jExecutor {
      * <pre>{@code
      * Filters filters = new Filters()
      *         .add(new Filter("status", ComparisonOperator.EQUALS, "active"))
-     *         .add(new Filter("age", ComparisonOperator.GREATER_THAN, 18));
+     *         .and(new Filter("age", ComparisonOperator.GREATER_THAN, 18));
      * SortOrder byAgeDesc = new SortOrder(SortOrder.Direction.DESC, "age");
      * Pagination page = new Pagination(0, 20);
      * Collection<Person> withRels = executor.loadAll(Person.class, filters, byAgeDesc, page, 1); // filtered/sorted/paged, with relationships
@@ -1962,7 +1984,7 @@ public final class Neo4jExecutor {
      * @param targetClass the class representing the node type to load
      * @param filters the multiple filter criteria to apply when loading nodes
      * @param sortOrder the sort order specification for results
-     * @param pagination pagination settings (page offset and size)
+     * @param pagination pagination settings (page number and size, or an explicit offset)
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of filtered, sorted nodes with relationships, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -1983,7 +2005,8 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Persists an OGM-mapped entity to Neo4j using the session's default save depth.
+     * Persists an OGM-mapped entity, entity array, or entity {@link Iterable} to Neo4j using the
+     * session's default save depth.
      * <p>
      * Delegates to {@link Session#save(Object)}, which by default traverses the object graph at
      * unlimited depth ({@code -1}), saving the supplied entity together with every reachable
@@ -2004,7 +2027,8 @@ public final class Neo4jExecutor {
      * executor.save(existing); // post-state: the matching node is updated in place
      * }</pre>
      *
-     * @param object the entity to save; must be an instance of an OGM-mapped class
+     * @param object a mapped entity, an array of mapped entities, or an {@link Iterable} of mapped
+     *               entities
      * @see #save(Object, int)
      */
     public void save(final Object object) {
@@ -2018,7 +2042,8 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Persists an OGM-mapped entity to Neo4j, traversing related entities to the given depth.
+     * Persists an OGM-mapped entity, entity array, or entity {@link Iterable} to Neo4j, traversing
+     * related entities to the given depth.
      * <p>
      * Delegates to {@link Session#save(Object, int)}. {@code depth == 0} saves only the
      * node's scalar properties (no relationships are written); a positive integer recursively
@@ -2034,10 +2059,11 @@ public final class Neo4jExecutor {
      * alice.worksFor(company);
      * executor.save(alice, 1);    // alice and the WORKS_FOR -> company edge
      *
-     * executor.save(rootNode, -1); // entire reachable sub-graph (use with care)
+     * executor.save(alice, -1);    // entire reachable sub-graph (use with care)
      * }</pre>
      *
-     * @param object the entity to save
+     * @param object a mapped entity, an array of mapped entities, or an {@link Iterable} of mapped
+     *               entities
      * @param depth the depth of related entities to traverse and persist: {@code 0} for the node
      *              only, a positive integer for that many hops, or {@code -1} for unlimited
      * @see #save(Object)
@@ -2053,8 +2079,9 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Deletes an OGM-managed entity (and any relationships incident to its underlying node) from
-     * Neo4j.
+     * Deletes one or more OGM-managed entities from Neo4j. The argument may be a single entity, an
+     * entity array, or an {@link Iterable}; deleting a node entity also deletes its incident
+     * relationships.
      * <p>
      * Delegates to {@link Session#delete(Object)}. The entity must carry a populated graph ID
      * (i.e. it has previously been loaded or saved); otherwise OGM has nothing to delete. The
@@ -2069,10 +2096,11 @@ public final class Neo4jExecutor {
      *
      * Collection<Person> inactive = executor.loadAll(Person.class,
      *     new Filter("status", ComparisonOperator.EQUALS, "inactive"));
-     * inactive.forEach(executor::delete);   // post-state: every inactive Person node is removed
+     * executor.delete(inactive);   // one round-trip: every inactive Person node is removed
      * }</pre>
      *
-     * @param object the entity to delete
+     * @param object a mapped entity, an array of mapped entities, or an {@link Iterable} of mapped
+     *               entities to delete
      * @see #deleteAll(Class)
      */
     public void delete(final Object object) {
@@ -2086,8 +2114,9 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Deletes every node of the supplied OGM-mapped class (and all relationships incident to those
-     * nodes) from Neo4j.
+     * Deletes every entity of the supplied OGM-mapped class. For a node-entity class, incident
+     * relationships are deleted as well; relationship-entity classes delete the mapped
+     * relationships.
      * <p>
      * Delegates to {@link Session#deleteAll(Class)}. <strong>WARNING:</strong> this is a destructive
      * bulk operation that cannot be undone; verify the target class before invoking it.
@@ -2106,7 +2135,7 @@ public final class Neo4jExecutor {
      * executor.deleteAll(Person.class); // nothing left to delete
      * }</pre>
      *
-     * @param targetClass the OGM-mapped class whose nodes are to be deleted
+     * @param targetClass the OGM-mapped entity class to delete
      * @see #delete(Object)
      */
     public void deleteAll(final Class<?> targetClass) {
@@ -2179,10 +2208,9 @@ public final class Neo4jExecutor {
      * Executes a Cypher query and returns each result row as a {@code Map<String, Object>} keyed
      * by the column alias declared in the {@code RETURN} clause.
      * <p>
-     * The Cypher executes immediately and the result rows are fully fetched; the returned stream
-     * lazily iterates the fetched rows and holds the borrowed session until closed. <b>Callers must
-     * close the stream</b> (preferably with try-with-resources); leaving it open means the session
-     * is never returned to the pool for reuse.
+     * The Cypher executes immediately and the result rows are fully fetched. The borrowed session
+     * is cleared and returned to the pool before this method returns, and the returned stream lazily
+     * iterates only those materialized rows.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2199,8 +2227,8 @@ public final class Neo4jExecutor {
      *
      * @param cypher the Cypher query string with {@code $name} parameter placeholders
      * @param parameters named parameters bound by the OGM session
-     * @return a {@link Stream} over the already-fetched result rows, each row a {@code Map} keyed by the
-     *         {@code RETURN}-clause aliases; close the stream to release the underlying session
+     * @return a {@link Stream} over the already-fetched result rows, each row a {@code Map} keyed by
+     *         the {@code RETURN}-clause aliases; it does not retain the borrowed session
      * @throws RuntimeException if the underlying OGM session rejects the query
      * @see #stream(Class, String, Map)
      * @see #stream(String, Map, boolean)
@@ -2212,11 +2240,11 @@ public final class Neo4jExecutor {
         }
 
         final Session session = getSession();
+
         try {
-            return Stream.of(session.query(cypher, parameters).iterator()).onClose(newCloseHandle(session));
-        } catch (RuntimeException | Error e) {
+            return Stream.of(session.query(cypher, parameters).iterator());
+        } finally {
             closeSession(session);
-            throw e;
         }
     }
 
@@ -2230,9 +2258,9 @@ public final class Neo4jExecutor {
      * {@code true} for a write query may fail at the driver/server depending on the deployment
      * (OGM logs a debug-level diagnostic and still submits the query in a read-only transaction).
      * <p>
-     * The Cypher executes immediately and the result rows are fully fetched; the returned stream
-     * lazily iterates the fetched rows and borrows a pooled session for its lifetime. Close the
-     * stream (try-with-resources) to release the session back to the pool.
+     * The Cypher executes immediately and the result rows are fully fetched. The borrowed session
+     * is cleared and returned to the pool before this method returns; the returned stream iterates
+     * only the materialized rows.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2250,15 +2278,15 @@ public final class Neo4jExecutor {
      *     created.forEach(row -> System.out.println("new id: " + row.get("id")));
      * }
      *
-     * // An unclosed stream's session is never returned to the pool - always use try-with-resources
+     * // The session has already been released; try-with-resources is still safe and conventional.
      * }</pre>
      *
      * @param cypher the Cypher query string with {@code $name} parameter placeholders
      * @param parameters named parameters bound by the OGM session
      * @param readOnly {@code true} to mark the query as read-only (eligible for read-replica
      *                 routing); must be {@code false} for queries that write to the graph
-     * @return a {@link Stream} over the already-fetched result rows; close the stream to release the
-     *         underlying session
+     * @return a {@link Stream} over the already-fetched result rows; it does not retain the borrowed
+     *         session
      * @throws RuntimeException if the underlying OGM session rejects the query
      * @see #stream(String, Map)
      * @see #stream(Class, String, Map)
@@ -2269,11 +2297,11 @@ public final class Neo4jExecutor {
         }
 
         final Session session = getSession();
+
         try {
-            return Stream.of(session.query(cypher, parameters, readOnly).iterator()).onClose(newCloseHandle(session));
-        } catch (RuntimeException | Error e) {
+            return Stream.of(session.query(cypher, parameters, readOnly).iterator());
+        } finally {
             closeSession(session);
-            throw e;
         }
     }
 
@@ -2284,9 +2312,9 @@ public final class Neo4jExecutor {
      * OGM-mapped entity class for queries that return whole nodes, but may also be a basic value
      * type when the {@code RETURN} clause produces a single scalar per row.
      * <p>
-     * The Cypher executes immediately and the result rows are fully fetched; the returned stream
-     * lazily iterates the fetched rows and owns a pooled session for its lifetime. Close the
-     * stream (try-with-resources recommended) to release the session back to the pool.
+     * The Cypher executes immediately and the result rows are fully fetched. The borrowed session
+     * is cleared and returned to the pool before this method returns; the returned stream lazily
+     * iterates only the materialized rows.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2303,8 +2331,8 @@ public final class Neo4jExecutor {
      * @param targetClass the target class &mdash; an OGM-mapped entity class or a basic value type
      * @param cypher the Cypher query string with {@code $name} parameter placeholders
      * @param parameters named parameters bound by the OGM session
-     * @return a {@link Stream} over the already-fetched rows mapped to {@code targetClass}; close the
-     *         stream to release the underlying session
+     * @return a {@link Stream} over the already-fetched rows mapped to {@code targetClass}; it does
+     *         not retain the borrowed session
      * @throws RuntimeException if the underlying OGM session rejects the query
      * @see #findOnly(Class, String, Map)
      * @see #stream(String, Map)
@@ -2315,22 +2343,19 @@ public final class Neo4jExecutor {
         }
 
         final Session session = getSession();
+
         try {
-            return Stream.of(session.query(targetClass, cypher, parameters).iterator()).onClose(newCloseHandle(session));
-        } catch (RuntimeException | Error e) {
+            return Stream.of(session.query(targetClass, cypher, parameters).iterator());
+        } finally {
             closeSession(session);
-            throw e;
         }
     }
 
-    private Runnable newCloseHandle(final Session session) {
-        return () -> closeSession(session);
-    }
-
     /**
-     * Counts the number of nodes of the specified type that match the given filter criteria.
+     * Counts the number of mapped entities of the specified type that match the given filter
+     * expression.
      * <p>
-     * This method efficiently counts nodes without loading them into memory.
+     * This method counts node or relationship entities without loading them into memory.
      * Useful for pagination calculations and data analytics.
      *
      * <p><b>Usage Examples:</b></p>
@@ -2343,7 +2368,7 @@ public final class Neo4jExecutor {
      * // Count with multiple filters
      * Filters filters = new Filters();
      * filters.add(new Filter("status", ComparisonOperator.EQUALS, "active"));
-     * filters.add(new Filter("age", ComparisonOperator.GREATER_THAN, 25));
+     * filters.and(new Filter("age", ComparisonOperator.GREATER_THAN, 25));
      * long count = executor.count(Person.class, filters);
      *
      * // Count for pagination
@@ -2353,10 +2378,12 @@ public final class Neo4jExecutor {
      * int totalPages = (int) Math.ceil((double) totalItems / pageSize);
      * }</pre>
      *
-     * @param targetClass the OGM-mapped class whose nodes are counted
-     * @param filters an {@link Iterable} of OGM {@link Filter}s combined with AND semantics; pass
-     *                an empty iterable to count all nodes of {@code targetClass}
-     * @return the number of nodes of {@code targetClass} that satisfy all the supplied filters
+     * @param targetClass the OGM-mapped class whose entities are counted
+     * @param filters OGM {@link Filter}s whose {@link org.neo4j.ogm.cypher.BooleanOperator}s define
+     *                how each filter is joined to the preceding one; pass an empty iterable to
+     *                count all entities of {@code targetClass}
+     * @return the number of entities of {@code targetClass} that satisfy the supplied filter
+     *         expression
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #count(Class)
      * @see org.neo4j.ogm.cypher.Filter
@@ -2372,10 +2399,10 @@ public final class Neo4jExecutor {
     }
 
     /**
-     * Counts the total number of nodes of the specified type in the Neo4j database.
+     * Counts all node or relationship entities mapped by the specified type.
      * <p>
-     * This method efficiently counts all nodes of the given type without loading
-     * them into memory. Useful for statistics, monitoring, and pagination setup.
+     * This method counts the mapped entities without loading them into memory. For an unmapped
+     * class, Neo4j-OGM returns {@code 0}.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2392,15 +2419,15 @@ public final class Neo4jExecutor {
      * stats.put("companies", executor.count(Company.class));
      * stats.put("projects", executor.count(Project.class));
      *
-     * // Check if database is empty
+     * // Initialize a type when it has no data
      * if (executor.count(Person.class) == 0) {
-     *     System.out.println("No persons found, initializing data...");
-     *     initializeData();
+     *     executor.save(new Person("First user", 30));
      * }
      * }</pre>
      *
-     * @param targetClass the OGM-mapped class whose nodes are counted
-     * @return the total number of nodes mapped by {@code targetClass}
+     * @param targetClass the OGM-mapped class whose entities are counted
+     * @return the total number of entities mapped by {@code targetClass}, or {@code 0} if the class
+     *         is not mapped
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #count(Class, Iterable)
      */
@@ -2418,7 +2445,7 @@ public final class Neo4jExecutor {
      * Returns the native Neo4j graph ID for {@code possibleEntity}, if it is an OGM-managed
      * entity.
      * <p>
-     * Delegates to {@link Session#resolveGraphIdFor(Object)}. Because the executor borrows a fresh
+     * Delegates to {@link Session#resolveGraphIdFor(Object)}. Because the executor uses a cleared
      * pooled session for the call, this only returns a non-null ID when the entity carries an ID
      * field that OGM has already populated (either because it was loaded from the database or
      * because a previous {@code save} assigned it). Transient objects that have never been saved
@@ -2427,7 +2454,7 @@ public final class Neo4jExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Person person = executor.load(Person.class, 123L);
-     * Long graphId = executor.getGraphId(person); // 123
+     * Long graphId = executor.getGraphId(person); // native graph ID; may differ from a primary-index lookup value
      *
      * Person newPerson = new Person("John Doe");
      * executor.getGraphId(newPerson);                // null - not yet saved

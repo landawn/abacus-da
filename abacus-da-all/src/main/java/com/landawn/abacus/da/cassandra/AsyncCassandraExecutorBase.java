@@ -20,6 +20,7 @@ import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 import com.landawn.abacus.annotation.Beta;
@@ -77,9 +78,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *
      * @param cassandraExecutor the synchronous executor to delegate query building and result
      *                          mapping to; must not be {@code null}
+     * @throws NullPointerException if {@code cassandraExecutor} is {@code null}
      */
     protected AsyncCassandraExecutorBase(final CassandraExecutorBase<RW, RS, ST, PS, BT> cassandraExecutor) {
-        this.cassandraExecutor = cassandraExecutor;
+        this.cassandraExecutor = Objects.requireNonNull(cassandraExecutor, "cassandraExecutor");
     }
 
     /**
@@ -344,7 +346,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * User user = async.gett(User.class, Filters.eq("email", "a@b.com")).get(); // the entity, or null
      *
      * // Typical: handle the resolved value in a continuation.
-     * async.gett(User.class, Filters.eq("id", 1L)).thenRunAsync(u -> { if (u != null) process(u); });
+     * async.gett(User.class, Filters.eq("id", 1L)).thenRunAsync(u -> { if (u != null) System.out.println(u); });
      *
      * // Edge: no matching row -> the future completes with null.
      * User missing = async.gett(User.class, Filters.eq("id", -1L)).get(); // missing == null
@@ -2828,7 +2830,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *
      * // Typical: apply per-statement options (e.g. page size) before executing.
      * Statement<?> paged = SimpleStatement.newInstance("SELECT * FROM users").setPageSize(500);
-     * async.execute(paged).thenRunAsync(result -> process(result)); // processes the result set when ready
+     * async.execute(paged).thenRunAsync(rs -> System.out.println(rs)); // prints the result set when ready
      *
      * // Edge: a null statement is rejected synchronously at the call site (no future is created):
      * // the v4 driver throws IllegalArgumentException, the v3 driver NullPointerException.

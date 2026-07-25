@@ -47,20 +47,20 @@ import com.landawn.abacus.util.Tuple.Tuple3;
  * byte-array conversions of the native {@link Put} API and offers both programmatic and
  * entity-based construction.
  *
- * <h2>Cell-write semantics (overwrite vs versioning)</h2>
+ * <h2>Cell-write semantics and versioning</h2>
  * <p>HBase stores each cell as a {@code (row, family, qualifier, timestamp)} tuple. The
- * {@code addColumn}/{@code add} methods on this class accumulate cells in the underlying Put,
- * which the server then applies as follows:</p>
+ * {@code addColumn}/{@code add} methods on this class append cells to the underlying Put:</p>
  * <ul>
- *   <li>When two cells share the same {@code (row, family, qualifier, timestamp)}, the later one
- *       replaces the earlier one (overwrite).</li>
+ *   <li>Every call queues another cell, including calls with the same
+ *       {@code (row, family, qualifier, timestamp)}. Such duplicates remain visible through
+ *       {@link #size()} and {@link #get(String, String)} until the Put is sent.</li>
  *   <li>When two cells share the same key but differ in timestamp, both versions are stored
  *       (subject to the column family's {@code VERSIONS} setting, which controls how many
  *       historical versions HBase retains).</li>
  *   <li>{@code addColumn(family, qualifier, value)} variants without an explicit timestamp use the
  *       Put's default timestamp — the timestamp supplied at construction, or the server's current
- *       time when none was supplied — so successive calls with the same {@code (family, qualifier)}
- *       pair overwrite each other.</li>
+ *       time when none was supplied. Do not queue the same cell coordinate more than once and rely
+ *       on duplicate-resolution order; use distinct timestamps when multiple versions are intended.</li>
  * </ul>
  * <p>In short, repeated {@code addColumn} calls do <i>not</i> concatenate or merge values; for
  * append-style semantics use {@link AnyAppend}, and for atomic counter increments use
@@ -94,27 +94,37 @@ import com.landawn.abacus.util.Tuple.Tuple3;
  *
  * <h3>Entity Mapping</h3>
  * <pre>{@code
- * &#64;ColumnFamily("info")
+ * @ColumnFamily("info")
  * public class User {
- *     &#64;Id
+ *     @Id
  *     private String userId;
  *     private String name;
  *     private String email;
- *     // getters and setters
- * }
  *
+ *     public User(String userId, String name, String email) {
+ *         this.userId = userId;
+ *         this.name = name;
+ *         this.email = email;
+ *     }
+ *
+ *     // JavaBean getters and setters for all three properties
+ * }
+ * }</pre>
+ *
+ * <p>Map and batch that entity:</p>
+ * <pre>{@code
  * User user = new User("user123", "John Doe", "john@example.com");
  * AnyPut entityPut = AnyPut.create(user);
  *
  * // Batch entity insertion
- * List&lt;User&gt; users = Arrays.asList(user1, user2, user3);
- * List&lt;AnyPut&gt; batchPuts = AnyPut.create(users);
+ * List<User> users = List.of(user);
+ * List<AnyPut> batchPuts = AnyPut.create(users);
  * }</pre>
  *
  * <h3>Selective Property Mapping</h3>
  * <pre>{@code
  * // Only insert specific properties
- * Set&lt;String&gt; selectedProps = Set.of("name", "email");
+ * Set<String> selectedProps = Set.of("name", "email");
  * AnyPut selectivePut = AnyPut.create(user, selectedProps);
  *
  * // Custom naming policy
@@ -162,7 +172,7 @@ import com.landawn.abacus.util.Tuple.Tuple3;
  * @see AnyIncrement
  * @see ColumnFamily
  * @see HBaseExecutor
- * @see <a href="http://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
+ * @see <a href="https://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
  */
 public final class AnyPut extends AnyMutation<AnyPut> {
 
@@ -240,7 +250,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
     /**
      * Package-private constructor backing {@link #of(ByteBuffer)}.
      *
-     * @param rowKey the row key as a ByteBuffer; bytes from current position to limit are used
+     * @param rowKey the row key as a ByteBuffer; remaining bytes are copied and its position is
+     *               advanced to the limit
      */
     AnyPut(final ByteBuffer rowKey) {
         super(new Put(rowKey));
@@ -250,7 +261,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
     /**
      * Package-private constructor backing {@link #of(ByteBuffer, long)}.
      *
-     * @param rowKey the row key as a ByteBuffer; bytes from current position to limit are used
+     * @param rowKey the row key as a ByteBuffer; remaining bytes are copied and its position is
+     *               advanced to the limit
      * @param timestamp the timestamp assigned to all cells added to this Put
      */
     AnyPut(final ByteBuffer rowKey, final long timestamp) {
@@ -491,8 +503,9 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p>This factory method creates a put operation using a ByteBuffer as the row key, which is
      * useful for NIO-based operations or when the row key is already in ByteBuffer format. The
-     * ByteBuffer's current position and limit determine which bytes are used for the row key.
-     * Use this variant when working with direct buffers or off-heap memory.</p>
+     * ByteBuffer's current position and limit determine which bytes are copied for the row key.
+     * The relative bulk read advances the input buffer's position to its limit; pass
+     * {@code rowKey.duplicate()} if the original position must be preserved.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -500,12 +513,14 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * AnyPut bufferPut = AnyPut.of(keyBuffer)
      *                          .addColumn("data", "value", "sample");
      * byte[] row = bufferPut.getRow();   // bytes of "user123"
+     * int position = keyBuffer.position(); // equals keyBuffer.limit()
      *
      * // Edge: a null ByteBuffer is rejected (the row buffer is null).
      * AnyPut.of((ByteBuffer) null);      // throws IllegalArgumentException
      * }</pre>
      *
-     * @param rowKey the row key as a ByteBuffer; must not be null
+     * @param rowKey the row key as a ByteBuffer; must not be null, and its position is advanced
+     *               to its limit
      * @return a new AnyPut instance configured for the ByteBuffer row key
      * @throws IllegalArgumentException if {@code rowKey} is null (raised by the wrapped {@link Put#Put(ByteBuffer)} constructor)
      * @see #of(ByteBuffer, long)
@@ -519,9 +534,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * Creates a new AnyPut instance for the specified ByteBuffer row key with timestamp control.
      *
      * <p>This factory method creates a put operation using a ByteBuffer as the row key with a
-     * specific timestamp for all cells. Combines the benefits of NIO buffer operations with
-     * temporal version control. Useful for high-performance scenarios involving direct buffers
-     * and time-series data.</p>
+     * specific timestamp for all cells. The remaining row bytes are copied, including from a
+     * direct buffer, and the input buffer's position is advanced to its limit.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -532,6 +546,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * AnyPut timestampedBufferPut = AnyPut.of(keyBuffer, timestamp)
      *                                     .addColumn("events", "action", "login");
      * long ts = timestampedBufferPut.getTimestamp();   // 1609459200000L
+     * int position = keyBuffer.position();             // equals keyBuffer.limit()
      *
      * // Edge: a null ByteBuffer is rejected (the row buffer is null).
      * AnyPut.of((ByteBuffer) null, timestamp);         // throws IllegalArgumentException
@@ -540,7 +555,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * AnyPut.of(ByteBuffer.wrap("k".getBytes()), -1L); // throws IllegalArgumentException
      * }</pre>
      *
-     * @param rowKey the row key as a ByteBuffer; must not be null
+     * @param rowKey the row key as a ByteBuffer; must not be null, and its position is advanced
+     *               to its limit
      * @param timestamp the timestamp for all cells in this put operation (milliseconds since epoch)
      * @return a new AnyPut instance with ByteBuffer row key and timestamp control
      * @throws IllegalArgumentException if {@code rowKey} is null (raised by the wrapped {@link Put#Put(ByteBuffer, long)} constructor), or if {@code timestamp} is negative
@@ -599,15 +615,25 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * &#64;ColumnFamily("info")
+     * @ColumnFamily("info")
      * public class User {
-     *     &#64;Id
+     *     @Id
      *     private String userId;
      *     private String name;
      *     private String email;
+     *
+     *     public User(String userId, String name, String email) {
+     *         this.userId = userId;
+     *         this.name = name;
+     *         this.email = email;
+     *     }
+     *
      *     // getters and setters
      * }
+     * }</pre>
      *
+     * <p>Map an instance of that entity:</p>
+     * <pre>{@code
      * User user = new User("user123", "John Doe", "john@example.com");
      * AnyPut put = AnyPut.create(user);
      * byte[] row = put.getRow();             // bytes of "user123"
@@ -642,7 +668,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * <pre>{@code
      * User user = new User("user123", "John Doe", "john@example.com");
      * AnyPut snakeCasePut = AnyPut.create(user, NamingPolicy.SNAKE_CASE);
-     * // Property "userName" becomes column "user_name"
+     * // For an entity property named "userName", the qualifier would be "user_name".
      * byte[] row = snakeCasePut.getRow();   // bytes of "user123"
      *
      * // Edge: a null naming policy is rejected.
@@ -678,15 +704,15 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * List&lt;User&gt; users = Arrays.asList(user1, user2, user3);
-     * List&lt;AnyPut&gt; puts = AnyPut.create(users);
+     * List<User> users = Arrays.asList(user1, user2, user3);
+     * List<AnyPut> puts = AnyPut.create(users);
      * int count = puts.size();   // 3
      *
      * // Edge: an empty collection yields an empty list.
-     * List&lt;AnyPut&gt; none = AnyPut.create(Collections.emptyList());   // size() == 0
+     * List<AnyPut> none = AnyPut.create(Collections.emptyList());   // size() == 0
      *
      * // Edge: a null collection is rejected.
-     * AnyPut.create((Collection&lt;?&gt;) null);   // throws IllegalArgumentException
+     * AnyPut.create((Collection<?>) null);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param entities the collection of Java objects to convert; must not be null
@@ -716,15 +742,15 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * List&lt;User&gt; users = loadUsersFromLegacySystem();
-     * List&lt;AnyPut&gt; puts = AnyPut.create(users, NamingPolicy.SNAKE_CASE);
+     * List<User> users = loadUsersFromLegacySystem();
+     * List<AnyPut> puts = AnyPut.create(users, NamingPolicy.SNAKE_CASE);
      * int count = puts.size();   // one AnyPut per entity
      *
      * // Edge: a null naming policy is rejected.
      * AnyPut.create(users, (NamingPolicy) null);              // throws IllegalArgumentException
      *
      * // Edge: a null collection is rejected.
-     * AnyPut.create((Collection&lt;?&gt;) null, NamingPolicy.SNAKE_CASE);   // throws IllegalArgumentException
+     * AnyPut.create((Collection<?>) null, NamingPolicy.SNAKE_CASE);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param entities the collection of Java objects to convert; must not be null
@@ -764,7 +790,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * boolean hasEmail = partialPut.has("info", "email");   // false
      *
      * // Edge: a null selection includes all properties.
-     * AnyPut allProps = AnyPut.create(user, (Collection&lt;String&gt;) null);
+     * AnyPut allProps = AnyPut.create(user, (Collection<String>) null);
      * boolean nameAndEmail = allProps.has("info", "email"); // true
      *
      * // Edge: a null entity is rejected.
@@ -831,15 +857,15 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * List&lt;User&gt; users = Arrays.asList(new User("u1", "A", "a@x"), new User("u2", "B", "b@x"));
+     * List<User> users = Arrays.asList(new User("u1", "A", "a@x"), new User("u2", "B", "b@x"));
      *
-     * List&lt;AnyPut&gt; puts = AnyPut.create(users, Arrays.asList("name"));
+     * List<AnyPut> puts = AnyPut.create(users, Arrays.asList("name"));
      * int count = puts.size();                             // 2
      * boolean hasName = puts.get(0).has("info", "name");   // true
      * boolean hasEmail = puts.get(0).has("info", "email"); // false
      *
      * // Edge: a null collection is rejected.
-     * AnyPut.create((Collection&lt;?&gt;) null, Arrays.asList("name"));   // throws IllegalArgumentException
+     * AnyPut.create((Collection<?>) null, Arrays.asList("name"));   // throws IllegalArgumentException
      * }</pre>
      *
      * @param entities the collection of Java objects to convert; must not be null
@@ -870,9 +896,9 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * List&lt;User&gt; users = Arrays.asList(new User("u1", "A", "a@x"));
+     * List<User> users = Arrays.asList(new User("u1", "A", "a@x"));
      *
-     * List&lt;AnyPut&gt; puts = AnyPut.create(users, Arrays.asList("name"), NamingPolicy.CAMEL_CASE);
+     * List<AnyPut> puts = AnyPut.create(users, Arrays.asList("name"), NamingPolicy.CAMEL_CASE);
      * int count = puts.size();   // 1
      *
      * // Edge: a null naming policy is rejected.
@@ -1050,12 +1076,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p>This variant uses the timestamp the {@link Put} was constructed with (or
      * {@code HConstants.LATEST_TIMESTAMP} when none was supplied, in which case the region server
-     * stamps the cell with its current wall-clock time when the mutation is applied). The same
-     * cell key is therefore reused on repeated calls within the same Put, which means a subsequent
-     * call with an identical {@code (family, qualifier)} pair <i>overwrites</i> the earlier cell
-     * rather than appending to it or creating a new version. To create multiple versions of the
-     * same column in one Put, use {@link #addColumn(String, String, long, Object)} with distinct
-     * timestamps.</p>
+     * stamps the cell when the mutation is applied). Every call appends a cell to this client-side
+     * Put, even when the family and qualifier repeat. To create intentional multiple versions of
+     * the same column, use {@link #addColumn(String, String, long, Object)} with distinct
+     * timestamps; do not rely on the resolution order of duplicate coordinates.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1092,8 +1116,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p>The explicit timestamp becomes part of the cell key, so this variant can be used to write
      * multiple versions of the same {@code (family, qualifier)} pair in a single Put by calling it
-     * with distinct timestamps. If another call adds a cell with the same
-     * {@code (family, qualifier, ts)} tuple, the later call overwrites the earlier one.</p>
+     * with distinct timestamps. A repeated {@code (family, qualifier, ts)} tuple queues another
+     * cell too, so callers should avoid duplicates rather than depend on which value wins.</p>
      *
      * <p>Use this method to insert data with a specific point-in-time version — for example, when
      * backdating data or implementing event-sourcing patterns.</p>
@@ -1136,10 +1160,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * values.</p>
      *
      * <p>This variant uses the timestamp the Put was constructed with (or
-     * {@code HConstants.LATEST_TIMESTAMP} if none was supplied), so successive calls with the same
-     * {@code (family, qualifier)} pair overwrite the earlier cell rather than creating a new
-     * version. Use {@link #addColumn(byte[], byte[], long, byte[])} with distinct timestamps to
-     * write multiple versions in a single Put.</p>
+     * {@code HConstants.LATEST_TIMESTAMP} if none was supplied). Successive calls with the same
+     * {@code (family, qualifier)} still queue separate cells in the Put; use
+     * {@link #addColumn(byte[], byte[], long, byte[])} with distinct timestamps to write
+     * intentional multiple versions.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1175,9 +1199,9 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p>The explicit timestamp becomes part of the cell key, so this variant can write multiple
      * versions of the same {@code (family, qualifier)} pair in one Put by calling it with
-     * distinct timestamps. If another call adds a cell with the same
-     * {@code (family, qualifier, ts)} tuple, the later call overwrites the earlier one. Ideal for
-     * high-throughput, time-versioned data ingestion with pre-encoded identifiers.</p>
+     * distinct timestamps. Repeating the same {@code (family, qualifier, ts)} tuple queues a
+     * duplicate coordinate and should be avoided. Ideal for high-throughput, time-versioned data
+     * ingestion with pre-encoded identifiers.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1213,9 +1237,9 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * Adds a single cell with explicit timestamp to this put using {@link ByteBuffer} qualifier
      * and value.
      *
-     * <p>Provides NIO {@link ByteBuffer} support for scenarios involving direct buffers or
-     * off-heap memory, minimising memory copies and GC pressure. The bytes between each buffer's
-     * current position and limit are used.</p>
+     * <p>The bytes between each buffer's current position and limit are copied into the queued
+     * cell. Both non-null buffers are consumed by relative reads, so their positions advance to
+     * their limits; pass duplicates if their positions must be preserved.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1226,6 +1250,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * AnyPut put = AnyPut.of("user123").addColumn(familyBytes, qualifier, timestamp, value);   // returns the same AnyPut
      * boolean stored = put.has(Bytes.toBytes("data"), Bytes.toBytes("value"), timestamp);      // true
+     * boolean consumed = qualifier.position() == qualifier.limit()
+     *                 && value.position() == value.limit();                                    // true
      *
      * // Edge: a negative timestamp is rejected.
      * AnyPut.of("row").addColumn(familyBytes, qualifier, -1L, value);   // throws IllegalArgumentException
@@ -1234,9 +1260,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param family the column family name as a byte array; must not be null or empty (not validated
      *               client-side; an invalid family causes the put to fail when it is executed
      *               against the table)
-     * @param qualifier the column qualifier as a ByteBuffer; must not be null
+     * @param qualifier the column qualifier as a ByteBuffer; may be null for an empty qualifier;
+     *                  a non-null buffer is consumed
      * @param ts the timestamp for this cell (milliseconds since epoch); must be non-negative
-     * @param value the value as a ByteBuffer; must not be null
+     * @param value the value as a ByteBuffer; may be null for an empty value; a non-null buffer is consumed
      * @return this {@code AnyPut} instance, to allow fluent method chaining
      * @throws IllegalArgumentException if {@code ts} is negative (validated by the underlying {@link Put})
      * @see #addColumn(byte[], byte[], long, byte[])
@@ -1247,104 +1274,6 @@ public final class AnyPut extends AnyMutation<AnyPut> {
 
         return this;
     }
-
-    //    /**
-    //     * See {@code addColumn(byte[], byte[], byte[])}. This version expects
-    //     * that the underlying arrays won't change. It's intended
-    //     * for usage internal HBase to and for advanced client applications.
-    //     *
-    //     * @param family
-    //     * @param qualifier
-    //     * @param value
-    //     * @return
-    //     * @deprecated As of release 2.0.0, this will be removed in HBase 3.0.0.
-    //     *             Use {@code add(Cell)} and {@link org.apache.hadoop.hbase.CellBuilder} instead
-    //     */
-    //    @Deprecated
-    //    public AnyPut addImmutable(String family, String qualifier, Object value) {
-    //        put.addImmutable(toFamilyQualifierBytes(family), toFamilyQualifierBytes(qualifier), toValueBytes(value));
-    //
-    //        return this;
-    //    }
-    //
-    //    /**
-    //     * See {@code addColumn(byte[], byte[], long, byte[])}. This version expects
-    //     * that the underlying arrays won't change. It's intended
-    //     * for usage internal HBase to and for advanced client applications.
-    //     *
-    //     * @param family
-    //     * @param qualifier
-    //     * @param ts
-    //     * @param value
-    //     * @return
-    //     * @deprecated As of release 2.0.0, this will be removed in HBase 3.0.0.
-    //     *             Use {@code add(Cell)} and {@link org.apache.hadoop.hbase.CellBuilder} instead
-    //     */
-    //    @Deprecated
-    //    public AnyPut addImmutable(String family, String qualifier, long ts, Object value) {
-    //        put.addImmutable(toFamilyQualifierBytes(family), toFamilyQualifierBytes(qualifier), ts, toValueBytes(value));
-    //
-    //        return this;
-    //    }
-    //
-    //    /**
-    //     * See {@code addColumn(byte[], byte[], byte[])}. This version expects
-    //     * that the underlying arrays won't change. It's intended
-    //     * for usage internal HBase to and for advanced client applications.
-    //     *
-    //     * @param family
-    //     * @param qualifier
-    //     * @param value
-    //     * @return
-    //     * @deprecated As of release 2.0.0, this will be removed in HBase 3.0.0.
-    //     *             Use {@code add(Cell)} and {@link org.apache.hadoop.hbase.CellBuilder} instead
-    //     */
-    //    @Deprecated
-    //    public AnyPut addImmutable(byte[] family, byte[] qualifier, byte[] value) {
-    //        put.addImmutable(family, qualifier, value);
-    //
-    //        return this;
-    //    }
-    //
-    //    /**
-    //     * See {@code addColumn(byte[], byte[], long, byte[])}. This version expects
-    //     * that the underlying arrays won't change. It's intended
-    //     * for usage internal HBase to and for advanced client applications.
-    //     *
-    //     * @param family
-    //     * @param qualifier
-    //     * @param ts
-    //     * @param value
-    //     * @return
-    //     * @deprecated As of release 2.0.0, this will be removed in HBase 3.0.0.
-    //     *             Use {@code add(Cell)} and {@link org.apache.hadoop.hbase.CellBuilder} instead
-    //     */
-    //    @Deprecated
-    //    public AnyPut addImmutable(byte[] family, byte[] qualifier, long ts, byte[] value) {
-    //        put.addImmutable(family, qualifier, ts, value);
-    //
-    //        return this;
-    //    }
-    //
-    //    /**
-    //     * See {@code addColumn(byte[], byte[], long, byte[])}. This version expects
-    //     * that the underlying arrays won't change. It's intended
-    //     * for usage internal HBase to and for advanced client applications.
-    //     *
-    //     * @param family
-    //     * @param qualifier
-    //     * @param ts
-    //     * @param value
-    //     * @return
-    //     * @deprecated As of release 2.0.0, this will be removed in HBase 3.0.0.
-    //     *             Use {@code add(Cell)} and {@link org.apache.hadoop.hbase.CellBuilder} instead
-    //     */
-    //    @Deprecated
-    //    public AnyPut addImmutable(byte[] family, ByteBuffer qualifier, long ts, ByteBuffer value) {
-    //        put.addImmutable(family, qualifier, ts, value);
-    //
-    //        return this;
-    //    }
 
     /**
      * Adds a pre-constructed {@link Cell} to this put.
@@ -1426,7 +1355,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyPut a = AnyPut.of("rowKey").addColumn("info", "name", "John");
-     * a.hashCode() == a.hashCode();   // returns true (stable; delegates to the wrapped HBase Put)
+     * assert a.hashCode() == a.hashCode();   // true (stable; delegates to the wrapped HBase Put)
      *
      * // Identity-based: two distinct puts built the same way are not equal and need not
      * // share a hash code:
@@ -1488,9 +1417,9 @@ public final class AnyPut extends AnyMutation<AnyPut> {
     /**
      * Returns a string representation of this AnyPut instance.
      *
-     * <p>The string representation is delegated to the underlying HBase Put object
-     * and includes information about the row key, column families, qualifiers, timestamps,
-     * and values contained in this put operation.</p>
+     * <p>The string representation is delegated to the underlying HBase Put object and includes
+     * structural information such as the row key, column families, qualifiers, timestamps, and
+     * value lengths. It does not expose the cell value bytes.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1517,19 +1446,19 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * List&lt;Object&gt; mixed = new ArrayList&lt;&gt;();
+     * List<Object> mixed = new ArrayList<>();
      * mixed.add(new User("user1", "John", "j@x"));                      // Entity
      * mixed.add(new User("user2", "Jane", "ja@x"));                     // Entity
      * AnyPut anyPut = AnyPut.of("user3").addColumn("info", "name", "Bob");
      * mixed.add(anyPut);                                                // AnyPut
      *
-     * List&lt;Put&gt; puts = AnyPut.toPut(mixed);
+     * List<Put> puts = AnyPut.toPut(mixed);
      * int count = puts.size();                         // 3
      * boolean sameRef = puts.get(2) == anyPut.val();   // true: AnyPut.val() returned directly
      * table.put(puts);                                 // Batch put with native HBase API
      *
      * // Edge: an empty collection yields an empty list.
-     * List&lt;Put&gt; none = AnyPut.toPut(Collections.emptyList());   // size() == 0
+     * List<Put> none = AnyPut.toPut(Collections.emptyList());   // size() == 0
      *
      * // Edge: a null collection is rejected.
      * AnyPut.toPut(null);   // throws IllegalArgumentException
@@ -1563,10 +1492,10 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * List&lt;User&gt; users = Arrays.asList(new User("u1", "Alice", "a@x"));
+     * List<User> users = Arrays.asList(new User("u1", "Alice", "a@x"));
      *
      * // Convert entities using snake_case naming
-     * List&lt;Put&gt; puts = AnyPut.toPut(users, NamingPolicy.SNAKE_CASE);
+     * List<Put> puts = AnyPut.toPut(users, NamingPolicy.SNAKE_CASE);
      * byte[] row = puts.get(0).getRow();   // bytes of "u1"
      * table.put(puts);                     // All column names will be in snake_case
      *

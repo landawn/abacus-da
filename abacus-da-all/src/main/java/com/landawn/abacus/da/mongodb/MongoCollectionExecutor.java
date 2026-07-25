@@ -429,7 +429,8 @@ public final class MongoCollectionExecutor {
      * Returns an estimated document count with additional options for controlling the estimation process.
      *
      * <p>This method allows customization of the estimation operation through {@code EstimatedDocumentCountOptions},
-     * including timeouts and read preferences for the metadata query.</p>
+     * namely a server-side time limit ({@code maxTime}) and a command comment. Read preference is configured
+     * on the underlying collection, not on {@code EstimatedDocumentCountOptions}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1738,7 +1739,7 @@ public final class MongoCollectionExecutor {
      * Dataset activeUsers = executor.query(Filters.eq("status", "active")); // non-null Dataset; 0 rows if no document matches
      *
      * // Export to CSV:
-     * activeUsers.toCsv("active_users.csv");
+     * activeUsers.toCsv(new File("active_users.csv"));
      *
      * // Print tabular format:
      * activeUsers.println();
@@ -1780,7 +1781,7 @@ public final class MongoCollectionExecutor {
      * Dataset mapDataset = executor.query(Filters.eq("category", "electronics"), Map.class); // non-null Dataset of Map rows; 0 rows if none match
      *
      * // Export with type safety:
-     * userDataset.toCsv("typed_users.csv");
+     * userDataset.toCsv(new File("typed_users.csv"));
      * }</pre>
      *
      * @param filter BSON filter criteria to match documents (must not be null)
@@ -1809,7 +1810,7 @@ public final class MongoCollectionExecutor {
      * Dataset productPage = executor.query(Filters.eq("category", "electronics"), 20, 20, Map.class); // up to 20 rows after skipping 20; 0 rows if none match
      *
      * // Export paginated results:
-     * productPage.toCsv("products_page2.csv");
+     * productPage.toCsv(new File("products_page2.csv"));
      *
      * // Process paginated User objects:
      * Dataset userPage = executor.query(Filters.eq("type", "user"), 0, 50, User.class); // first 50 matching documents
@@ -1844,7 +1845,7 @@ public final class MongoCollectionExecutor {
      * Dataset userData = executor.query(fields, Filters.eq("status", "active"), User.class); // Dataset with only the 3 projected columns; 0 rows if none match
      *
      * // Export projected data:
-     * userData.toCsv("user_contact_info.csv");
+     * userData.toCsv(new File("user_contact_info.csv"));
      *
      * // Access specific columns:
      * List<String> departments = userData.getColumn("department");
@@ -1880,10 +1881,10 @@ public final class MongoCollectionExecutor {
      *                                    Order.class); // up to 25 pending orders with only the projected columns; 0 rows if none match
      *
      * // Export paginated projected data:
-     * orderPage.toCsv("pending_orders_page1.csv");
+     * orderPage.toCsv(new File("pending_orders_page1.csv"));
      *
      * // Calculate totals from projected data:
-     * double totalAmount = orderPage.getColumn("total", Double.class).stream()
+     * double totalAmount = orderPage.<Double>getColumn("total").stream()
      *                                .mapToDouble(Double::doubleValue)
      *                                .sum();
      * }</pre>
@@ -1919,10 +1920,10 @@ public final class MongoCollectionExecutor {
      * Dataset productData = executor.query(fields, filter, sort, Product.class); // all high-rated products sorted by price ascending; 0 rows if none match
      *
      * // Export sorted projected data:
-     * productData.toCsv("high_rated_products_by_price.csv");
+     * productData.toCsv(new File("high_rated_products_by_price.csv"));
      *
      * // Analyze sorted data:
-     * List<Double> prices = productData.getColumn("price", Double.class);
+     * List<Double> prices = productData.getColumn("price");
      * // Prices are guaranteed to be in ascending order
      * }</pre>
      *
@@ -1957,10 +1958,10 @@ public final class MongoCollectionExecutor {
      * Dataset userPage = executor.query(fields, filter, sort, 0, 50, User.class); // up to 50 active users, most recent login first; 0 rows if none match
      *
      * // Export paginated sorted projected data:
-     * userPage.toCsv("active_users_page1_sorted.csv");
+     * userPage.toCsv(new File("active_users_page1_sorted.csv"));
      *
      * // Process sorted data:
-     * List<Date> lastLogins = userPage.getColumn("lastLogin", Date.class);
+     * List<Date> lastLogins = userPage.getColumn("lastLogin");
      * }</pre>
      *
      * @param selectPropNames collection of field names to include in projection (null for all fields)
@@ -2002,10 +2003,10 @@ public final class MongoCollectionExecutor {
      * Dataset users = executor.query(projection, filter, sort, User.class); // all active users by name, only the projected fields; 0 rows if none match
      *
      * // Export sorted projected data:
-     * users.toCsv("active_users.csv");
+     * users.toCsv(new File("active_users.csv"));
      *
      * // Process data:
-     * List<String> emails = users.getColumn("email", String.class);
+     * List<String> emails = users.getColumn("email");
      * }</pre>
      *
      * @param projection BSON projection specification for field selection (null for all fields)
@@ -2036,10 +2037,10 @@ public final class MongoCollectionExecutor {
      * Dataset userPage = executor.query(projection, filter, sort, 0, 50, User.class); // up to 50 active users by name, only the projected fields; 0 rows if none match
      *
      * // Export paginated sorted projected data:
-     * userPage.toCsv("active_users_page1.csv");
+     * userPage.toCsv(new File("active_users_page1.csv"));
      *
      * // Process paginated data:
-     * List<String> emails = userPage.getColumn("email", String.class);
+     * List<String> emails = userPage.getColumn("email");
      * }</pre>
      *
      * @param projection BSON projection specification for field selection (null for all fields)
@@ -2274,7 +2275,7 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the target type for each document
-     * @param selectPropNames collection of property names to include in results (null for all fields)
+     * @param selectPropNames collection of BSON field names to include in results (null for all fields)
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param rowType the target type for conversion
      * @return a Stream of typed objects with specified fields
@@ -2300,7 +2301,7 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the target type for each document
-     * @param selectPropNames collection of property names to include
+     * @param selectPropNames collection of BSON field names to include
      * @param filter BSON filter criteria (must not be null)
      * @param offset number of documents to skip
      * @param count maximum number of documents to return
@@ -2329,7 +2330,7 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the target type for each document
-     * @param selectPropNames collection of property names to include
+     * @param selectPropNames collection of BSON field names to include
      * @param filter BSON filter criteria (must not be null)
      * @param sort BSON sort criteria (null for no sorting)
      * @param rowType the target type for conversion
@@ -2358,7 +2359,7 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the target type for each document
-     * @param selectPropNames collection of property names to include
+     * @param selectPropNames collection of BSON field names to include
      * @param filter BSON filter criteria (must not be null)
      * @param sort BSON sort criteria
      * @param offset number of documents to skip
@@ -2549,7 +2550,7 @@ public final class MongoCollectionExecutor {
      * <p>Internal method that constructs and executes a MongoDB query with
      * the specified field projection, filter, sort, and pagination.</p>
      *
-     * @param selectPropNames property names to include in projection
+     * @param selectPropNames BSON field names to include in projection
      * @param filter query filter
      * @param sort sort criteria
      * @param offset number of documents to skip
@@ -2762,8 +2763,9 @@ public final class MongoCollectionExecutor {
      * Inserts a single document into the collection with additional options.
      *
      * <p>This method provides fine-grained control over the insert operation through InsertOneOptions,
-     * allowing specification of write concerns, bypass document validation, and other insert-specific settings.
-     * The object is automatically converted to a BSON document.</p>
+     * including bypassing document validation and attaching a command comment. Write concern is
+     * configured on the underlying collection, not on InsertOneOptions. The object is automatically
+     * converted to a BSON document.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2832,7 +2834,8 @@ public final class MongoCollectionExecutor {
      * Inserts multiple documents into the collection with additional options.
      *
      * <p>This method provides fine-grained control over the bulk insert operation through InsertManyOptions,
-     * allowing specification of ordered/unordered inserts, write concerns, and document validation settings.
+     * including ordered/unordered execution and document validation settings. Write concern is configured
+     * on the underlying collection, not on InsertManyOptions.
      * Non-Document objects are converted to BSON documents before insertion. Caller-supplied
      * {@link Document} instances are passed through even in a heterogeneous batch, allowing the driver
      * to populate generated {@code _id} values on those same instances.</p>
@@ -3037,8 +3040,9 @@ public final class MongoCollectionExecutor {
     /**
      * Updates a single document with additional options.
      *
-     * <p>Provides full control over the update operation including upsert behavior,
-     * write concern, and array filters.</p>
+     * <p>Provides control over the update operation including upsert behavior, validation bypass,
+     * collation, and array filters. Write concern is configured on the underlying collection, not
+     * on UpdateOptions.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3069,9 +3073,11 @@ public final class MongoCollectionExecutor {
      * <p>Applies a collection of update operations to the first matching document.
      * Useful for complex updates requiring multiple operations.</p>
      *
-     * <p><b>Note:</b> The collection is executed as an aggregation-pipeline update, which only allows
-     * {@code $set}/{@code $addFields}/{@code $project}/{@code $unset}/{@code $replaceRoot}/{@code $replaceWith}
-     * stages — operators such as {@code Updates.inc(...)} or {@code Updates.push(...)} are rejected by the server.</p>
+     * <p><b>Pipeline restrictions:</b> {@code objList} is sent as an aggregation-update pipeline.
+     * Only {@code $set}/{@code $addFields}, {@code $project}/{@code $unset}, and
+     * {@code $replaceRoot}/{@code $replaceWith} stages are permitted. A plain entity, map, or
+     * non-operator document is converted to a {@code $set} stage. Classic update operators such as
+     * {@code $inc}, {@code $push}, and {@code $currentDate} are not valid pipeline stages.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3099,6 +3105,9 @@ public final class MongoCollectionExecutor {
      *
      * <p>Applies a collection of update operations to the first matching document
      * with additional control through UpdateOptions.</p>
+     *
+     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
+     * documented by {@link #updateOne(Bson, Collection)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3297,8 +3306,9 @@ public final class MongoCollectionExecutor {
      * Updates multiple documents matching the filter with the specified update operations and options.
      *
      * <p>This method updates every document that matches the given filter with additional control
-     * through {@link UpdateOptions}. Options allow specification of upsert behavior, write concern,
-     * bypass document validation, and array filters for advanced update scenarios. The update payload
+     * through {@link UpdateOptions}. Options allow specification of upsert behavior,
+     * bypass document validation, collation, and array filters for advanced update scenarios. Write
+     * concern is configured on the underlying collection, not on UpdateOptions. The update payload
      * undergoes the same {@code $set}-wrapping conversion described in {@link #updateOne(String, Object)}.
      * As with all multi-document writes, the operation is not atomic across documents.</p>
      *
@@ -3341,9 +3351,11 @@ public final class MongoCollectionExecutor {
      * Each item in the collection represents an update operation that will be applied to matching
      * documents. This is useful for performing multiple different updates in a single operation.</p>
      *
-     * <p><b>Note:</b> The collection is executed as an aggregation-pipeline update, which only allows
-     * {@code $set}/{@code $addFields}/{@code $project}/{@code $unset}/{@code $replaceRoot}/{@code $replaceWith}
-     * stages — operators such as {@code Updates.inc(...)} or {@code Updates.push(...)} are rejected by the server.</p>
+     * <p><b>Pipeline restrictions:</b> {@code objList} is sent as an aggregation-update pipeline.
+     * Only {@code $set}/{@code $addFields}, {@code $project}/{@code $unset}, and
+     * {@code $replaceRoot}/{@code $replaceWith} stages are permitted. A plain entity, map, or
+     * non-operator document is converted to a {@code $set} stage. Classic update operators such as
+     * {@code $inc}, {@code $push}, and {@code $currentDate} are not valid pipeline stages.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3374,12 +3386,12 @@ public final class MongoCollectionExecutor {
      * Updates multiple documents matching the filter using a collection of update operations with options.
      *
      * <p>This method performs a bulk update operation using multiple update documents with additional
-     * control through UpdateOptions. This provides maximum flexibility for complex update scenarios
-     * requiring multiple operations with specific write concerns, upsert behavior, or array filters.</p>
+     * control through UpdateOptions, such as upsert, validation bypass, collation, and hints. Array
+     * filters cannot be used with aggregation-update pipelines. Write concern is configured on the
+     * underlying collection, not on UpdateOptions.</p>
      *
-     * <p><b>Note:</b> The collection is executed as an aggregation-pipeline update, which only allows
-     * {@code $set}/{@code $addFields}/{@code $project}/{@code $unset}/{@code $replaceRoot}/{@code $replaceWith}
-     * stages — operators such as {@code Updates.inc(...)} or {@code Updates.push(...)} are rejected by the server.</p>
+     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
+     * documented by {@link #updateMany(Bson, Collection)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3448,9 +3460,10 @@ public final class MongoCollectionExecutor {
     /**
      * Replaces a document identified by ObjectId.
      *
-     * <p>Completely replaces the document with the specified ObjectId. The {@code _id} of the matched
-     * document is retained; see {@link #replaceOne(String, Object)} for the full {@code _id}-handling
-     * rules and the prohibition on update operators in the replacement.</p>
+     * <p>Completely replaces the document with the specified ObjectId. MongoDB retains the matched
+     * document's {@code _id} when the replacement omits it. A replacement that supplies {@code _id}
+     * must supply the same value; see {@link #replaceOne(String, Object)} for the full rules and the
+     * prohibition on update operators in the replacement.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3496,8 +3509,9 @@ public final class MongoCollectionExecutor {
     /**
      * Replaces a single document with additional options.
      *
-     * <p>Provides full control over the replace operation including upsert
-     * behavior and write concern through ReplaceOptions.</p>
+     * <p>Provides control over the replace operation including upsert behavior, validation bypass,
+     * and collation through ReplaceOptions. Write concern is configured on the underlying collection,
+     * not on ReplaceOptions.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3681,8 +3695,9 @@ public final class MongoCollectionExecutor {
     /**
      * Performs bulk insert with additional options.
      *
-     * <p>Provides control over bulk insert behavior including ordered/unordered
-     * execution and write concern through BulkWriteOptions.</p>
+     * <p>Provides control over bulk insert behavior including ordered/unordered execution and
+     * validation bypass through BulkWriteOptions. Write concern is configured on the underlying
+     * collection, not on BulkWriteOptions.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3748,8 +3763,9 @@ public final class MongoCollectionExecutor {
     /**
      * Executes bulk write operations with additional options.
      *
-     * <p>Provides full control over bulk write execution including ordered/unordered
-     * processing and write concern. See {@link #bulkWrite(List)} for the atomicity
+     * <p>Provides control over bulk write execution including ordered/unordered processing and
+     * validation bypass. Write concern is configured on the underlying collection, not on
+     * BulkWriteOptions. See {@link #bulkWrite(List)} for the atomicity
      * semantics — individual operations are atomic against a single document but the
      * batch as a whole is not a multi-document transaction.</p>
      *
@@ -3897,9 +3913,11 @@ public final class MongoCollectionExecutor {
      *
      * <p>Atomically applies multiple update operations to a single document.</p>
      *
-     * <p><b>Note:</b> The collection is executed as an aggregation-pipeline update, which only allows
-     * {@code $set}/{@code $addFields}/{@code $project}/{@code $unset}/{@code $replaceRoot}/{@code $replaceWith}
-     * stages — operators such as {@code Updates.inc(...)} or {@code Updates.currentDate(...)} are rejected by the server.</p>
+     * <p><b>Pipeline restrictions:</b> {@code objList} is sent as an aggregation-update pipeline.
+     * Only {@code $set}/{@code $addFields}, {@code $project}/{@code $unset}, and
+     * {@code $replaceRoot}/{@code $replaceWith} stages are permitted. A plain entity, map, or
+     * non-operator document is converted to a {@code $set} stage. Classic update operators such as
+     * {@code $inc}, {@code $push}, and {@code $currentDate} are not valid pipeline stages.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3925,6 +3943,9 @@ public final class MongoCollectionExecutor {
      *
      * <p>Atomically applies multiple updates and returns the result as the specified type.</p>
      *
+     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
+     * documented by {@link #findOneAndUpdate(Bson, Collection)}.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Order original = executor.findOneAndUpdate(filter, updatesList, Order.class); // PRE-update doc converted to Order (default BEFORE), or null if no match
@@ -3946,6 +3967,9 @@ public final class MongoCollectionExecutor {
      * Finds and updates a document using multiple operations with options.
      *
      * <p>Provides full control over atomic update with multiple operations.</p>
+     *
+     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
+     * documented by {@link #findOneAndUpdate(Bson, Collection)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3977,6 +4001,9 @@ public final class MongoCollectionExecutor {
      * Finds and updates using multiple operations with options and type conversion.
      *
      * <p>The most flexible find-and-update method with multiple operations.</p>
+     *
+     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
+     * documented by {@link #findOneAndUpdate(Bson, Collection)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -4640,38 +4667,5 @@ public final class MongoCollectionExecutor {
 
         return Stream.of(cursor).map(toEntity(rowType)).onClose(Fn.close(cursor));
     }
-
-    //
-    //    private String getCollectionName(final Class<?> cls) {
-    //        final String collectionName = classCollectionMapper.get(cls);
-    //
-    //        if (N.isEmpty(collectionName)) {
-    //            throw new IllegalArgumentException("No collection is mapped to class: " + cls);
-    //        }
-    //        return collectionName;
-    //    }
-
-    //
-    //    private String getObjectId(Object obj) {
-    //        String objectId = null;
-    //
-    //        try {
-    //            objectId = N.convert(String.class, Beans.getPropValue(obj, "id"));
-    //        } catch (Exception e) {
-    //            // ignore
-    //
-    //            try {
-    //                objectId = N.convert(String.class, Beans.getPropValue(obj, "objectId"));
-    //            } catch (Exception e2) {
-    //                // ignore
-    //            }
-    //        }
-    //
-    //        if (N.isEmpty(objectId)) {
-    //            throw new IllegalArgumentException("Property value of 'id' or 'objectId' can't be null or empty for update or delete");
-    //        }
-    //
-    //        return objectId;
-    //    }
 
 }

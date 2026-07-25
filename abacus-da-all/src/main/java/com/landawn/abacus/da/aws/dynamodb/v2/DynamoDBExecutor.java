@@ -405,6 +405,7 @@ public final class DynamoDBExecutor {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * public class Product {
+     *     @Id
      *     private String productId;
      *     private String productName;
      *     private BigDecimal price;
@@ -2366,7 +2367,8 @@ public final class DynamoDBExecutor {
      *         asKey("userId", "user1"),
      *         asKey("userId", "user2")
      *     ))
-     *     .projectionExpression("userId, name, email")
+     *     .projectionExpression("userId, #name, email")
+     *     .expressionAttributeNames(Map.of("#name", "name"))
      *     .consistentRead(false)
      *     .build();
      *
@@ -3234,6 +3236,7 @@ public final class DynamoDBExecutor {
      *     .expressionAttributeValues(Map.of(":v1", AttributeValue.builder().s("user123").build()))
      *     .build();
      * Stream<Map<String, Object>> results = executor.stream(queryRequest);
+     * results.forEach(System.out::println);
      * }</pre>
      *
      * @param queryRequest the QueryRequest containing the table name and query parameters. Must not be null.
@@ -3260,6 +3263,7 @@ public final class DynamoDBExecutor {
      *     .expressionAttributeValues(Map.of(":v1", AttributeValue.builder().s("user123").build()))
      *     .build();
      * Stream<User> results = executor.stream(queryRequest, User.class);
+     * results.forEach(System.out::println);
      * }</pre>
      *
      * @param <T> the type of the entities to convert to
@@ -3325,6 +3329,7 @@ public final class DynamoDBExecutor {
      * <pre>{@code
      * List<String> attributesToGet = List.of("id", "name", "status");
      * Stream<Map<String, Object>> results = executor.scan("Users", attributesToGet);
+     * results.forEach(System.out::println);
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
@@ -3349,6 +3354,7 @@ public final class DynamoDBExecutor {
      * <pre>{@code
      * Map<String, Condition> scanFilter = Filters.eq("status", "active");
      * Stream<Map<String, Object>> results = executor.scan("Users", scanFilter);
+     * results.forEach(System.out::println);
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
@@ -3374,6 +3380,7 @@ public final class DynamoDBExecutor {
      * List<String> attributesToGet = Arrays.asList("userId", "name");
      * Map<String, Condition> scanFilter = Filters.eq("status", "active");
      * Stream<Map<String, Object>> results = executor.scan("Users", attributesToGet, scanFilter);
+     * results.forEach(System.out::println);
      * }</pre>
      *
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
@@ -3405,6 +3412,7 @@ public final class DynamoDBExecutor {
      *     .tableName("Users")
      *     .build();
      * Stream<Map<String, Object>> results = executor.scan(scanRequest);
+     * results.forEach(System.out::println);
      * }</pre>
      *
      * @param scanRequest the ScanRequest containing the table name and scan parameters. Must not be null.
@@ -3426,6 +3434,7 @@ public final class DynamoDBExecutor {
      * <pre>{@code
      * List<String> attributesToGet = Arrays.asList("userId", "name");
      * Stream<User> results = executor.scan("Users", attributesToGet, User.class);
+     * results.forEach(System.out::println);
      * }</pre>
      *
      * @param <T> the type of the entities to convert to
@@ -3454,6 +3463,7 @@ public final class DynamoDBExecutor {
      * <pre>{@code
      * Map<String, Condition> scanFilter = Filters.eq("status", "active");
      * Stream<User> results = executor.scan("Users", scanFilter, User.class);
+     * results.forEach(System.out::println);
      * }</pre>
      *
      * @param <T> the type of the entities to convert to
@@ -3484,6 +3494,7 @@ public final class DynamoDBExecutor {
      * List<String> attributesToGet = Arrays.asList("userId", "name");
      * Map<String, Condition> scanFilter = Filters.eq("status", "active");
      * Stream<User> results = executor.scan("Users", attributesToGet, scanFilter, User.class);
+     * results.forEach(System.out::println);
      * }</pre>
      *
      * @param <T> the type of the entities to convert to
@@ -3521,6 +3532,7 @@ public final class DynamoDBExecutor {
      *     .tableName("Users")
      *     .build();
      * Stream<User> results = executor.scan(scanRequest, User.class);
+     * results.forEach(System.out::println);
      * }</pre>
      *
      * @param <T> the type of the entities to convert to
@@ -3579,18 +3591,10 @@ public final class DynamoDBExecutor {
     /**
      * Closes this DynamoDB executor and releases all associated resources using AWS SDK v2.
      *
-     * <p>This method shuts down the underlying DynamoDbClient, which includes closing HTTP connections,
-     * stopping background threads, and releasing system resources. AWS SDK v2 provides more efficient
-     * resource cleanup compared to v1, with better handling of connection pools and NIO channels.</p>
-     *
-     * <p><b>Resource Management in SDK v2:</b></p>
-     * <ul>
-     * <li>Closes HTTP connection pools (Netty or Apache HTTP client)</li>
-     * <li>Shuts down NIO event loops and worker threads</li>
-     * <li>Releases direct memory buffers and native resources</li>
-     * <li>Cancels any pending requests gracefully</li>
-     * <li>Cleans up SSL/TLS contexts and certificate stores</li>
-     * </ul>
+     * <p>This method delegates to {@link DynamoDbClient#close()}. The exact resources released
+     * depend on the client's configured HTTP implementation and ownership model. Because the
+     * client is supplied to this executor, closing the executor also closes that client; do not
+     * close this executor while another component still needs the same client.</p>
      *
      * <p><b>Best Practices:</b></p>
      * <ul>
@@ -4316,6 +4320,7 @@ public final class DynamoDBExecutor {
          * <pre>{@code
          * Map<String, Condition> filter = Filters.gt("age", 18);
          * Stream<User> adults = userMapper.scan(filter);
+         * adults.forEach(System.out::println);
          * }</pre>
          *
          * @param scanFilter map of attribute names to conditions for filtering results
@@ -4336,6 +4341,7 @@ public final class DynamoDBExecutor {
          * List<String> attributes = Arrays.asList("userId", "userName");
          * Map<String, Condition> filter = Filters.eq("status", "ACTIVE");
          * Stream<User> activeUsers = userMapper.scan(attributes, filter);
+         * activeUsers.forEach(System.out::println);
          * }</pre>
          *
          * @param attributesToGet list of attribute names to retrieve; null or empty to get all attributes
@@ -4361,6 +4367,7 @@ public final class DynamoDBExecutor {
          *     .projectionExpression("userId, userName, age")
          *     .build();
          * Stream<User> users = userMapper.scan(request);
+         * users.forEach(System.out::println);
          * }</pre>
          *
          * @param scanRequest the fully configured scan request
@@ -4822,6 +4829,7 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to check
          * @param attrValues the values to match against
          * @return a map containing the IN condition
+         * @throws IllegalArgumentException if {@code attrName} or {@code attrValues} is null or empty
          */
         public static Map<String, Condition> in(final String attrName, final Object... attrValues) {
             final Map<String, Condition> result = new LinkedHashMap<>(1);
@@ -4841,12 +4849,13 @@ public final class DynamoDBExecutor {
          * List<String> validStatuses = Arrays.asList("ACTIVE", "PENDING", "PROCESSING");
          * Map<String, Condition> filter = Filters.in("status", validStatuses); // {status -> IN ["ACTIVE","PENDING","PROCESSING"]}, size 1
          *
-         * Map<String, Condition> none = Filters.in("status", List.of()); // {status -> IN []} (empty value list), size 1
+         * Filters.in("status", List.of()); // throws IllegalArgumentException (an IN list needs at least one value)
          * }</pre>
          *
          * @param attrName the name of the attribute to check
          * @param attrValues collection of values to match against
          * @return a map containing the IN condition
+         * @throws IllegalArgumentException if {@code attrName} or {@code attrValues} is null or empty
          */
         public static Map<String, Condition> in(final String attrName, final Collection<?> attrValues) {
             final Map<String, Condition> result = new LinkedHashMap<>(1);
@@ -4857,6 +4866,9 @@ public final class DynamoDBExecutor {
         }
 
         static void in(final Map<String, Condition> output, final String attrName, final Object... attrValues) {
+            N.checkArgNotEmpty(attrName, "attrName");
+            N.checkArgNotEmpty(attrValues, "attrValues");
+
             final AttributeValue[] attributeValueList = new AttributeValue[attrValues.length];
 
             for (int i = 0, len = attrValues.length; i < len; i++) {
@@ -4869,6 +4881,9 @@ public final class DynamoDBExecutor {
         }
 
         static void in(final Map<String, Condition> output, final String attrName, final Collection<?> attrValues) {
+            N.checkArgNotEmpty(attrName, "attrName");
+            N.checkArgNotEmpty(attrValues, "attrValues");
+
             final AttributeValue[] attributeValueList = new AttributeValue[attrValues.size()];
 
             int i = 0;
@@ -4928,6 +4943,7 @@ public final class DynamoDBExecutor {
      *
      * // Use with a mapper
      * Stream<Employee> employees = mapper.scan(complexFilter);
+     * employees.forEach(System.out::println);
      * }</pre>
      *
      * @author haiyangli
@@ -5238,6 +5254,7 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to check
          * @param attrValues the values to match against
          * @return this builder instance for method chaining
+         * @throws IllegalArgumentException if {@code attrName} or {@code attrValues} is null or empty
          */
         public ConditionBuilder in(final String attrName, final Object... attrValues) {
             Filters.in(condMap, attrName, attrValues);
@@ -5259,6 +5276,7 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to check
          * @param attrValues collection of values to match against
          * @return this builder instance for method chaining
+         * @throws IllegalArgumentException if {@code attrName} or {@code attrValues} is null or empty
          */
         public ConditionBuilder in(final String attrName, final Collection<?> attrValues) {
             Filters.in(condMap, attrName, attrValues);

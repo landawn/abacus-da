@@ -95,7 +95,8 @@ import com.landawn.abacus.util.stream.Stream;
  * helpers {@code toRowKeyBytes}, {@code toFamilyQualifierBytes}, and {@code toValueBytes}.
  * Overloads that take raw {@code byte[]} pass the bytes through unchanged. Strings are
  * encoded with {@link Bytes#toBytes(String)}; other objects are converted to their
- * {@code N.stringOf} form first; {@link ByteBuffer}s are read into a fresh array;
+ * {@code N.stringOf} form first; the remaining bytes of {@link ByteBuffer}s are copied
+ * into a fresh array without changing the buffer position;
  * existing {@code byte[]} values are returned as-is.</p>
  *
  * <h2>Entity mapping</h2>
@@ -114,11 +115,13 @@ import com.landawn.abacus.util.stream.Stream;
  *     private String guid;          // HBase: "guid:"        (columnFamily=guid, qualifier="")
  *     private Name name;            // HBase: "name:firstName" and "name:lastName"
  *     private String emailAddress;  // HBase: "emailAddress:"
+ *     // JavaBean getters and setters omitted
  * }
  *
  * public static class Name {
  *     private String firstName;  // HBase: "name:firstName"
  *     private String lastName;   // HBase: "name:lastName"
+ *     // JavaBean getters and setters omitted
  * }
  * }</pre>
  *
@@ -136,6 +139,7 @@ import com.landawn.abacus.util.stream.Stream;
  *     private String guid;          // HBase: "cf:guid"
  *     @ColumnFamily("name")
  *     private Name name;            // HBase: "name:firstName" and "name:lastName"
+ *     // JavaBean getters and setters omitted
  * }
  * }</pre>
  *
@@ -159,9 +163,12 @@ import com.landawn.abacus.util.stream.Stream;
  *     Result result  = executor.get("users", AnyGet.of("user123"));
  *     executor.put("users", AnyPut.of("user123").addColumn("info", "name", "John"));
  *
+ *     // User is a JavaBean annotated with @Table("users") and one @Id property.
  *     HBaseMapper<User, String> mapper = executor.mapper(User.class);
  *     User user = mapper.get("user123");
- *     mapper.put(user);
+ *     if (user != null) {
+ *         mapper.put(user);
+ *     }
  * } finally {
  *     executor.close();
  * }
@@ -176,7 +183,7 @@ import com.landawn.abacus.util.stream.Stream;
  * @see com.landawn.abacus.util.HBaseColumn
  * @see com.landawn.abacus.da.hbase.annotation.ColumnFamily
  * @see AsyncHBaseExecutor
- * @see <a href="http://hbase.apache.org/devapidocs/index.html">Apache HBase Java API</a>
+ * @see <a href="https://hbase.apache.org/devapidocs/index.html">Apache HBase Java API</a>
  */
 public final class HBaseExecutor {
 
@@ -385,8 +392,9 @@ public final class HBaseExecutor {
      * // Unknown property -> IllegalArgumentException
      * HBaseExecutor.registerRowKeyProperty(Account.class, "noSuchProp");   // throws IllegalArgumentException
      *
-     * // A property whose type is HBaseColumn is rejected
-     * HBaseExecutor.registerRowKeyProperty(Account.class, "hc1");   // throws IllegalArgumentException (hc1 is an HBaseColumn property)
+     * // A property declared as HBaseColumn (or as a Collection/Map of HBaseColumn) cannot be the row key.
+     * // For an entity that declares one, e.g. "private HBaseColumn<String> hc1;":
+     * HBaseExecutor.registerRowKeyProperty(AccountWithVersionedColumn.class, "hc1");   // throws IllegalArgumentException
      * }</pre>
      *
      * @param cls the entity class (must be a JavaBean class) on which to register the row-key property
@@ -572,8 +580,8 @@ public final class HBaseExecutor {
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * try (Table table = executor.getTable("users")) {              // throws IOException
-     *     ResultScanner scanner = table.getScanner(new Scan());
+     * try (Table table = executor.getTable("users")) {              // throws UncheckedIOException
+     *     ResultScanner scanner = table.getScanner(new Scan());     // throws IOException
      *     List<User> users = HBaseExecutor.toList(scanner, User.class);  // scanner is closed inside toList
      * }
      *
@@ -1923,7 +1931,7 @@ public final class HBaseExecutor {
      *         .withStopRow("user_zzz");
      *
      * try (Stream<Result> stream = executor.scan("users", anyScan)) {
-     *     stream.limit(100).forEach(this::process);
+     *     stream.limit(100).forEach(System.out::println);
      * }
      * }</pre>
      *
@@ -1960,7 +1968,7 @@ public final class HBaseExecutor {
      * try (Stream<Result> stream = executor.scan("users", scan)) {
      *     stream.limit(100)
      *           .filter(result -> !result.isEmpty())
-     *           .forEach(this::processResult);
+     *           .forEach(System.out::println);
      * }
      * }</pre>
      *
@@ -2181,10 +2189,7 @@ public final class HBaseExecutor {
      * scan.withStopRow(Bytes.toBytes("user_z"));
      *
      * try (Stream<User> users = executor.scan("users", scan, User.class)) {
-     *     List<User> activeUsers = users
-     *         .filter(user -> user.isActive())
-     *         .limit(100)
-     *         .collect(Collectors.toList());
+     *     List<User> page = users.limit(100).toList();
      * }
      * }</pre>
      *
@@ -2522,12 +2527,13 @@ public final class HBaseExecutor {
      * <pre>{@code
      * Result result = executor.append("users",
      *         AnyAppend.of("user123").addColumn("logs", "access", ",2023-10-15"));
-     * // result holds the post-append cell values (the appended bytes concatenated onto the prior value)
+     * // With the default return-results setting, result holds the post-append cell values.
      * }</pre>
      *
      * @param tableName the name of the HBase table
      * @param append the AnyAppend operation specifying the values to append
-     * @return the Result containing the new values after the append operation
+     * @return the post-append values when return-results is enabled; HBase may return
+     *         {@code null} when {@link Append#setReturnResults(boolean)} is set to {@code false}
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see AnyAppend
      * @see #append(String, Append)
@@ -2553,7 +2559,8 @@ public final class HBaseExecutor {
      *
      * @param tableName the name of the HBase table
      * @param append the Append operation specifying the values to append
-     * @return the Result containing the new values after the append operation
+     * @return the post-append values when return-results is enabled; HBase may return
+     *         {@code null} when {@link Append#setReturnResults(boolean)} is set to {@code false}
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see Append
      */
@@ -2580,12 +2587,13 @@ public final class HBaseExecutor {
      *         AnyIncrement.of("user123")
      *                 .addColumn("stats", "login_count", 1)
      *                 .addColumn("stats", "points", -5));   // negative amount decrements
-     * // result holds the new post-increment values for each affected column
+     * // With the default return-results setting, result holds each post-increment value.
      * }</pre>
      *
      * @param tableName the name of the HBase table
      * @param increment the AnyIncrement operation specifying the values to increment
-     * @return the Result containing the new values after the increment operation
+     * @return the post-increment values when return-results is enabled; callers that set
+     *         {@link Increment#setReturnResults(boolean)} to {@code false} must not rely on returned values
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see AnyIncrement
      * @see #increment(String, Increment)
@@ -2610,7 +2618,8 @@ public final class HBaseExecutor {
      *
      * @param tableName the name of the HBase table
      * @param increment the Increment operation specifying the values to increment
-     * @return the Result containing the new values after the increment operation
+     * @return the post-increment values when return-results is enabled; callers that set
+     *         {@link Increment#setReturnResults(boolean)} to {@code false} must not rely on returned values
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see Increment
      */
@@ -3314,7 +3323,10 @@ public final class HBaseExecutor {
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
-         * mapper.put(N.asList(user1, user2, user3));   // void; all three rows stored
+         * User user = new User();
+         * user.setId("user123");
+         * user.setName("John");
+         * mapper.put(N.asList(user));   // void; the row is stored
          *
          * mapper.put(N.<User> emptyList());   // void; no-op
          * }</pre>
@@ -3334,7 +3346,9 @@ public final class HBaseExecutor {
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * User user = mapper.get("user123");
-         * mapper.delete(user);   // void; row keyed by user.getId() is removed
+         * if (user != null) {
+         *     mapper.delete(user);   // void; row keyed by user.getId() is removed
+         * }
          * }</pre>
          *
          * @param entityToDelete the entity to delete
@@ -3664,11 +3678,12 @@ public final class HBaseExecutor {
          * <pre>{@code
          * Result result = mapper.append(
          *         AnyAppend.of("user123").addColumn("logs", "access", ",2023-10-15"));
-         * // result holds the post-append cell values
+         * // With the default return-results setting, result holds the post-append values.
          * }</pre>
          *
          * @param append the AnyAppend operation specifying the values to append
-         * @return the Result containing the new values after the append
+         * @return the post-append values when return-results is enabled; HBase may return
+         *         {@code null} when return-results is disabled
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @see AnyAppend
          */
@@ -3683,11 +3698,12 @@ public final class HBaseExecutor {
          * <pre>{@code
          * Result result = mapper.increment(
          *         AnyIncrement.of("user123").addColumn("stats", "login_count", 1));
-         * // result holds the new post-increment values
+         * // With the default return-results setting, result holds the post-increment values.
          * }</pre>
          *
          * @param increment the AnyIncrement operation specifying the values to increment
-         * @return the Result containing the new values after the increment
+         * @return the post-increment values when return-results is enabled; callers that disable
+         *         returned results must not rely on the returned values
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @see AnyIncrement
          */

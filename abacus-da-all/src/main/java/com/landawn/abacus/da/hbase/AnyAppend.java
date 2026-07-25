@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.NavigableMap;
 
 import org.apache.hadoop.hbase.Cell;
+import org.apache.hadoop.hbase.CellUtil;
 import org.apache.hadoop.hbase.client.Append;
 import org.apache.hadoop.hbase.io.TimeRange;
 
@@ -107,17 +108,17 @@ import com.landawn.abacus.annotation.SuppressFBWarnings;
  * <h3>HBase Append semantics</h3>
  * <ul>
  * <li><strong>Atomicity</strong>: single-row atomic; safe under concurrent access</li>
- * <li><strong>Ordering</strong>: bytes are appended in the order {@code addColumn} is called</li>
+ * <li><strong>Grouping</strong>: requested column updates are applied while holding the same row lock</li>
  * <li><strong>Existence</strong>: a new cell is created when the column did not previously exist</li>
  * <li><strong>Versioning</strong>: each append creates a new version stamped with the server time
- *     (or the timestamp set via {@link #setTimestamp(long)} on the wrapped mutation)</li>
+ *     (or the timestamp set via {@link #setTimestamp(long)} before the cell is added)</li>
  * </ul>
  *
  * @see Append
  * @see AnyMutation
  * @see AnyIncrement
  * @see HBaseExecutor#append(String, AnyAppend)
- * @see <a href="http://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
+ * @see <a href="https://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
  * @see org.apache.hadoop.hbase.client.Append
  */
 public final class AnyAppend extends AnyMutation<AnyAppend> {
@@ -364,7 +365,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      *                          Bytes.toBytes("login;"));
      *
      * AnyAppend append = AnyAppend.of(existingAppend);       // returns a new AnyAppend wrapping a fresh copy
-     * append.val() != existingAppend;                        // true: the wrapped Append is a distinct copy
+     * assert append.val() != existingAppend;                 // true: the wrapped Append is a distinct copy
      * append.addColumn("logs", "activity", "logout;");       // returns the same AnyAppend; does not mutate existingAppend
      *
      * AnyAppend.of((Append) null);                           // throws NullPointerException
@@ -393,7 +394,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * Append hbaseAppend = anyAppend.val();                  // returns the wrapped Append; row = "user123"
      * table.append(hbaseAppend);                             // use with the native HBase API
      *
-     * anyAppend.val() == anyAppend.val();                    // true: always returns the same wrapped instance
+     * assert anyAppend.val() == anyAppend.val();             // true: always returns the same wrapped instance
      * }</pre>
      *
      * @return the underlying HBase Append object
@@ -614,10 +615,9 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * encodes the value to append; for ordinary use prefer
      * {@link #addColumn(String, String, Object)}.
      *
-     * <p>The cell's row key should match this append's row key. The wrapped
-     * {@link Append#add(Cell)} logs and swallows the row-mismatch {@code IOException} rather
-     * than propagating it (kept for backwards compatibility), so callers must enforce row
-     * consistency themselves to avoid silently dropping the cell.</p>
+     * <p>The cell's row key must match this append's row key. Although the wrapped
+     * {@link Append#add(Cell)} logs and swallows a row-mismatch error for compatibility, this
+     * wrapper validates the row first and throws instead of silently dropping the cell.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -630,13 +630,22 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * append.add(cell);                                      // returns the same AnyAppend (for chaining); cell queued
      * }</pre>
      *
-     * @param cell the {@link Cell} to add to this append operation
+     * @param cell the non-null {@link Cell} to add to this append operation
      * @return this AnyAppend instance, to allow fluent method chaining
-     * @throws IllegalArgumentException if the cell's family is null or empty
+     * @throws IllegalArgumentException if {@code cell} is null, its row does not match this
+     *         append's row, or its family is null or empty
      * @see org.apache.hadoop.hbase.Cell
      * @see #addColumn(String, String, Object)
      */
     public AnyAppend add(final Cell cell) {
+        if (cell == null) {
+            throw new IllegalArgumentException("cell cannot be null");
+        }
+
+        if (!CellUtil.matchingRows(cell, append.getRow())) {
+            throw new IllegalArgumentException("The cell row does not match this append's row");
+        }
+
         append.add(cell);
 
         return this;
@@ -682,7 +691,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyAppend a = AnyAppend.of("rowKey").addColumn("cf", "qualifier", "v");
-     * a.hashCode() == a.hashCode();   // returns true (stable; delegates to the wrapped HBase Append)
+     * assert a.hashCode() == a.hashCode();   // true (stable; delegates to the wrapped HBase Append)
      *
      * // equals/hashCode are identity-based on the wrapped Append, so two distinct instances
      * // built the same way are not equal and need not share a hash code:

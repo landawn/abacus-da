@@ -131,8 +131,8 @@ import com.landawn.abacus.util.Strings;
  * count) are immutable after construction, so an instance can be freely shared across threads.</p>
  *
  * <h2>Memory Management</h2>
- * <p>The class uses object pooling to minimize memory allocation and garbage collection overhead.
- * The cache automatically manages memory usage through configurable eviction policies.</p>
+ * <p>The class keeps parsed instances in a bounded keyed pool to avoid repeated parsing and
+ * allocation. The pool manages retained entries through its configured eviction policies.</p>
  *
  * @see CqlMapper
  * @see CassandraExecutor
@@ -174,19 +174,19 @@ public final class ParsedCql {
     /**
      * Constructs a new ParsedCql instance by parsing the given CQL statement.
      *
-     * <p>This constructor performs comprehensive parsing of the CQL statement, including:
-     * parameter detection and normalization, syntax validation, and optimization for
-     * prepared statement execution. The parsing process handles multiple parameter styles
-     * and ensures compatibility with Cassandra's prepared statement system.</p>
+     * <p>This constructor trims surrounding statement whitespace and, in the parameterized form,
+     * removes trailing semicolons. For recognized data operations, it also detects and normalizes
+     * parameter placeholders for prepared statement execution. It validates supported placeholder
+     * forms and combinations, but does not validate Cassandra CQL grammar.</p>
      *
-     * <p>The constructor identifies and processes different types of operations:
+     * <p>The constructor identifies and processes different types of operations:</p>
      * <ul>
      * <li><strong>Data operations:</strong> SELECT, INSERT, UPDATE, DELETE, MERGE, and Cassandra
      *     {@code BEGIN ... BATCH} statements (parameter processing applied)</li>
      * <li><strong>Other statements:</strong> any statement not starting with one of the
-     *     keywords above (for example DDL such as CREATE, ALTER, or DROP) is stored
-     *     as-is with no parameter detection or normalization</li>
-     * </ul></p>
+     *     keywords above (for example DDL such as CREATE, ALTER, or DROP) receives only
+     *     statement-level normalization; placeholder scanning is skipped</li>
+     * </ul>
      *
      * <p>Parameter processing includes:</p>
      * <ul>
@@ -223,6 +223,12 @@ public final class ParsedCql {
                     String word = words.get(i);
                     final int prevCurlyDepth = literalState[0];
                     final boolean dollarQuotedToken = updateLiteralState(literalState, word);
+                    // A '{' opened by this very token counts, so a self-contained single-field literal such as
+                    // "{street::street}" (balanced braces => prevCurlyDepth and the post-token depth are both 0)
+                    // is still recognized. The cheap pre-check keeps the scan off tokens that cannot match.
+                    final int embeddedMarkerIndex = !dollarQuotedToken && (prevCurlyDepth > 0 || word.indexOf('{') >= 0)
+                            ? indexOfEmbeddedLiteralNamedParameter(word, prevCurlyDepth)
+                            : -1;
 
                     if (!dollarQuotedToken && word.equals(SK.QUESTION_MARK)) {
                         countOfParameter++;
@@ -273,10 +279,10 @@ public final class ParsedCql {
 
                         rebuilt.append(word);
                         word = rebuilt.toString();
-                    } else if (!dollarQuotedToken && (prevCurlyDepth > 0 || literalState[0] > 0) && indexOfEmbeddedLiteralNamedParameter(word) >= 0) {
+                    } else if (embeddedMarkerIndex >= 0) {
                         // Without whitespace, a UDT field separator and its named marker are tokenized together,
                         // for example "{street::street". Preserve the first ':' and replace only the marker.
-                        final int markerIndex = indexOfEmbeddedLiteralNamedParameter(word);
+                        final int markerIndex = embeddedMarkerIndex;
                         final int parameterNameEnd = namedParameterNameEnd(word, markerIndex + 2);
                         final String namedParameter = word.substring(markerIndex + 2, parameterNameEnd);
 
@@ -313,7 +319,7 @@ public final class ParsedCql {
                     }
 
                     if (Integer.bitCount(type) > 1) {
-                        throw new IllegalArgumentException("Cannot mix parameter styles ('?', ':propName', '#{propName}') in the same CQL statement");
+                        throw new IllegalArgumentException("Cannot mix parameter styles ('?', ':propName', '#{propName}') in the same CQL statement: " + cql);
                     }
 
                     sb.append(word);
@@ -388,9 +394,24 @@ public final class ParsedCql {
         return false;
     }
 
-    /** Finds the second ':' in an unspaced literal field/value separator plus named marker ({@code field::name}). */
-    private static int indexOfEmbeddedLiteralNamedParameter(final String word) {
+    /**
+     * Finds the second ':' in an unspaced literal field/value separator plus named marker
+     * ({@code field::name}).
+     *
+     * <p>The brace depth is tracked <i>within</i> the token, starting from {@code startDepth} (the depth
+     * before this token). Testing the depth at the marker itself — rather than the depth before or after
+     * the whole token — is what lets a self-contained literal such as {@code "{street::street}"}, whose
+     * braces balance inside one token, be recognized just like the multi-token {@code "{street::street"}
+     * form. Braces inside quoted literals are not counted, so a string such as {@code "'a{b'"} cannot
+     * raise the depth.</p>
+     *
+     * @param word the token to scan
+     * @param startDepth the map/UDT literal brace depth in effect before this token
+     * @return the index of the separator ':' preceding the marker, or -1 if this token carries none
+     */
+    private static int indexOfEmbeddedLiteralNamedParameter(final String word, final int startDepth) {
         char quoteChar = 0;
+        int depth = startDepth;
 
         for (int i = 0, len = word.length() - 1; i < len; i++) {
             final char ch = word.charAt(i);
@@ -407,7 +428,13 @@ public final class ParsedCql {
                 }
             } else if (ch == '\'' || ch == '"') {
                 quoteChar = ch;
-            } else if (ch == ':' && word.charAt(i + 1) == ':' && i + 2 < word.length() && word.charAt(i + 2) != '}') {
+            } else if (ch == '{') {
+                depth++;
+            } else if (ch == '}') {
+                if (depth > 0) {
+                    depth--;
+                }
+            } else if (depth > 0 && ch == ':' && word.charAt(i + 1) == ':' && i + 2 < word.length() && word.charAt(i + 2) != '}') {
                 return i;
             }
         }
@@ -505,8 +532,9 @@ public final class ParsedCql {
      * Returns {@code true} if the first non-comment, non-whitespace token of the parsed statement is one of the
      * recognized data-operation keywords ({@code SELECT}, {@code INSERT}, {@code UPDATE}, {@code DELETE},
      * {@code MERGE}, or {@code BEGIN} for a Cassandra batch). Only such statements have their parameter
-     * placeholders detected and normalized; other statements (DDL such as
-     * {@code CREATE}/{@code ALTER}/{@code DROP}) are stored as-is.
+     * placeholders detected and normalized. Other statements (DDL such as
+     * {@code CREATE}/{@code ALTER}/{@code DROP}) still receive statement-level normalization,
+     * but their contents are not scanned for placeholders.
      */
     private static boolean isOpSqlPrefix(final List<String> words) {
         for (final String word : words) {
@@ -534,7 +562,7 @@ public final class ParsedCql {
     }
 
     private static boolean isCommentOrSpaceToken(final String word) {
-        return Strings.isEmpty(word) || word.trim().isEmpty() || word.startsWith("--") || word.startsWith("//") || word.startsWith("/*");
+        return Strings.isBlank(word) || word.startsWith("--") || word.startsWith("//") || word.startsWith("/*");
     }
 
     /**
@@ -653,15 +681,25 @@ public final class ParsedCql {
     }
 
     /**
-     * Returns the normalized CQL statement with all parameters converted to positional placeholders.
+     * Returns the normalized form of the CQL statement used for execution.
      *
      * <p>This method returns the processed version of the CQL statement where:</p>
      * <ul>
-     * <li>All named parameters ({@code :name}) are converted to {@code ?}</li>
-     * <li>All MyBatis-style parameters ({@code #{name}}) are converted to {@code ?}</li>
+     * <li>For recognized data operations, named parameters ({@code :name}) are converted to {@code ?}</li>
+     * <li>For recognized data operations, MyBatis-style parameters ({@code #{name}}) are converted to {@code ?}</li>
      * <li>Leading and trailing whitespace is stripped</li>
      * <li>All trailing semicolons (and any whitespace between or around them) are removed</li>
      * </ul>
+     * <p>Statements whose first keyword is not a recognized data operation are not scanned for
+     * placeholders; only surrounding whitespace and trailing semicolons are removed.</p>
+     *
+     * <p><b>Known limitation.</b> A named or MyBatis marker is recognized only when it starts a token, or
+     * when it follows a map/UDT field separator within one ({@code {street::street}}). A marker written
+     * directly after {@code &#123;}, {@code [} or {@code ,} inside a collection literal or a subscript — for
+     * example {@code tags + &#123;:tag&#125;}, {@code l + [:v]} or {@code m[:k]} — is <i>not</i> rewritten and is
+     * <i>not</i> counted, because those characters do not separate tokens. Such a statement reaches the
+     * driver with a native {@code :name} marker still in it and will not bind correctly. Use a positional
+     * {@code ?} inside collection literals and subscripts instead ({@code tags + &#123;?&#125;} works).</p>
      *
      * <p>This parameterized version is what gets sent to Cassandra for prepared statement creation.</p>
      *
@@ -729,9 +767,10 @@ public final class ParsedCql {
     /**
      * Returns the total number of parameters in the CQL statement.
      *
-     * <p>This count represents the number of parameter placeholders that need to be
-     * bound when executing the statement. It includes all types of parameters:
+     * <p>For recognized data operations, this count represents the number of parameter placeholders
+     * that need to be bound when executing the statement. It includes all supported types:
      * positional ({@code ?}), named ({@code :name}), and MyBatis-style ({@code #{name}}).</p>
+     * <p>Other statement types are not scanned and therefore report zero.</p>
      *
      * <p>This count is essential for:</p>
      * <ul>
@@ -757,15 +796,14 @@ public final class ParsedCql {
     /**
      * Returns the hash code for this ParsedCql instance.
      *
-     * <p>The hash code is computed based solely on the original CQL statement string,
-     * ensuring that ParsedCql instances created from identical CQL strings will have
-     * the same hash code. This is essential for the caching mechanism to work correctly.</p>
+     * <p>The hash code is computed from the original CQL after surrounding whitespace has been
+     * trimmed, matching the definition used by {@link #equals(Object)}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * ParsedCql a = ParsedCql.parse("SELECT 1 FROM t WHERE id = ?");
      * ParsedCql b = ParsedCql.parse("SELECT 1 FROM t WHERE id = ?");
-     * a.hashCode() == b.hashCode();      // returns true (same CQL text)
+     * boolean sameHash = a.hashCode() == b.hashCode(); // true (same CQL text)
      * }</pre>
      *
      * @return hash code based on the original CQL statement
@@ -778,12 +816,9 @@ public final class ParsedCql {
     /**
      * Indicates whether some other object is "equal to" this ParsedCql.
      *
-     * <p>Two ParsedCql instances are considered equal if and only if they were
-     * created from identical CQL statement strings.</p>
-     *
-     * <p>This equality contract is essential for the caching mechanism, ensuring
-     * that identical CQL statements can be properly cached and retrieved regardless
-     * of when or how they were parsed.</p>
+     * <p>Two ParsedCql instances are considered equal if and only if their original CQL strings
+     * are identical after leading and trailing whitespace is trimmed. Internal whitespace and
+     * trailing semicolons remain significant.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

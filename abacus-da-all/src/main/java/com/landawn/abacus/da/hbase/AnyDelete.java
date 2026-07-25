@@ -138,7 +138,7 @@ import com.landawn.abacus.util.N;
  * @see Delete
  * @see AnyMutation
  * @see HBaseExecutor
- * @see <a href="http://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
+ * @see <a href="https://hbase.apache.org/devapidocs/index.html">Apache HBase Java API Documentation</a>
  * @see org.apache.hadoop.hbase.client.Delete
  */
 public final class AnyDelete extends AnyMutation<AnyDelete> {
@@ -162,14 +162,13 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
     }
 
     /**
-     * Constructs a new AnyDelete instance with a default timestamp upper bound.
+     * Constructs a new AnyDelete instance with a configured timestamp.
      *
      * <p>Without further {@code addFamily}/{@code addColumn} calls, executing this delete will
      * remove every version of every column in every family of the row whose stamp is less than
-     * or equal to {@code timestamp}. The supplied timestamp also serves as the default upper
-     * bound used by subsequent {@code addColumn(family, qualifier)} /
-     * {@code addColumns(family, qualifier)} / {@code addFamily(family)} calls that do not pass
-     * their own timestamp.</p>
+     * or equal to {@code timestamp}. Calls to {@code addColumns(family, qualifier)} or
+     * {@code addFamily(family)} that omit a timestamp reuse it as an inclusive upper bound;
+     * {@code addColumn(family, qualifier)} reuses it as the exact version timestamp.</p>
      *
      * @param rowKey the row key object to delete, automatically converted to bytes
      * @param timestamp the maximum timestamp for versions to delete (inclusive)
@@ -292,9 +291,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * }</pre>
      *
      * @param rowKey the row key object to delete, automatically converted to bytes
-     * @param timestamp the maximum timestamp for versions to delete (inclusive); also used as the
-     *                  default timestamp for any subsequent {@code addColumn}/{@code addColumns}/
-     *                  {@code addFamily} calls that omit a timestamp
+     * @param timestamp the maximum timestamp for row/family/all-version deletes (inclusive); also
+     *                  reused as the exact version timestamp by no-timestamp {@code addColumn} and
+     *                  as an inclusive upper bound by no-timestamp {@code addColumns}/{@code addFamily}
      * @return a new AnyDelete instance configured for timestamp-based deletion
      * @throws NullPointerException if {@code rowKey} resolves to a {@code null} byte array
      * @throws IllegalArgumentException if {@code rowKey} resolves to an empty byte array, or if
@@ -1005,7 +1004,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * AnyDelete a = AnyDelete.of("rowKey");
-     * a.hashCode() == a.hashCode();   // returns true (stable; delegates to the wrapped HBase Delete)
+     * assert a.hashCode() == a.hashCode();   // true (stable; delegates to the wrapped HBase Delete)
      *
      * // Identity-based: two distinct instances on the same row are not equal and need not
      * // share a hash code:

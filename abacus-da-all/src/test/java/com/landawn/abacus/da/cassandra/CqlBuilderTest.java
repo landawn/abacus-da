@@ -18,6 +18,7 @@ import static com.landawn.abacus.da.cassandra.CqlBuilder.Dsl.SCCB;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -75,12 +76,12 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void zzz_explore() {
-        N.println("BETWEEN PSC: " + PSC.select("id").from("account").where(Filters.between("age", 18, 65)).build().query());
-        N.println("BETWEEN NSC: " + NSC.select("id").from("account").where(Filters.between("age", 18, 65)).build().query());
-        N.println("NOTBETWEEN PSC: " + PSC.select("id").from("account").where(Filters.notBetween("age", 18, 65)).build().query());
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from("account").where(Filters.between("age", 18, 65)).build());
+        assertThrows(IllegalArgumentException.class, () -> NSC.select("id").from("account").where(Filters.between("age", 18, 65)).build());
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from("account").where(Filters.notBetween("age", 18, 65)).build());
         N.println("IN PSC: " + PSC.select("id").from("account").where(Filters.in("id", N.asList(1, 2, 3))).build().query());
         N.println("IN NSC: " + NSC.select("id").from("account").where(Filters.in("id", N.asList(1, 2, 3))).build().query());
-        N.println("NOTIN NSC: " + NSC.select("id").from("account").where(Filters.notIn("id", N.asList(1, 2, 3))).build().query());
+        assertThrows(IllegalArgumentException.class, () -> NSC.select("id").from("account").where(Filters.notIn("id", N.asList(1, 2, 3))).build());
         N.println("onlyIf cond PSC: " + PSC.update("account").set("firstName").where(Filters.eq("id", 1)).onlyIf(Filters.eq("status", "x")).build().query());
         N.println("DELETE cols: " + PSC.delete("firstName", "lastName").from("account").where(Filters.eq("id", 1)).build().query());
         N.println("AND junction: " + PSC.select("id").from("account").where(Filters.and(Filters.eq("a", 1), Filters.eq("b", 2))).build().query());
@@ -90,21 +91,21 @@ public class CqlBuilderTest extends TestBase {
         N.println("INSERT TTL: " + PSC.insert("id", "name").into("account").usingTTL(60).build().query());
         N.println("batchInsert: " + SCCB.batchInsert(N.asList(N.asMap("firstName", "a"), N.asMap("firstName", "b"))).into("account").build().query());
         N.println("NotEqual null: " + SCCB.select("id").from("account").where(Filters.ne("firstName", "x")).build().query());
-        N.println("InSubQuery: " + PSC.select("id").from("account").where(Filters.in("id", SubQueryGen())).build().query());
-        N.println("NotInSubQuery: " + NSC.select("id").from("account").where(Filters.notIn("id", SubQueryGen())).build().query());
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from("account").where(Filters.in("id", SubQueryGen())).build());
+        assertThrows(IllegalArgumentException.class, () -> NSC.select("id").from("account").where(Filters.notIn("id", SubQueryGen())).build());
         N.println("parse cond NSC: " + NSC.renderCondition(Filters.and(Filters.eq("status", "A"), Filters.gt("balance", 1000)), Account.class).build().query());
         N.println(
                 "parse cond SCCB: " + SCCB.renderCondition(Filters.and(Filters.eq("status", "A"), Filters.gt("balance", 1000)), Account.class).build().query());
         assertThrows(IllegalArgumentException.class,
                 () -> PSC.select("id").from("account").where(Filters.and(Filters.eq("a", 1), Filters.or(Filters.eq("b", 2), Filters.eq("c", 3)))).build());
         N.println("update entity: " + SCCB.update(Account.class).set("firstName", "lastName").where(Filters.eq("id", 1)).build().query());
-        N.println("multi-col InSubQuery: " + PSC.select("id")
-                .from("account")
-                .where(new com.landawn.abacus.query.condition.InSubQuery(N.asList("a", "b"),
-                        new com.landawn.abacus.query.condition.SubQuery("t", N.asList("x", "y"), Filters.eq("z", 1))))
-                .build()
-                .query());
-        N.println("eq null SCCB: " + SCCB.select("id").from("account").where(Filters.eq("firstName", null)).build().query());
+        assertThrows(IllegalArgumentException.class,
+                () -> PSC.select("id")
+                        .from("account")
+                        .where(new com.landawn.abacus.query.condition.InSubQuery(N.asList("a", "b"),
+                                new com.landawn.abacus.query.condition.SubQuery("t", N.asList("x", "y"), Filters.eq("z", 1))))
+                        .build());
+        assertThrows(IllegalArgumentException.class, () -> SCCB.select("id").from("account").where(Filters.eq("firstName", null)).build());
         N.println("count SCCB: " + SCCB.count("account").where(Filters.eq("id", 1)).build().query());
     }
 
@@ -140,9 +141,9 @@ public class CqlBuilderTest extends TestBase {
         N.println(NAC.select("firstName", "lastName").from("account").where(Filters.eq("id", 1)).build().query());
         N.println(NLC.select("firstName", "lastName").from("account").where(Filters.eq("id", 1)).build().query());
 
-        N.println(LCCB.select("firstName", "last_name").from("account").where(Filters.eq("id", 1).and(Filters.ne("first_name", "fn"))).build().query());
-        N.println(PLC.select("firstName", "last_name").from("account").where(Filters.eq("id", 1).and(Filters.ne("first_name", "fn"))).build().query());
-        N.println(NLC.select("firstName", "last_name").from("account").where(Filters.eq("id", 1).and(Filters.ne("first_name", "fn"))).build().query());
+        N.println(LCCB.select("firstName", "last_name").from("account").where(Filters.and(Filters.eq("id", 1), Filters.ne("first_name", "fn"))).build().query());
+        N.println(PLC.select("firstName", "last_name").from("account").where(Filters.and(Filters.eq("id", 1), Filters.ne("first_name", "fn"))).build().query());
+        N.println(NLC.select("firstName", "last_name").from("account").where(Filters.and(Filters.eq("id", 1), Filters.ne("first_name", "fn"))).build().query());
     }
 
     @Test
@@ -184,11 +185,11 @@ public class CqlBuilderTest extends TestBase {
         N.println(cql);
         N.println(PSC.insert(props).into("account").build().parameters());
 
-        cql = SCCB.select(N.asList("firstName", "lastName")).distinct().from("account2", "account2").where("id > ?").build().query();
+        cql = SCCB.select(N.asList("firstName", "lastName")).distinct().from("account2").where("id > ?").build().query();
         N.println(cql);
 
         Map<String, String> m = N.asMap("firstName", "lastName");
-        cql = SCCB.select(m).distinct().from("account2", "account2").where("id > ?").build().query();
+        cql = SCCB.select(m).distinct().from("account2").where("id > ?").build().query();
         N.println(cql);
     }
 
@@ -553,41 +554,47 @@ public class CqlBuilderTest extends TestBase {
                 .query();
         N.println(onlyIfConditionCql);
         assertTrue(onlyIfConditionCql.endsWith(" IF status = ?"), onlyIfConditionCql);
+
+        final String onlyIfNullCql = SCCB.update("account")
+                .set("first_name = 'updated'")
+                .where(Filters.eq("id", 1))
+                .onlyIf(Filters.eq("deleted_at", null))
+                .build()
+                .query();
+        assertEquals("UPDATE account SET first_name = 'updated' WHERE id = 1 IF deleted_at = null", onlyIfNullCql);
+
+        final SP onlyIfNullSp = PSC.update("account")
+                .set("firstName")
+                .where(Filters.eq("id", 1))
+                .onlyIf(Filters.eq("deletedAt", null))
+                .build();
+        assertEquals("UPDATE account SET first_name = ? WHERE id = ? IF deleted_at = ?", onlyIfNullSp.query());
+        assertNull(onlyIfNullSp.parameters().get(onlyIfNullSp.parameters().size() - 1));
+
+        assertThrows(IllegalArgumentException.class,
+                () -> PSC.update("account").set("firstName").where(Filters.eq("id", 1)).onlyIf(Filters.gt("deletedAt", null)).build());
+        assertThrows(IllegalArgumentException.class,
+                () -> PSC.update("account").set("firstName").where(Filters.eq("id", 1)).onlyIf(Filters.like("status", "active%")).build());
     }
 
-    /**
-     * Regression guard for {@code appendCondition}: BETWEEN / NOT BETWEEN must emit the correct
-     * keyword (not swapped) with the {@code AND} separator, IN / NOT IN must emit the correct
-     * keyword with a parenthesized, comma-separated placeholder list, and the column must be
-     * snake_case formalized. These are the parallel condition-rendering paths most exposed to
-     * copy-paste/inverted-keyword defects.
-     */
+    /** Verifies the supported IN renderer and fail-fast handling for SQL-only predicates. */
     @Test
-    public void test_between_in_keyword_and_operator_rendering() {
-        final String between = PSC.select("id").from("account").where(Filters.between("age", 18, 65)).build().query();
-        N.println(between);
-        assertEquals("SELECT id FROM account WHERE age BETWEEN ? AND ?", between);
-
-        final String notBetween = PSC.select("id").from("account").where(Filters.notBetween("age", 18, 65)).build().query();
-        N.println(notBetween);
-        assertEquals("SELECT id FROM account WHERE age NOT BETWEEN ? AND ?", notBetween);
-
+    public void test_in_and_unsupported_sql_predicates() {
         final String in = PSC.select("id").from("account").where(Filters.in("id", N.asList(1, 2, 3))).build().query();
         N.println(in);
         assertEquals("SELECT id FROM account WHERE id IN (?, ?, ?)", in);
 
-        final String notIn = PSC.select("id").from("account").where(Filters.notIn("id", N.asList(1, 2, 3))).build().query();
-        N.println(notIn);
-        assertEquals("SELECT id FROM account WHERE id NOT IN (?, ?, ?)", notIn);
-
-        // NAMED_SQL min/max + indexed-IN parameter naming must not collide between the two bounds/elements.
-        final String namedBetween = NSC.select("id").from("account").where(Filters.between("age", 18, 65)).build().query();
-        N.println(namedBetween);
-        assertEquals("SELECT id FROM account WHERE age BETWEEN :minAge AND :maxAge", namedBetween);
-
         final String namedIn = NSC.select("id").from("account").where(Filters.in("id", N.asList(1, 2, 3))).build().query();
         N.println(namedIn);
         assertEquals("SELECT id FROM account WHERE id IN (:id1, :id2, :id3)", namedIn);
+
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from("account").where(Filters.between("age", 18, 65)).build());
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from("account").where(Filters.notBetween("age", 18, 65)).build());
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from("account").where(Filters.notIn("id", N.asList(1, 2, 3))).build());
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from("account").where(Filters.isNull("name")).build());
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from("account").where(Filters.isNotNull("name")).build());
+        assertEquals("SELECT id FROM account WHERE name LIKE ?", PSC.select("id").from("account").where(Filters.like("name", "A%")).build().query());
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from("account").where(Filters.in("id", SubQueryGen())).build());
     }
 
     /**
@@ -598,7 +605,7 @@ public class CqlBuilderTest extends TestBase {
     public void test_and_or_junction_keyword_rendering() {
         final String and = PSC.select("id").from("account").where(Filters.and(Filters.eq("a", 1), Filters.eq("b", 2))).build().query();
         N.println(and);
-        assertEquals("SELECT id FROM account WHERE (a = ?) AND (b = ?)", and);
+        assertEquals("SELECT id FROM account WHERE a = ? AND b = ?", and);
 
         assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from("account").where(Filters.or(Filters.eq("a", 1), Filters.eq("b", 2))).build());
     }
@@ -893,8 +900,8 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testNSB_selectFromClassWithAlias() {
-        final String cql = NSB.selectFrom(Users.class, "u").build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = NSB.selectFrom(Users.class, (String) null).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
     }
 
     @Test
@@ -911,14 +918,14 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testNSB_selectFromClassAliasSubEntities() {
-        final String cql = NSB.selectFrom(Users.class, "u", false).build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = NSB.selectFrom(Users.class, null, false).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
     }
 
     @Test
     public void testNSB_selectFromClassAliasExcluded() {
-        final String cql = NSB.selectFrom(Users.class, "u", N.asSet("createdTime")).build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = NSB.selectFrom(Users.class, null, N.asSet("createdTime")).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
         assertTrue(!cql.contains("createdTime"), cql);
     }
 
@@ -930,8 +937,8 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testNSB_selectFromClassFull() {
-        final String cql = NSB.selectFrom(Users.class, "u", false, N.asSet("createdTime")).build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = NSB.selectFrom(Users.class, null, false, N.asSet("createdTime")).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
         assertTrue(!cql.contains("createdTime"), cql);
     }
 
@@ -1173,8 +1180,8 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testPSB_selectFromClassWithAlias() {
-        final String cql = PSB.selectFrom(Users.class, "u").build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = PSB.selectFrom(Users.class, (String) null).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
     }
 
     @Test
@@ -1191,13 +1198,13 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testPSB_selectFromClassAliasSubEntities() {
-        final String cql = PSB.selectFrom(Users.class, "u", false).build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = PSB.selectFrom(Users.class, null, false).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
     }
 
     @Test
     public void testPSB_selectFromClassAliasExcluded() {
-        final String cql = PSB.selectFrom(Users.class, "u", N.asSet("createdTime")).build().query();
+        final String cql = PSB.selectFrom(Users.class, null, N.asSet("createdTime")).build().query();
         assertTrue(!cql.contains("createdTime"), cql);
     }
 
@@ -1209,7 +1216,7 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testPSB_selectFromClassFull() {
-        final String cql = PSB.selectFrom(Users.class, "u", false, N.asSet("createdTime")).build().query();
+        final String cql = PSB.selectFrom(Users.class, null, false, N.asSet("createdTime")).build().query();
         assertTrue(!cql.contains("createdTime"), cql);
     }
 
@@ -1437,8 +1444,8 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testNAC_selectFromClassWithAlias() {
-        final String cql = NAC.selectFrom(Users.class, "u").build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = NAC.selectFrom(Users.class, (String) null).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
     }
 
     @Test
@@ -1455,13 +1462,13 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testNAC_selectFromClassAliasSubEntities() {
-        final String cql = NAC.selectFrom(Users.class, "u", false).build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = NAC.selectFrom(Users.class, null, false).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
     }
 
     @Test
     public void testNAC_selectFromClassAliasExcluded() {
-        final String cql = NAC.selectFrom(Users.class, "u", N.asSet("createdTime")).build().query();
+        final String cql = NAC.selectFrom(Users.class, null, N.asSet("createdTime")).build().query();
         assertTrue(!cql.contains("CREATED_TIME"), cql);
     }
 
@@ -1473,7 +1480,7 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testNAC_selectFromClassFull() {
-        final String cql = NAC.selectFrom(Users.class, "u", false, N.asSet("createdTime")).build().query();
+        final String cql = NAC.selectFrom(Users.class, null, false, N.asSet("createdTime")).build().query();
         assertTrue(!cql.contains("CREATED_TIME"), cql);
     }
 
@@ -1699,8 +1706,8 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testPAC_selectFromClassWithAlias() {
-        final String cql = PAC.selectFrom(Users.class, "u").build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = PAC.selectFrom(Users.class, (String) null).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
     }
 
     @Test
@@ -1717,13 +1724,13 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testPAC_selectFromClassAliasSubEntities() {
-        final String cql = PAC.selectFrom(Users.class, "u", false).build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = PAC.selectFrom(Users.class, null, false).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
     }
 
     @Test
     public void testPAC_selectFromClassAliasExcluded() {
-        final String cql = PAC.selectFrom(Users.class, "u", N.asSet("createdTime")).build().query();
+        final String cql = PAC.selectFrom(Users.class, null, N.asSet("createdTime")).build().query();
         assertTrue(!cql.contains("CREATED_TIME"), cql);
     }
 
@@ -1735,7 +1742,7 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testPAC_selectFromClassFull() {
-        final String cql = PAC.selectFrom(Users.class, "u", false, N.asSet("createdTime")).build().query();
+        final String cql = PAC.selectFrom(Users.class, null, false, N.asSet("createdTime")).build().query();
         assertTrue(!cql.contains("CREATED_TIME"), cql);
     }
 
@@ -1961,8 +1968,8 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testPLC_selectFromClassWithAlias() {
-        final String cql = PLC.selectFrom(Users.class, "u").build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = PLC.selectFrom(Users.class, (String) null).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
     }
 
     @Test
@@ -1979,13 +1986,13 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testPLC_selectFromClassAliasSubEntities() {
-        final String cql = PLC.selectFrom(Users.class, "u", false).build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = PLC.selectFrom(Users.class, null, false).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
     }
 
     @Test
     public void testPLC_selectFromClassAliasExcluded() {
-        final String cql = PLC.selectFrom(Users.class, "u", N.asSet("createdTime")).build().query();
+        final String cql = PLC.selectFrom(Users.class, null, N.asSet("createdTime")).build().query();
         assertTrue(!cql.contains("createdTime"), cql);
     }
 
@@ -1997,7 +2004,7 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testPLC_selectFromClassFull() {
-        final String cql = PLC.selectFrom(Users.class, "u", false, N.asSet("createdTime")).build().query();
+        final String cql = PLC.selectFrom(Users.class, null, false, N.asSet("createdTime")).build().query();
         assertTrue(!cql.contains("createdTime"), cql);
     }
 
@@ -2229,8 +2236,8 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testACCB_selectFromClassWithAlias() {
-        final String cql = ACCB.selectFrom(Users.class, "u").build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = ACCB.selectFrom(Users.class, (String) null).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
     }
 
     @Test
@@ -2247,13 +2254,13 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testACCB_selectFromClassAliasSubEntities() {
-        final String cql = ACCB.selectFrom(Users.class, "u", false).build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = ACCB.selectFrom(Users.class, null, false).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
     }
 
     @Test
     public void testACCB_selectFromClassAliasExcluded() {
-        final String cql = ACCB.selectFrom(Users.class, "u", N.asSet("createdTime")).build().query();
+        final String cql = ACCB.selectFrom(Users.class, null, N.asSet("createdTime")).build().query();
         assertTrue(!cql.contains("CREATED_TIME"), cql);
     }
 
@@ -2265,7 +2272,7 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testACCB_selectFromClassFull() {
-        final String cql = ACCB.selectFrom(Users.class, "u", false, N.asSet("createdTime")).build().query();
+        final String cql = ACCB.selectFrom(Users.class, null, false, N.asSet("createdTime")).build().query();
         assertTrue(!cql.contains("CREATED_TIME"), cql);
     }
 
@@ -2493,8 +2500,8 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testNLC_selectFromClassWithAlias() {
-        final String cql = NLC.selectFrom(Users.class, "u").build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = NLC.selectFrom(Users.class, (String) null).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
     }
 
     @Test
@@ -2511,13 +2518,13 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testNLC_selectFromClassAliasSubEntities() {
-        final String cql = NLC.selectFrom(Users.class, "u", false).build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = NLC.selectFrom(Users.class, null, false).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
     }
 
     @Test
     public void testNLC_selectFromClassAliasExcluded() {
-        final String cql = NLC.selectFrom(Users.class, "u", N.asSet("createdTime")).build().query();
+        final String cql = NLC.selectFrom(Users.class, null, N.asSet("createdTime")).build().query();
         assertTrue(!cql.contains("createdTime"), cql);
     }
 
@@ -2529,7 +2536,7 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testNLC_selectFromClassFull() {
-        final String cql = NLC.selectFrom(Users.class, "u", false, N.asSet("createdTime")).build().query();
+        final String cql = NLC.selectFrom(Users.class, null, false, N.asSet("createdTime")).build().query();
         assertTrue(!cql.contains("createdTime"), cql);
     }
 
@@ -2823,8 +2830,8 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testNSC_selectFromClassWithAlias() {
-        final String cql = NSC.selectFrom(Users.class, "u").build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = NSC.selectFrom(Users.class, (String) null).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
     }
 
     @Test
@@ -2841,14 +2848,14 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testNSC_selectFromClassAliasSubEntities() {
-        final String cql = NSC.selectFrom(Users.class, "u", false).build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = NSC.selectFrom(Users.class, null, false).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
     }
 
     @Test
     public void testNSC_selectFromClassAliasExcluded() {
-        final String cql = NSC.selectFrom(Users.class, "u", N.asSet("createdTime")).build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = NSC.selectFrom(Users.class, null, N.asSet("createdTime")).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
         assertTrue(!cql.contains("created_time"), cql);
     }
 
@@ -2860,8 +2867,8 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testNSC_selectFromClassFull() {
-        final String cql = NSC.selectFrom(Users.class, "u", false, N.asSet("createdTime")).build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = NSC.selectFrom(Users.class, null, false, N.asSet("createdTime")).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
         assertTrue(!cql.contains("created_time"), cql);
     }
 
@@ -3154,8 +3161,8 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testPSC_selectFromClassWithAlias() {
-        final String cql = PSC.selectFrom(Users.class, "u").build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = PSC.selectFrom(Users.class, (String) null).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
     }
 
     @Test
@@ -3172,14 +3179,14 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testPSC_selectFromClassAliasSubEntities() {
-        final String cql = PSC.selectFrom(Users.class, "u", false).build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = PSC.selectFrom(Users.class, null, false).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
     }
 
     @Test
     public void testPSC_selectFromClassAliasExcluded() {
-        final String cql = PSC.selectFrom(Users.class, "u", N.asSet("createdTime")).build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = PSC.selectFrom(Users.class, null, N.asSet("createdTime")).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
         assertTrue(!cql.contains("created_time"), cql);
     }
 
@@ -3191,8 +3198,8 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testPSC_selectFromClassFull() {
-        final String cql = PSC.selectFrom(Users.class, "u", false, N.asSet("createdTime")).build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = PSC.selectFrom(Users.class, null, false, N.asSet("createdTime")).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
         assertTrue(!cql.contains("created_time"), cql);
     }
 
@@ -3439,8 +3446,8 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testSCCB_selectFromClassWithAlias() {
-        final String cql = SCCB.selectFrom(Users.class, "u").build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = SCCB.selectFrom(Users.class, (String) null).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
     }
 
     @Test
@@ -3457,13 +3464,13 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testSCCB_selectFromClassAliasSubEntities() {
-        final String cql = SCCB.selectFrom(Users.class, "u", false).build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = SCCB.selectFrom(Users.class, null, false).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
     }
 
     @Test
     public void testSCCB_selectFromClassAliasExcluded() {
-        final String cql = SCCB.selectFrom(Users.class, "u", N.asSet("createdTime")).build().query();
+        final String cql = SCCB.selectFrom(Users.class, null, N.asSet("createdTime")).build().query();
         assertTrue(!cql.contains("created_time"), cql);
     }
 
@@ -3475,7 +3482,7 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testSCCB_selectFromClassFull() {
-        final String cql = SCCB.selectFrom(Users.class, "u", false, N.asSet("createdTime")).build().query();
+        final String cql = SCCB.selectFrom(Users.class, null, false, N.asSet("createdTime")).build().query();
         assertTrue(!cql.contains("created_time"), cql);
     }
 
@@ -3723,8 +3730,8 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testLCCB_selectFromClassWithAlias() {
-        final String cql = LCCB.selectFrom(Users.class, "u").build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = LCCB.selectFrom(Users.class, (String) null).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
     }
 
     @Test
@@ -3741,13 +3748,13 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testLCCB_selectFromClassAliasSubEntities() {
-        final String cql = LCCB.selectFrom(Users.class, "u", false).build().query();
-        assertTrue(cql.contains("FROM simplex.users u"), cql);
+        final String cql = LCCB.selectFrom(Users.class, null, false).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
     }
 
     @Test
     public void testLCCB_selectFromClassAliasExcluded() {
-        final String cql = LCCB.selectFrom(Users.class, "u", N.asSet("createdTime")).build().query();
+        final String cql = LCCB.selectFrom(Users.class, null, N.asSet("createdTime")).build().query();
         assertTrue(!cql.contains("createdTime"), cql);
     }
 
@@ -3759,7 +3766,7 @@ public class CqlBuilderTest extends TestBase {
 
     @Test
     public void testLCCB_selectFromClassFull() {
-        final String cql = LCCB.selectFrom(Users.class, "u", false, N.asSet("createdTime")).build().query();
+        final String cql = LCCB.selectFrom(Users.class, null, false, N.asSet("createdTime")).build().query();
         assertTrue(!cql.contains("createdTime"), cql);
     }
 
@@ -3977,7 +3984,7 @@ public class CqlBuilderTest extends TestBase {
      * Regression guard for {@code onlyIf(Condition)} with an AND junction:
      * Cassandra's LWT grammar is {@code IF columnCondition (AND columnCondition)*} and rejects
      * parenthesized members, so junction members must render WITHOUT per-member parentheses in the
-     * IF clause (WHERE junction rendering keeps its parentheses and is unaffected).
+     * IF clause. WHERE uses the same unparenthesized relation-junction grammar.
      */
     @Test
     public void test_onlyIf_andJunction_rendersWithoutParentheses() {
@@ -3991,14 +3998,14 @@ public class CqlBuilderTest extends TestBase {
 
         assertEquals("UPDATE account SET first_name = ? WHERE id = ? IF last_name = ? AND id < ?", cql);
 
-        // The WHERE-clause junction rendering (with parentheses) is unaffected by the IF fix.
+        // WHERE junctions use the same relation AND relation shape.
         final String whereCql = PSC.select("id").from("account").where(Filters.and(Filters.eq("a", 1), Filters.eq("b", 2))).build().query();
-        assertEquals("SELECT id FROM account WHERE (a = ?) AND (b = ?)", whereCql);
+        assertEquals("SELECT id FROM account WHERE a = ? AND b = ?", whereCql);
     }
 
     /**
      * Regression guard for the In/NotIn branches of {@code appendCondition}: they must iterate
-     * {@code getValues()} (one placeholder per IN-list element), not {@code getParameters()} (which
+     * {@code values()} (one placeholder per IN-list element), not {@code parameters()} (which
      * splices Condition-typed elements like {@code Filters.QME} out of the list and silently changed
      * the placeholder count from 3 to 2).
      */
@@ -4012,38 +4019,20 @@ public class CqlBuilderTest extends TestBase {
         assertEquals(N.asList(1, 3), sp.parameters());
     }
 
-    /**
-     * Regression guard for the SubQuery branch of {@code appendCondition}: the subquery used to be
-     * rendered via {@code ...build().query()} which dropped the subquery's bind parameters, leaving
-     * '?' placeholders with no bound values. The parameters must now be propagated to the outer
-     * builder, and a SubQuery with a NULL condition (allowed by the SubQuery contract) must render
-     * without a WHERE clause instead of throwing.
-     */
+    /** Cassandra CQL has no subqueries; both positional and named builders must fail fast. */
     @Test
-    public void test_subQuery_parametersPreserved() {
+    public void test_subQuery_isRejected() {
         final Condition cond = Filters.in("id", Filters.subQuery("account", N.asList("id"), Filters.eq("lastName", "Smith")));
-        final SP sp = PSC.select("firstName").from("account").where(cond).build();
-        N.println(sp.query());
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("firstName").from("account").where(cond).build());
 
-        assertTrue(sp.query().contains("IN (SELECT id FROM account WHERE last_name = ?)"), sp.query());
-        assertEquals(N.asList("Smith"), sp.parameters());
-
-        // Named builder: the subquery's named placeholder and parameter must be preserved too.
         final Condition namedCond = Filters.in("id", Filters.subQuery("account", N.asList("id"), Filters.eq("lastName", "Smith")));
-        final SP namedSp = NSC.select("firstName").from("account").where(namedCond).build();
-        N.println(namedSp.query());
-        assertTrue(namedSp.query().contains("IN (SELECT id FROM account WHERE last_name = :lastName)"), namedSp.query());
-        assertEquals(N.asList("Smith"), namedSp.parameters());
+        assertThrows(IllegalArgumentException.class, () -> NSC.select("firstName").from("account").where(namedCond).build());
     }
 
     @Test
-    public void test_subQuery_withNullCondition_rendersWithoutWhere() {
+    public void test_subQuery_withNullCondition_isRejected() {
         final Condition cond = Filters.in("id", Filters.subQuery("account", N.asList("id"), (Condition) null));
-        final SP sp = PSC.select("firstName").from("account").where(cond).build();
-        N.println(sp.query());
-
-        assertTrue(sp.query().contains("IN (SELECT id FROM account)"), sp.query());
-        assertTrue(sp.parameters().isEmpty(), sp.parameters().toString());
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("firstName").from("account").where(cond).build());
     }
 
     /**
@@ -4163,23 +4152,44 @@ public class CqlBuilderTest extends TestBase {
         assertThrows(IllegalStateException.class, allowFilteringBuilder::allowFiltering);
     }
 
-    /**
-     * Regression guard for BETWEEN named-parameter naming: an alias-qualified prop name like
-     * {@code "o.orderDate"} must produce {@code :minOrderDate}/{@code :maxOrderDate} (alias prefix
-     * stripped via {@code sanitizeNamedParameterName}), not punctuation-bearing placeholders like
-     * {@code :minO.orderDate} that named-parameter parsers reject.
-     */
+    /** BETWEEN is SQL syntax, not a Cassandra CQL relation. */
     @Test
-    public void test_between_namedParams_withAliasQualifiedProp() {
-        final SP sp = NSC.select("firstName").from("account").where(Filters.between("o.orderDate", "a", "b")).build();
-        N.println(sp.query());
+    public void test_between_namedParams_areRejected() {
+        assertThrows(IllegalArgumentException.class,
+                () -> NSC.select("firstName").from("account").where(Filters.between("o.orderDate", "a", "b")).build());
+        assertThrows(IllegalArgumentException.class, () -> NSC.select("id").from("account").where(Filters.between("age", 18, 65)).build());
+    }
 
-        assertTrue(sp.query().contains("BETWEEN :minOrderDate AND :maxOrderDate"), sp.query());
-        assertEquals(N.asList("a", "b"), sp.parameters());
+    @Test
+    public void test_tableAliases_areRejectedButNullAliasIsAccepted() {
+        assertThrows(IllegalArgumentException.class, () -> PSC.selectFrom(Users.class, "u"));
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from(Users.class, "u"));
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from("account a"));
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from("account AS a"));
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from("account a", Account.class));
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from(new String[] { "account", "other_account" }));
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from("account", "other_account"));
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from(N.asList("account", "other_account")));
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from("account, other_account"));
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from("account JOIN other_account ON account.id = other_account.id"));
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from("(SELECT id FROM account) nested"));
+        assertThrows(IllegalArgumentException.class, () -> PSC.delete("name").from("account a"));
+        assertThrows(IllegalArgumentException.class, () -> PSC.insert("id").into("account a"));
+        assertThrows(IllegalArgumentException.class, () -> PSC.update("account a"));
+        assertThrows(IllegalArgumentException.class, () -> PSC.deleteFrom("account a"));
 
-        // Non-regression: the simple unaliased case keeps :minPropName/:maxPropName.
-        final String simple = NSC.select("id").from("account").where(Filters.between("age", 18, 65)).build().query();
-        assertEquals("SELECT id FROM account WHERE age BETWEEN :minAge AND :maxAge", simple);
+        final String emptyQuotedTable = String.valueOf('"') + '"';
+        final String unclosedQuotedTable = String.valueOf('"') + "account";
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from(emptyQuotedTable));
+        assertThrows(IllegalArgumentException.class, () -> PSC.select("id").from(unclosedQuotedTable));
+
+        final String cql = PSC.selectFrom(Users.class, (String) null).build().query();
+        assertTrue(cql.contains("FROM simplex.users"), cql);
+        assertFalse(cql.contains("simplex.users u"), cql);
+
+        final String quotedTable = '"' + "key space" + '"' + "." + '"' + "user table" + '"';
+        assertEquals("SELECT id FROM " + quotedTable, PSC.select("id").from(quotedTable).build().query());
+        assertEquals("SELECT id FROM simplex . users", PSC.select("id").from("simplex . users").build().query());
     }
 
     /**
@@ -4220,5 +4230,36 @@ public class CqlBuilderTest extends TestBase {
         // TTL remains valid on a conditional INSERT.
         assertEquals("INSERT INTO account (id, name) VALUES (?, ?) IF NOT EXISTS USING TTL 60",
                 PSC.insert("id", "name").into("account").ifNotExists().usingTTL(60).build().query());
+    }
+
+    /**
+     * onlyIf(Condition) renders the IF clause atomically. appendCondition rejects the constructs CQL has no
+     * syntax for; without a rollback the half-emitted clause would remain and build() would silently return
+     * corrupt CQL such as "... IF ", "... IF s = ? AND " or "... IF s IN (?, ".
+     */
+    @Test
+    public void test_onlyIf_rejectedCondition_leavesBuilderUnchanged() {
+        final String expected = "UPDATE account SET first_name = ? WHERE id = ?";
+
+        final CqlBuilder afterBetween = PSC.update("account").set("firstName").where(Filters.eq("id", 1));
+        assertThrows(IllegalArgumentException.class, () -> afterBetween.onlyIf(Filters.between("age", 1, 2)));
+        assertEquals(expected, afterBetween.build().query());
+
+        final CqlBuilder afterNullInJunction = PSC.update("account").set("firstName").where(Filters.eq("id", 1));
+        assertThrows(IllegalArgumentException.class,
+                () -> afterNullInJunction.onlyIf(Filters.and(Filters.eq("status", "x"), Filters.gt("version", null))));
+        assertEquals(expected, afterNullInJunction.build().query());
+
+        final CqlBuilder afterNullInElement = PSC.update("account").set("firstName").where(Filters.eq("id", 1));
+        assertThrows(IllegalArgumentException.class, () -> afterNullInElement.onlyIf(Filters.in("status", N.asList("a", null))));
+        assertEquals(expected, afterNullInElement.build().query());
+
+        // After a rejected onlyIf the builder is still usable: a valid IF clause renders normally,
+        // and no stale bind value was left behind by the rejected attempt.
+        final CqlBuilder recovered = PSC.update("account").set("firstName").where(Filters.eq("id", 1));
+        assertThrows(IllegalArgumentException.class, () -> recovered.onlyIf(Filters.between("age", 1, 2)));
+        final SP recoveredSp = recovered.onlyIf(Filters.eq("status", "inactive")).build();
+        assertEquals(expected + " IF status = ?", recoveredSp.query());
+        assertEquals(2, recoveredSp.parameters().size());
     }
 }

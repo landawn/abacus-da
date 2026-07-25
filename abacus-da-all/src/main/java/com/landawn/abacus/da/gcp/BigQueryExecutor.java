@@ -134,9 +134,10 @@ import com.landawn.abacus.util.stream.Stream;
  *
  * <h2>Result Set Pagination</h2>
  * <p>Pagination is delegated to BigQuery's {@link TableResult}: {@link #list}/{@link #query}
- * eagerly materialise every page (via {@link TableResult#iterateAll()}); {@link #stream} returns a
- * lazy {@link Stream} backed by the same iterator. Use {@link #stream} for large result sets to
- * keep memory bounded.</p>
+ * eagerly materialise every page (via {@link TableResult#iterateAll()}); {@link #stream} submits and
+ * waits for the query job before returning, but defers row iteration and conversion through a
+ * {@link Stream} backed by the same iterator. Use {@link #stream} to avoid eagerly materialising all
+ * converted rows in application memory.</p>
  *
  * <h2>Naming Policy</h2>
  * <p>Property-to-column translation is governed by the {@link NamingPolicy} passed at
@@ -620,7 +621,7 @@ public class BigQueryExecutor {
      *         FieldValue.of(FieldValue.Attribute.PRIMITIVE, "Z")), fields);
      *
      * Map<String, Object> map = BigQueryExecutor.toMap(fields, row, IntFunctions.ofLinkedHashMap());
-     * (map instanceof LinkedHashMap);                                // true
+     * boolean preservesOrder = map instanceof LinkedHashMap;         // true
      * map.get("id");                                                 // returns "9"
      *
      * // Edge: a null mapSupplier is rejected
@@ -735,7 +736,7 @@ public class BigQueryExecutor {
      *         FieldValue.of(FieldValue.Attribute.PRIMITIVE, "Sam")), fields);
      *
      * Map<String, Object> map = BigQueryExecutor.toMap(row, IntFunctions.ofLinkedHashMap());
-     * (map instanceof LinkedHashMap);                        // true
+     * boolean preservesOrder = map instanceof LinkedHashMap; // true
      * map.get("id");                                         // returns "222"
      * map.get("name");                                       // returns "Sam"
      * }</pre>
@@ -977,7 +978,7 @@ public class BigQueryExecutor {
      * customers.get(0).getId();                          // returns 1
      *
      * // Map rows: each row becomes a column-to-value map
-     * List<Map<String, Object>> maps = BigQueryExecutor.toList(tableResult, Map.class);
+     * List<Map<String, Object>> maps = BigQueryExecutor.toList(tableResult, com.landawn.abacus.util.Clazz.PROPS_MAP);
      *
      * // Edge: an empty result (getTotalRows() == 0) yields an empty list
      * BigQueryExecutor.toList(emptyResult, Customer.class).isEmpty();        // returns true
@@ -1851,7 +1852,7 @@ public class BigQueryExecutor {
      * @see #execute(String, Object...)
      */
     public <V> Nullable<V> queryForSingleValue(final Class<?> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause) {
-        final SP sp = prepareQuery(targetClass, N.asList(propName), whereClause);
+        final SP sp = prepareQuery(targetClass, N.asList(propName), whereClause, 1);
 
         return queryForSingleValue(valueClass, sp.query(), sp.parameters().toArray());
     }
@@ -1970,7 +1971,7 @@ public class BigQueryExecutor {
      * @see #execute(String, Object...)
      */
     public <V> Optional<V> queryForSingleNonNull(final Class<?> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause) {
-        final SP sp = prepareQuery(targetClass, N.asList(propName), whereClause);
+        final SP sp = prepareQuery(targetClass, N.asList(propName), whereClause, 1);
 
         return queryForSingleNonNull(valueClass, sp.query(), sp.parameters().toArray());
     }
@@ -2183,8 +2184,7 @@ public class BigQueryExecutor {
      * }</pre>
      *
      * @param <T> the target type for list elements
-     * @param targetClass the target class for result conversion (entity class with getter/setter methods, Map.class,
-     *                   Object[].class, Collection classes, or supported basic types)
+     * @param targetClass the entity class used both to derive the table name and to map result rows
      * @param whereClause the condition to filter records, or {@code null} to select all rows
      * @return a List containing all matching records converted to the target type, empty list if no matches
      * @throws IllegalArgumentException if targetClass is null
@@ -2209,20 +2209,16 @@ public class BigQueryExecutor {
      * Condition condition = Filters.eq("status", "active");
      * List<Customer> customers = executor.list(Customer.class, columns, condition);   // returns a List of entities populated from the 3 columns
      *
-     * // Select to Map for flexibility
-     * List<Map<String, Object>> results = executor.list(Map.class, columns, condition);   // returns one Map per row
-     * results.forEach(row -> {
-     *     System.out.println(row.get("customerId") + ": " + row.get("name"));
-     * });
-     *
-     * // Select a single column into scalar values
-     * Collection<String> idColumn = Arrays.asList("customerId");
-     * List<String> customerIds = executor.list(String.class, idColumn, condition);   // returns one String per row
+     * // Map and scalar targets require the raw-SQL overload because this overload derives the
+     * // table from targetClass.
+     * List<Map<String, Object>> results = executor.list(com.landawn.abacus.util.Clazz.PROPS_MAP,
+     *     "SELECT customer_id, name FROM customers WHERE status = ?", "active");
+     * List<String> customerIds = executor.list(String.class,
+     *     "SELECT customer_id FROM customers WHERE status = ?", "active");
      * }</pre>
      *
      * @param <T> the target type for list elements
-     * @param targetClass the target class for result conversion (entity class with getter/setter methods, Map.class,
-     *                   Object[].class, Collection classes, or basic single value types)
+     * @param targetClass the entity class used both to derive the table name and to map result rows
      * @param selectPropNames the collection of property/column names to select, or null for all columns
      * @param whereClause the condition to filter records, or {@code null} to select all rows
      * @return a List containing matching records for the selected columns converted to the target type
@@ -2254,7 +2250,8 @@ public class BigQueryExecutor {
      * String joinSql = "SELECT c.customer_id, c.name, COUNT(o.order_id) as order_count " +
      *                  "FROM customers c LEFT JOIN orders o ON c.customer_id = o.customer_id " +
      *                  "WHERE c.status = ? GROUP BY c.customer_id, c.name";
-     * List<Map<String, Object>> results = executor.list(Map.class, joinSql, "active");   // returns one Map per row
+     * List<Map<String, Object>> results = executor.list(
+     *     com.landawn.abacus.util.Clazz.PROPS_MAP, joinSql, "active");   // returns one Map per row
      *
      * // Query returning single values (single-column result -> scalar conversion)
      * String idQuery = "SELECT customer_id FROM customers WHERE status = ?";
@@ -2282,32 +2279,32 @@ public class BigQueryExecutor {
      * <p>
      * This method performs a SELECT * query on the table corresponding to the target class
      * and returns the results as a Stream of objects. All columns are selected by default.
-     * The Stream allows for lazy evaluation and processing of large result sets.
+     * The query job is submitted and awaited before this method returns. Row iteration and conversion
+     * are deferred until the returned Stream is consumed.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Stream and process records
      * Condition condition = Filters.eq("status", "active");
-     * Stream<Customer> customerStream = executor.stream(Customer.class, condition);   // returns a lazy Stream of matching entities
+     * Stream<Customer> customerStream = executor.stream(Customer.class, condition);   // query completed; row conversion is deferred
      *
      * customerStream
      *     .filter(c -> c.getOrderCount() > 10)
      *     .map(Customer::getEmail)
-     *     .forEach(email -> sendEmail(email));
+     *     .forEach(System.out::println);
      *
      * // Stream with aggregation (abacus Stream)
      * BigDecimal totalAmount = executor.stream(Order.class, Filters.eq("status", "completed"))
      *     .map(Order::getAmount)
      *     .reduce(BigDecimal.ZERO, BigDecimal::add);   // returns the summed amount
      *
-     * // Stream for large datasets (memory efficient)
+     * // Avoid eagerly materialising converted rows
      * long count = executor.stream(Customer.class, Filters.between("createdDate", start, end))
      *     .count();                                    // returns the number of matching rows
      * }</pre>
      *
      * @param <T> the target type for stream elements
-     * @param targetClass the target class for result conversion (entity class with getter/setter methods, Map.class,
-     *                   or basic single value types)
+     * @param targetClass the entity class used both to derive the table name and to map result rows
      * @param whereClause the condition to filter records, or {@code null} to select all rows
      * @return a Stream containing all matching records converted to the target type
      * @throws IllegalArgumentException if targetClass is null
@@ -2323,7 +2320,8 @@ public class BigQueryExecutor {
      * <p>
      * This method performs a SELECT query on specified columns of the table corresponding
      * to the target class and returns the results as a Stream of objects. If selectPropNames
-     * is null or empty, all columns are selected. The Stream allows for lazy evaluation.
+     * is null or empty, all columns are selected. The query job completes before this method returns;
+     * row iteration and conversion are deferred until the Stream is consumed.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2343,8 +2341,7 @@ public class BigQueryExecutor {
      * }</pre>
      *
      * @param <T> the target type for stream elements
-     * @param targetClass the target class for result conversion (entity class with getter/setter methods, Map.class,
-     *                   or basic single value types)
+     * @param targetClass the entity class used both to derive the table name and to map result rows
      * @param selectPropNames the collection of property/column names to select, or null for all columns
      * @param whereClause the condition to filter records, or {@code null} to select all rows
      * @return a Stream containing matching records for the selected columns converted to the target type
@@ -2362,8 +2359,8 @@ public class BigQueryExecutor {
      * Executes a custom BigQuery SQL query and returns results as a Stream.
      * <p>
      * This method executes the provided SQL query with parameter binding and returns
-     * the results as a Stream of objects of the specified target type. The Stream allows
-     * for lazy evaluation and efficient processing of large result sets.
+     * the results as a Stream of objects of the specified target type. Query execution is synchronous;
+     * only result-row iteration and conversion are deferred until Stream consumption.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2425,7 +2422,7 @@ public class BigQueryExecutor {
      *     .setLabels(Map.of("environment", "production"))
      *     .build();
      *
-     * Stream<Customer> stream = executor.stream(Customer.class, config);   // returns a lazy Stream of entities
+     * Stream<Customer> stream = executor.stream(Customer.class, config);   // query completed; row conversion is deferred
      * long count = stream.count();                                         // returns the number of rows produced by the job
      *
      * // Query with caching disabled
@@ -2435,7 +2432,7 @@ public class BigQueryExecutor {
      *     .build();
      *
      * executor.stream(Map.class, noCacheConfig)
-     *     .forEach(row -> processRealtimeData(row));
+     *     .forEach(System.out::println);
      * }</pre>
      *
      * @param <T> the target type for stream elements
@@ -2482,7 +2479,7 @@ public class BigQueryExecutor {
      *     "SELECT * FROM customers")
      *     .build();
      *
-     * Stream<FieldValueList> rawStream = executor.stream(config);   // returns a lazy Stream of raw rows (no entity conversion)
+     * Stream<FieldValueList> rawStream = executor.stream(config);   // query completed; raw-row iteration is deferred
      *
      * rawStream.forEach(row -> {
      *     // Access fields by index or name

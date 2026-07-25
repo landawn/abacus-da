@@ -14,6 +14,8 @@
 
 /**
  * Provides Publisher-based MongoDB database, collection, and entity-mapping operations using the Reactive Streams driver.
- * Operations are exposed through cold Reactor {@link reactor.core.publisher.Mono} and {@link reactor.core.publisher.Flux} publishers.
+ * Most wrapper operations are exposed through cold Reactor {@link reactor.core.publisher.Mono} and
+ * {@link reactor.core.publisher.Flux} publishers; change-stream watches expose the driver's
+ * {@link com.mongodb.reactivestreams.client.ChangeStreamPublisher} directly.
  */
 package com.landawn.abacus.da.mongodb.reactivestreams;

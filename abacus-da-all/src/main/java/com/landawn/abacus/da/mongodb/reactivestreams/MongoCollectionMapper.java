@@ -54,7 +54,7 @@ import reactor.core.publisher.Mono;
  * <p>This class is the reactive counterpart of
  * {@link com.landawn.abacus.da.mongodb.MongoCollectionMapper} (in the parent package). It wraps a
  * reactive {@link MongoCollectionExecutor} and binds a fixed entity type {@code T} so callers never
- * have to repeat the target class on each call. Every operation returns a Project Reactor
+ * have to repeat the target class on each call. Database operations return a Project Reactor
  * {@link Mono} or {@link Flux} (both implementations of the Reactive Streams {@code Publisher}); the
  * returned publishers are <b>cold</b> — no database I/O is performed until they are subscribed to,
  * and each subscription triggers a fresh request honouring downstream demand (back-pressure) per the
@@ -62,25 +62,27 @@ import reactor.core.publisher.Mono;
  *
  * <h2>Key Features</h2>
  * <ul>
- *   <li><strong>Reactive type safety:</strong> Every method returns a {@code Mono<...>} or
- *       {@code Flux<T>} typed against the mapper's entity type, so no per-call {@code Class<T>}
- *       parameter is needed.</li>
- *   <li><strong>Automatic conversion:</strong> Entities are encoded/decoded by the driver's
- *       configured codec registry; ID fields annotated with {@code @Id} (or named {@code id}) are
- *       mapped to MongoDB's {@code _id}.</li>
+ *   <li><strong>Reactive type safety:</strong> Database-operation methods return a
+ *       {@code Mono<...>} or {@code Flux<T>} typed against the mapper's entity type, so no per-call
+ *       {@code Class<T>} parameter is needed. {@link #collectionExecutor()} is a synchronous accessor.</li>
+ *   <li><strong>Automatic conversion:</strong> The framework's MongoDB mapping helpers convert the
+ *       outer entity to and from a {@link Document}; ID fields annotated with {@code @Id} (or named
+ *       {@code id}) are mapped to MongoDB's {@code _id}. The collection codec registry handles BSON
+ *       values stored inside the document.</li>
  *   <li><strong>Back-pressure support:</strong> Streaming {@code Flux} operations propagate
  *       Reactive Streams {@code Subscription.request(n)} demand to the driver.</li>
  *   <li><strong>Error propagation:</strong> Database errors are signalled via
- *       {@code Subscriber.onError} rather than thrown synchronously.</li>
+ *       {@code Subscriber.onError}; argument validation and write-value conversion can fail
+ *       synchronously while the publisher is being built.</li>
  *   <li><strong>Framework integration:</strong> Returned types are interoperable with any
  *       Reactive Streams consumer (Project Reactor, RxJava 3, SmallRye Mutiny, &hellip;).</li>
  * </ul>
  *
  * <h3>Subscription &amp; lifecycle</h3>
- * <p>The methods of this class merely build a publisher; the MongoDB call only begins on
- * subscription. Subscribing a returned publisher twice will issue the underlying MongoDB request
- * twice. Use {@link Mono#cache()}/{@link Flux#cache()} or {@code share()} to multicast a single
- * execution when needed.</p>
+ * <p>MongoDB I/O only begins on subscription. Argument validation and conversion of write values may
+ * happen while a publisher is built. Subscribing a returned publisher twice will issue the underlying
+ * MongoDB request twice. Use {@link Mono#cache()}/{@link Flux#cache()} or {@code share()} to multicast
+ * a single execution when needed.</p>
  *
  * <h3>Reactive Entity Requirements:</h3>
  * <p>Entity classes used with this reactive mapper should follow these conventions:</p>
@@ -98,7 +100,8 @@ import reactor.core.publisher.Mono;
  *
  * <h3>Performance Considerations:</h3>
  * <ul>
- *   <li>Publishers are lazy - object conversion happens only on subscription</li>
+ *   <li>Database I/O is lazy; write arguments may be converted before subscription, while result
+ *       decoding happens as values are emitted</li>
  *   <li>Use reactive backpressure to control object creation rate</li>
  *   <li>Consider using projection to limit fields for large objects</li>
  *   <li>Batch operations are more efficient than individual reactive entity operations</li>
@@ -122,7 +125,10 @@ import reactor.core.publisher.Mono;
  * 
  * // Reactive type-safe operations with Project Reactor:
  * // (insertOne returns a cold Mono; the insert only runs once it is subscribed)
- * userMapper.insertOne(new User("John", "john@example.com")).subscribe();
+ * User newUser = new User();
+ * newUser.setName("John");
+ * newUser.setEmail("john@example.com");
+ * userMapper.insertOne(newUser).subscribe();
  *
  * Flux<User> activeUsers = userMapper.list(Filters.eq("status", "active"))
  *     .filter(user -> user.getCreatedAt().after(cutoffDate))
@@ -712,7 +718,8 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * Bson projection = Projections.fields(
      *     Projections.include("name", "email"),
-     *     Projections.computed("fullName", Projections.concat("$firstName", " ", "$lastName"))
+     *     Projections.computed("fullName",
+     *         new Document("$concat", Arrays.asList("$firstName", " ", "$lastName")))
      * );
      * Bson filter = Filters.eq("active", true);
      * Bson sort = Sorts.ascending("name");
@@ -852,7 +859,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.list(fields, (Bson) null);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param selectPropNames the collection of property names to include in the results (null or empty selects all fields)
+     * @param selectPropNames the collection of BSON field names to include in the results (null or empty selects all fields)
      * @param filter the query filter to match documents
      * @return a Flux that emits matching entities with only the specified fields populated
      * @throws IllegalArgumentException if filter is null
@@ -887,7 +894,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.list(fields, filter, 0, -1);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param selectPropNames the collection of property names to include in the results
+     * @param selectPropNames the collection of BSON field names to include in the results
      * @param filter the query filter to match documents against
      * @param offset the number of documents to skip (must be >= 0)
      * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
@@ -924,7 +931,7 @@ public final class MongoCollectionMapper<T> {
      * Flux<User> unsorted = userMapper.list(fields, filter, (Bson) null);   // no sort applied; not an error
      * }</pre>
      *
-     * @param selectPropNames the collection of property names to include in the results
+     * @param selectPropNames the collection of BSON field names to include in the results
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results
      * @return a Flux that emits sorted matching entities with specified fields
@@ -961,7 +968,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.list(fields, filter, sort, -1, 10);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param selectPropNames the collection of property names to include in the results
+     * @param selectPropNames the collection of BSON field names to include in the results
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results
      * @param offset the number of documents to skip (must be >= 0)
@@ -1113,11 +1120,11 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Typical: field present -> emits its Character value.
-     * Mono<Character> grade = userMapper.queryForChar("grade", Filters.eq("id", userId));
+     * Mono<Character> grade = userMapper.queryForChar("grade", MongoDB.objectIdToFilter(userId));
      * grade.subscribe(g -> System.out.println("Grade: " + g));   // e.g. emits 'A'
      *
      * // Edge: no match OR missing/null field -> Mono completes EMPTY.
-     * userMapper.queryForChar("grade", Filters.eq("id", "missing"))
+     * userMapper.queryForChar("grade", MongoDB.objectIdToFilter("507f1f77bcf86cd799439099"))
      *     .hasElement().subscribe(present -> System.out.println("present? " + present));   // emits false
      *
      * // Edge: cold publisher — building it issues no query until subscribed.
@@ -1583,11 +1590,11 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * // Typical: convert the field to an arbitrary target type.
      * Mono<BigDecimal> amount = userMapper.queryForSingleValue(
-     *     "amount", Filters.eq("id", entityId), BigDecimal.class);
+     *     "amount", MongoDB.objectIdToFilter(entityId), BigDecimal.class);
      * amount.subscribe(a -> processPayment(a));   // emits the converted BigDecimal
      *
      * // Edge: no match OR missing/null field -> Mono completes EMPTY.
-     * userMapper.queryForSingleValue("amount", Filters.eq("id", "missing"), BigDecimal.class)
+     * userMapper.queryForSingleValue("amount", MongoDB.objectIdToFilter("507f1f77bcf86cd799439099"), BigDecimal.class)
      *     .defaultIfEmpty(BigDecimal.ZERO)
      *     .subscribe(a -> System.out.println("amount: " + a));   // emits 0 when absent
      *
@@ -1715,7 +1722,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.query(fields, (Bson) null);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param selectPropNames the collection of property names to include in the results (null or empty selects all fields)
+     * @param selectPropNames the collection of BSON field names to include in the results (null or empty selects all fields)
      * @param filter the query filter to match documents
      * @return a Mono that emits a Dataset with projected fields
      * @throws IllegalArgumentException if filter is null
@@ -1749,7 +1756,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.query(fields, filter, -1, 50);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param selectPropNames the collection of property names to include in the results
+     * @param selectPropNames the collection of BSON field names to include in the results
      * @param filter the query filter to match documents against
      * @param offset the number of documents to skip (must be >= 0)
      * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
@@ -1787,7 +1794,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.query(fields, (Bson) null, sort);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param selectPropNames the collection of property names to include in the results
+     * @param selectPropNames the collection of BSON field names to include in the results
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results
      * @return a Mono that emits a sorted Dataset with projected fields
@@ -1823,7 +1830,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.query(fields, filter, sort, -1, 10);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param selectPropNames the collection of property names to include in the results
+     * @param selectPropNames the collection of BSON field names to include in the results
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results
      * @param offset the number of documents to skip (must be >= 0)
@@ -2178,10 +2185,16 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>Updates the first matching document using values from multiple entities.
      * This is useful for partial updates from multiple sources or complex update logic.</p>
+     *
+     * <p><b>Pipeline restrictions:</b> {@code objList} is sent as an aggregation-update pipeline.
+     * Only {@code $set}/{@code $addFields}, {@code $project}/{@code $unset}, and
+     * {@code $replaceRoot}/{@code $replaceWith} stages are permitted. A plain entity is converted
+     * to a {@code $set} stage. Classic update operators such as {@code $inc}, {@code $push}, and
+     * {@code $currentDate} are not valid pipeline stages.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
-     * Bson filter = Filters.eq("id", userId);
+     * Bson filter = MongoDB.objectIdToFilter(userId);
      * List<User> updates = Arrays.asList(profileUpdate, settingsUpdate);
      * Mono<UpdateResult> result = userMapper.updateOne(filter, updates);
      * }</pre>
@@ -2200,6 +2213,9 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>Updates the first matching document using values from multiple entities,
      * with support for custom update options like upsert.</p>
+     *
+     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
+     * documented by {@link #updateOne(Bson, Collection)}.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2286,6 +2302,12 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>Updates all matching documents using values from multiple entities.
      * This enables complex bulk updates with data from multiple sources.</p>
+     *
+     * <p><b>Pipeline restrictions:</b> {@code objList} is sent as an aggregation-update pipeline.
+     * Only {@code $set}/{@code $addFields}, {@code $project}/{@code $unset}, and
+     * {@code $replaceRoot}/{@code $replaceWith} stages are permitted. A plain entity is converted
+     * to a {@code $set} stage. Classic update operators such as {@code $inc}, {@code $push}, and
+     * {@code $currentDate} are not valid pipeline stages.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2308,6 +2330,9 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>Updates all matching documents using values from multiple entities,
      * with support for custom update options in bulk operations.</p>
+     *
+     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
+     * documented by {@link #updateMany(Bson, Collection)}.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2704,9 +2729,9 @@ public final class MongoCollectionMapper<T> {
     /**
      * Executes bulk write operations with custom options.
      *
-     * <p>Performs mixed write operations with fine-grained control over execution behavior,
-     * including ordering, validation bypass, and write concern. Useful for complex
-     * transactional-like operations requiring specific consistency guarantees.</p>
+     * <p>Performs mixed write operations with fine-grained control over ordering and validation
+     * bypass. Write concern is configured on the underlying collection, not on BulkWriteOptions.
+     * The batch is not a multi-document transaction.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2741,7 +2766,8 @@ public final class MongoCollectionMapper<T> {
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // Typical: match -> emits the PRE-update document (default returnDocument is BEFORE).
-     * User updatedUser = new User().setStatus("active");
+     * User updatedUser = new User();
+     * updatedUser.setStatus("active");
      * userMapper.findOneAndUpdate(Filters.eq("_id", userId), updatedUser)
      *     .subscribe(user -> System.out.println("Old status was: " + user.getStatus()));   // emits doc before update
      *
@@ -2801,6 +2827,12 @@ public final class MongoCollectionMapper<T> {
      * <p>Locates a document matching the filter and applies updates from a collection
      * of objects. This is useful when updates come from multiple sources or need to
      * be aggregated from various entities.</p>
+     *
+     * <p><b>Pipeline restrictions:</b> {@code objList} is sent as an aggregation-update pipeline.
+     * Only {@code $set}/{@code $addFields}, {@code $project}/{@code $unset}, and
+     * {@code $replaceRoot}/{@code $replaceWith} stages are permitted. A plain entity is converted
+     * to a {@code $set} stage. Classic update operators such as {@code $inc}, {@code $push}, and
+     * {@code $currentDate} are not valid pipeline stages.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2824,6 +2856,9 @@ public final class MongoCollectionMapper<T> {
      * <p>Performs atomic update using values from multiple source objects with custom
      * options for controlling the operation behavior, including upsert and return
      * document preferences.</p>
+     *
+     * <p>This overload uses the same aggregation-update pipeline and permitted-stage restrictions
+     * documented by {@link #findOneAndUpdate(Bson, Collection)}.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2848,7 +2883,8 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>Locates the first document matching the filter and replaces it entirely with the
      * provided replacement document. Unlike update operations, this completely overwrites the
-     * existing document while preserving the {@code _id} field. By default the driver returns
+     * existing document. MongoDB retains the matched document's {@code _id} when the replacement
+     * omits it; a supplied value must equal the existing {@code _id}. By default the driver returns
      * the document <i>before</i> replacement; use the {@link FindOneAndReplaceOptions}-overload
      * to request the post-replacement document.</p>
      *

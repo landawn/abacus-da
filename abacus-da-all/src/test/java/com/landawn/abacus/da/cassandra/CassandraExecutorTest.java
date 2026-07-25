@@ -1098,22 +1098,25 @@ public class CassandraExecutorTest extends TestBase {
     }
 
     @Test
-    public void test_UDTCodec_format_value_returnsJson() {
+    public void test_UDTCodec_format_value_returnsCqlLiteral() {
         UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
         Users.Name n = new Users.Name();
         n.setFirstName("a");
         n.setLastName("b");
-        String json = codec.format(n);
-        assertNotNull(json);
-        assertTrue(json.contains("a"));
-        assertTrue(json.contains("b"));
+        String literal = codec.format(n);
+        assertNotNull(literal);
+        assertTrue(literal.startsWith("{") && literal.endsWith("}"), literal);
+        assertTrue(literal.contains("a"));
+        assertTrue(literal.contains("b"));
     }
 
     @Test
-    public void test_UDTCodec_parse_json_returnsObject() {
+    public void test_UDTCodec_parse_cqlLiteral_returnsObject() {
         UDTCodec<Users.Name> codec = UDTCodec.create(lookupUDT("fullname"), Users.Name.class);
-        String json = "{\"firstName\":\"x\",\"lastName\":\"y\"}";
-        Users.Name n = codec.parse(json);
+        Users.Name source = new Users.Name();
+        source.setFirstName("x");
+        source.setLastName("y");
+        Users.Name n = codec.parse(codec.format(source));
         assertNotNull(n);
         assertEquals("x", n.getFirstName());
         assertEquals("y", n.getLastName());
