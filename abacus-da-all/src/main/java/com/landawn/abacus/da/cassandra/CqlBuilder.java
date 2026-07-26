@@ -158,6 +158,7 @@ import com.landawn.abacus.util.u.Optional;
  */
 public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
+    /** Logger shared by this builder and its nested {@code Dsl} subclasses. */
     protected static final Logger logger = LoggerFactory.getLogger(CqlBuilder.class);
 
     private static final String SPACE_USING = " USING ";
@@ -1933,7 +1934,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * String cql = PSC.insertInto(Account.class).build().query();
-         * // Output: INSERT INTO account (first_name, last_name, email) VALUES (?, ?, ?)
+         * // Output: INSERT INTO account (first_name, last_name, email, created_date) VALUES (?, ?, ?, ?)
          * }</pre>
          *
          * @param entityClass the entity class
@@ -2240,7 +2241,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *                  .from("account")
          *                  .where(Filters.eq("id", 1))
          *                  .build().query();
-         * // Output: DELETE first_name, last_name, email, status FROM account WHERE id = ?
+         * // Output: DELETE first_name, last_name, email, created_date FROM account WHERE id = ?
          * }</pre>
          *
          * @param entityClass the entity class
@@ -2265,7 +2266,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *                  .from("account")
          *                  .where(Filters.eq("id", 1))
          *                  .build().query();
-         * // Output: DELETE first_name, last_name, status FROM account WHERE id = ?
+         * // Output: DELETE first_name, last_name FROM account WHERE id = ?
          * }</pre>
          *
          * @param entityClass the entity class
@@ -2636,7 +2637,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * String cql = PSC.selectFrom(Account.class)
          *                 .where(Filters.eq("status", "active"))
          *                 .build().query();
-         * // Output: SELECT id AS "id", first_name AS "firstName", last_name AS "lastName", email AS "email" FROM account WHERE status = ?
+         * // Output: SELECT id AS "id", first_name AS "firstName", last_name AS "lastName", email AS "email", created_date AS "createdDate" FROM account WHERE status = ?
          * }</pre>
          *
          * @param entityClass the entity class

@@ -1527,10 +1527,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *     N.asMap("userId", UUID.fromString("123e4567-e89b-12d3-a456-426614174000"),
      *             "status", "pending"));
      *
-     * // Complex query with multiple named parameters
+     * // Complex query with multiple named parameters. Driver 3.x binds a CQL 'date'
+     * // column to com.datastax.driver.core.LocalDate, which has no now()/minusDays():
+     * // build the bounds from epoch milliseconds instead.
+     * long today = System.currentTimeMillis();
      * Map<String, Object> searchParams = new HashMap<>();
-     * searchParams.put("startDate", LocalDate.now().minusDays(30));
-     * searchParams.put("endDate", LocalDate.now());
+     * searchParams.put("startDate", LocalDate.fromMillisSinceEpoch(today - 30L * 24 * 60 * 60 * 1000));
+     * searchParams.put("endDate", LocalDate.fromMillisSinceEpoch(today));
      * searchParams.put("status", "completed");
      *
      * ResultSet recentOrders = executor.execute(

@@ -1820,6 +1820,19 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         return configStatement(stmt);
     }
 
+    /**
+     * Applies this executor's {@code StatementSettings} to the supplied statement and returns the
+     * configured statement.
+     *
+     * <p>Only settings that were explicitly supplied are applied; each unset setting leaves the
+     * driver default in place. Because driver 4.x statements are immutable, every {@code setXxx}
+     * returns a new instance — hence the result must be used in place of the argument rather than
+     * relying on mutation.</p>
+     *
+     * @param <T> the concrete driver statement type
+     * @param stmt the statement to configure
+     * @return the configured statement, which may be a different instance than {@code stmt}
+     */
     protected <T extends Statement<T>> T configStatement(T stmt) {
         if (settings != null) {
             if (settings.consistency() != null) {
@@ -1872,6 +1885,19 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         };
     }
 
+    /**
+     * Adapts a {@code (ColumnDefinitions, Row)} mapper to a plain {@code Function<Row, T>} by
+     * caching the column definitions from the first row it sees and reusing them for every
+     * subsequent row.
+     *
+     * <p>The returned function is stateful and therefore <b>not</b> thread-safe; create one per
+     * result-set traversal. It is safe to reuse across the rows of a single result set because all
+     * rows of one result set share the same column definitions.</p>
+     *
+     * @param <T> the mapped result type
+     * @param rowMapper the mapper invoked with the result set's column definitions and each row
+     * @return a row-only function that supplies the column definitions on the mapper's behalf
+     */
     protected <T> Function<Row, T> createRowMapper(final BiFunction<ColumnDefinitions, Row, T> rowMapper) {
         return new Function<>() {
             private ColumnDefinitions cds = null;
@@ -2308,12 +2334,34 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
             return cqlType;
         }
 
+        /**
+         * Creates an empty {@link UdtValue} for this codec's user-defined type, with every field
+         * unset. Subclasses call this from {@link #serialize(Object)} to obtain the container they
+         * populate.
+         *
+         * @return a new, empty {@code UdtValue} of this codec's CQL type
+         */
         protected UdtValue newUDTValue() {
             return cqlType.newValue();
         }
 
+        /**
+         * Converts a Java value into its Cassandra UDT representation. Implementations typically
+         * start from {@link #newUDTValue()} and set one field per Java property.
+         *
+         * @param value the Java value to convert; never {@code null} (null handling is applied by
+         *        the caller before this method is reached)
+         * @return the equivalent {@code UdtValue}
+         */
         protected abstract UdtValue serialize(T value);
 
+        /**
+         * Converts a Cassandra UDT value back into its Java representation — the inverse of
+         * {@link #serialize(Object)}.
+         *
+         * @param value the {@code UdtValue} read from Cassandra; never {@code null}
+         * @return the equivalent Java value
+         */
         protected abstract T deserialize(UdtValue value);
     }
 

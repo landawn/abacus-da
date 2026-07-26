@@ -175,37 +175,92 @@ import com.landawn.abacus.util.stream.Stream;
  */
 public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS, BT> {
 
+    /**
+     * The CQL literal {@code "NULL"}, used as the textual stand-in for a {@code null} UDT value
+     * when a user-defined type is formatted to, or parsed from, its CQL string form.
+     *
+     * @see com.landawn.abacus.da.cassandra.CassandraExecutor.UDTCodec
+     */
     protected static final String NULL_STR = "NULL";
 
+    /**
+     * The single-element select list {@code [count(*)]} used to build the {@code SELECT} issued by
+     * the {@code count(...)} family, so a count never materializes entity columns.
+     *
+     * @see CqlBuilder#COUNT_ALL
+     */
     protected static final ImmutableList<String> COUNT_SELECT_PROP_NAMES = ImmutableList.of(CqlBuilder.COUNT_ALL);
 
+    /**
+     * Maximum CQL text length, in characters, that is eligible for the {@code PreparedStatement}
+     * cache. Longer statements are prepared on every call rather than retained, which bounds the
+     * cache's memory footprint.
+     */
     protected static final int POOLABLE_LENGTH = 1024;
 
+    /**
+     * Adapts a single-value {@code Nullable<Boolean>} result to {@link OptionalBoolean}, unboxing a
+     * present value and mapping an absent one to {@link OptionalBoolean#empty()}. Used by the
+     * {@code queryForBoolean} family.
+     */
     protected static final Throwables.Function<Nullable<Boolean>, OptionalBoolean, RuntimeException> boolean_mapper = t -> t
             .mapToBoolean(ToBooleanFunction.UNBOX);
 
+    /** {@link #boolean_mapper} counterpart for {@code char}; used by the {@code queryForChar} family. */
     protected static final Throwables.Function<Nullable<Character>, OptionalChar, RuntimeException> char_mapper = t -> t.mapToChar(ToCharFunction.UNBOX);
 
+    /** {@link #boolean_mapper} counterpart for {@code byte}; used by the {@code queryForByte} family. */
     protected static final Throwables.Function<Nullable<Byte>, OptionalByte, RuntimeException> byte_mapper = t -> t.mapToByte(ToByteFunction.UNBOX);
 
+    /** {@link #boolean_mapper} counterpart for {@code short}; used by the {@code queryForShort} family. */
     protected static final Throwables.Function<Nullable<Short>, OptionalShort, RuntimeException> short_mapper = t -> t.mapToShort(ToShortFunction.UNBOX);
 
+    /** {@link #boolean_mapper} counterpart for {@code int}; used by the {@code queryForInt} family. */
     protected static final Throwables.Function<Nullable<Integer>, OptionalInt, RuntimeException> int_mapper = t -> t.mapToInt(ToIntFunction.UNBOX);
 
+    /** {@link #boolean_mapper} counterpart for {@code long}; used by the {@code queryForLong} family. */
     protected static final Throwables.Function<Nullable<Long>, OptionalLong, RuntimeException> long_mapper = t -> t.mapToLong(ToLongFunction.UNBOX);
 
+    /**
+     * Maps a single-value {@code Nullable<Long>} result to a plain {@code Long}, substituting
+     * {@code 0} when the value is absent. Used by the {@code count(...)} family, where "no row"
+     * and "zero rows counted" are the same answer — unlike {@link #long_mapper}, which preserves
+     * absence.
+     */
     protected static final Throwables.Function<Nullable<Long>, Long, RuntimeException> long_secondMapper = t -> t.mapToLong(ToLongFunction.UNBOX).orElse(0);
 
+    /** {@link #boolean_mapper} counterpart for {@code float}; used by the {@code queryForFloat} family. */
     protected static final Throwables.Function<Nullable<Float>, OptionalFloat, RuntimeException> float_mapper = t -> t.mapToFloat(ToFloatFunction.UNBOX);
 
+    /** {@link #boolean_mapper} counterpart for {@code double}; used by the {@code queryForDouble} family. */
     protected static final Throwables.Function<Nullable<Double>, OptionalDouble, RuntimeException> double_mapper = t -> t.mapToDouble(ToDoubleFunction.UNBOX);
 
+    /**
+     * Reports whether a driver result set yielded at least one row, by advancing its iterator once.
+     * Used by the {@code exists(...)} family.
+     */
     protected static final Throwables.Function<Iterable<?>, Boolean, RuntimeException> exists_mapper = resultSet -> resultSet.iterator().hasNext();
 
+    /**
+     * Process-wide cache of entity class to its primary-key property names, held both as an ordered
+     * {@link ImmutableList} (for building CQL) and as an {@link ImmutableSet} (for membership
+     * tests). Populated on first use per class, or eagerly by {@code registerKeys(...)}. Backed by
+     * a {@link ConcurrentHashMap}, so it is safe for concurrent access.
+     */
     protected static final Map<Class<?>, Tuple2<ImmutableList<String>, ImmutableSet<String>>> entityKeyNamesMap = new ConcurrentHashMap<>();
 
+    /**
+     * The optional registry of named CQL fragments consulted first when a query string is resolved,
+     * or {@code null} when named-CQL lookup is disabled for this executor. Set once at construction.
+     *
+     * @see #parseCql(String)
+     */
     protected final CqlMapper cqlMapper;
 
+    /**
+     * The policy that converts entity property names to CQL column names for this executor. Set
+     * once at construction; never {@code null} (the constructor substitutes the snake-case default).
+     */
     protected final NamingPolicy namingPolicy;
 
     /**
