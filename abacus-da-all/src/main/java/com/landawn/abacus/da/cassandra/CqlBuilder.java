@@ -1992,7 +1992,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * @param propsList collection of entities or property maps to insert
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if {@code propsList} is null or empty, or when a row is empty or exposes
-         *         a different set of property names (detected when {@link CqlBuilder#into(String)} is called)
+         *         a different set of property names (validated eagerly from the supplied rows)
          */
         @Beta
         public CqlBuilder batchInsert(final Collection<?> propsList) {
@@ -2291,7 +2291,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *
          * <p>This method starts building a DELETE statement. Typically followed by WHERE conditions
          * to specify which rows to delete. Property names in WHERE conditions are converted per the
-         * DSL's naming policy (snake_case in the PSC examples shown) if an entity class is associated.</p>
+         * DSL's naming policy (snake_case in the PSC examples shown).</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code

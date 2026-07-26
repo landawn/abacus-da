@@ -2547,8 +2547,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * <p>Any {@code null} field is left at the driver's default and not applied to the statement.
      * This class uses Lombok annotations ({@code @Builder}, {@code @Data},
-     * {@code @Accessors(fluent = true)}) to provide a fluent builder, fluent accessors, and the
-     * default and all-arguments constructors below.</p>
+     * {@code @Accessors(fluent = true)}) to provide a fluent builder and fluent accessors; the
+     * default and all-arguments constructors are declared below.</p>
      */
     @Builder
     @Data

@@ -2144,7 +2144,7 @@ public class BigQueryExecutor {
      * @param query the SQL query string with ? parameter placeholders
      * @param parameters the parameter values to bind to the query
      * @return a Dataset containing query results in columnar format
-     * @throws NullPointerException if query is null
+     * @throws IllegalArgumentException if query is null or empty (rejected by the BigQuery client layer)
      * @throws IllegalArgumentException if any positional parameter value is null (BigQuery requires
      *         null parameters to be typed; pass a typed {@code QueryParameterValue} instead)
      * @see #execute(String, Object...)
@@ -2264,7 +2264,7 @@ public class BigQueryExecutor {
      * @param query the SQL query string with ? parameter placeholders
      * @param parameters the parameter values to bind to the query
      * @return a List containing all query results converted to the target type, empty list if no results
-     * @throws NullPointerException if query is null
+     * @throws IllegalArgumentException if query is null or empty (rejected by the BigQuery client layer)
      * @throws IllegalArgumentException if any positional parameter value is null (BigQuery requires
      *         null parameters to be typed; pass a typed {@code QueryParameterValue} instead)
      * @see #execute(String, Object...)
@@ -2388,7 +2388,7 @@ public class BigQueryExecutor {
      * @param query the SQL query string with ? parameter placeholders
      * @param parameters the parameter values to bind to the query
      * @return a Stream containing all query results converted to the target type
-     * @throws NullPointerException if query is null
+     * @throws IllegalArgumentException if query is null or empty (rejected by the BigQuery client layer)
      * @throws IllegalArgumentException if any positional parameter value is null (BigQuery requires
      *         null parameters to be typed; pass a typed {@code QueryParameterValue} instead)
      * @see #execute(String, Object...)
@@ -2559,7 +2559,7 @@ public class BigQueryExecutor {
      * @return the {@link TableResult} returned by BigQuery; for SELECT statements this contains the
      *         rows, for DML the affected-row count via {@link TableResult#getTotalRows()}, for DDL
      *         a result with no schema
-     * @throws NullPointerException if {@code query} is null
+     * @throws IllegalArgumentException if {@code query} is null or empty (rejected by the BigQuery client layer)
      * @throws IllegalArgumentException if any positional parameter value is null (BigQuery requires
      *         null parameters to be typed; pass a typed {@code QueryParameterValue} instead)
      * @throws RuntimeException if the underlying BigQuery call throws {@link JobException} or the

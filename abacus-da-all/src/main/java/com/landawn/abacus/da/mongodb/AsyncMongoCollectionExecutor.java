@@ -1511,7 +1511,6 @@ public final class AsyncMongoCollectionExecutor {
      *         holding the typed Date value (possibly {@code null} for missing/null fields) when at
      *         least one document matches; {@code Nullable.empty()} when no document matches
      * @throws IllegalArgumentException if filter is null, or if propName is null or empty, or if valueType is null (propagated through future)
-     * @throws ClassCastException if the value cannot be cast to the specified type (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #queryForDate(String, Bson)
      * @see MongoCollectionExecutor#queryForDate(String, Bson, Class)
@@ -3794,7 +3793,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param mapFunction the JavaScript map function
      * @param reduceFunction the JavaScript reduce function
      * @return a ContinuableFuture that completes with a Stream of result Documents
-     * @throws IllegalArgumentException if mapFunction or reduceFunction is null (propagated through future)
+     * @throws IllegalArgumentException if either function is null or empty (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #aggregate(List)
      */
@@ -3822,7 +3821,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param reduceFunction the JavaScript reduce function
      * @param rowType the class to deserialize the result documents into
      * @return a ContinuableFuture that completes with a Stream of result objects
-     * @throws IllegalArgumentException if any parameter is null (propagated through future)
+     * @throws IllegalArgumentException if either function is null or empty, or rowType is null (propagated through future)
      * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see #aggregate(List, Class)
      */

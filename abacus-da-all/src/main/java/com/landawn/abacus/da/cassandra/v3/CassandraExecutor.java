@@ -1573,8 +1573,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *     "INSERT INTO users (id, name, email) VALUES (?, ?, ?)");
      *
      * BoundStatement boundStatement = preparedStatement
-     *     .bind(UUID.randomUUID(), "John Doe", "john@example.com")
-     *     .setConsistencyLevel(ConsistencyLevel.QUORUM)
+     *     .bind(UUID.randomUUID(), "John Doe", "john@example.com");
+     * boundStatement.setConsistencyLevel(ConsistencyLevel.QUORUM)
      *     .setReadTimeoutMillis(10000);
      *
      * ResultSet result = executor.execute(boundStatement);

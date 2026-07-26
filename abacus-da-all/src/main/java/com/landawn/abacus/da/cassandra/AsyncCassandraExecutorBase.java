@@ -2800,8 +2800,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * params.put("id", 1L);
      * RS rs = async.execute("SELECT * FROM users WHERE id = :id", params).get();
      *
-     * // Typical: an empty parameter map for a statement that has no placeholders.
-     * async.execute("SELECT * FROM users", new HashMap<String, Object>()).get(); // returns the result set
+     * // Edge: even an empty parameter map counts as one argument for a parameterless
+     * // statement and is rejected during the synchronous preparation.
+     * async.execute("SELECT * FROM users", new HashMap<String, Object>()); // throws IllegalArgumentException synchronously
      *
      * // Edge: the statement is prepared and bound synchronously before the async call is issued,
      * // so a missing named parameter throws directly from the call site (no future is created).

@@ -845,7 +845,16 @@ public final class AnyPut extends AnyMutation<AnyPut> {
 
         final BeanInfo entityInfo = ParserUtil.getBeanInfo(entity.getClass());
 
-        return create(entity, namingPolicy, entityInfo, N.map(selectPropNames, propName -> N.checkArgNotNull(entityInfo.getPropInfo(propName))));
+        return create(entity, namingPolicy, entityInfo, N.map(selectPropNames, propName -> {
+            final PropInfo propInfo = entityInfo.getPropInfo(propName);
+
+            if (propInfo == null) {
+                throw new IllegalArgumentException(
+                        "The specified class: " + ClassUtil.getCanonicalClassName(entity.getClass()) + " doesn't have the specified property: " + propName);
+            }
+
+            return propInfo;
+        }));
     }
 
     /**

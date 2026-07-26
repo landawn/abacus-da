@@ -2549,7 +2549,7 @@ public final class MongoCollectionMapper<T> {
      * <pre>{@code
      * Bson filter = Filters.eq("username", "JohnDoe");
      * DeleteOptions options = new DeleteOptions().collation(
-     *     Collation.builder().locale("en").strength(2).build()
+     *     Collation.builder().locale("en").collationStrength(CollationStrength.SECONDARY).build()
      * );
      * Mono<DeleteResult> result = userMapper.deleteOne(filter, options);
      * }</pre>

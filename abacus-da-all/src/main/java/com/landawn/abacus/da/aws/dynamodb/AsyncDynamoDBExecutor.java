@@ -935,7 +935,7 @@ public final class AsyncDynamoDBExecutor {
      * // Typical: handle success or a failed conditional check on a callback
      * future.thenRunAsync((result, ex) -> {
      *         if (ex != null) {
-     *             if (ex.getCause() instanceof ConditionalCheckFailedException) {
+     *             if (ex instanceof ConditionalCheckFailedException) {
      *                 System.err.println("User already exists");
      *             }
      *             return;
@@ -1296,7 +1296,7 @@ public final class AsyncDynamoDBExecutor {
      * // Typical: handle success or a failed conditional check on a callback
      * future.thenRunAsync((result, ex) -> {
      *         if (ex != null) {
-     *             if (ex.getCause() instanceof ConditionalCheckFailedException) {
+     *             if (ex instanceof ConditionalCheckFailedException) {
      *                 System.err.println("Item doesn't exist for update");
      *             }
      *             return;
@@ -1452,7 +1452,7 @@ public final class AsyncDynamoDBExecutor {
      * // Typical: handle success or a failed conditional check on a callback
      * future.thenRunAsync((result, ex) -> {
      *         if (ex != null) {
-     *             if (ex.getCause() instanceof ConditionalCheckFailedException) {
+     *             if (ex instanceof ConditionalCheckFailedException) {
      *                 System.err.println("Cannot delete - user is not inactive");
      *             }
      *             return;

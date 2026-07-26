@@ -81,7 +81,7 @@ import com.landawn.abacus.util.stream.Stream;
  *
  * <h2>Contract Honored By Subclasses</h2>
  * <ul>
- * <li><strong>Preferred statement cache:</strong> subclasses are expected to cache the
+ * <li><strong>Prepared statement cache:</strong> subclasses are expected to cache the
  *     {@code PreparedStatement} returned by their {@link #prepare(String)} implementation so that
  *     repeated calls with the same CQL string reuse a single prepared statement.</li>
  * <li><strong>ParsedCql cache:</strong> {@link #parseCql(String)} consults the optional

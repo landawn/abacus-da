@@ -684,6 +684,7 @@ public final class DynamoDBExecutor {
      * @return an item containing the attributes as {@code AttributeValue} objects, never null
      * @throws NullPointerException if {@code a} is {@code null}
      * @throws IllegalArgumentException if the array length is odd
+     * @throws ClassCastException if an even-indexed argument is not a String
      */
     public static Map<String, AttributeValue> asItem(final Object... a) {
         if ((a.length % 2) != 0) {
@@ -802,6 +803,7 @@ public final class DynamoDBExecutor {
      * @return an item containing the attributes as {@code AttributeValueUpdate} objects, never null
      * @throws NullPointerException if {@code a} is {@code null}
      * @throws IllegalArgumentException if the array length is odd
+     * @throws ClassCastException if an even-indexed argument is not a String
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final Object... a) {
         if ((a.length % 2) != 0) {

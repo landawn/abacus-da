@@ -1087,7 +1087,8 @@ public final class MongoCollectionExecutor {
 
         // Same short-circuit as the sync executor (MongoDBBase.toList / sync stream): when the caller asks
         // for Document/Map/Object, return the raw documents untouched instead of rebuilding them through
-        // readRow (which would throw "Unsupported target type" for Object.class).
+        // readRow (which rejects a multi-field document for Object.class and would silently extract a
+        // single field from a single-field one).
         if (rowType.isAssignableFrom(Document.class)) {
             return (Flux<T>) query(selectPropNames, filter, sort, offset, count);
         }
