@@ -175,6 +175,11 @@ public final class DynamoDBExecutor {
         N.registerConverter(AttributeValue.class, converter);
     }
 
+    /**
+     * Shared, library-default {@link AsyncExecutor} used for asynchronous operations by all executors
+     * constructed without an explicit {@code AsyncExecutor}. It is a single static, CPU-sized thread
+     * pool (core threads = max(64, CPU_CORES * 8), max threads = max(128, CPU_CORES * 16)).
+     */
     static final AsyncExecutor DEFAULT_ASYNC_EXECUTOR = new AsyncExecutor(//
             N.max(64, IOUtil.CPU_CORES * 8), // coreThreadPoolSize
             N.max(128, IOUtil.CPU_CORES * 16), // maxThreadPoolSize
@@ -1217,10 +1222,25 @@ public final class DynamoDBExecutor {
         return attrs;
     }
 
+    /**
+     * Converts a collection of Java objects (entities or maps) into a list of DynamoDB item maps
+     * using the default {@link NamingPolicy#CAMEL_CASE} naming policy.
+     *
+     * @param entities the entities, maps, or {@code Object[]} property pairs to convert
+     * @return a list of item maps in iteration order; never {@code null}
+     */
     static List<Map<String, AttributeValue>> toItem(final Collection<?> entities) {
         return toItem(entities, NamingPolicy.CAMEL_CASE);
     }
 
+    /**
+     * Converts a collection of Java objects (entities or maps) into a list of DynamoDB item maps
+     * using the supplied naming policy.
+     *
+     * @param entities the entities, maps, or {@code Object[]} property pairs to convert
+     * @param namingPolicy naming policy applied to attribute names
+     * @return a list of item maps in iteration order; never {@code null}
+     */
     static List<Map<String, AttributeValue>> toItem(final Collection<?> entities, final NamingPolicy namingPolicy) {
         final List<Map<String, AttributeValue>> attrsList = new ArrayList<>(entities.size());
 
@@ -1231,10 +1251,27 @@ public final class DynamoDBExecutor {
         return attrsList;
     }
 
+    /**
+     * Converts a collection of Java objects (entities or maps) into a list of DynamoDB update-item maps
+     * (each value wrapped in an {@link AttributeValueUpdate} with PUT action) using the default
+     * {@link NamingPolicy#CAMEL_CASE} naming policy.
+     *
+     * @param entities the entities, maps, or {@code Object[]} property pairs to convert
+     * @return a list of update-item maps in iteration order; never {@code null}
+     */
     static List<Map<String, AttributeValueUpdate>> toUpdateItem(final Collection<?> entities) {
         return toUpdateItem(entities, NamingPolicy.CAMEL_CASE);
     }
 
+    /**
+     * Converts a collection of Java objects (entities or maps) into a list of DynamoDB update-item maps
+     * (each value wrapped in an {@link AttributeValueUpdate} with PUT action) using the supplied
+     * naming policy.
+     *
+     * @param entities the entities, maps, or {@code Object[]} property pairs to convert
+     * @param namingPolicy naming policy applied to attribute names
+     * @return a list of update-item maps in iteration order; never {@code null}
+     */
     static List<Map<String, AttributeValueUpdate>> toUpdateItem(final Collection<?> entities, final NamingPolicy namingPolicy) {
         final List<Map<String, AttributeValueUpdate>> attrsList = new ArrayList<>(entities.size());
 
@@ -1522,10 +1559,36 @@ public final class DynamoDBExecutor {
         }
     }
 
+    /**
+     * Converts an {@link AttributeValue} to its natural Java value.
+     *
+     * <p>This method extracts the value from the {@code AttributeValue} based on its underlying DynamoDB type
+     * (S, N, BOOL, B, SS, NS, BS, L, or M) without applying any explicit target type conversion.
+     * If the {@code AttributeValue} is {@code null} or represents a NULL value, it returns {@code null}.</p>
+     *
+     * @param x the {@code AttributeValue} to convert, can be {@code null}
+     * @return the converted value, or {@code null} if {@code x} is {@code null} or represents a NULL value
+     * @throws IllegalArgumentException if the attribute type is not supported
+     */
     static Object toValue(final AttributeValue x) {
         return toValue(x, null);
     }
 
+    /**
+     * Converts an {@link AttributeValue} to a Java value of the specified type.
+     *
+     * <p>This method extracts the value from the {@code AttributeValue} based on its underlying DynamoDB type
+     * and, if {@code targetClass} is provided and not already assignable, converts it to that class.
+     * If the {@code AttributeValue} is {@code null} or represents a NULL value, it returns {@code null} when
+     * {@code targetClass} is {@code null}, otherwise the default value for {@code targetClass}.</p>
+     *
+     * @param <T> the type of the value to convert to
+     * @param x the {@code AttributeValue} to convert, can be {@code null}
+     * @param targetClass the class of the target value, can be {@code null}
+     * @return the converted value, or {@code null}/default value for {@code targetClass} if {@code x} is
+     *         {@code null} or represents a NULL value
+     * @throws IllegalArgumentException if the attribute type is not supported
+     */
     static <T> T toValue(final AttributeValue x, final Class<T> targetClass) {
         if (x == null || (x.getNULL() != null && x.isNULL())) {
             return targetClass == null ? null : N.defaultValueOf(targetClass);
@@ -1595,12 +1658,13 @@ public final class DynamoDBExecutor {
     }
 
     /**
-     * Converts a map of table items (from batch operations) to entity classes.
+     * Converts a map of table items (from batch operations) to entities of the specified type.
      * This method is typically used internally to process batch get results.
      *
      * @param <T> the target entity type
      * @param tableItems map of table names to lists of items (AttributeValue maps)
-     * @param targetClass entity classes with getter/setter methods or basic single value type (Primitive/String/Date...)
+     * @param targetClass entity class with getter/setter methods, a {@code Map} class, an object array
+     *                    class, a {@code Collection} class, or a single-value type for single-column rows
      * @return map of table names to lists of converted entities
      */
     static <T> Map<String, List<T>> toEntities(final Map<String, List<Map<String, AttributeValue>>> tableItems, final Class<T> targetClass) {
@@ -1657,7 +1721,8 @@ public final class DynamoDBExecutor {
      * @param queryResult the QueryResult from a DynamoDB query operation; may be {@code null}
      * @param offset number of items to skip from the beginning
      * @param count maximum number of items to return
-     * @param targetClass entity classes with getter/setter methods or basic single value type (Primitive/String/Date...)
+     * @param targetClass entity class with getter/setter methods, a {@code Map} class, an object array
+     *                    class, a {@code Collection} class, or a single-value type for single-column rows
      * @return list of converted entities within the specified range
      * @throws IllegalArgumentException if offset or count is negative
      */
@@ -1713,7 +1778,8 @@ public final class DynamoDBExecutor {
      * @param scanResult the ScanResult from a DynamoDB scan operation; may be {@code null}
      * @param offset number of items to skip from the beginning
      * @param count maximum number of items to return
-     * @param targetClass entity classes with getter/setter methods or basic single value type (Primitive/String/Date...)
+     * @param targetClass entity class with getter/setter methods, a {@code Map} class, an object array
+     *                    class, a {@code Collection} class, or a single-value type for single-column rows
      * @return list of converted entities within the specified range
      * @throws IllegalArgumentException if offset or count is negative
      */
@@ -1728,28 +1794,29 @@ public final class DynamoDBExecutor {
     }
 
     /**
-     * Converts a list of DynamoDB items to entities.
-     * Internal method for converting raw item lists.
+     * Converts a list of DynamoDB items to a list of values of the specified type.
      *
      * @param <T> the target entity type
      * @param items list of DynamoDB items as AttributeValue maps
-     * @param targetClass entity classes with getter/setter methods or basic single value type (Primitive/String/Date...)
-     * @return list of converted entities
+     * @param targetClass entity class with getter/setter methods, a {@code Map} class, an object array
+     *                    class, a {@code Collection} class, or a single-value type for single-column rows
+     * @return list of converted values
      */
     static <T> List<T> toList(final List<Map<String, AttributeValue>> items, final Class<T> targetClass) {
         return toList(items, 0, Integer.MAX_VALUE, targetClass);
     }
 
     /**
-     * Converts a list of DynamoDB items to entities with pagination.
-     * Internal method for converting raw item lists with offset and count.
+     * Converts a list of DynamoDB items to a list of values of the specified type,
+     * with offset and count limits.
      *
      * @param <T> the target entity type
      * @param items list of DynamoDB items as AttributeValue maps
      * @param offset number of items to skip
      * @param count maximum number of items to convert
-     * @param targetClass entity classes with getter/setter methods or basic single value type (Primitive/String/Date...)
-     * @return list of converted entities within the specified range
+     * @param targetClass entity class with getter/setter methods, a {@code Map} class, an object array
+     *                    class, a {@code Collection} class, or a single-value type for single-column rows
+     * @return list of converted values within the specified range
      */
     static <T> List<T> toList(final List<Map<String, AttributeValue>> items, final int offset, int count, final Class<T> targetClass) {
         N.checkArgument(offset >= 0 && count >= 0, "'offset' and 'count' can't be negative: %s, %s", offset, count);
@@ -2378,12 +2445,42 @@ public final class DynamoDBExecutor {
         return dynamoDBClient.putItem(putItemRequest);
     }
 
+    /**
+     * Package-private overload that converts the supplied entity to a DynamoDB item via
+     * {@link #toItem(Object)} and performs a {@code PutItem}.
+     *
+     * <p>This is intentionally not exposed publicly because the {@code Object} parameter would clash
+     * with {@link #putItem(String, Map)} and create overload-resolution ambiguity for callers
+     * passing a {@code Map}-typed entity. Public callers should serialize their entity via
+     * {@link #toItem(Object)} and use {@link #putItem(String, Map)}, or go through {@link Mapper}.</p>
+     *
+     * @param tableName the name of the DynamoDB table to put the item into; must not be null
+     * @param entity the entity to put; a bean with getter/setter methods, a {@code Map}, or an
+     *               {@code Object[]} of alternating name/value pairs; must not be null
+     * @return the {@link PutItemResult} from the PutItem operation, containing metadata about the operation
+     */
     // There isn't much benefit to adding a method for "Object entity",
     // and it may cause errors because "Object" is ambiguous with any type.
     PutItemResult putItem(final String tableName, final Object entity) {
         return putItem(tableName, toItem(entity));
     }
 
+    /**
+     * Package-private overload that converts the supplied entity to a DynamoDB item via
+     * {@link #toItem(Object)}, performs a {@code PutItem}, and applies {@code returnValues}.
+     *
+     * <p>This is intentionally not exposed publicly for the same reason as
+     * {@link #putItem(String, Object)} — the {@code Object} parameter would clash with the
+     * {@code Map}-accepting public entry point. For DynamoDB {@code PutItem} the only valid
+     * {@code returnValues} are {@code "NONE"} (default) and {@code "ALL_OLD"}; the {@code UPDATED_*}
+     * and {@code ALL_NEW} forms apply to {@code UpdateItem}.</p>
+     *
+     * @param tableName the name of the DynamoDB table to put the item into; must not be null
+     * @param entity the entity to put; a bean with getter/setter methods, a {@code Map}, or an
+     *               {@code Object[]} of alternating name/value pairs; must not be null
+     * @param returnValues {@code "NONE"} (default) or {@code "ALL_OLD"} to retrieve the previous item
+     * @return the {@link PutItemResult} from the PutItem operation, containing metadata and optionally the old item
+     */
     PutItemResult putItem(final String tableName, final Object entity, final String returnValues) {
         return putItem(tableName, toItem(entity), returnValues);
     }
@@ -2717,6 +2814,7 @@ public final class DynamoDBExecutor {
      * @param queryRequest the query parameters. Must not be {@code null}.
      * @return the query items materialized according to the pagination behavior of
      *         {@link #list(QueryRequest, Class)}, never {@code null}
+     * @throws NullPointerException if queryRequest is null
      */
     public List<Map<String, Object>> list(final QueryRequest queryRequest) {
         return list(queryRequest, Clazz.PROPS_MAP);
@@ -2756,6 +2854,8 @@ public final class DynamoDBExecutor {
      * @param targetClass the class to convert retrieved items to. Must not be {@code null}.
      * @return a list of converted items aggregated across all pages (when pagination is auto-driven),
      *         never {@code null}; empty when the query matches nothing
+     * @throws NullPointerException if queryRequest is null
+     * @throws IllegalArgumentException if targetClass is null
      */
     public <T> List<T> list(final QueryRequest queryRequest, final Class<T> targetClass) {
         final QueryResult queryResult = dynamoDBClient.query(queryRequest);
@@ -4712,6 +4812,14 @@ public final class DynamoDBExecutor {
             return result;
         }
 
+        /**
+         * Adds an IN condition for the specified attribute to the supplied output map.
+         *
+         * @param output the map to add the condition to; must not be {@code null}
+         * @param attrName the name of the attribute to check; must not be empty
+         * @param attrValues variable number of values to match against; must not be null or empty
+         * @throws IllegalArgumentException if {@code attrName} or {@code attrValues} is null or empty
+         */
         static void in(final Map<String, Condition> output, final String attrName, final Object... attrValues) {
             N.checkArgNotEmpty(attrName, "attrName");
             N.checkArgNotEmpty(attrValues, "attrValues");
@@ -4727,6 +4835,14 @@ public final class DynamoDBExecutor {
             output.put(attrName, cond);
         }
 
+        /**
+         * Adds an IN condition for the specified attribute to the supplied output map.
+         *
+         * @param output the map to add the condition to; must not be {@code null}
+         * @param attrName the name of the attribute to check; must not be empty
+         * @param attrValues collection of values to match against; must not be null or empty
+         * @throws IllegalArgumentException if {@code attrName} or {@code attrValues} is null or empty
+         */
         static void in(final Map<String, Condition> output, final String attrName, final Collection<?> attrValues) {
             N.checkArgNotEmpty(attrName, "attrName");
             N.checkArgNotEmpty(attrValues, "attrValues");
@@ -4785,6 +4901,11 @@ public final class DynamoDBExecutor {
     public static final class ConditionBuilder {
         private Map<String, Condition> condMap;
 
+        /**
+         * Constructs a new ConditionBuilder instance.
+         *
+         * <p>Initializes an empty condition map that will be populated through the builder methods.</p>
+         */
         ConditionBuilder() {
             condMap = new HashMap<>();
         }

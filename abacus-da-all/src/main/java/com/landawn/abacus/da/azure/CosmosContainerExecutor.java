@@ -157,7 +157,7 @@ import com.landawn.abacus.util.stream.Stream;
  * </ul>
  *
  * <h3>Request Units (RU) Management</h3>
- * <p>All operations return response objects that include RU consumption information, enabling cost monitoring
+ * <p>Most operations return response objects that include RU consumption information, enabling cost monitoring
  * and optimization. The executor supports request options for fine-tuning performance characteristics.</p>
  *
  * <h3>Thread Safety</h3>
@@ -677,7 +677,7 @@ public class CosmosContainerExecutor {
      * Performs partial updates on an item using patch operations with additional options.
      *
      * <p>Extended patch operation that allows specification of additional options such as
-     * consistency level, conditional patch based on etag, or custom request options.
+     * consistency level, conditional patch based on ETag, or custom request options.
      * This provides full control over the patch operation behavior and enables advanced
      * scenarios like optimistic concurrency control.</p>
      *
@@ -860,7 +860,7 @@ public class CosmosContainerExecutor {
      *
      * <p>This is the absence-tolerant counterpart to {@link #readItem(String, PartitionKey, Class)}: instead of
      * letting a {@link CosmosException} with a {@code 404 Not Found} status propagate when the document is missing,
-     * this method returns {@link Optional#empty()}. All other failures (throttling, ETag conflicts, connectivity, etc.)
+     * this method returns {@link Optional#empty()}. All other failures (throttling, connectivity, etc.)
      * still propagate as a {@code CosmosException}. Like {@code readItem}, this is executed as an efficient point read
      * (typically 1 RU for items up to 1KB).</p>
      *
@@ -943,7 +943,7 @@ public class CosmosContainerExecutor {
      * <p>This is the null-returning sibling of {@link #get(String, PartitionKey, Class)} (the abacus
      * {@code get}/{@code gett} pairing used across the library's executors): a {@link CosmosException}
      * with a {@code 404 Not Found} status is translated into a {@code null} return rather than
-     * propagated. All other failures (throttling, ETag conflicts, connectivity, etc.) still propagate
+     * propagated. All other failures (throttling, connectivity, etc.) still propagate
      * as a {@code CosmosException}. Like {@code readItem}, this is executed as an efficient point read
      * (typically 1 RU for items up to 1KB).</p>
      *

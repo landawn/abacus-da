@@ -366,6 +366,7 @@ public final class MongoDB extends MongoDBBase {
      * @param rowType the Class object representing the entity type
      * @return a reactive MongoCollectionMapper for the specified entity type
      * @throws IllegalArgumentException if rowType is null
+     * @see MongoCollectionMapper
      * @see org.reactivestreams.Publisher
      */
     public <T> MongoCollectionMapper<T> collectionMapper(final Class<T> rowType) {
@@ -408,6 +409,7 @@ public final class MongoDB extends MongoDBBase {
      * @param rowType the Class representing the entity type
      * @return a reactive MongoCollectionMapper configured for the specified type and collection
      * @throws IllegalArgumentException if collectionName or rowType is null
+     * @see MongoCollectionMapper
      * @see org.reactivestreams.Publisher
      * @see #collectionMapper(Class)
      */
@@ -454,6 +456,7 @@ public final class MongoDB extends MongoDBBase {
      * @param rowType the Class representing the entity type for mapping
      * @return a reactive MongoCollectionMapper for the provided collection and type
      * @throws IllegalArgumentException if collection or rowType is null
+     * @see MongoCollectionMapper
      * @see com.mongodb.reactivestreams.client.MongoCollection
      */
     @SuppressWarnings("rawtypes")
@@ -477,6 +480,7 @@ public final class MongoDB extends MongoDBBase {
      *            {@code null} when {@code rowType} is {@code null})
      * @param rowType the target Java class to map the document to
      * @return an instance of {@code rowType} populated from {@code row}
+     * @throws IllegalArgumentException if the row cannot be projected onto {@code rowType}
      * @see MongoDBBase#readRow(Document, Class)
      */
     protected static <T> T readRow(final Document row, final Class<T> rowType) {

@@ -611,7 +611,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param targetClass the entity class
      * @param ids the primary key values
      * @return an Optional containing the entity if found, otherwise empty
-     * @throws IllegalArgumentException if ids is null or empty
+     * @throws IllegalArgumentException if {@code ids} is null or empty, or if its length does not
+     *         match the registered/annotated key columns of {@code targetClass}
      * @throws DuplicateResultException if more than one entity is found
      * @see #gett(Class, Object...)
      */
@@ -643,7 +644,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param selectPropNames the property names to select (null for all properties)
      * @param ids the primary key values
      * @return an Optional containing the entity if found, otherwise empty
-     * @throws IllegalArgumentException if ids is null or empty
+     * @throws IllegalArgumentException if {@code ids} is null or empty, or if its length does not
+     *         match the registered/annotated key columns of {@code targetClass}
      * @throws DuplicateResultException if more than one entity is found
      * @see #gett(Class, Collection, Object...)
      */
@@ -730,7 +732,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param targetClass the entity class
      * @param ids the primary key values
      * @return the entity if found, otherwise null
-     * @throws IllegalArgumentException if ids is null or empty
+     * @throws IllegalArgumentException if {@code ids} is null or empty, or if its length does not
+     *         match the registered/annotated key columns of {@code targetClass}
      * @throws DuplicateResultException if more than one entity is found
      */
     public final <T> T gett(final Class<T> targetClass, final Object... ids) throws DuplicateResultException {
@@ -761,7 +764,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param selectPropNames the property names to select (null for all properties)
      * @param ids the primary key values
      * @return the entity if found, otherwise null
-     * @throws IllegalArgumentException if ids is null or empty
+     * @throws IllegalArgumentException if {@code ids} is null or empty, or if its length does not
+     *         match the registered/annotated key columns of {@code targetClass}
      * @throws DuplicateResultException if more than one entity is found
      */
     public final <T> T gett(final Class<T> targetClass, final Collection<String> selectPropNames, final Object... ids) throws DuplicateResultException {
@@ -960,7 +964,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param entity the entity to update
      * @return the result set from the UPDATE operation
-     * @throws IllegalArgumentException if entity is null
+     * @throws IllegalArgumentException if entity is null, if the entity's class declares no key,
+     *         or if a key value is missing
      */
     public RS update(final Object entity) {
         N.checkArgNotNull(entity, "entity");
@@ -996,7 +1001,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param propNamesToUpdate the property names to update
      * @return the result set from the UPDATE operation
      * @throws IllegalArgumentException if entity is null, if propNamesToUpdate is null or empty,
-     *         or if a primary-key property is requested for update
+     *         if a primary-key property is requested for update, or if a key value is missing
      */
     public RS update(final Object entity, final Collection<String> propNamesToUpdate) {
         N.checkArgument(N.notEmpty(propNamesToUpdate), "'propNamesToUpdate' can't be null or empty");
@@ -1212,7 +1217,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param entity the entity to delete (must have primary key values set)
      * @return the result set from the DELETE operation
-     * @throws IllegalArgumentException if entity is null
+     * @throws IllegalArgumentException if entity is null, if the entity's class declares no key,
+     *         or if a key value is missing
      */
     public RS delete(final Object entity) {
         return delete(entity, null);
@@ -1243,7 +1249,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @param propNamesToDelete the property names to delete (null for entire row)
      * @return the result set from the DELETE operation
      * @throws IllegalArgumentException if entity is null, if propNamesToDelete is empty (but not null),
-     *         or if a primary-key property is requested for deletion
+     *         if a primary-key property is requested for deletion, or if a key value is missing
      */
     public RS delete(final Object entity, final Collection<String> propNamesToDelete) {
         N.checkArgNotNull(entity, "entity");
@@ -1746,8 +1752,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         query returns no rows
      * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code propName} is
      *         {@code null} or empty
-     * @see #queryForSingleValue(Class, Class, String, Condition)
      * @see #queryForChar(String, Object...)
+     * @see #queryForSingleValue(Class, Class, String, Condition)
      */
     @Beta
     public OptionalChar queryForChar(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -2303,6 +2309,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return a <i>present</i> {@code OptionalChar} holding the column value (or the default {@code char}
      *         for {@code NULL}) when at least one row is returned; {@code OptionalChar.empty()} when the
      *         query returns no rows
+     * @see #queryForChar(Class, String, Condition)
      * @see #queryForSingleValue(Class, String, Object...)
      */
     @Beta

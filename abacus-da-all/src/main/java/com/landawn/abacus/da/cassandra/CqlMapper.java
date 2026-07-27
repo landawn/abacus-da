@@ -130,20 +130,21 @@ import com.landawn.abacus.util.XmlUtil;
  */
 public final class CqlMapper {
 
+    /** Logger for this class. */
     static final Logger logger = LoggerFactory.getLogger(CqlMapper.class);
 
     /**
-     * XML element name for the root cqlMapper element.
+     * XML element name for the root {@code cqlMapper} element.
      */
     public static final String CQL_MAPPER = "cqlMapper";
 
     /**
-     * XML element name for individual CQL statement elements.
+     * XML element name for an individual CQL statement ({@code cql}) element.
      */
     public static final String CQL = "cql";
 
     /**
-     * XML attribute name for the statement identifier.
+     * XML attribute name ({@code id}) for the statement identifier.
      */
     public static final String ID = "id";
 
@@ -367,7 +368,16 @@ public final class CqlMapper {
         }
     }
 
-    /** Returns the document root after verifying that it is the required {@code <cqlMapper>} element. */
+    /**
+     * Returns the document root element after verifying that it is the required
+     * {@code <cqlMapper>} element.
+     *
+     * @param doc the parsed XML document to inspect
+     * @param sourceLabel a human-readable label identifying the source, used in error messages
+     * @return the root element of {@code doc}
+     * @throws RuntimeException if the document has no root element, or the root element is not
+     *         named {@code cqlMapper}
+     */
     static Element requireCqlMapperRoot(final Document doc, final String sourceLabel) {
         final Element rootElement = doc.getDocumentElement();
 

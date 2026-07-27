@@ -253,6 +253,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         N.registerConverter(Row.class, converter);
     }
 
+    /**
+     * Maximum CQL text length, in characters, that is eligible for the {@code PreparedStatement}
+     * cache. Longer statements are prepared on every call rather than retained, which bounds the
+     * cache's memory footprint.
+     */
     static final int POOLABLE_LENGTH = 1024;
 
     private static final Logger logger = LoggerFactory.getLogger(CassandraExecutor.class);
@@ -330,9 +335,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     /**
      * Creates a new CassandraExecutor with specified session and statement settings.
      *
-     * <p>This constructor allows configuration of default statement execution behavior
-     * while using automatic discovery for other settings. The statement settings will
-     * be applied to all operations unless overridden on a per-operation basis.</p>
+     * <p>The statement settings configure the default behavior applied to every statement
+     * built by this executor; a {@code null} value leaves the driver defaults in place.
+     * The settings are applied to all operations unless overridden on a per-operation basis.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -412,6 +417,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param cqlMapper mapper containing pre-configured CQL statements, or null
      * @param namingPolicy policy for mapping Java property names to Cassandra column names,
      *                     or null for SNAKE_CASE
+     * @throws IllegalArgumentException if {@code namingPolicy} is not {@code SNAKE_CASE},
+     *         {@code SCREAMING_SNAKE_CASE} or {@code CAMEL_CASE} (checked before {@code session})
      * @throws NullPointerException if session is null
      * @see StatementSettings
      * @see NamingPolicy
@@ -531,6 +538,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param <T> the type of the entity
      * @param targetClass the entity class (must carry driver 3.x mapping annotations)
      * @return the DataStax {@link Mapper} for the entity class
+     * @throws NullPointerException if {@code targetClass} is {@code null}
      */
     public <T> Mapper<T> mapper(final Class<T> targetClass) {
         return mappingManager.mapper(targetClass);
@@ -1143,9 +1151,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * @param <T> the entity type
      * @param targetClass the entity class
-     * @param selectPropNames the property names to select (null for all properties)
+     * @param selectPropNames the property names to select, or {@code null} to select all entity properties
      * @param whereClause the WHERE condition
-     * @return the single matching entity, or null if not found
+     * @return an instance of {@code targetClass} populated with data from the single matching row,
+     *         or {@code null} when no row matches
      * @throws DuplicateResultException if multiple entities match the condition
      */
     @Override
@@ -1823,6 +1832,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * @param query the CQL query to prepare; must be non-null
      * @return an executable {@link Statement}
+     * @throws IllegalArgumentException if {@code query} is {@code null}, or if the resolved
+     *         query contains bind markers
      */
     @Override
     protected Statement prepareStatement(final String query) {
@@ -2065,8 +2076,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param preStmt the prepared statement to bind
      * @param parameters the positional parameter values, already coerced to the column types
      * @return a {@link BoundStatement} ready for execution
-     * @throws com.datastax.driver.core.exceptions.InvalidTypeException if a parameter value
-     *         cannot be assigned to its declared column type
+     * @throws InvalidTypeException if a parameter value cannot be assigned to its declared column type
      */
     @Override
     protected BoundStatement bind(final PreparedStatement preStmt, final Object... parameters) {

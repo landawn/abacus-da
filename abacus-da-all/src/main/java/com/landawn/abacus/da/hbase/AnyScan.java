@@ -35,7 +35,7 @@ import com.landawn.abacus.util.N;
  * A comprehensive wrapper around HBase's {@link Scan} class that provides simplified scanning
  * operations with automatic type conversion and a fluent API design.
  *
- * <p>This class extends {@link AnyQuery} and exposes all the functionality of HBase's native
+ * <p>This class extends {@link AnyQuery} and exposes the functionality of HBase's native
  * {@link Scan} class while reducing the complexity of working with byte arrays. Every mutator
  * returns {@code this}, enabling method chaining. The underlying {@link Scan} instance is
  * accessible through {@link #val()} for interoperation with native HBase APIs.</p>
@@ -90,7 +90,7 @@ import com.landawn.abacus.util.N;
  * <ul>
  *   <li>Automatic conversion between Java values and byte arrays for row keys / families / qualifiers</li>
  *   <li>Fluent API for method chaining</li>
- *   <li>Support for all HBase scan operations and filters</li>
+ *   <li>Support for HBase scan operations and filters</li>
  *   <li>Easy configuration of scan parameters like caching, batching, and limits</li>
  * </ul>
  *
@@ -172,6 +172,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * {@link #of(Scan)}.</p>
      *
      * @param scan the HBase {@link Scan} object to wrap; must not be {@code null}
+     * @throws IllegalArgumentException if {@code scan} is {@code null}
      */
     AnyScan(final Scan scan) {
         super(scan);
@@ -188,6 +189,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * Package-private; callers should use {@link #of(Get)}.</p>
      *
      * @param get the {@link Get} operation to convert to a {@link Scan}; must not be {@code null}
+     * @throws NullPointerException if {@code get} is {@code null} (raised by the wrapped {@link Scan#Scan(Get)} constructor)
      */
     AnyScan(final Get get) {
         this(new Scan(get));
@@ -377,7 +379,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * Creates a new AnyScan instance from an existing Get operation.
      * <p>
      * This factory method converts a Get operation into a Scan operation,
-     * preserving all the settings from the original Get.
+     * preserving the families, qualifiers, time range and other settings from the original Get.
      * </p>
      *
      * <p><b>Usage Examples:</b></p>
@@ -927,7 +929,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     }
 
     /**
-     * Sets the start row for the scan with inclusive behavior by default.
+     * Sets the start row for the scan; the start row itself is included in the scan (inclusive).
      * <p>
      * The scan will start from this row key. If the exact row doesn't exist,
      * the scan will start from the next closest row that is lexicographically
@@ -945,7 +947,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * int len = empty.getStartRow().length;                         // returns 0
      * }</pre>
      *
-     * @param startRow the row key to start scanning from (inclusive by default)
+     * @param startRow the row key to start scanning from (inclusive)
      * @return this AnyScan instance for method chaining
      * @see #withStartRow(Object, boolean)
      * @see #includeStartRow()
@@ -1035,7 +1037,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
     }
 
     /**
-     * Sets the stop row for the scan with exclusive behavior by default.
+     * Sets the stop row for the scan; the stop row itself is excluded from the scan (exclusive).
      * <p>
      * The scan will stop before reaching this row key. Rows that are lexicographically
      * less than the stop row will be included in the scan results.
@@ -1048,7 +1050,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * boolean incl = scan.includeStopRow();                      // returns false (exclusive)
      * }</pre>
      *
-     * @param stopRow the row key to stop scanning before (exclusive by default)
+     * @param stopRow the row key to stop scanning before (exclusive)
      * @return this AnyScan instance for method chaining
      * @see #withStopRow(Object, boolean)
      * @see #includeStopRow()

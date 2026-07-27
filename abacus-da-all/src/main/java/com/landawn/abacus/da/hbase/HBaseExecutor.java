@@ -195,8 +195,15 @@ public final class HBaseExecutor {
 
     private static final Logger logger = LoggerFactory.getLogger(HBaseExecutor.class);
 
+    /** The empty-string column qualifier used for properties stored directly under a column family without a qualifier. */
     static final String EMPTY_QUALIFIER = Strings.EMPTY;
 
+    /**
+     * The shared {@link AsyncExecutor} that backs {@link #async()} when no executor is supplied
+     * at construction. It is sized to {@code max(64, IOUtil.CPU_CORES * 8)} core threads and
+     * {@code max(128, IOUtil.CPU_CORES * 16)} maximum threads with a 180-second keep-alive,
+     * and is never shut down by {@link #close()}.
+     */
     static final AsyncExecutor DEFAULT_ASYNC_EXECUTOR = new AsyncExecutor(//
             N.max(64, IOUtil.CPU_CORES * 8), // coreThreadPoolSize
             N.max(128, IOUtil.CPU_CORES * 16), // maxThreadPoolSize
@@ -431,6 +438,18 @@ public final class HBaseExecutor {
         classFamilyColumnFieldNamePool.remove(cls);
     }
 
+    /**
+     * Resolves and caches the row-key property setter for {@code targetType}: either a property
+     * explicitly registered via {@link #registerRowKeyProperty(Class, String)} or the single
+     * {@code @Id}-annotated property discovered on the class.
+     *
+     * @param targetType the entity class whose row-key setter is requested
+     * @return the setter {@link Method} of the row-key property, or {@code null} if
+     *         {@code targetType} has no row-key property
+     * @throws IllegalArgumentException if more than one {@code @Id} property is defined on
+     *         {@code targetType}, or if the resolved row-key property is rejected by
+     *         {@link #registerRowKeyProperty(Class, String)}
+     */
     @SuppressWarnings("deprecation")
     static Method getRowKeySetMethod(final Class<?> targetType) {
         Method rowKeySetMethod = classRowKeySetMethodPool.get(targetType);
@@ -454,6 +473,16 @@ public final class HBaseExecutor {
         return rowKeySetMethod == ClassUtil.SENTINEL_METHOD ? null : rowKeySetMethod;
     }
 
+    /**
+     * Returns the cached property-to-column mapping for {@code entityClass} under
+     * {@code namingPolicy}, building it from the class's {@code @ColumnFamily}/{@code @Column}
+     * annotations (and the given naming policy) on first use.
+     *
+     * @param entityClass the entity class to map
+     * @param namingPolicy the naming policy applied to property names without annotations
+     * @return a map from property name to a {@link Tuple3} of (column family name, column
+     *         qualifier name, whether an explicit {@code @Column} annotation is present)
+     */
     static Map<String, Tuple3<String, String, Boolean>> getClassFamilyColumnNameMap(final Class<?> entityClass, final NamingPolicy namingPolicy) {
         final Map<NamingPolicy, Map<String, Tuple3<String, String, Boolean>>> namingPolicyFamilyColumnNameMap = classFamilyColumnNamePool
                 .computeIfAbsent(entityClass, k -> new ConcurrentHashMap<>());
@@ -562,6 +591,13 @@ public final class HBaseExecutor {
         return familyColumnFieldNameMapTP;
     }
 
+    /**
+     * Returns whether the given {@link ColumnFamily} annotation carries a usable family name.
+     *
+     * @param columnFamily the annotation to inspect; may be {@code null}
+     * @return {@code true} if {@code columnFamily} is not {@code null} and its {@code value}
+     *         is not empty, {@code false} otherwise
+     */
     static boolean hasColumnFamilyValue(final ColumnFamily columnFamily) {
         return columnFamily != null && Strings.isNotEmpty(columnFamily.value());
     }
@@ -1271,6 +1307,12 @@ public final class HBaseExecutor {
         return result;
     }
 
+    /**
+     * Verifies that {@code targetType} is a JavaBean entity class with getter/setter methods.
+     *
+     * @param targetType the class to validate
+     * @throws IllegalArgumentException if {@code targetType} is not a bean class
+     */
     static void checkEntityClass(final Class<?> targetType) {
         if (!Beans.isBeanClass(targetType)) {
             throw new IllegalArgumentException(
@@ -1426,6 +1468,17 @@ public final class HBaseExecutor {
 
     // There is no too much benefit to add method for "Object rowKey"
     // And it may cause error because the "Object" is ambiguous to any type.
+    /**
+     * Tests whether the row identified by {@code rowKey} has any cells.
+     *
+     * <p>Package-private convenience overload delegating to {@link #exists(String, AnyGet)};
+     * {@code rowKey} is converted to bytes via {@link #toRowKeyBytes(Object)}.</p>
+     *
+     * @param tableName the name of the HBase table
+     * @param rowKey the row key to check
+     * @return {@code true} if the row has one or more cells, {@code false} otherwise
+     * @throws UncheckedIOException if an I/O error occurs during the operation
+     */
     boolean exists(final String tableName, final Object rowKey) throws UncheckedIOException {
         return exists(tableName, AnyGet.of(rowKey));
     }
@@ -1560,6 +1613,17 @@ public final class HBaseExecutor {
 
     // There is no too much benefit to add method for "Object rowKey"
     // And it may cause error because the "Object" is ambiguous to any type.
+    /**
+     * Retrieves the row identified by {@code rowKey}.
+     *
+     * <p>Package-private convenience overload delegating to {@link #get(String, AnyGet)};
+     * {@code rowKey} is converted to bytes via {@link #toRowKeyBytes(Object)}.</p>
+     *
+     * @param tableName the name of the HBase table
+     * @param rowKey the row key of the row to retrieve
+     * @return the HBase Result containing the retrieved data, or a present-but-{@linkplain Result#isEmpty() empty} Result if the row does not exist
+     * @throws UncheckedIOException if an I/O error occurs during the operation
+     */
     Result get(final String tableName, final Object rowKey) throws UncheckedIOException {
         return get(tableName, AnyGet.of(rowKey));
     }
@@ -1698,6 +1762,20 @@ public final class HBaseExecutor {
 
     // There is no too much benefit to add method for "Object rowKey"
     // And it may cause error because the "Object" is ambiguous to any type.
+    /**
+     * Retrieves the row identified by {@code rowKey} and converts it to {@code targetType}.
+     *
+     * <p>Package-private convenience overload delegating to
+     * {@link #get(String, AnyGet, Class)}; {@code rowKey} is converted to bytes via
+     * {@link #toRowKeyBytes(Object)}.</p>
+     *
+     * @param <T> the target type for conversion
+     * @param tableName the name of the HBase table
+     * @param rowKey the row key of the row to retrieve
+     * @param targetType the class to convert the result to
+     * @return the converted object of the specified type, or the type's default value if the row does not exist
+     * @throws UncheckedIOException if an I/O error occurs during the operation
+     */
     <T> T get(final String tableName, final Object rowKey, final Class<T> targetType) throws UncheckedIOException {
         return get(tableName, AnyGet.of(rowKey), targetType);
     }
@@ -2331,6 +2409,16 @@ public final class HBaseExecutor {
 
     // There is no too much benefit to add method for "Object rowKey"
     // And it may cause error because the "Object" is ambiguous to any type.
+    /**
+     * Deletes the row identified by {@code rowKey}.
+     *
+     * <p>Package-private convenience overload delegating to {@link #delete(String, AnyDelete)};
+     * {@code rowKey} is converted to bytes via {@link #toRowKeyBytes(Object)}.</p>
+     *
+     * @param tableName the name of the HBase table
+     * @param rowKey the row key of the row to delete
+     * @throws UncheckedIOException if an I/O error occurs during the operation
+     */
     void delete(final String tableName, final Object rowKey) throws UncheckedIOException {
         delete(tableName, AnyDelete.of(rowKey));
     }
@@ -3071,30 +3159,79 @@ public final class HBaseExecutor {
         }
     }
 
+    /**
+     * Decodes {@code len} bytes of a row key starting at {@code offset} as a UTF-8 string.
+     *
+     * @param bytes the backing byte array
+     * @param offset the offset of the first byte to decode
+     * @param len the number of bytes to decode
+     * @return the decoded row-key string
+     */
     static String toRowKeyString(final byte[] bytes, final int offset, final int len) {
         return Bytes.toString(bytes, offset, len);
     }
 
+    /**
+     * Decodes {@code len} bytes of a column family or qualifier starting at {@code offset}
+     * as a UTF-8 string.
+     *
+     * @param bytes the backing byte array
+     * @param offset the offset of the first byte to decode
+     * @param len the number of bytes to decode
+     * @return the decoded family/qualifier string
+     */
     static String toFamilyQualifierString(final byte[] bytes, final int offset, final int len) {
         return Bytes.toString(bytes, offset, len);
     }
 
+    /**
+     * Decodes {@code len} bytes of a cell value starting at {@code offset} as a UTF-8 string.
+     *
+     * @param bytes the backing byte array
+     * @param offset the offset of the first byte to decode
+     * @param len the number of bytes to decode
+     * @return the decoded value string
+     */
     static String toValueString(final byte[] bytes, final int offset, final int len) {
         return Bytes.toString(bytes, offset, len);
     }
 
+    /**
+     * Returns the row key of {@code cell} decoded as a UTF-8 string.
+     *
+     * @param cell the cell whose row key is read
+     * @return the row-key string of {@code cell}
+     */
     static String getRowKeyString(final Cell cell) {
         return toRowKeyString(cell.getRowArray(), cell.getRowOffset(), cell.getRowLength());
     }
 
+    /**
+     * Returns the column family of {@code cell} decoded as a UTF-8 string.
+     *
+     * @param cell the cell whose column family is read
+     * @return the column-family string of {@code cell}
+     */
     static String getFamilyString(final Cell cell) {
         return toFamilyQualifierString(cell.getFamilyArray(), cell.getFamilyOffset(), cell.getFamilyLength());
     }
 
+    /**
+     * Returns the column qualifier of {@code cell} decoded as a UTF-8 string.
+     *
+     * @param cell the cell whose column qualifier is read
+     * @return the column-qualifier string of {@code cell}
+     */
     static String getQualifierString(final Cell cell) {
         return toFamilyQualifierString(cell.getQualifierArray(), cell.getQualifierOffset(), cell.getQualifierLength());
     }
 
+    /**
+     * Returns the value of {@code cell} decoded as a UTF-8 string.
+     *
+     * @param cell the cell whose value is read
+     * @return the value string of {@code cell}
+     */
     static String getValueString(final Cell cell) {
         return toValueString(cell.getValueArray(), cell.getValueOffset(), cell.getValueLength());
     }
@@ -3192,6 +3329,23 @@ public final class HBaseExecutor {
         private final String rowKeyPropName;
         private final NamingPolicy namingPolicy;
 
+        /**
+         * Constructs an {@code HBaseMapper} for {@code targetEntityClass} bound to
+         * {@code tableName} on the given executor.
+         *
+         * <p>Instances are normally obtained via {@link HBaseExecutor#mapper(Class)} or
+         * {@link HBaseExecutor#mapper(Class, String, NamingPolicy)} rather than constructed
+         * directly. The entity class must be a JavaBean class with exactly one
+         * {@code @Id}-annotated property, which is used as the row key.</p>
+         *
+         * @param targetEntityClass the entity class this mapper handles
+         * @param hbaseExecutor the executor that performs the underlying HBase operations
+         * @param tableName the HBase table name to bind this mapper to; must not be empty
+         * @param namingPolicy the naming policy for column name conversion; {@code null} maps to {@link NamingPolicy#CAMEL_CASE}
+         * @throws IllegalArgumentException if {@code targetEntityClass} or {@code hbaseExecutor}
+         *         is {@code null}, if {@code tableName} is empty, if {@code targetEntityClass}
+         *         is not a bean class, or if it has no or more than one {@code @Id} property
+         */
         HBaseMapper(final Class<T> targetEntityClass, final HBaseExecutor hbaseExecutor, final String tableName, final NamingPolicy namingPolicy) {
             N.checkArgNotNull(targetEntityClass, "targetEntityClass");
             N.checkArgNotNull(hbaseExecutor, "hbaseExecutor");
@@ -3411,7 +3565,7 @@ public final class HBaseExecutor {
         }
 
         /**
-         * Checks if data exists for the specified AnyGet operation.
+         * Tests whether the specified AnyGet operation would return any results on this mapper's table.
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3428,7 +3582,7 @@ public final class HBaseExecutor {
         }
 
         /**
-         * Checks if data exists for multiple AnyGet operations.
+         * Tests whether the specified AnyGet operations would return any results on this mapper's table.
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3585,7 +3739,7 @@ public final class HBaseExecutor {
         }
 
         /**
-         * Stores data using an AnyPut operation.
+         * Stores data in HBase on this mapper's table using an AnyPut operation.
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3601,7 +3755,7 @@ public final class HBaseExecutor {
         }
 
         /**
-         * Stores data using multiple AnyPut operations in a batch.
+         * Stores multiple rows of data in HBase on this mapper's table using a list of AnyPut operations.
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3619,7 +3773,7 @@ public final class HBaseExecutor {
         }
 
         /**
-         * Deletes data using an AnyDelete operation.
+         * Deletes data from HBase on this mapper's table using an AnyDelete operation.
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3636,7 +3790,7 @@ public final class HBaseExecutor {
         }
 
         /**
-         * Deletes data using multiple AnyDelete operations in a batch.
+         * Deletes multiple rows or cells from HBase on this mapper's table using a list of AnyDelete operations.
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3653,7 +3807,8 @@ public final class HBaseExecutor {
         }
 
         /**
-         * Performs multiple atomic mutations on a single row.
+         * Performs multiple mutations atomically on a single row on this mapper's table
+         * using an AnyRowMutations operation.
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3672,7 +3827,8 @@ public final class HBaseExecutor {
         }
 
         /**
-         * Appends values to columns.
+         * Appends values to one or more columns within a single row on this mapper's table
+         * using an AnyAppend operation.
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3683,7 +3839,7 @@ public final class HBaseExecutor {
          *
          * @param append the AnyAppend operation specifying the values to append
          * @return the post-append values when return-results is enabled; HBase may return
-         *         {@code null} when return-results is disabled
+         *         {@code null} when {@link Append#setReturnResults(boolean)} is set to {@code false}
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @see AnyAppend
          */
@@ -3692,7 +3848,8 @@ public final class HBaseExecutor {
         }
 
         /**
-         * Increments column values.
+         * Increments one or more column values within a single row on this mapper's table
+         * using an AnyIncrement operation.
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3702,8 +3859,8 @@ public final class HBaseExecutor {
          * }</pre>
          *
          * @param increment the AnyIncrement operation specifying the values to increment
-         * @return the post-increment values when return-results is enabled; callers that disable
-         *         returned results must not rely on the returned values
+         * @return the post-increment values when return-results is enabled; callers that set
+         *         {@link Increment#setReturnResults(boolean)} to {@code false} must not rely on returned values
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @see AnyIncrement
          */
@@ -3735,7 +3892,8 @@ public final class HBaseExecutor {
         }
 
         /**
-         * Atomically increments a single column value with specified durability.
+         * Atomically increments a single column's numeric value on this mapper's table with the
+         * specified {@link Durability} guarantee.
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3747,9 +3905,9 @@ public final class HBaseExecutor {
          * @param family the column family name (converted via {@link HBaseExecutor#toFamilyQualifierBytes(String)})
          * @param qualifier the column qualifier name (converted via {@link HBaseExecutor#toFamilyQualifierBytes(String)})
          * @param amount the amount to add (negative values decrement)
-         * @param durability the durability level for this operation
+         * @param durability the durability level to use for the WAL write
          * @return the value of the column after the increment
-         * @throws UncheckedIOException if an I/O error occurs during the operation
+         * @throws UncheckedIOException if the HBase call fails with an {@link IOException}
          * @see Durability
          */
         public long incrementColumnValue(final Object rowKey, final String family, final String qualifier, final long amount, final Durability durability)
@@ -3758,7 +3916,8 @@ public final class HBaseExecutor {
         }
 
         /**
-         * Atomically increments a single column value using byte arrays.
+         * Byte-array variant of {@link #incrementColumnValue(Object, String, String, long)} on
+         * this mapper's table.
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3771,14 +3930,15 @@ public final class HBaseExecutor {
          * @param qualifier the column qualifier bytes (used as-is)
          * @param amount the amount to add (negative values decrement)
          * @return the value of the column after the increment
-         * @throws UncheckedIOException if an I/O error occurs during the operation
+         * @throws UncheckedIOException if the HBase call fails with an {@link IOException}
          */
         public long incrementColumnValue(final Object rowKey, final byte[] family, final byte[] qualifier, final long amount) throws UncheckedIOException {
             return hbaseExecutor.incrementColumnValue(tableName, rowKey, family, qualifier, amount);
         }
 
         /**
-         * Atomically increments a single column value using byte arrays with specified durability.
+         * Byte-array variant of {@link #incrementColumnValue(Object, String, String, long, Durability)}
+         * on this mapper's table.
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3791,9 +3951,9 @@ public final class HBaseExecutor {
          * @param family the column family bytes (used as-is)
          * @param qualifier the column qualifier bytes (used as-is)
          * @param amount the amount to add (negative values decrement)
-         * @param durability the durability level for this operation
+         * @param durability the durability level to use for the WAL write
          * @return the value of the column after the increment
-         * @throws UncheckedIOException if an I/O error occurs during the operation
+         * @throws UncheckedIOException if the HBase call fails with an {@link IOException}
          * @see Durability
          */
         public long incrementColumnValue(final Object rowKey, final byte[] family, final byte[] qualifier, final long amount, final Durability durability)
@@ -3802,7 +3962,8 @@ public final class HBaseExecutor {
         }
 
         /**
-         * Gets a CoprocessorRpcChannel for communicating with a coprocessor.
+         * Returns a {@link CoprocessorRpcChannel} for the region hosting {@code rowKey} on this
+         * mapper's table.
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3811,8 +3972,8 @@ public final class HBaseExecutor {
          * MyResponse response = stub.myMethod(null, request);
          * }</pre>
          *
-         * @param rowKey the row key to identify which region server to connect to
-         * @return the CoprocessorRpcChannel for the specified row's region
+         * @param rowKey the row key identifying the target region (converted via {@link HBaseExecutor#toRowKeyBytes(Object)})
+         * @return a CoprocessorRpcChannel pointed at the region hosting {@code rowKey}
          * @throws UncheckedIOException if an I/O error occurs while obtaining the underlying {@link Table}
          * @see CoprocessorRpcChannel
          */
@@ -3821,7 +3982,9 @@ public final class HBaseExecutor {
         }
 
         /**
-         * Executes a coprocessor call against a range of rows and returns results.
+         * Invokes a coprocessor {@link Service} on every region from the region containing
+         * {@code startRowKey} through the region containing {@code endRowKey}, inclusive, and
+         * returns the per-region results.
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3837,7 +4000,7 @@ public final class HBaseExecutor {
          * @param startRowKey the start row key (inclusive; {@code null} for unbounded start)
          * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
          * @param callable the callable to execute on each region
-         * @return a map of region names to their corresponding results
+         * @return a map from region name bytes to the result returned by {@code callable} for that region
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @throws RuntimeException if the coprocessor invocation throws a non-IOException {@link Throwable}
          *         (wrapped via {@code ExceptionUtil.toRuntimeException})
@@ -3850,7 +4013,9 @@ public final class HBaseExecutor {
         }
 
         /**
-         * Executes a coprocessor call against a range of rows with a callback for results.
+         * Invokes a coprocessor {@link Service} on every region from the region containing
+         * {@code startRowKey} through the region containing {@code endRowKey}, inclusive,
+         * delivering each per-region result to {@code callback} as it becomes available.
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
@@ -3868,7 +4033,10 @@ public final class HBaseExecutor {
          * @param callable the callable to execute on each region
          * @param callback the callback to receive results from each region
          * @throws UncheckedIOException if an I/O error occurs during the operation
-         * @throws Exception if the coprocessor execution throws an exception
+         * @throws Exception if the coprocessor invocation throws a non-{@link IOException}
+         *         {@link Throwable}: it is rethrown as-is if it is already an {@link Exception},
+         *         otherwise wrapped in a new {@link Exception} (an {@link Error} is always
+         *         rethrown unchanged)
          * @see Service
          * @see Batch.Call
          * @see Batch.Callback
@@ -3899,7 +4067,10 @@ public final class HBaseExecutor {
          * @param responsePrototype the prototype for the response message
          * @return a map of region names to their corresponding response messages
          * @throws UncheckedIOException if an I/O error occurs during the operation
-         * @throws Exception if the coprocessor execution throws an exception
+         * @throws Exception if the coprocessor execution throws a {@link Throwable} other than
+         *         {@link IOException}: it is rethrown as-is if it is already an {@link Exception},
+         *         otherwise wrapped in a new {@link Exception} (an {@link Error} is always
+         *         rethrown unchanged)
          * @see Message
          * @see Descriptors.MethodDescriptor
          */
@@ -3929,7 +4100,10 @@ public final class HBaseExecutor {
          * @param responsePrototype the prototype for the response message
          * @param callback the callback to receive response messages from each region
          * @throws UncheckedIOException if an I/O error occurs during the operation
-         * @throws Exception if the coprocessor execution throws an exception
+         * @throws Exception if the coprocessor execution throws a {@link Throwable} other than
+         *         {@link IOException}: it is rethrown as-is if it is already an {@link Exception},
+         *         otherwise wrapped in a new {@link Exception} (an {@link Error} is always
+         *         rethrown unchanged)
          * @see Message
          * @see Descriptors.MethodDescriptor
          * @see Batch.Callback

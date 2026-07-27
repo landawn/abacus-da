@@ -423,8 +423,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param settings default statement settings to apply to every prepared/bound statement built by
      *                 this executor, or {@code null} to apply no defaults (copied defensively)
      * @param cqlMapper CQL mapper containing pre-configured statements, or {@code null} if not needed
-     * @param namingPolicy policy for mapping Java property names to column names; when {@code null} the
-     *                     default defined in {@link CassandraExecutorBase} is used
+     * @param namingPolicy policy for mapping Java property names to column names; when {@code null},
+     *                     {@link NamingPolicy#SNAKE_CASE} is used
      * @throws IllegalArgumentException if {@code namingPolicy} is not {@code SNAKE_CASE},
      *         {@code SCREAMING_SNAKE_CASE} or {@code CAMEL_CASE} (checked before {@code session})
      * @throws NullPointerException if session is null
@@ -2003,8 +2003,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @param userType the Cassandra User Defined Type to map
          * @param javaClazz the Java class to map the UDT to
          * @return a new instance of {@link UDTCodec} for the specified UDT and Java class
-         * @throws IllegalArgumentException when encoding a {@link Collection} value that has more elements
-         *         than the UDT has fields
+         * @throws IllegalArgumentException (lazily, at encode/decode time, not by this factory) when a
+         *         {@link Collection} value has more elements than the UDT has fields, or when
+         *         {@code javaClazz} is not a {@link Collection}, {@link Map}, or bean class
          */
         public static <T> UDTCodec<T> create(final UserDefinedType userType, final Class<T> javaClazz) {
             return new UDTCodec<>(userType, javaClazz) {
@@ -2264,7 +2265,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * }</pre>
          *
          * @param value the CQL UDT literal to parse
-         * @return an instance of type T, or null if the input is empty or equals to {@link CassandraExecutorBase#NULL_STR}
+         * @return an instance of type {@code T}, or {@code null} if the input is empty or equal
+         *         (case-insensitively) to {@link CassandraExecutorBase#NULL_STR}
          */
         @Override
         public T parse(final String value) {
@@ -2349,9 +2351,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * Converts a Java value into its Cassandra UDT representation. Implementations typically
          * start from {@link #newUDTValue()} and set one field per Java property.
          *
-         * @param value the Java value to convert; never {@code null} (null handling is applied by
-         *        the caller before this method is reached)
-         * @return the equivalent {@code UdtValue}
+         * @param value the Java value to convert; implementations must accept {@code null}
+         * @return the equivalent {@code UdtValue}, or {@code null} for a {@code null} input
          */
         protected abstract UdtValue serialize(T value);
 
@@ -2359,8 +2360,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * Converts a Cassandra UDT value back into its Java representation — the inverse of
          * {@link #serialize(Object)}.
          *
-         * @param value the {@code UdtValue} read from Cassandra; never {@code null}
-         * @return the equivalent Java value
+         * @param value the {@code UdtValue} read from Cassandra; implementations must accept
+         *        {@code null}
+         * @return the equivalent Java value, or {@code null} for a {@code null} input
          */
         protected abstract T deserialize(UdtValue value);
     }

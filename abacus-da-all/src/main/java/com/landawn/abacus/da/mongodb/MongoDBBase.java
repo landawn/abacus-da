@@ -368,6 +368,7 @@ public abstract class MongoDBBase {
      *
      * @param bson the BSON object to convert to JSON
      * @return the JSON string representation of the BSON object
+     * @throws NullPointerException if bson is null
      * @see Document
      * @see org.bson.conversions.Bson
      */
@@ -396,6 +397,7 @@ public abstract class MongoDBBase {
      *
      * @param bsonObject the BSONObject to convert to JSON
      * @return the JSON string representation of the BSONObject
+     * @throws NullPointerException if bsonObject is null
      * @see org.bson.BSONObject
      */
     public static String toJson(final BSONObject bsonObject) {
@@ -856,8 +858,8 @@ public abstract class MongoDBBase {
      * using default conversion settings. It provides a simple way to work with MongoDB
      * documents using familiar Java collection interfaces.</p>
      *
-     * <p>The conversion handles nested documents, arrays, and MongoDB-specific types
-     * appropriately, creating a nested Map structure that mirrors the document hierarchy.</p>
+     * <p>The copy is shallow: entries are copied into the new map as-is, so nested
+     * documents and arrays keep their original types and are not recursively converted.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1514,7 +1516,8 @@ public abstract class MongoDBBase {
      * @param rowType the Class representing the target type for each stream element
      * @return a Stream of objects of the specified type
      * @throws NullPointerException if iter is null
-     * @throws IllegalArgumentException if rowType is unsupported by {@code readRow}
+     * @throws IllegalArgumentException if a result document cannot be projected onto {@code rowType}
+     *         (for example, a document with more than one non-{@code _id} field targeted at a scalar type)
      * @see Stream
      * @see #stream(MongoIterable)
      * @see #stream(MongoCursor, Class)
@@ -1590,7 +1593,8 @@ public abstract class MongoDBBase {
      * @param cursor the MongoCursor to convert to a Stream
      * @param rowType the Class representing the target type for each stream element
      * @return a Stream of objects of the specified type with automatic cursor management
-     * @throws IllegalArgumentException if rowType is unsupported by {@code readRow}
+     * @throws IllegalArgumentException if a result document cannot be projected onto {@code rowType}
+     *         (for example, a document with more than one non-{@code _id} field targeted at a scalar type)
      * @see Stream
      * @see MongoCursor
      * @see #stream(MongoCursor)

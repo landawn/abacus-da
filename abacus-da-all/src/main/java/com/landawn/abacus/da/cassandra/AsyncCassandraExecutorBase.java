@@ -144,6 +144,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         row matches; if more than one row matches, {@code get()} throws
      *         {@link com.landawn.abacus.exception.DuplicateResultException} directly (not wrapped in
      *         an {@code ExecutionException})
+     * @throws IllegalArgumentException if {@code ids} is {@code null} or empty, or if its length does
+     *         not match the registered/annotated key columns of {@code targetClass}
      */
     public final <T> ContinuableFuture<Optional<T>> get(final Class<T> targetClass, final Object... ids) {
         return get(targetClass, null, ids);
@@ -181,6 +183,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param ids the primary key value(s) identifying the row
      * @return a future whose payload is an {@link Optional} containing the entity, or empty if no
      *         row matches
+     * @throws IllegalArgumentException if {@code ids} is {@code null} or empty, or if its length does
+     *         not match the registered/annotated key columns of {@code targetClass}
      */
     public final <T> ContinuableFuture<Optional<T>> get(final Class<T> targetClass, final Collection<String> selectPropNames, final Object... ids) {
         return get(targetClass, selectPropNames, CassandraExecutorBase.idsToCondition(targetClass, ids));
@@ -293,6 +297,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the entity class to fetch
      * @param ids the primary key value(s) identifying the row
      * @return a future whose payload is the entity instance, or {@code null} if no row matches
+     * @throws IllegalArgumentException if {@code ids} is {@code null} or empty, or if its length does
+     *         not match the registered/annotated key columns of {@code targetClass}
      */
     public final <T> ContinuableFuture<T> gett(final Class<T> targetClass, final Object... ids) {
         return gett(targetClass, null, ids);
@@ -329,6 +335,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *                       to select all mapped properties
      * @param ids the primary key value(s) identifying the row
      * @return a future whose payload is the entity instance, or {@code null} if no row matches
+     * @throws IllegalArgumentException if {@code ids} is {@code null} or empty, or if its length does
+     *         not match the registered/annotated key columns of {@code targetClass}
      */
     public final <T> ContinuableFuture<T> gett(final Class<T> targetClass, final Collection<String> selectPropNames, final Object... ids) {
         return gett(targetClass, selectPropNames, CassandraExecutorBase.idsToCondition(targetClass, ids));
@@ -493,6 +501,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param type the batch type (e.g. {@code LOGGED}, {@code UNLOGGED}, {@code COUNTER}) defined
      *             by the underlying driver
      * @return a future whose payload is the driver result set produced by the batch INSERT
+     * @throws IllegalArgumentException if {@code entities} is {@code null} or empty (enforced by the
+     *         shipped executors' batch-statement builders)
      */
     public ContinuableFuture<RS> batchInsert(final Collection<?> entities, final BT type) {
         return execute(cassandraExecutor.prepareBatchInsertStatement(entities, type));
@@ -524,6 +534,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param propsList the list of column-name to column-value maps to insert
      * @param type the batch type (e.g. {@code LOGGED}, {@code UNLOGGED}, {@code COUNTER})
      * @return a future whose payload is the driver result set produced by the batch INSERT
+     * @throws IllegalArgumentException if {@code propsList} is {@code null} or empty (enforced by the
+     *         shipped executors' batch-statement builders)
      */
     public ContinuableFuture<RS> batchInsert(final Class<?> targetClass, final Collection<? extends Map<String, Object>> propsList, final BT type) {
         return execute(cassandraExecutor.prepareBatchInsertStatement(targetClass, propsList, type));
@@ -556,7 +568,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param entity the entity whose primary-key fields are used in the WHERE clause and whose
      *               non-key fields supply the new values
      * @return a future whose payload is the driver result set produced by the UPDATE
-     * @throws IllegalArgumentException if {@code entity} is {@code null} (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code entity} is {@code null}, if the entity's class declares
+     *         no key, or if a key value is missing (thrown synchronously at the call site)
      */
     public ContinuableFuture<RS> update(final Object entity) {
         N.checkArgNotNull(entity, "entity");
@@ -596,8 +609,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *               selected fields supply the new values
      * @param propNamesToUpdate the names of the properties to update; must be non-empty
      * @return a future whose payload is the driver result set produced by the UPDATE
-     * @throws IllegalArgumentException if {@code entity} is {@code null}, or if {@code propNamesToUpdate}
-     *         is {@code null} or empty (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code entity} is {@code null}, if {@code propNamesToUpdate}
+     *         is {@code null} or empty, if a primary-key property is requested for update, or if a key
+     *         value is missing (thrown synchronously at the call site)
      */
     public ContinuableFuture<RS> update(final Object entity, final Collection<String> propNamesToUpdate) {
         N.checkArgument(N.notEmpty(propNamesToUpdate), "'propNamesToUpdate' can't be null or empty");
@@ -632,7 +646,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param props the column-name to new-value map to apply
      * @param whereClause the WHERE condition selecting rows to update
      * @return a future whose payload is the driver result set produced by the UPDATE
-     * @throws IllegalArgumentException if {@code props} is null or empty (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, if {@code props} is
+     *         {@code null} or empty, if {@code whereClause} is {@code null}, or if {@code props}
+     *         contains a primary-key property (thrown synchronously at the call site)
      */
     public ContinuableFuture<RS> update(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause) {
         N.checkArgument(N.notEmpty(props), "'props' can't be null or empty.");
@@ -694,8 +710,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param entities the entities to update; must be non-empty and homogeneous
      * @param type the batch type (e.g. {@code LOGGED}, {@code UNLOGGED}, {@code COUNTER})
      * @return a future whose payload is the driver result set produced by the batch UPDATE
-     * @throws IllegalArgumentException if {@code entities} is {@code null} / empty, or its first
-     *         element is {@code null}
+     * @throws IllegalArgumentException if {@code entities} is {@code null} or empty, if its first
+     *         element is {@code null}, if an entity's class declares no key, or if a key value is
+     *         missing (thrown synchronously at the call site)
      */
     public ContinuableFuture<RS> batchUpdate(final Collection<?> entities, final BT type) {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
@@ -735,7 +752,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param propNamesToUpdate the names of the properties to update; must be non-empty
      * @param type the batch type (e.g. {@code LOGGED}, {@code UNLOGGED}, {@code COUNTER})
      * @return a future whose payload is the driver result set produced by the batch UPDATE
-     * @throws IllegalArgumentException if {@code propNamesToUpdate} is {@code null} or empty
+     * @throws IllegalArgumentException if {@code propNamesToUpdate} is {@code null} or empty, or if
+     *         {@code entities} is {@code null} or empty (the latter enforced by the shipped executors'
+     *         batch-statement builders)
      */
     public ContinuableFuture<RS> batchUpdate(final Collection<?> entities, final Collection<String> propNamesToUpdate, final BT type) {
         N.checkArgument(N.notEmpty(propNamesToUpdate), "'propNamesToUpdate' can't be null or empty");
@@ -769,6 +788,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param propsList the list of column-name to new-value maps to apply
      * @param type the batch type (e.g. {@code LOGGED}, {@code UNLOGGED}, {@code COUNTER})
      * @return a future whose payload is the driver result set produced by the batch UPDATE
+     * @throws IllegalArgumentException if {@code propsList} is {@code null} or empty (enforced by the
+     *         shipped executors' batch-statement builders)
      */
     public ContinuableFuture<RS> batchUpdate(final Class<?> targetClass, final Collection<? extends Map<String, Object>> propsList, final BT type) {
         return execute(cassandraExecutor.prepareBatchUpdateStatement(targetClass, propsList, type));
@@ -803,6 +824,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *                       invocation of {@code query}
      * @param type the batch type (e.g. {@code LOGGED}, {@code UNLOGGED}, {@code COUNTER})
      * @return a future whose payload is the driver result set produced by the batch execution
+     * @throws IllegalArgumentException if {@code parametersList} is {@code null} or empty (enforced by
+     *         the shipped executors' batch-statement builders)
      */
     public ContinuableFuture<RS> batchUpdate(final String query, final Collection<?> parametersList, final BT type) {
         return execute(cassandraExecutor.prepareBatchUpdateStatement(query, parametersList, type));
@@ -832,7 +855,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *
      * @param entity the entity whose primary-key fields identify the row to delete
      * @return a future whose payload is the driver result set produced by the DELETE
-     * @throws IllegalArgumentException if {@code entity} is {@code null} (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code entity} is {@code null}, if the entity's class declares
+     *         no key, or if a key value is missing (thrown synchronously at the call site)
      */
     public ContinuableFuture<RS> delete(final Object entity) {
         return delete(entity, null);
@@ -864,8 +888,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param propNamesToDelete the columns to delete; {@code null} deletes the entire row, a
      *                          non-{@code null} value must be non-empty
      * @return a future whose payload is the driver result set produced by the DELETE
-     * @throws IllegalArgumentException if {@code entity} is {@code null}, or if {@code propNamesToDelete}
-     *         is non-{@code null} and empty (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code entity} is {@code null}, if {@code propNamesToDelete}
+     *         is non-{@code null} but empty or contains a primary-key property, or if a key value is
+     *         missing (thrown synchronously at the call site)
      */
     public ContinuableFuture<RS> delete(final Object entity, final Collection<String> propNamesToDelete) {
         N.checkArgNotNull(entity, "entity");
@@ -898,6 +923,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the entity class identifying the target table
      * @param ids the primary key value(s) identifying the row(s)
      * @return a future whose payload is the driver result set produced by the DELETE
+     * @throws IllegalArgumentException if {@code ids} is {@code null} or empty, or if its length does
+     *         not match the registered/annotated key columns of {@code targetClass}
      */
     public final ContinuableFuture<RS> delete(final Class<?> targetClass, final Object... ids) {
         return delete(targetClass, null, ids);
@@ -929,7 +956,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *                          non-{@code null} value must be non-empty
      * @param ids the primary key value(s) identifying the row(s)
      * @return a future whose payload is the driver result set produced by the DELETE
-     * @throws IllegalArgumentException if {@code propNamesToDelete} is non-{@code null} and empty
+     * @throws IllegalArgumentException if {@code propNamesToDelete} is non-{@code null} and empty, or if
+     *         {@code ids} is {@code null} or empty or its length does not match the registered/annotated
+     *         key columns of {@code targetClass}
      */
     public final ContinuableFuture<RS> delete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Object... ids) {
         N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be empty (pass null to delete the entire row)");
@@ -962,6 +991,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the entity class identifying the target table
      * @param whereClause the WHERE condition selecting rows to delete
      * @return a future whose payload is the driver result set produced by the DELETE
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code whereClause} is
+     *         {@code null}
      */
     public ContinuableFuture<RS> delete(final Class<?> targetClass, final Condition whereClause) {
         return delete(targetClass, null, whereClause);
@@ -995,7 +1026,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *                          non-{@code null} value must be non-empty
      * @param whereClause the WHERE condition selecting rows to delete
      * @return a future whose payload is the driver result set produced by the DELETE
-     * @throws IllegalArgumentException if {@code propNamesToDelete} is non-{@code null} and empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, if {@code whereClause} is
+     *         {@code null}, or if {@code propNamesToDelete} is non-{@code null} but empty or contains a
+     *         primary-key property
      */
     public ContinuableFuture<RS> delete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Condition whereClause) {
         N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be empty (pass null to delete the entire row)");
@@ -1027,8 +1060,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *
      * @param entities the entities to delete; must be non-empty and homogeneous
      * @return a future whose payload is the driver result set produced by the DELETE
-     * @throws IllegalArgumentException if {@code entities} is {@code null} / empty, or its first
-     *         element is {@code null}
+     * @throws IllegalArgumentException if {@code entities} is {@code null} or empty, if any element is
+     *         {@code null} or is not an instance of the first entity's class, if the entity has no
+     *         single-column key, or if a key value is missing (thrown synchronously at the call site)
      */
     public ContinuableFuture<RS> batchDelete(final Collection<?> entities) {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
@@ -1067,8 +1101,11 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param propNamesToDelete the columns to delete; {@code null} deletes the entire row, a
      *                          non-{@code null} value must be non-empty
      * @return a future whose payload is the driver result set produced by the DELETE
-     * @throws IllegalArgumentException if {@code entities} is empty or its first element is
-     *         {@code null}, or if {@code propNamesToDelete} is non-{@code null} and empty
+     * @throws IllegalArgumentException if {@code entities} is {@code null} or empty, if any element is
+     *         {@code null} or is not an instance of the first entity's class, if the entity has no
+     *         single-column key, if a key value is missing, or if {@code propNamesToDelete} is
+     *         non-{@code null} but empty or contains a primary-key property (thrown synchronously at
+     *         the call site)
      */
     public ContinuableFuture<RS> batchDelete(final Collection<?> entities, final Collection<String> propNamesToDelete) {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
@@ -1106,6 +1143,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param ids the primary key value(s) to look up
      * @return a future whose payload is {@code true} if at least one matching row exists,
      *         {@code false} otherwise
+     * @throws IllegalArgumentException if {@code ids} is {@code null} or empty, or if its length does
+     *         not match the registered/annotated key columns of {@code targetClass}
      */
     public final ContinuableFuture<Boolean> exists(final Class<?> targetClass, final Object... ids) {
         return exists(targetClass, CassandraExecutorBase.idsToCondition(targetClass, ids));
@@ -1832,7 +1871,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is a <i>present</i> {@link OptionalBoolean} holding the value
      *         ({@code false} when the column is {@code null}); empty only when no row matches
-     * @throws IllegalArgumentException if targetClass is null, or propName is null or empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code propName} is
+     *         {@code null} or empty
      */
     @Beta
     public ContinuableFuture<OptionalBoolean> queryForBoolean(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -1868,7 +1908,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is a <i>present</i> {@link OptionalChar} holding the value
      *         ({@code (char) 0} when the column is {@code null}); empty only when no row matches
-     * @throws IllegalArgumentException if targetClass is null, or propName is null or empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code propName} is
+     *         {@code null} or empty
      */
     @Beta
     public ContinuableFuture<OptionalChar> queryForChar(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -1904,7 +1945,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is a <i>present</i> {@link OptionalByte} holding the value
      *         ({@code (byte) 0} when the column is {@code null}); empty only when no row matches
-     * @throws IllegalArgumentException if targetClass is null, or propName is null or empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code propName} is
+     *         {@code null} or empty
      */
     @Beta
     public ContinuableFuture<OptionalByte> queryForByte(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -1940,7 +1982,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is a <i>present</i> {@link OptionalShort} holding the value
      *         ({@code (short) 0} when the column is {@code null}); empty only when no row matches
-     * @throws IllegalArgumentException if targetClass is null, or propName is null or empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code propName} is
+     *         {@code null} or empty
      */
     @Beta
     public ContinuableFuture<OptionalShort> queryForShort(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -1976,7 +2019,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is a <i>present</i> {@link OptionalInt} holding the value
      *         ({@code 0} when the column is {@code null}); empty only when no row matches
-     * @throws IllegalArgumentException if targetClass is null, or propName is null or empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code propName} is
+     *         {@code null} or empty
      */
     @Beta
     public ContinuableFuture<OptionalInt> queryForInt(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -2012,7 +2056,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is a <i>present</i> {@link OptionalLong} holding the value
      *         ({@code 0L} when the column is {@code null}); empty only when no row matches
-     * @throws IllegalArgumentException if targetClass is null, or propName is null or empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code propName} is
+     *         {@code null} or empty
      */
     @Beta
     public ContinuableFuture<OptionalLong> queryForLong(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -2048,7 +2093,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is a <i>present</i> {@link OptionalFloat} holding the value
      *         ({@code 0f} when the column is {@code null}); empty only when no row matches
-     * @throws IllegalArgumentException if targetClass is null, or propName is null or empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code propName} is
+     *         {@code null} or empty
      */
     @Beta
     public ContinuableFuture<OptionalFloat> queryForFloat(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -2084,7 +2130,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is a <i>present</i> {@link OptionalDouble} holding the value
      *         ({@code 0d} when the column is {@code null}); empty only when no row matches
-     * @throws IllegalArgumentException if targetClass is null, or propName is null or empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code propName} is
+     *         {@code null} or empty
      */
     @Beta
     public ContinuableFuture<OptionalDouble> queryForDouble(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -2120,7 +2167,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is a {@link Nullable} holding the {@code String} value, or
      *         empty if no row matches; the value is {@code null} when the column is SQL NULL
-     * @throws IllegalArgumentException if targetClass is null, or propName is null or empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code propName} is
+     *         {@code null} or empty
      */
     @Beta
     public ContinuableFuture<Nullable<String>> queryForString(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -2155,7 +2203,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is a {@link Nullable} holding the {@code Date} value, or
      *         empty if no row matches
-     * @throws IllegalArgumentException if targetClass is null, or propName is null or empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code propName} is
+     *         {@code null} or empty
      */
     @Beta
     public ContinuableFuture<Nullable<Date>> queryForDate(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -2191,6 +2240,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is a {@link Nullable} holding the typed date value, or empty
      *         if no row matches
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code valueClass} is
+     *         {@code null}, or {@code propName} is {@code null} or empty
      */
     @Beta
     public <E extends Date> ContinuableFuture<Nullable<E>> queryForDate(final Class<?> targetClass, final Class<E> valueClass, final String propName,
@@ -2229,7 +2280,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting at most one row
      * @return a future whose payload is a {@link Nullable} holding the value, or empty if no row
      *         matches; the value is {@code null} when the column is SQL NULL
-     * @throws IllegalArgumentException if {@code propName} is {@code null} or empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code valueClass} is
+     *         {@code null}, or {@code propName} is {@code null} or empty
      */
     public <V> ContinuableFuture<Nullable<V>> queryForSingleValue(final Class<?> targetClass, final Class<V> valueClass, final String propName,
             final Condition whereClause) {
@@ -2276,7 +2328,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         matches; if a row was returned but the column value is {@code null}, {@code get()}
      *         throws a {@link NullPointerException} directly (not wrapped in an {@code ExecutionException}),
      *         since {@link Optional} cannot hold {@code null}
-     * @throws IllegalArgumentException if {@code propName} is {@code null} or empty
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code valueClass} is
+     *         {@code null}, or {@code propName} is {@code null} or empty
      */
     public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final Class<?> targetClass, final Class<V> valueClass, final String propName,
             final Condition whereClause) {

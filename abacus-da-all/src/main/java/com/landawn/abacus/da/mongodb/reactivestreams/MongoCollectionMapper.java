@@ -87,11 +87,11 @@ import reactor.core.publisher.Mono;
  * <h3>Reactive Entity Requirements:</h3>
  * <p>Entity classes used with this reactive mapper should follow these conventions:</p>
  * <ul>
- *   <li>Have a default (no-argument) constructor for reactive instantiation</li>
- *   <li>Use proper getter/setter methods for reactive property access</li>
- *   <li>Mark ID fields with @Id annotation or use "id" property name</li>
- *   <li>Use MongoDB-compatible data types for reactive serialization</li>
- *   <li>Be thread-safe if used across reactive streams boundaries</li>
+ *   <li>Have a default (no-argument) constructor for instantiation</li>
+ *   <li>Use proper getter/setter methods for property access</li>
+ *   <li>Mark ID fields with the {@code @Id} annotation or use the {@code "id"} property name</li>
+ *   <li>Use MongoDB-compatible data types for serialization</li>
+ *   <li>Be thread-safe if used across stream boundaries</li>
  * </ul>
  *
  * <h3>Thread Safety:</h3>
@@ -859,7 +859,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.list(fields, (Bson) null);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param selectPropNames the collection of BSON field names to include in the results (null or empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents
      * @return a Flux that emits matching entities with only the specified fields populated
      * @throws IllegalArgumentException if filter is null
@@ -894,7 +894,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.list(fields, filter, 0, -1);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param selectPropNames the collection of BSON field names to include in the results
+     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents against
      * @param offset the number of documents to skip (must be >= 0)
      * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
@@ -931,7 +931,7 @@ public final class MongoCollectionMapper<T> {
      * Flux<User> unsorted = userMapper.list(fields, filter, (Bson) null);   // no sort applied; not an error
      * }</pre>
      *
-     * @param selectPropNames the collection of BSON field names to include in the results
+     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results
      * @return a Flux that emits sorted matching entities with specified fields
@@ -968,7 +968,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.list(fields, filter, sort, -1, 10);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param selectPropNames the collection of BSON field names to include in the results
+     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results
      * @param offset the number of documents to skip (must be >= 0)
@@ -1722,7 +1722,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.query(fields, (Bson) null);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param selectPropNames the collection of BSON field names to include in the results (null or empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents
      * @return a Mono that emits a Dataset with projected fields
      * @throws IllegalArgumentException if filter is null
@@ -1756,7 +1756,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.query(fields, filter, -1, 50);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param selectPropNames the collection of BSON field names to include in the results
+     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents against
      * @param offset the number of documents to skip (must be >= 0)
      * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
@@ -1794,7 +1794,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.query(fields, (Bson) null, sort);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param selectPropNames the collection of BSON field names to include in the results
+     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results
      * @return a Mono that emits a sorted Dataset with projected fields
@@ -1830,7 +1830,7 @@ public final class MongoCollectionMapper<T> {
      * userMapper.query(fields, filter, sort, -1, 10);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param selectPropNames the collection of BSON field names to include in the results
+     * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results
      * @param offset the number of documents to skip (must be >= 0)

@@ -362,8 +362,9 @@ public final class AsyncHBaseExecutor {
      * Asynchronously retrieves multiple rows from the specified HBase table.
      *
      * <p>Performs batch get operations to retrieve data from multiple rows efficiently.
-     * This method is optimized for retrieving many rows in a single round-trip to the
-     * HBase region servers. The returned list maintains the same order as the input list.</p>
+     * This method executes multiple Get operations in a single batch call, which is more
+     * efficient than executing them individually. The returned list maintains the same
+     * order as the input list.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1460,7 +1461,8 @@ public final class AsyncHBaseExecutor {
     }
 
     /**
-     * Asynchronously performs atomic mutations on a single row using a fluent builder.
+     * Asynchronously performs atomic mutations on a single row using a fluent {@link AnyRowMutations}
+     * builder.
      *
      * <p>Executes multiple mutations (puts and/or deletes) on a single row atomically. All
      * mutations target the same row key and either all succeed or all fail, ensuring per-row
@@ -1923,8 +1925,8 @@ public final class AsyncHBaseExecutor {
      * @param <R> the return type from the coprocessor call
      * @param tableName the name of the HBase table
      * @param service the coprocessor service class
-     * @param startRowKey the starting row key (inclusive) for the range
-     * @param endRowKey the ending row key (inclusive; {@code null} for unbounded end)
+     * @param startRowKey the start row key (inclusive; {@code null} for unbounded start)
+     * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
      * @param callable the callable to execute on each region
      * @return a {@link ContinuableFuture} containing a map from region name bytes to the result
      *         returned by {@code callable} for that region. Wraps
@@ -1970,8 +1972,8 @@ public final class AsyncHBaseExecutor {
      * @param <R> the return type from the coprocessor call
      * @param tableName the name of the HBase table
      * @param service the coprocessor service class
-     * @param startRowKey the starting row key (inclusive) for the range
-     * @param endRowKey the ending row key (inclusive; {@code null} for unbounded end)
+     * @param startRowKey the start row key (inclusive; {@code null} for unbounded start)
+     * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
      * @param callable the callable to execute on each region
      * @param callback the callback that receives each region's result
      * @return a {@link ContinuableFuture} that completes with {@code null} when all calls finish.
@@ -2020,8 +2022,8 @@ public final class AsyncHBaseExecutor {
      * @param tableName the name of the HBase table
      * @param methodDescriptor the Protocol Buffer method descriptor for the coprocessor method
      * @param request the request message to send to each region
-     * @param startRowKey the starting row key (inclusive) for the range
-     * @param endRowKey the ending row key (inclusive; {@code null} for unbounded end)
+     * @param startRowKey the start row key (inclusive; {@code null} for unbounded start)
+     * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
      * @param responsePrototype the prototype instance used to parse responses
      * @return a {@link ContinuableFuture} containing a map of region names (byte arrays) to their
      *         corresponding response messages. Wraps {@link HBaseExecutor#batchCoprocessorService(String, Descriptors.MethodDescriptor, Message, Object, Object, Message)}.
@@ -2070,8 +2072,8 @@ public final class AsyncHBaseExecutor {
      * @param tableName the name of the HBase table
      * @param methodDescriptor the Protocol Buffer method descriptor for the coprocessor method
      * @param request the request message to send to each region
-     * @param startRowKey the starting row key (inclusive) for the range
-     * @param endRowKey the ending row key (inclusive; {@code null} for unbounded end)
+     * @param startRowKey the start row key (inclusive; {@code null} for unbounded start)
+     * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
      * @param responsePrototype the prototype instance used to parse responses
      * @param callback the callback that receives each region's response
      * @return a {@link ContinuableFuture} that completes with {@code null} when all calls finish.

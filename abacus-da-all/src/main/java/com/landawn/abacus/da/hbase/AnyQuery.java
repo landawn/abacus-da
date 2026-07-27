@@ -401,7 +401,7 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * <ul>
      * <li>Dramatically reduces I/O when filtering on specific columns</li>
      * <li>Reduces network traffic by not loading unnecessary column family data</li>
-     * <li>Most beneficial with SingleColumnValueFilter and filterIfMissing=true</li>
+     * <li>Most beneficial with {@code SingleColumnValueFilter} and {@code filterIfMissing=true}</li>
      * </ul>
      *
      * <p><strong>Important Consistency Considerations:</strong></p>

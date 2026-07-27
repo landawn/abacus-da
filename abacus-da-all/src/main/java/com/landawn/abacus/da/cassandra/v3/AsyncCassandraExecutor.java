@@ -30,12 +30,12 @@ import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.stream.Stream;
 
 /**
- * Asynchronous facade for the Cassandra Java Driver 3.x backed {@link CassandraExecutor}.
+ * Asynchronous facade for {@link CassandraExecutor} backed by the DataStax Java Driver 3.x.
  *
- * <p>This executor exposes the same operations as {@link CassandraExecutor} but returns each
+ * <p>This executor exposes the same set of operations as {@link CassandraExecutor} but returns each
  * result wrapped in a {@link ContinuableFuture}, executing statements through the driver's
  * {@code executeAsync} API. Instances are obtained from {@link CassandraExecutor#async()}, and
- * the backing synchronous executor is available via {@link #sync()}.</p>
+ * the backing synchronous executor can be retrieved via {@link #sync()}.</p>
  *
  * <p><b>Naming convention:</b> method names are identical to the synchronous {@link CassandraExecutor}
  * (the abacus "house" CRUD vocabulary: {@code get}/{@code gett}, {@code findFirst}, {@code list},
@@ -150,11 +150,11 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * async.stream("SELECT name FROM users", boom).get().forEach(x -> {}); // throws IllegalStateException on iteration
      * }</pre>
      *
-     * @param <T> the result type produced by the row mapper
+     * @param <T> the type of objects in the returned stream
      * @param query the CQL query to execute
-     * @param rowMapper function that converts the column definitions and each row into a result object
-     * @param parameters the query parameters
-     * @return a future that completes with a Stream of mapped results
+     * @param rowMapper a function that maps the column definitions and each row to a result object
+     * @param parameters the positional query parameters
+     * @return a future that completes with a Stream of mapped objects
      * @throws IllegalArgumentException if rowMapper is null
      */
     public <T> ContinuableFuture<Stream<T>> stream(final String query, final BiFunction<ColumnDefinitions, Row, T> rowMapper, final Object... parameters) {
@@ -190,10 +190,10 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * async.stream((Statement) null, mapper);             // throws NullPointerException
      * }</pre>
      *
-     * @param <T> the result type produced by the row mapper
-     * @param statement the statement to execute
-     * @param rowMapper function that converts the column definitions and each row into a result object
-     * @return a future that completes with a Stream of mapped results
+     * @param <T> the type of objects in the returned stream
+     * @param statement the CQL statement to execute
+     * @param rowMapper a function that maps the column definitions and each row to a result object
+     * @return a future that completes with a Stream of mapped objects
      * @throws IllegalArgumentException if rowMapper is null
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Statement statement, final BiFunction<ColumnDefinitions, Row, T> rowMapper) {

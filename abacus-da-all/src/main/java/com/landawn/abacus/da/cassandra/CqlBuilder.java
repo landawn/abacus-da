@@ -173,12 +173,16 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
 
     private static final String TIMESTAMP = "TIMESTAMP";
 
+    /** Pre-rendered {@code " IF "} separator emitted before a conditional IF expression. */
     static final char[] _SPACE_IF_SPACE = " IF ".toCharArray();
 
+    /** Pre-rendered {@code " IF EXISTS"} clause for conditional UPDATE/DELETE statements. */
     static final char[] _SPACE_IF_EXISTS = " IF EXISTS".toCharArray();
 
+    /** Pre-rendered {@code " IF NOT EXISTS"} clause for conditional INSERT statements. */
     static final char[] _SPACE_IF_NOT_EXISTS = " IF NOT EXISTS".toCharArray();
 
+    /** Pre-rendered {@code " ALLOW FILTERING"} clause for SELECT statements. */
     static final char[] _SPACE_ALLOW_FILTERING = " ALLOW FILTERING".toCharArray();
 
     private boolean _ttlSpecified;
@@ -299,7 +303,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      *
      * @param count the number of question marks to repeat (must be non-negative)
      * @return a string containing {@code count} question marks separated by {@code ", "}
-     * @throws IllegalArgumentException if count is negative
+     * @throws IllegalArgumentException if {@code count} is negative
      */
     @Beta
     public static String repeatPlaceholders(final int count) {
@@ -1583,7 +1587,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         public static final CqlBuilder.Dsl SCCB = Dsl
                 .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SNAKE_CASE).sqlPolicy(SqlPolicy.RAW_SQL).build());
         /**
-         * Raw-CQL DSL with {@code UPPER_CASE_WITH_UNDERSCORE} naming; values are inlined as CQL literals rather than parameterized.
+         * Raw-CQL DSL with {@code SCREAMING_SNAKE_CASE} naming; values are inlined as CQL literals rather than parameterized.
          *
          * @deprecated {@link #PAC} or {@link #NAC} is preferred for better security and performance.
          *             Un-parameterized CQL is vulnerable to CQL injection attacks.
@@ -1611,7 +1615,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         public static final CqlBuilder.Dsl PSC = Dsl
                 .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SNAKE_CASE).sqlPolicy(SqlPolicy.PARAMETERIZED_SQL).build());
         /**
-         * Parameterized-CQL DSL ({@code ?} placeholders) with {@code UPPER_CASE_WITH_UNDERSCORE} naming.
+         * Parameterized-CQL DSL ({@code ?} placeholders) with {@code SCREAMING_SNAKE_CASE} naming.
          */
         public static final CqlBuilder.Dsl PAC = Dsl
                 .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SCREAMING_SNAKE_CASE).sqlPolicy(SqlPolicy.PARAMETERIZED_SQL).build());
@@ -1631,7 +1635,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         public static final CqlBuilder.Dsl NSC = Dsl
                 .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SNAKE_CASE).sqlPolicy(SqlPolicy.NAMED_SQL).build());
         /**
-         * Named-CQL DSL ({@code :name} placeholders) with {@code UPPER_CASE_WITH_UNDERSCORE} naming.
+         * Named-CQL DSL ({@code :name} placeholders) with {@code SCREAMING_SNAKE_CASE} naming.
          */
         public static final CqlBuilder.Dsl NAC = Dsl
                 .forDialect(SqlDialect.builder().namingPolicy(NamingPolicy.SCREAMING_SNAKE_CASE).sqlPolicy(SqlPolicy.NAMED_SQL).build());
@@ -1655,10 +1659,17 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
             dslCache.put(Dsl.LCCB.sqlDialect, Dsl.LCCB);
         }
 
+        /** The dialect (naming policy + parameter style) this DSL is bound to. */
         final SqlDialect sqlDialect;
 
+        /** The naming policy applied to property/column names; never {@code null}. */
         final NamingPolicy namingPolicy;
 
+        /**
+         * Constructs a {@code Dsl} bound to the given dialect.
+         *
+         * @param sqlDialect the dialect (naming policy + parameter style) to bind
+         */
         Dsl(final SqlDialect sqlDialect) {
             this.sqlDialect = sqlDialect;
             namingPolicy = sqlDialect.namingPolicy() == null ? NamingPolicy.SNAKE_CASE : sqlDialect.namingPolicy();
@@ -2499,7 +2510,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * // Output: SELECT first_name AS "fname", last_name AS "lname", email_address AS "email" FROM account
          * }</pre>
          *
-         * @param propOrColumnNameAliases Map of property/column names to their aliases
+         * @param propOrColumnNameAliases map of property/column names to their aliases
          * @return a new CqlBuilder instance for method chaining
          * @throws IllegalArgumentException if propOrColumnNameAliases is null or empty, or if any
          *         alias is blank, quoted, or contains CQL comment tokens
@@ -2833,7 +2844,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *
          * @param tableName the name of the table to count rows from
          * @return a new CqlBuilder instance for method chaining
-         * @throws IllegalArgumentException if tableName is null or empty
+         * @throws IllegalArgumentException if {@code tableName} is not exactly one CQL table reference
          */
         public CqlBuilder count(final String tableName) {
             N.checkArgNotEmpty(tableName, SELECTION_PART_MSG);

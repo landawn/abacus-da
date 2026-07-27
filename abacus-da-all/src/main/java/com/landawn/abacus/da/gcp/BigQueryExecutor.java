@@ -518,10 +518,11 @@ public class BigQueryExecutor {
      * }</pre>
      *
      * @param <T> the entity type
-     * @param fieldValueList the row to convert
+     * @param fieldValueList the row to convert; must not be {@code null}
      * @param targetClass the bean class to instantiate; must declare standard getter/setter methods
      * @return a new {@code targetClass} instance with properties populated from {@code fieldValueList}
-     * @throws IllegalArgumentException if {@code targetClass} is not a recognised bean class, or if
+     * @throws IllegalArgumentException if {@code fieldValueList} is {@code null}, if
+     *                                  {@code targetClass} is not a recognised bean class, or if
      *                                  the schema cannot be retrieved from {@code fieldValueList}
      * @see #toEntity(FieldList, FieldValueList, Class)
      */
@@ -569,10 +570,11 @@ public class BigQueryExecutor {
     }
 
     /**
-     * Converts a BigQuery FieldValueList to a Map using the provided field list.
+     * Converts a BigQuery {@link FieldValueList} (a single result row) to a {@link HashMap} keyed
+     * by the column names in the supplied {@link FieldList}.
      * <p>
-     * This method creates a HashMap where keys are column names from the field list and values
-     * are the corresponding data from the FieldValueList. This is equivalent to calling
+     * Nested {@link FieldValueList} values (BigQuery {@code STRUCT}s) are recursively converted to
+     * nested maps. This is equivalent to calling
      * {@code toMap(fields, fieldValueList, IntFunctions.ofMap())}.
      *
      * <p><b>Usage Examples:</b></p>
@@ -692,10 +694,14 @@ public class BigQueryExecutor {
     }
 
     /**
-     * Converts a BigQuery FieldValueList to a HashMap by automatically extracting the schema.
+     * Converts a BigQuery {@link FieldValueList} (a single result row) to a {@link HashMap} keyed
+     * by column names, extracting the schema from the row itself via
+     * {@link #getSchema(FieldValueList)} (reflection-based access to {@code FieldValueList.schema}).
      * <p>
-     * This is a convenience method that automatically extracts the schema information from the
-     * FieldValueList and creates a HashMap containing the column-value mappings.
+     * This is a convenience overload of {@link #toMap(FieldList, FieldValueList)} for callers who
+     * don't have a separate {@link FieldList} handy. Note that the underlying reflection-based
+     * schema extraction will fail if the BigQuery client library hides the {@code schema} field;
+     * in long-running processes prefer the {@link #toMap(FieldList, FieldValueList)} overload.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -712,8 +718,10 @@ public class BigQueryExecutor {
      *
      * @param fieldValueList the row data from BigQuery containing both schema and values
      * @return a HashMap containing column names as keys and corresponding values
-     * @throws IllegalArgumentException if fieldValueList is null
+     * @throws IllegalArgumentException if {@code fieldValueList} is {@code null}, or if the schema
+     *                                  cannot be extracted from {@code fieldValueList}
      * @see #toMap(Schema, FieldValueList)
+     * @see #toMap(FieldList, FieldValueList)
      */
     public static Map<String, Object> toMap(final FieldValueList fieldValueList) {
         N.checkArgNotNull(fieldValueList, "fieldValueList");
@@ -722,10 +730,12 @@ public class BigQueryExecutor {
     }
 
     /**
-     * Converts a BigQuery FieldValueList to a Map using the provided Map supplier.
+     * Converts a BigQuery {@link FieldValueList} (a single result row) to a {@code Map} of
+     * caller-chosen type, extracting the schema from the row itself via
+     * {@link #getSchema(FieldValueList)} (reflection-based access to {@code FieldValueList.schema}).
      * <p>
-     * This is a convenience method that automatically extracts the schema information from the
-     * FieldValueList and creates a Map of the specified type containing the column-value mappings.
+     * Convenience overload of {@link #toMap(FieldList, FieldValueList, IntFunction)}; nested
+     * {@link FieldValueList} values are recursively converted into maps of the same supplier type.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -744,7 +754,9 @@ public class BigQueryExecutor {
      * @param fieldValueList the row data from BigQuery containing both schema and values
      * @param mapSupplier a function that creates Map instances given the expected size
      * @return a Map of the mapSupplier's type containing column names as keys and corresponding values
-     * @throws IllegalArgumentException if fieldValueList or mapSupplier is null
+     * @throws IllegalArgumentException if {@code fieldValueList} or {@code mapSupplier} is
+     *                                  {@code null}, or if the schema cannot be extracted from
+     *                                  {@code fieldValueList}
      * @see #toMap(FieldList, FieldValueList, IntFunction)
      */
     public static Map<String, Object> toMap(final FieldValueList fieldValueList, final IntFunction<? extends Map<String, Object>> mapSupplier) {
@@ -1296,7 +1308,8 @@ public class BigQueryExecutor {
      *               {@code QueryParameterValue}
      * @return the TableResult containing execution statistics including number of rows affected
      * @throws IllegalArgumentException if entity is null, if no primary key fields are found for the
-     *         entity class, or if every non-key property of the entity is null (nothing to update)
+     *         entity class, if a primary-key property of the entity has a null or blank value, or if
+     *         every non-key property of the entity is null (nothing to update)
      * @see #update(Object, Set)
      */
     public TableResult update(final Object entity) {
@@ -1343,8 +1356,9 @@ public class BigQueryExecutor {
      *               {@code QueryParameterValue}
      * @param primaryKeyNames the set of property names to use as primary key fields in the WHERE clause
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if entity is null, if primaryKeyNames is null or empty, or if
-     *         every non-key property of the entity is null (nothing to update)
+     * @throws IllegalArgumentException if entity is null, if primaryKeyNames is null or empty, if a
+     *         named primary-key property of the entity has a null or blank value, or if every
+     *         non-key property of the entity is null (nothing to update)
      * @see #update(Class, Map, Condition)
      */
     public TableResult update(final Object entity, final Set<String> primaryKeyNames) {

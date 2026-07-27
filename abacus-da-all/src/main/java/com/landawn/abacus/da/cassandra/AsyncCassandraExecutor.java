@@ -119,7 +119,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
     }
 
     /**
-     * Asynchronously executes a CQL query and returns a future of a {@link Stream} mapped by a custom row mapper.
+     * Asynchronously executes the given CQL query and returns a future that completes with a
+     * {@link Stream} of rows mapped by the supplied row mapper.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -145,9 +146,9 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * }</pre>
      *
      * @param <T> the type of objects in the returned stream
-     * @param query the CQL query string
-     * @param rowMapper a function that maps column definitions and rows to result objects
-     * @param parameters the query parameters
+     * @param query the CQL query to execute
+     * @param rowMapper a function that maps the column definitions and each row to a result object
+     * @param parameters the positional query parameters
      * @return a future that completes with a Stream of mapped objects
      * @throws IllegalArgumentException if rowMapper is null
      */
@@ -158,7 +159,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
     }
 
     /**
-     * Asynchronously executes a pre-configured CQL statement and returns a future of a {@link Stream} mapped by a custom row mapper.
+     * Asynchronously executes the given statement and returns a future that completes with a
+     * {@link Stream} of rows mapped by the supplied row mapper.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -184,8 +186,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * }</pre>
      *
      * @param <T> the type of objects in the returned stream
-     * @param statement the configured CQL statement to execute
-     * @param rowMapper a function that maps column definitions and rows to result objects
+     * @param statement the CQL statement to execute
+     * @param rowMapper a function that maps the column definitions and each row to a result object
      * @return a future that completes with a Stream of mapped objects
      * @throws IllegalArgumentException if rowMapper is null
      */

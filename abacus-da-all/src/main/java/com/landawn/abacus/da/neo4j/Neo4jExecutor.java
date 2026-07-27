@@ -425,7 +425,7 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type
      * @param ids primary-index values, or native graph IDs for a class without a primary index
-     * @return collection of loaded node entities, empty collection if no nodes found
+     * @return collection of loaded node entities, or an empty collection if no nodes are found
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Collection, int)
      * @see #load(Class, Serializable)
@@ -2029,6 +2029,7 @@ public final class Neo4jExecutor {
      *
      * @param object a mapped entity, an array of mapped entities, or an {@link Iterable} of mapped
      *               entities
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #save(Object, int)
      */
     public void save(final Object object) {
@@ -2066,6 +2067,7 @@ public final class Neo4jExecutor {
      *               entities
      * @param depth the depth of related entities to traverse and persist: {@code 0} for the node
      *              only, a positive integer for that many hops, or {@code -1} for unlimited
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #save(Object)
      */
     public void save(final Object object, final int depth) {
@@ -2101,6 +2103,7 @@ public final class Neo4jExecutor {
      *
      * @param object a mapped entity, an array of mapped entities, or an {@link Iterable} of mapped
      *               entities to delete
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #deleteAll(Class)
      */
     public void delete(final Object object) {
@@ -2115,8 +2118,8 @@ public final class Neo4jExecutor {
 
     /**
      * Deletes every entity of the supplied OGM-mapped class. For a node-entity class, incident
-     * relationships are deleted as well; relationship-entity classes delete the mapped
-     * relationships.
+     * relationships are deleted as well; for a relationship-entity class, the mapped relationships
+     * are deleted.
      * <p>
      * Delegates to {@link Session#deleteAll(Class)}. <strong>WARNING:</strong> this is a destructive
      * bulk operation that cannot be undone; verify the target class before invoking it.
@@ -2136,6 +2139,7 @@ public final class Neo4jExecutor {
      * }</pre>
      *
      * @param targetClass the OGM-mapped entity class to delete
+     * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #delete(Object)
      */
     public void deleteAll(final Class<?> targetClass) {

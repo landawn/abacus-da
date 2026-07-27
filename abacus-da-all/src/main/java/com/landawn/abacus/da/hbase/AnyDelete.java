@@ -508,7 +508,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * }</pre>
      *
      * @param cell an existing Cell to attach to this delete; should be a delete-type cell
-     *           whose row matches this delete's row
+     *             whose row matches this delete's row
      * @return this AnyDelete instance for method chaining
      * @throws IOException if the cell's row does not match this delete's row
      *         (a {@code WrongRowIOException}, an {@code IOException} subtype)

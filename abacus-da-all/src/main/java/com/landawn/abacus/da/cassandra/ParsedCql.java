@@ -561,6 +561,7 @@ public final class ParsedCql {
         return false;
     }
 
+    /** Returns {@code true} if the token is blank or starts a comment ({@code --}, {@code //}, or a block comment). */
     private static boolean isCommentOrSpaceToken(final String word) {
         return Strings.isBlank(word) || word.startsWith("--") || word.startsWith("//") || word.startsWith("/*");
     }

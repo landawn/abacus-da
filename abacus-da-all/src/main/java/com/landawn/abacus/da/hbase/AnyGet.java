@@ -156,7 +156,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * The supplied Get is stored by reference; subsequent mutations through this AnyGet
      * (or directly on the original Get) are visible on both.
      *
-     * @param get the existing HBase Get object to wrap; must not be null
+     * @param get the existing HBase Get object to wrap; must not be {@code null}
      */
     AnyGet(final Get get) {
         super(get);
@@ -188,7 +188,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @param rowKey the row key object to retrieve, automatically converted to bytes
      * @return a new AnyGet instance configured with the specified row key
      * @throws IllegalArgumentException if {@code rowKey} is null or its converted byte
-     *         representation is empty
+     *         representation is empty or exceeds HBase's maximum row length
      * @see #of(Object, int, int)
      * @see #of(ByteBuffer)
      * @see #of(Get)
@@ -224,7 +224,8 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @param rowOffset the starting offset within the row key byte array
      * @param rowLength the number of bytes to use from the row key
      * @return a new AnyGet instance configured with the partial row key
-     * @throws IllegalArgumentException if {@code rowKey} is null or the selected slice is empty
+     * @throws IllegalArgumentException if {@code rowKey} is null, the selected slice is empty,
+     *         or {@code rowLength} exceeds HBase's maximum row length
      * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative, or
      *         {@code rowOffset + rowLength} exceeds the length of the converted row-key bytes
      * @see #of(Object)
@@ -292,7 +293,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * AnyGet.of((Get) null);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param get the existing HBase Get object to wrap; must not be null
+     * @param get the existing HBase Get object to wrap; must not be {@code null}
      * @return a new AnyGet instance that wraps the specified Get by reference
      * @throws IllegalArgumentException if {@code get} is null
      * @see org.apache.hadoop.hbase.client.Get
@@ -460,7 +461,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * boolean isEmpty = empty.isEmpty();   // true
      * }</pre>
      *
-     * @return the live family map, never null (possibly empty)
+     * @return the live family map, never {@code null} (possibly empty)
      * @see #addFamily(String)
      * @see #addColumn(String, String)
      */
@@ -887,7 +888,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * String keyString = Bytes.toString(rowKey);   // "user123"
      * }</pre>
      *
-     * @return the row key as a byte array; never null
+     * @return the row key as a byte array; never {@code null}
      * @see Row#getRow()
      */
     @Override
@@ -967,7 +968,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * boolean empty = AnyGet.of("user123").familySet().isEmpty();   // true
      * }</pre>
      *
-     * @return a live keySet view of column-family byte arrays; never null, possibly empty
+     * @return a live keySet view of column-family byte arrays; never {@code null}, possibly empty
      * @see #hasFamilies()
      * @see #numFamilies()
      */
@@ -1117,8 +1118,8 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * AnyGet.toGet(null);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param anyGets the collection of AnyGet instances to convert; must not be null
-     *                and must not contain null elements
+     * @param anyGets the collection of AnyGet instances to convert; must not be {@code null}
+     *                and must not contain {@code null} elements
      * @return a list of native HBase Get objects, in iteration order of {@code anyGets}.
      *         Returns an empty list when {@code anyGets} is empty.
      * @throws IllegalArgumentException if {@code anyGets} is null, or any element of {@code anyGets} is null

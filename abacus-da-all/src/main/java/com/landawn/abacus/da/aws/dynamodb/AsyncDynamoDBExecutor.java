@@ -384,7 +384,7 @@ public final class AsyncDynamoDBExecutor {
      * }</pre>
      *
      * @param <T> the type to convert the item to
-     * @param tableName the name of the table to get the item from, must not be {@code null}
+     * @param tableName the name of the DynamoDB table to retrieve the item from, must not be {@code null}
      * @param key the primary key of the item to retrieve, must include all key attributes, must not be {@code null}
      * @param consistentRead {@code Boolean.TRUE} to perform a strongly consistent read;
      *                       {@code Boolean.FALSE} or {@code null} for an eventually consistent read
@@ -552,7 +552,7 @@ public final class AsyncDynamoDBExecutor {
      *         System.out.println("Retrieved " + users.size() + " users");
      *         // Note: every batchGetItem overload on this executor returns only the per-table
      *         // results. To inspect ConsumedCapacity, call the underlying client directly:
-     *         // sync().dynamoDBClient().batchGetItem(request).
+     *         // sync().dynamoDBClient().batchGetItem(request)
      *     }); // returns ContinuableFuture<Map<String, List<Map<String, Object>>>> (capacity not exposed by any overload)
      *
      * // Typical: block for the result map ("NONE" disables capacity reporting on the wire)
@@ -950,9 +950,9 @@ public final class AsyncDynamoDBExecutor {
      * PutItemResult result = future.get(); // returns a non-null PutItemResult (the request used ReturnValue.ALL_OLD)
      * }</pre>
      *
-     * @param putItemRequest the complete PutItemRequest with all parameters configured. Must not be null.
+     * @param putItemRequest the complete PutItemRequest with all parameters configured, must not be {@code null}
      * @return a ContinuableFuture containing the PutItemResult with operation results
-     * @throws IllegalArgumentException if putItemRequest is null
+     * @throws IllegalArgumentException if putItemRequest is {@code null}
      * @see PutItemRequest
      * @see PutItemResult
      */
@@ -971,8 +971,8 @@ public final class AsyncDynamoDBExecutor {
      * entity to a {@code Map<String, AttributeValue>} and use the public overload, or
      * obtain the wrapper through other API entry points.</p>
      *
-     * @param tableName the name of the table to put the entity into (must not be null)
-     * @param entity the entity object to put (must not be null)
+     * @param tableName the name of the table to put the entity into (must not be {@code null})
+     * @param entity the entity object to put (must not be {@code null})
      * @return a {@link ContinuableFuture} whose payload is the {@link PutItemResult}
      *         returned by the underlying synchronous operation
      */
@@ -988,8 +988,8 @@ public final class AsyncDynamoDBExecutor {
      * same reason as {@link #putItem(String, Object)} — the {@code Object} parameter would
      * overload-clash with the {@code Map}-accepting public entry point.</p>
      *
-     * @param tableName the name of the table to put the entity into (must not be null)
-     * @param entity the entity object to put (must not be null)
+     * @param tableName the name of the table to put the entity into (must not be {@code null})
+     * @param entity the entity object to put (must not be {@code null})
      * @param returnValues specifies what values to return: "NONE" (default) or "ALL_OLD" for PutItem operations
      * @return a {@link ContinuableFuture} whose payload is the {@link PutItemResult}
      *         returned by the underlying synchronous operation; when {@code returnValues}
@@ -1010,7 +1010,7 @@ public final class AsyncDynamoDBExecutor {
      * <ul>
      * <li>Up to 25 put or delete requests in a single batch</li>
      * <li>Can write to multiple tables in one operation</li>
-     * <li>Automatic handling of unprocessed items in the result</li>
+     * <li>Unprocessed items are reported in the result so they can be retried</li>
      * <li>More cost-effective than individual writes</li>
      * </ul>
      *
@@ -1134,10 +1134,10 @@ public final class AsyncDynamoDBExecutor {
      * BatchWriteItemResult result = future.get(); // returns a non-null BatchWriteItemResult
      * }</pre>
      *
-     * @param batchWriteItemRequest the complete BatchWriteItemRequest with all parameters configured. Must not be null.
+     * @param batchWriteItemRequest the complete BatchWriteItemRequest with all parameters configured, must not be {@code null}
      * @return a ContinuableFuture containing the BatchWriteItemResult with consumed capacity,
      *         item collection metrics, and any unprocessed items
-     * @throws IllegalArgumentException if batchWriteItemRequest is null (surfaced through the future);
+     * @throws IllegalArgumentException if batchWriteItemRequest is {@code null} (surfaced through the future);
      *         exceeding DynamoDB's 25-request batch limit fails with a service {@code ValidationException} via the future
      * @see BatchWriteItemRequest
      * @see BatchWriteItemResult
@@ -1309,9 +1309,9 @@ public final class AsyncDynamoDBExecutor {
      * UpdateItemResult result = future.get(); // returns a non-null UpdateItemResult
      * }</pre>
      *
-     * @param updateItemRequest the complete UpdateItemRequest with all parameters configured. Must not be null.
+     * @param updateItemRequest the complete UpdateItemRequest with all parameters configured, must not be {@code null}
      * @return a ContinuableFuture containing the UpdateItemResult with operation results
-     * @throws IllegalArgumentException if updateItemRequest is null
+     * @throws IllegalArgumentException if updateItemRequest is {@code null}
      * @see UpdateItemRequest
      * @see UpdateItemResult
      */
@@ -1469,9 +1469,9 @@ public final class AsyncDynamoDBExecutor {
      * DeleteItemResult result = future.get(); // returns a non-null DeleteItemResult
      * }</pre>
      *
-     * @param deleteItemRequest the complete DeleteItemRequest with all parameters configured. Must not be null.
+     * @param deleteItemRequest the complete DeleteItemRequest with all parameters configured, must not be {@code null}
      * @return a ContinuableFuture containing the DeleteItemResult with operation results
-     * @throws IllegalArgumentException if deleteItemRequest is null
+     * @throws IllegalArgumentException if deleteItemRequest is {@code null}
      * @see DeleteItemRequest
      * @see DeleteItemResult
      */
@@ -1587,8 +1587,8 @@ public final class AsyncDynamoDBExecutor {
      * returned. A {@code Limit} on the request acts as a page size only, not a total-result cap.</p>
      *
      * @param <T> the type to convert each item to
-     * @param queryRequest the QueryRequest with all parameters configured. Must not be null.
-     * @param targetClass the class to convert each item to. Must not be null.
+     * @param queryRequest the QueryRequest with all parameters configured, must not be {@code null}
+     * @param targetClass the class to convert each item to, must not be {@code null}
      * @return a ContinuableFuture containing the matching items materialized according to the
      *         pagination behavior above and converted to type T
      * @throws NullPointerException if queryRequest is {@code null} (surfaced through the future)

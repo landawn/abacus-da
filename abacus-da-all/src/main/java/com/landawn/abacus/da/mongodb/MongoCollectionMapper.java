@@ -2164,10 +2164,13 @@ public final class MongoCollectionMapper<T> {
      * <p>If {@code update} is already a driver-built {@link Bson} update expression
      * (for example {@code Updates.set(...)}/{@code Updates.combine(...)}) it is used verbatim.
      * Otherwise the entity is converted to a {@link Document} via {@link MongoDBBase#toDocument(Object)}
-     * and wrapped in {@code {$set: ...}}; properties whose getter returns {@code null} are
+     * and wrapped in {@code {$set: ...}} (the immutable {@code _id} field is stripped from the
+     * converted document first); properties whose getter returns {@code null} are
      * <i>dropped</i> by the bean conversion, so entity nulls cannot be used to clear fields through
      * this path. Use a driver-built {@link Bson} update (e.g. {@code Updates.set(field, null)})
-     * when you need to explicitly write {@code null}.</p>
+     * when you need to explicitly write {@code null}. If nothing updatable remains (every property
+     * is {@code null} or only {@code _id} was set), an {@link IllegalArgumentException} is thrown —
+     * the server rejects an empty {@code $set}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2185,9 +2188,11 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param objectId the 24-hex-character ObjectId string identifying the entity to update
-     * @param update the entity (or driver {@link Bson} update expression) containing the update data
+     * @param update the entity, or a driver-built {@link Bson} update expression, containing the update data
      * @return UpdateResult containing information about the update operation
-     * @throws IllegalArgumentException if {@code objectId} is null, empty, or not a valid hex ObjectId, or {@code update} is null
+     * @throws IllegalArgumentException if {@code objectId} is null, empty, or not a valid hex ObjectId,
+     *         {@code update} is null, or the converted update payload is empty (no non-{@code null}
+     *         updatable properties besides the immutable {@code _id})
      * @throws com.mongodb.MongoWriteException if the update operation fails
      * @throws com.mongodb.MongoException if the database operation fails
      * @see UpdateResult
@@ -2232,7 +2237,9 @@ public final class MongoCollectionMapper<T> {
      * 
      * <p>This method updates the first entity matching the provided filter. The update entity
      * specifies which fields to modify. If multiple documents match the filter, only the first
-     * one found will be updated. Use updateMany for updating multiple documents.</p>
+     * one found will be updated. Use updateMany for updating multiple documents. The update
+     * payload undergoes the same {@code $set}-wrapping conversion documented by
+     * {@link #updateOne(String, Object)}.</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2278,7 +2285,7 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param filter the query filter to match the entity to update
-     * @param update the entity containing update data
+     * @param update the entity, or a driver-built {@link Bson} update expression, containing the update data
      * @param options additional options for the update operation (null uses defaults)
      * @return UpdateResult containing information about the update operation
      * @throws IllegalArgumentException if filter or update is null
@@ -2365,7 +2372,8 @@ public final class MongoCollectionMapper<T> {
      *
      * <p>This method updates all entities that match the provided filter criteria. Unlike updateOne,
      * this operation modifies every matching document in the collection. Use with caution on
-     * filters that may match large numbers of documents.</p>
+     * filters that may match large numbers of documents. The update payload undergoes the same
+     * {@code $set}-wrapping conversion documented by {@link #updateOne(String, Object)}.</p>
      *
      * <p><b>Note:</b> This method performs a blocking operation. For non-blocking operations, use
      * {@link #collectionExecutor()}.{@code async()}.</p>
@@ -2381,7 +2389,7 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param filter the query filter to match entities to update
-     * @param update the entity containing update data
+     * @param update the entity, or a driver-built {@link Bson} update expression, containing the update data
      * @return UpdateResult containing information about the update operation
      * @throws IllegalArgumentException if filter or update is null
      * @throws com.mongodb.MongoWriteException if the update operation fails
@@ -2412,7 +2420,7 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param filter the query filter to match entities to update
-     * @param update the entity containing update data
+     * @param update the entity, or a driver-built {@link Bson} update expression, containing the update data
      * @param options additional options for the update operation (null uses defaults)
      * @return UpdateResult containing information about the update operation
      * @throws IllegalArgumentException if filter or update is null
@@ -2911,6 +2919,8 @@ public final class MongoCollectionMapper<T> {
     /**
      * Atomically finds the first document matching {@code filter}, applies the supplied update, and
      * returns the matched document as an entity. The find-and-modify is atomic on a single document.
+     * The update payload undergoes the same {@code $set}-wrapping conversion documented by
+     * {@link #updateOne(String, Object)}.
      *
      * <p>By default the entity is returned in its <strong>pre-update</strong> state
      * (driver default {@code ReturnDocument.BEFORE}). Use
@@ -2927,7 +2937,7 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param filter the query filter to match the entity to update
-     * @param update the entity containing update data, or a driver-built {@link Bson} update
+     * @param update the entity, or a driver-built {@link Bson} update expression, containing the update data
      * @return the matched entity (pre-update by default), or {@code null} if no document matched
      * @throws IllegalArgumentException if filter or update is null
      * @throws com.mongodb.MongoWriteException if the operation fails

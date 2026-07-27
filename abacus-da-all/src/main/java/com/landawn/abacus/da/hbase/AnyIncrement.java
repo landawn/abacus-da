@@ -478,7 +478,7 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      *                  {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @param amount the long delta to apply to the existing cell value (negative for decrement)
      * @return this AnyIncrement instance, to allow fluent method chaining
-     * @throws IllegalArgumentException if {@code family} is null
+     * @throws IllegalArgumentException if {@code family} is {@code null}
      * @see #addColumn(byte[], byte[], long)
      */
     public AnyIncrement addColumn(final String family, final String qualifier, final long amount) {

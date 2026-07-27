@@ -114,7 +114,6 @@ import com.landawn.abacus.annotation.SuppressFBWarnings;
  *     (or the timestamp set via {@link #setTimestamp(long)} before the cell is added)</li>
  * </ul>
  *
- * @see Append
  * @see AnyMutation
  * @see AnyIncrement
  * @see HBaseExecutor#append(String, AnyAppend)
@@ -336,7 +335,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
      * AnyAppend.of(new byte[0], ts, familyMap);              // throws IllegalArgumentException (empty row key)
      * }</pre>
      *
-     * @param rowKey the row key as a byte array, must not be null or empty
+     * @param rowKey the row key as a byte array; must not be {@code null} or empty
      * @param timestamp the timestamp for all append operations (milliseconds since epoch)
      * @param familyMap a map of column family names to lists of cells to append
      * @return a new AnyAppend instance configured with the specified data
@@ -508,7 +507,7 @@ public final class AnyAppend extends AnyMutation<AnyAppend> {
     }
 
     /**
-     * Checks whether this append operation is configured to return results.
+     * Returns whether this append operation is configured to return results.
      *
      * <p>This method returns {@code true} if the append operation is set to return the updated values
      * after the operation. If false, the operation will not return results, optimizing performance

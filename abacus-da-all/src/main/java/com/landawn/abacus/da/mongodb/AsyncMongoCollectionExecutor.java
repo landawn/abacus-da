@@ -161,7 +161,7 @@ public final class AsyncMongoCollectionExecutor {
     }
 
     /**
-     * Returns the underlying synchronous MongoCollectionExecutor for blocking operations.
+     * Returns the underlying synchronous {@link MongoCollectionExecutor} for blocking operations.
      *
      * <p>This method provides access to the synchronous executor when blocking operations are
      * needed or when integrating with synchronous code paths. The returned executor shares
@@ -185,7 +185,7 @@ public final class AsyncMongoCollectionExecutor {
      * Asynchronously checks if a document exists by its ObjectId string representation.
      *
      * <p>This method returns immediately with a ContinuableFuture that will complete with
-     * the existence check result. The ObjectId string must be valid 24-character hexadecimal.</p>
+     * the existence check result. The ObjectId string must be a valid 24-character hexadecimal.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -721,7 +721,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to match documents against (must not be null)
      * @return a ContinuableFuture that completes with an Optional containing the first matching document, or empty if none found
      * @throws IllegalArgumentException if filter is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through the future)
+     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Optional
      * @see Document
      * @see com.mongodb.client.model.Filters
@@ -859,7 +859,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to match documents against (must not be null)
      * @return a ContinuableFuture that completes with a List containing all matching documents (empty list if none found)
      * @throws IllegalArgumentException if filter is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through the future)
+     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Document
      * @see #stream(Bson)
      * @see com.mongodb.client.model.Filters
@@ -1619,7 +1619,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to match documents (must not be null)
      * @return a ContinuableFuture that completes with a Dataset containing the query results
      * @throws IllegalArgumentException if filter is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through the future)
+     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Dataset
      * @see #query(Bson, Class)
      */
@@ -1862,7 +1862,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to match documents (must not be null)
      * @return a ContinuableFuture that completes with a Stream of Document objects
      * @throws IllegalArgumentException if filter is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through the future)
+     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
      * @see Stream
      * @see Document
      */

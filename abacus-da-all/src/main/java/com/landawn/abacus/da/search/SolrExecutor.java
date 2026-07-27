@@ -26,6 +26,9 @@ package com.landawn.abacus.da.search;
  */
 final class SolrExecutor { //NOSONAR
 
+    /**
+     * Package-private constructor; reserved for a future implementation.
+     */
     SolrExecutor() {
         // placeholder class - reserved for a future implementation
     }

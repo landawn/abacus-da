@@ -306,7 +306,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * AnyPut.of(new byte[0]);             // throws IllegalArgumentException
      * }</pre>
      *
-     * @param rowKey the row key for the put operation, automatically converted to bytes (String, Long, byte[], etc.); should not be {@code null}
+     * @param rowKey the row key for the put operation, automatically converted to bytes (String, Long, byte[], etc.); must not be {@code null}
      * @return a new AnyPut instance configured for the specified row
      * @throws NullPointerException if {@code rowKey} is {@code null}
      * @throws IllegalArgumentException if the converted row key is an empty byte array
@@ -337,14 +337,19 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * // Edge: a negative timestamp is rejected.
      * AnyPut.of("user123", -1L);   // throws IllegalArgumentException
+     *
+     * // Edge: a null row key is rejected.
+     * AnyPut.of((Object) null, eventTime);   // throws NullPointerException
      * }</pre>
      *
-     * @param rowKey the row key for the put operation, automatically converted to bytes
+     * @param rowKey the row key for the put operation, automatically converted to bytes; must not
+     *               be {@code null}
      * @param timestamp the default timestamp for cells added without an explicit timestamp
      *                  (milliseconds since epoch)
      * @return a new AnyPut configured with the specified default timestamp
-     * @throws IllegalArgumentException if {@code timestamp} is negative (validated by the
-     *         underlying {@link Put} constructor)
+     * @throws NullPointerException if {@code rowKey} is {@code null}
+     * @throws IllegalArgumentException if the converted row key is an empty byte array, or if
+     *         {@code timestamp} is negative (validated by the underlying {@link Put} constructor)
      * @see #of(Object)
      * @see #addColumn(String, String, long, Object)
      */
@@ -452,7 +457,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * AnyPut.of((Object) null, true);       // throws IllegalArgumentException
      * }</pre>
      *
-     * @param rowKey the row key for the put operation, automatically converted to bytes; should not be {@code null}
+     * @param rowKey the row key for the put operation, automatically converted to bytes; must not be {@code null}
      * @param rowIsImmutable true if the row key byte array is guaranteed to be immutable
      * @return a new AnyPut instance with immutability control
      * @throws IllegalArgumentException if the converted row key is {@code null} or empty
@@ -519,10 +524,11 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * AnyPut.of((ByteBuffer) null);      // throws IllegalArgumentException
      * }</pre>
      *
-     * @param rowKey the row key as a ByteBuffer; must not be null, and its position is advanced
-     *               to its limit
+     * @param rowKey the row key as a ByteBuffer; must not be {@code null} and must have at least
+     *               one remaining byte; its position is advanced to its limit
      * @return a new AnyPut instance configured for the ByteBuffer row key
-     * @throws IllegalArgumentException if {@code rowKey} is null (raised by the wrapped {@link Put#Put(ByteBuffer)} constructor)
+     * @throws IllegalArgumentException if {@code rowKey} is null or empty ({@code remaining() == 0})
+     *         (raised by the wrapped {@link Put#Put(ByteBuffer)} constructor)
      * @see #of(ByteBuffer, long)
      * @see #of(Object)
      */
@@ -555,11 +561,12 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * AnyPut.of(ByteBuffer.wrap("k".getBytes()), -1L); // throws IllegalArgumentException
      * }</pre>
      *
-     * @param rowKey the row key as a ByteBuffer; must not be null, and its position is advanced
-     *               to its limit
+     * @param rowKey the row key as a ByteBuffer; must not be {@code null} and must have at least
+     *               one remaining byte; its position is advanced to its limit
      * @param timestamp the timestamp for all cells in this put operation (milliseconds since epoch)
      * @return a new AnyPut instance with ByteBuffer row key and timestamp control
-     * @throws IllegalArgumentException if {@code rowKey} is null (raised by the wrapped {@link Put#Put(ByteBuffer, long)} constructor), or if {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code rowKey} is null or empty ({@code remaining() == 0})
+     *         (raised by the wrapped {@link Put#Put(ByteBuffer, long)} constructor), or if {@code timestamp} is negative
      * @see #of(ByteBuffer)
      * @see #of(Object, long)
      */
@@ -646,8 +653,8 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param entity the Java object to convert to a put operation; must not be null and must
      *               have a row-key property
      * @return a new AnyPut populated from the entity
-     * @throws IllegalArgumentException if {@code entity} is null or its class lacks a row-key
-     *         property
+     * @throws IllegalArgumentException if {@code entity} is null, its class lacks a row-key
+     *         property, or the row-key value is {@code null}
      * @see #create(Object, NamingPolicy)
      * @see #create(Object, Collection)
      * @see ColumnFamily
@@ -681,7 +688,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param entity the Java object to convert to a put operation; must not be null
      * @param namingPolicy the naming policy for property-to-column name conversion; must not be null
      * @return a new AnyPut instance with data from the entity
-     * @throws IllegalArgumentException if entity or namingPolicy is null, or entity lacks a row key property
+     * @throws IllegalArgumentException if entity or namingPolicy is null, or entity lacks a row key property or has a null row key value
      * @see #create(Object)
      * @see NamingPolicy
      */
@@ -717,7 +724,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * @param entities the collection of Java objects to convert; must not be null
      * @return a list of AnyPut instances, one for each entity
-     * @throws IllegalArgumentException if entities is null or any entity lacks a row key property
+     * @throws IllegalArgumentException if entities is null, or any entity lacks a row key property or has a null row key value
      * @see #create(Collection, NamingPolicy)
      * @see #create(Object)
      */
@@ -756,7 +763,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param entities the collection of Java objects to convert; must not be null
      * @param namingPolicy the naming policy for property-to-column name conversion; must not be null
      * @return a list of AnyPut instances, one for each entity
-     * @throws IllegalArgumentException if entities or namingPolicy is null
+     * @throws IllegalArgumentException if entities or namingPolicy is null, or any entity lacks a row key property
      * @see #create(Collection)
      * @see NamingPolicy
      */
@@ -800,7 +807,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param entity the Java object to convert; must not be null
      * @param selectPropNames the property names to include in the put; if null, all properties are included
      * @return a new AnyPut instance with only the selected properties
-     * @throws IllegalArgumentException if entity is null, entity lacks a row key, or a property name is invalid
+     * @throws IllegalArgumentException if entity is null, entity lacks a row key property or has a null row key value, or a property name is invalid
      * @see #create(Object, Collection, NamingPolicy)
      * @see #create(Object)
      */
@@ -831,7 +838,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param selectPropNames the property names to include; if null, all properties are included
      * @param namingPolicy the naming policy for property-to-column name conversion; must not be null
      * @return a new AnyPut instance with only the selected properties
-     * @throws IllegalArgumentException if entity or namingPolicy is null, or property names are invalid
+     * @throws IllegalArgumentException if entity or namingPolicy is null, entity lacks a row key property, or property names are invalid
      * @see #create(Object, Collection)
      * @see NamingPolicy
      */
@@ -880,7 +887,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param entities the collection of Java objects to convert; must not be null
      * @param selectPropNames the property names to include from each entity; if null, all properties are included
      * @return a list of AnyPut instances with only the selected properties from each entity
-     * @throws IllegalArgumentException if entities is null or property names are invalid
+     * @throws IllegalArgumentException if entities is null, any entity lacks a row key property, or property names are invalid
      * @see #create(Collection, Collection, NamingPolicy)
      * @see #create(Object, Collection)
      */
@@ -918,7 +925,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @param selectPropNames the property names to include from each entity; if null, all properties included
      * @param namingPolicy the naming policy for property-to-column name conversion; must not be null
      * @return a list of AnyPut instances with selected properties from each entity
-     * @throws IllegalArgumentException if entities or namingPolicy is null
+     * @throws IllegalArgumentException if entities or namingPolicy is null, any entity lacks a row key property, or property names are invalid
      * @see #create(Collection, Collection)
      * @see NamingPolicy
      */

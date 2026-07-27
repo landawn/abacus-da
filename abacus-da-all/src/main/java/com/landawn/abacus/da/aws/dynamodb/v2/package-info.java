@@ -14,7 +14,7 @@
 
 /**
  * Provides synchronous and asynchronous Amazon DynamoDB access through AWS SDK for Java 2.x.
- * It uses the SDK 2.x request, response, and attribute-value types, with asynchronous results exposed as
+ * The executors use the SDK 2.x request, response, and attribute-value types, with asynchronous results exposed as
  * {@link java.util.concurrent.CompletableFuture} instances.
  */
 package com.landawn.abacus.da.aws.dynamodb.v2;

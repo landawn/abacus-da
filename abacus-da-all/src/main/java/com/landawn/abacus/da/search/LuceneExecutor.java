@@ -26,6 +26,9 @@ package com.landawn.abacus.da.search;
  */
 final class LuceneExecutor { //NOSONAR
 
+    /**
+     * Package-private constructor; reserved for a future implementation.
+     */
     LuceneExecutor() {
         // placeholder class - reserved for a future implementation
     }
