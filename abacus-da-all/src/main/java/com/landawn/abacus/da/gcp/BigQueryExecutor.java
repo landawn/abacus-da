@@ -66,6 +66,7 @@ import com.landawn.abacus.util.SK;
 import com.landawn.abacus.util.Strings;
 import com.landawn.abacus.util.Tuple;
 import com.landawn.abacus.util.Tuple.Tuple2;
+import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.function.Function;
@@ -641,10 +642,11 @@ public class BigQueryExecutor {
      * @see IntFunctions#ofLinkedHashMap()
      */
     public static Map<String, Object> toMap(final FieldList fields, final FieldValueList fieldValueList,
-            final IntFunction<? extends Map<String, Object>> mapSupplier) {
+            final IntFunction<? extends Map<String, Object>> mapSupplier) throws IllegalArgumentException {
         N.checkArgNotNull(fields, "fields");
         N.checkArgNotNull(fieldValueList, "fieldValueList");
-        N.checkArgNotNull(mapSupplier, "mapSupplier");
+        N.checkArgNotNull(mapSupplier, cs.mapSupplier);
+
         checkFieldCount(fields, fieldValueList);
 
         final Map<String, Object> map = mapSupplier.apply(fieldValueList.size());
@@ -759,8 +761,10 @@ public class BigQueryExecutor {
      *                                  {@code fieldValueList}
      * @see #toMap(FieldList, FieldValueList, IntFunction)
      */
-    public static Map<String, Object> toMap(final FieldValueList fieldValueList, final IntFunction<? extends Map<String, Object>> mapSupplier) {
+    public static Map<String, Object> toMap(final FieldValueList fieldValueList, final IntFunction<? extends Map<String, Object>> mapSupplier)
+            throws IllegalArgumentException {
         N.checkArgNotNull(fieldValueList, "fieldValueList");
+        N.checkArgNotNull(mapSupplier, cs.mapSupplier);
 
         return toMap(getSchema(fieldValueList), fieldValueList, mapSupplier);
     }

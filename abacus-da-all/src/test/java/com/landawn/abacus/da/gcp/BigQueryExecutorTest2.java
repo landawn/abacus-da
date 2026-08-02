@@ -415,6 +415,15 @@ public class BigQueryExecutorTest2 extends TestBase {
     }
 
     @Test
+    public void testToMapWithNullMapSupplier() {
+        FieldList fields = FieldList.of(Field.of("id", StandardSQLTypeName.INT64));
+        FieldValueList row = FieldValueList.of(Arrays.asList(FieldValue.of(FieldValue.Attribute.PRIMITIVE, "9")), fields);
+
+        assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.toMap(fields, row, null));
+        assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.toMap(row, null));
+    }
+
+    @Test
     public void testToMap_UnwrapsRepeatedFieldValues() {
         final Field repeated = Field.newBuilder("tags", StandardSQLTypeName.STRING).setMode(Field.Mode.REPEATED).build();
         final FieldList fields = FieldList.of(repeated);

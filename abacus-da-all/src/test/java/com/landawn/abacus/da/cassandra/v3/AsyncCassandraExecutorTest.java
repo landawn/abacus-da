@@ -198,6 +198,27 @@ public class AsyncCassandraExecutorTest extends TestBase {
     }
 
     @Test
+    public void testNullFunctionalInterfaceArguments() {
+        assertThrows(IllegalArgumentException.class, () -> async.stream("SELECT * FROM t", (BiFunction<ColumnDefinitions, Row, Object>) null));
+        assertThrows(IllegalArgumentException.class, () -> async.stream((Statement) null, (BiFunction<ColumnDefinitions, Row, Object>) null));
+
+        final Session session = mock(Session.class);
+        final Cluster cluster = mock(Cluster.class);
+        final Configuration configuration = mock(Configuration.class);
+        final ProtocolOptions protocolOptions = mock(ProtocolOptions.class);
+        when(session.getCluster()).thenReturn(cluster);
+        when(cluster.getConfiguration()).thenReturn(configuration);
+        when(configuration.getCodecRegistry()).thenReturn(mock(CodecRegistry.class));
+        when(configuration.getProtocolOptions()).thenReturn(protocolOptions);
+        when(protocolOptions.getProtocolVersion()).thenReturn(ProtocolVersion.V4);
+
+        final CassandraExecutor executor = new CassandraExecutor(session);
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toMap((Row) null, null));
+        assertThrows(IllegalArgumentException.class, () -> executor.stream("SELECT * FROM t", (BiFunction<ColumnDefinitions, Row, Object>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.stream((Statement) null, (BiFunction<ColumnDefinitions, Row, Object>) null));
+    }
+
+    @Test
     public void testStream_StringNoParams_ReturnsStreamFuture() throws Exception {
         when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
         final ResultSetFuture _f = immediateFuture(mockResultSet);

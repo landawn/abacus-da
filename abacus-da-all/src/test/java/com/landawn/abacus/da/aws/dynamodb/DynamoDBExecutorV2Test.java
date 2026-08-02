@@ -307,6 +307,11 @@ public class DynamoDBExecutorV2Test extends TestBase {
     }
 
     @Test
+    public void testToMapWithNullMapSupplier() {
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toMap(new HashMap<>(), null));
+    }
+
+    @Test
     public void testToMapWithEmptyStringAttribute() {
         // Regression: an empty-string ("") S attribute is a legal DynamoDB value.
         // toValue() must return it rather than throwing "Unsupported Attribute type".

@@ -233,6 +233,12 @@ public class AsyncCassandraExecutorTest extends TestBase {
     }
 
     @Test
+    public void testStream_NullRowMapper_ThrowsIllegalArgumentException() {
+        assertThrows(IllegalArgumentException.class, () -> async.stream("SELECT * FROM t", (BiFunction<ColumnDefinitions, Row, Object>) null));
+        assertThrows(IllegalArgumentException.class, () -> async.stream((Statement<?>) null, (BiFunction<ColumnDefinitions, Row, Object>) null));
+    }
+
+    @Test
     public void testFindFirst_WithEmptyResultSet_ReturnsEmpty() throws Exception {
         when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);
         when(mockSession.executeAsync(any(Statement.class))).thenReturn(completed(mockAsyncRS));

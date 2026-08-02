@@ -76,6 +76,11 @@ public class MongoDBBaseTest extends TestBase {
         assertEquals(2, result.size());
     }
 
+    @Test
+    public void testToMapWithNullMapSupplier() {
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toMap(new Document(), null));
+    }
+
     // -- toEntity edge cases --
 
     @Test

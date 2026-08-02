@@ -24,6 +24,7 @@ import com.datastax.oss.driver.api.core.cql.Row;
 import com.datastax.oss.driver.api.core.cql.Statement;
 import com.landawn.abacus.util.ContinuableFuture;
 import com.landawn.abacus.util.N;
+import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.stream.Stream;
@@ -150,10 +151,11 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param rowMapper a function that maps the column definitions and each row to a result object
      * @param parameters the positional query parameters
      * @return a future that completes with a Stream of mapped objects
-     * @throws IllegalArgumentException if rowMapper is null
+     * @throws IllegalArgumentException if {@code rowMapper} is {@code null}
      */
-    public <T> ContinuableFuture<Stream<T>> stream(final String query, final BiFunction<ColumnDefinitions, Row, T> rowMapper, final Object... parameters) {
-        N.checkArgNotNull(rowMapper, "rowMapper");
+    public <T> ContinuableFuture<Stream<T>> stream(final String query, final BiFunction<ColumnDefinitions, Row, T> rowMapper, final Object... parameters)
+            throws IllegalArgumentException {
+        N.checkArgNotNull(rowMapper, cs.rowMapper);
 
         return execute(query, parameters).map(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(rowMapper)));
     }
@@ -189,10 +191,11 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param statement the CQL statement to execute
      * @param rowMapper a function that maps the column definitions and each row to a result object
      * @return a future that completes with a Stream of mapped objects
-     * @throws IllegalArgumentException if rowMapper is null
+     * @throws IllegalArgumentException if {@code rowMapper} is {@code null}
      */
-    public <T> ContinuableFuture<Stream<T>> stream(final Statement<?> statement, final BiFunction<ColumnDefinitions, Row, T> rowMapper) {
-        N.checkArgNotNull(rowMapper, "rowMapper");
+    public <T> ContinuableFuture<Stream<T>> stream(final Statement<?> statement, final BiFunction<ColumnDefinitions, Row, T> rowMapper)
+            throws IllegalArgumentException {
+        N.checkArgNotNull(rowMapper, cs.rowMapper);
 
         return execute(statement).map(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(rowMapper)));
     }

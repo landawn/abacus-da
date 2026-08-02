@@ -32,6 +32,8 @@ import org.neo4j.ogm.transaction.Transaction;
 import com.landawn.abacus.annotation.Beta;
 import com.landawn.abacus.logging.Logger;
 import com.landawn.abacus.logging.LoggerFactory;
+import com.landawn.abacus.util.N;
+import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.stream.Stream;
 import com.landawn.abacus.util.u.Optional;
 
@@ -277,10 +279,13 @@ public final class Neo4jExecutor {
      * }</pre>
      *
      * @param action the callback invoked with the pooled session; must not be {@code null}
+     * @throws IllegalArgumentException if {@code action} is {@code null}
      * @see #call(Function)
      */
     @Beta
-    public void run(final Consumer<? super Session> action) {
+    public void run(final Consumer<? super Session> action) throws IllegalArgumentException {
+        N.checkArgNotNull(action, cs.action);
+
         final Session session = getSession();
 
         try {
@@ -315,10 +320,13 @@ public final class Neo4jExecutor {
      * @param <T> the type returned by {@code action}
      * @param action the function invoked with the pooled session; must not be {@code null}
      * @return the value produced by {@code action}
+     * @throws IllegalArgumentException if {@code action} is {@code null}
      * @see #run(Consumer)
      */
     @Beta
-    public <T> T call(final Function<? super Session, ? extends T> action) {
+    public <T> T call(final Function<? super Session, ? extends T> action) throws IllegalArgumentException {
+        N.checkArgNotNull(action, cs.action);
+
         final Session session = getSession();
 
         try {

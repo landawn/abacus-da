@@ -80,6 +80,7 @@ import com.landawn.abacus.util.ObjIterator;
 import com.landawn.abacus.util.RowDataset;
 import com.landawn.abacus.util.SK;
 import com.landawn.abacus.util.Strings;
+import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.function.Function;
 import com.landawn.abacus.util.stream.Stream;
 
@@ -1321,8 +1322,12 @@ public final class DynamoDBExecutor {
      * @param item the DynamoDB item to convert
      * @param mapSupplier function to create the Map instance
      * @return a Map with converted Java objects, or null if input is null
+     * @throws IllegalArgumentException if {@code mapSupplier} is {@code null}
      */
-    public static Map<String, Object> toMap(final Map<String, AttributeValue> item, final IntFunction<? extends Map<String, Object>> mapSupplier) {
+    public static Map<String, Object> toMap(final Map<String, AttributeValue> item, final IntFunction<? extends Map<String, Object>> mapSupplier)
+            throws IllegalArgumentException {
+        N.checkArgNotNull(mapSupplier, cs.mapSupplier);
+
         if (item == null) {
             return null; // NOSONAR
         }

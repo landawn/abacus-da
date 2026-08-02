@@ -144,6 +144,12 @@ public class Neo4jExecutorTest extends TestBase {
     }
 
     @Test
+    public void testRunAndCallRejectNullActions() {
+        assertThrows(IllegalArgumentException.class, () -> executor.run(null));
+        assertThrows(IllegalArgumentException.class, () -> executor.call(null));
+    }
+
+    @Test
     public void testRun_PropagatesException() {
         // Session must still be cleared even if the action throws.
         assertThrows(RuntimeException.class, () -> executor.run(s -> {

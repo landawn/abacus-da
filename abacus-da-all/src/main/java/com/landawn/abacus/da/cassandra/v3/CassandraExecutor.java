@@ -81,6 +81,7 @@ import com.landawn.abacus.util.NamingPolicy;
 import com.landawn.abacus.util.RowDataset;
 import com.landawn.abacus.util.SK;
 import com.landawn.abacus.util.Strings;
+import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.function.Function;
@@ -926,9 +927,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param row the Cassandra Row to convert
      * @param supplier factory invoked with the expected column count to create the target map
      * @return a Map containing all column name-value pairs from the row
-     * @throws NullPointerException if {@code row} or {@code supplier} is {@code null}
+     * @throws NullPointerException if {@code row} is {@code null}
+     * @throws IllegalArgumentException if {@code supplier} is {@code null}
      */
-    public static Map<String, Object> toMap(final Row row, final IntFunction<? extends Map<String, Object>> supplier) {
+    public static Map<String, Object> toMap(final Row row, final IntFunction<? extends Map<String, Object>> supplier) throws IllegalArgumentException {
+        N.checkArgNotNull(supplier, cs.supplier);
+
         final ColumnDefinitions columnDefinitions = row.getColumnDefinitions();
         final int columnCount = columnDefinitions.size();
         final Map<String, Object> map = supplier.apply(columnCount);
@@ -1380,8 +1384,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @return a Stream of mapped results
      * @throws IllegalArgumentException if query or rowMapper is null
      */
-    public <T> Stream<T> stream(final String query, final BiFunction<ColumnDefinitions, Row, T> rowMapper, final Object... parameters) {
-        N.checkArgNotNull(rowMapper, "rowMapper");
+    public <T> Stream<T> stream(final String query, final BiFunction<ColumnDefinitions, Row, T> rowMapper, final Object... parameters)
+            throws IllegalArgumentException {
+        N.checkArgNotNull(rowMapper, cs.rowMapper);
 
         return Stream.of(execute(query, parameters).iterator()).map(createRowMapper(rowMapper));
     }
@@ -1413,8 +1418,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @throws IllegalArgumentException if rowMapper is null
      * @throws NullPointerException if statement is null
      */
-    public <T> Stream<T> stream(final Statement statement, final BiFunction<ColumnDefinitions, Row, T> rowMapper) {
-        N.checkArgNotNull(rowMapper, "rowMapper");
+    public <T> Stream<T> stream(final Statement statement, final BiFunction<ColumnDefinitions, Row, T> rowMapper) throws IllegalArgumentException {
+        N.checkArgNotNull(rowMapper, cs.rowMapper);
 
         return Stream.of(execute(statement).iterator()).map(createRowMapper(rowMapper));
     }

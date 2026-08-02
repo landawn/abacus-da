@@ -52,6 +52,7 @@ import com.landawn.abacus.util.IOUtil;
 import com.landawn.abacus.util.IntFunctions;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.ObjectPool;
+import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.stream.Stream;
 import com.mongodb.BasicDBObject;
@@ -912,12 +913,15 @@ public abstract class MongoDBBase {
      * @param doc the MongoDB Document to convert; must not be null
      * @param mapSupplier a function that creates Map instances based on expected size
      * @return a Map representation of the document using the supplied Map type
-     * @throws NullPointerException if doc or mapSupplier is null
+     * @throws NullPointerException if {@code doc} is {@code null}
+     * @throws IllegalArgumentException if {@code mapSupplier} is {@code null}
      * @see #toMap(Document)
      * @see IntFunction
      * @see Document
      */
-    public static Map<String, Object> toMap(final Document doc, final IntFunction<? extends Map<String, Object>> mapSupplier) {
+    public static Map<String, Object> toMap(final Document doc, final IntFunction<? extends Map<String, Object>> mapSupplier) throws IllegalArgumentException {
+        N.checkArgNotNull(mapSupplier, cs.mapSupplier);
+
         final Map<String, Object> map = mapSupplier.apply(doc.size());
 
         map.putAll(doc);

@@ -49,6 +49,7 @@ import com.landawn.abacus.util.ObjIterator;
 import com.landawn.abacus.util.RowDataset;
 import com.landawn.abacus.util.SK;
 import com.landawn.abacus.util.Strings;
+import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.function.Function;
 import com.landawn.abacus.util.stream.Stream;
 
@@ -1331,8 +1332,12 @@ public final class DynamoDBExecutor {
      * @param item the DynamoDB item map with {@link AttributeValue} objects, can be {@code null}
      * @param mapSupplier function to create the target map instance, receiving the expected size
      * @return a Map with converted Java objects, or {@code null} if {@code item} is {@code null}
+     * @throws IllegalArgumentException if {@code mapSupplier} is {@code null}
      */
-    public static Map<String, Object> toMap(final Map<String, AttributeValue> item, final IntFunction<? extends Map<String, Object>> mapSupplier) {
+    public static Map<String, Object> toMap(final Map<String, AttributeValue> item, final IntFunction<? extends Map<String, Object>> mapSupplier)
+            throws IllegalArgumentException {
+        N.checkArgNotNull(mapSupplier, cs.mapSupplier);
+
         if (item == null) {
             return null; // NOSONAR
         }

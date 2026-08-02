@@ -321,6 +321,11 @@ public class DynamoDBExecutor01Test extends TestBase {
     }
 
     @Test
+    public void testToMapWithNullMapSupplier() {
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toMap(new HashMap<>(), null));
+    }
+
+    @Test
     public void testToEntity() {
         Map<String, AttributeValue> item = new HashMap<>();
         item.put("id", new AttributeValue().withS("123"));

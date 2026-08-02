@@ -19,6 +19,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.function.BiFunction;
 import java.nio.ByteBuffer;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -351,6 +352,13 @@ public class CassandraExecutor01Test extends TestBase {
         Map<String, Object> map2 = CassandraExecutor.toMap(mockRow, HashMap::new);
         assertNotNull(map2);
         assertEquals(2, map2.size());
+    }
+
+    @Test
+    public void testNullFunctionalInterfaceArguments() {
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toMap((Row) null, null));
+        assertThrows(IllegalArgumentException.class, () -> executor.stream("SELECT * FROM test", (BiFunction<ColumnDefinitions, Row, Object>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.stream((Statement<?>) null, (BiFunction<ColumnDefinitions, Row, Object>) null));
     }
 
     @Test
