@@ -1236,6 +1236,45 @@ public class HBaseExecutorStaticTest extends TestBase {
         }
     }
 
+    @Test
+    public void testCoprocessorService_nullCallable_throwsIllegalArgumentException() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        when(conn.getAdmin()).thenReturn(admin);
+
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
+            assertThrows(IllegalArgumentException.class,
+                    () -> executor.coprocessorService("tbl", com.google.protobuf.Service.class, "a", "z", null));
+            assertThrows(IllegalArgumentException.class,
+                    () -> executor.coprocessorService("tbl", com.google.protobuf.Service.class, "a", "z", null,
+                            (region, row, result) -> {
+                            }));
+            assertThrows(IllegalArgumentException.class,
+                    () -> executor.coprocessorService("tbl", com.google.protobuf.Service.class, "a", "z", instance -> null, null));
+        } finally {
+            executor.close();
+        }
+    }
+
+    @Test
+    public void testBatchCoprocessorService_nullCallback_throwsIllegalArgumentException() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        when(conn.getAdmin()).thenReturn(admin);
+
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+        try {
+            final com.google.protobuf.Descriptors.MethodDescriptor methodDescriptor = mock(com.google.protobuf.Descriptors.MethodDescriptor.class);
+            final com.google.protobuf.Message request = mock(com.google.protobuf.Message.class);
+            final com.google.protobuf.Message responsePrototype = mock(com.google.protobuf.Message.class);
+            assertThrows(IllegalArgumentException.class,
+                    () -> executor.batchCoprocessorService("tbl", methodDescriptor, request, "a", "z", responsePrototype, null));
+        } finally {
+            executor.close();
+        }
+    }
+
     // ---------------------------------------------------------------------
     // Convenience scan overloads: returned Stream is non-null and closable.
     // ---------------------------------------------------------------------

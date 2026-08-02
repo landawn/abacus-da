@@ -7,6 +7,7 @@ package com.landawn.abacus.da.hbase;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
@@ -29,7 +30,12 @@ import org.apache.hadoop.hbase.client.Durability;
 import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.Put;
 import org.apache.hadoop.hbase.client.Result;
+import org.apache.hadoop.hbase.client.coprocessor.Batch;
 import org.junit.jupiter.api.Test;
+
+import com.google.protobuf.Descriptors;
+import com.google.protobuf.Message;
+import com.google.protobuf.Service;
 
 import com.landawn.abacus.da.TestBase;
 import com.landawn.abacus.util.AsyncExecutor;
@@ -467,6 +473,32 @@ public class AsyncHBaseExecutorTest extends TestBase {
 
         AsyncHBaseExecutor async = newAsync(sync);
         assertSame(ch, async.coprocessorService("tbl", "k").get());
+    }
+
+    @Test
+    public void testCoprocessorService_nullFunctionalArgs_throwIllegalArgumentException() {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        AsyncHBaseExecutor async = newAsync(sync);
+
+        assertThrows(IllegalArgumentException.class,
+                () -> async.coprocessorService("tbl", Service.class, "a", "z", (Batch.Call<Service, Object>) null));
+        assertThrows(IllegalArgumentException.class,
+                () -> async.coprocessorService("tbl", Service.class, "a", "z", null, (region, row, result) -> {
+                }));
+        assertThrows(IllegalArgumentException.class,
+                () -> async.coprocessorService("tbl", Service.class, "a", "z", (Batch.Call<Service, Object>) instance -> null, null));
+    }
+
+    @Test
+    public void testBatchCoprocessorService_nullCallback_throwsIllegalArgumentException() {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        AsyncHBaseExecutor async = newAsync(sync);
+
+        final Descriptors.MethodDescriptor methodDescriptor = mock(Descriptors.MethodDescriptor.class);
+        final Message request = mock(Message.class);
+        final Message responsePrototype = mock(Message.class);
+        assertThrows(IllegalArgumentException.class,
+                () -> async.batchCoprocessorService("tbl", methodDescriptor, request, "a", "z", responsePrototype, null));
     }
 
     // ---------------------------------------------------------------------

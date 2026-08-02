@@ -36,6 +36,7 @@ import com.google.protobuf.Service;
 import com.landawn.abacus.util.AsyncExecutor;
 import com.landawn.abacus.util.ContinuableFuture;
 import com.landawn.abacus.util.N;
+import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.stream.Stream;
 
 /**
@@ -1931,11 +1932,14 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} containing a map from region name bytes to the result
      *         returned by {@code callable} for that region. Wraps
      *         {@link HBaseExecutor#coprocessorService(String, Class, Object, Object, Batch.Call)}.
+     * @throws IllegalArgumentException if {@code callable} is {@code null}
      * @see HBaseExecutor#coprocessorService(String, Class, Object, Object, Batch.Call)
      * @see Batch.Call
      */
     public <T extends Service, R> ContinuableFuture<Map<byte[], R>> coprocessorService(final String tableName, final Class<T> service, final Object startRowKey,
-            final Object endRowKey, final Batch.Call<T, R> callable) {
+            final Object endRowKey, final Batch.Call<T, R> callable) throws IllegalArgumentException {
+        N.checkArgNotNull(callable, cs.callable);
+
         return asyncExecutor.execute(() -> hbaseExecutor.coprocessorService(tableName, service, startRowKey, endRowKey, callable));
     }
 
@@ -1978,12 +1982,16 @@ public final class AsyncHBaseExecutor {
      * @param callback the callback that receives each region's result
      * @return a {@link ContinuableFuture} that completes with {@code null} when all calls finish.
      *         Wraps {@link HBaseExecutor#coprocessorService(String, Class, Object, Object, Batch.Call, Batch.Callback)}.
+     * @throws IllegalArgumentException if {@code callable} or {@code callback} is {@code null}
      * @see HBaseExecutor#coprocessorService(String, Class, Object, Object, Batch.Call, Batch.Callback)
      * @see Batch.Call
      * @see Batch.Callback
      */
     public <T extends Service, R> ContinuableFuture<Void> coprocessorService(final String tableName, final Class<T> service, final Object startRowKey,
-            final Object endRowKey, final Batch.Call<T, R> callable, final Batch.Callback<R> callback) {
+            final Object endRowKey, final Batch.Call<T, R> callable, final Batch.Callback<R> callback) throws IllegalArgumentException {
+        N.checkArgNotNull(callable, cs.callable);
+        N.checkArgNotNull(callback, cs.callback);
+
         return asyncExecutor.execute(() -> {
             hbaseExecutor.coprocessorService(tableName, service, startRowKey, endRowKey, callable, callback);
 
@@ -2078,12 +2086,16 @@ public final class AsyncHBaseExecutor {
      * @param callback the callback that receives each region's response
      * @return a {@link ContinuableFuture} that completes with {@code null} when all calls finish.
      *         Wraps {@link HBaseExecutor#batchCoprocessorService(String, Descriptors.MethodDescriptor, Message, Object, Object, Message, Batch.Callback)}.
+     * @throws IllegalArgumentException if {@code callback} is {@code null}
      * @see HBaseExecutor#batchCoprocessorService(String, Descriptors.MethodDescriptor, Message, Object, Object, Message, Batch.Callback)
      * @see Descriptors.MethodDescriptor
      * @see Batch.Callback
      */
     public <R extends Message> ContinuableFuture<Void> batchCoprocessorService(final String tableName, final Descriptors.MethodDescriptor methodDescriptor,
-            final Message request, final Object startRowKey, final Object endRowKey, final R responsePrototype, final Batch.Callback<R> callback) {
+            final Message request, final Object startRowKey, final Object endRowKey, final R responsePrototype, final Batch.Callback<R> callback)
+            throws IllegalArgumentException {
+        N.checkArgNotNull(callback, cs.callback);
+
         return asyncExecutor.execute(() -> {
             hbaseExecutor.batchCoprocessorService(tableName, methodDescriptor, request, startRowKey, endRowKey, responsePrototype, callback);
 

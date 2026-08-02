@@ -72,6 +72,7 @@ import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.NamingPolicy;
 import com.landawn.abacus.util.Strings;
 import com.landawn.abacus.util.Tuple;
+import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.Tuple.Tuple2;
 import com.landawn.abacus.util.Tuple.Tuple3;
 import com.landawn.abacus.util.function.Function;
@@ -2909,6 +2910,7 @@ public final class HBaseExecutor {
      * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
      * @param callable the per-region callable to execute
      * @return a map from region name bytes to the result returned by {@code callable} for that region
+     * @throws IllegalArgumentException if {@code callable} is {@code null}
      * @throws UncheckedIOException if the call fails with an {@link IOException}
      * @throws RuntimeException if the coprocessor invocation throws a non-{@link IOException}
      *         {@link Throwable} (wrapped via {@code ExceptionUtil.toRuntimeException})
@@ -2916,7 +2918,9 @@ public final class HBaseExecutor {
      * @see Batch.Call
      */
     public <T extends Service, R> Map<byte[], R> coprocessorService(final String tableName, final Class<T> service, final Object startRowKey,
-            final Object endRowKey, final Batch.Call<T, R> callable) throws UncheckedIOException {
+            final Object endRowKey, final Batch.Call<T, R> callable) throws IllegalArgumentException, UncheckedIOException {
+        N.checkArgNotNull(callable, cs.callable);
+
         final Table table = getTable(tableName);
 
         try {
@@ -2960,6 +2964,7 @@ public final class HBaseExecutor {
      * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
      * @param callable the per-region callable to execute
      * @param callback the callback that receives each region's result
+     * @throws IllegalArgumentException if {@code callable} or {@code callback} is {@code null}
      * @throws UncheckedIOException if the call fails with an {@link IOException}
      * @throws Exception if the coprocessor invocation throws a non-{@link IOException}
      *         {@link Throwable}: it is rethrown as-is if it is already an {@link Exception}, otherwise
@@ -2969,7 +2974,10 @@ public final class HBaseExecutor {
      * @see Batch.Callback
      */
     public <T extends Service, R> void coprocessorService(final String tableName, final Class<T> service, final Object startRowKey, final Object endRowKey,
-            final Batch.Call<T, R> callable, final Batch.Callback<R> callback) throws UncheckedIOException, Exception {
+            final Batch.Call<T, R> callable, final Batch.Callback<R> callback) throws IllegalArgumentException, UncheckedIOException, Exception {
+        N.checkArgNotNull(callable, cs.callable);
+        N.checkArgNotNull(callback, cs.callback);
+
         final Table table = getTable(tableName);
 
         try {
@@ -3067,6 +3075,7 @@ public final class HBaseExecutor {
      * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
      * @param responsePrototype the prototype for the response message
      * @param callback the callback to receive response messages from each region
+     * @throws IllegalArgumentException if {@code callback} is {@code null}
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @throws Exception if the coprocessor execution throws a {@link Throwable} other than {@link IOException}:
      *         it is rethrown as-is if it is already an {@link Exception}, otherwise wrapped in a new
@@ -3077,7 +3086,9 @@ public final class HBaseExecutor {
      */
     public <R extends Message> void batchCoprocessorService(final String tableName, final Descriptors.MethodDescriptor methodDescriptor, final Message request,
             final Object startRowKey, final Object endRowKey, final R responsePrototype, final Batch.Callback<R> callback)
-            throws UncheckedIOException, Exception {
+            throws IllegalArgumentException, UncheckedIOException, Exception {
+        N.checkArgNotNull(callback, cs.callback);
+
         final Table table = getTable(tableName);
 
         try {
