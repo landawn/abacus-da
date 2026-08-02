@@ -4012,6 +4012,7 @@ public final class HBaseExecutor {
          * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
          * @param callable the callable to execute on each region
          * @return a map from region name bytes to the result returned by {@code callable} for that region
+         * @throws IllegalArgumentException if {@code callable} is {@code null}
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @throws RuntimeException if the coprocessor invocation throws a non-IOException {@link Throwable}
          *         (wrapped via {@code ExceptionUtil.toRuntimeException})
@@ -4019,7 +4020,7 @@ public final class HBaseExecutor {
          * @see Batch.Call
          */
         public <S extends Service, R> Map<byte[], R> coprocessorService(final Class<S> service, final Object startRowKey, final Object endRowKey,
-                final Batch.Call<S, R> callable) throws UncheckedIOException {
+                final Batch.Call<S, R> callable) throws IllegalArgumentException, UncheckedIOException {
             return hbaseExecutor.coprocessorService(tableName, service, startRowKey, endRowKey, callable);
         }
 
@@ -4043,6 +4044,7 @@ public final class HBaseExecutor {
          * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
          * @param callable the callable to execute on each region
          * @param callback the callback to receive results from each region
+         * @throws IllegalArgumentException if {@code callable} or {@code callback} is {@code null}
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @throws Exception if the coprocessor invocation throws a non-{@link IOException}
          *         {@link Throwable}: it is rethrown as-is if it is already an {@link Exception},
@@ -4053,7 +4055,7 @@ public final class HBaseExecutor {
          * @see Batch.Callback
          */
         public <S extends Service, R> void coprocessorService(final Class<S> service, final Object startRowKey, final Object endRowKey,
-                final Batch.Call<S, R> callable, final Batch.Callback<R> callback) throws UncheckedIOException, Exception {
+                final Batch.Call<S, R> callable, final Batch.Callback<R> callback) throws IllegalArgumentException, UncheckedIOException, Exception {
             hbaseExecutor.coprocessorService(tableName, service, startRowKey, endRowKey, callable, callback);
         }
 
@@ -4110,6 +4112,7 @@ public final class HBaseExecutor {
          * @param endRowKey the end row key (inclusive; {@code null} for unbounded end)
          * @param responsePrototype the prototype for the response message
          * @param callback the callback to receive response messages from each region
+         * @throws IllegalArgumentException if {@code callback} is {@code null}
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @throws Exception if the coprocessor execution throws a {@link Throwable} other than
          *         {@link IOException}: it is rethrown as-is if it is already an {@link Exception},
@@ -4121,7 +4124,7 @@ public final class HBaseExecutor {
          */
         public <R extends Message> void batchCoprocessorService(final Descriptors.MethodDescriptor methodDescriptor, final Message request,
                 final Object startRowKey, final Object endRowKey, final R responsePrototype, final Batch.Callback<R> callback)
-                throws UncheckedIOException, Exception {
+                throws IllegalArgumentException, UncheckedIOException, Exception {
             hbaseExecutor.batchCoprocessorService(tableName, methodDescriptor, request, startRowKey, endRowKey, responsePrototype, callback);
         }
     }

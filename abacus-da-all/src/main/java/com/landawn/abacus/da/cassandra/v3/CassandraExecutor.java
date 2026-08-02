@@ -135,7 +135,7 @@ import lombok.experimental.Accessors;
  * </li>
  * <li><strong>Performance Optimizations:</strong>
  *     <ul>
- *     <li>Statement and prepared statement pooling</li>
+ *     <li>PreparedStatement caching (keyed by resolved CQL text up to {@code POOLABLE_LENGTH}); a fresh BoundStatement per call</li>
  *     <li>Type codec registration and caching</li>
  *     <li>Connection reuse through session management</li>
  *     <li>Configurable consistency levels and retry policies</li>
@@ -1428,8 +1428,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * Executes a CQL query without parameters and returns the raw ResultSet.
      *
      * <p>This method prepares and executes a CQL statement, applying any configured
-     * statement settings. The query is automatically prepared and cached for optimal
-     * performance on repeated executions.</p>
+     * statement settings. The query is prepared on each path; for CQL text no longer than
+     * {@code POOLABLE_LENGTH} characters the {@code PreparedStatement} is cached and reused.
+     * A fresh {@code BoundStatement} is created for every execution.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

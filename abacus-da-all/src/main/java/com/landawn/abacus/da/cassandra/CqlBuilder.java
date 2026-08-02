@@ -2244,6 +2244,8 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          *
          * <p>This method generates a DELETE statement for all deletable properties of the class.
          * Properties marked with @ReadOnly, @ReadOnlyId, or @Transient are automatically excluded.
+         * Primary-key properties (via {@code @Id} / registered keys) are also excluded, because
+         * Cassandra rejects DELETE of partition/clustering key columns.
          * This is useful for creating templates for partial row deletion.</p>
          *
          * <p><b>Usage Examples:</b></p>
@@ -2266,9 +2268,10 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         /**
          * Creates a DELETE CQL builder for an entity class, excluding specified properties.
          *
-         * <p>This method generates a DELETE statement excluding both annotation-based exclusions
-         * and the specified properties. Useful for selective column deletion where certain
-         * fields should be preserved.</p>
+         * <p>This method generates a DELETE statement excluding annotation-based exclusions
+         * ({@code @ReadOnly}, {@code @ReadOnlyId}, {@code @Transient}), primary-key properties
+         * (Cassandra rejects DELETE of key columns), and the specified extra properties. Useful for
+         * selective column deletion where certain fields should be preserved.</p>
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code

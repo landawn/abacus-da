@@ -219,8 +219,9 @@ public final class MongoCollectionExecutor {
      * <p>This method provides direct access to the MongoDB reactive streams driver's
      * {@link com.mongodb.reactivestreams.client.MongoCollection} object, allowing for advanced
      * reactive operations not directly exposed by this executor. The returned collection is the
-     * same instance passed to this executor at construction time and is pre-configured with the
-     * framework's codec registry.</p>
+     * same instance passed to this executor at construction time (codec/read/write settings match
+     * whatever was supplied — the framework codec is applied only when the collection was obtained
+     * through {@code MongoDB} factory methods that wrap the database with that registry).</p>
      *
      * <p>Unlike most methods on this executor, {@code coll()} is a plain synchronous accessor — it
      * does not return a {@code Publisher} and performs no database I/O; it simply hands back the
@@ -612,8 +613,9 @@ public final class MongoCollectionExecutor {
      * Retrieves a single document by its ObjectId string and converts it to the specified type reactively.
      *
      * <p>This method provides a reactive way to retrieve a document and automatically convert it to
-     * a Java object of the specified type using the configured codec registry.</p>
-     * 
+     * a Java object of the specified type via the framework's Document mapping helpers
+     * ({@code toEntity}/{@link MongoDB#readRow(Document, Class)}).</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Mono<User> userMono = executor.get("507f1f77bcf86cd799439011", User.class);
@@ -642,7 +644,8 @@ public final class MongoCollectionExecutor {
      * Retrieves a single document by its ObjectId and converts it to the specified type reactively.
      *
      * <p>This method provides a reactive way to retrieve a document and automatically convert it to
-     * a Java object of the specified type using the configured codec registry.</p>
+     * a Java object of the specified type via the framework's Document mapping helpers
+     * ({@code toEntity}/{@link MongoDB#readRow(Document, Class)}).</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -781,7 +784,7 @@ public final class MongoCollectionExecutor {
      *
      * <p>This method provides a reactive way to retrieve and convert the first document that matches
      * the given filter criteria. The document is automatically converted to the specified Java type
-     * using the configured codec registry.</p>
+     * via the framework's Document mapping helpers ({@code toEntity}/{@link MongoDB#readRow(Document, Class)}).</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -964,8 +967,8 @@ public final class MongoCollectionExecutor {
      * Lists all documents matching the filter, converted to the specified type.
      *
      * <p>Returns a cold {@link Flux} of all documents that match the filter; each subscription opens
-     * a new server-side cursor and converts every emitted document to {@code T} using the configured
-     * codec registry.</p>
+     * a new server-side cursor and converts every emitted document to {@code T} via the framework's
+     * Document mapping helpers ({@code toEntity}/{@link MongoDB#readRow(Document, Class)}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1716,8 +1719,9 @@ public final class MongoCollectionExecutor {
      * matching document, converted to the specified type.
      *
      * <p>Only the named property of the first matched document is read; any remaining documents or
-     * fields are ignored. The value is converted to {@code valueType} using the configured codec
-     * registry and the {@code N.convert} helper. This is the underlying method delegated to by the
+     * fields are ignored. The value is converted to {@code valueType} via
+     * {@link com.landawn.abacus.util.N#convert(Object, Class)} on the projected field value.
+     * This is the underlying method delegated to by the
      * primitive-wrapper convenience overloads ({@link #queryForBoolean}, {@link #queryForInt}, etc.).</p>
      *
      * <p><b>Empty vs. present semantics:</b> the returned {@code Mono} completes <i>empty</i> when no
@@ -2203,7 +2207,8 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param pipeline the aggregation pipeline applied to change events; must not be null
-     * @return a {@link ChangeStreamPublisher} emitting filtered change events as {@link Document}
+     * @return a {@link ChangeStreamPublisher} emitting filtered {@link com.mongodb.client.model.changestream.ChangeStreamDocument}
+     *         events whose full-document type is {@link Document}
      * @throws IllegalArgumentException if {@code pipeline} is null
      * @throws com.mongodb.MongoException if the database operation fails (signalled via the returned publisher)
      * @see com.mongodb.reactivestreams.client.MongoCollection#watch(List)
@@ -4011,9 +4016,11 @@ public final class MongoCollectionExecutor {
     /**
      * Executes an aggregation pipeline, decoding each output document as the specified type.
      *
-     * <p>The pipeline is always executed against {@link Document} (so the framework codec
-     * registry is honoured) and each output document is then converted to {@code rowType} via
-     * the same row-conversion path used by {@code list(...)}/{@code findFirst(...)}.</p>
+     * <p>The pipeline is always executed against {@link Document}, and each output document is
+     * converted to {@code rowType} via {@code toEntity}/{@link MongoDB#readRow(Document, Class)}.
+     * Unlike {@code list(...)}/{@code findFirst(...)}, there is no short-circuit that returns the
+     * raw document when {@code rowType} is assignable from {@link Document}; conversion still runs
+     * through {@code toEntity}.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

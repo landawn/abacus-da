@@ -2731,7 +2731,7 @@ public final class AsyncDynamoDBExecutor {
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * GetItemRequest request = GetItemRequest.builder()
-         *     .key(createKey("user123"))   // table name omitted -> mapper's table is substituted
+         *     .key(asKey("userId", "user123"))   // table name omitted -> mapper's table is substituted
          *     .projectionExpression("userId, email, lastLogin")
          *     .build();
          *
@@ -2743,7 +2743,7 @@ public final class AsyncDynamoDBExecutor {
          *
          * // Edge: a request naming a different table is rejected before any call
          * GetItemRequest wrong = GetItemRequest.builder()
-         *     .tableName("OtherTable").key(createKey("user123")).build();
+         *     .tableName("OtherTable").key(asKey("userId", "user123")).build();
          * userMapper.getItem(wrong);   // throws IllegalArgumentException (table name mismatch)
          * }</pre>
          *
@@ -3083,7 +3083,7 @@ public final class AsyncDynamoDBExecutor {
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * UpdateItemRequest request = UpdateItemRequest.builder()
-         *     .key(createKey("user123"))
+         *     .key(asKey("userId", "user123"))
          *     .updateExpression("SET #email = :email, #count = #count + :inc")
          *     .expressionAttributeNames(Map.of("#email", "email", "#count", "loginCount"))
          *     .expressionAttributeValues(Map.of(
@@ -3193,7 +3193,7 @@ public final class AsyncDynamoDBExecutor {
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * DeleteItemRequest request = DeleteItemRequest.builder()
-         *     .key(createKey("user123"))
+         *     .key(asKey("userId", "user123"))
          *     .conditionExpression("attribute_exists(userId)")
          *     .returnValues("ALL_OLD")
          *     .build();
@@ -3271,7 +3271,7 @@ public final class AsyncDynamoDBExecutor {
          *
          * // Add delete requests
          * writeRequests.add(WriteRequest.builder()
-         *     .deleteRequest(DeleteRequest.builder().key(createKey(oldUser)).build())
+         *     .deleteRequest(DeleteRequest.builder().key(asKey("userId", oldUser.getUserId())).build())
          *     .build());
          *
          * requestItems.put("users-table", writeRequests);

@@ -3431,7 +3431,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * Prepares a statement from a CQL query string.
      *
      * @param query the CQL query
-     * @return the prepared statement
+     * @return a bound (executable) statement ready for {@code execute}
      */
     protected abstract ST prepareStatement(final String query);
 
@@ -3440,7 +3440,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param query the CQL query
      * @param parameters the query parameters
-     * @return the prepared statement
+     * @return a bound (executable) statement ready for {@code execute}
      */
     protected abstract ST prepareStatement(final String query, final Object... parameters);
 
@@ -3468,16 +3468,15 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * the CQL mapper (if available), falling back to parsing the raw CQL string if
      * not found. This provides a two-tier approach to CQL management:</p>
      * <ol>
-     * <li><strong>Mapped CQL:</strong> Pre-configured statements with metadata</li>
-     * <li><strong>Ad-hoc CQL:</strong> Dynamic parsing of arbitrary CQL strings</li>
+     * <li><strong>Mapped CQL:</strong> {@link CqlMapper} id → stored {@link ParsedCql}</li>
+     * <li><strong>Ad-hoc CQL:</strong> {@link ParsedCql#parse(String)} (placeholder normalize + cache)</li>
      * </ol>
      *
      * <p>The parsing process includes:</p>
      * <ul>
      * <li>Parameter detection and normalization (positional, named, MyBatis-style)</li>
-     * <li>Query optimization and validation</li>
+     * <li>Placeholder-style validation (mixed/malformed styles rejected)</li>
      * <li>Caching for improved performance on repeated queries</li>
-     * <li>Metadata extraction for statement configuration</li>
      * </ul>
      *
      * <p><b>Usage Examples:</b></p>

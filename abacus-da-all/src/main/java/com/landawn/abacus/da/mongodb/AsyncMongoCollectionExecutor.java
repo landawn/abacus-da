@@ -1525,8 +1525,8 @@ public final class AsyncMongoCollectionExecutor {
      * specified type.
      *
      * <p>Only the named property of the first matched document is read; any remaining documents or
-     * fields are ignored. The value is converted to {@code valueType} using the configured codec
-     * registry.</p>
+     * fields are ignored. The value is converted to {@code valueType} via
+     * {@link com.landawn.abacus.util.N#convert(Object, Class)} (not the MongoDB codec registry).</p>
      *
      * <p><b>Empty vs. present semantics:</b> the future completes with {@code Nullable.empty()}
      * <i>only</i> when no document matches the filter. If a document is found but the named field is
@@ -2203,9 +2203,9 @@ public final class AsyncMongoCollectionExecutor {
      * Asynchronously inserts a single document into the collection.
      *
      * <p>This method performs a non-blocking insert operation for a single document. The object can be
-     * a Document, Map, or any entity class with getter/setter methods. Entity objects are automatically
-     * converted to BSON documents using the configured codec registry. The operation is executed on
-     * the configured thread pool.</p>
+     * a Document, Map, or any entity class with getter/setter methods. Entity objects are converted
+     * via {@link MongoDBBase#toDocument(Object)} (null bean properties dropped; Map null values
+     * preserved). The operation is executed on the configured thread pool.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -2242,8 +2242,8 @@ public final class AsyncMongoCollectionExecutor {
      * Asynchronously inserts a single document with custom options.
      *
      * <p>This method performs a non-blocking insertion of a single document into the collection
-     * with custom insertion options. The document is converted to BSON format using the configured
-     * codec registry, and the insertion is executed on the thread pool.</p>
+     * with custom insertion options. The document is converted via {@link MongoDBBase#toDocument(Object)}
+     * (or passed through when already a {@link Document}), and the insertion is executed on the thread pool.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code

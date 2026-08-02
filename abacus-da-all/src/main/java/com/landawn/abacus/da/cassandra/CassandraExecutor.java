@@ -126,9 +126,10 @@ import lombok.experimental.Accessors;
  * COUNTER} is required for counter mutations. Batches do <i>not</i> provide ACID transactions.</p>
  *
  * <h2>Consistency Levels &amp; Statement Settings</h2>
- * <p>Default consistency, serial consistency, page size, per-statement timeout, and query tracing are
- * applied uniformly from the {@link StatementSettings} passed at construction time; they can be
- * overridden per-statement when callers build a {@link Statement} directly against the driver.</p>
+ * <p>Default consistency, serial consistency, page size, per-statement timeout, and query tracing from
+ * {@link StatementSettings} are applied to every prepared/bound statement this executor builds
+ * (via {@code prepareStatement}/{@code bind}/{@code prepareBatch*}). Caller-supplied {@link Statement}
+ * instances passed to {@code execute}/{@code stream} are used as-is (executor settings are not applied).</p>
  *
  * <h2>Key Features</h2>
  * <ul>
@@ -159,7 +160,7 @@ import lombok.experimental.Accessors;
  * </li>
  * <li><strong>Performance Optimizations:</strong>
  *     <ul>
- *     <li>Statement pooling for frequently used queries</li>
+ *     <li>PreparedStatement caching (keyed by resolved CQL text up to {@code POOLABLE_LENGTH}); a fresh BoundStatement per call</li>
  *     <li>Connection reuse and session management</li>
  *     <li>Asynchronous execution exposed via {@link #async()} returning ContinuableFuture-typed results</li>
  *     <li>Efficient type conversion and codec registry support</li>
@@ -340,9 +341,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     /**
      * Creates a new CassandraExecutor with the specified session and statement settings.
      *
-     * <p>The statement settings allow you to configure default behavior for all statements
-     * executed by this executor, such as consistency levels, timeouts, and fetch sizes.
-     * These settings can be overridden on a per-statement basis when needed.</p>
+     * <p>The statement settings configure defaults (consistency, timeout, page size, tracing)
+     * applied to every prepared/bound statement this executor builds. Caller-supplied
+     * {@link Statement} instances passed to {@code execute}/{@code stream} are not modified.</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -355,7 +356,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * }</pre>
      *
      * @param session the Cassandra session to use for database operations
-     * @param settings default statement settings to apply to all operations, or null for defaults
+     * @param settings default statement settings for statements this executor prepares/binds/batches, or null for defaults
      * @throws NullPointerException if session is null
      * @see StatementSettings
      */
@@ -1633,7 +1634,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * @param query the CQL text or mapper identifier
      * @return a newly bound, configured statement
-     * @throws IllegalArgumentException if the resolved query contains bind markers
+     * @throws IllegalArgumentException if {@code query} is {@code null}, or if the resolved query contains bind markers
      */
     @Override
     protected BoundStatement prepareStatement(final String query) {

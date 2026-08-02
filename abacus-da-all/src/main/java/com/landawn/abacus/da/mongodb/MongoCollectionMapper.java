@@ -2030,8 +2030,8 @@ public final class MongoCollectionMapper<T> {
      * Inserts a single entity into the collection (blocking operation).
      *
      * <p>This method inserts a single entity of the mapped type into the collection. The entity
-     * is automatically converted to a BSON document using the configured codec registry, handling
-     * ID field mapping and type conversions transparently.</p>
+     * is converted via {@link MongoDBBase#toDocument(Object)} (null bean properties dropped;
+     * generated {@code _id} is not written back into the entity).</p>
      *
      * <p><b>Note:</b> This method performs a blocking operation. For non-blocking operations, use
      * the underlying executor's async methods via {@link #collectionExecutor()}.{@code async()}.</p>

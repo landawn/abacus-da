@@ -2220,19 +2220,21 @@ public final class DynamoDBExecutor {
     }
 
     /**
-     * Retrieves multiple items from DynamoDB tables with consumed capacity reporting.
-     * This method allows monitoring of read capacity consumption for billing and performance analysis.
+     * Retrieves multiple items from DynamoDB tables, forwarding {@code returnConsumedCapacity} to the
+     * service. This overload still returns only the per-table item lists; consumed-capacity details
+     * from the service response are not exposed. To inspect capacity, call
+     * {@code dynamoDBClient().batchGetItem(...)} directly.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, KeysAndAttributes> requestItems = createRequestItems();
      * Map<String, List<Map<String, Object>>> results =
      *     executor.batchGetItem(requestItems, "TOTAL");
-     * // Check consumed capacity in the result
+     * // results contains only retrieved items; capacity is not available on this return value
      * }</pre>
      *
      * @param requestItems a map of table names to KeysAndAttributes specifying which items to retrieve
-     * @param returnConsumedCapacity "NONE", "TOTAL", or "INDEXES" for capacity reporting
+     * @param returnConsumedCapacity "NONE", "TOTAL", or "INDEXES" forwarded to the service (not returned here)
      * @return a map of table names to lists of retrieved items
      * @throws IllegalArgumentException if requestItems is null
      */
@@ -2291,19 +2293,21 @@ public final class DynamoDBExecutor {
     }
 
     /**
-     * Retrieves multiple items with consumed capacity reporting and type conversion.
-     * This method combines batch operations, capacity monitoring, and automatic type conversion.
+     * Retrieves multiple items with automatic type conversion, forwarding
+     * {@code returnConsumedCapacity} to the service. The return value is only the converted
+     * per-table item lists; capacity metrics are not exposed on this API.
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * Map<String, KeysAndAttributes> requestItems = createRequestItems();
      * Map<String, List<User>> results =
      *     executor.batchGetItem(requestItems, "TOTAL", User.class);
+     * // results contains only converted items; capacity is not available on this return value
      * }</pre>
      *
      * @param <T> the target type for conversion
      * @param requestItems a map of table names to KeysAndAttributes
-     * @param returnConsumedCapacity "NONE", "TOTAL", or "INDEXES" for capacity reporting
+     * @param returnConsumedCapacity "NONE", "TOTAL", or "INDEXES" forwarded to the service (not returned here)
      * @param targetClass the class to convert retrieved items to
      * @return a map of table names to lists of converted items
      * @throws IllegalArgumentException if any parameter is null or invalid
@@ -3713,17 +3717,19 @@ public final class DynamoDBExecutor {
         }
 
         /**
-         * Retrieves multiple items from DynamoDB in a single batch operation with specified
-         * return consumed capacity settings.
+         * Retrieves multiple items from DynamoDB in a single batch operation, forwarding
+         * {@code returnConsumedCapacity} to the service. Only the list of entities is returned;
+         * capacity details are not available on this result (use the underlying client if needed).
          *
          * <p><b>Usage Examples:</b></p>
          * <pre>{@code
          * List<User> users = Arrays.asList(user1, user2, user3);
          * List<User> retrieved = mapper.batchGetItem(users, "TOTAL");
+         * // retrieved is the entity list only; capacity is not exposed on this return value
          * }</pre>
          *
          * @param entities collection of entities containing the key values to search for, must not be {@code null}
-         * @param returnConsumedCapacity specifies the level of detail about consumed capacity to return
+         * @param returnConsumedCapacity "NONE", "TOTAL", or "INDEXES" forwarded to the service (not returned here)
          * @return list of retrieved entities from DynamoDB; empty list if none found
          * @throws IllegalArgumentException if entities is {@code null}
          */

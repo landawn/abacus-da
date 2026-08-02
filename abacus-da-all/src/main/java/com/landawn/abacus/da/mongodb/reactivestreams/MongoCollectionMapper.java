@@ -435,7 +435,8 @@ public final class MongoCollectionMapper<T> {
      * Retrieves a single entity by its ObjectId string reactively.
      *
      * <p>This method provides a reactive way to retrieve a document using its string ObjectId representation
-     * and automatically convert it to the mapped entity type using the configured codec registry.</p>
+     * and convert it to the mapped entity type via the framework's Document mapping helpers
+     * ({@code toEntity}/{@link MongoDB#readRow(Document, Class)}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -473,7 +474,8 @@ public final class MongoCollectionMapper<T> {
      * Retrieves a single entity by its ObjectId reactively.
      *
      * <p>This method provides a reactive way to retrieve a document using a typed ObjectId
-     * and automatically convert it to the mapped entity type using the configured codec registry.</p>
+     * and convert it to the mapped entity type via the framework's Document mapping helpers
+     * ({@code toEntity}/{@link MongoDB#readRow(Document, Class)}).</p>
      * 
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -1924,8 +1926,8 @@ public final class MongoCollectionMapper<T> {
      * Inserts a single entity into the collection reactively.
      *
      * <p>This method provides a reactive way to insert a single entity of the mapped type into the
-     * collection. The entity is automatically converted to a MongoDB document using the configured
-     * codec registry.</p>
+     * collection. The entity is converted via {@link com.landawn.abacus.da.mongodb.MongoDBBase#toDocument(Object)}
+     * (or passed through when already a {@link Document}).</p>
      *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
@@ -3330,11 +3332,11 @@ public final class MongoCollectionMapper<T> {
      * userMapper.mapReduce((String) null, reduceFunction);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param mapFunction the JavaScript map function; must not be null
-     * @param reduceFunction the JavaScript reduce function; must not be null
+     * @param mapFunction the JavaScript map function; must not be null or empty
+     * @param reduceFunction the JavaScript reduce function; must not be null or empty
      * @return a {@code Flux} that, on subscription, emits each map-reduce output document decoded
      *         as {@code T}, then completes; completes empty when the operation produces no output
-     * @throws IllegalArgumentException if mapFunction or reduceFunction is null
+     * @throws IllegalArgumentException if mapFunction or reduceFunction is null or empty
      * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
      * @deprecated Map-reduce is deprecated in MongoDB 5.0+. Use {@link #aggregate(List)} with an
      *             aggregation pipeline instead.

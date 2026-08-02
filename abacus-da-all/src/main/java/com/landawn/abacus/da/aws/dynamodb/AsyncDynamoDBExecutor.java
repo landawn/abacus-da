@@ -509,25 +509,16 @@ public final class AsyncDynamoDBExecutor {
     }
 
     /**
-     * Asynchronously performs a batch get operation with consumed capacity reporting.
+     * Asynchronously performs a batch get operation, forwarding {@code returnConsumedCapacity} to
+     * the service. Like the other {@code batchGetItem} overloads on this executor, the completed
+     * value is only the per-table item map; consumed-capacity details are not exposed. To inspect
+     * capacity, call the underlying client via {@code sync().dynamoDBClient().batchGetItem(...)}.
      *
-     * <p>This method extends the basic batch get by allowing you to track the read capacity consumed
-     * by the operation asynchronously. This is particularly useful for monitoring and optimizing
-     * your DynamoDB usage and costs in high-throughput async applications.</p>
-     *
-     * <p><b>Capacity Monitoring Benefits:</b></p>
+     * <p><b>Return Consumed Capacity options (wire flag only):</b></p>
      * <ul>
-     * <li>Real-time capacity consumption tracking for cost optimization</li>
-     * <li>Performance monitoring for auto-scaling decisions</li>
-     * <li>Debugging high-consumption operations</li>
-     * <li>Compliance with capacity budget constraints</li>
-     * </ul>
-     *
-     * <p><b>Return Consumed Capacity Options:</b></p>
-     * <ul>
-     * <li><b>INDEXES</b> - Returns capacity consumed by table and all indexes</li>
-     * <li><b>TOTAL</b> - Returns only the total consumed capacity units</li>
-     * <li><b>NONE</b> - No capacity details returned (default)</li>
+     * <li><b>INDEXES</b> - requests capacity for table and indexes from the service</li>
+     * <li><b>TOTAL</b> - requests total consumed capacity units from the service</li>
+     * <li><b>NONE</b> - no capacity details requested (default)</li>
      * </ul>
      *
      * <p><b>Usage Examples:</b></p>
@@ -563,10 +554,7 @@ public final class AsyncDynamoDBExecutor {
      * }</pre>
      *
      * @param requestItems a map of table names to KeysAndAttributes specifying the items to retrieve, must not be {@code null}
-     * @param returnConsumedCapacity determines the level of detail about consumed capacity returned:
-     *                              "INDEXES" - returns capacity for table and indexes,
-     *                              "TOTAL" - returns only total consumed capacity,
-     *                              "NONE" - no capacity details returned
+     * @param returnConsumedCapacity "NONE", "TOTAL", or "INDEXES" forwarded to the service; not present on the future result
      * @return a ContinuableFuture containing a map of table names to lists of retrieved items
      * @throws IllegalArgumentException if requestItems is {@code null} (surfaced through the future);
      *         exceeding DynamoDB's 100-item batch limit fails with a service {@code ValidationException} via the future
@@ -707,18 +695,14 @@ public final class AsyncDynamoDBExecutor {
     }
 
     /**
-     * Asynchronously performs a batch get operation with type conversion and capacity monitoring.
+     * Asynchronously performs a batch get with type conversion, forwarding
+     * {@code returnConsumedCapacity} to the service. The completed value is only the converted
+     * per-table item lists; capacity metrics are not exposed on this API.
      *
-     * <p>This method combines automatic type conversion with capacity consumption tracking,
-     * providing both type safety and performance monitoring in a single operation. This is
-     * ideal for production applications that need both strong typing and cost optimization.</p>
-     *
-     * <p><b>Combined Benefits:</b></p>
+     * <p><b>Notes:</b></p>
      * <ul>
-     * <li>Type-safe retrieval with automatic conversion</li>
-     * <li>Capacity consumption monitoring for cost control</li>
-     * <li>Performance metrics for scaling decisions</li>
-     * <li>Production-ready error handling and logging</li>
+     * <li>Type-safe retrieval with automatic conversion to {@code targetClass}</li>
+     * <li>{@code returnConsumedCapacity} is a wire flag only (not returned on the future result)</li>
      * </ul>
      *
      * <p><b>Usage Examples:</b></p>
