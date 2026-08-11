@@ -37,6 +37,7 @@ import com.landawn.abacus.query.condition.In;
 import com.landawn.abacus.util.Beans;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.Profiler;
+import com.landawn.abacus.util.SK;
 import com.landawn.abacus.util.Strings;
 
 public class CqlBuilderTest extends TestBase {
@@ -408,7 +409,7 @@ public class CqlBuilderTest extends TestBase {
     @Test
     public void test_count_query_has_no_bogus_limit() {
         // Mirrors CassandraExecutorBase.prepareQuery(..., count = 0) for the SNAKE_CASE naming policy.
-        final String countCql = NSC.select(N.asList(CqlBuilder.COUNT_ALL)).from("account").appendIf(true, Filters.eq("id", Filters.QME)).build().query();
+        final String countCql = NSC.select(N.asList(SK.COUNT_ALL)).from("account").appendIf(true, Filters.eq("id", Filters.QME)).build().query();
         N.println(countCql);
 
         assertTrue(countCql.startsWith("SELECT count(*)"), countCql);
@@ -419,7 +420,7 @@ public class CqlBuilderTest extends TestBase {
 
         // Sanity check: the buggy behavior (count = 1 -> limit(1)) would have produced "LIMIT 1",
         // which truncates the aggregated count in Cassandra.
-        final String buggyCql = NSC.select(N.asList(CqlBuilder.COUNT_ALL))
+        final String buggyCql = NSC.select(N.asList(SK.COUNT_ALL))
                 .from("account")
                 .appendIf(true, Filters.eq("id", Filters.QME))
                 .limit(1)

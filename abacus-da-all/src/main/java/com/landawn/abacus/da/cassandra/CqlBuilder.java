@@ -689,20 +689,20 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         }
     }
 
-    private void assertNotClosed() {
+    protected  void assertNotClosed() {
         if (_sb == null) {
             throw new IllegalStateException("This CqlBuilder has been closed after build() was called. No further operation is supported");
         }
     }
 
     @Override
-    protected void setParameterForRawSQL(final Object propValue) {
+    protected void setParameterForRawSql(final Object propValue) {
         // CQL escapes a single quote inside a string literal by doubling it ('O''Brien'); the SQL-style
         // backslash escaping produced by the parent implementation is a CQL syntax error.
         if (propValue instanceof final String str) {
             _sb.append('\'').append(Strings.replaceAll(str, "'", "''")).append('\'');
         } else {
-            super.setParameterForRawSQL(propValue);
+            super.setParameterForRawSql(propValue);
         }
     }
 
@@ -1278,6 +1278,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      * @return this CqlBuilder instance for method chaining
      * @throws IllegalArgumentException if either argument is not the same single CQL table reference
      */
+    @SuppressWarnings("deprecation")
     @Override
     protected CqlBuilder from(final String tableName, final String fromClause) {
         checkCqlTableReference(tableName, "tableName");

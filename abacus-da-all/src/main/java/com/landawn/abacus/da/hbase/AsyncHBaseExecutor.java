@@ -1990,7 +1990,7 @@ public final class AsyncHBaseExecutor {
     public <T extends Service, R> ContinuableFuture<Void> coprocessorService(final String tableName, final Class<T> service, final Object startRowKey,
             final Object endRowKey, final Batch.Call<T, R> callable, final Batch.Callback<R> callback) throws IllegalArgumentException {
         N.checkArgNotNull(callable, cs.callable);
-        N.checkArgNotNull(callback, cs.callback);
+        N.checkArgNotNull(callback, "callback");
 
         return asyncExecutor.execute(() -> {
             hbaseExecutor.coprocessorService(tableName, service, startRowKey, endRowKey, callable, callback);
@@ -2094,7 +2094,7 @@ public final class AsyncHBaseExecutor {
     public <R extends Message> ContinuableFuture<Void> batchCoprocessorService(final String tableName, final Descriptors.MethodDescriptor methodDescriptor,
             final Message request, final Object startRowKey, final Object endRowKey, final R responsePrototype, final Batch.Callback<R> callback)
             throws IllegalArgumentException {
-        N.checkArgNotNull(callback, cs.callback);
+        N.checkArgNotNull(callback, "callback");
 
         return asyncExecutor.execute(() -> {
             hbaseExecutor.batchCoprocessorService(tableName, methodDescriptor, request, startRowKey, endRowKey, responsePrototype, callback);

@@ -1412,13 +1412,13 @@ public class BigQueryExecutor {
 
         switch (namingPolicy) {
             case SNAKE_CASE:
-                return PSC.update(targetClass).setEntity(entity, excludedPropNames).where(Filters.and(conds)).build();
+                return PSC.update(targetClass).set(entity, excludedPropNames).where(Filters.and(conds)).build();
 
             case SCREAMING_SNAKE_CASE:
-                return PAC.update(targetClass).setEntity(entity, excludedPropNames).where(Filters.and(conds)).build();
+                return PAC.update(targetClass).set(entity, excludedPropNames).where(Filters.and(conds)).build();
 
             case CAMEL_CASE:
-                return PLC.update(targetClass).setEntity(entity, excludedPropNames).where(Filters.and(conds)).build();
+                return PLC.update(targetClass).set(entity, excludedPropNames).where(Filters.and(conds)).build();
 
             default:
                 throw new IllegalStateException("Unsupported naming policy: " + namingPolicy);

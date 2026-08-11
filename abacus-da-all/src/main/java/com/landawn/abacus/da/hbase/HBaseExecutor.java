@@ -2976,7 +2976,7 @@ public final class HBaseExecutor {
     public <T extends Service, R> void coprocessorService(final String tableName, final Class<T> service, final Object startRowKey, final Object endRowKey,
             final Batch.Call<T, R> callable, final Batch.Callback<R> callback) throws IllegalArgumentException, UncheckedIOException, Exception {
         N.checkArgNotNull(callable, cs.callable);
-        N.checkArgNotNull(callback, cs.callback);
+        N.checkArgNotNull(callback, "callback");
 
         final Table table = getTable(tableName);
 
@@ -3087,7 +3087,7 @@ public final class HBaseExecutor {
     public <R extends Message> void batchCoprocessorService(final String tableName, final Descriptors.MethodDescriptor methodDescriptor, final Message request,
             final Object startRowKey, final Object endRowKey, final R responsePrototype, final Batch.Callback<R> callback)
             throws IllegalArgumentException, UncheckedIOException, Exception {
-        N.checkArgNotNull(callback, cs.callback);
+        N.checkArgNotNull(callback, "callback");
 
         final Table table = getTable(tableName);
 

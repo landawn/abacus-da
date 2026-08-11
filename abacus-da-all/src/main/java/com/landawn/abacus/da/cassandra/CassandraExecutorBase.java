@@ -43,6 +43,7 @@ import com.landawn.abacus.util.ImmutableList;
 import com.landawn.abacus.util.ImmutableSet;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.NamingPolicy;
+import com.landawn.abacus.util.SK;
 import com.landawn.abacus.util.Strings;
 import com.landawn.abacus.util.Throwables;
 import com.landawn.abacus.util.Tuple;
@@ -189,7 +190,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @see CqlBuilder#COUNT_ALL
      */
-    protected static final ImmutableList<String> COUNT_SELECT_PROP_NAMES = ImmutableList.of(CqlBuilder.COUNT_ALL);
+    protected static final ImmutableList<String> COUNT_SELECT_PROP_NAMES = ImmutableList.of(SK.COUNT_ALL);
 
     /**
      * Maximum CQL text length, in characters, that is eligible for the {@code PreparedStatement}

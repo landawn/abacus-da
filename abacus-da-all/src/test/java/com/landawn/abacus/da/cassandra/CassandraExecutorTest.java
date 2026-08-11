@@ -607,7 +607,7 @@ public class CassandraExecutorTest extends TestBase {
 
         cassandraExecutor.query("SELECT * FROM simplex.songs WHERE id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d").println();
 
-        String sql = LCCB.update("simplex.songs").set("title", "album").where("id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d").build().query();
+        String sql = LCCB.update("simplex.songs").set(N.asList("title", "album")).where("id = 2cc9ccb7-6221-4ccb-8387-f22b6a1b354d").build().query();
         N.println(sql);
         ResultSet resultSet = cassandraExecutor.execute(sql, "new new title", "new new Album");
         N.println(resultSet);

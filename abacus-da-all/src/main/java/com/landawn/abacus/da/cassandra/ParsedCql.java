@@ -206,7 +206,7 @@ public final class ParsedCql {
         Map<Integer, String> localNamedParameters = new HashMap<>();
         hashCode = Objects.hash(this.cql);
 
-        final List<String> words = SqlParser.parse(removeDoubleSlashComments(this.cql));
+        final List<String> words = SqlParser.tokenize(removeDoubleSlashComments(this.cql));
         final boolean isOpSqlPrefix = isOpSqlPrefix(words);
 
         int type = 0; // bit mask: 1 - '?', 2 - ':propName', 4 - '#{propName}'
