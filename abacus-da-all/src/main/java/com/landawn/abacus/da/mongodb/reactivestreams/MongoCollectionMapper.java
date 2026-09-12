@@ -1098,7 +1098,7 @@ public final class MongoCollectionMapper<T> {
      * @return a {@code Mono} that emits the {@code Boolean} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
      * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
-     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @throws MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForBoolean(String, Bson)
      */
@@ -1142,7 +1142,7 @@ public final class MongoCollectionMapper<T> {
      * @return a {@code Mono} that emits the {@code Character} field value on subscription, or
      *         completes empty when no document matches or the field is missing/null
      * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
-     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @throws MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForChar(String, Bson)
      */
@@ -1188,7 +1188,7 @@ public final class MongoCollectionMapper<T> {
      * @return a {@code Mono} that emits the {@code Byte} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
      * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
-     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @throws MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForByte(String, Bson)
      */
@@ -1234,7 +1234,7 @@ public final class MongoCollectionMapper<T> {
      * @return a {@code Mono} that emits the {@code Short} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
      * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
-     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @throws MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForShort(String, Bson)
      */
@@ -1280,7 +1280,7 @@ public final class MongoCollectionMapper<T> {
      * @return a {@code Mono} that emits the {@code Integer} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
      * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
-     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @throws MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForInt(String, Bson)
      */
@@ -1326,7 +1326,7 @@ public final class MongoCollectionMapper<T> {
      * @return a {@code Mono} that emits the {@code Long} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
      * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
-     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @throws MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForLong(String, Bson)
      */
@@ -1372,7 +1372,7 @@ public final class MongoCollectionMapper<T> {
      * @return a {@code Mono} that emits the {@code Float} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
      * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
-     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @throws MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForDouble(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForFloat(String, Bson)
@@ -1419,7 +1419,7 @@ public final class MongoCollectionMapper<T> {
      * @return a {@code Mono} that emits the {@code Double} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
      * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
-     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @throws MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForFloat(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForDouble(String, Bson)
@@ -1469,7 +1469,7 @@ public final class MongoCollectionMapper<T> {
      * @return a {@code Mono} that emits the {@code String} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
      * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
-     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @throws MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForString(String, Bson)
      */
@@ -1515,7 +1515,7 @@ public final class MongoCollectionMapper<T> {
      * @return a {@code Mono} that emits the {@code Date} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
      * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
-     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @throws MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForDate(String, Bson, Class)
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForDate(String, Bson)
@@ -1564,7 +1564,7 @@ public final class MongoCollectionMapper<T> {
      * @return a {@code Mono} that emits the typed {@code Date} value on subscription, or completes
      *         empty when no document matches or the field is missing/null
      * @throws IllegalArgumentException if {@code propName} is null or empty, if {@code filter} is null, or if {@code valueType} is null (thrown synchronously at the call site)
-     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @throws MongoException if the database operation fails (signalled via {@code Mono})
      * @see #queryForDate(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForDate(String, Bson, Class)
@@ -1615,7 +1615,7 @@ public final class MongoCollectionMapper<T> {
      * @return a {@code Mono} that emits the converted field value on subscription, or completes empty
      *         when no document matches or the field is missing/null
      * @throws IllegalArgumentException if {@code propName} is null or empty, if {@code filter} is null, or if {@code valueType} is null (thrown synchronously at the call site)
-     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Mono})
+     * @throws MongoException if the database operation fails (signalled via {@code Mono})
      * @see MongoCollectionExecutor#queryForSingleValue(String, Bson, Class)
      */
     public <V> Mono<V> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType) {
@@ -1954,9 +1954,9 @@ public final class MongoCollectionMapper<T> {
      * @return a cold {@code Mono} that, on subscription, emits exactly one
      *         {@link InsertOneResult} when the insert completes, then completes
      * @throws IllegalArgumentException if obj is null
-     * @throws com.mongodb.MongoWriteException if the insert operation fails (signalled via
+     * @throws MongoWriteException if the insert operation fails (signalled via
      *         {@code Mono})
-     * @throws com.mongodb.MongoException if the database operation fails (signalled via
+     * @throws MongoException if the database operation fails (signalled via
      *         {@code Mono})
      * @see #insertOne(Object, InsertOneOptions)
      * @see #insertMany(Collection)
@@ -1995,9 +1995,9 @@ public final class MongoCollectionMapper<T> {
      * @return a cold {@code Mono} that, on subscription, emits exactly one
      *         {@link InsertOneResult} when the insert completes, then completes
      * @throws IllegalArgumentException if obj is null
-     * @throws com.mongodb.MongoWriteException if the insert operation fails (signalled via
+     * @throws MongoWriteException if the insert operation fails (signalled via
      *         {@code Mono})
-     * @throws com.mongodb.MongoException if the database operation fails (signalled via
+     * @throws MongoException if the database operation fails (signalled via
      *         {@code Mono})
      * @see #insertOne(Object)
      * @see InsertOneOptions
@@ -2038,7 +2038,7 @@ public final class MongoCollectionMapper<T> {
      * @return a cold {@code Mono} that, on subscription, emits exactly one
      *         {@link InsertManyResult} when the operation completes, then completes
      * @throws IllegalArgumentException if objList is null or empty
-     * @throws com.mongodb.MongoBulkWriteException if any document fails to insert (signalled via
+     * @throws MongoBulkWriteException if any document fails to insert (signalled via
      *         {@code Mono})
      */
     public Mono<InsertManyResult> insertMany(final Collection<? extends T> objList) {
@@ -2618,9 +2618,9 @@ public final class MongoCollectionMapper<T> {
      * @return a cold {@code Mono} that, on subscription, emits exactly one {@link DeleteResult}
      *         with deletion statistics, then completes
      * @throws IllegalArgumentException if filter is null
-     * @throws com.mongodb.MongoWriteException if the delete operation fails (signalled via
+     * @throws MongoWriteException if the delete operation fails (signalled via
      *         {@code Mono})
-     * @throws com.mongodb.MongoException if the database operation fails (signalled via
+     * @throws MongoException if the database operation fails (signalled via
      *         {@code Mono})
      */
     public Mono<DeleteResult> deleteMany(final Bson filter, final DeleteOptions options) {
@@ -2657,7 +2657,7 @@ public final class MongoCollectionMapper<T> {
      * @return a {@code Mono} that, on subscription, emits exactly one {@link BulkWriteResult}
      *         (use {@link BulkWriteResult#getInsertedCount()} for the inserted count), then completes
      * @throws IllegalArgumentException if entities is null or empty
-     * @throws com.mongodb.MongoBulkWriteException if the bulk write reports any per-document
+     * @throws MongoBulkWriteException if the bulk write reports any per-document
      *         failures (signalled via {@code Mono})
      * @see MongoCollectionExecutor#bulkInsert(Collection)
      */
@@ -3157,7 +3157,7 @@ public final class MongoCollectionMapper<T> {
      *         {@code T} (one per emission, honouring downstream demand), then completes; completes
      *         empty if the pipeline produces no documents
      * @throws IllegalArgumentException if pipeline is null
-     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
+     * @throws MongoException if the database operation fails (signalled via {@code Flux})
      */
     public Flux<T> aggregate(final List<? extends Bson> pipeline) {
         return collectionExecutor.aggregate(pipeline, rowType);
@@ -3337,7 +3337,7 @@ public final class MongoCollectionMapper<T> {
      * @return a {@code Flux} that, on subscription, emits each map-reduce output document decoded
      *         as {@code T}, then completes; completes empty when the operation produces no output
      * @throws IllegalArgumentException if mapFunction or reduceFunction is null or empty
-     * @throws com.mongodb.MongoException if the database operation fails (signalled via {@code Flux})
+     * @throws MongoException if the database operation fails (signalled via {@code Flux})
      * @deprecated Map-reduce is deprecated in MongoDB 5.0+. Use {@link #aggregate(List)} with an
      *             aggregation pipeline instead.
      */

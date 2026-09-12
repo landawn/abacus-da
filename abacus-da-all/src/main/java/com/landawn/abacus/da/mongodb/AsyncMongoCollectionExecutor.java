@@ -378,7 +378,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param objectId the string representation of the ObjectId to search for
      * @return a ContinuableFuture that completes with an Optional containing the document if found, or empty if not found
      * @throws IllegalArgumentException if objectId is null, empty, or invalid format (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Optional
      * @see Document
      * @see #get(ObjectId)
@@ -403,7 +403,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param objectId the ObjectId to search for
      * @return a ContinuableFuture that completes with an Optional containing the document if found, or empty if not found
      * @throws IllegalArgumentException if objectId is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see ObjectId
      * @see Optional
      * @see Document
@@ -430,7 +430,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return a ContinuableFuture that completes with an Optional containing the converted object if found, or empty if not found
      * @throws IllegalArgumentException if objectId or rowType is null, or if objectId format is invalid (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #get(ObjectId, Class)
      */
     public <T> ContinuableFuture<Optional<T>> get(final String objectId, final Class<T> rowType) {
@@ -456,7 +456,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return a ContinuableFuture that completes with an Optional containing the converted object if found, or empty if not found
      * @throws IllegalArgumentException if objectId or rowType is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #get(String, Class)
      */
     public <T> ContinuableFuture<Optional<T>> get(final ObjectId objectId, final Class<T> rowType) {
@@ -483,7 +483,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return a ContinuableFuture that completes with an Optional containing the converted object with projected fields, or empty if not found
      * @throws IllegalArgumentException if objectId or rowType is null, or objectId format is invalid (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #get(ObjectId, Collection, Class)
      */
     public <T> ContinuableFuture<Optional<T>> get(final String objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
@@ -512,7 +512,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return a ContinuableFuture that completes with an Optional containing the converted object with only the specified fields, or empty if not found
      * @throws IllegalArgumentException if objectId or rowType is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see com.mongodb.client.model.Projections
      */
     public <T> ContinuableFuture<Optional<T>> get(final ObjectId objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
@@ -540,7 +540,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param objectId the string representation of the ObjectId (24 hex characters)
      * @return a ContinuableFuture that completes with the matching document, or {@code null} if not found
      * @throws IllegalArgumentException if objectId is null, empty, or invalid format (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #get(String)
      * @see #gett(ObjectId)
      */
@@ -569,7 +569,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param objectId the ObjectId to search for
      * @return a ContinuableFuture that completes with the matching document, or {@code null} if not found
      * @throws IllegalArgumentException if objectId is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #get(ObjectId)
      * @see #gett(String)
      */
@@ -599,7 +599,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return a ContinuableFuture that completes with the converted entity, or {@code null} if not found
      * @throws IllegalArgumentException if objectId or rowType is null, or if objectId format is invalid (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #get(String, Class)
      * @see #gett(ObjectId, Class)
      */
@@ -630,7 +630,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return a ContinuableFuture that completes with the converted entity, or {@code null} if not found
      * @throws IllegalArgumentException if objectId or rowType is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #get(ObjectId, Class)
      * @see #gett(String, Class)
      */
@@ -662,7 +662,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return a ContinuableFuture that completes with the converted entity with projected fields, or {@code null} if not found
      * @throws IllegalArgumentException if objectId or rowType is null, or if objectId format is invalid (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #get(String, Collection, Class)
      * @see #gett(ObjectId, Collection, Class)
      */
@@ -696,7 +696,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return a ContinuableFuture that completes with the converted entity with projected fields, or {@code null} if not found
      * @throws IllegalArgumentException if objectId or rowType is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #get(ObjectId, Collection, Class)
      * @see com.mongodb.client.model.Projections
      */
@@ -721,7 +721,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to match documents against (must not be null)
      * @return a ContinuableFuture that completes with an Optional containing the first matching document, or empty if none found
      * @throws IllegalArgumentException if filter is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Optional
      * @see Document
      * @see com.mongodb.client.model.Filters
@@ -748,7 +748,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the target type for conversion of the document
      * @return a ContinuableFuture that completes with an Optional containing the converted entity, or empty if none found
      * @throws IllegalArgumentException if filter is null, or if rowType is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #findFirst(Bson)
      * @see #findFirst(Collection, Bson, Class)
      */
@@ -776,7 +776,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the target type for conversion of the document
      * @return a ContinuableFuture that completes with an Optional containing the converted entity with projected fields, or empty if none found
      * @throws IllegalArgumentException if filter is null, or if rowType is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #findFirst(Bson, Class)
      * @see #findFirst(Collection, Bson, Bson, Class)
      */
@@ -805,7 +805,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the target type for conversion of the document
      * @return a ContinuableFuture that completes with an Optional containing the converted entity with projected fields, or empty if none found
      * @throws IllegalArgumentException if filter is null, or if rowType is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see com.mongodb.client.model.Sorts
      * @see #findFirst(Collection, Bson, Class)
      */
@@ -834,7 +834,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the target type for conversion of the document
      * @return a ContinuableFuture that completes with an Optional containing the converted entity with projected fields, or empty if none found
      * @throws IllegalArgumentException if filter is null, or if rowType is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Sorts
      */
@@ -859,7 +859,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to match documents against (must not be null)
      * @return a ContinuableFuture that completes with a List containing all matching documents (empty list if none found)
      * @throws IllegalArgumentException if filter is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Document
      * @see #stream(Bson)
      * @see com.mongodb.client.model.Filters
@@ -886,7 +886,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a List of converted entities
      * @throws IllegalArgumentException if filter is null, or if rowType is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #list(Bson, int, int, Class)
      * @see #list(Collection, Bson, Class)
      */
@@ -914,7 +914,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a List of converted entities within the specified range
      * @throws IllegalArgumentException if filter is null, or if rowType is null or offset/count are negative (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #list(Bson, Class)
      */
     public <T> ContinuableFuture<List<T>> list(final Bson filter, final int offset, final int count, final Class<T> rowType) {
@@ -941,7 +941,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a List of converted entities with only the projected fields
      * @throws IllegalArgumentException if filter is null, or if rowType is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #list(Bson, Class)
      */
     public <T> ContinuableFuture<List<T>> list(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) {
@@ -970,7 +970,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a List of converted entities with projected fields within the range
      * @throws IllegalArgumentException if filter is null, or if rowType is null or offset/count are negative (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #list(Collection, Bson, Class)
      */
     public <T> ContinuableFuture<List<T>> list(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count,
@@ -999,7 +999,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a sorted List of converted entities with projected fields
      * @throws IllegalArgumentException if filter is null, or if rowType is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see com.mongodb.client.model.Sorts
      */
     public <T> ContinuableFuture<List<T>> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
@@ -1028,7 +1028,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a sorted List of converted entities with projected fields within the range
      * @throws IllegalArgumentException if filter is null, or if rowType is null or offset/count are negative (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see com.mongodb.client.model.Sorts
      */
     public <T> ContinuableFuture<List<T>> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
@@ -1057,7 +1057,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a sorted List of converted entities with projected fields
      * @throws IllegalArgumentException if filter is null, or if rowType is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Sorts
      */
@@ -1087,7 +1087,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a sorted List of converted entities with projected fields within the range
      * @throws IllegalArgumentException if filter is null, or if rowType is null or offset/count are negative (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Sorts
      */
@@ -1131,7 +1131,7 @@ public final class AsyncMongoCollectionExecutor {
      *         holding the field value (or {@code false} for missing/null) when at least one document
      *         matches; {@code OptionalBoolean.empty()} when no document matches
      * @throws IllegalArgumentException if filter is null, or if propName is null or empty (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see OptionalBoolean
      * @see MongoCollectionExecutor#queryForBoolean(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1168,7 +1168,7 @@ public final class AsyncMongoCollectionExecutor {
      *         holding the field value (or the default {@code char} for missing/null) when at least one
      *         document matches; {@code OptionalChar.empty()} when no document matches
      * @throws IllegalArgumentException if filter is null, or if propName is null or empty (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see OptionalChar
      * @see MongoCollectionExecutor#queryForChar(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1205,7 +1205,7 @@ public final class AsyncMongoCollectionExecutor {
      *         holding the field value (or {@code 0} for missing/null) when at least one document
      *         matches; {@code OptionalByte.empty()} when no document matches
      * @throws IllegalArgumentException if filter is null, or if propName is null or empty (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see OptionalByte
      * @see MongoCollectionExecutor#queryForByte(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1242,7 +1242,7 @@ public final class AsyncMongoCollectionExecutor {
      *         holding the field value (or {@code 0} for missing/null) when at least one document
      *         matches; {@code OptionalShort.empty()} when no document matches
      * @throws IllegalArgumentException if filter is null, or if propName is null or empty (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see OptionalShort
      * @see MongoCollectionExecutor#queryForShort(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1282,7 +1282,7 @@ public final class AsyncMongoCollectionExecutor {
      *         holding the field value (or {@code 0} for missing/null) when at least one document
      *         matches; {@code OptionalInt.empty()} when no document matches
      * @throws IllegalArgumentException if filter is null, or if propName is null or empty (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see OptionalInt
      * @see MongoCollectionExecutor#queryForInt(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1319,7 +1319,7 @@ public final class AsyncMongoCollectionExecutor {
      *         holding the field value (or {@code 0L} for missing/null) when at least one document
      *         matches; {@code OptionalLong.empty()} when no document matches
      * @throws IllegalArgumentException if filter is null, or if propName is null or empty (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see OptionalLong
      * @see MongoCollectionExecutor#queryForLong(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1356,7 +1356,7 @@ public final class AsyncMongoCollectionExecutor {
      *         holding the field value (or {@code 0.0f} for missing/null) when at least one document
      *         matches; {@code OptionalFloat.empty()} when no document matches
      * @throws IllegalArgumentException if filter is null, or if propName is null or empty (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see OptionalFloat
      * @see #queryForDouble(String, Bson)
      * @see MongoCollectionExecutor#queryForFloat(String, Bson)
@@ -1394,7 +1394,7 @@ public final class AsyncMongoCollectionExecutor {
      *         holding the field value (or {@code 0.0d} for missing/null) when at least one document
      *         matches; {@code OptionalDouble.empty()} when no document matches
      * @throws IllegalArgumentException if filter is null, or if propName is null or empty (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see OptionalDouble
      * @see #queryForFloat(String, Bson)
      * @see MongoCollectionExecutor#queryForDouble(String, Bson)
@@ -1432,7 +1432,7 @@ public final class AsyncMongoCollectionExecutor {
      *         holding the field value (possibly {@code null} for missing/null fields) when at least
      *         one document matches; {@code Nullable.empty()} when no document matches
      * @throws IllegalArgumentException if filter is null, or if propName is null or empty (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Nullable
      * @see MongoCollectionExecutor#queryForString(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1469,7 +1469,7 @@ public final class AsyncMongoCollectionExecutor {
      *         holding the field value (possibly {@code null} for missing/null fields) when at least
      *         one document matches; {@code Nullable.empty()} when no document matches
      * @throws IllegalArgumentException if filter is null, or if propName is null or empty (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Nullable
      * @see Date
      * @see #queryForDate(String, Bson, Class)
@@ -1511,7 +1511,7 @@ public final class AsyncMongoCollectionExecutor {
      *         holding the typed Date value (possibly {@code null} for missing/null fields) when at
      *         least one document matches; {@code Nullable.empty()} when no document matches
      * @throws IllegalArgumentException if filter is null, or if propName is null or empty, or if valueType is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #queryForDate(String, Bson)
      * @see MongoCollectionExecutor#queryForDate(String, Bson, Class)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1552,7 +1552,7 @@ public final class AsyncMongoCollectionExecutor {
      *         holding the converted value (possibly {@code null} for missing/null fields) when at
      *         least one document matches; {@code Nullable.empty()} when no document matches
      * @throws IllegalArgumentException if filter is null, or if propName is null or empty, or if valueType is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Nullable
      * @see #queryForSingleNonNull(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForSingleValue(String, Bson, Class)
@@ -1595,7 +1595,7 @@ public final class AsyncMongoCollectionExecutor {
      * @throws NullPointerException if a document is matched but the field is absent, the raw value is
      *         {@code null}, or the conversion to {@code valueType} yields {@code null}, because
      *         {@link Optional#of(Object)} rejects a null payload (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Optional
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForSingleNonNull(String, Bson, Class)
@@ -1619,7 +1619,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to match documents (must not be null)
      * @return a ContinuableFuture that completes with a Dataset containing the query results
      * @throws IllegalArgumentException if filter is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Dataset
      * @see #query(Bson, Class)
      */
@@ -1643,7 +1643,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing the query results
      * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Dataset
      * @see #query(Bson)
      */
@@ -1669,7 +1669,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing the paginated results
      * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Dataset
      * @see #query(Bson, Class)
      */
@@ -1694,7 +1694,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing projected results
      * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Dataset
      * @see com.mongodb.client.model.Projections
      */
@@ -1721,7 +1721,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing paginated projected results
      * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Dataset
      */
     public ContinuableFuture<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count,
@@ -1748,7 +1748,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing sorted projected results
      * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Dataset
      * @see com.mongodb.client.model.Sorts
      */
@@ -1777,7 +1777,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing the complete query results
      * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Dataset
      */
     public ContinuableFuture<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
@@ -1807,7 +1807,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing projected and sorted results
      * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Dataset
      * @see com.mongodb.client.model.Projections
      */
@@ -1837,7 +1837,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing the complete query results
      * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Dataset
      * @see com.mongodb.client.model.Projections
      */
@@ -1862,7 +1862,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to match documents (must not be null)
      * @return a ContinuableFuture that completes with a Stream of Document objects
      * @throws IllegalArgumentException if filter is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Stream
      * @see Document
      */
@@ -1889,7 +1889,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Stream
      * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Stream
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Bson filter, final Class<T> rowType) {
@@ -1915,7 +1915,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a paginated typed Stream
      * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Stream
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Bson filter, final int offset, final int count, final Class<T> rowType) {
@@ -1940,7 +1940,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a projected typed Stream
      * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Stream
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) {
@@ -1968,7 +1968,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a paginated projected typed Stream
      * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Stream
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count,
@@ -1996,7 +1996,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a sorted projected typed Stream
      * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Stream
      * @see com.mongodb.client.model.Sorts
      */
@@ -2026,7 +2026,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a fully configured typed Stream
      * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Stream
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset,
@@ -2055,7 +2055,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a projected and sorted typed Stream
      * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Stream
      * @see com.mongodb.client.model.Projections
      */
@@ -2089,7 +2089,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a fully configured typed Stream
      * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null, or if {@code offset} or {@code count} is negative (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see Stream
      * @see com.mongodb.client.model.Projections
      */
@@ -2112,7 +2112,7 @@ public final class AsyncMongoCollectionExecutor {
      * }</pre>
      *
      * @return a ContinuableFuture that completes with a ChangeStreamIterable for Document changes
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see ChangeStreamIterable
      * @see #watch(Class)
      */
@@ -2137,7 +2137,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed ChangeStreamIterable
      * @throws IllegalArgumentException if rowType is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see ChangeStreamIterable
      * @see #watch()
      */
@@ -2163,7 +2163,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param pipeline the aggregation pipeline to apply to change events
      * @return a ContinuableFuture that completes with a filtered ChangeStreamIterable for Document changes
      * @throws IllegalArgumentException if pipeline is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see ChangeStreamIterable
      * @see com.mongodb.client.model.Aggregates
      */
@@ -2191,7 +2191,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a filtered typed ChangeStreamIterable
      * @throws IllegalArgumentException if any parameter is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see ChangeStreamIterable
      * @see com.mongodb.client.model.Aggregates
      */
@@ -2229,8 +2229,8 @@ public final class AsyncMongoCollectionExecutor {
      * @param obj the object to insert - can be Document, {@code Map<String, Object>}, or entity class with getter/setter methods
      * @return a ContinuableFuture that completes with the {@link InsertOneResult} reported by the server
      * @throws IllegalArgumentException if obj is null (propagated through future)
-     * @throws com.mongodb.MongoWriteException if the insert operation fails (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoWriteException if the insert operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #insertOne(Object, InsertOneOptions)
      * @see #insertMany(Collection)
      */
@@ -2258,7 +2258,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param options the options to apply to the insert operation (null uses defaults)
      * @return a ContinuableFuture that completes with the {@link InsertOneResult} reported by the server
      * @throws IllegalArgumentException if obj is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see InsertOneOptions
      * @see #insertOne(Object)
      */
@@ -2288,7 +2288,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param objList the collection of objects to insert, each will be converted to a Document
      * @return a ContinuableFuture that completes with the {@link InsertManyResult} reported by the server
      * @throws IllegalArgumentException if objList is null or empty (propagated through future)
-     * @throws com.mongodb.MongoException if any database operation fails (propagated through future)
+     * @throws MongoException if any database operation fails (propagated through future)
      * @see #insertMany(Collection, InsertManyOptions)
      * @see #insertOne(Object)
      */
@@ -2318,7 +2318,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param options the options to apply to the insert operation (null uses defaults)
      * @return a ContinuableFuture that completes with the {@link InsertManyResult} reported by the server
      * @throws IllegalArgumentException if objList is null or empty (propagated through future)
-     * @throws com.mongodb.MongoException if any database operation fails (propagated through future)
+     * @throws MongoException if any database operation fails (propagated through future)
      * @see InsertManyOptions
      * @see #insertMany(Collection)
      */
@@ -2354,7 +2354,7 @@ public final class AsyncMongoCollectionExecutor {
      *               {@code replaceOne} to replace the whole document)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if {@code objectId} is null, empty, or not a valid hex ObjectId, or {@code update} is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see UpdateResult
      * @see #updateOne(ObjectId, Object)
      * @see com.mongodb.client.model.Updates
@@ -2394,7 +2394,7 @@ public final class AsyncMongoCollectionExecutor {
      *               {@code replaceOne} to replace the whole document)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if objectId or update is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see UpdateResult
      * @see #updateOne(String, Object)
      * @see ObjectId
@@ -2430,7 +2430,7 @@ public final class AsyncMongoCollectionExecutor {
      *               {@code replaceOne} to replace the whole document)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if filter or update is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see UpdateResult
      * @see #updateOne(Bson, Object, UpdateOptions)
      * @see com.mongodb.client.model.Filters
@@ -2458,7 +2458,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param options the options to apply to the update operation (null uses defaults)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if filter or update is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see UpdateOptions
      * @see UpdateResult
      */
@@ -2492,7 +2492,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param objList the collection of update operations to apply
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if filter or objList is null, or if objList is empty (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see UpdateResult
      */
     public ContinuableFuture<UpdateResult> updateOne(final Bson filter, final Collection<?> objList) {
@@ -2525,7 +2525,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param options the options to apply to the update operation (null uses defaults)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if filter or objList is null, or if objList is empty (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see UpdateResult
      */
     public ContinuableFuture<UpdateResult> updateOne(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
@@ -2560,7 +2560,7 @@ public final class AsyncMongoCollectionExecutor {
      *               {@code replaceOne} to replace the whole document)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if filter or update is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see UpdateResult
      * @see #updateMany(Bson, Object, UpdateOptions)
      * @see #updateOne(Bson, Object)
@@ -2591,7 +2591,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param options the options to apply to the update operation (null uses defaults)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if filter or update is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      */
     public ContinuableFuture<UpdateResult> updateMany(final Bson filter, final Object update, final UpdateOptions options) {
         return asyncExecutor.execute(() -> collectionExecutor.updateMany(filter, update, options));
@@ -2624,7 +2624,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param objList the collection of update operations to apply
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if filter or objList is null, or if objList is empty (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      */
     public ContinuableFuture<UpdateResult> updateMany(final Bson filter, final Collection<?> objList) {
         return asyncExecutor.execute(() -> collectionExecutor.updateMany(filter, objList));
@@ -2656,7 +2656,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param options the options to apply to the update operation (null uses defaults)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if filter or objList is null, or if objList is empty (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      */
     public ContinuableFuture<UpdateResult> updateMany(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
         return asyncExecutor.execute(() -> collectionExecutor.updateMany(filter, objList, options));
@@ -2683,7 +2683,7 @@ public final class AsyncMongoCollectionExecutor {
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if objectId is null, empty, or not a valid hex ObjectId (propagated through future)
      * @throws IllegalArgumentException if replacement is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see UpdateResult
      * @see #replaceOne(ObjectId, Object)
      * @see #replaceOne(Bson, Object)
@@ -2713,7 +2713,7 @@ public final class AsyncMongoCollectionExecutor {
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if objectId is null (propagated through future)
      * @throws IllegalArgumentException if replacement is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see UpdateResult
      * @see #replaceOne(String, Object)
      * @see #replaceOne(Bson, Object)
@@ -2755,7 +2755,7 @@ public final class AsyncMongoCollectionExecutor {
      *                    value must equal the matched document's {@code _id}
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if filter or replacement is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see UpdateResult
      * @see #replaceOne(Bson, Object, ReplaceOptions)
      * @see #updateOne(Bson, Object)
@@ -2786,7 +2786,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param options the options to apply to the replace operation (null uses defaults)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
      * @throws IllegalArgumentException if filter or replacement is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see UpdateResult
      * @see ReplaceOptions
      * @see #replaceOne(Bson, Object)
@@ -2819,7 +2819,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param objectId the string representation of the ObjectId to identify the document for deletion
      * @return a ContinuableFuture that completes with DeleteResult containing operation details
      * @throws IllegalArgumentException if objectId is null, empty, or not a valid hex ObjectId (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see DeleteResult
      * @see #deleteOne(ObjectId)
      * @see #deleteOne(Bson)
@@ -2845,7 +2845,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param objectId the ObjectId to identify the document for deletion
      * @return a ContinuableFuture that completes with DeleteResult containing operation details
      * @throws IllegalArgumentException if objectId is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see DeleteResult
      * @see #deleteOne(String)
      * @see #deleteOne(Bson)
@@ -2871,7 +2871,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to select the document for deletion
      * @return a ContinuableFuture that completes with DeleteResult containing operation details
      * @throws IllegalArgumentException if filter is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see DeleteResult
      * @see #deleteOne(Bson, DeleteOptions)
      * @see #deleteMany(Bson)
@@ -2898,7 +2898,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param options the options to apply to the delete operation (null uses defaults)
      * @return a ContinuableFuture that completes with DeleteResult containing operation details
      * @throws IllegalArgumentException if filter is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see DeleteResult
      * @see DeleteOptions
      * @see #deleteOne(Bson)
@@ -2937,7 +2937,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to select documents for deletion
      * @return a ContinuableFuture that completes with DeleteResult containing operation details
      * @throws IllegalArgumentException if filter is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see DeleteResult
      * @see #deleteMany(Bson, DeleteOptions)
      * @see #deleteOne(Bson)
@@ -2964,7 +2964,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param options the options to apply to the delete operation (null uses defaults)
      * @return a ContinuableFuture that completes with DeleteResult containing operation details
      * @throws IllegalArgumentException if filter is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see DeleteResult
      * @see DeleteOptions
      * @see #deleteMany(Bson)
@@ -2990,8 +2990,8 @@ public final class AsyncMongoCollectionExecutor {
      * @param entities the collection of documents to insert
      * @return a ContinuableFuture that completes with the {@link BulkWriteResult} reported by the server (use {@link BulkWriteResult#getInsertedCount()} for the inserted count)
      * @throws IllegalArgumentException if entities is null or empty (propagated through future)
-     * @throws com.mongodb.MongoBulkWriteException if the bulk operation fails (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoBulkWriteException if the bulk operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #bulkInsert(Collection, BulkWriteOptions)
      * @see #bulkWrite(List)
      */
@@ -3017,8 +3017,8 @@ public final class AsyncMongoCollectionExecutor {
      * @param options the options to apply to the bulk insert operation (null uses defaults)
      * @return a ContinuableFuture that completes with the {@link BulkWriteResult} reported by the server (use {@link BulkWriteResult#getInsertedCount()} for the inserted count)
      * @throws IllegalArgumentException if entities is null or empty (propagated through future)
-     * @throws com.mongodb.MongoBulkWriteException if the bulk operation fails (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoBulkWriteException if the bulk operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see BulkWriteOptions
      * @see #bulkInsert(Collection)
      */
@@ -3047,8 +3047,8 @@ public final class AsyncMongoCollectionExecutor {
      * @param requests the list of write operations to perform
      * @return a ContinuableFuture that completes with BulkWriteResult containing operation details
      * @throws IllegalArgumentException if requests is null or empty (propagated through future)
-     * @throws com.mongodb.MongoBulkWriteException if the bulk operation fails (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoBulkWriteException if the bulk operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see BulkWriteResult
      * @see WriteModel
      * @see #bulkWrite(List, BulkWriteOptions)
@@ -3077,8 +3077,8 @@ public final class AsyncMongoCollectionExecutor {
      * @param options the options to apply to the bulk write operation (null uses defaults)
      * @return a ContinuableFuture that completes with BulkWriteResult containing operation details
      * @throws IllegalArgumentException if requests is null or empty (propagated through future)
-     * @throws com.mongodb.MongoBulkWriteException if the bulk operation fails (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoBulkWriteException if the bulk operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see BulkWriteResult
      * @see BulkWriteOptions
      * @see #bulkWrite(List)
@@ -3105,7 +3105,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param update the update operations to apply
      * @return a ContinuableFuture that completes with the found document (before update by default), or {@code null} if no document matches
      * @throws IllegalArgumentException if filter or update is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #findOneAndUpdate(Bson, Object, FindOneAndUpdateOptions)
      * @see #findOneAndUpdate(Bson, Object, Class)
      */
@@ -3132,7 +3132,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the class to deserialize the result document into
      * @return a ContinuableFuture that completes with the found document as the specified type, or {@code null} if no document matches
      * @throws IllegalArgumentException if filter, update, or rowType is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #findOneAndUpdate(Bson, Object)
      * @see #findOneAndUpdate(Bson, Object, FindOneAndUpdateOptions, Class)
      */
@@ -3161,7 +3161,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param options the options to apply to the operation (null uses defaults)
      * @return a ContinuableFuture that completes with the found document, or {@code null} if no document matches
      * @throws IllegalArgumentException if filter or update is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see FindOneAndUpdateOptions
      * @see #findOneAndUpdate(Bson, Object)
      */
@@ -3190,7 +3190,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the class to deserialize the result document into
      * @return a ContinuableFuture that completes with the found document as the specified type, or {@code null} if no document matches
      * @throws IllegalArgumentException if filter, update, or rowType is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see FindOneAndUpdateOptions
      * @see #findOneAndUpdate(Bson, Object, Class)
      */
@@ -3222,7 +3222,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param objList the collection of update operations to apply
      * @return a ContinuableFuture that completes with the found document (before update by default), or {@code null} if no document matches
      * @throws IllegalArgumentException if filter or objList is null, or if objList is empty (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #findOneAndUpdate(Bson, Object)
      * @see #findOneAndUpdate(Bson, Collection, FindOneAndUpdateOptions)
      */
@@ -3252,7 +3252,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the class to deserialize the result document into
      * @return a ContinuableFuture that completes with the found document as the specified type, or {@code null} if no document matches
      * @throws IllegalArgumentException if any parameter is null or objList is empty (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #findOneAndUpdate(Bson, Collection)
      */
     public <T> ContinuableFuture<T> findOneAndUpdate(final Bson filter, final Collection<?> objList, final Class<T> rowType) {
@@ -3281,7 +3281,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param options the options to apply to the operation (null uses defaults)
      * @return a ContinuableFuture that completes with the found document, or {@code null} if no document matches
      * @throws IllegalArgumentException if filter or objList is null or objList is empty (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see FindOneAndUpdateOptions
      * @see #findOneAndUpdate(Bson, Collection)
      */
@@ -3313,7 +3313,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the class to deserialize the result document into
      * @return a ContinuableFuture that completes with the found document as the specified type, or {@code null} if no document matches
      * @throws IllegalArgumentException if filter, objList, or rowType is null or objList is empty (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see FindOneAndUpdateOptions
      * @see #findOneAndUpdate(Bson, Collection, Class)
      */
@@ -3340,7 +3340,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param replacement the replacement document
      * @return a ContinuableFuture that completes with the found document (before replacement by default), or {@code null} if no document matches
      * @throws IllegalArgumentException if filter or replacement is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #findOneAndReplace(Bson, Object, FindOneAndReplaceOptions)
      */
     public ContinuableFuture<Document> findOneAndReplace(final Bson filter, final Object replacement) {
@@ -3366,7 +3366,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the class to deserialize the result document into
      * @return a ContinuableFuture that completes with the found document as the specified type, or {@code null} if no document matches
      * @throws IllegalArgumentException if any parameter is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #findOneAndReplace(Bson, Object)
      */
     public <T> ContinuableFuture<T> findOneAndReplace(final Bson filter, final Object replacement, final Class<T> rowType) {
@@ -3394,7 +3394,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param options the options to apply to the operation (null uses defaults)
      * @return a ContinuableFuture that completes with the found document, or {@code null} if no document matches
      * @throws IllegalArgumentException if filter or replacement is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see FindOneAndReplaceOptions
      * @see #findOneAndReplace(Bson, Object)
      */
@@ -3422,7 +3422,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the class to deserialize the result document into
      * @return a ContinuableFuture that completes with the found document as the specified type, or {@code null} if no document matches
      * @throws IllegalArgumentException if filter, replacement, or rowType is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see FindOneAndReplaceOptions
      * @see #findOneAndReplace(Bson, Object, Class)
      */
@@ -3447,7 +3447,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param filter the query filter to find the document
      * @return a ContinuableFuture that completes with the deleted document, or {@code null} if no document matches
      * @throws IllegalArgumentException if filter is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #findOneAndDelete(Bson, FindOneAndDeleteOptions)
      * @see #deleteOne(Bson)
      */
@@ -3472,7 +3472,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the class to deserialize the result document into
      * @return a ContinuableFuture that completes with the deleted document as the specified type, or {@code null} if no document matches
      * @throws IllegalArgumentException if filter or rowType is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #findOneAndDelete(Bson)
      */
     public <T> ContinuableFuture<T> findOneAndDelete(final Bson filter, final Class<T> rowType) {
@@ -3499,7 +3499,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param options the options to apply to the operation (null uses defaults)
      * @return a ContinuableFuture that completes with the deleted document, or {@code null} if no document matches
      * @throws IllegalArgumentException if filter is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see FindOneAndDeleteOptions
      * @see #findOneAndDelete(Bson)
      */
@@ -3526,7 +3526,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the class to deserialize the result document into
      * @return a ContinuableFuture that completes with the deleted document as the specified type, or {@code null} if no document matches
      * @throws IllegalArgumentException if filter or rowType is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see FindOneAndDeleteOptions
      * @see #findOneAndDelete(Bson, Class)
      */
@@ -3552,7 +3552,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the class to deserialize the distinct values into
      * @return a ContinuableFuture that completes with a Stream of distinct values
      * @throws IllegalArgumentException if fieldName is null or empty, or if rowType is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #distinct(String, Bson, Class)
      */
     public <T> ContinuableFuture<Stream<T>> distinct(final String fieldName, final Class<T> rowType) {
@@ -3578,7 +3578,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the class to deserialize the distinct values into
      * @return a ContinuableFuture that completes with a Stream of distinct values
      * @throws IllegalArgumentException if fieldName is null or empty, if filter is null, or if rowType is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #distinct(String, Class)
      */
     public <T> ContinuableFuture<Stream<T>> distinct(final String fieldName, final Bson filter, final Class<T> rowType) {
@@ -3605,7 +3605,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param pipeline the aggregation pipeline to execute
      * @return a ContinuableFuture that completes with a Stream of result Documents
      * @throws IllegalArgumentException if pipeline is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #aggregate(List, Class)
      * @see com.mongodb.client.model.Aggregates
      */
@@ -3635,7 +3635,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the class to deserialize the result documents into
      * @return a ContinuableFuture that completes with a Stream of result objects
      * @throws IllegalArgumentException if pipeline or rowType is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #aggregate(List)
      * @see com.mongodb.client.model.Aggregates
      */
@@ -3659,7 +3659,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param fieldName the field name to group by
      * @return a ContinuableFuture that completes with a Stream of grouped Documents
      * @throws IllegalArgumentException if fieldName is null or empty (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #groupBy(Collection)
      * @see #aggregate(List)
      */
@@ -3684,7 +3684,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param fieldNames the collection of field names to group by
      * @return a ContinuableFuture that completes with a Stream of grouped Documents
      * @throws IllegalArgumentException if fieldNames is null or empty (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #groupBy(String)
      * @see #aggregate(List)
      */
@@ -3722,7 +3722,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param fieldName the field name to group by and count
      * @return a ContinuableFuture that completes with a Stream of Documents containing group keys and counts
      * @throws IllegalArgumentException if fieldName is null or empty (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #groupByAndCount(Collection)
      * @see #groupBy(String)
      * @see #aggregate(List)
@@ -3764,7 +3764,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param fieldNames the collection of field names to group by and count
      * @return a ContinuableFuture that completes with a Stream of Documents containing composite group keys and counts
      * @throws IllegalArgumentException if fieldNames is null or empty (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #groupByAndCount(String)
      * @see #groupBy(Collection)
      * @see #aggregate(List)
@@ -3794,7 +3794,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param reduceFunction the JavaScript reduce function
      * @return a ContinuableFuture that completes with a Stream of result Documents
      * @throws IllegalArgumentException if either function is null or empty (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #aggregate(List)
      */
     @Deprecated
@@ -3822,7 +3822,7 @@ public final class AsyncMongoCollectionExecutor {
      * @param rowType the class to deserialize the result documents into
      * @return a ContinuableFuture that completes with a Stream of result objects
      * @throws IllegalArgumentException if either function is null or empty, or rowType is null (propagated through future)
-     * @throws com.mongodb.MongoException if the database operation fails (propagated through future)
+     * @throws MongoException if the database operation fails (propagated through future)
      * @see #aggregate(List, Class)
      */
     @Deprecated

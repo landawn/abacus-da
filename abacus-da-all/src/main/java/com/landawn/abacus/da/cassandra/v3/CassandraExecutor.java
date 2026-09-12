@@ -1450,7 +1450,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param query the CQL query to execute
      * @return the ResultSet containing query results
      * @throws IllegalArgumentException if query is null
-     * @throws com.datastax.driver.core.exceptions.NoHostAvailableException if all contact points are unreachable
+     * @throws NoHostAvailableException if all contact points are unreachable
      */
     @Override
     public ResultSet execute(final String query) {
@@ -1505,7 +1505,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param parameters the query parameters
      * @return the ResultSet containing query results
      * @throws IllegalArgumentException if query is null or if parameter count doesn't match placeholders
-     * @throws com.datastax.driver.core.exceptions.NoHostAvailableException if all contact points are unreachable
+     * @throws NoHostAvailableException if all contact points are unreachable
      */
     @Override
     public ResultSet execute(final String query, final Object... parameters) {
@@ -1560,7 +1560,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param parameters the query parameters
      * @return the ResultSet containing query results
      * @throws IllegalArgumentException if query is null or if required parameters are missing
-     * @throws com.datastax.driver.core.exceptions.NoHostAvailableException if all contact points are unreachable
+     * @throws NoHostAvailableException if all contact points are unreachable
      */
     @Override
     public ResultSet execute(final String query, final Map<String, Object> parameters) {
@@ -1610,7 +1610,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param statement the configured CQL Statement to execute
      * @return the ResultSet containing execution results
      * @throws NullPointerException if statement is null
-     * @throws com.datastax.driver.core.exceptions.NoHostAvailableException if all contact points are unreachable
+     * @throws NoHostAvailableException if all contact points are unreachable
      */
     @Override
     public ResultSet execute(final Statement statement) {

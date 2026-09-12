@@ -1361,7 +1361,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param query the CQL statement to execute
      * @return the raw ResultSet from Cassandra
      * @throws IllegalArgumentException if query is null
-     * @throws com.datastax.oss.driver.api.core.AllNodesFailedException if all contact points are unreachable
+     * @throws AllNodesFailedException if all contact points are unreachable
      */
     @Override
     public ResultSet execute(final String query) {
@@ -1411,7 +1411,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param parameters the parameter values (can be individual values, arrays, collections, maps, or entities)
      * @return the raw ResultSet from Cassandra
      * @throws IllegalArgumentException if query is null or if parameter count/names don't match
-     * @throws com.datastax.oss.driver.api.core.AllNodesFailedException if all contact points are unreachable
+     * @throws AllNodesFailedException if all contact points are unreachable
      */
     @Override
     public ResultSet execute(final String query, final Object... parameters) {
@@ -1453,7 +1453,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param parameters the query parameters
      * @return the raw ResultSet from Cassandra
      * @throws IllegalArgumentException if query is null or if required parameters are missing
-     * @throws com.datastax.oss.driver.api.core.AllNodesFailedException if all contact points are unreachable
+     * @throws AllNodesFailedException if all contact points are unreachable
      */
     @Override
     public ResultSet execute(final String query, final Map<String, Object> parameters) {
@@ -1503,7 +1503,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @return the raw ResultSet from Cassandra
      * @throws IllegalArgumentException if statement is null (the driver's request dispatch finds no
      *         processor for a null statement)
-     * @throws com.datastax.oss.driver.api.core.AllNodesFailedException if all contact points are unreachable
+     * @throws AllNodesFailedException if all contact points are unreachable
      */
     @Override
     public ResultSet execute(final Statement<?> statement) {
@@ -2143,7 +2143,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @param userTypeName the name of the User Defined Type (UDT)
          * @param javaClazz the Java class to map the UDT to
          * @return a new instance of {@link UDTCodec} for the specified UDT and Java class
-         * @throws java.util.NoSuchElementException if {@code keySpace} or the named user type cannot be
+         * @throws NoSuchElementException if {@code keySpace} or the named user type cannot be
          *         found in the session metadata
          */
         public static <T> UDTCodec<T> create(final Session session, final String keySpace, final String userTypeName, final Class<T> javaClazz) {

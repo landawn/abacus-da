@@ -1274,7 +1274,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * @param batch the maximum number of cells in each result; {@code -1} removes the explicit limit
      * @return this AnyScan instance for method chaining
-     * @throws org.apache.hadoop.hbase.filter.IncompatibleFilterException if the current filter
+     * @throws IncompatibleFilterException if the current filter
      *         requires whole-row processing ({@link Filter#hasFilterRow()} returns {@code true})
      * @see #getBatch()
      * @see #setCaching(int)

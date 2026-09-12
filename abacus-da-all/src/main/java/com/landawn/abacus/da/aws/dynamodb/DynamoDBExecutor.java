@@ -3845,7 +3845,7 @@ public final class DynamoDBExecutor {
          * @param entities collection of entities to save to DynamoDB, must not be {@code null}
          * @return the BatchWriteItemResult containing operation metadata
          * @throws IllegalArgumentException if entities is {@code null}
-         * @throws com.amazonaws.AmazonServiceException if the request exceeds the 25-item batch limit
+         * @throws AmazonServiceException if the request exceeds the 25-item batch limit
          */
         public BatchWriteItemResult batchPutItem(final Collection<? extends T> entities) {
             return dynamoDBExecutor.batchWriteItem(createBatchPutRequest(entities));
@@ -4066,7 +4066,7 @@ public final class DynamoDBExecutor {
          * @param entities collection of entities containing the key values for deletion, must not be {@code null}
          * @return the BatchWriteItemResult containing operation metadata and any unprocessed items
          * @throws IllegalArgumentException if entities is {@code null}
-         * @throws com.amazonaws.AmazonServiceException if the request exceeds the 25-item batch limit
+         * @throws AmazonServiceException if the request exceeds the 25-item batch limit
          */
         public BatchWriteItemResult batchDeleteItem(final Collection<? extends T> entities) {
             return dynamoDBExecutor.batchWriteItem(createBatchDeleteRequest(entities));

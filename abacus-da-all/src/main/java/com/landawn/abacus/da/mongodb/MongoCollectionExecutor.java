@@ -263,7 +263,7 @@ public final class MongoCollectionExecutor {
      * @param objectId the string representation of the ObjectId to check for existence
      * @return {@code true} if a document with the specified ObjectId exists, {@code false} otherwise
      * @throws IllegalArgumentException if objectId is null, empty, or invalid format
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #exists(ObjectId)
      * @see #exists(Bson)
      * @see #async()
@@ -287,7 +287,7 @@ public final class MongoCollectionExecutor {
      * @param objectId the ObjectId to check for existence
      * @return {@code true} if a document with the specified ObjectId exists, {@code false} otherwise
      * @throws IllegalArgumentException if objectId is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see ObjectId
      * @see #exists(String)
      */
@@ -312,7 +312,7 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to match documents against (must not be null)
      * @return {@code true} if any documents match the filter, {@code false} otherwise
      * @throws IllegalArgumentException if filter is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see com.mongodb.client.model.Filters
      */
     public boolean exists(final Bson filter) {
@@ -335,7 +335,7 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @return the total number of documents in the collection
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #count(Bson)
      * @see #estimatedDocumentCount()
      * @see #async()
@@ -361,7 +361,7 @@ public final class MongoCollectionExecutor {
      *               for an unfiltered count)
      * @return the number of documents matching the filter
      * @throws IllegalArgumentException if filter is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see com.mongodb.client.model.Filters
      * @see #count(Bson, CountOptions)
      */
@@ -389,7 +389,7 @@ public final class MongoCollectionExecutor {
      * @param options additional options for the count operation (null uses defaults)
      * @return the number of documents matching the filter within the specified constraints
      * @throws IllegalArgumentException if filter is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see CountOptions
      * @see com.mongodb.client.model.Filters
      */
@@ -417,7 +417,7 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @return an estimated count of documents in the collection
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see MongoCollection#estimatedDocumentCount()
      * @see #count()
      */
@@ -441,7 +441,7 @@ public final class MongoCollectionExecutor {
      *
      * @param options configuration options for the estimation operation; may be null (default options)
      * @return an estimated count of documents in the collection
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see EstimatedDocumentCountOptions
      * @see MongoCollection#estimatedDocumentCount(EstimatedDocumentCountOptions)
      */
@@ -472,7 +472,7 @@ public final class MongoCollectionExecutor {
      * @param objectId the string representation of the ObjectId to search for
      * @return an Optional containing the document if found, or empty if not found
      * @throws IllegalArgumentException if objectId is null, empty, or invalid format
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see Optional
      * @see #get(ObjectId)
      * @see #gett(String)
@@ -496,7 +496,7 @@ public final class MongoCollectionExecutor {
      * @param objectId the ObjectId to search for
      * @return an Optional containing the document if found, or empty if not found
      * @throws IllegalArgumentException if objectId is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see ObjectId
      * @see Optional
      * @see #gett(ObjectId)
@@ -522,7 +522,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return an Optional containing the converted object if found, or empty if not found
      * @throws IllegalArgumentException if objectId or rowType is null, or if objectId format is invalid
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #get(ObjectId, Class)
      * @see #gett(String, Class)
      */
@@ -547,7 +547,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return an Optional containing the converted object if found, or empty if not found
      * @throws IllegalArgumentException if objectId or rowType is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #get(ObjectId, Collection, Class)
      * @see #gett(ObjectId, Class)
      */
@@ -574,7 +574,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return an Optional containing the converted object with projected fields, or empty if not found
      * @throws IllegalArgumentException if objectId or rowType is null, or objectId format is invalid
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #get(ObjectId, Collection, Class)
      * @see #gett(String, Collection, Class)
      */
@@ -601,7 +601,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return an Optional containing the converted object with only the specified fields, or empty if not found
      * @throws IllegalArgumentException if objectId or rowType is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see com.mongodb.client.model.Projections
      * @see #gett(ObjectId, Collection, Class)
      */
@@ -628,7 +628,7 @@ public final class MongoCollectionExecutor {
      * @param objectId the string representation of the ObjectId (24 hex characters)
      * @return the matching document, or {@code null} if not found
      * @throws IllegalArgumentException if objectId is null, empty, or invalid format
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #get(String)
      * @see #gett(ObjectId)
      */
@@ -655,7 +655,7 @@ public final class MongoCollectionExecutor {
      * @param objectId the ObjectId to search for
      * @return the matching document, or {@code null} if not found
      * @throws IllegalArgumentException if objectId is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #get(ObjectId)
      * @see #gett(String)
      */
@@ -683,7 +683,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return the matching document converted to the specified type, or {@code null} if not found
      * @throws IllegalArgumentException if objectId or rowType is null, or if objectId format is invalid
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #get(String, Class)
      * @see #gett(ObjectId, Class)
      */
@@ -712,7 +712,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return the matching document converted to the specified type, or {@code null} if not found
      * @throws IllegalArgumentException if objectId or rowType is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #get(ObjectId, Class)
      * @see #gett(String, Class)
      */
@@ -742,7 +742,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return the matching document with projected fields converted to the specified type, or {@code null} if not found
      * @throws IllegalArgumentException if objectId or rowType is null, or if objectId format is invalid
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #get(String, Collection, Class)
      * @see #gett(ObjectId, Collection, Class)
      */
@@ -774,7 +774,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return the matching document with projected fields converted to the specified type, or {@code null} if not found
      * @throws IllegalArgumentException if objectId or rowType is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #get(ObjectId, Collection, Class)
      * @see com.mongodb.client.model.Projections
      */
@@ -798,7 +798,7 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to match documents against (must not be null)
      * @return an Optional containing the first matching document, or empty if none found
      * @throws IllegalArgumentException if filter is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see Optional
      * @see Document
      * @see com.mongodb.client.model.Filters
@@ -825,7 +825,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return an Optional containing the first matching converted object, or empty if none found
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #findFirst(Collection, Bson, Class)
      */
     public <T> Optional<T> findFirst(final Bson filter, final Class<T> rowType) {
@@ -852,7 +852,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return an Optional containing the first matching converted object with projected fields, or empty if none found
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see com.mongodb.client.model.Projections
      */
     public <T> Optional<T> findFirst(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) {
@@ -886,7 +886,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return an Optional containing the first matching sorted converted object with projected fields, or empty if none found
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Sorts
      */
@@ -931,7 +931,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return an Optional containing the first matching sorted converted object with projected fields, or empty if none found
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Sorts
      */
@@ -962,7 +962,7 @@ public final class MongoCollectionExecutor {
      * @param filter the query filter to match documents against (must not be null)
      * @return a List containing all matching documents (empty list if none found)
      * @throws IllegalArgumentException if filter is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see Document
      * @see #stream(Bson)
      * @see com.mongodb.client.model.Filters
@@ -989,7 +989,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return a List containing all matching converted objects (empty list if none found)
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #list(Bson, int, int, Class)
      */
     public <T> List<T> list(final Bson filter, final Class<T> rowType) {
@@ -1018,7 +1018,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the Class representing the target type for conversion
      * @return a List containing the specified range of matching converted objects
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported, or if offset or count is negative
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #list(Collection, Bson, int, int, Class)
      */
     public <T> List<T> list(final Bson filter, final int offset, final int count, final Class<T> rowType) {
@@ -1044,7 +1044,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a list of all matching documents converted to the specified type
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #list(Collection, Bson, int, int, Class)
      * @see #list(Collection, Bson, Bson, Class)
      */
@@ -1073,7 +1073,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a paginated list of matching documents converted to the specified type
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported, or if offset or count is negative
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #list(Collection, Bson, Class)
      * @see #list(Collection, Bson, Bson, int, int, Class)
      */
@@ -1102,7 +1102,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a sorted list of all matching documents converted to the specified type
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #list(Collection, Bson, Class)
      * @see #list(Collection, Bson, Bson, int, int, Class)
      * @see com.mongodb.client.model.Sorts
@@ -1139,7 +1139,7 @@ public final class MongoCollectionExecutor {
      * @param rowType an entity class with getter/setter method, <code>Map.class</code> or basic single value type (Primitive/String/Date...)
      * @return a list of documents converted to the specified type, may be empty but never null
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported, or if offset or count is negative
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #list(Bson, Bson, Bson, int, int, Class)
      * @see com.mongodb.client.model.Filters
      * @see com.mongodb.client.model.Sorts
@@ -1186,7 +1186,7 @@ public final class MongoCollectionExecutor {
      * @param rowType an entity class with getter/setter method, <code>Map.class</code> or basic single value type (Primitive/String/Date...)
      * @return a list of all matching documents converted to the specified type, may be empty but never null
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #list(Bson, Bson, Bson, int, int, Class)
      * @see com.mongodb.client.model.Projections
      */
@@ -1223,7 +1223,7 @@ public final class MongoCollectionExecutor {
      * @param rowType an entity class with getter/setter method, <code>Map.class</code> or basic single value type (Primitive/String/Date...)
      * @return a list of documents converted to the specified type, may be empty but never null
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported, or if offset or count is negative
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Filters
      * @see com.mongodb.client.model.Sorts
@@ -1264,7 +1264,7 @@ public final class MongoCollectionExecutor {
      *         for a missing/null field) when a document is matched; {@code OptionalBoolean.empty()} when no
      *         document matches the filter
      * @throws IllegalArgumentException if filter is null, or if propName is null or empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
@@ -1298,7 +1298,7 @@ public final class MongoCollectionExecutor {
      *         for a missing/null field) when a document is matched; {@code OptionalChar.empty()} when no
      *         document matches the filter
      * @throws IllegalArgumentException if filter is null, or if propName is null or empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
@@ -1332,7 +1332,7 @@ public final class MongoCollectionExecutor {
      *         for a missing/null field) when a document is matched; {@code OptionalByte.empty()} when no
      *         document matches the filter
      * @throws IllegalArgumentException if filter is null, or if propName is null or empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
@@ -1368,7 +1368,7 @@ public final class MongoCollectionExecutor {
      *         {@code (short) 0} for a missing/null field) when a document is matched;
      *         {@code OptionalShort.empty()} when no document matches the filter
      * @throws IllegalArgumentException if filter is null, or if propName is null or empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
@@ -1402,7 +1402,7 @@ public final class MongoCollectionExecutor {
      *         missing/null field) when a document is matched; {@code OptionalInt.empty()} when no document
      *         matches the filter
      * @throws IllegalArgumentException if filter is null, or if propName is null or empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
@@ -1436,7 +1436,7 @@ public final class MongoCollectionExecutor {
      *         missing/null field) when a document is matched; {@code OptionalLong.empty()} when no document
      *         matches the filter
      * @throws IllegalArgumentException if filter is null, or if propName is null or empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
@@ -1470,7 +1470,7 @@ public final class MongoCollectionExecutor {
      *         for a missing/null field) when a document is matched; {@code OptionalFloat.empty()} when no
      *         document matches the filter
      * @throws IllegalArgumentException if filter is null, or if propName is null or empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
@@ -1504,7 +1504,7 @@ public final class MongoCollectionExecutor {
      *         for a missing/null field) when a document is matched; {@code OptionalDouble.empty()} when no
      *         document matches the filter
      * @throws IllegalArgumentException if filter is null, or if propName is null or empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
@@ -1538,7 +1538,7 @@ public final class MongoCollectionExecutor {
      *         for a missing/null field) when a document is matched; {@code Nullable.empty()} when no
      *         document matches the filter
      * @throws IllegalArgumentException if filter is null, or if propName is null or empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
      */
     @Beta
@@ -1570,7 +1570,7 @@ public final class MongoCollectionExecutor {
      *         a missing/null field) when a document is matched; {@code Nullable.empty()} when no document
      *         matches the filter
      * @throws IllegalArgumentException if filter is null, or if propName is null or empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #queryForDate(String, Bson, Class)
      * @see #queryForSingleValue(String, Bson, Class)
      */
@@ -1608,7 +1608,7 @@ public final class MongoCollectionExecutor {
      *         {@code null} for a missing/null field) when a document is matched; {@code Nullable.empty()}
      *         when no document matches the filter
      * @throws IllegalArgumentException if filter or valueType is null, or if propName is null or empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #queryForDate(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
      */
@@ -1649,7 +1649,7 @@ public final class MongoCollectionExecutor {
      *         {@code null} for a missing/null field) when a document is matched; {@code Nullable.empty()}
      *         when no document matches the filter
      * @throws IllegalArgumentException if filter or valueType is null, or if propName is null or empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #queryForSingleNonNull(String, Bson, Class)
      * @see com.landawn.abacus.util.u.Nullable
      */
@@ -1706,7 +1706,7 @@ public final class MongoCollectionExecutor {
      * @throws NullPointerException if a document is matched but the field is absent, the raw value is
      *         {@code null}, or the conversion to {@code valueType} yields {@code null}, because
      *         {@link Optional#of(Object)} rejects a null payload
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
      * @see com.landawn.abacus.util.u.Optional
      */
@@ -1751,7 +1751,7 @@ public final class MongoCollectionExecutor {
      * @param filter BSON filter criteria to match documents (must not be null)
      * @return a Dataset containing the query results with Document-based rows
      * @throws IllegalArgumentException if filter is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see Dataset
      * @see #query(Bson, Class)
      * @see #query(Collection, Bson, Class)
@@ -1788,7 +1788,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the query results with typed rows
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see Dataset
      * @see #query(Bson)
      * @see #query(Collection, Bson, Class)
@@ -1823,7 +1823,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the paginated query results with typed rows
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported, or if offset or count is negative
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see Dataset
      * @see #query(Bson, Class)
      */
@@ -1856,7 +1856,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the query results with projected fields and typed rows
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see Dataset
      * @see #query(Collection, Bson, int, int, Class)
      */
@@ -1896,7 +1896,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the paginated query results with projected fields and typed rows
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported, or if offset or count is negative
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see Dataset
      * @see #query(Collection, Bson, Class)
      */
@@ -1933,7 +1933,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the sorted query results with projected fields and typed rows
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see Dataset
      * @see #query(Collection, Bson, Bson, int, int, Class)
      * @see com.mongodb.client.model.Sorts
@@ -1972,7 +1972,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the sorted and paginated query results with projected fields and typed rows
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported, or if offset or count is negative
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public Dataset query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<?> rowType) {
@@ -2015,7 +2015,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing all matching query results with projected fields and typed rows
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public Dataset query(final Bson projection, final Bson filter, final Bson sort, final Class<?> rowType) {
         return query(projection, filter, sort, 0, Integer.MAX_VALUE, rowType);
@@ -2051,7 +2051,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a Dataset containing the paginated query results with projected fields and typed rows
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported, or if offset or count is negative
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public Dataset query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<?> rowType) {
         N.checkArgNotNull(rowType, "rowType");
@@ -2089,7 +2089,7 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @return a Stream of Document objects representing all documents in the collection
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see Stream
      * @see #stream(Class)
      * @see #stream(Bson)
@@ -2132,7 +2132,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a Stream of typed objects representing all documents in the collection
      * @throws IllegalArgumentException if rowType is null or unsupported
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see Stream
      * @see #stream()
      * @see #stream(Bson, Class)
@@ -2180,7 +2180,7 @@ public final class MongoCollectionExecutor {
      * @param filter BSON filter criteria to match documents (must not be null)
      * @return a Stream of Document objects matching the filter criteria
      * @throws IllegalArgumentException if filter is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see Stream
      * @see #stream(Bson, Class)
      * @see com.mongodb.client.model.Filters
@@ -2223,7 +2223,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a Stream of typed objects matching the filter criteria
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see Stream
      * @see #stream(Bson)
      * @see #stream(Bson, int, int, Class)
@@ -2253,7 +2253,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a Stream of typed objects with pagination applied
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported, or if offset or count is negative
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public <T> Stream<T> stream(final Bson filter, final int offset, final int count, final Class<T> rowType) {
         return stream(null, filter, offset, count, rowType);
@@ -2280,7 +2280,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a Stream of typed objects with specified fields
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public <T> Stream<T> stream(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) {
         return stream(selectPropNames, filter, 0, Integer.MAX_VALUE, rowType);
@@ -2308,7 +2308,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a Stream of typed objects
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported, or if offset or count is negative
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public <T> Stream<T> stream(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count, final Class<T> rowType) {
         return stream(selectPropNames, filter, null, offset, count, rowType);
@@ -2336,7 +2336,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a sorted Stream of typed objects
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public <T> Stream<T> stream(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
         return stream(selectPropNames, filter, sort, 0, Integer.MAX_VALUE, rowType);
@@ -2367,7 +2367,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a Stream of typed objects matching the projection, filter, sort, and pagination constraints
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported, or if offset or count is negative
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public <T> Stream<T> stream(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
@@ -2406,7 +2406,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a Stream of typed objects with the specified projection applied
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public <T> Stream<T> stream(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
         return stream(projection, filter, sort, 0, Integer.MAX_VALUE, rowType);
@@ -2438,7 +2438,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the target type for conversion of each document
      * @return a Stream of typed objects matching the projection, filter, sort, and pagination constraints
      * @throws IllegalArgumentException if filter is null, or if rowType is null or unsupported, or if offset or count is negative
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public <T> Stream<T> stream(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType) {
         N.checkArgNotNull(rowType, "rowType");
@@ -2629,7 +2629,7 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @return a ChangeStreamIterable for monitoring collection changes
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see ChangeStreamIterable
      */
     public ChangeStreamIterable<Document> watch() {
@@ -2652,7 +2652,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the class to convert change documents to
      * @return a typed ChangeStreamIterable
      * @throws IllegalArgumentException if rowType is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public <T> ChangeStreamIterable<T> watch(final Class<T> rowType) {
         N.checkArgNotNull(rowType, "rowType");
@@ -2678,7 +2678,7 @@ public final class MongoCollectionExecutor {
      * @param pipeline aggregation pipeline to apply to change events
      * @return a filtered ChangeStreamIterable
      * @throws IllegalArgumentException if pipeline is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public ChangeStreamIterable<Document> watch(final List<? extends Bson> pipeline) {
         N.checkArgNotNull(pipeline, "pipeline");
@@ -2706,7 +2706,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the class to convert change documents to
      * @return a filtered and typed ChangeStreamIterable
      * @throws IllegalArgumentException if parameters are null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public <T> ChangeStreamIterable<T> watch(final List<? extends Bson> pipeline, final Class<T> rowType) {
         N.checkArgNotNull(pipeline, "pipeline");
@@ -2744,8 +2744,8 @@ public final class MongoCollectionExecutor {
      * @return the {@link InsertOneResult} reported by the server (e.g. the generated {@code _id} via {@link InsertOneResult#getInsertedId()})
      * @throws IllegalArgumentException if obj is null
      * @throws IllegalArgumentException if obj is not a Document, Map, or bean class with getter/setter methods
-     * @throws com.mongodb.MongoWriteException if the insert operation fails
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoWriteException if the insert operation fails
+     * @throws MongoException if the database operation fails
      * @see #insertOne(Object, InsertOneOptions)
      * @see #insertMany(Collection)
      * @see #async()
@@ -2778,8 +2778,8 @@ public final class MongoCollectionExecutor {
      * @return the {@link InsertOneResult} reported by the server (e.g. the generated {@code _id} via {@link InsertOneResult#getInsertedId()})
      * @throws IllegalArgumentException if obj is null
      * @throws IllegalArgumentException if obj is not a Document, Map, or bean class with getter/setter methods
-     * @throws com.mongodb.MongoWriteException if the insert operation fails
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoWriteException if the insert operation fails
+     * @throws MongoException if the database operation fails
      * @see InsertOneOptions
      * @see #insertOne(Object)
      */
@@ -2817,8 +2817,8 @@ public final class MongoCollectionExecutor {
      * @param objList collection of objects to insert - each can be Document, {@code Map<String, Object>}, or entity class with getter/setter methods
      * @return the {@link InsertManyResult} reported by the server (e.g. the generated {@code _id}s via {@link InsertManyResult#getInsertedIds()})
      * @throws IllegalArgumentException if objList is null or empty
-     * @throws com.mongodb.MongoBulkWriteException if one or more insert operations fail
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoBulkWriteException if one or more insert operations fail
+     * @throws MongoException if the database operation fails
      * @see #insertMany(Collection, InsertManyOptions)
      * @see #insertOne(Object)
      * @see #async()
@@ -2853,8 +2853,8 @@ public final class MongoCollectionExecutor {
      * @param options additional options for the insert operation (null uses defaults)
      * @return the {@link InsertManyResult} reported by the server (e.g. the generated {@code _id}s via {@link InsertManyResult#getInsertedIds()})
      * @throws IllegalArgumentException if objList is null or empty
-     * @throws com.mongodb.MongoBulkWriteException if one or more insert operations fail
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoBulkWriteException if one or more insert operations fail
+     * @throws MongoException if the database operation fails
      * @see InsertManyOptions
      * @see #insertMany(Collection)
      */
@@ -2970,8 +2970,8 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if objectId or update is null, objectId format is invalid, or the
      *         converted update payload is empty (no non-null updatable properties besides {@code _id}),
      *         or a document mixes top-level operator keys with ordinary field names
-     * @throws com.mongodb.MongoWriteException if the update operation fails
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoWriteException if the update operation fails
+     * @throws MongoException if the database operation fails
      * @see UpdateResult
      * @see #updateOne(ObjectId, Object)
      * @see com.mongodb.client.model.Updates
@@ -3000,7 +3000,7 @@ public final class MongoCollectionExecutor {
      * @param update can be Bson/Document/{@code Map<String, Object>}/entity class with getter/setter methods
      * @return UpdateResult containing update operation details
      * @throws IllegalArgumentException if objectId or update is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #updateOne(String, Object)
      */
     public UpdateResult updateOne(final ObjectId objectId, final Object update) {
@@ -3025,7 +3025,7 @@ public final class MongoCollectionExecutor {
      * @param update can be Bson/Document/{@code Map<String, Object>}/entity class with getter/setter methods
      * @return UpdateResult containing update operation details
      * @throws IllegalArgumentException if filter or update is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #updateOne(String, Object)
      */
     public UpdateResult updateOne(final Bson filter, final Object update) {
@@ -3052,7 +3052,7 @@ public final class MongoCollectionExecutor {
      * @param options additional update options (null uses defaults)
      * @return UpdateResult containing update operation details
      * @throws IllegalArgumentException if filter or update is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public UpdateResult updateOne(final Bson filter, final Object update, final UpdateOptions options) {
         N.checkArgNotNull(filter, "filter");
@@ -3089,7 +3089,7 @@ public final class MongoCollectionExecutor {
      * @param objList collection of update operations
      * @return UpdateResult containing update operation details
      * @throws IllegalArgumentException if filter or objList is null, or if objList is empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public UpdateResult updateOne(final Bson filter, final Collection<?> objList) {
         N.checkArgNotNull(filter, "filter");
@@ -3117,7 +3117,7 @@ public final class MongoCollectionExecutor {
      * @param options additional update options (null uses defaults)
      * @return UpdateResult containing update operation details
      * @throws IllegalArgumentException if filter or objList is null, or if objList is empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public UpdateResult updateOne(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
         N.checkArgNotNull(filter, "filter");
@@ -3287,7 +3287,7 @@ public final class MongoCollectionExecutor {
      * @param update the update operations to apply; can be Bson/Document/{@code Map<String, Object>}/entity class with getter/setter methods
      * @return UpdateResult containing information about the update operation
      * @throws IllegalArgumentException if filter or update is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #updateMany(Bson, Object, UpdateOptions)
      * @see #updateOne(Bson, Object)
      * @see UpdateResult
@@ -3326,7 +3326,7 @@ public final class MongoCollectionExecutor {
      * @param options additional options for the update operation (null uses defaults)
      * @return UpdateResult containing information about the update operation
      * @throws IllegalArgumentException if filter or update is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #updateMany(Bson, Object)
      * @see UpdateOptions
      * @see UpdateResult
@@ -3369,7 +3369,7 @@ public final class MongoCollectionExecutor {
      * @param objList collection of update operations; each can be Bson/Document/Map or entity objects
      * @return UpdateResult containing information about the update operation
      * @throws IllegalArgumentException if filter or objList is null or empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #updateMany(Bson, Collection, UpdateOptions)
      * @see #updateMany(Bson, Object)
      */
@@ -3408,7 +3408,7 @@ public final class MongoCollectionExecutor {
      * @param options additional options for the update operation (null uses defaults)
      * @return UpdateResult containing information about the update operation
      * @throws IllegalArgumentException if filter or objList is null or empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #updateMany(Bson, Collection)
      * @see UpdateOptions
      */
@@ -3448,7 +3448,7 @@ public final class MongoCollectionExecutor {
      * @param replacement can be Document/{@code Map<String, Object>}/entity class with getter/setter methods
      * @return UpdateResult containing replace operation details
      * @throws IllegalArgumentException if objectId is null, empty, or invalid format, or if replacement is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public UpdateResult replaceOne(final String objectId, final Object replacement) {
         return replaceOne(createObjectId(objectId), replacement);
@@ -3473,7 +3473,7 @@ public final class MongoCollectionExecutor {
      * @param replacement can be Document/{@code Map<String, Object>}/entity class with getter/setter methods
      * @return UpdateResult containing replace operation details
      * @throws IllegalArgumentException if objectId or replacement is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public UpdateResult replaceOne(final ObjectId objectId, final Object replacement) {
         return replaceOne(MongoDBBase.objectIdToFilter(objectId), replacement);
@@ -3497,7 +3497,7 @@ public final class MongoCollectionExecutor {
      * @param replacement can be Document/{@code Map<String, Object>}/entity class with getter/setter methods
      * @return UpdateResult containing replace operation details
      * @throws IllegalArgumentException if filter or replacement is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public UpdateResult replaceOne(final Bson filter, final Object replacement) {
         return replaceOne(filter, replacement, null);
@@ -3521,7 +3521,7 @@ public final class MongoCollectionExecutor {
      * @param options additional replace options (null uses defaults)
      * @return UpdateResult containing replace operation details
      * @throws IllegalArgumentException if filter or replacement is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public UpdateResult replaceOne(final Bson filter, final Object replacement, final ReplaceOptions options) {
         N.checkArgNotNull(filter, "filter");
@@ -3550,7 +3550,7 @@ public final class MongoCollectionExecutor {
      * @param objectId string representation of the ObjectId
      * @return DeleteResult containing deletion details
      * @throws IllegalArgumentException if objectId is null, empty, or invalid format
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #async()
      */
     public DeleteResult deleteOne(final String objectId) {
@@ -3569,7 +3569,7 @@ public final class MongoCollectionExecutor {
      * @param objectId the ObjectId of the document to delete
      * @return DeleteResult containing deletion details
      * @throws IllegalArgumentException if objectId is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public DeleteResult deleteOne(final ObjectId objectId) {
         return deleteOne(MongoDBBase.objectIdToFilter(objectId));
@@ -3587,7 +3587,7 @@ public final class MongoCollectionExecutor {
      * @param filter BSON filter to identify the document
      * @return DeleteResult containing deletion details
      * @throws IllegalArgumentException if filter is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public DeleteResult deleteOne(final Bson filter) {
         N.checkArgNotNull(filter, "filter");
@@ -3608,7 +3608,7 @@ public final class MongoCollectionExecutor {
      * @param options additional delete options (null uses defaults)
      * @return DeleteResult containing deletion details
      * @throws IllegalArgumentException if filter is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public DeleteResult deleteOne(final Bson filter, final DeleteOptions options) {
         N.checkArgNotNull(filter, "filter");
@@ -3631,7 +3631,7 @@ public final class MongoCollectionExecutor {
      * @param filter BSON filter to identify documents to delete
      * @return DeleteResult containing deletion details
      * @throws IllegalArgumentException if filter is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public DeleteResult deleteMany(final Bson filter) {
         N.checkArgNotNull(filter, "filter");
@@ -3652,7 +3652,7 @@ public final class MongoCollectionExecutor {
      * @param options additional delete options (null uses defaults)
      * @return DeleteResult containing deletion details
      * @throws IllegalArgumentException if filter is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public DeleteResult deleteMany(final Bson filter, final DeleteOptions options) {
         N.checkArgNotNull(filter, "filter");
@@ -3683,8 +3683,8 @@ public final class MongoCollectionExecutor {
      * @param entities collection of entities to insert
      * @return the {@link BulkWriteResult} reported by the server (use {@link BulkWriteResult#getInsertedCount()} for the inserted count)
      * @throws IllegalArgumentException if entities is null or empty
-     * @throws com.mongodb.MongoBulkWriteException if bulk write fails
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoBulkWriteException if bulk write fails
+     * @throws MongoException if the database operation fails
      */
     public BulkWriteResult bulkInsert(final Collection<?> entities) {
         return bulkInsert(entities, null);
@@ -3707,8 +3707,8 @@ public final class MongoCollectionExecutor {
      * @param options additional bulk write options (null uses defaults)
      * @return the {@link BulkWriteResult} reported by the server (use {@link BulkWriteResult#getInsertedCount()} for the inserted count)
      * @throws IllegalArgumentException if entities is null or empty
-     * @throws com.mongodb.MongoBulkWriteException if bulk write fails
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoBulkWriteException if bulk write fails
+     * @throws MongoException if the database operation fails
      */
     public BulkWriteResult bulkInsert(final Collection<?> entities, final BulkWriteOptions options) {
         N.checkArgNotEmpty(entities, "entities");
@@ -3753,8 +3753,8 @@ public final class MongoCollectionExecutor {
      * @param requests list of write operations to execute
      * @return BulkWriteResult containing operation details
      * @throws IllegalArgumentException if requests is null or empty
-     * @throws com.mongodb.MongoBulkWriteException if bulk write fails
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoBulkWriteException if bulk write fails
+     * @throws MongoException if the database operation fails
      */
     public BulkWriteResult bulkWrite(final List<? extends WriteModel<? extends Document>> requests) {
         return bulkWrite(requests, null);
@@ -3781,8 +3781,8 @@ public final class MongoCollectionExecutor {
      * @param options additional bulk write options (null uses defaults)
      * @return BulkWriteResult containing operation details
      * @throws IllegalArgumentException if requests is null or empty
-     * @throws com.mongodb.MongoBulkWriteException if bulk write fails
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoBulkWriteException if bulk write fails
+     * @throws MongoException if the database operation fails
      */
     public BulkWriteResult bulkWrite(final List<? extends WriteModel<? extends Document>> requests, final BulkWriteOptions options) {
         N.checkArgNotEmpty(requests, "requests");
@@ -3817,7 +3817,7 @@ public final class MongoCollectionExecutor {
      * @param update update operations to apply
      * @return the matched document (pre-update by default), or {@code null} if no document matches
      * @throws IllegalArgumentException if filter or update is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @see #updateOne(String, Object)
      */
     public Document findOneAndUpdate(final Bson filter, final Object update) {
@@ -3840,7 +3840,7 @@ public final class MongoCollectionExecutor {
      * @param rowType class to convert the result to
      * @return the original document as the specified type, or null if not found
      * @throws IllegalArgumentException if filter, update, or rowType is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public <T> T findOneAndUpdate(final Bson filter, final Object update, final Class<T> rowType) {
         return findOneAndUpdate(filter, update, null, rowType);
@@ -3865,7 +3865,7 @@ public final class MongoCollectionExecutor {
      * @param options additional options (null uses defaults)
      * @return the document (original or updated based on options), or null if not found
      * @throws IllegalArgumentException if filter or update is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public Document findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options) {
         N.checkArgNotNull(filter, "filter");
@@ -3896,7 +3896,7 @@ public final class MongoCollectionExecutor {
      * @param rowType class to convert the result to
      * @return the document as the specified type, or null if not found
      * @throws IllegalArgumentException if filter, update, or rowType is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public <T> T findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options, final Class<T> rowType) {
         N.checkArgNotNull(filter, "filter");
@@ -3933,7 +3933,7 @@ public final class MongoCollectionExecutor {
      * @param objList collection of update operations
      * @return the original document before update, or null if not found
      * @throws IllegalArgumentException if filter or objList is null, or if objList is empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public Document findOneAndUpdate(final Bson filter, final Collection<?> objList) {
         return findOneAndUpdate(filter, objList, (FindOneAndUpdateOptions) null);
@@ -3958,7 +3958,7 @@ public final class MongoCollectionExecutor {
      * @param rowType class to convert the result to
      * @return the original document as the specified type, or null if not found
      * @throws IllegalArgumentException if filter, objList, or rowType is null, or if objList is empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public <T> T findOneAndUpdate(final Bson filter, final Collection<?> objList, final Class<T> rowType) {
         return findOneAndUpdate(filter, objList, null, rowType);
@@ -3984,7 +3984,7 @@ public final class MongoCollectionExecutor {
      * @param options additional options (null uses defaults)
      * @return the document (original or updated based on options), or null if not found
      * @throws IllegalArgumentException if filter or objList is null, or if objList is empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public Document findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options) {
         N.checkArgNotNull(filter, "filter");
@@ -4020,7 +4020,7 @@ public final class MongoCollectionExecutor {
      * @param rowType class to convert the result to
      * @return the document as the specified type, or null if not found
      * @throws IllegalArgumentException if filter, objList, or rowType is null, or if objList is empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public <T> T findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options, final Class<T> rowType) {
         N.checkArgNotNull(filter, "filter");
@@ -4057,7 +4057,7 @@ public final class MongoCollectionExecutor {
      * @param replacement the replacement document
      * @return the matched document (pre-replacement by default), or {@code null} if no document matches
      * @throws IllegalArgumentException if filter or replacement is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public Document findOneAndReplace(final Bson filter, final Object replacement) {
         return findOneAndReplace(filter, replacement, (FindOneAndReplaceOptions) null);
@@ -4079,7 +4079,7 @@ public final class MongoCollectionExecutor {
      * @param rowType class to convert the result to
      * @return the original document as the specified type, or null if not found
      * @throws IllegalArgumentException if filter, replacement, or rowType is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public <T> T findOneAndReplace(final Bson filter, final Object replacement, final Class<T> rowType) {
         return findOneAndReplace(filter, replacement, null, rowType);
@@ -4104,7 +4104,7 @@ public final class MongoCollectionExecutor {
      * @param options additional options (null uses defaults)
      * @return the document (original or new based on options), or null if not found
      * @throws IllegalArgumentException if filter or replacement is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public Document findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options) {
         N.checkArgNotNull(filter, "filter");
@@ -4137,7 +4137,7 @@ public final class MongoCollectionExecutor {
      * @param rowType class to convert the result to
      * @return the document as the specified type, or null if not found
      * @throws IllegalArgumentException if filter, replacement, or rowType is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public <T> T findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options, final Class<T> rowType) {
         N.checkArgNotNull(filter, "filter");
@@ -4166,7 +4166,7 @@ public final class MongoCollectionExecutor {
      * @param filter BSON filter to identify the document
      * @return the deleted document, or null if not found
      * @throws IllegalArgumentException if filter is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public Document findOneAndDelete(final Bson filter) {
         return findOneAndDelete(filter, (FindOneAndDeleteOptions) null);
@@ -4187,7 +4187,7 @@ public final class MongoCollectionExecutor {
      * @param rowType class to convert the result to
      * @return the deleted document as the specified type, or null if not found
      * @throws IllegalArgumentException if filter or rowType is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public <T> T findOneAndDelete(final Bson filter, final Class<T> rowType) {
         return findOneAndDelete(filter, null, rowType);
@@ -4210,7 +4210,7 @@ public final class MongoCollectionExecutor {
      * @param options additional options (null uses defaults)
      * @return the deleted document, or null if not found
      * @throws IllegalArgumentException if filter is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public Document findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options) {
         N.checkArgNotNull(filter, "filter");
@@ -4240,7 +4240,7 @@ public final class MongoCollectionExecutor {
      * @param rowType class to convert the result to
      * @return the deleted document as the specified type, or null if not found
      * @throws IllegalArgumentException if filter or rowType is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public <T> T findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options, final Class<T> rowType) {
         N.checkArgNotNull(filter, "filter");
@@ -4269,7 +4269,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the class of the field values
      * @return a Stream of distinct values
      * @throws IllegalArgumentException if fieldName is null or empty, or rowType is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public <T> Stream<T> distinct(final String fieldName, final Class<T> rowType) {
         N.checkArgNotEmpty(fieldName, "fieldName");
@@ -4298,7 +4298,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the class of the field values
      * @return a Stream of distinct values from filtered documents
      * @throws IllegalArgumentException if fieldName is null or empty, or filter or rowType is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public <T> Stream<T> distinct(final String fieldName, final Bson filter, final Class<T> rowType) {
         N.checkArgNotEmpty(fieldName, "fieldName");
@@ -4328,7 +4328,7 @@ public final class MongoCollectionExecutor {
      * @param pipeline the aggregation pipeline stages
      * @return a Stream of aggregation results as Documents
      * @throws IllegalArgumentException if pipeline is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public Stream<Document> aggregate(final List<? extends Bson> pipeline) {
         return aggregate(pipeline, Document.class);
@@ -4354,7 +4354,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the class to convert results to
      * @return a Stream of typed aggregation results
      * @throws IllegalArgumentException if pipeline or rowType is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     public <T> Stream<T> aggregate(final List<? extends Bson> pipeline, final Class<T> rowType) {
         N.checkArgNotNull(pipeline, "pipeline");
@@ -4380,7 +4380,7 @@ public final class MongoCollectionExecutor {
      * @param fieldName the field to group by
      * @return a Stream of grouped documents
      * @throws IllegalArgumentException if fieldName is null or empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     @Beta
     public Stream<Document> groupBy(final String fieldName) {
@@ -4403,7 +4403,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the class to convert results to
      * @return a Stream of typed grouped documents
      * @throws IllegalArgumentException if fieldName is null or empty, or if rowType is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     @Beta
     public <T> Stream<T> groupBy(final String fieldName, final Class<T> rowType) {
@@ -4428,7 +4428,7 @@ public final class MongoCollectionExecutor {
      * @param fieldNames collection of fields to group by
      * @return a Stream of grouped documents
      * @throws IllegalArgumentException if fieldNames is null or empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     @Beta
     public Stream<Document> groupBy(final Collection<String> fieldNames) {
@@ -4452,7 +4452,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the class to convert results to
      * @return a Stream of typed grouped documents
      * @throws IllegalArgumentException if fieldNames is null or empty, or if rowType is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     @Beta
     public <T> Stream<T> groupBy(final Collection<String> fieldNames, final Class<T> rowType) {
@@ -4477,7 +4477,7 @@ public final class MongoCollectionExecutor {
      * @param fieldName the field to group by
      * @return a Stream of documents with group id and count
      * @throws IllegalArgumentException if fieldName is null or empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     @Beta
     public Stream<Document> groupByAndCount(final String fieldName) {
@@ -4500,7 +4500,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the class to convert results to
      * @return a Stream of typed documents with counts
      * @throws IllegalArgumentException if fieldName is null or empty, or if rowType is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     @Beta
     public <T> Stream<T> groupByAndCount(final String fieldName, final Class<T> rowType) {
@@ -4525,7 +4525,7 @@ public final class MongoCollectionExecutor {
      * @param fieldNames collection of fields to group by
      * @return a Stream of documents with group ids and counts
      * @throws IllegalArgumentException if fieldNames is null or empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     @Beta
     public Stream<Document> groupByAndCount(final Collection<String> fieldNames) {
@@ -4549,7 +4549,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the class to convert results to
      * @return a Stream of typed documents with counts
      * @throws IllegalArgumentException if fieldNames is null or empty, or if rowType is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      */
     @Beta
     public <T> Stream<T> groupByAndCount(final Collection<String> fieldNames, final Class<T> rowType) {
@@ -4629,7 +4629,7 @@ public final class MongoCollectionExecutor {
      * @param reduceFunction JavaScript reduce function as string
      * @return a Stream of map-reduce results
      * @throws IllegalArgumentException if either function is null or empty
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @deprecated Map-reduce is deprecated in MongoDB 5.0+. Use aggregate() instead.
      */
     @Deprecated
@@ -4655,7 +4655,7 @@ public final class MongoCollectionExecutor {
      * @param rowType the class to convert results to
      * @return a Stream of typed map-reduce results
      * @throws IllegalArgumentException if either function is null or empty, or rowType is null
-     * @throws com.mongodb.MongoException if the database operation fails
+     * @throws MongoException if the database operation fails
      * @deprecated Map-reduce is deprecated in MongoDB 5.0+. Use aggregate() instead.
      */
     @Deprecated
