@@ -1375,7 +1375,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         {@code Map<String, Object>}
      */
     public final ContinuableFuture<List<Map<String, Object>>> list(final String query, final Object... parameters) {
-        return list(Clazz.PROPS_MAP, query, parameters);
+        return list(CassandraExecutorBase.PROP_MAP_TYPE, query, parameters);
     }
 
     /**
@@ -1798,7 +1798,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         {@code Map<String, Object>}, or empty if the query returned no row
      */
     public final ContinuableFuture<Optional<Map<String, Object>>> findFirst(final String query, final Object... parameters) {
-        return findFirst(Clazz.PROPS_MAP, query, parameters);
+        return findFirst(CassandraExecutorBase.PROP_MAP_TYPE, query, parameters);
     }
 
     /**

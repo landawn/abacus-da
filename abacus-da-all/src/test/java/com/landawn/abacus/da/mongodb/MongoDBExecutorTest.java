@@ -179,7 +179,7 @@ public class MongoDBExecutorTest extends TestBase {
         List<Document> resultList = collectionExecutor.mapReduce(mapFunction, reduceFunction).toList();
         N.println(resultList);
 
-        List<Map<String, Object>> mapList = collectionExecutor.mapReduce(mapFunction, reduceFunction, Clazz.PROPS_MAP).toList();
+        List<? extends Map<String, Object>> mapList = collectionExecutor.mapReduce(mapFunction, reduceFunction, Clazz.PROPS_MAP).toList();
         N.println(mapList);
 
         collectionExecutor.deleteMany(Filters.eq("firstName", account.getFirstName()));

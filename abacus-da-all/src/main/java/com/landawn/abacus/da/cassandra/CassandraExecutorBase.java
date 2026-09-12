@@ -185,6 +185,14 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
     protected static final String NULL_STR = "NULL";
 
     /**
+     * {@link Clazz#PROPS_MAP} viewed as {@code Class<Map<String, Object>>} so it can be passed to
+     * APIs that return {@code Map}/{@code List<Map>}/{@code Optional<Map>} without tripping
+     * invariance. Runtime class remains {@code LinkedHashMap.class}.
+     */
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    static final Class<Map<String, Object>> PROP_MAP_TYPE = (Class) Clazz.PROPS_MAP;
+
+    /**
      * The single-element select list {@code [count(*)]} used to build the {@code SELECT} issued by
      * the {@code count(...)} family, so a count never materializes entity columns.
      *
@@ -2700,7 +2708,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #findFirst(Class, String, Object...)
      */
     public final Optional<Map<String, Object>> findFirst(final String query, final Object... parameters) {
-        return findFirst(Clazz.PROPS_MAP, query, parameters);
+        return findFirst(PROP_MAP_TYPE, query, parameters);
     }
 
     /**
@@ -2766,7 +2774,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #list(Class, String, Object...)
      */
     public final List<Map<String, Object>> list(final String query, final Object... parameters) {
-        return list(Clazz.PROPS_MAP, query, parameters);
+        return list(PROP_MAP_TYPE, query, parameters);
     }
 
     /**

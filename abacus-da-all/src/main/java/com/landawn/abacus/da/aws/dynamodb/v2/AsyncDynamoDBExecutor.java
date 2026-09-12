@@ -185,6 +185,9 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
  */
 public final class AsyncDynamoDBExecutor {
 
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    private static final Class<Map<String, Object>> PROP_MAP_TYPE = (Class) PROP_MAP_TYPE;
+
     private final DynamoDbAsyncClient dynamoDBClient;
 
     /**
@@ -465,7 +468,7 @@ public final class AsyncDynamoDBExecutor {
      * @see DynamoDbAsyncClient#getItem(GetItemRequest)
      */
     public CompletableFuture<Map<String, Object>> getItem(final String tableName, final Map<String, AttributeValue> key) {
-        return getItem(tableName, key, Clazz.PROPS_MAP);
+        return getItem(tableName, key, PROP_MAP_TYPE);
     }
 
     /**
@@ -512,7 +515,7 @@ public final class AsyncDynamoDBExecutor {
      *         {@link software.amazon.awssdk.services.dynamodb.model.DynamoDbException}
      */
     public CompletableFuture<Map<String, Object>> getItem(final String tableName, final Map<String, AttributeValue> key, final Boolean consistentRead) {
-        return getItem(tableName, key, consistentRead, Clazz.PROPS_MAP);
+        return getItem(tableName, key, consistentRead, PROP_MAP_TYPE);
     }
 
     /**
@@ -562,7 +565,7 @@ public final class AsyncDynamoDBExecutor {
      * @throws NullPointerException if {@code getItemRequest} is null (rejected by the AWS SDK v2 client)
      */
     public CompletableFuture<Map<String, Object>> getItem(final GetItemRequest getItemRequest) {
-        return getItem(getItemRequest, Clazz.PROPS_MAP);
+        return getItem(getItemRequest, PROP_MAP_TYPE);
     }
 
     /**
@@ -787,7 +790,7 @@ public final class AsyncDynamoDBExecutor {
      * @see #batchGetItem(Map, String)
      */
     public CompletableFuture<Map<String, List<Map<String, Object>>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems) {
-        return batchGetItem(requestItems, Clazz.PROPS_MAP);
+        return batchGetItem(requestItems, PROP_MAP_TYPE);
     }
 
     /**
@@ -840,7 +843,7 @@ public final class AsyncDynamoDBExecutor {
      */
     public CompletableFuture<Map<String, List<Map<String, Object>>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems,
             final String returnConsumedCapacity) {
-        return batchGetItem(requestItems, returnConsumedCapacity, Clazz.PROPS_MAP);
+        return batchGetItem(requestItems, returnConsumedCapacity, PROP_MAP_TYPE);
     }
 
     /**
@@ -898,7 +901,7 @@ public final class AsyncDynamoDBExecutor {
      * @throws IllegalArgumentException if batchGetItemRequest is null; exceeding DynamoDB's batch limits fails with a service {@code ValidationException} via the future
      */
     public CompletableFuture<Map<String, List<Map<String, Object>>>> batchGetItem(final BatchGetItemRequest batchGetItemRequest) {
-        return batchGetItem(batchGetItemRequest, Clazz.PROPS_MAP);
+        return batchGetItem(batchGetItemRequest, PROP_MAP_TYPE);
     }
 
     /**
@@ -1719,7 +1722,7 @@ public final class AsyncDynamoDBExecutor {
      * @see #stream(QueryRequest)
      */
     public CompletableFuture<List<Map<String, Object>>> list(final QueryRequest queryRequest) {
-        return list(queryRequest, Clazz.PROPS_MAP);
+        return list(queryRequest, PROP_MAP_TYPE);
     }
 
     /**
@@ -1987,7 +1990,7 @@ public final class AsyncDynamoDBExecutor {
      * @see #list(QueryRequest)
      */
     public CompletableFuture<Stream<Map<String, Object>>> stream(final QueryRequest queryRequest) {
-        return stream(queryRequest, Clazz.PROPS_MAP);
+        return stream(queryRequest, PROP_MAP_TYPE);
     }
 
     /**
@@ -2269,7 +2272,7 @@ public final class AsyncDynamoDBExecutor {
      * @see #scan(ScanRequest, Class)
      */
     public CompletableFuture<Stream<Map<String, Object>>> scan(final ScanRequest scanRequest) {
-        return scan(scanRequest, Clazz.PROPS_MAP);
+        return scan(scanRequest, PROP_MAP_TYPE);
     }
 
     /**

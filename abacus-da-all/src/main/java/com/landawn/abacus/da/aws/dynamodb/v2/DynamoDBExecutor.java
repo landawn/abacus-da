@@ -186,6 +186,9 @@ public final class DynamoDBExecutor {
 
     private static final Logger logger = LoggerFactory.getLogger(DynamoDBExecutor.class);
 
+    @SuppressWarnings({ "rawtypes", "unchecked" })
+    private static final Class<Map<String, Object>> PROP_MAP_TYPE = (Class) PROP_MAP_TYPE;
+
     static {
         final BiFunction<AttributeValue, Class<?>, Object> converter = DynamoDBExecutor::toValue;
 
@@ -2171,7 +2174,7 @@ public final class DynamoDBExecutor {
             logger.debug("getItem on table: {}", tableName);
         }
 
-        return getItem(tableName, key, Clazz.PROPS_MAP);
+        return getItem(tableName, key, PROP_MAP_TYPE);
     }
 
     /**
@@ -2224,7 +2227,7 @@ public final class DynamoDBExecutor {
      * @see #getItem(String, Map, Boolean, Class)
      */
     public Map<String, Object> getItem(final String tableName, final Map<String, AttributeValue> key, final Boolean consistentRead) {
-        return getItem(tableName, key, consistentRead, Clazz.PROPS_MAP);
+        return getItem(tableName, key, consistentRead, PROP_MAP_TYPE);
     }
 
     /**
@@ -2261,7 +2264,7 @@ public final class DynamoDBExecutor {
      * @throws NullPointerException if {@code getItemRequest} is null (rejected by the AWS SDK v2 client)
      */
     public Map<String, Object> getItem(final GetItemRequest getItemRequest) {
-        return getItem(getItemRequest, Clazz.PROPS_MAP);
+        return getItem(getItemRequest, PROP_MAP_TYPE);
     }
 
     /**
@@ -2440,7 +2443,7 @@ public final class DynamoDBExecutor {
      * @see #batchGetItem(Map, String)
      */
     public Map<String, List<Map<String, Object>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems) {
-        return batchGetItem(requestItems, Clazz.PROPS_MAP);
+        return batchGetItem(requestItems, PROP_MAP_TYPE);
     }
 
     /**
@@ -2469,7 +2472,7 @@ public final class DynamoDBExecutor {
      *         {@code requestItems} or a batch exceeding DynamoDB's limits fails with a service {@code ValidationException})
      */
     public Map<String, List<Map<String, Object>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems, final String returnConsumedCapacity) {
-        return batchGetItem(requestItems, returnConsumedCapacity, Clazz.PROPS_MAP);
+        return batchGetItem(requestItems, returnConsumedCapacity, PROP_MAP_TYPE);
     }
 
     /**
@@ -2495,7 +2498,7 @@ public final class DynamoDBExecutor {
      * @throws IllegalArgumentException if batchGetItemRequest is null; exceeding DynamoDB's batch limits fails with a service {@code ValidationException}
      */
     public Map<String, List<Map<String, Object>>> batchGetItem(final BatchGetItemRequest batchGetItemRequest) {
-        return batchGetItem(batchGetItemRequest, Clazz.PROPS_MAP);
+        return batchGetItem(batchGetItemRequest, PROP_MAP_TYPE);
     }
 
     /**
@@ -3144,7 +3147,7 @@ public final class DynamoDBExecutor {
      * @throws IllegalArgumentException if queryRequest is null
      */
     public List<Map<String, Object>> list(final QueryRequest queryRequest) {
-        return list(queryRequest, Clazz.PROPS_MAP);
+        return list(queryRequest, PROP_MAP_TYPE);
     }
 
     /**
@@ -3220,7 +3223,7 @@ public final class DynamoDBExecutor {
      * @throws IllegalArgumentException if queryRequest is null
      */
     public Dataset query(final QueryRequest queryRequest) {
-        return query(queryRequest, Clazz.PROPS_MAP);
+        return query(queryRequest, PROP_MAP_TYPE);
     }
 
     /**
@@ -3297,7 +3300,7 @@ public final class DynamoDBExecutor {
      * @throws IllegalArgumentException if queryRequest is null
      */
     public Stream<Map<String, Object>> stream(final QueryRequest queryRequest) {
-        return stream(queryRequest, Clazz.PROPS_MAP);
+        return stream(queryRequest, PROP_MAP_TYPE);
     }
 
     /**
@@ -3473,7 +3476,7 @@ public final class DynamoDBExecutor {
      * @throws IllegalArgumentException if scanRequest is null
      */
     public Stream<Map<String, Object>> scan(final ScanRequest scanRequest) {
-        return scan(scanRequest, Clazz.PROPS_MAP);
+        return scan(scanRequest, PROP_MAP_TYPE);
     }
 
     /**
