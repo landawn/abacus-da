@@ -51,7 +51,6 @@ import com.landawn.abacus.util.Fn;
 import com.landawn.abacus.util.IOUtil;
 import com.landawn.abacus.util.IntFunctions;
 import com.landawn.abacus.util.N;
-import com.landawn.abacus.util.ObjectPool;
 import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.stream.Stream;
@@ -330,15 +329,15 @@ public abstract class MongoDBBase {
 
         if (rowType.equals(Bson.class) || rowType.equals(Document.class)) {
             final Document doc = new Document();
-            jsonParser.parse(json, doc);
+            jsonParser.parseInto(json, doc);
             return (T) doc;
         } else if (rowType.equals(BasicBSONObject.class)) {
             final BasicBSONObject result = new BasicBSONObject();
-            jsonParser.parse(json, result);
+            jsonParser.parseInto(json, result);
             return (T) result;
         } else if (rowType.equals(BasicDBObject.class)) {
             final BasicDBObject result = new BasicDBObject();
-            jsonParser.parse(json, result);
+            jsonParser.parseInto(json, result);
             return (T) result;
         } else {
             throw new IllegalArgumentException("Unsupported type: " + ClassUtil.getCanonicalClassName(rowType));
@@ -1698,7 +1697,7 @@ public abstract class MongoDBBase {
     static class GeneralCodecRegistry implements CodecRegistry {
 
         /** Codec cache keyed by the encoded class; populated on first request. */
-        private static final Map<Class<?>, Codec<?>> pool = new ObjectPool<>(128);
+        private static final Map<Class<?>, Codec<?>> pool = new ConcurrentHashMap<>(128);
 
         /**
          * Returns a {@link Codec} for {@code clazz}, creating and caching a new {@link GeneralCodec}

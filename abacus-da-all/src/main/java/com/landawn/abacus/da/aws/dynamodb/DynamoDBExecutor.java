@@ -171,7 +171,7 @@ public final class DynamoDBExecutor {
     private static final Logger logger = LoggerFactory.getLogger(DynamoDBExecutor.class);
 
     @SuppressWarnings({ "rawtypes", "unchecked" })
-    private static final Class<Map<String, Object>> PROP_MAP_TYPE = (Class) PROP_MAP_TYPE;
+    private static final Class<Map<String, Object>> PROP_MAP_TYPE = (Class) Clazz.PROPS_MAP;
 
     static {
         final BiFunction<AttributeValue, Class<?>, Object> converter = DynamoDBExecutor::toValue;
@@ -950,7 +950,8 @@ public final class DynamoDBExecutor {
         if (value == null) {
             attrVal.withNULL(Boolean.TRUE);
         } else {
-            final Type<Object> type = N.typeOf(value.getClass());
+            @SuppressWarnings("unchecked")
+            final Type<Object> type = N.typeOf((Class<Object>) value.getClass());
 
             if (type.isNumber()) {
                 N.checkArgument(!(value instanceof Double) || Double.isFinite((Double) value), "DynamoDB numbers must be finite: %s", value);

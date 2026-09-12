@@ -186,7 +186,7 @@ import software.amazon.awssdk.services.dynamodb.model.WriteRequest;
 public final class AsyncDynamoDBExecutor {
 
     @SuppressWarnings({ "rawtypes", "unchecked" })
-    private static final Class<Map<String, Object>> PROP_MAP_TYPE = (Class) PROP_MAP_TYPE;
+    private static final Class<Map<String, Object>> PROP_MAP_TYPE = (Class) Clazz.PROPS_MAP;
 
     private final DynamoDbAsyncClient dynamoDBClient;
 

@@ -47,11 +47,11 @@ public final class TestUtil {
 
         typeValues.put(String.class, "1970");
 
-        typeValues.put(Calendar.class, Dates.parseCalendar("1970-01-01'T'10:10:10'Z'"));
-        typeValues.put(java.util.Date.class, Dates.parseCalendar("1970-01-01'T'10:10:11'Z'"));
-        typeValues.put(Date.class, Dates.parseCalendar("1970-01-01'T'10:10:12'Z'"));
-        typeValues.put(Time.class, Dates.parseCalendar("1970-01-01'T'10:10:13'Z'"));
-        typeValues.put(Timestamp.class, Dates.parseCalendar("1970-01-01'T'10:10:14'Z'"));
+        typeValues.put(Calendar.class, Dates.parseToCalendar("1970-01-01'T'10:10:10'Z'"));
+        typeValues.put(java.util.Date.class, Dates.parseToJUDate("1970-01-01'T'10:10:11'Z'"));
+        typeValues.put(Date.class, Dates.parseToDate("1970-01-01'T'10:10:12'Z'"));
+        typeValues.put(Time.class, Dates.parseToTime("1970-01-01'T'10:10:13'Z'"));
+        typeValues.put(Timestamp.class, Dates.parseToTimestamp("1970-01-01'T'10:10:14'Z'"));
 
     }
 

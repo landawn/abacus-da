@@ -184,11 +184,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      */
     protected static final String NULL_STR = "NULL";
 
-    /**
-     * {@link Clazz#PROPS_MAP} viewed as {@code Class<Map<String, Object>>} so it can be passed to
-     * APIs that return {@code Map}/{@code List<Map>}/{@code Optional<Map>} without tripping
-     * invariance. Runtime class remains {@code LinkedHashMap.class}.
-     */
+    /** {@link Clazz#PROPS_MAP} as {@code Class<Map<String, Object>>}; runtime class is still {@code LinkedHashMap}. */
     @SuppressWarnings({ "rawtypes", "unchecked" })
     static final Class<Map<String, Object>> PROP_MAP_TYPE = (Class) Clazz.PROPS_MAP;
 
