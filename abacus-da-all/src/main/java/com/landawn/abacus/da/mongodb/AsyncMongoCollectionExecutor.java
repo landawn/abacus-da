@@ -18,6 +18,7 @@ import java.util.Collection;
 import java.util.Date;
 import java.util.List;
 import java.util.concurrent.Callable;
+import java.util.concurrent.RejectedExecutionException;
 
 import org.bson.Document;
 import org.bson.conversions.Bson;
@@ -201,9 +202,15 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(exists -> System.out.println("User exists: " + exists));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code exists} operation fails while converting documents or executing the
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code objectId} is not a 24-character hexadecimal ObjectId.</p>
+     *
      * @param objectId the string representation of the ObjectId to check
      * @return a ContinuableFuture that completes with {@code true} if the document exists, {@code false} otherwise
-     * @throws IllegalArgumentException if {@code objectId} is null or empty (thrown synchronously at the call site), or is not a valid ObjectId hex string (propagated through future)
+     * @throws IllegalArgumentException if {@code objectId} is null or empty
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see ContinuableFuture
      * @see #exists(ObjectId)
      */
@@ -226,9 +233,15 @@ public final class AsyncMongoCollectionExecutor {
      * async.exists(id).thenRunAsync(exists -> processExistence(exists));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code exists} operation fails while converting documents or executing the
+     * MongoDB command.</p>
+     *
      * @param objectId the ObjectId to check for existence
      * @return a ContinuableFuture that completes with {@code true} if the document exists, {@code false} otherwise
-     * @throws IllegalArgumentException if objectId is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code objectId} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see ObjectId
      * @see ContinuableFuture
      */
@@ -250,9 +263,15 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(hasActive -> System.out.println("Has active users: " + hasActive));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code exists} operation fails while converting documents or executing the
+     * MongoDB command.</p>
+     *
      * @param filter the query filter to match documents against (must not be null)
      * @return a ContinuableFuture that completes with {@code true} if matching documents exist, {@code false} otherwise
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see com.mongodb.client.model.Filters
      * @see ContinuableFuture
      */
@@ -274,7 +293,13 @@ public final class AsyncMongoCollectionExecutor {
      * async.count().thenRunAsync(total -> System.out.println("Total documents: " + total));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code count} operation fails while converting documents or executing the
+     * MongoDB command.</p>
+     *
      * @return a ContinuableFuture that completes with the total document count
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see ContinuableFuture
      * @see #count(Bson)
      */
@@ -295,9 +320,15 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(activeCount -> System.out.println("Active users: " + activeCount));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code count} operation fails while converting documents or executing the
+     * MongoDB command.</p>
+     *
      * @param filter the query filter to count matching documents (must not be null)
      * @return a ContinuableFuture that completes with the count of matching documents
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see com.mongodb.client.model.Filters
      * @see ContinuableFuture
      */
@@ -320,10 +351,16 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(count -> System.out.println("Users with email: " + count));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code count} operation fails while converting documents or executing the
+     * MongoDB command.</p>
+     *
      * @param filter the query filter to count matching documents (must not be null)
      * @param options additional options for the count operation (null uses defaults)
      * @return a ContinuableFuture that completes with the count within the specified constraints
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see CountOptions
      * @see ContinuableFuture
      */
@@ -347,7 +384,13 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(approx -> System.out.println("~" + approx + " documents"));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code estimatedDocumentCount} operation fails while converting documents
+     * or executing the MongoDB command.</p>
+     *
      * @return a ContinuableFuture that completes with the estimated document count
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #count()
      * @see ContinuableFuture
      */
@@ -370,8 +413,14 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(approx -> System.out.println("~" + approx + " documents"));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code estimatedDocumentCount} operation fails while converting documents
+     * or executing the MongoDB command.</p>
+     *
      * @param options additional options for the estimated count operation (null uses defaults)
      * @return a ContinuableFuture that completes with the estimated document count
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #estimatedDocumentCount()
      * @see EstimatedDocumentCountOptions
      * @see ContinuableFuture
@@ -393,10 +442,15 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(docOpt -> docOpt.ifPresent(doc -> processDocument(doc)));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code get} operation fails while converting documents or executing the
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code objectId} is not a 24-character hexadecimal ObjectId.</p>
+     *
      * @param objectId the string representation of the ObjectId to search for
      * @return a ContinuableFuture that completes with an Optional containing the document if found, or empty if not found
-     * @throws IllegalArgumentException if {@code objectId} is null or empty (thrown synchronously at the call site), or is not a valid ObjectId hex string (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code objectId} is null or empty
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Optional
      * @see Document
      * @see #get(ObjectId)
@@ -420,10 +474,15 @@ public final class AsyncMongoCollectionExecutor {
      * async.get(id).thenRunAsync(docOpt -> docOpt.ifPresent(doc -> processDocument(doc)));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code get} operation fails while converting documents or executing the
+     * MongoDB command.</p>
+     *
      * @param objectId the ObjectId to search for
      * @return a ContinuableFuture that completes with an Optional containing the document if found, or empty if not found
-     * @throws IllegalArgumentException if objectId is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code objectId} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see ObjectId
      * @see Optional
      * @see Document
@@ -447,12 +506,17 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(userOpt -> userOpt.ifPresent(user -> System.out.println(user.getName())));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code get} operation fails while converting documents or executing the
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code objectId} is not a 24-character hexadecimal ObjectId.</p>
+     *
      * @param <T> the target type for the retrieved document
      * @param objectId the string representation of the ObjectId to search for
      * @param rowType the Class representing the target type for conversion
      * @return a ContinuableFuture that completes with an Optional containing the converted object if found, or empty if not found
-     * @throws IllegalArgumentException if {@code objectId} is null or empty, or {@code rowType} is null (thrown synchronously at the call site), or if {@code objectId} is not a valid ObjectId hex string (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code objectId} is null or empty, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #get(ObjectId, Class)
      */
     public <T> ContinuableFuture<Optional<T>> get(final String objectId, final Class<T> rowType) {
@@ -476,12 +540,17 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(userOpt -> userOpt.ifPresent(user -> processUser(user)));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code get} operation fails while converting documents or executing the
+     * MongoDB command.</p>
+     *
      * @param <T> the target type for the retrieved document
      * @param objectId the ObjectId to search for
      * @param rowType the Class representing the target type for conversion
      * @return a ContinuableFuture that completes with an Optional containing the converted object if found, or empty if not found
-     * @throws IllegalArgumentException if objectId or rowType is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code objectId} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #get(String, Class)
      */
     public <T> ContinuableFuture<Optional<T>> get(final ObjectId objectId, final Class<T> rowType) {
@@ -505,13 +574,18 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(user -> user.ifPresent(u -> System.out.println(u.getName())));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code get} operation fails while converting documents or executing the
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code objectId} is not a 24-character hexadecimal ObjectId.</p>
+     *
      * @param <T> the target type for the retrieved document
      * @param objectId the string representation of the ObjectId to search for
      * @param selectPropNames collection of field names to include in the projection (null for all fields)
      * @param rowType the Class representing the target type for conversion
      * @return a ContinuableFuture that completes with an Optional containing the converted object with projected fields, or empty if not found
-     * @throws IllegalArgumentException if {@code objectId} is null or empty, or {@code rowType} is null (thrown synchronously at the call site), or if {@code objectId} is not a valid ObjectId hex string (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code objectId} is null or empty, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #get(ObjectId, Collection, Class)
      */
     public <T> ContinuableFuture<Optional<T>> get(final String objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
@@ -537,13 +611,18 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(user -> user.ifPresent(u -> processPartialUser(u)));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code get} operation fails while converting documents or executing the
+     * MongoDB command.</p>
+     *
      * @param <T> the target type for the retrieved document
      * @param objectId the ObjectId to search for
      * @param selectPropNames collection of field names to include (null includes all fields)
      * @param rowType the Class representing the target type for conversion
      * @return a ContinuableFuture that completes with an Optional containing the converted object with only the specified fields, or empty if not found
-     * @throws IllegalArgumentException if objectId or rowType is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code objectId} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see com.mongodb.client.model.Projections
      */
     public <T> ContinuableFuture<Optional<T>> get(final ObjectId objectId, final Collection<String> selectPropNames, final Class<T> rowType) {
@@ -571,10 +650,15 @@ public final class AsyncMongoCollectionExecutor {
      *      });
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code gett} operation fails while converting documents or executing the
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code objectId} is not a 24-character hexadecimal ObjectId.</p>
+     *
      * @param objectId the string representation of the ObjectId (24 hex characters)
      * @return a ContinuableFuture that completes with the matching document, or {@code null} if not found
-     * @throws IllegalArgumentException if {@code objectId} is null or empty (thrown synchronously at the call site), or is not a valid ObjectId hex string (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code objectId} is null or empty
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #get(String)
      * @see #gett(ObjectId)
      */
@@ -602,10 +686,15 @@ public final class AsyncMongoCollectionExecutor {
      *      });
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code gett} operation fails while converting documents or executing the
+     * MongoDB command.</p>
+     *
      * @param objectId the ObjectId to search for
      * @return a ContinuableFuture that completes with the matching document, or {@code null} if not found
-     * @throws IllegalArgumentException if objectId is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code objectId} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #get(ObjectId)
      * @see #gett(String)
      */
@@ -632,12 +721,17 @@ public final class AsyncMongoCollectionExecutor {
      *      });
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code gett} operation fails while converting documents or executing the
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code objectId} is not a 24-character hexadecimal ObjectId.</p>
+     *
      * @param <T> the target type for the retrieved document
      * @param objectId the string representation of the ObjectId (24 hex characters)
      * @param rowType the Class representing the target type for conversion
      * @return a ContinuableFuture that completes with the converted entity, or {@code null} if not found
-     * @throws IllegalArgumentException if {@code objectId} is null or empty, or {@code rowType} is null (thrown synchronously at the call site), or if {@code objectId} is not a valid ObjectId hex string (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code objectId} is null or empty, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #get(String, Class)
      * @see #gett(ObjectId, Class)
      */
@@ -666,12 +760,17 @@ public final class AsyncMongoCollectionExecutor {
      *      });
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code gett} operation fails while converting documents or executing the
+     * MongoDB command.</p>
+     *
      * @param <T> the target type for the retrieved document
      * @param objectId the ObjectId to search for
      * @param rowType the Class representing the target type for conversion
      * @return a ContinuableFuture that completes with the converted entity, or {@code null} if not found
-     * @throws IllegalArgumentException if objectId or rowType is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code objectId} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #get(ObjectId, Class)
      * @see #gett(String, Class)
      */
@@ -700,13 +799,18 @@ public final class AsyncMongoCollectionExecutor {
      *      });
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code gett} operation fails while converting documents or executing the
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code objectId} is not a 24-character hexadecimal ObjectId.</p>
+     *
      * @param <T> the target type for the retrieved document
      * @param objectId the string representation of the ObjectId (24 hex characters)
      * @param selectPropNames collection of field names to include in the projection (null for all fields)
      * @param rowType the Class representing the target type for conversion
      * @return a ContinuableFuture that completes with the converted entity with projected fields, or {@code null} if not found
-     * @throws IllegalArgumentException if {@code objectId} is null or empty, or {@code rowType} is null (thrown synchronously at the call site), or if {@code objectId} is not a valid ObjectId hex string (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code objectId} is null or empty, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #get(String, Collection, Class)
      * @see #gett(ObjectId, Collection, Class)
      */
@@ -737,13 +841,18 @@ public final class AsyncMongoCollectionExecutor {
      *      });
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code gett} operation fails while converting documents or executing the
+     * MongoDB command.</p>
+     *
      * @param <T> the target type for the retrieved document
      * @param objectId the ObjectId to search for
      * @param selectPropNames collection of field names to include in the projection (null for all fields)
      * @param rowType the Class representing the target type for conversion
      * @return a ContinuableFuture that completes with the converted entity with projected fields, or {@code null} if not found
-     * @throws IllegalArgumentException if objectId or rowType is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code objectId} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #get(ObjectId, Collection, Class)
      * @see com.mongodb.client.model.Projections
      */
@@ -768,10 +877,15 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(userOpt -> userOpt.ifPresent(user -> System.out.println(user.getString("name"))));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code findFirst} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param filter the query filter to match documents against (must not be null)
      * @return a ContinuableFuture that completes with an Optional containing the first matching document, or empty if none found
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Optional
      * @see Document
      * @see com.mongodb.client.model.Filters
@@ -795,18 +909,23 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(user -> user.ifPresent(u -> processUser(u)));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code findFirst} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param <T> the target type for the document conversion
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param rowType the target type for conversion of the document
      * @return a ContinuableFuture that completes with an Optional containing the converted entity, or empty if none found
-     * @throws IllegalArgumentException if filter is null, or if rowType is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #findFirst(Bson)
      * @see #findFirst(Collection, Bson, Class)
      */
     public <T> ContinuableFuture<Optional<T>> findFirst(final Bson filter, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.findFirst(filter, rowType));
     }
@@ -825,19 +944,24 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(user -> user.ifPresent(u -> System.out.println(u.getName())));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code findFirst} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param <T> the target type for the document conversion
      * @param selectPropNames collection of field names to include in projection (null for all fields)
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param rowType the target type for conversion of the document
      * @return a ContinuableFuture that completes with an Optional containing the converted entity with projected fields, or empty if none found
-     * @throws IllegalArgumentException if filter is null, or if rowType is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #findFirst(Bson, Class)
      * @see #findFirst(Collection, Bson, Bson, Class)
      */
     public <T> ContinuableFuture<Optional<T>> findFirst(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.findFirst(selectPropNames, filter, rowType));
     }
@@ -856,20 +980,25 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(topUser -> topUser.ifPresent(u -> System.out.println("Top user: " + u.getName())));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code findFirst} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param <T> the target type for the document conversion
      * @param selectPropNames collection of field names to include in projection (null for all fields)
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort criteria to determine document order (null for natural order)
      * @param rowType the target type for conversion of the document
      * @return a ContinuableFuture that completes with an Optional containing the converted entity with projected fields, or empty if none found
-     * @throws IllegalArgumentException if filter is null, or if rowType is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see com.mongodb.client.model.Sorts
      * @see #findFirst(Collection, Bson, Class)
      */
     public <T> ContinuableFuture<Optional<T>> findFirst(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.findFirst(selectPropNames, filter, sort, rowType));
     }
@@ -888,20 +1017,25 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(user -> user.ifPresent(u -> processUser(u)));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code findFirst} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param <T> the target type for the document conversion
      * @param projection BSON projection document for field inclusion/exclusion (null for all fields)
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort criteria to determine document order (null for natural order)
      * @param rowType the target type for conversion of the document
      * @return a ContinuableFuture that completes with an Optional containing the converted entity with projected fields, or empty if none found
-     * @throws IllegalArgumentException if filter is null, or if rowType is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Sorts
      */
     public <T> ContinuableFuture<Optional<T>> findFirst(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.findFirst(projection, filter, sort, rowType));
     }
@@ -920,10 +1054,15 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(activeUsers -> activeUsers.forEach(user -> processUser(user)));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code list} operation fails while converting documents or executing the
+     * MongoDB command.</p>
+     *
      * @param filter the query filter to match documents against (must not be null)
      * @return a ContinuableFuture that completes with a List containing all matching documents (empty list if none found)
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Document
      * @see #stream(Bson)
      * @see com.mongodb.client.model.Filters
@@ -947,18 +1086,23 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(users -> users.forEach(user -> processUser(user)));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code list} operation fails while converting documents or executing the
+     * MongoDB command.</p>
+     *
      * @param <T> the target type for document conversion
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a List of converted entities
-     * @throws IllegalArgumentException if filter is null, or if rowType is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #list(Bson, int, int, Class)
      * @see #list(Collection, Bson, Class)
      */
     public <T> ContinuableFuture<List<T>> list(final Bson filter, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.list(filter, rowType));
     }
@@ -976,19 +1120,24 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(users -> displayPage(users));   // Shows users 21-30
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code list} operation fails while converting documents or executing the
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative.</p>
+     *
      * @param <T> the target type for document conversion
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param offset the number of documents to skip before starting to return results
      * @param count the maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a List of converted entities within the specified range
-     * @throws IllegalArgumentException if {@code filter} or {@code rowType} is null (thrown synchronously at the call site), or if {@code offset} or {@code count} is negative (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #list(Bson, Class)
      */
     public <T> ContinuableFuture<List<T>> list(final Bson filter, final int offset, final int count, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.list(filter, offset, count, rowType));
     }
@@ -1007,18 +1156,23 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(engineers -> engineers.forEach(u -> System.out.println(u.getName())));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code list} operation fails while converting documents or executing the
+     * MongoDB command.</p>
+     *
      * @param <T> the target type for document conversion
      * @param selectPropNames collection of field names to include in projection (null for all fields)
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a List of converted entities with only the projected fields
-     * @throws IllegalArgumentException if filter is null, or if rowType is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #list(Bson, Class)
      */
     public <T> ContinuableFuture<List<T>> list(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.list(selectPropNames, filter, rowType));
     }
@@ -1037,6 +1191,9 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(topScorers -> displayTopScorers(topScorers));   // Shows users 11-15
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code list} operation fails while converting documents or executing the
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative.</p>
+     *
      * @param <T> the target type for document conversion
      * @param selectPropNames collection of field names to include in projection (null for all fields)
      * @param filter BSON filter criteria to match documents (must not be null)
@@ -1044,14 +1201,16 @@ public final class AsyncMongoCollectionExecutor {
      * @param count the maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a List of converted entities with projected fields within the range
-     * @throws IllegalArgumentException if {@code filter} or {@code rowType} is null (thrown synchronously at the call site), or if {@code offset} or {@code count} is negative (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #list(Collection, Bson, Class)
      */
     public <T> ContinuableFuture<List<T>> list(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count,
             final Class<T> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.list(selectPropNames, filter, offset, count, rowType));
     }
@@ -1070,19 +1229,24 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(employees -> employees.forEach(e -> System.out.println(e.getName() + ": " + e.getSalary())));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code list} operation fails while converting documents or executing the
+     * MongoDB command.</p>
+     *
      * @param <T> the target type for document conversion
      * @param selectPropNames collection of field names to include in projection (null for all fields)
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort criteria to determine document order (null for natural order)
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a sorted List of converted entities with projected fields
-     * @throws IllegalArgumentException if filter is null, or if rowType is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see com.mongodb.client.model.Sorts
      */
     public <T> ContinuableFuture<List<T>> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.list(selectPropNames, filter, sort, rowType));
     }
@@ -1100,6 +1264,9 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(topPlayers -> displayLeaderboard(topPlayers));   // Top 10 high scorers
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code list} operation fails while converting documents or executing the
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative.</p>
+     *
      * @param <T> the target type for document conversion
      * @param selectPropNames collection of field names to include in projection (null for all fields)
      * @param filter BSON filter criteria to match documents (must not be null)
@@ -1108,14 +1275,16 @@ public final class AsyncMongoCollectionExecutor {
      * @param count the maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a sorted List of converted entities with projected fields within the range
-     * @throws IllegalArgumentException if {@code filter} or {@code rowType} is null (thrown synchronously at the call site), or if {@code offset} or {@code count} is negative (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see com.mongodb.client.model.Sorts
      */
     public <T> ContinuableFuture<List<T>> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.list(selectPropNames, filter, sort, offset, count, rowType));
     }
@@ -1134,20 +1303,25 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(employees -> processEmployees(employees));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code list} operation fails while converting documents or executing the
+     * MongoDB command.</p>
+     *
      * @param <T> the target type for document conversion
      * @param projection BSON projection document for field inclusion/exclusion (null for all fields)
      * @param filter BSON filter criteria to match documents (must not be null)
      * @param sort BSON sort criteria to determine document order (null for natural order)
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a sorted List of converted entities with projected fields
-     * @throws IllegalArgumentException if filter is null, or if rowType is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Sorts
      */
     public <T> ContinuableFuture<List<T>> list(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.list(projection, filter, sort, rowType));
     }
@@ -1165,6 +1339,9 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(topPlayers -> updateLeaderboard(topPlayers));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code list} operation fails while converting documents or executing the
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative.</p>
+     *
      * @param <T> the target type for document conversion
      * @param projection BSON projection document for field inclusion/exclusion (null for all fields)
      * @param filter BSON filter criteria to match documents (must not be null)
@@ -1173,15 +1350,17 @@ public final class AsyncMongoCollectionExecutor {
      * @param count the maximum number of documents to return
      * @param rowType the target type for conversion of each document
      * @return a ContinuableFuture that completes with a sorted List of converted entities with projected fields within the range
-     * @throws IllegalArgumentException if {@code filter} or {@code rowType} is null (thrown synchronously at the call site), or if {@code offset} or {@code count} is negative (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Sorts
      */
     public <T> ContinuableFuture<List<T>> list(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.list(projection, filter, sort, offset, count, rowType));
     }
@@ -1215,13 +1394,18 @@ public final class AsyncMongoCollectionExecutor {
      * // returns OptionalBoolean.empty(); none.isPresent() == false
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code queryForBoolean} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param propName the name of the boolean property to retrieve
      * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalBoolean}
      *         holding the field value (or {@code false} for missing/null) when at least one document
      *         matches; {@code OptionalBoolean.empty()} when no document matches
-     * @throws IllegalArgumentException if filter is null, or if propName is null or empty (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see OptionalBoolean
      * @see MongoCollectionExecutor#queryForBoolean(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1255,13 +1439,18 @@ public final class AsyncMongoCollectionExecutor {
      * // OptionalChar.empty() when no doc matches; present (default NUL char) if matched but field absent/null
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code queryForChar} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param propName the name of the character property to retrieve
      * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalChar}
      *         holding the field value (or the default {@code char} for missing/null) when at least one
      *         document matches; {@code OptionalChar.empty()} when no document matches
-     * @throws IllegalArgumentException if filter is null, or if propName is null or empty (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see OptionalChar
      * @see MongoCollectionExecutor#queryForChar(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1295,13 +1484,18 @@ public final class AsyncMongoCollectionExecutor {
      * // OptionalByte.empty() when no doc matches; present (default 0) if matched but field absent/null
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code queryForByte} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param propName the name of the byte property to retrieve
      * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalByte}
      *         holding the field value (or {@code 0} for missing/null) when at least one document
      *         matches; {@code OptionalByte.empty()} when no document matches
-     * @throws IllegalArgumentException if filter is null, or if propName is null or empty (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see OptionalByte
      * @see MongoCollectionExecutor#queryForByte(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1335,13 +1529,18 @@ public final class AsyncMongoCollectionExecutor {
      * // OptionalShort.empty() when no doc matches; present (default 0) if matched but field absent/null
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code queryForShort} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param propName the name of the short property to retrieve
      * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalShort}
      *         holding the field value (or {@code 0} for missing/null) when at least one document
      *         matches; {@code OptionalShort.empty()} when no document matches
-     * @throws IllegalArgumentException if filter is null, or if propName is null or empty (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see OptionalShort
      * @see MongoCollectionExecutor#queryForShort(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1378,13 +1577,18 @@ public final class AsyncMongoCollectionExecutor {
      * // returns OptionalInt.of(30) for a matched doc; OptionalInt.empty() if none match
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code queryForInt} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param propName the name of the integer property to retrieve
      * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalInt}
      *         holding the field value (or {@code 0} for missing/null) when at least one document
      *         matches; {@code OptionalInt.empty()} when no document matches
-     * @throws IllegalArgumentException if filter is null, or if propName is null or empty (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see OptionalInt
      * @see MongoCollectionExecutor#queryForInt(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1418,13 +1622,18 @@ public final class AsyncMongoCollectionExecutor {
      * // OptionalLong.empty() when no doc matches; present (default 0L) if matched but field absent/null
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code queryForLong} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param propName the name of the long property to retrieve
      * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalLong}
      *         holding the field value (or {@code 0L} for missing/null) when at least one document
      *         matches; {@code OptionalLong.empty()} when no document matches
-     * @throws IllegalArgumentException if filter is null, or if propName is null or empty (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see OptionalLong
      * @see MongoCollectionExecutor#queryForLong(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1458,13 +1667,18 @@ public final class AsyncMongoCollectionExecutor {
      * // OptionalFloat.empty() when no doc matches; present (default 0.0f) if matched but field absent/null
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code queryForFloat} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param propName the name of the float property to retrieve
      * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalFloat}
      *         holding the field value (or {@code 0.0f} for missing/null) when at least one document
      *         matches; {@code OptionalFloat.empty()} when no document matches
-     * @throws IllegalArgumentException if filter is null, or if propName is null or empty (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see OptionalFloat
      * @see #queryForDouble(String, Bson)
      * @see MongoCollectionExecutor#queryForFloat(String, Bson)
@@ -1499,13 +1713,18 @@ public final class AsyncMongoCollectionExecutor {
      * // OptionalDouble.empty() when no doc matches; present (default 0.0d) if matched but field absent/null
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code queryForDouble} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param propName the name of the double property to retrieve
      * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code OptionalDouble}
      *         holding the field value (or {@code 0.0d} for missing/null) when at least one document
      *         matches; {@code OptionalDouble.empty()} when no document matches
-     * @throws IllegalArgumentException if filter is null, or if propName is null or empty (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see OptionalDouble
      * @see #queryForFloat(String, Bson)
      * @see MongoCollectionExecutor#queryForDouble(String, Bson)
@@ -1540,13 +1759,18 @@ public final class AsyncMongoCollectionExecutor {
      * // Nullable.empty() when no doc matches; present-but-null (Nullable.of(null)) if matched but field absent/null
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code queryForString} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param propName the name of the string property to retrieve
      * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code Nullable<String>}
      *         holding the field value (possibly {@code null} for missing/null fields) when at least
      *         one document matches; {@code Nullable.empty()} when no document matches
-     * @throws IllegalArgumentException if filter is null, or if propName is null or empty (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Nullable
      * @see MongoCollectionExecutor#queryForString(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1580,13 +1804,18 @@ public final class AsyncMongoCollectionExecutor {
      * // Nullable.empty() when no doc matches; present-but-null (Nullable.of(null)) if matched but field absent/null
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code queryForDate} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param propName the name of the Date property to retrieve
      * @param filter the query filter to match documents (must not be null)
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code Nullable<Date>}
      *         holding the field value (possibly {@code null} for missing/null fields) when at least
      *         one document matches; {@code Nullable.empty()} when no document matches
-     * @throws IllegalArgumentException if filter is null, or if propName is null or empty (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Nullable
      * @see Date
      * @see #queryForDate(String, Bson, Class)
@@ -1623,6 +1852,9 @@ public final class AsyncMongoCollectionExecutor {
      * // Nullable.empty() when no doc matches; present-but-null if matched but field absent/null
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code queryForDate} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param <T> the specific Date subclass type
      * @param propName the name of the Date property to retrieve
      * @param filter the query filter to match documents (must not be null)
@@ -1630,16 +1862,18 @@ public final class AsyncMongoCollectionExecutor {
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code Nullable<T>}
      *         holding the typed Date value (possibly {@code null} for missing/null fields) when at
      *         least one document matches; {@code Nullable.empty()} when no document matches
-     * @throws IllegalArgumentException if filter is null, or if propName is null or empty, or if valueType is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if {@code valueType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #queryForDate(String, Bson)
      * @see MongoCollectionExecutor#queryForDate(String, Bson, Class)
      * @see #queryForSingleValue(String, Bson, Class)
      */
     public <T extends Date> ContinuableFuture<Nullable<T>> queryForDate(final String propName, final Bson filter, final Class<T> valueType) {
         N.checkArgNotEmpty(propName, cs.propName);
-        N.checkArgNotNull(valueType, cs.valueType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(valueType, cs.valueType);
 
         return asyncExecutor.execute(() -> collectionExecutor.queryForDate(propName, filter, valueType));
     }
@@ -1668,6 +1902,9 @@ public final class AsyncMongoCollectionExecutor {
      * // Nullable.empty() when no doc matches; present-but-null (Nullable.of(null)) if matched but field absent/null
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code queryForSingleValue} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param <V> the type of the value to retrieve
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents (must not be null)
@@ -1675,16 +1912,18 @@ public final class AsyncMongoCollectionExecutor {
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code Nullable<V>}
      *         holding the converted value (possibly {@code null} for missing/null fields) when at
      *         least one document matches; {@code Nullable.empty()} when no document matches
-     * @throws IllegalArgumentException if filter is null, or if propName is null or empty, or if valueType is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if {@code valueType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Nullable
      * @see #queryForSingleNonNull(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForSingleValue(String, Bson, Class)
      */
     public <V> ContinuableFuture<Nullable<V>> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType) {
         N.checkArgNotEmpty(propName, cs.propName);
-        N.checkArgNotNull(valueType, cs.valueType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(valueType, cs.valueType);
 
         return asyncExecutor.execute(() -> collectionExecutor.queryForSingleValue(propName, filter, valueType));
     }
@@ -1712,6 +1951,10 @@ public final class AsyncMongoCollectionExecutor {
      * // Optional.empty() when no doc matches; completes exceptionally (NullPointerException) if matched but value is null
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code queryForSingleNonNull} operation fails while converting documents
+     * or executing the MongoDB command. This includes a {@link NullPointerException} when a matched, nonempty document has no non-null
+     * convertible value for {@code propName}.</p>
+     *
      * @param <V> the type of the value to retrieve
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents (must not be null)
@@ -1719,19 +1962,18 @@ public final class AsyncMongoCollectionExecutor {
      * @return a {@code ContinuableFuture} that completes with a <i>present</i> {@code Optional<V>}
      *         holding the (non-null) converted value when a document is matched and the field carries
      *         a non-null value; {@code Optional.empty()} when no document matches the filter
-     * @throws IllegalArgumentException if filter is null, or if propName is null or empty, or if valueType is null (thrown synchronously at the call site)
-     * @throws NullPointerException if a document is matched but the field is absent, the raw value is
-     *         {@code null}, or the conversion to {@code valueType} yields {@code null}, because
-     *         {@link Optional#of(Object)} rejects a null payload (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if {@code valueType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Optional
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForSingleNonNull(String, Bson, Class)
      */
     public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final String propName, final Bson filter, final Class<V> valueType) {
         N.checkArgNotEmpty(propName, cs.propName);
-        N.checkArgNotNull(valueType, cs.valueType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(valueType, cs.valueType);
 
         return asyncExecutor.execute(() -> collectionExecutor.queryForSingleNonNull(propName, filter, valueType));
     }
@@ -1748,10 +1990,15 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(dataset -> dataset.forEach(row -> System.out.println(row)));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code query} operation fails while converting documents or executing the
+     * MongoDB command.</p>
+     *
      * @param filter the query filter to match documents (must not be null)
      * @return a ContinuableFuture that completes with a Dataset containing the query results
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Dataset
      * @see #query(Bson, Class)
      */
@@ -1773,17 +2020,22 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(dataset -> dataset.forEach(product -> processProduct(product)));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code query} operation fails while converting documents or executing the
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type.</p>
+     *
      * @param filter the query filter to match documents (must not be null)
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing the query results
-     * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Dataset
      * @see #query(Bson)
      */
     public ContinuableFuture<Dataset> query(final Bson filter, final Class<?> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.query(filter, rowType));
     }
@@ -1800,19 +2052,25 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(dataset -> displayPage(dataset));   // Shows articles 21-30
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code query} operation fails while converting documents or executing the
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative, and an {@link
+     * IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type.</p>
+     *
      * @param filter the query filter to match documents (must not be null)
      * @param offset the number of documents to skip
      * @param count the maximum number of documents to return
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing the paginated results
-     * @throws IllegalArgumentException if {@code filter} or {@code rowType} is null (thrown synchronously at the call site), or if {@code offset} or {@code count} is negative (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Dataset
      * @see #query(Bson, Class)
      */
     public ContinuableFuture<Dataset> query(final Bson filter, final int offset, final int count, final Class<?> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.query(filter, offset, count, rowType));
     }
@@ -1829,18 +2087,23 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(dataset -> exportToCSV(dataset));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code query} operation fails while converting documents or executing the
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type.</p>
+     *
      * @param selectPropNames the collection of BSON field names to include in the projection
      * @param filter the query filter to match documents (must not be null)
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing projected results
-     * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Dataset
      * @see com.mongodb.client.model.Projections
      */
     public ContinuableFuture<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Class<?> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.query(selectPropNames, filter, rowType));
     }
@@ -1857,20 +2120,26 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(dataset -> displayBookList(dataset));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code query} operation fails while converting documents or executing the
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative, and an {@link
+     * IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type.</p>
+     *
      * @param selectPropNames the collection of BSON field names to include in the projection
      * @param filter the query filter to match documents (must not be null)
      * @param offset the number of documents to skip
      * @param count the maximum number of documents to return
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing paginated projected results
-     * @throws IllegalArgumentException if {@code filter} or {@code rowType} is null (thrown synchronously at the call site), or if {@code offset} or {@code count} is negative (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Dataset
      */
     public ContinuableFuture<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count,
             final Class<?> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.query(selectPropNames, filter, offset, count, rowType));
     }
@@ -1888,19 +2157,24 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(dataset -> displayTopStudents(dataset));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code query} operation fails while converting documents or executing the
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type.</p>
+     *
      * @param selectPropNames the collection of BSON field names to include in the projection
      * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing sorted projected results
-     * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Dataset
      * @see com.mongodb.client.model.Sorts
      */
     public ContinuableFuture<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<?> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.query(selectPropNames, filter, sort, rowType));
     }
@@ -1918,6 +2192,10 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(dataset -> displayProductCatalog(dataset));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code query} operation fails while converting documents or executing the
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative, and an {@link
+     * IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type.</p>
+     *
      * @param selectPropNames the collection of BSON field names to include in the projection
      * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification
@@ -1925,14 +2203,16 @@ public final class AsyncMongoCollectionExecutor {
      * @param count the maximum number of documents to return
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing the complete query results
-     * @throws IllegalArgumentException if {@code filter} or {@code rowType} is null (thrown synchronously at the call site), or if {@code offset} or {@code count} is negative (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Dataset
      */
     public ContinuableFuture<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<?> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.query(selectPropNames, filter, sort, offset, count, rowType));
     }
@@ -1953,19 +2233,24 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(dataset -> renderBlogPosts(dataset));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code query} operation fails while converting documents or executing the
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type.</p>
+     *
      * @param projection the BSON projection specification
      * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing projected and sorted results
-     * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Dataset
      * @see com.mongodb.client.model.Projections
      */
     public ContinuableFuture<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final Class<?> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.query(projection, filter, sort, rowType));
     }
@@ -1984,6 +2269,10 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(dataset -> updateTaskBoard(dataset));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code query} operation fails while converting documents or executing the
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative, and an {@link
+     * IllegalArgumentException} when {@code rowType} is neither a bean class nor a Map type.</p>
+     *
      * @param projection the BSON projection specification
      * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification
@@ -1991,15 +2280,17 @@ public final class AsyncMongoCollectionExecutor {
      * @param count the maximum number of documents to return
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Dataset containing the complete query results
-     * @throws IllegalArgumentException if {@code filter} or {@code rowType} is null (thrown synchronously at the call site), or if {@code offset} or {@code count} is negative (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Dataset
      * @see com.mongodb.client.model.Projections
      */
     public ContinuableFuture<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<?> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.query(projection, filter, sort, offset, count, rowType));
     }
@@ -2017,10 +2308,15 @@ public final class AsyncMongoCollectionExecutor {
      *                               .forEach(doc -> processLog(doc)));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code stream} operation fails while converting documents or executing the
+     * MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     *
      * @param filter the query filter to match documents (must not be null)
      * @return a ContinuableFuture that completes with a Stream of Document objects
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Stream
      * @see Document
      */
@@ -2044,17 +2340,22 @@ public final class AsyncMongoCollectionExecutor {
      *                               .forEach(System.out::println));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code stream} operation fails while converting documents or executing the
+     * MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     *
      * @param <T> the type to map each document to
      * @param filter the query filter to match documents (must not be null)
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed Stream
-     * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Stream
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Bson filter, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.stream(filter, rowType));
     }
@@ -2071,19 +2372,25 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(stream -> stream.forEach(customer -> sendNewsletter(customer)));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code stream} operation fails while converting documents or executing the
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative. Failures while
+     * consuming the returned stream or change cursor are raised during consumption.</p>
+     *
      * @param <T> the type to map each document to
      * @param filter the query filter to match documents (must not be null)
      * @param offset the number of documents to skip
      * @param count the maximum number of documents to stream
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a paginated typed Stream
-     * @throws IllegalArgumentException if {@code filter} or {@code rowType} is null (thrown synchronously at the call site), or if {@code offset} or {@code count} is negative (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Stream
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Bson filter, final int offset, final int count, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.stream(filter, offset, count, rowType));
     }
@@ -2100,18 +2407,23 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(stream -> calculateDailyRevenue(stream));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code stream} operation fails while converting documents or executing the
+     * MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     *
      * @param <T> the type to map each document to
      * @param selectPropNames the collection of BSON field names to include in the projection
      * @param filter the query filter to match documents (must not be null)
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a projected typed Stream
-     * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Stream
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Collection<String> selectPropNames, final Bson filter, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.stream(selectPropNames, filter, rowType));
     }
@@ -2129,6 +2441,10 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(stream -> archiveAuditLogs(stream));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code stream} operation fails while converting documents or executing the
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative. Failures while
+     * consuming the returned stream or change cursor are raised during consumption.</p>
+     *
      * @param <T> the type to map each document to
      * @param selectPropNames the collection of BSON field names to include in the projection
      * @param filter the query filter to match documents (must not be null)
@@ -2136,14 +2452,16 @@ public final class AsyncMongoCollectionExecutor {
      * @param count the maximum number of documents to stream
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a paginated projected typed Stream
-     * @throws IllegalArgumentException if {@code filter} or {@code rowType} is null (thrown synchronously at the call site), or if {@code offset} or {@code count} is negative (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Stream
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count,
             final Class<T> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.stream(selectPropNames, filter, offset, count, rowType));
     }
@@ -2161,20 +2479,25 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(stream -> displayLeaderboard(stream));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code stream} operation fails while converting documents or executing the
+     * MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     *
      * @param <T> the type to map each document to
      * @param selectPropNames the collection of BSON field names to include in the projection
      * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a sorted projected typed Stream
-     * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Stream
      * @see com.mongodb.client.model.Sorts
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.stream(selectPropNames, filter, sort, rowType));
     }
@@ -2192,6 +2515,10 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(stream -> displayTopArticles(stream));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code stream} operation fails while converting documents or executing the
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative. Failures while
+     * consuming the returned stream or change cursor are raised during consumption.</p>
+     *
      * @param <T> the type to map each document to
      * @param selectPropNames the collection of BSON field names to include in the projection
      * @param filter the query filter to match documents (must not be null)
@@ -2200,14 +2527,16 @@ public final class AsyncMongoCollectionExecutor {
      * @param count the maximum number of documents to stream
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a fully configured typed Stream
-     * @throws IllegalArgumentException if {@code filter} or {@code rowType} is null (thrown synchronously at the call site), or if {@code offset} or {@code count} is negative (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Stream
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset,
             final int count, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.stream(selectPropNames, filter, sort, offset, count, rowType));
     }
@@ -2226,20 +2555,25 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(stream -> exportUserList(stream));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code stream} operation fails while converting documents or executing the
+     * MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     *
      * @param <T> the type to map each document to
      * @param projection the BSON projection specification
      * @param filter the query filter to match documents (must not be null)
      * @param sort the sort specification
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a projected and sorted typed Stream
-     * @throws IllegalArgumentException if filter is null, or if {@code rowType} is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Stream
      * @see com.mongodb.client.model.Projections
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.stream(projection, filter, sort, rowType));
     }
@@ -2261,6 +2595,10 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(stream -> displayBookRecommendations(stream));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code stream} operation fails while converting documents or executing the
+     * MongoDB command. This includes an {@link IllegalArgumentException} when {@code offset} or {@code count} is negative. Failures while
+     * consuming the returned stream or change cursor are raised during consumption.</p>
+     *
      * @param <T> the type to map each document to
      * @param projection the BSON projection specification
      * @param filter the query filter to match documents (must not be null)
@@ -2269,15 +2607,17 @@ public final class AsyncMongoCollectionExecutor {
      * @param count the maximum number of documents to stream
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a fully configured typed Stream
-     * @throws IllegalArgumentException if {@code filter} or {@code rowType} is null (thrown synchronously at the call site), or if {@code offset} or {@code count} is negative (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see Stream
      * @see com.mongodb.client.model.Projections
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.stream(projection, filter, sort, offset, count, rowType));
     }
@@ -2295,8 +2635,13 @@ public final class AsyncMongoCollectionExecutor {
      *          System.out.println("Change detected: " + change.getOperationType())));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code watch} operation fails while converting documents or executing the
+     * MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     *
      * @return a ContinuableFuture that completes with a ChangeStreamIterable for Document changes
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see ChangeStreamIterable
      * @see #watch(Class)
      */
@@ -2317,11 +2662,16 @@ public final class AsyncMongoCollectionExecutor {
      *          updateInventoryCache(change.getFullDocument())));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code watch} operation fails while converting documents or executing the
+     * MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     *
      * @param <T> the type to deserialize change events to
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a typed ChangeStreamIterable
-     * @throws IllegalArgumentException if rowType is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see ChangeStreamIterable
      * @see #watch()
      */
@@ -2346,10 +2696,15 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(changeStream -> processFilteredChanges(changeStream));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code watch} operation fails while converting documents or executing the
+     * MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     *
      * @param pipeline the aggregation pipeline to apply to change events
      * @return a ContinuableFuture that completes with a filtered ChangeStreamIterable for Document changes
-     * @throws IllegalArgumentException if pipeline is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code pipeline} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see ChangeStreamIterable
      * @see com.mongodb.client.model.Aggregates
      */
@@ -2374,12 +2729,17 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(changeStream -> notifyHighPriorityChanges(changeStream));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code watch} operation fails while converting documents or executing the
+     * MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     *
      * @param <T> the type to deserialize change events to
      * @param pipeline the aggregation pipeline to apply to change events
      * @param rowType the Class object representing the row type
      * @return a ContinuableFuture that completes with a filtered typed ChangeStreamIterable
-     * @throws IllegalArgumentException if any parameter is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code pipeline} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see ChangeStreamIterable
      * @see com.mongodb.client.model.Aggregates
      */
@@ -2417,11 +2777,15 @@ public final class AsyncMongoCollectionExecutor {
      * InsertOneResult result = async.insertOne(user).get();
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code insertOne} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param obj the object to insert - can be Document, {@code Map<String, Object>}, or entity class with getter/setter methods
      * @return a ContinuableFuture that completes with the {@link InsertOneResult} reported by the server
-     * @throws IllegalArgumentException if obj is null (thrown synchronously at the call site)
-     * @throws MongoWriteException if the insert operation fails (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code obj} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #insertOne(Object, InsertOneOptions)
      * @see #insertMany(Collection)
      */
@@ -2447,11 +2811,16 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(result -> System.out.println("User inserted with validation bypass: " + result.getInsertedId()));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code insertOne} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param obj the object to insert, which will be converted to a Document
      * @param options the options to apply to the insert operation (null uses defaults)
      * @return a ContinuableFuture that completes with the {@link InsertOneResult} reported by the server
-     * @throws IllegalArgumentException if obj is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code obj} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see InsertOneOptions
      * @see #insertOne(Object)
      */
@@ -2480,10 +2849,15 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(result -> System.out.println("All users inserted successfully: " + result.getInsertedIds()));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code insertMany} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param objList the collection of objects to insert, each will be converted to a Document
      * @return a ContinuableFuture that completes with the {@link InsertManyResult} reported by the server
-     * @throws IllegalArgumentException if objList is null or empty (thrown synchronously at the call site)
-     * @throws MongoException if any database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code objList} is null or empty
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #insertMany(Collection, InsertManyOptions)
      * @see #insertOne(Object)
      */
@@ -2511,11 +2885,16 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(result -> System.out.println("Bulk product import completed: " + result.getInsertedIds()));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code insertMany} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param objList the collection of objects to insert, each will be converted to a Document
      * @param options the options to apply to the insert operation (null uses defaults)
      * @return a ContinuableFuture that completes with the {@link InsertManyResult} reported by the server
-     * @throws IllegalArgumentException if objList is null or empty (thrown synchronously at the call site)
-     * @throws MongoException if any database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code objList} is null or empty
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see InsertManyOptions
      * @see #insertMany(Collection)
      */
@@ -2547,13 +2926,19 @@ public final class AsyncMongoCollectionExecutor {
      *      });
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code updateOne} operation fails while converting documents or executing
+     * the MongoDB command. This includes an {@link IllegalArgumentException} when {@code objectId} is not a 24-character hexadecimal
+     * ObjectId.</p>
+     *
      * @param objectId the string representation of the ObjectId to identify the document
      * @param update the update specification; can be Bson/Document/{@code Map<String, Object>}/entity class
      *               with getter/setter methods. A non-operator payload is wrapped in {@code $set} (use
      *               {@code replaceOne} to replace the whole document)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
-     * @throws IllegalArgumentException if {@code objectId} is null or empty, or {@code update} is null (thrown synchronously at the call site), or if {@code objectId} is not a valid hex ObjectId (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code objectId} is null or empty, or if {@code update} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see UpdateResult
      * @see #updateOne(ObjectId, Object)
      * @see com.mongodb.client.model.Updates
@@ -2590,13 +2975,18 @@ public final class AsyncMongoCollectionExecutor {
      *      });
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code updateOne} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param objectId the ObjectId to identify the document to update
      * @param update the update specification; can be Bson/Document/{@code Map<String, Object>}/entity class
      *               with getter/setter methods. A non-operator payload is wrapped in {@code $set} (use
      *               {@code replaceOne} to replace the whole document)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
-     * @throws IllegalArgumentException if objectId or update is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code objectId} is null, or if {@code update} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see UpdateResult
      * @see #updateOne(String, Object)
      * @see ObjectId
@@ -2629,13 +3019,18 @@ public final class AsyncMongoCollectionExecutor {
      *      });
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code updateOne} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param filter the query filter to select the document to update
      * @param update the update specification; can be Bson/Document/{@code Map<String, Object>}/entity class
      *               with getter/setter methods. A non-operator payload is wrapped in {@code $set} (use
      *               {@code replaceOne} to replace the whole document)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
-     * @throws IllegalArgumentException if filter or update is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see UpdateResult
      * @see #updateOne(Bson, Object, UpdateOptions)
      * @see com.mongodb.client.model.Filters
@@ -2661,12 +3056,17 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(result -> System.out.println("Upserted: " + result.getUpsertedId()));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code updateOne} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param filter the query filter to select the document to update
      * @param update the update specification
      * @param options the options to apply to the update operation (null uses defaults)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
-     * @throws IllegalArgumentException if filter or update is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see UpdateOptions
      * @see UpdateResult
      */
@@ -2699,11 +3099,16 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(result -> System.out.println("Document processed"));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code updateOne} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param filter the query filter to select the document to update
      * @param objList the collection of update operations to apply
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
-     * @throws IllegalArgumentException if filter or objList is null, or if objList is empty (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see UpdateResult
      */
     public ContinuableFuture<UpdateResult> updateOne(final Bson filter, final Collection<?> objList) {
@@ -2734,12 +3139,17 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(result -> System.out.println("Document processed with upsert"));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code updateOne} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param filter the query filter to select the document to update
      * @param objList the collection of update operations to apply
      * @param options the options to apply to the update operation (null uses defaults)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
-     * @throws IllegalArgumentException if filter or objList is null, or if objList is empty (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see UpdateResult
      */
     public ContinuableFuture<UpdateResult> updateOne(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
@@ -2771,13 +3181,18 @@ public final class AsyncMongoCollectionExecutor {
      *      });
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code updateMany} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param filter the query filter to select documents to update
      * @param update the update specification; can be Bson/Document/{@code Map<String, Object>}/entity class
      *               with getter/setter methods. A non-operator payload is wrapped in {@code $set} (use
      *               {@code replaceOne} to replace the whole document)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
-     * @throws IllegalArgumentException if filter or update is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see UpdateResult
      * @see #updateMany(Bson, Object, UpdateOptions)
      * @see #updateOne(Bson, Object)
@@ -2804,14 +3219,19 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(result -> System.out.println("Processed " + result.getModifiedCount() + " items"));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code updateMany} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param filter the query filter to select documents to update
      * @param update the update specification; can be Bson/Document/{@code Map<String, Object>}/entity class
      *               with getter/setter methods. A non-operator payload is wrapped in {@code $set} (use
      *               {@code replaceOne} to replace the whole document)
      * @param options the options to apply to the update operation (null uses defaults)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
-     * @throws IllegalArgumentException if filter or update is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      */
     public ContinuableFuture<UpdateResult> updateMany(final Bson filter, final Object update, final UpdateOptions options) {
         N.checkArgNotNull(filter, cs.filter);
@@ -2843,11 +3263,16 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(result -> System.out.println("Processed " + result.getModifiedCount() + " pending items"));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code updateMany} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param filter the query filter to select documents to update
      * @param objList the collection of update operations to apply
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
-     * @throws IllegalArgumentException if filter or objList is null, or if objList is empty (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      */
     public ContinuableFuture<UpdateResult> updateMany(final Bson filter, final Collection<?> objList) {
         N.checkArgNotNull(filter, cs.filter);
@@ -2877,12 +3302,17 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(result -> System.out.println("Processed " + result.getModifiedCount() + " pending items with upsert"));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code updateMany} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param filter the query filter to select documents to update
      * @param objList the collection of update operations to apply
      * @param options the options to apply to the update operation (null uses defaults)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
-     * @throws IllegalArgumentException if filter or objList is null, or if objList is empty (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      */
     public ContinuableFuture<UpdateResult> updateMany(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
         N.checkArgNotNull(filter, cs.filter);
@@ -2906,12 +3336,18 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(result -> System.out.println("Replaced: " + result.getModifiedCount()));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code replaceOne} operation fails while converting documents or executing
+     * the MongoDB command. This includes an {@link IllegalArgumentException} when {@code objectId} is not a 24-character hexadecimal
+     * ObjectId.</p>
+     *
      * @param objectId the string representation of the ObjectId to identify the document
      * @param replacement the replacement document; an omitted {@code _id} is retained, while a supplied
      *                    value must equal the matched document's {@code _id}
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
-     * @throws IllegalArgumentException if {@code objectId} is null or empty, or {@code replacement} is null (thrown synchronously at the call site), or if {@code objectId} is not a valid hex ObjectId (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code objectId} is null or empty, or if {@code replacement} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see UpdateResult
      * @see #replaceOne(ObjectId, Object)
      * @see #replaceOne(Bson, Object)
@@ -2938,12 +3374,17 @@ public final class AsyncMongoCollectionExecutor {
      * async.replaceOne(id, newDoc).thenRunAsync(result -> System.out.println("Updated: " + result));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code replaceOne} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param objectId the ObjectId to identify the document for replacement
      * @param replacement the replacement document; an omitted {@code _id} is retained, while a supplied
      *                    value must equal the matched document's {@code _id}
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
-     * @throws IllegalArgumentException if {@code objectId} or {@code replacement} is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code objectId} is null, or if {@code replacement} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see UpdateResult
      * @see #replaceOne(String, Object)
      * @see #replaceOne(Bson, Object)
@@ -2983,12 +3424,17 @@ public final class AsyncMongoCollectionExecutor {
      *      });
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code replaceOne} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param filter the query filter to select the document to replace
      * @param replacement the replacement document; an omitted {@code _id} is retained, while a supplied
      *                    value must equal the matched document's {@code _id}
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
-     * @throws IllegalArgumentException if filter or replacement is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see UpdateResult
      * @see #replaceOne(Bson, Object, ReplaceOptions)
      * @see #updateOne(Bson, Object)
@@ -3016,13 +3462,18 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(result -> System.out.println("Upserted: " + result.getUpsertedId()));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code replaceOne} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param filter the query filter to select the document to replace
      * @param replacement the replacement document; for a match, an omitted {@code _id} is retained while
      *                    a supplied value must equal the matched document's {@code _id}
      * @param options the options to apply to the replace operation (null uses defaults)
      * @return a ContinuableFuture that completes with UpdateResult containing operation details
-     * @throws IllegalArgumentException if filter or replacement is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see UpdateResult
      * @see ReplaceOptions
      * @see #replaceOne(Bson, Object)
@@ -3055,10 +3506,16 @@ public final class AsyncMongoCollectionExecutor {
      *      });
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code deleteOne} operation fails while converting documents or executing
+     * the MongoDB command. This includes an {@link IllegalArgumentException} when {@code objectId} is not a 24-character hexadecimal
+     * ObjectId.</p>
+     *
      * @param objectId the string representation of the ObjectId to identify the document for deletion
      * @return a ContinuableFuture that completes with DeleteResult containing operation details
-     * @throws IllegalArgumentException if {@code objectId} is null or empty (thrown synchronously at the call site), or is not a valid hex ObjectId (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code objectId} is null or empty
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see DeleteResult
      * @see #deleteOne(ObjectId)
      * @see #deleteOne(Bson)
@@ -3083,10 +3540,15 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(result -> System.out.println("Deleted: " + result.getDeletedCount()));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code deleteOne} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param objectId the ObjectId to identify the document for deletion
      * @return a ContinuableFuture that completes with DeleteResult containing operation details
-     * @throws IllegalArgumentException if objectId is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code objectId} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see DeleteResult
      * @see #deleteOne(String)
      * @see #deleteOne(Bson)
@@ -3111,10 +3573,15 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(result -> System.out.println("Deleted inactive user: " + result.wasAcknowledged()));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code deleteOne} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param filter the query filter to select the document for deletion
      * @return a ContinuableFuture that completes with DeleteResult containing operation details
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see DeleteResult
      * @see #deleteOne(Bson, DeleteOptions)
      * @see #deleteMany(Bson)
@@ -3139,11 +3606,16 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(result -> System.out.println("Case-insensitive delete: " + result.getDeletedCount()));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code deleteOne} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param filter the query filter to select the document for deletion
      * @param options the options to apply to the delete operation (null uses defaults)
      * @return a ContinuableFuture that completes with DeleteResult containing operation details
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see DeleteResult
      * @see DeleteOptions
      * @see #deleteOne(Bson)
@@ -3181,10 +3653,15 @@ public final class AsyncMongoCollectionExecutor {
      *      });
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code deleteMany} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param filter the query filter to select documents for deletion
      * @return a ContinuableFuture that completes with DeleteResult containing operation details
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see DeleteResult
      * @see #deleteMany(Bson, DeleteOptions)
      * @see #deleteOne(Bson)
@@ -3209,11 +3686,16 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(result -> System.out.println("Archived records deleted: " + result.getDeletedCount()));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code deleteMany} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param filter the query filter to select documents for deletion
      * @param options the options to apply to the delete operation (null uses defaults)
      * @return a ContinuableFuture that completes with DeleteResult containing operation details
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see DeleteResult
      * @see DeleteOptions
      * @see #deleteMany(Bson)
@@ -3238,11 +3720,15 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(result -> System.out.println("Inserted " + result.getInsertedCount() + " users"));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code bulkInsert} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param entities the collection of documents to insert
      * @return a ContinuableFuture that completes with the {@link BulkWriteResult} reported by the server (use {@link BulkWriteResult#getInsertedCount()} for the inserted count)
-     * @throws IllegalArgumentException if entities is null or empty (thrown synchronously at the call site)
-     * @throws MongoBulkWriteException if the bulk operation fails (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code entities} is null or empty
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #bulkInsert(Collection, BulkWriteOptions)
      * @see #bulkWrite(List)
      */
@@ -3266,12 +3752,16 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(result -> System.out.println("Inserted " + result.getInsertedCount() + " documents (unordered)"));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code bulkInsert} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param entities the collection of documents to insert
      * @param options the options to apply to the bulk insert operation (null uses defaults)
      * @return a ContinuableFuture that completes with the {@link BulkWriteResult} reported by the server (use {@link BulkWriteResult#getInsertedCount()} for the inserted count)
-     * @throws IllegalArgumentException if entities is null or empty (thrown synchronously at the call site)
-     * @throws MongoBulkWriteException if the bulk operation fails (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code entities} is null or empty
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see BulkWriteOptions
      * @see #bulkInsert(Collection)
      */
@@ -3299,11 +3789,15 @@ public final class AsyncMongoCollectionExecutor {
      *     System.out.println("Modified: " + result.getModifiedCount()));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code bulkWrite} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param requests the list of write operations to perform
      * @return a ContinuableFuture that completes with BulkWriteResult containing operation details
-     * @throws IllegalArgumentException if requests is null or empty (thrown synchronously at the call site)
-     * @throws MongoBulkWriteException if the bulk operation fails (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code requests} is null or empty
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see BulkWriteResult
      * @see WriteModel
      * @see #bulkWrite(List, BulkWriteOptions)
@@ -3330,12 +3824,16 @@ public final class AsyncMongoCollectionExecutor {
      * });
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code bulkWrite} operation fails while converting documents or executing
+     * the MongoDB command.</p>
+     *
      * @param requests the list of write operations to perform
      * @param options the options to apply to the bulk write operation (null uses defaults)
      * @return a ContinuableFuture that completes with BulkWriteResult containing operation details
-     * @throws IllegalArgumentException if requests is null or empty (thrown synchronously at the call site)
-     * @throws MongoBulkWriteException if the bulk operation fails (propagated through future)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code requests} is null or empty
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see BulkWriteResult
      * @see BulkWriteOptions
      * @see #bulkWrite(List)
@@ -3360,11 +3858,16 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(doc -> System.out.println("Processing: " + doc));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code findOneAndUpdate} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param filter the query filter to find the document
      * @param update the update operations to apply
      * @return a ContinuableFuture that completes with the found document (before update by default), or {@code null} if no document matches
-     * @throws IllegalArgumentException if filter or update is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #findOneAndUpdate(Bson, Object, FindOneAndUpdateOptions)
      * @see #findOneAndUpdate(Bson, Object, Class)
      */
@@ -3388,20 +3891,25 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(user -> System.out.println("Updated user: " + user.getName()));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code findOneAndUpdate} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
      * @param update the update operations to apply
      * @param rowType the class to deserialize the result document into
      * @return a ContinuableFuture that completes with the found document as the specified type, or {@code null} if no document matches
-     * @throws IllegalArgumentException if filter, update, or rowType is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #findOneAndUpdate(Bson, Object)
      * @see #findOneAndUpdate(Bson, Object, FindOneAndUpdateOptions, Class)
      */
     public <T> ContinuableFuture<T> findOneAndUpdate(final Bson filter, final Object update, final Class<T> rowType) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(update, "update");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.findOneAndUpdate(filter, update, rowType));
     }
@@ -3422,12 +3930,17 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(doc -> System.out.println("Counter value: " + doc.getInteger("counter")));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code findOneAndUpdate} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param filter the query filter to find the document
      * @param update the update operations to apply
      * @param options the options to apply to the operation (null uses defaults)
      * @return a ContinuableFuture that completes with the found document, or {@code null} if no document matches
-     * @throws IllegalArgumentException if filter or update is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see FindOneAndUpdateOptions
      * @see #findOneAndUpdate(Bson, Object)
      */
@@ -3452,21 +3965,26 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(user -> System.out.println("Updated: " + user));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code findOneAndUpdate} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
      * @param update the update operations to apply
      * @param options the options to apply to the operation (null uses defaults)
      * @param rowType the class to deserialize the result document into
      * @return a ContinuableFuture that completes with the found document as the specified type, or {@code null} if no document matches
-     * @throws IllegalArgumentException if filter, update, or rowType is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see FindOneAndUpdateOptions
      * @see #findOneAndUpdate(Bson, Object, Class)
      */
     public <T> ContinuableFuture<T> findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options, final Class<T> rowType) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(update, "update");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.findOneAndUpdate(filter, update, options, rowType));
     }
@@ -3491,11 +4009,16 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(doc -> System.out.println("Updated document: " + doc));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code findOneAndUpdate} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param filter the query filter to find the document
      * @param objList the collection of update operations to apply
      * @return a ContinuableFuture that completes with the found document (before update by default), or {@code null} if no document matches
-     * @throws IllegalArgumentException if filter or objList is null, or if objList is empty (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #findOneAndUpdate(Bson, Object)
      * @see #findOneAndUpdate(Bson, Collection, FindOneAndUpdateOptions)
      */
@@ -3522,19 +4045,24 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(user -> System.out.println("Verified user: " + user.getName()));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code findOneAndUpdate} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
      * @param objList the collection of update operations to apply
      * @param rowType the class to deserialize the result document into
      * @return a ContinuableFuture that completes with the found document as the specified type, or {@code null} if no document matches
-     * @throws IllegalArgumentException if any parameter is null or objList is empty (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #findOneAndUpdate(Bson, Collection)
      */
     public <T> ContinuableFuture<T> findOneAndUpdate(final Bson filter, final Collection<?> objList, final Class<T> rowType) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotEmpty(objList, "objList");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.findOneAndUpdate(filter, objList, rowType));
     }
@@ -3556,12 +4084,17 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(doc -> System.out.println("Result: " + doc));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code findOneAndUpdate} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param filter the query filter to find the document
      * @param objList the collection of update operations to apply
      * @param options the options to apply to the operation (null uses defaults)
      * @return a ContinuableFuture that completes with the found document, or {@code null} if no document matches
-     * @throws IllegalArgumentException if filter or objList is null or objList is empty (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see FindOneAndUpdateOptions
      * @see #findOneAndUpdate(Bson, Collection)
      */
@@ -3589,22 +4122,27 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(user -> processUpdatedUser(user));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code findOneAndUpdate} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
      * @param objList the collection of update operations to apply
      * @param options the options to apply to the operation (null uses defaults)
      * @param rowType the class to deserialize the result document into
      * @return a ContinuableFuture that completes with the found document as the specified type, or {@code null} if no document matches
-     * @throws IllegalArgumentException if filter, objList, or rowType is null or objList is empty (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see FindOneAndUpdateOptions
      * @see #findOneAndUpdate(Bson, Collection, Class)
      */
     public <T> ContinuableFuture<T> findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options,
             final Class<T> rowType) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotEmpty(objList, "objList");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.findOneAndUpdate(filter, objList, options, rowType));
     }
@@ -3623,11 +4161,16 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(oldDoc -> System.out.println("Replaced: " + oldDoc));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code findOneAndReplace} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param filter the query filter to find the document
      * @param replacement the replacement document
      * @return a ContinuableFuture that completes with the found document (before replacement by default), or {@code null} if no document matches
-     * @throws IllegalArgumentException if filter or replacement is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #findOneAndReplace(Bson, Object, FindOneAndReplaceOptions)
      */
     public ContinuableFuture<Document> findOneAndReplace(final Bson filter, final Object replacement) {
@@ -3650,19 +4193,24 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(oldUser -> System.out.println("Previous: " + oldUser.getName()));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code findOneAndReplace} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
      * @param replacement the replacement document
      * @param rowType the class to deserialize the result document into
      * @return a ContinuableFuture that completes with the found document as the specified type, or {@code null} if no document matches
-     * @throws IllegalArgumentException if any parameter is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #findOneAndReplace(Bson, Object)
      */
     public <T> ContinuableFuture<T> findOneAndReplace(final Bson filter, final Object replacement, final Class<T> rowType) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(replacement, cs.replacement);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.findOneAndReplace(filter, replacement, rowType));
     }
@@ -3683,12 +4231,17 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(doc -> System.out.println("New document: " + doc));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code findOneAndReplace} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param filter the query filter to find the document
      * @param replacement the replacement document
      * @param options the options to apply to the operation (null uses defaults)
      * @return a ContinuableFuture that completes with the found document, or {@code null} if no document matches
-     * @throws IllegalArgumentException if filter or replacement is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see FindOneAndReplaceOptions
      * @see #findOneAndReplace(Bson, Object)
      */
@@ -3712,22 +4265,27 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(user -> logUserChange(user));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code findOneAndReplace} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
      * @param replacement the replacement document
      * @param options the options to apply to the operation (null uses defaults)
      * @param rowType the class to deserialize the result document into
      * @return a ContinuableFuture that completes with the found document as the specified type, or {@code null} if no document matches
-     * @throws IllegalArgumentException if filter, replacement, or rowType is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see FindOneAndReplaceOptions
      * @see #findOneAndReplace(Bson, Object, Class)
      */
     public <T> ContinuableFuture<T> findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options,
             final Class<T> rowType) {
         N.checkArgNotNull(filter, cs.filter);
-        N.checkArgNotNull(rowType, cs.rowType);
         N.checkArgNotNull(replacement, cs.replacement);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return asyncExecutor.execute(() -> collectionExecutor.findOneAndReplace(filter, replacement, options, rowType));
     }
@@ -3745,10 +4303,15 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(doc -> System.out.println("Deleted document: " + doc));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code findOneAndDelete} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param filter the query filter to find the document
      * @return a ContinuableFuture that completes with the deleted document, or {@code null} if no document matches
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #findOneAndDelete(Bson, FindOneAndDeleteOptions)
      * @see #deleteOne(Bson)
      */
@@ -3770,12 +4333,17 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(session -> logExpiredSession(session));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code findOneAndDelete} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
      * @param rowType the class to deserialize the result document into
      * @return a ContinuableFuture that completes with the deleted document as the specified type, or {@code null} if no document matches
-     * @throws IllegalArgumentException if filter or rowType is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #findOneAndDelete(Bson)
      */
     public <T> ContinuableFuture<T> findOneAndDelete(final Bson filter, final Class<T> rowType) {
@@ -3801,11 +4369,16 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(doc -> processNextTask(doc));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code findOneAndDelete} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param filter the query filter to find the document
      * @param options the options to apply to the operation (null uses defaults)
      * @return a ContinuableFuture that completes with the deleted document, or {@code null} if no document matches
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see FindOneAndDeleteOptions
      * @see #findOneAndDelete(Bson)
      */
@@ -3828,13 +4401,18 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(task -> completeTask(task));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code findOneAndDelete} operation fails while converting documents or
+     * executing the MongoDB command.</p>
+     *
      * @param <T> the type of the result document
      * @param filter the query filter to find the document
      * @param options the options to apply to the operation (null uses defaults)
      * @param rowType the class to deserialize the result document into
      * @return a ContinuableFuture that completes with the deleted document as the specified type, or {@code null} if no document matches
-     * @throws IllegalArgumentException if filter or rowType is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see FindOneAndDeleteOptions
      * @see #findOneAndDelete(Bson, Class)
      */
@@ -3858,12 +4436,17 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(stream -> stream.forEach(System.out::println));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code distinct} operation fails while converting documents or executing
+     * the MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     *
      * @param <T> the type of the distinct values
      * @param fieldName the field name to get distinct values for
      * @param rowType the class to deserialize the distinct values into
      * @return a ContinuableFuture that completes with a Stream of distinct values
-     * @throws IllegalArgumentException if fieldName is null or empty, or if rowType is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code fieldName} is null or empty, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #distinct(String, Bson, Class)
      */
     public <T> ContinuableFuture<Stream<T>> distinct(final String fieldName, final Class<T> rowType) {
@@ -3886,13 +4469,18 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(stream -> stream.sorted().forEach(System.out::println));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code distinct} operation fails while converting documents or executing
+     * the MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     *
      * @param <T> the type of the distinct values
      * @param fieldName the field name to get distinct values for
      * @param filter the query filter to apply before getting distinct values (must not be null)
      * @param rowType the class to deserialize the distinct values into
      * @return a ContinuableFuture that completes with a Stream of distinct values
-     * @throws IllegalArgumentException if fieldName is null or empty, if filter is null, or if rowType is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code fieldName} is null or empty, or if {@code filter} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #distinct(String, Class)
      */
     public <T> ContinuableFuture<Stream<T>> distinct(final String fieldName, final Bson filter, final Class<T> rowType) {
@@ -3920,10 +4508,15 @@ public final class AsyncMongoCollectionExecutor {
      *     stream.forEach(doc -> System.out.println(doc)));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code aggregate} operation fails while converting documents or executing
+     * the MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     *
      * @param pipeline the aggregation pipeline to execute
      * @return a ContinuableFuture that completes with a Stream of result Documents
-     * @throws IllegalArgumentException if pipeline is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code pipeline} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #aggregate(List, Class)
      * @see com.mongodb.client.model.Aggregates
      */
@@ -3950,12 +4543,17 @@ public final class AsyncMongoCollectionExecutor {
      *     stream.limit(10).forEach(result -> System.out.println(result)));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code aggregate} operation fails while converting documents or executing
+     * the MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     *
      * @param <T> the type of the result documents
      * @param pipeline the aggregation pipeline to execute
      * @param rowType the class to deserialize the result documents into
      * @return a ContinuableFuture that completes with a Stream of result objects
-     * @throws IllegalArgumentException if pipeline or rowType is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code pipeline} is null, or if {@code rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #aggregate(List)
      * @see com.mongodb.client.model.Aggregates
      */
@@ -3979,10 +4577,15 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(stream -> stream.forEach(group -> System.out.println(group)));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code groupBy} operation fails while converting documents or executing
+     * the MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     *
      * @param fieldName the field name to group by
      * @return a ContinuableFuture that completes with a Stream of grouped Documents
-     * @throws IllegalArgumentException if fieldName is null or empty (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code fieldName} is null or empty
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #groupBy(Collection)
      * @see #aggregate(List)
      */
@@ -4006,10 +4609,15 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(stream -> stream.forEach(group -> System.out.println(group)));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code groupBy} operation fails while converting documents or executing
+     * the MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     *
      * @param fieldNames the collection of field names to group by
      * @return a ContinuableFuture that completes with a Stream of grouped Documents
-     * @throws IllegalArgumentException if fieldNames is null or empty (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code fieldNames} is null or empty
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #groupBy(String)
      * @see #aggregate(List)
      */
@@ -4046,10 +4654,15 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(stream -> stream.forEach(System.out::println));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code groupByAndCount} operation fails while converting documents or
+     * executing the MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     *
      * @param fieldName the field name to group by and count
      * @return a ContinuableFuture that completes with a Stream of Documents containing group keys and counts
-     * @throws IllegalArgumentException if fieldName is null or empty (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code fieldName} is null or empty
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #groupByAndCount(Collection)
      * @see #groupBy(String)
      * @see #aggregate(List)
@@ -4090,10 +4703,15 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(stream -> stream.forEach(System.out::println));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code groupByAndCount} operation fails while converting documents or
+     * executing the MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     *
      * @param fieldNames the collection of field names to group by and count
      * @return a ContinuableFuture that completes with a Stream of Documents containing composite group keys and counts
-     * @throws IllegalArgumentException if fieldNames is null or empty (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
+     * @throws IllegalArgumentException if {@code fieldNames} is null or empty
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @see #groupByAndCount(String)
      * @see #groupBy(Collection)
      * @see #aggregate(List)
@@ -4120,12 +4738,17 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(stream -> stream.forEach(System.out::println));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code mapReduce} operation fails while converting documents or executing
+     * the MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     *
+     * @throws IllegalArgumentException if {@code mapFunction} is null or empty, or if {@code reduceFunction} is null or empty
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @deprecated Use {@link #aggregate(List)} with aggregation pipeline instead.
      * @param mapFunction the JavaScript map function
      * @param reduceFunction the JavaScript reduce function
      * @return a ContinuableFuture that completes with a Stream of result Documents
-     * @throws IllegalArgumentException if either function is null or empty (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
      * @see #aggregate(List)
      */
     @Deprecated
@@ -4149,14 +4772,20 @@ public final class AsyncMongoCollectionExecutor {
      *      .thenRunAsync(stream -> stream.forEach(sum -> System.out.println(sum)));
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the delegated {@code mapReduce} operation fails while converting documents or executing
+     * the MongoDB command. Failures while consuming the returned stream or change cursor are raised during consumption.</p>
+     *
+     * @throws IllegalArgumentException if {@code mapFunction} is null or empty, or if {@code reduceFunction} is null or empty, or if {@code
+     *         rowType} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task, for example because its queue is full or it has
+     *         shut down
      * @deprecated Use {@link #aggregate(List, Class)} with aggregation pipeline instead.
      * @param <T> the type of the result documents
      * @param mapFunction the JavaScript map function
      * @param reduceFunction the JavaScript reduce function
      * @param rowType the class to deserialize the result documents into
      * @return a ContinuableFuture that completes with a Stream of result objects
-     * @throws IllegalArgumentException if either function is null or empty, or rowType is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (propagated through future)
      * @see #aggregate(List, Class)
      */
     @Deprecated

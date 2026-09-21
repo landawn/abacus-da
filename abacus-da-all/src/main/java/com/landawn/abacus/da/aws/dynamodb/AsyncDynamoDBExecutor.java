@@ -16,6 +16,7 @@ package com.landawn.abacus.da.aws.dynamodb;
 
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.RejectedExecutionException;
 
 import com.amazonaws.services.dynamodbv2.model.AttributeValue;
 import com.amazonaws.services.dynamodbv2.model.AttributeValueUpdate;
@@ -181,12 +182,15 @@ public final class AsyncDynamoDBExecutor {
      * Map<String, Object> none = asyncExecutor.getItem("Users", missing).get(); // returns null
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the getItem request, DynamoDB rejects its table, key, conditions, or
+     *         service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     *
      * @param tableName the name of the DynamoDB table to retrieve the item from, must not be {@code null}
      * @param key the primary key of the item to retrieve, must include all key attributes, must not be {@code null}
      * @return a {@link ContinuableFuture} containing the item as a Map of attribute names to values,
      *         or {@code null} if the item doesn't exist
-     * @throws RuntimeException if the request is rejected by the underlying DynamoDB client (for example,
-     *         when tableName or key is null or invalid), surfaced through the future
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #getItem(String, Map, Boolean)
      */
     public ContinuableFuture<Map<String, Object>> getItem(final String tableName, final Map<String, AttributeValue> key) {
@@ -225,14 +229,17 @@ public final class AsyncDynamoDBExecutor {
      * Map<String, Object> acct = asyncExecutor.getItem("Accounts", key, (Boolean) null).get(); // returns the item map, or null if absent
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the getItem request, DynamoDB rejects its table, key, conditions, or
+     *         service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     *
      * @param tableName the name of the DynamoDB table to retrieve the item from, must not be {@code null}
      * @param key the primary key of the item to retrieve, must include all key attributes, must not be {@code null}
      * @param consistentRead {@code Boolean.TRUE} for a strongly consistent read;
      *                       {@code Boolean.FALSE} or {@code null} for an eventually consistent read
      * @return a {@link ContinuableFuture} whose payload is a {@code Map<String, Object>} of attribute
      *         names to values, or {@code null} if the item doesn't exist
-     * @throws RuntimeException if the request is rejected by the underlying DynamoDB client (for example,
-     *         when tableName or key is null or invalid), surfaced through the future
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #getItem(String, Map)
      * @see #getItem(String, Map, Boolean, Class)
      */
@@ -286,11 +293,15 @@ public final class AsyncDynamoDBExecutor {
      * Map<String, Object> none = asyncExecutor.getItem(miss).get(); // returns null
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the getItem request, DynamoDB rejects its table, key, conditions, or
+     *         service limits, or a returned item cannot be converted to the requested Java representation. A null {@code getItemRequest} is also
+     *         rejected inside the submitted task and reported through the future.</p>
+     *
      * @param getItemRequest the complete GetItemRequest with all parameters configured, must not be {@code null}
      * @return a ContinuableFuture containing the item as a Map of attribute names to values,
      *         or {@code null} if the item doesn't exist
-     * @throws NullPointerException if {@code getItemRequest} is null (rejected by the AWS SDK v1 client),
-     *         surfaced through the future
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see GetItemRequest
      * @see #getItem(GetItemRequest, Class)
      */
@@ -339,14 +350,17 @@ public final class AsyncDynamoDBExecutor {
      * Order none = asyncExecutor.getItem("Orders", miss, Order.class).get(); // returns null
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the getItem request, DynamoDB rejects its table, key, conditions, or
+     *         service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     *
      * @param <T> the type to convert the item to
      * @param tableName the name of the DynamoDB table to retrieve the item from, must not be {@code null}
      * @param key the primary key of the item to retrieve, must include all key attributes, must not be {@code null}
      * @param targetClass the class to convert the item to, must have a default constructor, must not be {@code null}
      * @return a {@link ContinuableFuture} containing the item converted to type T, or {@code null} if not found
-     * @throws IllegalArgumentException if targetClass is {@code null}, or is unsupported (surfaced through the future)
-     * @throws RuntimeException if the request is rejected by the underlying DynamoDB client (for example,
-     *         when tableName or key is null or invalid), surfaced through the future
+     * @throws IllegalArgumentException if {@code targetClass} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #getItem(String, Map, Boolean, Class)
      */
     public <T> ContinuableFuture<T> getItem(final String tableName, final Map<String, AttributeValue> key, final Class<T> targetClass) {
@@ -390,6 +404,9 @@ public final class AsyncDynamoDBExecutor {
      * Account none = asyncExecutor.getItem("Accounts", miss, (Boolean) null, Account.class).get(); // returns null
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the getItem request, DynamoDB rejects its table, key, conditions, or
+     *         service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     *
      * @param <T> the type to convert the item to
      * @param tableName the name of the DynamoDB table to retrieve the item from, must not be {@code null}
      * @param key the primary key of the item to retrieve, must include all key attributes, must not be {@code null}
@@ -398,9 +415,9 @@ public final class AsyncDynamoDBExecutor {
      * @param targetClass the class to convert the item to, must not be {@code null}
      * @return a {@link ContinuableFuture} whose payload is the item converted to type {@code T},
      *         or {@code null} if the item does not exist
-     * @throws IllegalArgumentException if targetClass is {@code null}, or is unsupported (surfaced through the future)
-     * @throws RuntimeException if the request is rejected by the underlying DynamoDB client (for example,
-     *         when tableName or key is null or invalid), surfaced through the future
+     * @throws IllegalArgumentException if {@code targetClass} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      */
     public <T> ContinuableFuture<T> getItem(final String tableName, final Map<String, AttributeValue> key, final Boolean consistentRead,
             final Class<T> targetClass) {
@@ -452,13 +469,17 @@ public final class AsyncDynamoDBExecutor {
      * ProductSummary none = asyncExecutor.getItem(miss, ProductSummary.class).get(); // returns null
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the getItem request, DynamoDB rejects its table, key, conditions, or
+     *         service limits, or a returned item cannot be converted to the requested Java representation. A null {@code getItemRequest} is also
+     *         rejected inside the submitted task and reported through the future.</p>
+     *
      * @param <T> the type to convert the item to
      * @param getItemRequest the complete GetItemRequest with all parameters configured, must not be {@code null}
      * @param targetClass the class to convert the item to, must have a default constructor, must not be {@code null}
      * @return a ContinuableFuture containing the item converted to type T, or null if not found
-     * @throws IllegalArgumentException if targetClass is {@code null}, or is unsupported (surfaced through the future)
-     * @throws NullPointerException if {@code getItemRequest} is null (rejected by the AWS SDK v1 client),
-     *         surfaced through the future
+     * @throws IllegalArgumentException if {@code targetClass} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      */
     public <T> ContinuableFuture<T> getItem(final GetItemRequest getItemRequest, final Class<T> targetClass) {
         N.checkArgNotNull(targetClass, cs.targetClass);
@@ -507,12 +528,15 @@ public final class AsyncDynamoDBExecutor {
      * List<Map<String, Object>> products = results.get("Products");
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the batchGetItem request, DynamoDB rejects its table, key,
+     *         conditions, or service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     *
      * @param requestItems a map where keys are table names and values are {@link KeysAndAttributes}
      *                    objects specifying the items to retrieve from each table, must not be {@code null}
      * @return a {@link ContinuableFuture} containing a map of table names to lists of retrieved items,
      *         where each item is represented as a Map of attribute names to values
-     * @throws RuntimeException if the request is rejected by the underlying DynamoDB client (for example, when requestItems
-     *         is null or invalid, or when DynamoDB's batch limits are exceeded), surfaced through the future
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #batchGetItem(Map, String)
      */
     public ContinuableFuture<Map<String, List<Map<String, Object>>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems) {
@@ -564,11 +588,14 @@ public final class AsyncDynamoDBExecutor {
      * boolean empty = results.getOrDefault("Users", List.of()).isEmpty(); // returns true when nothing matched
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the batchGetItem request, DynamoDB rejects its table, key,
+     *         conditions, or service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     *
      * @param requestItems a map of table names to KeysAndAttributes specifying the items to retrieve, must not be {@code null}
      * @param returnConsumedCapacity "NONE", "TOTAL", or "INDEXES" forwarded to the service; not present on the future result
      * @return a ContinuableFuture containing a map of table names to lists of retrieved items
-     * @throws RuntimeException if the request is rejected by the underlying DynamoDB client (for example, when requestItems
-     *         is null or invalid, or when DynamoDB's 100-item batch limit is exceeded), surfaced through the future
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      */
     public ContinuableFuture<Map<String, List<Map<String, Object>>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems,
             final String returnConsumedCapacity) {
@@ -636,10 +663,14 @@ public final class AsyncDynamoDBExecutor {
      * boolean noUsers = results.getOrDefault("Users", List.of()).isEmpty(); // returns true when no Users matched
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the batchGetItem request, DynamoDB rejects its table, key,
+     *         conditions, or service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     *
      * @param batchGetItemRequest the complete BatchGetItemRequest with all parameters configured, must not be {@code null}
      * @return a {@link ContinuableFuture} containing a map of table names to lists of retrieved items
-     * @throws IllegalArgumentException if batchGetItemRequest is {@code null}; exceeding DynamoDB's 100-item batch limit
-     *         fails with a service {@code ValidationException} via the future
+     * @throws IllegalArgumentException if {@code batchGetItemRequest} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see BatchGetItemRequest
      * @see #batchGetItem(BatchGetItemRequest, Class)
      */
@@ -697,13 +728,16 @@ public final class AsyncDynamoDBExecutor {
      * boolean none = results.getOrDefault("Orders", List.of()).isEmpty(); // returns true when no orders matched
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the batchGetItem request, DynamoDB rejects its table, key,
+     *         conditions, or service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     *
      * @param <T> the type to convert retrieved items to
      * @param requestItems a map of table names to KeysAndAttributes specifying items to retrieve, must not be {@code null}
      * @param targetClass the class to convert each retrieved item to, must not be {@code null}
      * @return a ContinuableFuture containing a map of table names to lists of converted items
-     * @throws IllegalArgumentException if targetClass is {@code null}
-     * @throws RuntimeException if the request is rejected by the underlying DynamoDB client (for example, when requestItems
-     *         is null or invalid), surfaced through the future
+     * @throws IllegalArgumentException if {@code targetClass} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      */
     public <T> ContinuableFuture<Map<String, List<T>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems, final Class<T> targetClass) {
         N.checkArgNotNull(targetClass, cs.targetClass);
@@ -751,14 +785,17 @@ public final class AsyncDynamoDBExecutor {
      * boolean none = results.getOrDefault("Products", List.of()).isEmpty(); // returns true when no products matched
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the batchGetItem request, DynamoDB rejects its table, key,
+     *         conditions, or service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     *
      * @param <T> the type to convert retrieved items to
      * @param requestItems a map of table names to KeysAndAttributes specifying items to retrieve, must not be {@code null}
      * @param returnConsumedCapacity the level of capacity details to return ("INDEXES", "TOTAL", or "NONE")
      * @param targetClass the class to convert each retrieved item to, must not be {@code null}
      * @return a ContinuableFuture containing a map of table names to lists of converted items
-     * @throws IllegalArgumentException if targetClass is {@code null}
-     * @throws RuntimeException if the request is rejected by the underlying DynamoDB client (for example, when requestItems
-     *         is null or invalid), surfaced through the future
+     * @throws IllegalArgumentException if {@code targetClass} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      */
     public <T> ContinuableFuture<Map<String, List<T>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems, final String returnConsumedCapacity,
             final Class<T> targetClass) {
@@ -797,12 +834,17 @@ public final class AsyncDynamoDBExecutor {
      * boolean hasOrders = results.containsKey("Orders"); // returns false when "Orders" was not requested
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the batchGetItem request, DynamoDB rejects its table, key,
+     *         conditions, or service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     *
      * @param <T> the type to convert retrieved items to
      * @param batchGetItemRequest the complete BatchGetItemRequest with all parameters configured, must not be {@code null}
      * @param targetClass the class to convert each retrieved item to, must not be {@code null}
      * @return a {@link ContinuableFuture} whose payload is a map of table names to lists of items
      *         converted to type {@code T}; tables not in the request are absent from the map
-     * @throws IllegalArgumentException if {@code batchGetItemRequest} or {@code targetClass} is {@code null}
+     * @throws IllegalArgumentException if {@code batchGetItemRequest} is null, or if {@code targetClass} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      */
     public <T> ContinuableFuture<Map<String, List<T>>> batchGetItem(final BatchGetItemRequest batchGetItemRequest, final Class<T> targetClass) {
         N.checkArgNotNull(batchGetItemRequest, "batchGetItemRequest");
@@ -836,12 +878,15 @@ public final class AsyncDynamoDBExecutor {
      * Map<String, AttributeValue> old = result.getAttributes(); // returns null (use the returnValues overload for ALL_OLD)
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the putItem request, DynamoDB rejects its table, key, conditions, or
+     *         service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     *
      * @param tableName the name of the DynamoDB table to put the item into, must not be {@code null}
      * @param item the item to put, represented as a map of attribute names to {@link AttributeValue} objects,
      *            must include all required attributes, must not be {@code null}
      * @return a {@link ContinuableFuture} containing the {@link PutItemResult} with operation metadata
-     * @throws RuntimeException if the request is rejected by the underlying DynamoDB client (for example,
-     *         when tableName or item is null or invalid), surfaced through the future
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #putItem(String, Map, String)
      */
     public ContinuableFuture<PutItemResult> putItem(final String tableName, final Map<String, AttributeValue> item) {
@@ -895,14 +940,17 @@ public final class AsyncDynamoDBExecutor {
      * Map<String, AttributeValue> old = asyncExecutor.putItem("Users", newItem, "NONE").get().getAttributes(); // returns null
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the putItem request, DynamoDB rejects its table, key, conditions, or
+     *         service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     *
      * @param tableName the name of the DynamoDB table to put the item into, must not be {@code null}
      * @param item the item to put, represented as a map of attribute names to {@link AttributeValue} objects,
      *            must include all required attributes, must not be {@code null}
      * @param returnValues specifies what values to return: "NONE" (default) or "ALL_OLD" for PutItem operations
      * @return a {@link ContinuableFuture} containing the {@link PutItemResult} with operation metadata
      *         and optionally the old item's attributes if returnValues is "ALL_OLD"
-     * @throws RuntimeException if the request is rejected by the underlying DynamoDB client (for example,
-     *         when tableName or item is null or invalid), surfaced through the future
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #putItem(String, Map)
      * @see #putItem(PutItemRequest)
      */
@@ -960,10 +1008,14 @@ public final class AsyncDynamoDBExecutor {
      * PutItemResult result = future.get(); // returns a non-null PutItemResult (the request used ReturnValue.ALL_OLD)
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the putItem request, DynamoDB rejects its table, key, conditions, or
+     *         service limits, or a returned item cannot be converted to the requested Java representation. A null {@code putItemRequest} is also
+     *         rejected inside the submitted task and reported through the future.</p>
+     *
      * @param putItemRequest the complete PutItemRequest with all parameters configured, must not be {@code null}
      * @return a ContinuableFuture containing the PutItemResult with operation results
-     * @throws NullPointerException if {@code putItemRequest} is null (rejected by the AWS SDK v1 client),
-     *         surfaced through the future
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see PutItemRequest
      * @see PutItemResult
      */
@@ -982,10 +1034,14 @@ public final class AsyncDynamoDBExecutor {
      * entity to a {@code Map<String, AttributeValue>} and use the public overload, or
      * obtain the wrapper through other API entry points.</p>
      *
+     * <p>Entity conversion and DynamoDB request failures complete the returned future exceptionally.</p>
+     *
      * @param tableName the name of the table to put the entity into (must not be {@code null})
      * @param entity the entity object to put (must not be {@code null})
      * @return a {@link ContinuableFuture} whose payload is the {@link PutItemResult}
      *         returned by the underlying synchronous operation
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task
      */
     ContinuableFuture<PutItemResult> putItem(final String tableName, final Object entity) {
         return asyncExecutor.execute(() -> dbExecutor.putItem(tableName, entity));
@@ -999,12 +1055,16 @@ public final class AsyncDynamoDBExecutor {
      * same reason as {@link #putItem(String, Object)} — the {@code Object} parameter would
      * overload-clash with the {@code Map}-accepting public entry point.</p>
      *
+     * <p>Entity conversion and DynamoDB request failures complete the returned future exceptionally.</p>
+     *
      * @param tableName the name of the table to put the entity into (must not be {@code null})
      * @param entity the entity object to put (must not be {@code null})
      * @param returnValues specifies what values to return: "NONE" (default) or "ALL_OLD" for PutItem operations
      * @return a {@link ContinuableFuture} whose payload is the {@link PutItemResult}
      *         returned by the underlying synchronous operation; when {@code returnValues}
      *         is {@code "ALL_OLD"} the result's {@code getAttributes()} contains the previous item
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task
      */
     ContinuableFuture<PutItemResult> putItem(final String tableName, final Object entity, final String returnValues) {
         return asyncExecutor.execute(() -> dbExecutor.putItem(tableName, entity, returnValues));
@@ -1068,12 +1128,15 @@ public final class AsyncDynamoDBExecutor {
      * Map<String, List<WriteRequest>> unprocessed = result.getUnprocessedItems(); // returns an empty map (or null) on full success
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the batchWriteItem request, DynamoDB rejects its table, key,
+     *         conditions, or service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     *
      * @param requestItems a map where keys are table names and values are lists of {@link WriteRequest} objects
      *                     (containing either PutRequest or DeleteRequest), must not be {@code null}
      * @return a {@link ContinuableFuture} containing the {@link BatchWriteItemResult} with information about
      *         consumed capacity and any unprocessed items that need to be retried
-     * @throws RuntimeException if the request is rejected by the underlying DynamoDB client (for example, when requestItems
-     *         is null or invalid, or when DynamoDB's 25-request batch limit is exceeded), surfaced through the future
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #batchWriteItem(BatchWriteItemRequest)
      */
     public ContinuableFuture<BatchWriteItemResult> batchWriteItem(final Map<String, List<WriteRequest>> requestItems) {
@@ -1145,12 +1208,15 @@ public final class AsyncDynamoDBExecutor {
      * BatchWriteItemResult result = future.get(); // returns a non-null BatchWriteItemResult
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the batchWriteItem request, DynamoDB rejects its table, key,
+     *         conditions, or service limits, or a returned item cannot be converted to the requested Java representation. A null {@code
+     *         batchWriteItemRequest} is also rejected inside the submitted task and reported through the future.</p>
+     *
      * @param batchWriteItemRequest the complete BatchWriteItemRequest with all parameters configured, must not be {@code null}
      * @return a ContinuableFuture containing the BatchWriteItemResult with consumed capacity,
      *         item collection metrics, and any unprocessed items
-     * @throws NullPointerException if {@code batchWriteItemRequest} is null (rejected by the AWS SDK v1 client),
-     *         surfaced through the future; exceeding DynamoDB's 25-request batch limit fails with a service
-     *         {@code ValidationException} via the future
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see BatchWriteItemRequest
      * @see BatchWriteItemResult
      * @see #batchWriteItem(Map)
@@ -1189,14 +1255,17 @@ public final class AsyncDynamoDBExecutor {
      * Map<String, AttributeValue> changed = result.getAttributes(); // returns null (use the returnValues overload to fetch them)
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the updateItem request, DynamoDB rejects its table, key, conditions,
+     *         or service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     *
      * @param tableName the name of the DynamoDB table containing the item to update, must not be {@code null}
      * @param key the primary key identifying the item to update, must include all key attributes,
      *           must not be {@code null}
      * @param attributeUpdates a map of attribute names to {@link AttributeValueUpdate} objects specifying
      *                        the update actions, must not be {@code null}
      * @return a {@link ContinuableFuture} containing the {@link UpdateItemResult} with operation metadata
-     * @throws RuntimeException if the request is rejected by the underlying DynamoDB client (for example,
-     *         when tableName, key, or attributeUpdates is null or invalid), surfaced through the future
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #updateItem(String, Map, Map, String)
      */
     public ContinuableFuture<UpdateItemResult> updateItem(final String tableName, final Map<String, AttributeValue> key,
@@ -1251,6 +1320,9 @@ public final class AsyncDynamoDBExecutor {
      * Map<String, AttributeValue> attrs = asyncExecutor.updateItem("Products", key, updates, "NONE").get().getAttributes(); // returns null
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the updateItem request, DynamoDB rejects its table, key, conditions,
+     *         or service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     *
      * @param tableName the name of the DynamoDB table containing the item to update, must not be {@code null}
      * @param key the primary key identifying the item to update, must include all key attributes, must not be {@code null}
      * @param attributeUpdates a map of attribute names to {@link AttributeValueUpdate} objects specifying
@@ -1259,8 +1331,8 @@ public final class AsyncDynamoDBExecutor {
      *                     may be {@code null} (treated as "NONE")
      * @return a {@link ContinuableFuture} containing the {@link UpdateItemResult} with operation metadata
      *         and optionally the item's attributes based on the returnValues parameter
-     * @throws RuntimeException if the request is rejected by the underlying DynamoDB client (for example,
-     *         when tableName, key, or attributeUpdates is null or invalid), surfaced through the future
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #updateItem(String, Map, Map)
      * @see #updateItem(UpdateItemRequest)
      */
@@ -1323,10 +1395,14 @@ public final class AsyncDynamoDBExecutor {
      * UpdateItemResult result = future.get(); // returns a non-null UpdateItemResult
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the updateItem request, DynamoDB rejects its table, key, conditions,
+     *         or service limits, or a returned item cannot be converted to the requested Java representation. A null {@code updateItemRequest}
+     *         is also rejected inside the submitted task and reported through the future.</p>
+     *
      * @param updateItemRequest the complete UpdateItemRequest with all parameters configured, must not be {@code null}
      * @return a ContinuableFuture containing the UpdateItemResult with operation results
-     * @throws NullPointerException if {@code updateItemRequest} is null (rejected by the AWS SDK v1 client),
-     *         surfaced through the future
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see UpdateItemRequest
      * @see UpdateItemResult
      */
@@ -1365,12 +1441,15 @@ public final class AsyncDynamoDBExecutor {
      * DeleteItemResult none = asyncExecutor.deleteItem("Users", absent).get(); // returns a non-null DeleteItemResult; getAttributes() is null
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the deleteItem request, DynamoDB rejects its table, key, conditions,
+     *         or service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     *
      * @param tableName the name of the DynamoDB table to delete the item from, must not be {@code null}
      * @param key the primary key identifying the item to delete, must include all key attributes,
      *           must not be {@code null}
      * @return a {@link ContinuableFuture} containing the {@link DeleteItemResult} with operation metadata
-     * @throws RuntimeException if the request is rejected by the underlying DynamoDB client (for example,
-     *         when tableName or key is null or invalid), surfaced through the future
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #deleteItem(String, Map, String)
      */
     public ContinuableFuture<DeleteItemResult> deleteItem(final String tableName, final Map<String, AttributeValue> key) {
@@ -1422,13 +1501,16 @@ public final class AsyncDynamoDBExecutor {
      * Map<String, AttributeValue> old = asyncExecutor.deleteItem("Orders", miss, "ALL_OLD").get().getAttributes(); // returns null
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the deleteItem request, DynamoDB rejects its table, key, conditions,
+     *         or service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     *
      * @param tableName the name of the DynamoDB table to delete the item from, must not be {@code null}
      * @param key the primary key identifying the item to delete, must include all key attributes, must not be {@code null}
      * @param returnValues specifies what values to return: "NONE" (default) or "ALL_OLD" to retrieve the deleted item
      * @return a {@link ContinuableFuture} containing the {@link DeleteItemResult} with operation metadata
      *         and optionally the deleted item's attributes if returnValues is "ALL_OLD"
-     * @throws RuntimeException if the request is rejected by the underlying DynamoDB client (for example,
-     *         when tableName or key is null or invalid), surfaced through the future
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #deleteItem(String, Map)
      * @see #deleteItem(DeleteItemRequest)
      */
@@ -1486,10 +1568,14 @@ public final class AsyncDynamoDBExecutor {
      * DeleteItemResult result = future.get(); // returns a non-null DeleteItemResult
      * }</pre>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the deleteItem request, DynamoDB rejects its table, key, conditions,
+     *         or service limits, or a returned item cannot be converted to the requested Java representation. A null {@code deleteItemRequest}
+     *         is also rejected inside the submitted task and reported through the future.</p>
+     *
      * @param deleteItemRequest the complete DeleteItemRequest with all parameters configured, must not be {@code null}
      * @return a ContinuableFuture containing the DeleteItemResult with operation results
-     * @throws NullPointerException if {@code deleteItemRequest} is null (rejected by the AWS SDK v1 client),
-     *         surfaced through the future
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see DeleteItemRequest
      * @see DeleteItemResult
      */
@@ -1534,11 +1620,16 @@ public final class AsyncDynamoDBExecutor {
      * has not set {@code exclusiveStartKey} on the request; if it was set, exactly one page is
      * returned. A {@code Limit} on the request acts as a page size only, not a total-result cap.</p>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the list request, DynamoDB rejects its table, key, conditions, or
+     *         service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     *
      * @param queryRequest the {@link QueryRequest} specifying table name, key conditions,
      *                    filter expressions, and other query parameters, must not be {@code null}
      * @return a {@link ContinuableFuture} containing the items materialized according to the
      *         pagination behavior above, represented as Maps of attribute names to values
-     * @throws IllegalArgumentException if queryRequest is {@code null}
+     * @throws IllegalArgumentException if {@code queryRequest} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #stream(QueryRequest)
      */
     public ContinuableFuture<List<Map<String, Object>>> list(final QueryRequest queryRequest) {
@@ -1606,13 +1697,17 @@ public final class AsyncDynamoDBExecutor {
      * has not set {@code exclusiveStartKey} on the request; if it was set, exactly one page is
      * returned. A {@code Limit} on the request acts as a page size only, not a total-result cap.</p>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the list request, DynamoDB rejects its table, key, conditions, or
+     *         service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     *
      * @param <T> the type to convert each item to
      * @param queryRequest the QueryRequest with all parameters configured, must not be {@code null}
      * @param targetClass the class to convert each item to, must not be {@code null}
      * @return a ContinuableFuture containing the matching items materialized according to the
      *         pagination behavior above and converted to type T
-     * @throws IllegalArgumentException if queryRequest or targetClass is {@code null}, or if targetClass is
-     *         unsupported (surfaced through the future)
+     * @throws IllegalArgumentException if {@code queryRequest} is null, or if {@code targetClass} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #list(QueryRequest)
      * @see #stream(QueryRequest, Class)
      */
@@ -1661,11 +1756,16 @@ public final class AsyncDynamoDBExecutor {
      * has not set {@code exclusiveStartKey} on the request; if it was set, exactly one page is
      * returned. A {@code Limit} on the request acts as a page size only, not a total-result cap.</p>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the query request, DynamoDB rejects its table, key, conditions, or
+     *         service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     *
      * @param queryRequest the {@link QueryRequest} specifying table name, key conditions,
      *                    filter expressions, and other query parameters, must not be {@code null}
      * @return a {@link ContinuableFuture} containing a {@link Dataset} with the query results
      *         materialized according to the pagination behavior above
-     * @throws IllegalArgumentException if queryRequest is {@code null}
+     * @throws IllegalArgumentException if {@code queryRequest} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #list(QueryRequest)
      */
     public ContinuableFuture<Dataset> query(final QueryRequest queryRequest) {
@@ -1734,13 +1834,18 @@ public final class AsyncDynamoDBExecutor {
      * has not set {@code exclusiveStartKey} on the request; if it was set, exactly one page is
      * returned. A {@code Limit} on the request acts as a page size only, not a total-result cap.</p>
      *
+     * <p>The returned future completes exceptionally if the SDK cannot send the query request, DynamoDB rejects its table, key, conditions, or
+     *         service limits, or a returned item cannot be converted to the requested Java representation.</p>
+     *
      * @param queryRequest the QueryRequest specifying the query parameters including key conditions,
      *                    filter expressions, and projection, must not be {@code null}
      * @param targetClass the class to associate with the Dataset for type operations; if {@code null}
      *                    or a {@link Map} type, results are extracted as raw attribute maps
      * @return a {@link ContinuableFuture} containing a {@link Dataset} with the query results
      *         and associated type information for type-safe operations
-     * @throws IllegalArgumentException if queryRequest is {@code null}
+     * @throws IllegalArgumentException if {@code queryRequest} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #query(QueryRequest)
      * @see #list(QueryRequest, Class)
      */
@@ -1785,11 +1890,16 @@ public final class AsyncDynamoDBExecutor {
      * long none = asyncExecutor.stream(noMatchRequest).get().count(); // returns 0
      * }</pre>
      *
+     * <p>The future completes exceptionally if the delegated stream construction fails. DynamoDB request validation, service or connection
+     *         failures, and item conversion failures are raised when the returned stream is consumed.</p>
+     *
      * @param queryRequest the {@link QueryRequest} specifying table name, key conditions,
      *                    filter expressions, and other query parameters, must not be {@code null}
      * @return a {@link ContinuableFuture} containing a {@link Stream} of items matching the query,
      *         providing lazy evaluation and automatic pagination
-     * @throws IllegalArgumentException if queryRequest is {@code null}
+     * @throws IllegalArgumentException if {@code queryRequest} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #list(QueryRequest)
      */
     public ContinuableFuture<Stream<Map<String, Object>>> stream(final QueryRequest queryRequest) {
@@ -1851,14 +1961,18 @@ public final class AsyncDynamoDBExecutor {
      * long none = asyncExecutor.stream(noMatchRequest, Transaction.class).get().count(); // returns 0
      * }</pre>
      *
+     * <p>The future completes exceptionally if the delegated stream construction fails. DynamoDB request validation, service or connection
+     *         failures, and item conversion failures are raised when the returned stream is consumed.</p>
+     *
      * @param <T> the type to convert each query result item to
      * @param queryRequest the QueryRequest specifying the query parameters including key conditions,
      *                    filter expressions, and projection, must not be {@code null}
      * @param targetClass the class to convert each result item to, must have a default constructor, must not be {@code null}
      * @return a {@link ContinuableFuture} containing a {@link Stream} of items matching the query,
      *         each automatically converted to type {@code T} with lazy evaluation and automatic pagination
-     * @throws IllegalArgumentException if queryRequest or targetClass is {@code null}, or if targetClass is
-     *         unsupported (surfaced through the future)
+     * @throws IllegalArgumentException if {@code queryRequest} is null, or if {@code targetClass} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #stream(QueryRequest)
      * @see #list(QueryRequest, Class)
      */
@@ -1895,12 +2009,17 @@ public final class AsyncDynamoDBExecutor {
      * long all = asyncExecutor.scan("Users", (List<String>) null).get().count(); // returns the full row count
      * }</pre>
      *
+     * <p>The future completes exceptionally if the delegated stream construction fails. DynamoDB request validation, service or connection
+     *         failures, and item conversion failures are raised when the returned stream is consumed.</p>
+     *
      * @param tableName the name of the DynamoDB table to scan, must not be {@code null}
      * @param attributesToGet list of attribute names to retrieve, or {@code null} to retrieve all attributes.
      *                       Projecting specific attributes reduces data transfer costs
      * @return a {@link ContinuableFuture} containing a {@link Stream} of all items in the table,
      *         with automatic pagination and lazy evaluation
-     * @throws IllegalArgumentException if tableName is {@code null}
+     * @throws IllegalArgumentException if {@code tableName} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #scan(String, Map)
      */
     public ContinuableFuture<Stream<Map<String, Object>>> scan(final String tableName, final List<String> attributesToGet) {
@@ -1940,11 +2059,16 @@ public final class AsyncDynamoDBExecutor {
      * long none = asyncExecutor.scan("Users", noMatchFilter).get().count(); // returns 0
      * }</pre>
      *
+     * <p>The future completes exceptionally if the delegated stream construction fails. DynamoDB request validation, service or connection
+     *         failures, and item conversion failures are raised when the returned stream is consumed.</p>
+     *
      * @param tableName the name of the DynamoDB table to scan, must not be {@code null}
      * @param scanFilter map of attribute names to {@link Condition} objects for filtering results;
      *                  may be {@code null} to apply no filter. Multiple conditions are combined with AND logic
      * @return a {@link ContinuableFuture} containing a {@link Stream} of items matching all filter conditions
-     * @throws IllegalArgumentException if tableName is {@code null}
+     * @throws IllegalArgumentException if {@code tableName} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #scan(String, List, Map)
      */
     public ContinuableFuture<Stream<Map<String, Object>>> scan(final String tableName, final Map<String, Condition> scanFilter) {
@@ -2002,6 +2126,9 @@ public final class AsyncDynamoDBExecutor {
      * long none = asyncExecutor.scan("Products", attributes, noMatchFilter).get().count(); // returns 0
      * }</pre>
      *
+     * <p>The future completes exceptionally if the delegated stream construction fails. DynamoDB request validation, service or connection
+     *         failures, and item conversion failures are raised when the returned stream is consumed.</p>
+     *
      * @param tableName the name of the DynamoDB table to scan, must not be {@code null}
      * @param attributesToGet list of attribute names to retrieve, or {@code null} to retrieve all attributes.
      *                       Projecting reduces network transfer but not read cost
@@ -2009,7 +2136,9 @@ public final class AsyncDynamoDBExecutor {
      *                  may be {@code null} to apply no filter. Multiple conditions are combined with AND logic.
      * @return a {@link ContinuableFuture} containing a {@link Stream} of items matching all filter conditions
      *         with only specified attributes, providing lazy evaluation and automatic pagination
-     * @throws IllegalArgumentException if tableName is {@code null}
+     * @throws IllegalArgumentException if {@code tableName} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see #scan(String, List)
      * @see #scan(String, Map)
      * @see #scan(ScanRequest)
@@ -2078,10 +2207,15 @@ public final class AsyncDynamoDBExecutor {
      *     .thenRunAsync(stream -> processSegment(stream)); // returns ContinuableFuture<Stream<Map<String, Object>>> for segment 0
      * }</pre>
      *
+     * <p>The future completes exceptionally if the delegated stream construction fails. DynamoDB request validation, service or connection
+     *         failures, and item conversion failures are raised when the returned stream is consumed.</p>
+     *
      * @param scanRequest the complete ScanRequest with all parameters configured, must not be {@code null}
      * @return a {@link ContinuableFuture} containing a {@link Stream} of all items from the scan,
      *         providing lazy evaluation and automatic pagination
-     * @throws IllegalArgumentException if scanRequest is {@code null}
+     * @throws IllegalArgumentException if {@code scanRequest} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      * @see ScanRequest
      * @see #scan(ScanRequest, Class)
      * @see #scan(String, List, Map)
@@ -2117,13 +2251,18 @@ public final class AsyncDynamoDBExecutor {
      * long all = asyncExecutor.scan("Users", (List<String>) null, User.class).get().count(); // returns the full row count
      * }</pre>
      *
+     * <p>The future completes exceptionally if the delegated stream construction fails. DynamoDB request validation, service or connection
+     *         failures, and item conversion failures are raised when the returned stream is consumed.</p>
+     *
      * @param <T> the type to convert the scan results to
      * @param tableName the name of the DynamoDB table to scan, must not be {@code null}
      * @param attributesToGet list of attribute names to retrieve, or {@code null} to retrieve all attributes
      * @param targetClass the class to convert each result item to, must not be {@code null}
      * @return a {@link ContinuableFuture} containing a {@link Stream} of items from the scan,
      *         each converted to type {@code T}
-     * @throws IllegalArgumentException if tableName or targetClass is {@code null}
+     * @throws IllegalArgumentException if {@code tableName} is null, or if {@code targetClass} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final List<String> attributesToGet, final Class<T> targetClass) {
         N.checkArgNotNull(tableName, "tableName");
@@ -2159,6 +2298,9 @@ public final class AsyncDynamoDBExecutor {
      * long none = asyncExecutor.scan("Users", noMatchFilter, User.class).get().count(); // returns 0
      * }</pre>
      *
+     * <p>The future completes exceptionally if the delegated stream construction fails. DynamoDB request validation, service or connection
+     *         failures, and item conversion failures are raised when the returned stream is consumed.</p>
+     *
      * @param <T> the type to convert the scan results to
      * @param tableName the name of the DynamoDB table to scan, must not be {@code null}
      * @param scanFilter map of attribute names to {@link Condition} objects for filtering results;
@@ -2166,7 +2308,9 @@ public final class AsyncDynamoDBExecutor {
      * @param targetClass the class to convert each result item to, must not be {@code null}
      * @return a {@link ContinuableFuture} containing a {@link Stream} of items matching the filter conditions,
      *         each converted to type {@code T}
-     * @throws IllegalArgumentException if tableName or targetClass is {@code null}
+     * @throws IllegalArgumentException if {@code tableName} is null, or if {@code targetClass} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final Map<String, Condition> scanFilter, final Class<T> targetClass) {
         N.checkArgNotNull(tableName, "tableName");
@@ -2202,6 +2346,9 @@ public final class AsyncDynamoDBExecutor {
      * long none = asyncExecutor.scan("Products", attributes, noMatchFilter, Product.class).get().count(); // returns 0
      * }</pre>
      *
+     * <p>The future completes exceptionally if the delegated stream construction fails. DynamoDB request validation, service or connection
+     *         failures, and item conversion failures are raised when the returned stream is consumed.</p>
+     *
      * @param <T> the type to convert the scan results to
      * @param tableName the name of the DynamoDB table to scan, must not be {@code null}
      * @param attributesToGet list of attribute names to retrieve, or {@code null} to retrieve all attributes
@@ -2210,7 +2357,9 @@ public final class AsyncDynamoDBExecutor {
      * @param targetClass the class to convert each result item to, must not be {@code null}
      * @return a {@link ContinuableFuture} containing a {@link Stream} of filtered items with specified attributes,
      *         each converted to type {@code T}
-     * @throws IllegalArgumentException if tableName or targetClass is {@code null}
+     * @throws IllegalArgumentException if {@code tableName} is null, or if {@code targetClass} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final List<String> attributesToGet, final Map<String, Condition> scanFilter,
             final Class<T> targetClass) {
@@ -2244,12 +2393,17 @@ public final class AsyncDynamoDBExecutor {
      * long none = asyncExecutor.scan(empty, User.class).get().count(); // returns 0
      * }</pre>
      *
+     * <p>The future completes exceptionally if the delegated stream construction fails. DynamoDB request validation, service or connection
+     *         failures, and item conversion failures are raised when the returned stream is consumed.</p>
+     *
      * @param <T> the type to convert the scan results to
      * @param scanRequest the complete ScanRequest with all parameters configured, must not be {@code null}
      * @param targetClass the class to convert each result item to, must not be {@code null}
      * @return a {@link ContinuableFuture} containing a {@link Stream} of items from the scan,
      *         each converted to type {@code T}
-     * @throws IllegalArgumentException if scanRequest or targetClass is {@code null}, or targetClass is unsupported
+     * @throws IllegalArgumentException if {@code scanRequest} is null, or if {@code targetClass} is null
+     * @throws IllegalStateException if the backing AsyncExecutor has been shut down before task submission
+     * @throws RejectedExecutionException if the backing executor refuses the submitted task because its queue is full or it has shut down
      */
     public <T> ContinuableFuture<Stream<T>> scan(final ScanRequest scanRequest, final Class<T> targetClass) {
         N.checkArgNotNull(scanRequest, "scanRequest");

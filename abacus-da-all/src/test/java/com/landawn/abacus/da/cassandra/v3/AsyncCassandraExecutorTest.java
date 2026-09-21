@@ -200,7 +200,9 @@ public class AsyncCassandraExecutorTest extends TestBase {
     @Test
     public void testNullFunctionalInterfaceArguments() {
         assertThrows(IllegalArgumentException.class, () -> async.stream("SELECT * FROM t", (BiFunction<ColumnDefinitions, Row, Object>) null));
-        assertThrows(IllegalArgumentException.class, () -> async.stream((Statement) null, (BiFunction<ColumnDefinitions, Row, Object>) null));
+        assertThrows(NullPointerException.class, () -> async.stream((Statement) null, (BiFunction<ColumnDefinitions, Row, Object>) null));
+
+        assertThrows(IllegalArgumentException.class, () -> async.stream(mockStatement, (BiFunction<ColumnDefinitions, Row, Object>) null));
 
         final Session session = mock(Session.class);
         final Cluster cluster = mock(Cluster.class);
@@ -213,9 +215,10 @@ public class AsyncCassandraExecutorTest extends TestBase {
         when(protocolOptions.getProtocolVersion()).thenReturn(ProtocolVersion.V4);
 
         final CassandraExecutor executor = new CassandraExecutor(session);
-        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toMap((Row) null, null));
+        assertThrows(NullPointerException.class, () -> CassandraExecutor.toMap((Row) null, null));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toMap(mock(Row.class), null));
         assertThrows(IllegalArgumentException.class, () -> executor.stream("SELECT * FROM t", (BiFunction<ColumnDefinitions, Row, Object>) null));
-        assertThrows(IllegalArgumentException.class, () -> executor.stream((Statement) null, (BiFunction<ColumnDefinitions, Row, Object>) null));
+        assertThrows(NullPointerException.class, () -> executor.stream((Statement) null, (BiFunction<ColumnDefinitions, Row, Object>) null));
     }
 
     /**

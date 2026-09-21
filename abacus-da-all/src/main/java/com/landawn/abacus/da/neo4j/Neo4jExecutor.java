@@ -300,6 +300,7 @@ public final class Neo4jExecutor {
      *
      * @param action the callback invoked with the pooled session; must not be {@code null}
      * @throws IllegalArgumentException if {@code action} is {@code null}
+     * @throws RuntimeException if {@code action} throws while using the borrowed session
      * @see #call(Function)
      */
     @Beta
@@ -341,6 +342,7 @@ public final class Neo4jExecutor {
      * @param action the function invoked with the pooled session; must not be {@code null}
      * @return the value produced by {@code action}
      * @throws IllegalArgumentException if {@code action} is {@code null}
+     * @throws RuntimeException if {@code action} throws while using the borrowed session
      * @see #run(Consumer)
      */
     @Beta
@@ -376,7 +378,8 @@ public final class Neo4jExecutor {
      * @param id the configured primary-index value, or a native graph ID for an entity class
      *           without a primary index
      * @return the loaded entity, or {@code null} if no node with that ID exists
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #load(Class, Serializable, int)
      * @see #loadAll(Class, Collection)
      */
@@ -413,7 +416,8 @@ public final class Neo4jExecutor {
      * @param depth the depth of relationships to traverse: {@code 0} for the node only, a positive
      *              integer for that many hops, or {@code -1} for unlimited
      * @return the loaded entity, or {@code null} if no node with that ID exists
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #load(Class, Serializable)
      * @see #loadAll(Class, Collection, int)
      */
@@ -454,7 +458,8 @@ public final class Neo4jExecutor {
      * @param targetClass the class representing the node type
      * @param ids primary-index values, or native graph IDs for a class without a primary index
      * @return collection of loaded node entities, or an empty collection if no nodes are found
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Collection, int)
      * @see #load(Class, Serializable)
      */
@@ -493,7 +498,8 @@ public final class Neo4jExecutor {
      * @param ids primary-index values, or native graph IDs for a class without a primary index
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of loaded node entities with relationships, may be empty if no nodes found
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Collection)
      * @see #load(Class, Serializable, int)
      */
@@ -534,7 +540,8 @@ public final class Neo4jExecutor {
      * @param ids primary-index values, or native graph IDs for a class without a primary index
      * @param sortOrder the sort order specification for results; must not be {@code null}
      * @return collection of loaded node entities sorted as specified, may be empty if no nodes found
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Collection, SortOrder, int)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
@@ -574,7 +581,8 @@ public final class Neo4jExecutor {
      * @param sortOrder the sort order specification for results; must not be {@code null}
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of loaded node entities with relationships, sorted as specified
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Collection, SortOrder)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
@@ -614,7 +622,8 @@ public final class Neo4jExecutor {
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @return collection of loaded node entities for the specified page, may be empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Collection, Pagination, int)
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
@@ -655,7 +664,8 @@ public final class Neo4jExecutor {
      *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of loaded node entities with relationships for the specified page
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Collection, Pagination)
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
@@ -697,7 +707,8 @@ public final class Neo4jExecutor {
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @return collection of loaded, sorted node entities for the specified page
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Collection, SortOrder, Pagination, int)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination
@@ -744,7 +755,8 @@ public final class Neo4jExecutor {
      *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of loaded, sorted node entities with relationships for the specified page
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Collection, SortOrder, Pagination)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination
@@ -783,7 +795,8 @@ public final class Neo4jExecutor {
      * @param objects collection of node entities to reload; may be {@code null} or empty, in which
      *                case it is returned unchanged without a database round-trip
      * @return collection of reloaded node entities with current database state
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Collection, int)
      */
     public <T> Collection<T> loadAll(final Collection<T> objects) {
@@ -821,7 +834,8 @@ public final class Neo4jExecutor {
      *                case it is returned unchanged without a database round-trip
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of reloaded node entities with relationships and current database state
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Collection)
      */
     public <T> Collection<T> loadAll(final Collection<T> objects, final int depth) {
@@ -862,7 +876,8 @@ public final class Neo4jExecutor {
      *                case it is returned unchanged without a database round-trip
      * @param sortOrder the sort order specification for results; must not be {@code null}
      * @return collection of reloaded, sorted node entities with current database state
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Collection, SortOrder, int)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
@@ -903,7 +918,8 @@ public final class Neo4jExecutor {
      * @param sortOrder the sort order specification for results; must not be {@code null}
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of reloaded, sorted node entities with relationships
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Collection, SortOrder)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
@@ -945,7 +961,8 @@ public final class Neo4jExecutor {
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @return paginated collection of reloaded node entities with current database state
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Collection, Pagination, int)
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
@@ -987,7 +1004,8 @@ public final class Neo4jExecutor {
      *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of reloaded node entities with relationships
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Collection, Pagination)
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
@@ -1031,7 +1049,8 @@ public final class Neo4jExecutor {
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @return paginated collection of reloaded, sorted node entities
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Collection, SortOrder, Pagination, int)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination
@@ -1077,7 +1096,8 @@ public final class Neo4jExecutor {
      *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of reloaded, sorted node entities with relationships
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Collection, SortOrder, Pagination)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination
@@ -1118,7 +1138,8 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @return collection of all nodes of the specified type, may be empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, int)
      * @see #loadAll(Class, Pagination)
      */
@@ -1153,7 +1174,8 @@ public final class Neo4jExecutor {
      * @param targetClass the class representing the node type to load
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of all nodes of the specified type with relationships, may be empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class)
      * @see #loadAll(Class, Pagination, int)
      */
@@ -1190,7 +1212,8 @@ public final class Neo4jExecutor {
      * @param targetClass the class representing the node type to load
      * @param sortOrder the sort order specification for results
      * @return collection of all sorted nodes of the specified type, may be empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, SortOrder, int)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
@@ -1226,7 +1249,8 @@ public final class Neo4jExecutor {
      * @param sortOrder the sort order specification for results
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of all sorted nodes with relationships, may be empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, SortOrder)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      */
@@ -1264,7 +1288,8 @@ public final class Neo4jExecutor {
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @return paginated collection of nodes of the specified type, may be empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Pagination, int)
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
@@ -1301,7 +1326,8 @@ public final class Neo4jExecutor {
      *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of nodes with relationships, may be empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Pagination)
      * @see org.neo4j.ogm.cypher.query.Pagination
      */
@@ -1340,7 +1366,8 @@ public final class Neo4jExecutor {
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @return paginated collection of sorted nodes of the specified type, may be empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, SortOrder, Pagination, int)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination
@@ -1381,7 +1408,8 @@ public final class Neo4jExecutor {
      *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of sorted nodes with relationships, may be empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, SortOrder, Pagination)
      * @see org.neo4j.ogm.cypher.query.SortOrder
      * @see org.neo4j.ogm.cypher.query.Pagination
@@ -1420,7 +1448,8 @@ public final class Neo4jExecutor {
      * @param targetClass the class representing the node type to load
      * @param filter the filter criteria to apply when loading nodes
      * @return collection of nodes matching the filter criteria, may be empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Filter, int)
      * @see org.neo4j.ogm.cypher.Filter
      */
@@ -1457,7 +1486,8 @@ public final class Neo4jExecutor {
      * @param filter the filter criteria to apply when loading nodes
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of filtered nodes with relationships, may be empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Filter)
      * @see org.neo4j.ogm.cypher.Filter
      */
@@ -1497,7 +1527,8 @@ public final class Neo4jExecutor {
      * @param filter the filter criteria to apply when loading nodes
      * @param sortOrder the sort order specification for results
      * @return collection of filtered, sorted nodes, may be empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Filter, SortOrder, int)
      * @see org.neo4j.ogm.cypher.Filter
      * @see org.neo4j.ogm.cypher.query.SortOrder
@@ -1537,7 +1568,8 @@ public final class Neo4jExecutor {
      * @param sortOrder the sort order specification for results
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of filtered, sorted nodes with relationships, may be empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Filter, SortOrder)
      * @see org.neo4j.ogm.cypher.Filter
      * @see org.neo4j.ogm.cypher.query.SortOrder
@@ -1577,7 +1609,8 @@ public final class Neo4jExecutor {
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @return paginated collection of filtered nodes, may be empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Filter, Pagination, int)
      * @see org.neo4j.ogm.cypher.Filter
      * @see org.neo4j.ogm.cypher.query.Pagination
@@ -1617,7 +1650,8 @@ public final class Neo4jExecutor {
      *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of filtered nodes with relationships, may be empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Filter, Pagination)
      * @see org.neo4j.ogm.cypher.Filter
      * @see org.neo4j.ogm.cypher.query.Pagination
@@ -1660,7 +1694,8 @@ public final class Neo4jExecutor {
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @return paginated collection of filtered, sorted nodes, may be empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Filter, SortOrder, Pagination, int)
      * @see org.neo4j.ogm.cypher.Filter
      * @see org.neo4j.ogm.cypher.query.SortOrder
@@ -1704,7 +1739,8 @@ public final class Neo4jExecutor {
      *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of filtered, sorted nodes with relationships, may be empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Filter, SortOrder, Pagination)
      * @see org.neo4j.ogm.cypher.Filter
      * @see org.neo4j.ogm.cypher.query.SortOrder
@@ -1748,7 +1784,8 @@ public final class Neo4jExecutor {
      * @param filters the multiple filter criteria to apply when loading nodes; may be {@code null}
      *                or empty, in which case every node of {@code targetClass} is loaded
      * @return collection of entities matching the combined filter expression, possibly empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Filters, int)
      * @see #loadAll(Class, Filter)
      * @see org.neo4j.ogm.cypher.Filters
@@ -1789,7 +1826,8 @@ public final class Neo4jExecutor {
      *                or empty, in which case every node of {@code targetClass} is loaded
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of filtered nodes with relationships, may be empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Filters)
      * @see org.neo4j.ogm.cypher.Filters
      */
@@ -1832,7 +1870,8 @@ public final class Neo4jExecutor {
      *                or empty, in which case every node of {@code targetClass} is loaded
      * @param sortOrder the sort order specification for results
      * @return collection of filtered, sorted nodes, may be empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Filters, SortOrder, int)
      * @see org.neo4j.ogm.cypher.Filters
      * @see org.neo4j.ogm.cypher.query.SortOrder
@@ -1875,7 +1914,8 @@ public final class Neo4jExecutor {
      * @param sortOrder the sort order specification for results
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of filtered, sorted nodes with relationships, may be empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Filters, SortOrder)
      * @see org.neo4j.ogm.cypher.Filters
      * @see org.neo4j.ogm.cypher.query.SortOrder
@@ -1917,7 +1957,8 @@ public final class Neo4jExecutor {
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @return paginated collection of filtered nodes, may be empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Filters, Pagination, int)
      * @see org.neo4j.ogm.cypher.Filters
      * @see org.neo4j.ogm.cypher.query.Pagination
@@ -1959,7 +2000,8 @@ public final class Neo4jExecutor {
      *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of filtered nodes with relationships, may be empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Filters, Pagination)
      * @see org.neo4j.ogm.cypher.Filters
      * @see org.neo4j.ogm.cypher.query.Pagination
@@ -2004,7 +2046,8 @@ public final class Neo4jExecutor {
      * @param pagination pagination settings (page number and size, or an explicit offset); may be
      *                   {@code null} for no pagination
      * @return paginated collection of filtered, sorted nodes, may be empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Filters, SortOrder, Pagination, int)
      * @see org.neo4j.ogm.cypher.Filters
      * @see org.neo4j.ogm.cypher.query.SortOrder
@@ -2051,7 +2094,8 @@ public final class Neo4jExecutor {
      *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of filtered, sorted nodes with relationships, may be empty
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the requested entities or identifiers, the database cannot be reached, or Neo4j rejects the
+     *         load query
      * @see #loadAll(Class, Filters, SortOrder, Pagination)
      * @see org.neo4j.ogm.cypher.Filters
      * @see org.neo4j.ogm.cypher.query.SortOrder
@@ -2093,7 +2137,7 @@ public final class Neo4jExecutor {
      *
      * @param object a mapped entity, an array of mapped entities, or an {@link Iterable} of mapped
      *               entities
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the supplied object, the database cannot be reached, or Neo4j rejects a write or constraint
      * @see #save(Object, int)
      */
     public void save(final Object object) {
@@ -2131,7 +2175,7 @@ public final class Neo4jExecutor {
      *               entities
      * @param depth the depth of related entities to traverse and persist: {@code 0} for the node
      *              only, a positive integer for that many hops, or {@code -1} for unlimited
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the supplied object, the database cannot be reached, or Neo4j rejects a write or constraint
      * @see #save(Object)
      */
     public void save(final Object object, final int depth) {
@@ -2167,7 +2211,7 @@ public final class Neo4jExecutor {
      *
      * @param object a mapped entity, an array of mapped entities, or an {@link Iterable} of mapped
      *               entities to delete
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot resolve the objects to delete, the database cannot be reached, or Neo4j rejects the delete query
      * @see #deleteAll(Class)
      */
     public void delete(final Object object) {
@@ -2203,7 +2247,7 @@ public final class Neo4jExecutor {
      * }</pre>
      *
      * @param targetClass the OGM-mapped entity class to delete
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot resolve the objects to delete, the database cannot be reached, or Neo4j rejects the delete query
      * @see #delete(Object)
      */
     public void deleteAll(final Class<?> targetClass) {
@@ -2254,9 +2298,8 @@ public final class Neo4jExecutor {
      *                   {@code null}
      * @return an {@link Optional} describing the single mapped result, or an empty {@code Optional} if
      *         the query returns no rows
-     * @throws RuntimeException if the query returns more than one row, or the underlying OGM session
-     *                          rejects the query &mdash; which is also how it reports a {@code null}
-     *                          {@code targetClass}, {@code cypher} or {@code parameters}
+     * @throws RuntimeException if the query returns more than one row, or the underlying OGM session rejects the query &mdash; which is also how
+     *         it reports a {@code null} {@code targetClass} , {@code cypher} or {@code parameters}
      * @see #stream(Class, String, Map)
      * @see #stream(String, Map)
      */
@@ -2301,8 +2344,8 @@ public final class Neo4jExecutor {
      *                   {@code null}
      * @return a {@link Stream} over the already-fetched result rows, each row a {@code Map} keyed by
      *         the {@code RETURN}-clause aliases; it does not retain the borrowed session
-     * @throws RuntimeException if the underlying OGM session rejects the query &mdash; which is also
-     *                          how it reports a {@code null} {@code cypher} or {@code parameters}
+     * @throws RuntimeException if the underlying OGM session rejects the query &mdash; which is also how it reports a {@code null}
+     *         {@code cypher} or {@code parameters}
      * @see #stream(Class, String, Map)
      * @see #stream(String, Map, boolean)
      * @see #findOnly(Class, String, Map)
@@ -2362,8 +2405,8 @@ public final class Neo4jExecutor {
      *                 routing); must be {@code false} for queries that write to the graph
      * @return a {@link Stream} over the already-fetched result rows; it does not retain the borrowed
      *         session
-     * @throws RuntimeException if the underlying OGM session rejects the query &mdash; which is also
-     *                          how it reports a {@code null} {@code cypher} or {@code parameters}
+     * @throws RuntimeException if the underlying OGM session rejects the query &mdash; which is also how it reports a {@code null}
+     *         {@code cypher} or {@code parameters}
      * @see #stream(String, Map)
      * @see #stream(Class, String, Map)
      */
@@ -2411,8 +2454,8 @@ public final class Neo4jExecutor {
      *                   {@code null}
      * @return a {@link Stream} over the already-fetched rows mapped to {@code targetClass}; it does
      *         not retain the borrowed session
-     * @throws RuntimeException if the underlying OGM session rejects the query &mdash; which is also
-     *                          how it reports a {@code null} {@code cypher} or {@code parameters}
+     * @throws RuntimeException if the underlying OGM session rejects the query &mdash; which is also how it reports a {@code null}
+     *         {@code cypher} or {@code parameters}
      * @see #findOnly(Class, String, Map)
      * @see #stream(String, Map)
      */
@@ -2464,7 +2507,7 @@ public final class Neo4jExecutor {
      *                of {@code loadAll}, a {@code null} iterable is <i>not</i> accepted here
      * @return the number of entities of {@code targetClass} that satisfy the supplied filter
      *         expression
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the target class or filters, the database cannot be reached, or Neo4j rejects the count query
      * @see #count(Class)
      * @see org.neo4j.ogm.cypher.Filter
      */
@@ -2508,7 +2551,7 @@ public final class Neo4jExecutor {
      * @param targetClass the OGM-mapped class whose entities are counted
      * @return the total number of entities mapped by {@code targetClass}, or {@code 0} if the class
      *         is not mapped
-     * @throws RuntimeException if the underlying OGM session rejects the request
+     * @throws RuntimeException if OGM cannot map the target class or filters, the database cannot be reached, or Neo4j rejects the count query
      * @see #count(Class, Iterable)
      */
     public long count(final Class<?> targetClass) {

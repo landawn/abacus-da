@@ -38,6 +38,9 @@ import com.landawn.abacus.util.u.OptionalInt;
 import com.landawn.abacus.util.u.OptionalLong;
 import com.landawn.abacus.util.u.OptionalShort;
 import com.landawn.abacus.util.stream.Stream;
+import com.mongodb.MongoBulkWriteException;
+import com.mongodb.MongoException;
+import com.mongodb.MongoWriteException;
 import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.model.Aggregates;
 import com.mongodb.client.model.BulkWriteOptions;
@@ -224,8 +227,8 @@ public final class MongoCollectionMapper<T> {
      *
      * @param objectId the string representation of the ObjectId to check
      * @return {@code true} if an entity with the specified ObjectId exists, {@code false} otherwise
-     * @throws IllegalArgumentException if objectId is null, empty, or invalid format
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #exists(ObjectId)
      */
     public boolean exists(final String objectId) {
@@ -249,8 +252,8 @@ public final class MongoCollectionMapper<T> {
      *
      * @param objectId the ObjectId to check for existence
      * @return {@code true} if an entity with the specified ObjectId exists, {@code false} otherwise
-     * @throws IllegalArgumentException if objectId is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code objectId} is null
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see ObjectId
      */
     public boolean exists(final ObjectId objectId) {
@@ -277,7 +280,7 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match entities against
      * @return {@code true} if any entities match the filter, {@code false} otherwise
      * @throws IllegalArgumentException if {@code filter} is null
-     * @throws MongoException if the database operation fails
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see com.mongodb.client.model.Filters
      */
     public boolean exists(final Bson filter) {
@@ -303,7 +306,7 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @return the total number of entities in the collection
-     * @throws MongoException if the database operation fails
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #count(Bson)
      * @see #collectionExecutor()
      */
@@ -329,7 +332,7 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to count matching entities
      * @return the number of entities matching the filter
      * @throws IllegalArgumentException if {@code filter} is null
-     * @throws MongoException if the database operation fails
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see com.mongodb.client.model.Filters
      */
     public long count(final Bson filter) {
@@ -356,7 +359,7 @@ public final class MongoCollectionMapper<T> {
      * @param options additional options for the count operation (null uses defaults)
      * @return the number of entities matching the filter within the specified constraints
      * @throws IllegalArgumentException if {@code filter} is null
-     * @throws MongoException if the database operation fails
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see CountOptions
      */
     public long count(final Bson filter, final CountOptions options) {
@@ -384,8 +387,10 @@ public final class MongoCollectionMapper<T> {
      *
      * @param objectId the string representation of the ObjectId to retrieve
      * @return an Optional containing the entity if found, or empty if not found
-     * @throws IllegalArgumentException if objectId is null, empty, or invalid format
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if a returned document has
+     *         multiple non-{@code _id} fields for a scalar result type, inconsistent scalar projection fields, or a value that cannot be
+     *         converted to the requested type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see Optional
      * @see #get(ObjectId)
      */
@@ -414,8 +419,9 @@ public final class MongoCollectionMapper<T> {
      *
      * @param objectId the ObjectId to search for
      * @return an Optional containing the entity if found, or empty if not found
-     * @throws IllegalArgumentException if objectId is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code objectId} is null, or if a returned document has multiple non-{@code _id} fields for a scalar
+     *         result type, inconsistent scalar projection fields, or a value that cannot be converted to the requested type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see ObjectId
      * @see Optional
      */
@@ -445,8 +451,10 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the string representation of the ObjectId to search for
      * @param selectPropNames collection of field names to include (null or empty includes all fields)
      * @return an Optional containing the entity with only the specified fields populated, or empty if not found
-     * @throws IllegalArgumentException if objectId is null, empty, or invalid format
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if a returned document has
+     *         multiple non-{@code _id} fields for a scalar result type, inconsistent scalar projection fields, or a value that cannot be
+     *         converted to the requested type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #get(ObjectId, Collection)
      */
     public Optional<T> get(final String objectId, final Collection<String> selectPropNames) {
@@ -475,8 +483,9 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the ObjectId to search for
      * @param selectPropNames collection of field names to include (null or empty includes all fields)
      * @return an Optional containing the entity with only the specified fields populated, or empty if not found
-     * @throws IllegalArgumentException if objectId is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code objectId} is null, or if a returned document has multiple non-{@code _id} fields for a scalar
+     *         result type, inconsistent scalar projection fields, or a value that cannot be converted to the requested type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #get(String, Collection)
      * @see com.mongodb.client.model.Projections
      */
@@ -506,8 +515,10 @@ public final class MongoCollectionMapper<T> {
      *
      * @param objectId the string representation of the ObjectId (24 hex characters)
      * @return the matching entity, or {@code null} if not found
-     * @throws IllegalArgumentException if objectId is null, empty, or invalid format
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if a returned document has
+     *         multiple non-{@code _id} fields for a scalar result type, inconsistent scalar projection fields, or a value that cannot be
+     *         converted to the requested type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #get(String)
      * @see #gett(ObjectId)
      */
@@ -536,8 +547,9 @@ public final class MongoCollectionMapper<T> {
      *
      * @param objectId the ObjectId to search for
      * @return the matching entity, or {@code null} if not found
-     * @throws IllegalArgumentException if objectId is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code objectId} is null, or if a returned document has multiple non-{@code _id} fields for a scalar
+     *         result type, inconsistent scalar projection fields, or a value that cannot be converted to the requested type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #get(ObjectId)
      * @see #gett(String)
      */
@@ -566,8 +578,10 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the string representation of the ObjectId (24 hex characters)
      * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @return the matching entity with projected fields, or {@code null} if not found
-     * @throws IllegalArgumentException if objectId is null, empty, or invalid format
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if a returned document has
+     *         multiple non-{@code _id} fields for a scalar result type, inconsistent scalar projection fields, or a value that cannot be
+     *         converted to the requested type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #get(String, Collection)
      * @see #gett(ObjectId, Collection)
      */
@@ -599,8 +613,9 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the ObjectId to search for
      * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @return the matching entity with projected fields, or {@code null} if not found
-     * @throws IllegalArgumentException if objectId is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code objectId} is null, or if a returned document has multiple non-{@code _id} fields for a scalar
+     *         result type, inconsistent scalar projection fields, or a value that cannot be converted to the requested type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #get(ObjectId, Collection)
      * @see com.mongodb.client.model.Projections
      */
@@ -630,8 +645,9 @@ public final class MongoCollectionMapper<T> {
      *
      * @param filter the query filter to match entities against
      * @return an Optional containing the first matching entity, or empty if none found
-     * @throws IllegalArgumentException if filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if a returned document has multiple non-{@code _id} fields for a scalar
+     *         result type, inconsistent scalar projection fields, or a value that cannot be converted to the requested type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see Optional
      * @see com.mongodb.client.model.Filters
      */
@@ -661,8 +677,9 @@ public final class MongoCollectionMapper<T> {
      * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match entities against
      * @return an Optional containing the first matching entity with projected fields, or empty if none found
-     * @throws IllegalArgumentException if filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if a returned document has multiple non-{@code _id} fields for a scalar
+     *         result type, inconsistent scalar projection fields, or a value that cannot be converted to the requested type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #findFirst(Bson)
      * @see #findFirst(Collection, Bson, Bson)
      */
@@ -693,8 +710,9 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match entities against
      * @param sort the sort specification to determine result ordering (null for the natural, unspecified order)
      * @return an Optional containing the first matching entity with projected fields, or empty if none found
-     * @throws IllegalArgumentException if filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if a returned document has multiple non-{@code _id} fields for a scalar
+     *         result type, inconsistent scalar projection fields, or a value that cannot be converted to the requested type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #findFirst(Collection, Bson)
      * @see #findFirst(Bson, Bson, Bson)
      * @see com.mongodb.client.model.Sorts
@@ -729,8 +747,9 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match entities against
      * @param sort the BSON sort specification for result ordering (null for the natural, unspecified order)
      * @return an Optional containing the first matching entity with projected fields, or empty if none found
-     * @throws IllegalArgumentException if filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if a returned document has multiple non-{@code _id} fields for a scalar
+     *         result type, inconsistent scalar projection fields, or a value that cannot be converted to the requested type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #findFirst(Collection, Bson, Bson)
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Sorts
@@ -758,8 +777,9 @@ public final class MongoCollectionMapper<T> {
      *
      * @param filter the query filter to match entities against
      * @return a List containing all matching entities (empty list if none found)
-     * @throws IllegalArgumentException if filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if a returned document has multiple non-{@code _id} fields for a scalar
+     *         result type, inconsistent scalar projection fields, or a value that cannot be converted to the requested type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #stream(Bson)
      * @see com.mongodb.client.model.Filters
      */
@@ -789,8 +809,10 @@ public final class MongoCollectionMapper<T> {
      * @param count the maximum number of entities to return ({@code 0} yields an empty list;
      *        {@code Integer.MAX_VALUE} is effectively "no limit")
      * @return a List containing the requested page of matching entities
-     * @throws IllegalArgumentException if filter is null, offset is negative, or count is negative
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if a
+     *         returned document has multiple non-{@code _id} fields for a scalar result type, inconsistent scalar projection fields, or a value
+     *         that cannot be converted to the requested type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #list(Bson)
      * @see #list(Collection, Bson, int, int)
      */
@@ -818,8 +840,9 @@ public final class MongoCollectionMapper<T> {
      * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match entities against
      * @return a List containing all matching entities with projected fields
-     * @throws IllegalArgumentException if filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if a returned document has multiple non-{@code _id} fields for a scalar
+     *         result type, inconsistent scalar projection fields, or a value that cannot be converted to the requested type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #list(Bson)
      * @see #list(Collection, Bson, int, int)
      */
@@ -849,8 +872,10 @@ public final class MongoCollectionMapper<T> {
      * @param offset the number of entities to skip (0-based)
      * @param count the maximum number of entities to return
      * @return a List containing the specified range of matching entities with projected fields
-     * @throws IllegalArgumentException if filter is null, or if offset/count is negative
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if a
+     *         returned document has multiple non-{@code _id} fields for a scalar result type, inconsistent scalar projection fields, or a value
+     *         that cannot be converted to the requested type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #list(Collection, Bson)
      * @see #list(Bson, int, int)
      */
@@ -880,8 +905,9 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match entities against
      * @param sort the sort specification for result ordering (null for the natural, unspecified order)
      * @return a List containing all matching entities with projected fields in sorted order
-     * @throws IllegalArgumentException if filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if a returned document has multiple non-{@code _id} fields for a scalar
+     *         result type, inconsistent scalar projection fields, or a value that cannot be converted to the requested type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #list(Collection, Bson)
      * @see #list(Collection, Bson, Bson, int, int)
      * @see com.mongodb.client.model.Sorts
@@ -914,8 +940,10 @@ public final class MongoCollectionMapper<T> {
      * @param offset the number of entities to skip (0-based)
      * @param count the maximum number of entities to return
      * @return a List containing the specified range of matching entities with projected fields in sorted order
-     * @throws IllegalArgumentException if filter is null, or if offset/count is negative
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if a
+     *         returned document has multiple non-{@code _id} fields for a scalar result type, inconsistent scalar projection fields, or a value
+     *         that cannot be converted to the requested type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #list(Collection, Bson, Bson)
      * @see #list(Collection, Bson, int, int)
      * @see com.mongodb.client.model.Sorts
@@ -949,8 +977,9 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match entities against
      * @param sort the sort specification for result ordering (null for the natural, unspecified order)
      * @return a List containing all matching entities with BSON-projected fields in sorted order
-     * @throws IllegalArgumentException if filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if a returned document has multiple non-{@code _id} fields for a scalar
+     *         result type, inconsistent scalar projection fields, or a value that cannot be converted to the requested type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #list(Collection, Bson, Bson)
      * @see com.mongodb.client.model.Projections
      * @see com.mongodb.client.model.Sorts
@@ -986,8 +1015,10 @@ public final class MongoCollectionMapper<T> {
      * @param offset the number of entities to skip (0-based)
      * @param count the maximum number of entities to return
      * @return a List containing the specified range of matching entities with BSON-projected fields in sorted order
-     * @throws IllegalArgumentException if filter is null, or if offset/count is negative
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if a
+     *         returned document has multiple non-{@code _id} fields for a scalar result type, inconsistent scalar projection fields, or a value
+     *         that cannot be converted to the requested type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #list(Bson, Bson, Bson)
      * @see #list(Collection, Bson, Bson, int, int)
      * @see com.mongodb.client.model.Projections
@@ -1024,8 +1055,9 @@ public final class MongoCollectionMapper<T> {
      * @return a <i>present</i> {@code OptionalBoolean} holding the field value (or {@code false} for a
      *         missing/{@code null} field) when at least one document is matched;
      *         {@code OptionalBoolean.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty, or filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot
+     *         be converted to the requested value type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see OptionalBoolean
      * @see #queryForSingleValue(String, Bson, Class)
      */
@@ -1062,8 +1094,9 @@ public final class MongoCollectionMapper<T> {
      * @return a <i>present</i> {@code OptionalChar} holding the field value (or the default {@code char}
      *         for a missing/{@code null} field) when at least one document is matched;
      *         {@code OptionalChar.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty, or filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot
+     *         be converted to the requested value type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see OptionalChar
      * @see #queryForSingleValue(String, Bson, Class)
      */
@@ -1099,8 +1132,9 @@ public final class MongoCollectionMapper<T> {
      * @return a <i>present</i> {@code OptionalByte} holding the field value (or {@code 0} for a
      *         missing/{@code null} field) when at least one document is matched;
      *         {@code OptionalByte.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty, or filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot
+     *         be converted to the requested value type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see OptionalByte
      * @see #queryForSingleValue(String, Bson, Class)
      */
@@ -1137,8 +1171,9 @@ public final class MongoCollectionMapper<T> {
      * @return a <i>present</i> {@code OptionalShort} holding the field value (or {@code 0} for a
      *         missing/{@code null} field) when at least one document is matched;
      *         {@code OptionalShort.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty, or filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot
+     *         be converted to the requested value type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see OptionalShort
      * @see #queryForSingleValue(String, Bson, Class)
      */
@@ -1175,8 +1210,9 @@ public final class MongoCollectionMapper<T> {
      * @return a <i>present</i> {@code OptionalInt} holding the field value (or {@code 0} for a
      *         missing/{@code null} field) when at least one document is matched;
      *         {@code OptionalInt.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty, or filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot
+     *         be converted to the requested value type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see OptionalInt
      * @see #queryForSingleValue(String, Bson, Class)
      */
@@ -1213,8 +1249,9 @@ public final class MongoCollectionMapper<T> {
      * @return a <i>present</i> {@code OptionalLong} holding the field value (or {@code 0L} for a
      *         missing/{@code null} field) when at least one document is matched;
      *         {@code OptionalLong.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty, or filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot
+     *         be converted to the requested value type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see OptionalLong
      * @see #queryForSingleValue(String, Bson, Class)
      */
@@ -1251,8 +1288,9 @@ public final class MongoCollectionMapper<T> {
      * @return a <i>present</i> {@code OptionalFloat} holding the field value (or {@code 0.0f} for a
      *         missing/{@code null} field) when at least one document is matched;
      *         {@code OptionalFloat.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty, or filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot
+     *         be converted to the requested value type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see OptionalFloat
      * @see #queryForSingleValue(String, Bson, Class)
      */
@@ -1289,8 +1327,9 @@ public final class MongoCollectionMapper<T> {
      * @return a <i>present</i> {@code OptionalDouble} holding the field value (or {@code 0.0d} for a
      *         missing/{@code null} field) when at least one document is matched;
      *         {@code OptionalDouble.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty, or filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot
+     *         be converted to the requested value type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see OptionalDouble
      * @see #queryForSingleValue(String, Bson, Class)
      */
@@ -1329,8 +1368,9 @@ public final class MongoCollectionMapper<T> {
      * @return a <i>present</i> {@code Nullable<String>} holding the field value (possibly {@code null}
      *         for a missing/{@code null} field) when at least one document is matched;
      *         {@code Nullable.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty, or filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot
+     *         be converted to the requested value type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see Nullable
      * @see #queryForSingleValue(String, Bson, Class)
      */
@@ -1365,8 +1405,9 @@ public final class MongoCollectionMapper<T> {
      * @return a <i>present</i> {@code Nullable<Date>} holding the field value (possibly {@code null}
      *         for a missing/{@code null} field) when at least one document is matched;
      *         {@code Nullable.empty()} when no document matches
-     * @throws IllegalArgumentException if propName is null or empty, or filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if the selected field value cannot
+     *         be converted to the requested value type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see Nullable
      * @see Date
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1408,8 +1449,9 @@ public final class MongoCollectionMapper<T> {
      * @return a <i>present</i> {@code Nullable<V>} holding the field value (possibly {@code null} for
      *         a missing or BSON {@code null} field) when at least one document is matched;
      *         {@code Nullable.empty()} when no document matches
-     * @throws IllegalArgumentException if {@code propName} is null or empty, {@code filter} is null, or {@code valueType} is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if {@code valueType} is null, or
+     *         if the selected field value cannot be converted to the requested value type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see Nullable
      * @see Date
      * @see #queryForSingleValue(String, Bson, Class)
@@ -1452,8 +1494,9 @@ public final class MongoCollectionMapper<T> {
      * @return a <i>present</i> {@code Nullable<V>} holding the field value (possibly {@code null} for
      *         a missing or BSON {@code null} field) when at least one document is matched;
      *         {@code Nullable.empty()} when no document matches
-     * @throws IllegalArgumentException if {@code propName} is null or empty, {@code filter} is null, or {@code valueType} is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if {@code valueType} is null, or
+     *         if the selected field value cannot be converted to the requested value type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see Nullable
      */
     public <V> Nullable<V> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType) {
@@ -1486,10 +1529,11 @@ public final class MongoCollectionMapper<T> {
      * @param valueType the class of the type to convert to
      * @return a <i>present</i> {@code Optional<V>} holding the field value when at least one document is
      *         matched; {@code Optional.empty()} when no document matches
-     * @throws IllegalArgumentException if {@code propName} is null or empty, {@code filter} is null, or {@code valueType} is null
-     * @throws NullPointerException if a document is matched but the field is absent, its value is BSON {@code null},
-     *         or the conversion to {@code valueType} yields {@code null}
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if {@code valueType} is null, or
+     *         if the selected field value cannot be converted to the requested value type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
+     * @throws NullPointerException if a document is matched but the field is absent, its value is BSON {@code null}, or the conversion to {@code
+     *         valueType} yields {@code null}
      * @see #queryForSingleValue(String, Bson, Class)
      * @see Optional
      */
@@ -1515,8 +1559,8 @@ public final class MongoCollectionMapper<T> {
      *
      * @param filter the query filter to match entities against
      * @return a Dataset containing the query results
-     * @throws IllegalArgumentException if filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if the mapped type is neither a bean class nor a Map type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see Dataset
      */
     public Dataset query(final Bson filter) {
@@ -1541,8 +1585,9 @@ public final class MongoCollectionMapper<T> {
      * @param offset the number of documents to skip (0-based)
      * @param count the maximum number of entities to return
      * @return a Dataset containing the paginated query results
-     * @throws IllegalArgumentException if filter is null, or if offset/count is negative
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if the
+     *         mapped type is neither a bean class nor a Map type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see Dataset
      */
     public Dataset query(final Bson filter, final int offset, final int count) {
@@ -1568,8 +1613,8 @@ public final class MongoCollectionMapper<T> {
      * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match entities against
      * @return a Dataset containing the query results with projected fields
-     * @throws IllegalArgumentException if filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if the mapped type is neither a bean class nor a Map type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see Dataset
      */
     public Dataset query(final Collection<String> selectPropNames, final Bson filter) {
@@ -1595,8 +1640,9 @@ public final class MongoCollectionMapper<T> {
      * @param offset the number of matching documents to skip (0-based)
      * @param count the maximum number of documents to return
      * @return a Dataset containing the paginated query results with projected fields
-     * @throws IllegalArgumentException if filter is null or offset/count are negative
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if the
+     *         mapped type is neither a bean class nor a Map type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #query(Collection, Bson)
      */
     public Dataset query(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count) {
@@ -1623,8 +1669,8 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match entities against
      * @param sort the sort specification for result ordering (null for the natural, unspecified order)
      * @return a Dataset containing the sorted query results with projected fields
-     * @throws IllegalArgumentException if filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if the mapped type is neither a bean class nor a Map type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see com.mongodb.client.model.Sorts
      */
     public Dataset query(final Collection<String> selectPropNames, final Bson filter, final Bson sort) {
@@ -1653,8 +1699,9 @@ public final class MongoCollectionMapper<T> {
      * @param offset the number of matching documents to skip (0-based)
      * @param count the maximum number of documents to return
      * @return a Dataset containing the paginated and sorted query results with projected fields
-     * @throws IllegalArgumentException if filter is null or offset/count are negative
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if the
+     *         mapped type is neither a bean class nor a Map type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #query(Collection, Bson, Bson)
      */
     public Dataset query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count) {
@@ -1682,8 +1729,8 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match entities against
      * @param sort the sort specification for result ordering (null for the natural, unspecified order)
      * @return a Dataset containing the sorted query results with BSON-projected fields
-     * @throws IllegalArgumentException if filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if the mapped type is neither a bean class nor a Map type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see com.mongodb.client.model.Projections
      */
     public Dataset query(final Bson projection, final Bson filter, final Bson sort) {
@@ -1716,8 +1763,9 @@ public final class MongoCollectionMapper<T> {
      * @param offset the number of matching documents to skip (0-based)
      * @param count the maximum number of documents to return
      * @return a Dataset containing the paginated and sorted query results with BSON-projected fields
-     * @throws IllegalArgumentException if filter is null or offset/count are negative
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if the
+     *         mapped type is neither a bean class nor a Map type
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #query(Bson, Bson, Bson)
      */
     public Dataset query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count) {
@@ -1749,10 +1797,13 @@ public final class MongoCollectionMapper<T> {
      * }
      * }</pre>
      *
+     * <p>The cursor is opened by this call. Further MongoDB, decoding, or result conversion failures can occur while consuming the returned
+     * stream.</p>
+     *
      * @param filter the query filter to match entities against
      * @return a Stream of entities matching the filter criteria
-     * @throws IllegalArgumentException if filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see Stream
      * @see com.mongodb.client.model.Filters
      * @see #list(Bson)
@@ -1783,12 +1834,15 @@ public final class MongoCollectionMapper<T> {
      * }
      * }</pre>
      *
+     * <p>The cursor is opened by this call. Further MongoDB, decoding, or result conversion failures can occur while consuming the returned
+     * stream.</p>
+     *
      * @param filter the query filter to match entities against
      * @param offset the number of entities to skip (0-based)
      * @param count the maximum number of entities to include in the stream
      * @return a Stream of entities matching the filter within the specified range
-     * @throws IllegalArgumentException if filter is null, or if offset/count is negative
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #stream(Bson)
      * @see Stream
      */
@@ -1817,11 +1871,14 @@ public final class MongoCollectionMapper<T> {
      * }
      * }</pre>
      *
+     * <p>The cursor is opened by this call. Further MongoDB, decoding, or result conversion failures can occur while consuming the returned
+     * stream.</p>
+     *
      * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match entities against
      * @return a Stream of entities with projected fields matching the filter
-     * @throws IllegalArgumentException if filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #stream(Bson)
      * @see #list(Collection, Bson)
      */
@@ -1854,13 +1911,16 @@ public final class MongoCollectionMapper<T> {
      * }
      * }</pre>
      *
+     * <p>The cursor is opened by this call. Further MongoDB, decoding, or result conversion failures can occur while consuming the returned
+     * stream.</p>
+     *
      * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match entities against
      * @param offset the number of entities to skip (0-based)
      * @param count the maximum number of entities to include in the stream
      * @return a Stream of entities with projected fields within the specified range
-     * @throws IllegalArgumentException if filter is null, or if offset/count is negative
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #stream(Collection, Bson)
      * @see #stream(Bson, int, int)
      */
@@ -1890,12 +1950,15 @@ public final class MongoCollectionMapper<T> {
      * }
      * }</pre>
      *
+     * <p>The cursor is opened by this call. Further MongoDB, decoding, or result conversion failures can occur while consuming the returned
+     * stream.</p>
+     *
      * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match entities against
      * @param sort the sort specification for result ordering (null for the natural, unspecified order)
      * @return a Stream of entities with projected fields in sorted order
-     * @throws IllegalArgumentException if filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #stream(Collection, Bson)
      * @see #stream(Collection, Bson, Bson, int, int)
      * @see com.mongodb.client.model.Sorts
@@ -1928,14 +1991,17 @@ public final class MongoCollectionMapper<T> {
      * }
      * }</pre>
      *
+     * <p>The cursor is opened by this call. Further MongoDB, decoding, or result conversion failures can occur while consuming the returned
+     * stream.</p>
+     *
      * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match entities against
      * @param sort the sort specification for result ordering (null for the natural, unspecified order)
      * @param offset the number of entities to skip (0-based)
      * @param count the maximum number of entities to include in the stream
      * @return a Stream of entities with projected fields in sorted order within the specified range
-     * @throws IllegalArgumentException if filter is null, or if offset/count is negative
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #stream(Collection, Bson, Bson)
      * @see #stream(Collection, Bson, int, int)
      */
@@ -1970,12 +2036,15 @@ public final class MongoCollectionMapper<T> {
      * }
      * }</pre>
      *
+     * <p>The cursor is opened by this call. Further MongoDB, decoding, or result conversion failures can occur while consuming the returned
+     * stream.</p>
+     *
      * @param projection the BSON projection specification for field selection and transformation (null for all fields)
      * @param filter the query filter to match entities against
      * @param sort the sort specification for result ordering (null for the natural, unspecified order)
      * @return a Stream of entities with BSON-projected fields in sorted order
-     * @throws IllegalArgumentException if filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #stream(Collection, Bson, Bson)
      * @see com.mongodb.client.model.Projections
      */
@@ -2015,14 +2084,17 @@ public final class MongoCollectionMapper<T> {
      * }
      * }</pre>
      *
+     * <p>The cursor is opened by this call. Further MongoDB, decoding, or result conversion failures can occur while consuming the returned
+     * stream.</p>
+     *
      * @param projection the BSON projection specification for field selection and transformation (null for all fields)
      * @param filter the query filter to match entities against
      * @param sort the sort specification for result ordering (null for the natural, unspecified order)
      * @param offset the number of entities to skip (0-based)
      * @param count the maximum number of entities to include in the stream
      * @return a Stream of entities with BSON-projected fields in sorted order within the specified range
-     * @throws IllegalArgumentException if filter is null, or if offset/count is negative
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #stream(Bson, Bson, Bson)
      * @see #stream(Collection, Bson, Bson, int, int)
      */
@@ -2053,9 +2125,10 @@ public final class MongoCollectionMapper<T> {
      *
      * @param obj the entity to insert
      * @return the {@link InsertOneResult} reported by the server (e.g. the generated {@code _id} via {@link InsertOneResult#getInsertedId()})
-     * @throws IllegalArgumentException if obj is null
-     * @throws MongoWriteException if the insert operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code obj} is null, or if a document value cannot be converted from a Map, bean, or array of String
+     *         name/value pairs
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #insertOne(Object, InsertOneOptions)
      * @see #insertMany(Collection)
      * @see #collectionExecutor()
@@ -2085,9 +2158,10 @@ public final class MongoCollectionMapper<T> {
      * @param obj the entity to insert
      * @param options additional options for the insert operation (null uses defaults)
      * @return the {@link InsertOneResult} reported by the server (e.g. the generated {@code _id} via {@link InsertOneResult#getInsertedId()})
-     * @throws IllegalArgumentException if obj is null
-     * @throws MongoWriteException if the insert operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code obj} is null, or if a document value cannot be converted from a Map, bean, or array of String
+     *         name/value pairs
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #insertOne(Object)
      * @see InsertOneOptions
      */
@@ -2121,9 +2195,11 @@ public final class MongoCollectionMapper<T> {
      *
      * @param objList collection of entities to insert
      * @return the {@link InsertManyResult} reported by the server (e.g. the generated {@code _id}s via {@link InsertManyResult#getInsertedIds()})
-     * @throws IllegalArgumentException if objList is null or empty
-     * @throws MongoBulkWriteException if one or more insert operations fail
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code objList} is null or empty, or if a document value cannot be converted from a Map, bean, or
+     *         array of String name/value pairs
+     * @throws NullPointerException if {@code objList} contains a null document
+     * @throws MongoBulkWriteException if the server reports a write or write-concern error for one or more requests in the batch
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #insertMany(Collection, InsertManyOptions)
      * @see #insertOne(Object)
      */
@@ -2151,9 +2227,11 @@ public final class MongoCollectionMapper<T> {
      * @param objList collection of entities to insert
      * @param options additional options for the insert operation (null uses defaults)
      * @return the {@link InsertManyResult} reported by the server (e.g. the generated {@code _id}s via {@link InsertManyResult#getInsertedIds()})
-     * @throws IllegalArgumentException if objList is null or empty
-     * @throws MongoBulkWriteException if one or more insert operations fail
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code objList} is null or empty, or if a document value cannot be converted from a Map, bean, or
+     *         array of String name/value pairs
+     * @throws NullPointerException if {@code objList} contains a null document
+     * @throws MongoBulkWriteException if the server reports a write or write-concern error for one or more requests in the batch
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #insertMany(Collection)
      * @see InsertManyOptions
      */
@@ -2194,11 +2272,11 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the 24-hex-character ObjectId string identifying the entity to update
      * @param update the entity, or a driver-built {@link Bson} update expression, containing the update data
      * @return UpdateResult containing information about the update operation
-     * @throws IllegalArgumentException if {@code objectId} is null, empty, or not a valid hex ObjectId,
-     *         {@code update} is null, or the converted update payload is empty (no non-{@code null}
-     *         updatable properties besides the immutable {@code _id})
-     * @throws MongoWriteException if the update operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if {@code update} is null,
+     *         or if an update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
+     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see UpdateResult
      * @see #updateOne(ObjectId, Object)
      */
@@ -2226,9 +2304,11 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the ObjectId identifying the entity to update
      * @param update the entity, or a driver-built {@link Bson} update expression, containing the update data
      * @return UpdateResult containing information about the update operation
-     * @throws IllegalArgumentException if objectId or update is null
-     * @throws MongoWriteException if the update operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code objectId} is null, or if {@code update} is null, or if an update document has a null field
+     *         name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot
+     *         be converted from a Map, bean, or array of String name/value pairs
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #updateOne(String, Object)
      * @see UpdateResult
      */
@@ -2257,9 +2337,11 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match the entity to update
      * @param update the entity, or a driver-built {@link Bson} update expression, containing the update data
      * @return UpdateResult containing information about the update operation
-     * @throws IllegalArgumentException if filter or update is null
-     * @throws MongoWriteException if the update operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #updateMany(Bson, Object)
      * @see UpdateResult
      */
@@ -2292,9 +2374,11 @@ public final class MongoCollectionMapper<T> {
      * @param update the entity, or a driver-built {@link Bson} update expression, containing the update data
      * @param options additional options for the update operation (null uses defaults)
      * @return UpdateResult containing information about the update operation
-     * @throws IllegalArgumentException if filter or update is null
-     * @throws MongoWriteException if the update operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #updateOne(Bson, Object)
      * @see UpdateOptions
      */
@@ -2330,9 +2414,11 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match the entity to update
      * @param objList collection of entities forming the update pipeline
      * @return UpdateResult containing information about the update operation
-     * @throws IllegalArgumentException if filter or objList is null or empty
-     * @throws MongoWriteException if the update operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if an update document has a null
+     *         field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value
+     *         cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #updateOne(Bson, Object)
      */
     public UpdateResult updateOne(final Bson filter, final Collection<? extends T> objList) {
@@ -2361,9 +2447,11 @@ public final class MongoCollectionMapper<T> {
      * @param objList collection of entities forming the update pipeline
      * @param options additional options for the update operation (null uses defaults)
      * @return UpdateResult containing information about the update operation
-     * @throws IllegalArgumentException if filter or objList is null or empty
-     * @throws MongoWriteException if the update operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if an update document has a null
+     *         field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value
+     *         cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #updateOne(Bson, Collection)
      * @see UpdateOptions
      */
@@ -2395,9 +2483,11 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match entities to update
      * @param update the entity, or a driver-built {@link Bson} update expression, containing the update data
      * @return UpdateResult containing information about the update operation
-     * @throws IllegalArgumentException if filter or update is null
-     * @throws MongoWriteException if the update operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #updateOne(Bson, Object)
      * @see UpdateResult
      * @see #collectionExecutor()
@@ -2427,9 +2517,11 @@ public final class MongoCollectionMapper<T> {
      * @param update the entity, or a driver-built {@link Bson} update expression, containing the update data
      * @param options additional options for the update operation (null uses defaults)
      * @return UpdateResult containing information about the update operation
-     * @throws IllegalArgumentException if filter or update is null
-     * @throws MongoWriteException if the update operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #updateMany(Bson, Object)
      * @see UpdateOptions
      */
@@ -2464,9 +2556,11 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match entities to update
      * @param objList collection of entities forming the update pipeline
      * @return UpdateResult containing information about the update operation
-     * @throws IllegalArgumentException if filter or objList is null or empty
-     * @throws MongoWriteException if the update operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if an update document has a null
+     *         field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value
+     *         cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #updateMany(Bson, Object)
      */
     public UpdateResult updateMany(final Bson filter, final Collection<? extends T> objList) {
@@ -2496,9 +2590,11 @@ public final class MongoCollectionMapper<T> {
      * @param objList collection of entities forming the update pipeline
      * @param options additional options for the update operation (null uses defaults)
      * @return UpdateResult containing information about the update operation
-     * @throws IllegalArgumentException if filter or objList is null or empty
-     * @throws MongoWriteException if the update operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if an update document has a null
+     *         field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value
+     *         cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #updateMany(Bson, Collection)
      * @see UpdateOptions
      */
@@ -2529,9 +2625,10 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the string representation of the ObjectId identifying the entity to replace
      * @param replacement the new entity to replace the existing one
      * @return UpdateResult containing information about the replace operation
-     * @throws IllegalArgumentException if objectId is null or empty, if objectId is not a valid hex ObjectId, or if replacement is null
-     * @throws MongoWriteException if the replace operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if {@code replacement} is
+     *         null, or if a document value cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #replaceOne(ObjectId, Object)
      * @see UpdateResult
      */
@@ -2557,9 +2654,10 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the ObjectId identifying the entity to replace
      * @param replacement the new entity to replace the existing one
      * @return UpdateResult containing information about the replace operation
-     * @throws IllegalArgumentException if objectId or replacement is null
-     * @throws MongoWriteException if the replace operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code objectId} is null, or if {@code replacement} is null, or if a document value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #replaceOne(String, Object)
      * @see UpdateResult
      */
@@ -2585,9 +2683,10 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match the entity to replace
      * @param replacement the new entity to replace the existing one
      * @return UpdateResult containing information about the replace operation
-     * @throws IllegalArgumentException if filter or replacement is null
-     * @throws MongoWriteException if the replace operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #replaceOne(Bson, Object, ReplaceOptions)
      * @see UpdateResult
      */
@@ -2618,9 +2717,10 @@ public final class MongoCollectionMapper<T> {
      * @param replacement the new entity to replace the existing one
      * @param options additional options for the replace operation (null uses defaults)
      * @return UpdateResult containing information about the replace operation
-     * @throws IllegalArgumentException if filter or replacement is null
-     * @throws MongoWriteException if the replace operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #replaceOne(Bson, Object)
      * @see ReplaceOptions
      */
@@ -2646,9 +2746,9 @@ public final class MongoCollectionMapper<T> {
      *
      * @param objectId the string representation of the ObjectId identifying the entity to delete
      * @return DeleteResult containing information about the delete operation
-     * @throws IllegalArgumentException if objectId is null or empty, or is not a valid hex ObjectId
-     * @throws MongoWriteException if the delete operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #deleteOne(ObjectId)
      * @see DeleteResult
      */
@@ -2672,9 +2772,9 @@ public final class MongoCollectionMapper<T> {
      *
      * @param objectId the ObjectId identifying the entity to delete
      * @return DeleteResult containing information about the delete operation
-     * @throws IllegalArgumentException if objectId is null
-     * @throws MongoWriteException if the delete operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code objectId} is null
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #deleteOne(String)
      * @see DeleteResult
      */
@@ -2702,9 +2802,9 @@ public final class MongoCollectionMapper<T> {
      *
      * @param filter the query filter to match the entity to delete
      * @return DeleteResult containing information about the delete operation
-     * @throws IllegalArgumentException if filter is null
-     * @throws MongoWriteException if the delete operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #deleteMany(Bson)
      * @see DeleteResult
      */
@@ -2730,9 +2830,9 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match the entity to delete
      * @param options additional options for the delete operation (null uses defaults)
      * @return DeleteResult containing information about the delete operation
-     * @throws IllegalArgumentException if filter is null
-     * @throws MongoWriteException if the delete operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #deleteOne(Bson)
      * @see DeleteOptions
      */
@@ -2761,9 +2861,9 @@ public final class MongoCollectionMapper<T> {
      *
      * @param filter the query filter to match entities to delete
      * @return DeleteResult containing information about the delete operation
-     * @throws IllegalArgumentException if filter is null
-     * @throws MongoWriteException if the delete operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #deleteOne(Bson)
      * @see DeleteResult
      * @see #collectionExecutor()
@@ -2793,9 +2893,9 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match entities to delete
      * @param options additional options for the delete operation (null uses defaults)
      * @return DeleteResult containing information about the delete operation
-     * @throws IllegalArgumentException if filter is null
-     * @throws MongoWriteException if the delete operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #deleteMany(Bson)
      * @see DeleteOptions
      */
@@ -2821,9 +2921,11 @@ public final class MongoCollectionMapper<T> {
      *
      * @param entities collection of entities to insert in bulk
      * @return the {@link BulkWriteResult} reported by the server (use {@link BulkWriteResult#getInsertedCount()} for the inserted count)
-     * @throws IllegalArgumentException if entities is null or empty
-     * @throws MongoBulkWriteException if one or more operations fail
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code entities} is null or empty, or if a document value cannot be converted from a Map, bean, or
+     *         array of String name/value pairs
+     * @throws NullPointerException if {@code entities} contains a null document
+     * @throws MongoBulkWriteException if the server reports a write or write-concern error for one or more requests in the batch
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #bulkInsert(Collection, BulkWriteOptions)
      * @see #insertMany(Collection)
      */
@@ -2850,9 +2952,11 @@ public final class MongoCollectionMapper<T> {
      * @param entities collection of entities to insert in bulk
      * @param options additional options for the bulk write operation (null uses defaults)
      * @return the {@link BulkWriteResult} reported by the server (use {@link BulkWriteResult#getInsertedCount()} for the inserted count)
-     * @throws IllegalArgumentException if entities is null or empty
-     * @throws MongoBulkWriteException if one or more operations fail
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code entities} is null or empty, or if a document value cannot be converted from a Map, bean, or
+     *         array of String name/value pairs
+     * @throws NullPointerException if {@code entities} contains a null document
+     * @throws MongoBulkWriteException if the server reports a write or write-concern error for one or more requests in the batch
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #bulkInsert(Collection)
      * @see BulkWriteOptions
      */
@@ -2880,9 +2984,9 @@ public final class MongoCollectionMapper<T> {
      *
      * @param requests list of write models defining the operations to perform
      * @return BulkWriteResult containing detailed information about the bulk operation
-     * @throws IllegalArgumentException if requests is null or empty
-     * @throws MongoBulkWriteException if one or more operations fail
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code requests} is null or empty
+     * @throws MongoBulkWriteException if the server reports a write or write-concern error for one or more requests in the batch
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #bulkWrite(List, BulkWriteOptions)
      * @see BulkWriteResult
      */
@@ -2910,9 +3014,9 @@ public final class MongoCollectionMapper<T> {
      * @param requests list of write models defining the operations to perform
      * @param options additional options for the bulk write operation (null uses defaults)
      * @return BulkWriteResult containing detailed information about the bulk operation
-     * @throws IllegalArgumentException if requests is null or empty
-     * @throws MongoBulkWriteException if one or more operations fail
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code requests} is null or empty
+     * @throws MongoBulkWriteException if the server reports a write or write-concern error for one or more requests in the batch
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #bulkWrite(List)
      * @see BulkWriteOptions
      */
@@ -2943,9 +3047,11 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match the entity to update
      * @param update the entity, or a driver-built {@link Bson} update expression, containing the update data
      * @return the matched entity (pre-update by default), or {@code null} if no document matched
-     * @throws IllegalArgumentException if filter or update is null
-     * @throws MongoWriteException if the operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #findOneAndUpdate(Bson, Object, FindOneAndUpdateOptions)
      */
     public T findOneAndUpdate(final Bson filter, final T update) {
@@ -2975,9 +3081,11 @@ public final class MongoCollectionMapper<T> {
      * @param update the entity, or a driver-built {@link Bson} update expression, containing the update data
      * @param options additional options for the find and update operation (null uses defaults)
      * @return the entity before or after the update (based on options), or null if not found
-     * @throws IllegalArgumentException if filter or update is null
-     * @throws MongoWriteException if the operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #findOneAndUpdate(Bson, Object)
      * @see FindOneAndUpdateOptions
      */
@@ -3014,9 +3122,11 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match the entity to update
      * @param objList collection of entities forming the update pipeline
      * @return the entity before the update (default behavior), or null if not found
-     * @throws IllegalArgumentException if filter or objList is null or empty
-     * @throws MongoWriteException if the operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if an update document has a null
+     *         field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value
+     *         cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #findOneAndUpdate(Bson, Object)
      * @see #findOneAndUpdate(Bson, Collection, FindOneAndUpdateOptions)
      */
@@ -3048,9 +3158,11 @@ public final class MongoCollectionMapper<T> {
      * @param objList collection of entities forming the update pipeline
      * @param options additional options for the find and update operation (null uses defaults)
      * @return the entity before or after the update (based on options), or null if not found
-     * @throws IllegalArgumentException if filter or objList is null or empty
-     * @throws MongoWriteException if the operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if an update document has a null
+     *         field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value
+     *         cannot be converted from a Map, bean, or array of String name/value pairs
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #findOneAndUpdate(Bson, Collection)
      * @see FindOneAndUpdateOptions
      */
@@ -3076,9 +3188,10 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match the entity to replace
      * @param replacement the new entity to replace the existing one
      * @return the original entity before replacement, or null if not found
-     * @throws IllegalArgumentException if filter or replacement is null
-     * @throws MongoWriteException if the operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #findOneAndReplace(Bson, Object, FindOneAndReplaceOptions)
      * @see #replaceOne(Bson, Object)
      */
@@ -3108,9 +3221,10 @@ public final class MongoCollectionMapper<T> {
      * @param replacement the new entity to replace the existing one
      * @param options additional options for the find and replace operation (null uses defaults)
      * @return the entity before or after replacement (based on options), or null if not found
-     * @throws IllegalArgumentException if filter or replacement is null
-     * @throws MongoWriteException if the operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #findOneAndReplace(Bson, Object)
      * @see FindOneAndReplaceOptions
      */
@@ -3140,9 +3254,9 @@ public final class MongoCollectionMapper<T> {
      *
      * @param filter the query filter to match the entity to delete
      * @return the deleted entity, or null if no entity matched the filter
-     * @throws IllegalArgumentException if filter is null
-     * @throws MongoWriteException if the operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #findOneAndDelete(Bson, FindOneAndDeleteOptions)
      * @see #deleteOne(Bson)
      */
@@ -3170,9 +3284,9 @@ public final class MongoCollectionMapper<T> {
      * @param filter the query filter to match the entity to delete
      * @param options additional options for the find and delete operation (null uses defaults)
      * @return the deleted entity with projected fields, or null if no entity matched
-     * @throws IllegalArgumentException if filter is null
-     * @throws MongoWriteException if the operation fails
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code filter} is null
+     * @throws MongoWriteException if the server rejects the write, for example because a unique index or document validation rule is violated
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #findOneAndDelete(Bson)
      * @see FindOneAndDeleteOptions
      */
@@ -3198,10 +3312,13 @@ public final class MongoCollectionMapper<T> {
      * }
      * }</pre>
      *
+     * <p>The cursor is opened by this call. Further MongoDB, decoding, or result conversion failures can occur while consuming the returned
+     * stream.</p>
+     *
      * @param fieldName the name of the field to get distinct values from
      * @return a Stream of entities containing only the distinct field values
-     * @throws IllegalArgumentException if fieldName is null or empty
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code fieldName} is null or empty
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #distinct(String, Bson)
      * @see Stream
      */
@@ -3246,11 +3363,14 @@ public final class MongoCollectionMapper<T> {
      * }
      * }</pre>
      *
+     * <p>The cursor is opened by this call. Further MongoDB, decoding, or result conversion failures can occur while consuming the returned
+     * stream.</p>
+     *
      * @param fieldName the name of the field to get distinct values from
      * @param filter the query filter to match entities before extracting distinct values
      * @return a Stream of entities containing only the distinct field values from matching entities
-     * @throws IllegalArgumentException if fieldName is null or empty, or filter is null
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code fieldName} is null or empty, or if {@code filter} is null
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #distinct(String)
      * @see Stream
      */
@@ -3281,11 +3401,13 @@ public final class MongoCollectionMapper<T> {
      * }
      * }</pre>
      *
+     * <p>The cursor is opened by this call. Further MongoDB, decoding, or result conversion failures can occur while consuming the returned
+     * stream.</p>
+     *
      * @param pipeline list of aggregation pipeline stages to execute
      * @return a Stream of entities representing the aggregation results
-     * @throws IllegalArgumentException if pipeline is null (an empty pipeline is accepted and
-     *         streams the entire collection)
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code pipeline} is null
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see Stream
      * @see com.mongodb.client.model.Aggregates
      * @see com.mongodb.client.model.Accumulators
@@ -3311,10 +3433,13 @@ public final class MongoCollectionMapper<T> {
      * }
      * }</pre>
      *
+     * <p>The cursor is opened by this call. Further MongoDB, decoding, or result conversion failures can occur while consuming the returned
+     * stream.</p>
+     *
      * @param fieldName the field name to group entities by
      * @return a Stream of entities representing grouped results
-     * @throws IllegalArgumentException if fieldName is null or empty
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code fieldName} is null or empty
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #groupBy(Collection)
      * @see #groupByAndCount(String)
      */
@@ -3341,10 +3466,13 @@ public final class MongoCollectionMapper<T> {
      * }
      * }</pre>
      *
+     * <p>The cursor is opened by this call. Further MongoDB, decoding, or result conversion failures can occur while consuming the returned
+     * stream.</p>
+     *
      * @param fieldNames collection of field names to group entities by
      * @return a Stream of entities representing grouped results
-     * @throws IllegalArgumentException if fieldNames is null or empty
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code fieldNames} is null or empty
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #groupBy(String)
      * @see #groupByAndCount(Collection)
      */
@@ -3372,10 +3500,13 @@ public final class MongoCollectionMapper<T> {
      * }
      * }</pre>
      *
+     * <p>The cursor is opened by this call. Further MongoDB, decoding, or result conversion failures can occur while consuming the returned
+     * stream.</p>
+     *
      * @param fieldName the field name to group entities by
      * @return a Stream of entities with group information and counts
-     * @throws IllegalArgumentException if fieldName is null or empty
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code fieldName} is null or empty
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #groupBy(String)
      * @see #groupByAndCount(Collection)
      */
@@ -3405,10 +3536,13 @@ public final class MongoCollectionMapper<T> {
      * }
      * }</pre>
      *
+     * <p>The cursor is opened by this call. Further MongoDB, decoding, or result conversion failures can occur while consuming the returned
+     * stream.</p>
+     *
      * @param fieldNames collection of field names to group entities by
      * @return a Stream of entities with group information and counts
-     * @throws IllegalArgumentException if fieldNames is null or empty
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code fieldNames} is null or empty
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @see #groupBy(Collection)
      * @see #groupByAndCount(String)
      */
@@ -3436,11 +3570,14 @@ public final class MongoCollectionMapper<T> {
      * }
      * }</pre>
      *
+     * <p>The cursor is opened by this call. Further MongoDB, decoding, or result conversion failures can occur while consuming the returned
+     * stream.</p>
+     *
      * @param mapFunction JavaScript map function as a string
      * @param reduceFunction JavaScript reduce function as a string
      * @return a Stream of entities representing the MapReduce results
-     * @throws IllegalArgumentException if mapFunction or reduceFunction is null or empty
-     * @throws MongoException if the database operation fails
+     * @throws IllegalArgumentException if {@code mapFunction} is null or empty, or if {@code reduceFunction} is null or empty
+     * @throws MongoException if the MongoDB command cannot complete because of a connection, authentication, server, or command error
      * @deprecated Use {@link #aggregate(List)} with aggregation pipeline instead.
      * @see #aggregate(List)
      * @see com.mongodb.client.model.Aggregates

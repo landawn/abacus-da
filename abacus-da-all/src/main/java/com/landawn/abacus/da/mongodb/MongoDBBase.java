@@ -26,6 +26,7 @@ import java.util.function.IntFunction;
 
 import org.bson.BSONObject;
 import org.bson.BasicBSONObject;
+import org.bson.BsonInvalidOperationException;
 import org.bson.BsonReader;
 import org.bson.BsonWriter;
 import org.bson.Document;
@@ -34,11 +35,14 @@ import org.bson.codecs.Codec;
 import org.bson.codecs.DecoderContext;
 import org.bson.codecs.DocumentCodec;
 import org.bson.codecs.EncoderContext;
+import org.bson.codecs.configuration.CodecConfigurationException;
 import org.bson.codecs.configuration.CodecRegistries;
 import org.bson.codecs.configuration.CodecRegistry;
 import org.bson.conversions.Bson;
 import org.bson.types.ObjectId;
 
+import com.landawn.abacus.exception.ParsingException;
+import com.landawn.abacus.exception.UncheckedIOException;
 import com.landawn.abacus.parser.JsonParser;
 import com.landawn.abacus.parser.ParserFactory;
 import com.landawn.abacus.query.QueryUtil;
@@ -56,6 +60,7 @@ import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.stream.Stream;
 import com.mongodb.BasicDBObject;
 import com.mongodb.MongoClientSettings;
+import com.mongodb.MongoException;
 import com.mongodb.client.MongoCursor;
 import com.mongodb.client.MongoIterable;
 
@@ -197,9 +202,8 @@ public abstract class MongoDBBase {
      *
      * @param documentClass the entity class to configure ID property mapping for; must not be {@code null}
      * @param idPropertyName the name of the property to map to MongoDB's "_id" field; must not be {@code null}
-     * @throws IllegalArgumentException if {@code documentClass} or {@code idPropertyName} is {@code null},
-     *                                  if the class lacks getter/setter methods for the property,
-     *                                  or if the property type is not {@link String} or {@link ObjectId}
+     * @throws IllegalArgumentException if {@code documentClass} or {@code idPropertyName} is {@code null}, if the class lacks getter/setter
+     *         methods for the property, or if the property type is not {@link String} or {@link ObjectId}
      * @see com.landawn.abacus.annotation.Id
      * @see ObjectId
      * @deprecated Use {@code @Id} annotation on the desired property instead of programmatic registration.
@@ -324,6 +328,8 @@ public abstract class MongoDBBase {
      *                {@link Document}, {@link BasicBSONObject}, or {@link BasicDBObject}
      * @return an instance of the specified type populated with the JSON data
      * @throws IllegalArgumentException if {@code rowType} is {@code null} or is not one of the supported BSON types
+     * @throws ParsingException if nonempty {@code json} is malformed or does not represent a JSON object
+     * @throws UncheckedIOException if a delegated value reader cannot read data needed to materialize a JSON value
      * @see Document
      * @see org.bson.BasicBSONObject
      * @see com.mongodb.BasicDBObject
@@ -372,8 +378,11 @@ public abstract class MongoDBBase {
      *
      * @param bson the BSON object to convert to JSON; must not be {@code null}
      * @return the JSON string representation of the BSON object
-     * @throws NullPointerException if {@code bson} is {@code null}; this method dereferences the
-     *         argument directly and performs no argument validation of its own
+     * @throws NullPointerException if {@code bson} is {@code null}; this method dereferences the argument directly and performs no argument
+     *         validation of its own
+     * @throws CodecConfigurationException if a non-Map BSON value or one of its fields has no usable codec
+     * @throws ParsingException if a document value has an unsupported or cyclic structure during JSON serialization
+     * @throws UncheckedIOException if a value serializer cannot read an underlying stream or reader while generating JSON
      * @see Document
      * @see org.bson.conversions.Bson
      */
@@ -402,8 +411,10 @@ public abstract class MongoDBBase {
      *
      * @param bsonObject the BSONObject to convert to JSON; must not be {@code null}
      * @return the JSON string representation of the BSONObject
-     * @throws NullPointerException if {@code bsonObject} is {@code null}; this method dereferences the
-     *         argument directly and performs no argument validation of its own
+     * @throws NullPointerException if {@code bsonObject} is {@code null}; this method dereferences the argument directly and performs no
+     *         argument validation of its own
+     * @throws ParsingException if a document value has an unsupported or cyclic structure during JSON serialization
+     * @throws UncheckedIOException if a value serializer cannot read an underlying stream or reader while generating JSON
      * @see org.bson.BSONObject
      */
     public static String toJson(final BSONObject bsonObject) {
@@ -434,6 +445,8 @@ public abstract class MongoDBBase {
      * @param bsonObject the BasicDBObject to convert to JSON; may be {@code null}
      * @return the JSON string representation of the BasicDBObject, or an empty string if
      *         {@code bsonObject} is {@code null}
+     * @throws ParsingException if a document value has an unsupported or cyclic structure during JSON serialization
+     * @throws UncheckedIOException if a value serializer cannot read an underlying stream or reader while generating JSON
      * @see com.mongodb.BasicDBObject
      * @see #toJson(BSONObject)
      */
@@ -464,9 +477,9 @@ public abstract class MongoDBBase {
      *
      * @param obj the object to convert; must not be {@code null} - can be an entity with getter/setter methods, {@code Map<String, Object>}, or array of property name-value pairs
      * @return a BSON document representation of the object
-     * @throws NullPointerException if {@code obj} is {@code null}
-     * @throws IllegalArgumentException if {@code obj} is an array with an odd number of elements,
-     *         is a bean class with no readable properties, or is otherwise not convertible to a BSON document
+     * @throws NullPointerException if {@code obj} is null
+     * @throws IllegalArgumentException if {@code obj} is not a Map, bean, or name/value array, or if a name/value array has an odd length or a
+     *         name that is not a String
      * @see Document
      * @see org.bson.conversions.Bson
      * @see #toDocument(Object)
@@ -500,7 +513,9 @@ public abstract class MongoDBBase {
      *          element is converted via {@link #toBson(Object)}. Otherwise the array is treated as alternating
      *          name-value pairs and must contain an even number of elements.
      * @return a BSON document created from the specified parameters; never {@code null}
-     * @throws IllegalArgumentException if multiple arguments are provided but they don't form valid name-value pairs
+     * @throws NullPointerException if exactly one argument is supplied and that argument is null
+     * @throws IllegalArgumentException if a single argument is not a supported Map, bean, or name/value array, or if the name/value array has an
+     *         odd length or a name that is not a String
      * @see #toBson(Object)
      * @see Document
      */
@@ -533,9 +548,9 @@ public abstract class MongoDBBase {
      *
      * @param obj the object to convert; must not be {@code null} - can be an entity with getter/setter methods, {@code Map<String, Object>}, or array of property name-value pairs
      * @return a MongoDB Document representation of the object; never {@code null}
-     * @throws NullPointerException if {@code obj} is {@code null}
-     * @throws IllegalArgumentException if {@code obj} is an array with an odd number of elements,
-     *         is a bean class with no readable properties, or is not a {@link Map}, bean, or {@code Object[]}
+     * @throws NullPointerException if {@code obj} is null
+     * @throws IllegalArgumentException if {@code obj} is not a Map, bean, or name/value array, or if a name/value array has an odd length or a
+     *         name that is not a String
      * @see Document
      * @see #toBson(Object)
      */
@@ -571,7 +586,9 @@ public abstract class MongoDBBase {
      *          <li>No arguments for an empty Document</li>
      *          </ul>
      * @return a MongoDB Document created from the specified arguments
-     * @throws IllegalArgumentException if arguments are malformed (odd number of name-value pairs)
+     * @throws NullPointerException if exactly one argument is supplied and that argument is null
+     * @throws IllegalArgumentException if a single argument is not a supported Map, bean, or name/value array, or if the name/value array has an
+     *         odd length or a name that is not a String
      * @see #toDocument(Object)
      * @see Document
      */
@@ -595,9 +612,9 @@ public abstract class MongoDBBase {
      * @param obj the source value; must not be {@code null}
      * @param isForUpdate reserved for callers that build {@code $set}-style update documents; currently unused
      * @return a {@link Document} populated from {@code obj}
-     * @throws NullPointerException if {@code obj} is {@code null}
-     * @throws IllegalArgumentException if {@code obj} is an array with an odd number of elements,
-     *         a bean class with no getter/setter pairs, or an unsupported type
+     * @throws NullPointerException if {@code obj} is null
+     * @throws IllegalArgumentException if {@code obj} is not a Map, bean, or name/value array, or if a name/value array has an odd length or a
+     *         name that is not a String
      */
     protected static Document toDocument(final Object obj, @SuppressWarnings("unused") final boolean isForUpdate) { //NOSONAR
         final Document result = new Document();
@@ -629,7 +646,7 @@ public abstract class MongoDBBase {
                 throw new IllegalArgumentException("Parameters must be property name-value pairs, a Map, or an entity with getter/setter methods");
             }
 
-            for (int i = 0; i < a.length; i++) {
+            for (int i = 0; i < a.length; i += 2) {
                 // Validate eagerly so a non-String name surfaces as the documented IllegalArgumentException
                 // instead of a raw ClassCastException.
                 if (!(a[i] instanceof String)) {
@@ -637,7 +654,10 @@ public abstract class MongoDBBase {
                             + (a[i] == null ? "null" : a[i].getClass().getName()) + " at index " + i);
                 }
 
-                result.put((String) a[i], a[++i]);
+            }
+
+            for (int i = 0; i < a.length; i += 2) {
+                result.put((String) a[i], a[i + 1]);
             }
         } else {
             throw new IllegalArgumentException("Parameters must be a Map or an entity with getter/setter methods");
@@ -673,9 +693,9 @@ public abstract class MongoDBBase {
      *
      * @param obj the object to convert; must not be {@code null} - can be an entity with getter/setter methods, {@code Map<String, Object>}, or array of property name-value pairs
      * @return a BasicBSONObject representation of the object; never {@code null}
-     * @throws NullPointerException if {@code obj} is {@code null}
-     * @throws IllegalArgumentException if {@code obj} is an array with an odd number of elements,
-     *         or is not a {@link Map}, bean, or {@code Object[]}
+     * @throws NullPointerException if {@code obj} is null
+     * @throws IllegalArgumentException if {@code obj} is not a Map, bean, or name/value array, or if a name/value array has an odd length or a
+     *         name that is not a String
      * @see BasicBSONObject
      * @see #toBSONObject(Object...)
      * @see #toDocument(Object)
@@ -692,7 +712,7 @@ public abstract class MongoDBBase {
                 throw new IllegalArgumentException("Parameters must be property name-value pairs, a Map, or an entity with getter/setter methods");
             }
 
-            for (int i = 0; i < a.length; i++) {
+            for (int i = 0; i < a.length; i += 2) {
                 // Validate eagerly so a non-String name surfaces as the documented IllegalArgumentException
                 // instead of a raw ClassCastException.
                 if (!(a[i] instanceof String)) {
@@ -700,7 +720,10 @@ public abstract class MongoDBBase {
                             + (a[i] == null ? "null" : a[i].getClass().getName()) + " at index " + i);
                 }
 
-                result.put((String) a[i], a[++i]);
+            }
+
+            for (int i = 0; i < a.length; i += 2) {
+                result.put((String) a[i], a[i + 1]);
             }
         } else {
             throw new IllegalArgumentException("Parameters must be a Map or an entity with getter/setter methods");
@@ -738,7 +761,9 @@ public abstract class MongoDBBase {
      *          <li>Multiple objects - interpreted as property name-value pairs</li>
      *          </ul>
      * @return a BasicBSONObject representation of the arguments
-     * @throws IllegalArgumentException if multiple arguments are provided but they don't form valid pairs
+     * @throws NullPointerException if exactly one argument is supplied and that argument is null
+     * @throws IllegalArgumentException if a single argument is not a supported Map, bean, or name/value array, or if the name/value array has an
+     *         odd length or a name that is not a String
      * @see #toBSONObject(Object)
      * @see BasicBSONObject
      */
@@ -778,9 +803,9 @@ public abstract class MongoDBBase {
      *
      * @param obj the object to convert; must not be {@code null} - can be an entity with getter/setter methods, {@code Map<String, Object>}, or array of property name-value pairs
      * @return a BasicDBObject representation of the object; never {@code null}
-     * @throws NullPointerException if {@code obj} is {@code null}
-     * @throws IllegalArgumentException if {@code obj} is an array with an odd number of elements,
-     *         or is not a {@link Map}, bean, or {@code Object[]}
+     * @throws NullPointerException if {@code obj} is null
+     * @throws IllegalArgumentException if {@code obj} is not a Map, bean, or name/value array, or if a name/value array has an odd length or a
+     *         name that is not a String
      * @see BasicDBObject
      * @see #toDBObject(Object...)
      * @see #toBSONObject(Object)
@@ -797,7 +822,7 @@ public abstract class MongoDBBase {
                 throw new IllegalArgumentException("Parameters must be property name-value pairs, a Map, or an entity with getter/setter methods");
             }
 
-            for (int i = 0; i < a.length; i++) {
+            for (int i = 0; i < a.length; i += 2) {
                 // Validate eagerly so a non-String name surfaces as the documented IllegalArgumentException
                 // instead of a raw ClassCastException.
                 if (!(a[i] instanceof String)) {
@@ -805,7 +830,10 @@ public abstract class MongoDBBase {
                             + (a[i] == null ? "null" : a[i].getClass().getName()) + " at index " + i);
                 }
 
-                result.put((String) a[i], a[++i]);
+            }
+
+            for (int i = 0; i < a.length; i += 2) {
+                result.put((String) a[i], a[i + 1]);
             }
         } else {
             throw new IllegalArgumentException("Parameters must be a Map or an entity with getter/setter methods");
@@ -846,7 +874,9 @@ public abstract class MongoDBBase {
      *          <li>Multiple objects - interpreted as property name-value pairs</li>
      *          </ul>
      * @return a BasicDBObject representation of the arguments
-     * @throws IllegalArgumentException if multiple arguments are provided but they don't form valid pairs
+     * @throws NullPointerException if exactly one argument is supplied and that argument is null
+     * @throws IllegalArgumentException if a single argument is not a supported Map, bean, or name/value array, or if the name/value array has an
+     *         odd length or a name that is not a String
      * @see #toDBObject(Object)
      * @see BasicDBObject
      */
@@ -884,7 +914,7 @@ public abstract class MongoDBBase {
      *
      * @param doc the MongoDB Document to convert; must not be null
      * @return a Map representation of the document
-     * @throws NullPointerException if doc is null
+     * @throws NullPointerException if {@code doc} is null
      * @see #toMap(Document, IntFunction)
      * @see Document
      */
@@ -919,8 +949,10 @@ public abstract class MongoDBBase {
      * @param doc the MongoDB Document to convert; must not be null
      * @param mapSupplier a function that creates Map instances based on expected size
      * @return a Map representation of the document using the supplied Map type
-     * @throws NullPointerException if {@code doc} is {@code null}
-     * @throws IllegalArgumentException if {@code mapSupplier} is {@code null}
+     * @throws IllegalArgumentException if {@code mapSupplier} is null
+     * @throws NullPointerException if {@code doc} is null, {@code mapSupplier} returns null, or the supplied map rejects a null key or value
+     * @throws RuntimeException if {@code mapSupplier} throws while creating the result map
+     * @throws UnsupportedOperationException if the supplied map does not support inserting the document entries
      * @see #toMap(Document)
      * @see IntFunction
      * @see Document
@@ -965,7 +997,8 @@ public abstract class MongoDBBase {
      * @param doc the MongoDB Document to convert; if {@code null}, {@code null} is returned
      * @param rowType the Class representing the target entity type; must not be {@code null}
      * @return an entity instance populated with data from the document, or {@code null} if {@code doc} is {@code null}
-     * @throws IllegalArgumentException if {@code rowType} is {@code null}
+     * @throws IllegalArgumentException if {@code rowType} is null, or a non-null {@code doc} cannot be mapped to its bean properties or
+     *         identifier type
      * @see Document
      * @see #_ID
      * @see com.landawn.abacus.annotation.Id
@@ -1038,9 +1071,11 @@ public abstract class MongoDBBase {
      * @return a List containing all results converted to the specified type (empty list if no results).
      *         When a result is a non-{@link Document} {@link Map} and a different concrete map type is
      *         requested, its entries are copied directly rather than being interpreted as bean properties.
-     * @throws NullPointerException if findIterable is null
-     * @throws IllegalArgumentException if {@code rowType} is null, or if a result document cannot be projected onto {@code rowType}
-     *         (for example, a document with more than one non-{@code _id} field targeted at a primitive/String/Date scalar)
+     * @throws IllegalArgumentException if {@code rowType} is null, or a result document has multiple non-{@code _id} fields for a scalar target,
+     *         inconsistent scalar projection fields, or cannot be converted to {@code rowType}
+     * @throws NullPointerException if {@code findIterable} is null
+     * @throws MongoException if fetching documents from {@code findIterable} fails because the cursor or MongoDB command fails
+     * @throws ClassCastException if a result list beginning with a Document contains a later non-Document row in the document conversion branch
      * @see com.mongodb.client.MongoIterable
      * @see #toEntity(Document, Class)
      */
@@ -1159,7 +1194,9 @@ public abstract class MongoDBBase {
      *            (or {@code null} when {@code rowType} is {@code null})
      * @param rowType the target type, or {@code null} to produce an {@code Object[]}
      * @return the converted value
-     * @throws IllegalArgumentException if the row cannot be projected onto {@code rowType}
+     * @throws IllegalArgumentException if a scalar target is requested for a row with multiple non-{@code _id} fields, or a field value cannot
+     *         be converted to {@code rowType}
+     * @throws ArrayStoreException if {@code rowType} is a reference-array type and a row value is incompatible with its component type
      */
     @SuppressWarnings("rawtypes")
     protected static <T> T readRow(final Document row, final Class<T> rowType) {
@@ -1240,6 +1277,7 @@ public abstract class MongoDBBase {
      * @param findIterable the MongoDB query result to extract data from; must not be {@code null}
      * @return a Dataset containing the query results with Map-based rows
      * @throws NullPointerException if findIterable is null
+     * @throws MongoException if fetching documents from {@code findIterable} fails because the cursor or MongoDB command fails
      * @see Dataset
      * @see #extractData(MongoIterable, Class)
      */
@@ -1272,6 +1310,7 @@ public abstract class MongoDBBase {
      * @return a Dataset containing the query results with typed rows
      * @throws IllegalArgumentException if rowType is null or unsupported (not a bean class and not assignable to Map)
      * @throws NullPointerException if findIterable is null
+     * @throws MongoException if fetching documents from {@code findIterable} fails because the cursor or MongoDB command fails
      * @see Dataset
      * @see #extractData(MongoIterable)
      * @see #extractData(Collection, MongoIterable, Class)
@@ -1307,6 +1346,7 @@ public abstract class MongoDBBase {
      * @return a Dataset containing the selected properties with typed rows
      * @throws IllegalArgumentException if rowType is null or unsupported (not a bean class and not assignable to Map)
      * @throws NullPointerException if findIterable is null
+     * @throws MongoException if fetching documents from {@code findIterable} fails because the cursor or MongoDB command fails
      * @see Dataset
      * @see #extractData(MongoIterable, Class)
      */
@@ -1345,6 +1385,9 @@ public abstract class MongoDBBase {
      * @param rowList the list of objects to convert to Dataset rows; may be {@code null} or empty,
      *                in which case an empty Dataset is returned
      * @return a Dataset containing the objects as Map-based rows
+     * @throws IllegalArgumentException if the selected columns or row values cannot be converted into a consistent Dataset
+     * @throws NullPointerException if the list contains both a non-null Map and a null row while column names are inferred
+     * @throws ClassCastException if rows do not share the Map or Document shape selected from the first non-null row
      * @see Dataset
      * @see #extractData(List, Class)
      */
@@ -1383,7 +1426,10 @@ public abstract class MongoDBBase {
      *                in which case an empty Dataset is returned
      * @param rowType the target type for each row in the Dataset; must not be {@code null}
      * @return a Dataset containing the objects as typed rows
-     * @throws IllegalArgumentException if {@code rowType} is {@code null}
+     * @throws IllegalArgumentException if {@code rowType} is null, or the selected columns or row values cannot be converted into a consistent
+     *         Dataset
+     * @throws NullPointerException if the list contains both a non-null Map and a null row while column names are inferred
+     * @throws ClassCastException if rows do not share the Map or Document shape selected from the first non-null row
      * @see Dataset
      * @see #extractData(List)
      * @see #extractData(Collection, List, Class)
@@ -1432,7 +1478,10 @@ public abstract class MongoDBBase {
      *                case an empty Dataset is returned
      * @param rowType the target type for each row in the resulting Dataset; must not be {@code null}
      * @return a Dataset containing the extracted properties as typed rows
-     * @throws IllegalArgumentException if {@code rowType} is {@code null}
+     * @throws IllegalArgumentException if {@code rowType} is null, or the selected columns or row values cannot be converted into a consistent
+     *         Dataset
+     * @throws NullPointerException if the list contains both a non-null Map and a null row while column names are inferred
+     * @throws ClassCastException if rows do not share the Map or Document shape selected from the first non-null row
      * @see Dataset
      * @see #extractData(List, Class)
      * @see #extractData(Collection, MongoIterable, Class)
@@ -1505,9 +1554,13 @@ public abstract class MongoDBBase {
      * //     MongoDB.stream(emptyIterable).count()  ->  0
      * }</pre>
      *
+     * <p>Cursor read failures are raised while consuming the returned stream. When a target type is supplied, an incompatible row or scalar
+     *         projection also fails during consumption.</p>
+     *
      * @param iter the MongoIterable to convert to a Stream; must not be {@code null}
      * @return a Stream of Document objects
      * @throws NullPointerException if iter is null
+     * @throws MongoException if opening the iterator fails because the MongoDB command or connection fails
      * @see Stream
      * @see #stream(MongoIterable, Class)
      * @see #stream(MongoCursor)
@@ -1541,13 +1594,15 @@ public abstract class MongoDBBase {
      * //     MongoDB.stream(emptyIterable, User.class).count()  ->  0
      * }</pre>
      *
+     * <p>Cursor read failures are raised while consuming the returned stream. When a target type is supplied, an incompatible row or scalar
+     *         projection also fails during consumption.</p>
+     *
      * @param <T> the target type for stream elements
      * @param iter the MongoIterable to convert to a Stream; must not be {@code null}
      * @param rowType the Class representing the target type for each stream element
      * @return a Stream of objects of the specified type
      * @throws NullPointerException if iter is null
-     * @throws IllegalArgumentException if a result document cannot be projected onto {@code rowType}
-     *         (for example, a document with more than one non-{@code _id} field targeted at a scalar type)
+     * @throws MongoException if opening the iterator fails because the MongoDB command or connection fails
      * @see Stream
      * @see #stream(MongoIterable)
      * @see #stream(MongoCursor, Class)
@@ -1581,6 +1636,9 @@ public abstract class MongoDBBase {
      * // An empty cursor produces an empty stream:
      * //     MongoDB.stream(emptyCursor).count()  ->  0
      * }</pre>
+     *
+     * <p>Cursor read failures are raised while consuming the returned stream. When a target type is supplied, an incompatible row or scalar
+     *         projection also fails during consumption.</p>
      *
      * @param cursor the MongoCursor to convert to a Stream; a {@code null} cursor yields an empty stream
      * @return a Stream of Document objects with automatic cursor management
@@ -1619,12 +1677,13 @@ public abstract class MongoDBBase {
      * //     MongoDB.stream(emptyCursor, User.class).count()  ->  0
      * }</pre>
      *
+     * <p>Cursor read failures are raised while consuming the returned stream. When a target type is supplied, an incompatible row or scalar
+     *         projection also fails during consumption.</p>
+     *
      * @param <T> the target type for stream elements
      * @param cursor the MongoCursor to convert to a Stream; a {@code null} cursor yields an empty stream
      * @param rowType the Class representing the target type for each stream element
      * @return a Stream of objects of the specified type with automatic cursor management
-     * @throws IllegalArgumentException if a result document cannot be projected onto {@code rowType}
-     *         (for example, a document with more than one non-{@code _id} field targeted at a scalar type)
      * @see Stream
      * @see MongoCursor
      * @see #stream(MongoCursor)
@@ -1707,7 +1766,13 @@ public abstract class MongoDBBase {
         }
     }
 
-    private static void checkResultClass(final Class<?> rowType) {
+    /**
+     * Validates the supported Dataset row types before a query is constructed or executed.
+     *
+     * @param rowType the requested row type
+     * @throws IllegalArgumentException if rowType is null, or is neither a bean class nor assignable to Map
+     */
+    static void checkResultClass(final Class<?> rowType) {
         N.checkArgNotNull(rowType, cs.rowType);
 
         if (!(Beans.isBeanClass(rowType) || Map.class.isAssignableFrom(rowType))) {
@@ -1733,6 +1798,7 @@ public abstract class MongoDBBase {
          * @param <T> the encoded Java type
          * @param clazz the class to obtain a codec for
          * @return a codec that handles {@code clazz}; never {@code null}
+         * @throws NullPointerException if {@code clazz} is null
          */
         @Override
         public <T> Codec<T> get(final Class<T> clazz) {
@@ -1755,6 +1821,7 @@ public abstract class MongoDBBase {
          * @param clazz the class to obtain a codec for
          * @param registry the parent registry (ignored)
          * @return a codec that handles {@code clazz}; never {@code null}
+         * @throws NullPointerException if {@code clazz} is null
          */
         @Override
         public <T> Codec<T> get(final Class<T> clazz, final CodecRegistry registry) {
@@ -1805,6 +1872,10 @@ public abstract class MongoDBBase {
          * @param writer destination writer
          * @param value the value to encode
          * @param encoderContext encoder context forwarded to the underlying document codec for bean values
+         * @throws NullPointerException if {@code writer} is null, or if a bean value is null
+         * @throws IllegalArgumentException if a bean value cannot be converted to a BSON document
+         * @throws BsonInvalidOperationException if the writer is not positioned to accept the encoded value
+         * @throws CodecConfigurationException if a bean property value has no usable BSON codec
          */
         @Override
         public void encode(final BsonWriter writer, final T value, final EncoderContext encoderContext) {
@@ -1824,6 +1895,10 @@ public abstract class MongoDBBase {
          * @param reader BSON reader positioned at the value to decode
          * @param decoderContext decoder context forwarded to the underlying document codec for bean values
          * @return the decoded value
+         * @throws NullPointerException if {@code reader} is null
+         * @throws BsonInvalidOperationException if the current BSON value does not have the document or string type required by this codec
+         * @throws CodecConfigurationException if a nested BSON value has no usable codec
+         * @throws IllegalArgumentException if a decoded value cannot be converted to the target Java type
          */
         @Override
         public T decode(final BsonReader reader, final DecoderContext decoderContext) {
@@ -1837,7 +1912,7 @@ public abstract class MongoDBBase {
         /**
          * Returns the Java class this codec encodes.
          *
-         * @return the encoded class; never {@code null}
+         * @return the encoded class supplied to this codec's constructor
          */
         @Override
         public Class<T> getEncoderClass() {

@@ -30,6 +30,7 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.NoSuchElementException;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.BiFunction;
@@ -60,7 +61,10 @@ import com.datastax.oss.driver.api.core.type.codec.registry.CodecRegistry;
 import com.datastax.oss.driver.api.core.type.codec.registry.MutableCodecRegistry;
 import com.datastax.oss.driver.api.core.type.reflect.GenericType;
 import com.datastax.oss.protocol.internal.ProtocolConstants;
+import com.datastax.oss.driver.api.core.AllNodesFailedException;
 import com.landawn.abacus.exception.DuplicateResultException;
+import com.landawn.abacus.exception.ParsingException;
+import com.landawn.abacus.exception.UncheckedIOException;
 import com.landawn.abacus.logging.Logger;
 import com.landawn.abacus.logging.LoggerFactory;
 import com.landawn.abacus.parser.ParserUtil;
@@ -514,17 +518,16 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * }</pre>
      *
      * @param javaClazz the Java class for which to register a type codec
-     * @throws NullPointerException if javaClazz is null
      * @throws IllegalStateException if the session exposes a read-only codec registry
+     * @throws NullPointerException if javaClazz is null
      * @see #registerTypeCodec(MutableCodecRegistry, Class)
      */
     public void registerTypeCodec(final Class<?> javaClazz) {
-        Objects.requireNonNull(javaClazz, "javaClazz");
-
         if (!(codecRegistry instanceof final MutableCodecRegistry mutableCodecRegistry)) {
             throw new IllegalStateException("The session codec registry is not mutable; register the codec while building the driver context");
         }
 
+        Objects.requireNonNull(javaClazz, "javaClazz");
         registerTypeCodec(mutableCodecRegistry, javaClazz);
     }
 
@@ -705,11 +708,13 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *        {@code Row.class}, an array class, a collection class, or a basic single-value type);
      *        must not be {@code null}
      * @return a List containing all rows converted to the specified type
+     * @throws NullPointerException if {@code resultSet} is {@code null}
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, or if
      *         {@code targetClass} is a single-value type but the result set has more than one column
-     * @throws NullPointerException if {@code resultSet} is {@code null}
+     * @throws RuntimeException if a column value cannot be converted to the requested Java type or a bean property cannot be read or written
      */
     public static <T> List<T> toList(final ResultSet resultSet, final Class<T> targetClass) {
+        Objects.requireNonNull(resultSet, "resultSet");
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         if (targetClass.isAssignableFrom(Row.class)) {
@@ -768,10 +773,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param row the Cassandra Row containing the data
      * @param entityClass the target entity class with getter/setter methods (must not be {@code null})
      * @return a new instance of the entity class populated with row data
-     * @throws IllegalArgumentException if {@code entityClass} is {@code null}
      * @throws NullPointerException if {@code row} is {@code null}
+     * @throws IllegalArgumentException if {@code entityClass} is {@code null}
+     * @throws RuntimeException if a column value cannot be converted to the requested Java type or a bean property cannot be read or written
      */
     public static <T> T toEntity(final Row row, final Class<T> entityClass) {
+        Objects.requireNonNull(row, "row");
         N.checkArgNotNull(entityClass, cs.entityClass);
 
         final ColumnDefinitions columnDefinitions = row.getColumnDefinitions();
@@ -878,10 +885,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param row the Cassandra Row to convert
      * @param supplier a function that creates a new Map instance with the specified initial capacity
      * @return a Map of the specified type containing all column names and values from the row
-     * @throws NullPointerException if {@code row} is {@code null}
+     * @throws NullPointerException if {@code row} is {@code null}, or {@code supplier} returns {@code null} for a nonempty row
      * @throws IllegalArgumentException if {@code supplier} is {@code null}
+     * @throws RuntimeException if {@code supplier} fails to create a map or the supplied map rejects a column entry
      */
     public static Map<String, Object> toMap(final Row row, final IntFunction<? extends Map<String, Object>> supplier) throws IllegalArgumentException {
+        Objects.requireNonNull(row, "row");
         N.checkArgNotNull(supplier, cs.supplier);
 
         final ColumnDefinitions columnDefinitions = row.getColumnDefinitions();
@@ -1075,6 +1084,9 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param whereClause the WHERE condition
      * @return an instance of {@code targetClass} populated with data from the single matching row,
      *         or {@code null} when no row matches
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code whereClause} contains a relation unsupported by CQL
+     * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
+     *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws DuplicateResultException if more than one row matches the WHERE condition
      */
     @Override
@@ -1119,7 +1131,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @return a <i>present</i> {@code Nullable<V>} holding the column value (possibly {@code null} for
      *         {@code NULL}) when at least one row is returned; {@code Nullable.empty()} when the query
      *         returns no rows
-     * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}
+     * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
+     *         be converted to the requested Java type or assigned to a mapped bean property
      * @see #queryForSingleNonNull(Class, String, Object...)
      */
     @Override
@@ -1171,7 +1186,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @return a <i>present</i> {@code Optional<V>} holding the (non-null) column value when at least
      *         one row is returned with a non-null value; {@code Optional.empty()} when the query
      *         returns no rows
-     * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}
+     * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
+     *         be converted to the requested Java type or assigned to a mapped bean property
      * @throws NullPointerException if a row is returned but the column value (or its conversion) is
      *         {@code null}, because {@link Optional#of(Object)} rejects a null payload
      * @see #queryForSingleValue(Class, String, Object...)
@@ -1228,7 +1246,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param parameters the values to bind, in declaration order
      * @return a <i>present</i> {@code Optional<T>} holding the first mapped row when at least one row is
      *         returned; {@code Optional.empty()} when the query returns no rows
-     * @throws IllegalArgumentException if {@code targetClass} or {@code query} is {@code null}
+     * @throws IllegalArgumentException if {@code targetClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if preparing, binding, executing, or fetching the CQL fails; or a returned column cannot
+     *         be converted to the requested Java type or assigned to a mapped bean property
+     * @throws NullPointerException if the first row maps to a null value, which {@link Optional#of(Object)} cannot contain
      * @see #findFirst(String, Object...)
      * @see #findFirst(Class, Condition)
      */
@@ -1290,11 +1312,15 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param rowMapper a function that maps column definitions and rows to result objects
      * @param parameters the query parameters
      * @return a Stream of mapped objects
-     * @throws IllegalArgumentException if query or rowMapper is null
+     * @throws IllegalArgumentException if {@code query} or {@code rowMapper} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
+     *         executing, or fetching the query fails
      * @see #stream(Class, String, Object...)
      */
     public <T> Stream<T> stream(final String query, final BiFunction<ColumnDefinitions, Row, T> rowMapper, final Object... parameters)
             throws IllegalArgumentException {
+        N.checkArgNotNull(query, "query");
         N.checkArgNotNull(rowMapper, cs.rowMapper);
 
         return Stream.of(execute(query, parameters).iterator()).map(createRowMapper(rowMapper));
@@ -1341,10 +1367,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param statement the configured CQL Statement to execute
      * @param rowMapper a function that maps column definitions and rows to result objects
      * @return a Stream of mapped objects
-     * @throws IllegalArgumentException if rowMapper is null (rejected eagerly), or if statement is
-     *         null (the driver's request dispatch finds no processor for a null statement)
+     * @throws IllegalArgumentException if {@code statement} or {@code rowMapper} is {@code null}
+     * @throws RuntimeException if the session is closed or the driver rejects request submission or statement execution
      */
     public <T> Stream<T> stream(final Statement<?> statement, final BiFunction<ColumnDefinitions, Row, T> rowMapper) throws IllegalArgumentException {
+        N.checkArgNotNull(statement, "statement");
         N.checkArgNotNull(rowMapper, cs.rowMapper);
 
         return Stream.of(execute(statement).iterator()).map(createRowMapper(rowMapper));
@@ -1375,8 +1402,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * @param query the CQL statement to execute
      * @return the raw ResultSet from Cassandra
-     * @throws IllegalArgumentException if query is null
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
      * @throws AllNodesFailedException if all contact points are unreachable
+     * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
+     *         executing, or fetching the query fails
      */
     @Override
     public ResultSet execute(final String query) {
@@ -1425,8 +1455,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param query the parameterized CQL statement
      * @param parameters the parameter values (can be individual values, arrays, collections, maps, or entities)
      * @return the raw ResultSet from Cassandra
-     * @throws IllegalArgumentException if query is null or if parameter count/names don't match
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
      * @throws AllNodesFailedException if all contact points are unreachable
+     * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
+     *         executing, or fetching the query fails
      */
     @Override
     public ResultSet execute(final String query, final Object... parameters) {
@@ -1467,8 +1500,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @param query the parameterized CQL statement
      * @param parameters the query parameters
      * @return the raw ResultSet from Cassandra
-     * @throws IllegalArgumentException if query is null or if required parameters are missing
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
      * @throws AllNodesFailedException if all contact points are unreachable
+     * @throws RuntimeException if the driver rejects CQL or a bound value, the session is closed, or preparing,
+     *         executing, or fetching the query fails
      */
     @Override
     public ResultSet execute(final String query, final Map<String, Object> parameters) {
@@ -1519,6 +1555,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * @throws IllegalArgumentException if statement is null (the driver's request dispatch finds no
      *         processor for a null statement)
      * @throws AllNodesFailedException if all contact points are unreachable
+     * @throws RuntimeException if the session is closed or the driver rejects request submission or statement execution
      */
     @Override
     public ResultSet execute(final Statement<?> statement) {
@@ -1576,6 +1613,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     @Override
     protected BatchStatement prepareBatchInsertStatement(final Class<?> targetClass, final Collection<? extends Map<String, Object>> propsList,
             final BatchType type) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgument(N.notEmpty(propsList), "'propsList' can't be null or empty.");
         N.checkElementNotNull(propsList);
 
@@ -1593,8 +1631,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     @Override
     protected BatchStatement prepareBatchUpdateStatement(final Collection<?> entities, final Collection<String> propNamesToUpdate, final BatchType type) {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
-        N.checkArgument(N.notEmpty(propNamesToUpdate), "'propNamesToUpdate' can't be null or empty");
         N.checkElementNotNull(entities);
+        N.checkArgument(N.notEmpty(propNamesToUpdate), "'propNamesToUpdate' can't be null or empty");
 
         BatchStatement stmt = prepareBatchStatement(type);
 
@@ -1609,6 +1647,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
     @Override
     protected BatchStatement prepareBatchUpdateStatement(final Class<?> targetClass, final Collection<? extends Map<String, Object>> propsList,
             final BatchType type) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgument(N.notEmpty(propsList), "'propsList' can't be null or empty.");
         N.checkElementNotNull(propsList);
 
@@ -1939,8 +1978,16 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
         return N.convert(row.getObject(0), targetClass);
     }
 
+    /**
+     * Reads the only row and maps it to the requested Java type.
+     *
+     * @param targetClass the Java type for the row
+     * @param resultSet the rows to consume
+     * @return the mapped row, or {@code null} when there are no rows
+     * @throws DuplicateResultException if {@code resultSet} contains more than one row
+     */
     @Override
-    protected <T> T fetchOnlyOne(final Class<T> targetClass, final ResultSet resultSet) {
+    protected <T> T fetchOnlyOne(final Class<T> targetClass, final ResultSet resultSet) throws DuplicateResultException {
         final Iterator<Row> iter = resultSet.iterator();
 
         if (!iter.hasNext()) {
@@ -2020,13 +2067,14 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * UDTCodec<MyClass> codec = UDTCodec.create(userType, MyClass.class); // returns a codec marshaling MyClass to/from the UDT
          * }</pre>
          *
+         * <p>The returned codec rejects unsupported Java types and collections with more elements than UDT
+         * fields when encoding or decoding a non-null value.</p>
+         *
          * @param <T> the type of the Java class to map the UDT to
          * @param userType the Cassandra User Defined Type to map
          * @param javaClazz the Java class to map the UDT to
          * @return a new instance of {@link UDTCodec} for the specified UDT and Java class
-         * @throws IllegalArgumentException (lazily, at encode/decode time, not by this factory) when a
-         *         {@link Collection} value has more elements than the UDT has fields, or when
-         *         {@code javaClazz} is not a {@link Collection}, {@link Map}, or bean class
+         * @throws NullPointerException if {@code javaClazz} is {@code null}
          */
         public static <T> UDTCodec<T> create(final UserDefinedType userType, final Class<T> javaClazz) {
             return new UDTCodec<>(userType, javaClazz) {
@@ -2184,6 +2232,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @param protocolVersion the protocol version to use for serialization
          * @return a ByteBuffer containing the serialized value, or {@code null} for a {@code null} value
          * @deprecated Use {@link #encode(Object, ProtocolVersion)} instead.
+         * @throws IllegalArgumentException if the non-null value cannot be mapped to this UDT, including an unsupported Java type
+         *         or a collection with more elements than UDT fields
          */
         @Deprecated
         public ByteBuffer serialize(final T value, final ProtocolVersion protocolVersion) {
@@ -2210,6 +2260,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @param protocolVersion the protocol version to use for deserialization
          * @return the deserialized value, or {@code null} for a {@code null} payload
          * @deprecated Use {@link #decode(ByteBuffer, ProtocolVersion)} instead.
+         * @throws IllegalArgumentException if the input cannot be decoded as this UDT or the non-null UDT cannot be mapped to the configured Java type
          */
         @Deprecated
         public T deserialize(final ByteBuffer bytes, final ProtocolVersion protocolVersion) {
@@ -2235,6 +2286,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @param value the value to encode
          * @param protocolVersion the protocol version to use for encoding
          * @return a ByteBuffer containing the encoded value, or {@code null} for a {@code null} value
+         * @throws IllegalArgumentException if the non-null value cannot be mapped to this UDT, including an unsupported Java type
+         *         or a collection with more elements than UDT fields
          */
         @Override
         public ByteBuffer encode(final T value, final ProtocolVersion protocolVersion) {
@@ -2261,6 +2314,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @param bytes the ByteBuffer containing the serialized value
          * @param protocolVersion the protocol version to use for decoding
          * @return the deserialized value, or {@code null} for a {@code null} payload
+         * @throws IllegalArgumentException if the input cannot be decoded as this UDT or the non-null UDT cannot be mapped to the configured Java type
          */
         @Override
         public T decode(final ByteBuffer bytes, final ProtocolVersion protocolVersion) {
@@ -2288,6 +2342,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @param value the CQL UDT literal to parse
          * @return an instance of type {@code T}, or {@code null} if the input is empty or equal
          *         (case-insensitively) to {@link CassandraExecutorBase#NULL_STR}
+         * @throws IllegalArgumentException if the input cannot be decoded as this UDT or the non-null UDT cannot be mapped to the configured Java type
          */
         @Override
         public T parse(final String value) {
@@ -2312,6 +2367,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          *
          * @param value the value to format
          * @return a CQL UDT literal, or {@link CassandraExecutorBase#NULL_STR} if the value is null
+         * @throws IllegalArgumentException if the non-null value cannot be mapped to this UDT, including an unsupported Java type
+         *         or a collection with more elements than UDT fields
          */
         @Override
         public String format(final T value) {
@@ -2410,6 +2467,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * Cassandra {@code TEXT}.
          *
          * @param javaClazz the Java class this codec encodes/decodes
+         * @throws NullPointerException if {@code javaClazz} is {@code null}
          */
         protected StringCodec(final Class<T> javaClazz) {
             this.javaClazz = javaClazz;
@@ -2425,9 +2483,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @param protocolVersion the protocol version to use for serialization
          * @return a ByteBuffer containing the serialized value
          * @deprecated Use {@link #encode(Object, ProtocolVersion)} instead.
+         * @throws ParsingException if JSON serialization rejects the value, including unsupported or cyclic content
+         * @throws UncheckedIOException if a value serializer cannot read an underlying stream or reader
          */
         @Deprecated
-        public ByteBuffer serialize(final T value, final ProtocolVersion protocolVersion) {
+        public ByteBuffer serialize(final T value, final ProtocolVersion protocolVersion) throws ParsingException, UncheckedIOException {
             return stringTypeCodec.encode(serialize(value), protocolVersion);
         }
 
@@ -2440,9 +2500,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @param protocolVersion the protocol version to use for deserialization
          * @return the deserialized value
          * @deprecated Use {@link #decode(ByteBuffer, ProtocolVersion)} instead.
+         * @throws ParsingException if the decoded JSON syntax or structure cannot be read as {@code T}
+         * @throws UncheckedIOException if a JSON value reader or converter reports an I/O failure while materializing {@code T}
          */
         @Deprecated
-        public T deserialize(final ByteBuffer bytes, final ProtocolVersion protocolVersion) {
+        public T deserialize(final ByteBuffer bytes, final ProtocolVersion protocolVersion) throws ParsingException, UncheckedIOException {
             return deserialize(stringTypeCodec.decode(bytes, protocolVersion));
         }
 
@@ -2454,9 +2516,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @param value the value to encode
          * @param protocolVersion the protocol version to use for encoding
          * @return a ByteBuffer containing the encoded value
+         * @throws ParsingException if JSON serialization rejects the value, including unsupported or cyclic content
+         * @throws UncheckedIOException if a value serializer cannot read an underlying stream or reader
          */
         @Override
-        public ByteBuffer encode(final T value, final ProtocolVersion protocolVersion) {
+        public ByteBuffer encode(final T value, final ProtocolVersion protocolVersion) throws ParsingException, UncheckedIOException {
             return stringTypeCodec.encode(serialize(value), protocolVersion);
         }
 
@@ -2468,9 +2532,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @param bytes the ByteBuffer containing the serialized value
          * @param protocolVersion the protocol version to use for decoding
          * @return the deserialized value
+         * @throws ParsingException if the decoded JSON syntax or structure cannot be read as {@code T}
+         * @throws UncheckedIOException if a JSON value reader or converter reports an I/O failure while materializing {@code T}
          */
         @Override
-        public T decode(final ByteBuffer bytes, final ProtocolVersion protocolVersion) {
+        public T decode(final ByteBuffer bytes, final ProtocolVersion protocolVersion) throws ParsingException, UncheckedIOException {
             return deserialize(stringTypeCodec.decode(bytes, protocolVersion));
         }
 
@@ -2483,9 +2549,12 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          *
          * @param value the CQL text literal to parse
          * @return an instance of {@code T}, or {@code null} for empty/{@code NULL} input
+         * @throws IllegalArgumentException if the nonempty, non-null-literal {@code value} is not a quoted CQL text literal
+         * @throws ParsingException if the decoded JSON syntax or structure cannot be read as {@code T}
+         * @throws UncheckedIOException if a JSON value reader or converter reports an I/O failure while materializing {@code T}
          */
         @Override
-        public T parse(final String value) {
+        public T parse(final String value) throws ParsingException, UncheckedIOException {
             return Strings.isEmpty(value) || NULL_STR.equals(value) ? null : deserialize(stringTypeCodec.parse(value));
         }
 
@@ -2498,9 +2567,11 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          * @param value the value to format
          * @return a quoted CQL text literal, or {@link CassandraExecutorBase#NULL_STR NULL}
          *         if the value is {@code null}
+         * @throws ParsingException if JSON serialization rejects the value, including unsupported or cyclic content
+         * @throws UncheckedIOException if a value serializer cannot read an underlying stream or reader
          */
         @Override
-        public String format(final T value) {
+        public String format(final T value) throws ParsingException, UncheckedIOException {
             return value == null ? NULL_STR : stringTypeCodec.format(serialize(value));
         }
 
@@ -2533,8 +2604,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          *
          * @param value the value to serialize
          * @return the JSON payload, or {@code null} for a {@code null} value
+         * @throws ParsingException if JSON serialization rejects the value, including unsupported or cyclic content
+         * @throws UncheckedIOException if a value serializer cannot read an underlying stream or reader
          */
-        protected String serialize(final T value) {
+        protected String serialize(final T value) throws ParsingException, UncheckedIOException {
             return value == null ? null : N.toJson(value);
         }
 
@@ -2543,8 +2616,10 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
          *
          * @param value the decoded JSON payload
          * @return the deserialized value, or {@code null} for a {@code null} payload
+         * @throws ParsingException if the decoded JSON syntax or structure cannot be read as {@code T}
+         * @throws UncheckedIOException if a JSON value reader or converter reports an I/O failure while materializing {@code T}
          */
-        protected T deserialize(final String value) {
+        protected T deserialize(final String value) throws ParsingException, UncheckedIOException {
             return value == null ? null : N.fromJson(value, javaClazz);
         }
     }

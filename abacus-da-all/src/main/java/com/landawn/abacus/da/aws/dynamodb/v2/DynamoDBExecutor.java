@@ -23,6 +23,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.BiFunction;
@@ -54,6 +55,7 @@ import com.landawn.abacus.util.function.Function;
 import com.landawn.abacus.util.stream.Stream;
 
 import software.amazon.awssdk.core.SdkBytes;
+import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
 import software.amazon.awssdk.services.dynamodb.DynamoDbClient;
 import software.amazon.awssdk.services.dynamodb.model.AttributeAction;
@@ -68,6 +70,7 @@ import software.amazon.awssdk.services.dynamodb.model.Condition;
 import software.amazon.awssdk.services.dynamodb.model.DeleteItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.DeleteItemResponse;
 import software.amazon.awssdk.services.dynamodb.model.DeleteRequest;
+import software.amazon.awssdk.services.dynamodb.model.DynamoDbException;
 import software.amazon.awssdk.services.dynamodb.model.GetItemRequest;
 import software.amazon.awssdk.services.dynamodb.model.GetItemResponse;
 import software.amazon.awssdk.services.dynamodb.model.KeysAndAttributes;
@@ -360,9 +363,8 @@ public final class DynamoDBExecutor {
      * @param <T> the entity type
      * @param targetEntityClass the entity class to create mapper for. Must be annotated with @Table. Must not be null.
      * @return a cached Mapper instance for the specified entity class, never null
-     * @throws IllegalArgumentException if {@code targetEntityClass} is null, is missing a {@code @Table}
-     *                                  annotation, or fails the underlying Mapper validation (not a
-     *                                  bean class, zero or more than two {@code @Id} fields, etc.)
+     * @throws IllegalArgumentException if {@code targetEntityClass} is null or not a bean class, is missing {@code @Table} , does not declare
+     *         one or two ID properties, or two IDs map to the same DynamoDB attribute name
      * @see #mapper(Class, String, NamingPolicy)
      */
     public <T> Mapper<T> mapper(final Class<T> targetEntityClass) {
@@ -436,9 +438,8 @@ public final class DynamoDBExecutor {
      * @param tableName the DynamoDB table name to use for operations. Must not be null or empty.
      * @param namingPolicy the naming policy for converting property names to attribute names. If {@code null}, defaults to {@link NamingPolicy#CAMEL_CASE}.
      * @return a new Mapper instance configured with the specified parameters, never null
-     * @throws IllegalArgumentException if {@code targetEntityClass} is null, not a bean class, has
-     *                                  zero or more than two {@code @Id} fields, two IDs map to the same
-     *                                  attribute name, or {@code tableName} is null/empty
+     * @throws IllegalArgumentException if {@code targetEntityClass} is null, not a bean class, has zero or more than two {@code @Id} fields, two
+     *         IDs map to the same attribute name, or {@code tableName} is null/empty
      * @see NamingPolicy
      * @see #mapper(Class)
      */
@@ -576,8 +577,8 @@ public final class DynamoDBExecutor {
      *
      * @param a one or two name-value pairs; the even-indexed elements must be Strings
      * @return a Map containing one or two valid key attributes, never null
-     * @throws IllegalArgumentException if {@code a} is null, does not contain one or two pairs,
-     *                                  contains duplicate/empty names, or contains an invalid key value
+     * @throws IllegalArgumentException if {@code a} is null, does not contain one or two pairs, contains duplicate/empty names, or contains an
+     *         invalid key value
      * @throws ClassCastException if an even-indexed argument is not a String
      */
     public static Map<String, AttributeValue> asKey(final Object... a) {
@@ -614,7 +615,8 @@ public final class DynamoDBExecutor {
      * @param attrName the name of the attribute. Must not be null or empty.
      * @param value the value for the attribute, automatically converted to AttributeValue
      * @return a Map containing the single attribute as AttributeValue, never null
-     * @throws IllegalArgumentException if {@code attrName} is null or empty
+     * @throws IllegalArgumentException if {@code attrName} is null or empty, or if a value being converted is {@code Float.NaN} ,
+     *         {@code Double.NaN} , or a floating-point infinity
      */
     public static Map<String, AttributeValue> asItem(final String attrName, final Object value) {
         N.checkArgNotEmpty(attrName, cs.attrName);
@@ -640,7 +642,8 @@ public final class DynamoDBExecutor {
      * @param attrName2 the name of the second attribute. Must not be null or empty.
      * @param value2    the value of the second attribute, automatically converted to {@code AttributeValue}.
      * @return an item containing the two attributes as {@code AttributeValue} objects. Never null.
-     * @throws IllegalArgumentException if {@code attrName} or {@code attrName2} is null or empty
+     * @throws IllegalArgumentException if {@code attrName} or {@code attrName2} is null or empty, or if a value being converted is
+     *         {@code Float.NaN} , {@code Double.NaN} , or a floating-point infinity
      */
     public static Map<String, AttributeValue> asItem(final String attrName, final Object value, final String attrName2, final Object value2) {
         N.checkArgNotEmpty(attrName, cs.attrName);
@@ -669,7 +672,8 @@ public final class DynamoDBExecutor {
      * @param attrName3 the name of the third attribute. Must not be null or empty.
      * @param value3    the value of the third attribute, automatically converted to {@code AttributeValue}.
      * @return an item containing the three attributes as {@code AttributeValue} objects. Never null.
-     * @throws IllegalArgumentException if {@code attrName}, {@code attrName2}, or {@code attrName3} is null or empty
+     * @throws IllegalArgumentException if {@code attrName} , {@code attrName2} , or {@code attrName3} is null or empty, or if a value being
+     *         converted is {@code Float.NaN} , {@code Double.NaN} , or a floating-point infinity
      */
     public static Map<String, AttributeValue> asItem(final String attrName, final Object value, final String attrName2, final Object value2,
             final String attrName3, final Object value3) {
@@ -698,7 +702,8 @@ public final class DynamoDBExecutor {
      *
      * @param a an array of alternating attribute names and values, must not be {@code null}
      * @return an item containing the attributes as {@code AttributeValue} objects, never null
-     * @throws IllegalArgumentException if {@code a} is {@code null} or the array length is odd
+     * @throws IllegalArgumentException if {@code a} is {@code null} or the array length is odd, or if a value being converted is
+     *         {@code Float.NaN} , {@code Double.NaN} , or a floating-point infinity
      * @throws ClassCastException if an even-indexed argument is not a String
      */
     public static Map<String, AttributeValue> asItem(final Object... a) {
@@ -740,7 +745,8 @@ public final class DynamoDBExecutor {
      * @param attrName the name of the attribute to update. Must not be null or empty.
      * @param value the value for the attribute, automatically converted to AttributeValueUpdate
      * @return a Map containing the single AttributeValueUpdate, never null
-     * @throws IllegalArgumentException if {@code attrName} is null or empty
+     * @throws IllegalArgumentException if {@code attrName} is null or empty, or if a value being converted is {@code Float.NaN} ,
+     *         {@code Double.NaN} , or a floating-point infinity
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final String attrName, final Object value) {
         N.checkArgNotEmpty(attrName, cs.attrName);
@@ -767,7 +773,8 @@ public final class DynamoDBExecutor {
      * @param attrName2 the name of the second attribute to update. Must not be null or empty.
      * @param value2    the value of the second attribute, automatically converted to {@code AttributeValueUpdate}.
      * @return an item containing the two attributes as {@code AttributeValueUpdate} objects. Never null.
-     * @throws IllegalArgumentException if {@code attrName} or {@code attrName2} is null or empty
+     * @throws IllegalArgumentException if {@code attrName} or {@code attrName2} is null or empty, or if a value being converted is
+     *         {@code Float.NaN} , {@code Double.NaN} , or a floating-point infinity
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final String attrName, final Object value, final String attrName2, final Object value2) {
         N.checkArgNotEmpty(attrName, cs.attrName);
@@ -798,7 +805,8 @@ public final class DynamoDBExecutor {
      * @param attrName3 the name of the third attribute to update. Must not be null or empty.
      * @param value3    the value of the third attribute, automatically converted to {@code AttributeValueUpdate}.
      * @return an item containing the three attributes as {@code AttributeValueUpdate} objects. Never null.
-     * @throws IllegalArgumentException if {@code attrName}, {@code attrName2}, or {@code attrName3} is null or empty
+     * @throws IllegalArgumentException if {@code attrName} , {@code attrName2} , or {@code attrName3} is null or empty, or if a value being
+     *         converted is {@code Float.NaN} , {@code Double.NaN} , or a floating-point infinity
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final String attrName, final Object value, final String attrName2, final Object value2,
             final String attrName3, final Object value3) {
@@ -830,7 +838,8 @@ public final class DynamoDBExecutor {
      *
      * @param a an array of alternating attribute names and values, must not be {@code null}
      * @return an item containing the attributes as {@code AttributeValueUpdate} objects, never null
-     * @throws IllegalArgumentException if {@code a} is {@code null} or the array length is odd
+     * @throws IllegalArgumentException if {@code a} is {@code null} or the array length is odd, or if a value being converted is
+     *         {@code Float.NaN} , {@code Double.NaN} , or a floating-point infinity
      * @throws ClassCastException if an even-indexed argument is not a String
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final Object... a) {
@@ -964,6 +973,7 @@ public final class DynamoDBExecutor {
      *
      * @param value the value to create AttributeValueUpdate for, can be null
      * @return an AttributeValueUpdate with PUT action containing the converted value, never null
+     * @throws IllegalArgumentException if a value being converted is {@code Float.NaN} , {@code Double.NaN} , or a floating-point infinity
      * @see #toAttributeValueUpdate(Object, AttributeAction)
      * @see #toAttributeValue(Object)
      */
@@ -1024,6 +1034,7 @@ public final class DynamoDBExecutor {
      *               {@code null}, which leaves {@code Action} unset so DynamoDB applies its default
      *               ({@code PUT})
      * @return an AttributeValueUpdate with the specified action and converted value, never null
+     * @throws IllegalArgumentException if a value being converted is {@code Float.NaN} , {@code Double.NaN} , or a floating-point infinity
      * @see #toAttributeValue(Object)
      * @see #toAttributeValueUpdate(Object)
      */
@@ -1053,7 +1064,8 @@ public final class DynamoDBExecutor {
      *
      * @param entity the Java object (Entity, Map, or Object[]) to convert, must not be {@code null}
      * @return a Map representing the DynamoDB item, never null
-     * @throws IllegalArgumentException if {@code entity} is {@code null}, or is not an Entity, Map, or Object[]
+     * @throws IllegalArgumentException if {@code entity} is {@code null} , or is not an Entity, Map, or Object[], or if a value being converted
+     *         is {@code Float.NaN} , {@code Double.NaN} , or a floating-point infinity
      */
     public static Map<String, AttributeValue> toItem(final Object entity) {
         return toItem(entity, NamingPolicy.CAMEL_CASE);
@@ -1077,8 +1089,8 @@ public final class DynamoDBExecutor {
      * @param entity the Java object (Entity, Map, or Object[]) to convert, must not be {@code null}
      * @param namingPolicy the naming policy to use for attribute names, must not be {@code null}
      * @return a Map representing the DynamoDB item, never null
-     * @throws IllegalArgumentException if {@code entity} or {@code namingPolicy} is {@code null}, or if
-     *                                  {@code entity} is not an Entity, Map, or Object[]
+     * @throws IllegalArgumentException if {@code entity} or {@code namingPolicy} is {@code null} , or if {@code entity} is not an Entity, Map,
+     *         or Object[], or if a value being converted is {@code Float.NaN} , {@code Double.NaN} , or a floating-point infinity
      */
     public static Map<String, AttributeValue> toItem(final Object entity, final NamingPolicy namingPolicy) {
         N.checkArgNotNull(entity, cs.entity);
@@ -1139,7 +1151,8 @@ public final class DynamoDBExecutor {
      *
      * @param entity the Java object (Entity, Map, or Object[]) to convert, must not be {@code null}
      * @return a Map representing the DynamoDB update item, never null
-     * @throws IllegalArgumentException if {@code entity} is {@code null}, or is not an Entity, Map, or Object[]
+     * @throws IllegalArgumentException if {@code entity} is {@code null} , or is not an Entity, Map, or Object[], or if a value being converted
+     *         is {@code Float.NaN} , {@code Double.NaN} , or a floating-point infinity
      */
     public static Map<String, AttributeValueUpdate> toUpdateItem(final Object entity) {
         return toUpdateItem(entity, NamingPolicy.CAMEL_CASE);
@@ -1163,8 +1176,8 @@ public final class DynamoDBExecutor {
      * @param entity the Java object (Entity, Map, or Object[]) to convert, must not be {@code null}
      * @param namingPolicy the naming policy to use for attribute names, must not be {@code null}
      * @return a Map representing the DynamoDB update item, never null
-     * @throws IllegalArgumentException if {@code entity} or {@code namingPolicy} is {@code null}, or if
-     *                                  {@code entity} is not an Entity, Map, or Object[]
+     * @throws IllegalArgumentException if {@code entity} or {@code namingPolicy} is {@code null} , or if {@code entity} is not an Entity, Map,
+     *         or Object[], or if a value being converted is {@code Float.NaN} , {@code Double.NaN} , or a floating-point infinity
      */
     public static Map<String, AttributeValueUpdate> toUpdateItem(final Object entity, final NamingPolicy namingPolicy) {
         N.checkArgNotNull(entity, cs.entity);
@@ -1341,6 +1354,7 @@ public final class DynamoDBExecutor {
      *
      * @param item the DynamoDB item map with {@link AttributeValue} objects, can be {@code null}
      * @return a Map with converted Java objects, or {@code null} if {@code item} is {@code null}
+     * @throws IllegalArgumentException if an attribute value in {@code item} has no supported DynamoDB type
      */
     public static Map<String, Object> toMap(final Map<String, AttributeValue> item) {
         return toMap(item, IntFunctions.ofMap());
@@ -1368,7 +1382,10 @@ public final class DynamoDBExecutor {
      * @param item the DynamoDB item map with {@link AttributeValue} objects, can be {@code null}
      * @param mapSupplier function to create the target map instance, receiving the expected size
      * @return a Map with converted Java objects, or {@code null} if {@code item} is {@code null}
-     * @throws IllegalArgumentException if {@code mapSupplier} is {@code null}
+     * @throws IllegalArgumentException if {@code mapSupplier} is {@code null} , or an attribute value has no supported DynamoDB type * @throws
+     *         RuntimeException if {@code mapSupplier} throws while creating the result map
+    
+     * @throws NullPointerException if {@code mapSupplier} returns null for a non-empty {@code item}
      */
     public static Map<String, Object> toMap(final Map<String, AttributeValue> item, final IntFunction<? extends Map<String, Object>> mapSupplier)
             throws IllegalArgumentException {
@@ -1412,7 +1429,8 @@ public final class DynamoDBExecutor {
      *                    Must not be null.
      * @return an instance of the target class representing the item, or null if {@code getItemResponse}
      *         is null or contains no item
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
+     * @throws IllegalArgumentException if {@code targetClass} is null, or an item is present and its attributes cannot be mapped to the bean
+     *         properties
      */
     public static <T> T toEntity(final GetItemResponse getItemResponse, final Class<T> targetClass) {
         N.checkArgNotNull(targetClass, cs.targetClass);
@@ -1456,7 +1474,8 @@ public final class DynamoDBExecutor {
      * @param targetClass the entity class to instantiate; must be a bean class with getter/setter methods.
      *                    Must not be null.
      * @return an instance of {@code targetClass} populated from {@code item}, or {@code null} if {@code item} is {@code null}
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
+     * @throws IllegalArgumentException if {@code targetClass} is null, or an item is present and its attributes cannot be mapped to the bean
+     *         properties
      */
     public static <T> T toEntity(final Map<String, AttributeValue> item, final Class<T> targetClass) {
         N.checkArgNotNull(targetClass, cs.targetClass);
@@ -1831,6 +1850,8 @@ public final class DynamoDBExecutor {
      * @param queryResult the QueryResponse containing the items to convert
      * @param targetClass the class of the entities to convert to
      * @return a List of entities, never null
+     * @throws IllegalArgumentException if the response contains items and {@code targetClass} is null, or a selected row cannot be converted to
+     *         {@code targetClass}
      */
     public static <T> List<T> toList(final QueryResponse queryResult, final Class<T> targetClass) {
         return toList(queryResult, 0, Integer.MAX_VALUE, targetClass);
@@ -1867,7 +1888,8 @@ public final class DynamoDBExecutor {
      * @param count the maximum number of items to take from {@code offset}
      * @param targetClass the class of the entities to convert to
      * @return a List of entities materialized from the sliced page, never null
-     * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
+     * @throws IllegalArgumentException if {@code offset} or {@code count} is negative, or the response contains items and {@code targetClass} is
+     *         null, or a selected row cannot be converted to {@code targetClass}
      */
     public static <T> List<T> toList(final QueryResponse queryResult, final int offset, final int count, final Class<T> targetClass) {
         N.checkArgument(offset >= 0 && count >= 0, "'offset' and 'count' can't be negative: %s, %s", offset, count);
@@ -1904,6 +1926,8 @@ public final class DynamoDBExecutor {
      * @param scanResult the ScanResponse containing the items to convert
      * @param targetClass the class of the entities to convert to
      * @return a List of entities, never null
+     * @throws IllegalArgumentException if the response contains items and {@code targetClass} is null, or a selected row cannot be converted to
+     *         {@code targetClass}
      */
     public static <T> List<T> toList(final ScanResponse scanResult, final Class<T> targetClass) {
         return toList(scanResult, 0, Integer.MAX_VALUE, targetClass);
@@ -1934,7 +1958,8 @@ public final class DynamoDBExecutor {
      * @param count the maximum number of items to take from {@code offset}
      * @param targetClass the class of the entities to convert to
      * @return a List of entities materialized from the sliced page, never null
-     * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
+     * @throws IllegalArgumentException if {@code offset} or {@code count} is negative, or the response contains items and {@code targetClass} is
+     *         null, or a selected row cannot be converted to {@code targetClass}
      */
     public static <T> List<T> toList(final ScanResponse scanResult, final int offset, final int count, final Class<T> targetClass) {
         N.checkArgument(offset >= 0 && count >= 0, "'offset' and 'count' can't be negative: %s, %s", offset, count);
@@ -2045,9 +2070,9 @@ public final class DynamoDBExecutor {
      * @param queryResult the QueryResponse containing the items to convert
      * @param offset the starting index within the single response page (0-based)
      * @param count the maximum number of items to take from {@code offset}
-     * @return a Dataset containing the sliced page, never null
+     * @return a Dataset containing the sliced page, never null     * @throws NullPointerException if {@code queryResult} is {@code null}
+    
      * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
-     * @throws NullPointerException if {@code queryResult} is {@code null}
      */
     public static Dataset extractData(final QueryResponse queryResult, final int offset, final int count) {
         return extractData(queryResult.items(), offset, count);
@@ -2104,9 +2129,9 @@ public final class DynamoDBExecutor {
      * @param scanResult the ScanResponse containing the items to convert
      * @param offset the starting index within the single response page (0-based)
      * @param count the maximum number of items to take from {@code offset}
-     * @return a Dataset containing the sliced page, never null
+     * @return a Dataset containing the sliced page, never null     * @throws NullPointerException if {@code scanResult} is {@code null}
+    
      * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
-     * @throws NullPointerException if {@code scanResult} is {@code null}
      */
     public static Dataset extractData(final ScanResponse scanResult, final int offset, final int count) {
         return extractData(scanResult.items(), offset, count);
@@ -2205,8 +2230,10 @@ public final class DynamoDBExecutor {
      * @param tableName the name of the DynamoDB table to retrieve the item from. Must not be null or empty.
      * @param key the primary key of the item to retrieve, must include all key attributes. Must not be null.
      * @return the item as a Map of attribute names to values, or null if the item doesn't exist
-     * @throws DynamoDbException if DynamoDB rejects the request (a null/empty
-     *         {@code tableName} or a null {@code key} fails service-side validation)
+     * @throws DynamoDbException if DynamoDB rejects the request (a null/empty {@code tableName} or a null {@code key} fails service-side
+     *         validation)
+     * @throws SdkException if the SDK cannot send the getItem request or DynamoDB rejects it because of credentials, table/key data, conditions,
+     *         or service limits
      * @see #getItem(String, Map, Boolean)
      * @see #getItem(String, Map, Class)
      */
@@ -2262,8 +2289,10 @@ public final class DynamoDBExecutor {
      * @param key the primary key of the item to retrieve, must include all key attributes. Must not be null.
      * @param consistentRead true for strongly consistent reads, false/null for eventually consistent reads
      * @return the item as a Map of attribute names to values, or null if the item doesn't exist
-     * @throws DynamoDbException if DynamoDB rejects the request (a null/empty
-     *         {@code tableName} or a null {@code key} fails service-side validation)
+     * @throws DynamoDbException if DynamoDB rejects the request (a null/empty {@code tableName} or a null {@code key} fails service-side
+     *         validation)
+     * @throws SdkException if the SDK cannot send the getItem request or DynamoDB rejects it because of credentials, table/key data, conditions,
+     *         or service limits
      * @see #getItem(String, Map)
      * @see #getItem(String, Map, Boolean, Class)
      */
@@ -2303,6 +2332,8 @@ public final class DynamoDBExecutor {
      * @param getItemRequest the complete request with all parameters. Must not be null.
      * @return the item as a Map of attribute names to values, or null if the item doesn't exist
      * @throws NullPointerException if {@code getItemRequest} is null (rejected by the AWS SDK v2 client)
+     * @throws SdkException if the SDK cannot send the getItem request or DynamoDB rejects it because of credentials, table/key data, conditions,
+     *         or service limits
      */
     public Map<String, Object> getItem(final GetItemRequest getItemRequest) {
         return getItem(getItemRequest, PROP_MAP_TYPE);
@@ -2334,10 +2365,14 @@ public final class DynamoDBExecutor {
      * @param targetClass the class of the entity to convert to. Must not be null.
      * @return an instance of the target class representing the item, or null if the item doesn't exist
      * @throws IllegalArgumentException if {@code targetClass} is null
-     * @throws DynamoDbException if DynamoDB rejects the request (a null/empty
-     *         {@code tableName} or a null {@code key} fails service-side validation)
+     * @throws DynamoDbException if DynamoDB rejects the request (a null/empty {@code tableName} or a null {@code key} fails service-side
+     *         validation)
+     * @throws SdkException if the SDK cannot send the getItem request or DynamoDB rejects it because of credentials, table/key data, conditions,
+     *         or service limits
      */
     public <T> T getItem(final String tableName, final Map<String, AttributeValue> key, final Class<T> targetClass) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final GetItemRequest getItemRequest = GetItemRequest.builder().tableName(tableName).key(key).build();
 
         return getItem(getItemRequest, targetClass);
@@ -2371,10 +2406,14 @@ public final class DynamoDBExecutor {
      * @param targetClass the class of the entity to convert to. Must not be null.
      * @return an instance of the target class representing the item, or null if the item doesn't exist
      * @throws IllegalArgumentException if {@code targetClass} is null
-     * @throws DynamoDbException if DynamoDB rejects the request (a null/empty
-     *         {@code tableName} or a null {@code key} fails service-side validation)
+     * @throws DynamoDbException if DynamoDB rejects the request (a null/empty {@code tableName} or a null {@code key} fails service-side
+     *         validation)
+     * @throws SdkException if the SDK cannot send the getItem request or DynamoDB rejects it because of credentials, table/key data, conditions,
+     *         or service limits
      */
     public <T> T getItem(final String tableName, final Map<String, AttributeValue> key, final Boolean consistentRead, final Class<T> targetClass) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final GetItemRequest getItemRequest = GetItemRequest.builder().tableName(tableName).key(key).consistentRead(consistentRead).build();
 
         return getItem(getItemRequest, targetClass);
@@ -2400,10 +2439,13 @@ public final class DynamoDBExecutor {
      * @return an instance of {@code targetClass} containing the item data, or {@code null} for
      *         reference types when the item doesn't exist (primitive {@code targetClass} returns its
      *         default value such as {@code 0} or {@code false})
-     * @throws IllegalArgumentException if {@code targetClass} is null or unsupported
      * @throws NullPointerException if {@code getItemRequest} is null (rejected by the AWS SDK v2 client)
+     * @throws IllegalArgumentException if {@code targetClass} is null or unsupported
+     * @throws SdkException if the SDK cannot send the getItem request or DynamoDB rejects it because of credentials, table/key data, conditions,
+     *         or service limits
      */
     public <T> T getItem(final GetItemRequest getItemRequest, final Class<T> targetClass) {
+        Objects.requireNonNull(getItemRequest, "getItemRequest");
         N.checkArgNotNull(targetClass, cs.targetClass);
 
         return readRow(dynamoDBClient.getItem(getItemRequest), targetClass);
@@ -2478,8 +2520,10 @@ public final class DynamoDBExecutor {
      *                    objects specifying the items to retrieve from each table. Must not be null.
      * @return a map of table names to lists of retrieved items, where each item is represented
      *         as a Map of attribute names to values
-     * @throws DynamoDbException if DynamoDB rejects the request (a null
-     *         {@code requestItems} or a batch exceeding DynamoDB's limits fails with a service {@code ValidationException})
+     * @throws DynamoDbException if DynamoDB rejects the request (a null {@code requestItems} or a batch exceeding DynamoDB's limits fails with a
+     *         service {@code ValidationException} )
+     * @throws SdkException if the SDK cannot send the batchGetItem request or DynamoDB rejects it because of credentials, table/key data,
+     *         conditions, or service limits
      * @see KeysAndAttributes
      * @see #batchGetItem(Map, String)
      */
@@ -2509,8 +2553,10 @@ public final class DynamoDBExecutor {
      * @param returnConsumedCapacity the level of consumed capacity to return. Can be "INDEXES", "TOTAL", or "NONE".
      * @return a map of table names to lists of retrieved items, where each item is represented
      *         as a Map of attribute names to values
-     * @throws DynamoDbException if DynamoDB rejects the request (a null
-     *         {@code requestItems} or a batch exceeding DynamoDB's limits fails with a service {@code ValidationException})
+     * @throws DynamoDbException if DynamoDB rejects the request (a null {@code requestItems} or a batch exceeding DynamoDB's limits fails with a
+     *         service {@code ValidationException} )
+     * @throws SdkException if the SDK cannot send the batchGetItem request or DynamoDB rejects it because of credentials, table/key data,
+     *         conditions, or service limits
      */
     public Map<String, List<Map<String, Object>>> batchGetItem(final Map<String, KeysAndAttributes> requestItems, final String returnConsumedCapacity) {
         return batchGetItem(requestItems, returnConsumedCapacity, PROP_MAP_TYPE);
@@ -2536,7 +2582,10 @@ public final class DynamoDBExecutor {
      * @param batchGetItemRequest the BatchGetItemRequest containing the request items and options. Must not be null.
      * @return a map of table names to lists of retrieved items, where each item is represented
      *         as a Map of attribute names to values
-     * @throws IllegalArgumentException if batchGetItemRequest is null; exceeding DynamoDB's batch limits fails with a service {@code ValidationException}
+     * @throws IllegalArgumentException if batchGetItemRequest is null; exceeding DynamoDB's batch limits fails with a service
+     *         {@code ValidationException}
+     * @throws SdkException if the SDK cannot send the batchGetItem request or DynamoDB rejects it because of credentials, table/key data,
+     *         conditions, or service limits
      */
     public Map<String, List<Map<String, Object>>> batchGetItem(final BatchGetItemRequest batchGetItemRequest) {
         return batchGetItem(batchGetItemRequest, PROP_MAP_TYPE);
@@ -2567,10 +2616,13 @@ public final class DynamoDBExecutor {
      * @return a map where each key is a table name and the value is a list of entities of the specified
      *         target class. Never null.
      * @throws IllegalArgumentException if {@code targetClass} is null
-     * @throws DynamoDbException if DynamoDB rejects the request (a null
-     *         {@code requestItems} fails service-side validation)
+     * @throws DynamoDbException if DynamoDB rejects the request (a null {@code requestItems} fails service-side validation)
+     * @throws SdkException if the SDK cannot send the batchGetItem request or DynamoDB rejects it because of credentials, table/key data,
+     *         conditions, or service limits
      */
     public <T> Map<String, List<T>> batchGetItem(final Map<String, KeysAndAttributes> requestItems, final Class<T> targetClass) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final BatchGetItemRequest batchGetItemRequest = BatchGetItemRequest.builder().requestItems(requestItems).build();
 
         return batchGetItem(batchGetItemRequest, targetClass);
@@ -2602,11 +2654,14 @@ public final class DynamoDBExecutor {
      * @return a map where each key is a table name and the value is a list of entities of the specified
      *         target class. Never null.
      * @throws IllegalArgumentException if {@code targetClass} is null
-     * @throws DynamoDbException if DynamoDB rejects the request (a null
-     *         {@code requestItems} fails service-side validation)
+     * @throws DynamoDbException if DynamoDB rejects the request (a null {@code requestItems} fails service-side validation)
+     * @throws SdkException if the SDK cannot send the batchGetItem request or DynamoDB rejects it because of credentials, table/key data,
+     *         conditions, or service limits
      */
     public <T> Map<String, List<T>> batchGetItem(final Map<String, KeysAndAttributes> requestItems, final String returnConsumedCapacity,
             final Class<T> targetClass) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final BatchGetItemRequest batchGetItemRequest = BatchGetItemRequest.builder()
                 .requestItems(requestItems)
                 .returnConsumedCapacity(returnConsumedCapacity)
@@ -2641,6 +2696,8 @@ public final class DynamoDBExecutor {
      * @return a map where each key is a table name and the value is a list of entities of the specified
      *         target class. Never null.
      * @throws IllegalArgumentException if batchGetItemRequest or targetClass is null
+     * @throws SdkException if the SDK cannot send the batchGetItem request or DynamoDB rejects it because of credentials, table/key data,
+     *         conditions, or service limits
      */
     public <T> Map<String, List<T>> batchGetItem(final BatchGetItemRequest batchGetItemRequest, final Class<T> targetClass) {
         N.checkArgNotNull(batchGetItemRequest, "batchGetItemRequest");
@@ -2675,8 +2732,10 @@ public final class DynamoDBExecutor {
      * @param tableName the name of the DynamoDB table. Must not be null or empty.
      * @param item the item to put, as a map of attribute names to AttributeValues. Must not be null.
      * @return a {@link PutItemResponse} containing operation metadata and consumed capacity
-     * @throws DynamoDbException if DynamoDB rejects the request (a null/empty
-     *         {@code tableName} or a null {@code item} fails service-side validation)
+     * @throws DynamoDbException if DynamoDB rejects the request (a null/empty {@code tableName} or a null {@code item} fails service-side
+     *         validation)
+     * @throws SdkException if the SDK cannot send the putItem request or DynamoDB rejects it because of credentials, table/key data, conditions,
+     *         or service limits
      * @see #putItem(String, Map, String)
      * @see #updateItem
      */
@@ -2722,8 +2781,10 @@ public final class DynamoDBExecutor {
      * @param item the item to put, as a map of attribute names to AttributeValues. Must not be null.
      * @param returnValues specifies what to return: "NONE" or "ALL_OLD"
      * @return a {@link PutItemResponse} containing operation metadata and optionally the replaced item
-     * @throws DynamoDbException if DynamoDB rejects the request (a null/empty
-     *         {@code tableName} or a null {@code item} fails service-side validation)
+     * @throws DynamoDbException if DynamoDB rejects the request (a null/empty {@code tableName} or a null {@code item} fails service-side
+     *         validation)
+     * @throws SdkException if the SDK cannot send the putItem request or DynamoDB rejects it because of credentials, table/key data, conditions,
+     *         or service limits
      * @see software.amazon.awssdk.services.dynamodb.model.ReturnValue
      */
     public PutItemResponse putItem(final String tableName, final Map<String, AttributeValue> item, final String returnValues) {
@@ -2770,6 +2831,8 @@ public final class DynamoDBExecutor {
      * @param putItemRequest the complete request with all parameters. Must not be null.
      * @return a {@link PutItemResponse} containing operation metadata and optional return values
      * @throws NullPointerException if {@code putItemRequest} is null (rejected by the AWS SDK v2 client)
+     * @throws SdkException if the SDK cannot send the putItem request or DynamoDB rejects it because of credentials, table/key data, conditions,
+     *         or service limits
      */
     public PutItemResponse putItem(final PutItemRequest putItemRequest) {
         return dynamoDBClient.putItem(putItemRequest);
@@ -2788,7 +2851,7 @@ public final class DynamoDBExecutor {
      * @param entity the entity to put; a bean with getter/setter methods, a {@code Map}, or an
      *               {@code Object[]} of alternating name/value pairs; must not be null
      * @return the response from the PutItem operation, containing metadata about the operation
-     * @throws IllegalArgumentException if {@code entity} is {@code null}, or is not an Entity, Map, or Object[]
+     * @throws IllegalArgumentException if {@code entity} is {@code null} , or is not an Entity, Map, or Object[]
      */
     // There isn't much benefit to adding a method for "Object entity",
     // and it may cause errors because "Object" is ambiguous with any type.
@@ -2813,7 +2876,7 @@ public final class DynamoDBExecutor {
      *               {@code Object[]} of alternating name/value pairs; must not be null
      * @param returnValues {@code "NONE"} (default) or {@code "ALL_OLD"} to retrieve the previous item
      * @return the response from the PutItem operation, containing metadata and optionally the old item
-     * @throws IllegalArgumentException if {@code entity} is {@code null}, or is not an Entity, Map, or Object[]
+     * @throws IllegalArgumentException if {@code entity} is {@code null} , or is not an Entity, Map, or Object[]
      */
     PutItemResponse putItem(final String tableName, final Object entity, final String returnValues) {
         PutItemRequest putItemRequest = PutItemRequest.builder().tableName(tableName).item(toItem(entity)).returnValues(returnValues).build();
@@ -2868,8 +2931,10 @@ public final class DynamoDBExecutor {
      *
      * @param requestItems map of table names to lists of write requests (puts/deletes). Must not be null.
      * @return a {@link BatchWriteItemResponse} containing unprocessed items and consumed capacity
-     * @throws DynamoDbException if DynamoDB rejects the request (a null
-     *         {@code requestItems} or a batch exceeding DynamoDB's limits fails with a service {@code ValidationException})
+     * @throws DynamoDbException if DynamoDB rejects the request (a null {@code requestItems} or a batch exceeding DynamoDB's limits fails with a
+     *         service {@code ValidationException} )
+     * @throws SdkException if the SDK cannot send the batchWriteItem request or DynamoDB rejects it because of credentials, table/key data,
+     *         conditions, or service limits
      * @see #batchWriteItem(BatchWriteItemRequest)
      */
     public BatchWriteItemResponse batchWriteItem(final Map<String, List<WriteRequest>> requestItems) {
@@ -2900,6 +2965,8 @@ public final class DynamoDBExecutor {
      * @param batchWriteItemRequest the complete batch write request. Must not be null.
      * @return a {@link BatchWriteItemResponse} with unprocessed items and optional metrics
      * @throws NullPointerException if {@code batchWriteItemRequest} is null (rejected by the AWS SDK v2 client)
+     * @throws SdkException if the SDK cannot send the batchWriteItem request or DynamoDB rejects it because of credentials, table/key data,
+     *         conditions, or service limits
      */
     public BatchWriteItemResponse batchWriteItem(final BatchWriteItemRequest batchWriteItemRequest) {
         return dynamoDBClient.batchWriteItem(batchWriteItemRequest);
@@ -2940,8 +3007,10 @@ public final class DynamoDBExecutor {
      * @param key the primary key identifying the item to update. Must not be null.
      * @param attributeUpdates map of attribute names to update actions. Must not be null.
      * @return an {@link UpdateItemResponse} containing operation metadata
-     * @throws DynamoDbException if DynamoDB rejects the request (a null/empty
-     *         {@code tableName}, a null {@code key}, or null {@code attributeUpdates} fails service-side validation)
+     * @throws DynamoDbException if DynamoDB rejects the request (a null/empty {@code tableName} , a null {@code key} , or null
+     *         {@code attributeUpdates} fails service-side validation)
+     * @throws SdkException if the SDK cannot send the updateItem request or DynamoDB rejects it because of credentials, table/key data,
+     *         conditions, or service limits
      * @see #updateItem(String, Map, Map, String)
      */
     public UpdateItemResponse updateItem(final String tableName, final Map<String, AttributeValue> key,
@@ -2987,8 +3056,10 @@ public final class DynamoDBExecutor {
      * @param attributeUpdates map of attribute names to update actions. Must not be null.
      * @param returnValues specifies what to return: "NONE", "ALL_OLD", "UPDATED_OLD", "ALL_NEW", or "UPDATED_NEW"
      * @return an {@link UpdateItemResponse} containing operation metadata and optional values
-     * @throws DynamoDbException if DynamoDB rejects the request (a null/empty
-     *         {@code tableName}, a null {@code key}, or null {@code attributeUpdates} fails service-side validation)
+     * @throws DynamoDbException if DynamoDB rejects the request (a null/empty {@code tableName} , a null {@code key} , or null
+     *         {@code attributeUpdates} fails service-side validation)
+     * @throws SdkException if the SDK cannot send the updateItem request or DynamoDB rejects it because of credentials, table/key data,
+     *         conditions, or service limits
      * @see software.amazon.awssdk.services.dynamodb.model.ReturnValue
      */
     public UpdateItemResponse updateItem(final String tableName, final Map<String, AttributeValue> key,
@@ -3042,6 +3113,8 @@ public final class DynamoDBExecutor {
      * @param updateItemRequest the complete update request. Must not be null.
      * @return an {@link UpdateItemResponse} containing operation results
      * @throws NullPointerException if {@code updateItemRequest} is null (rejected by the AWS SDK v2 client)
+     * @throws SdkException if the SDK cannot send the updateItem request or DynamoDB rejects it because of credentials, table/key data,
+     *         conditions, or service limits
      */
     public UpdateItemResponse updateItem(final UpdateItemRequest updateItemRequest) {
         return dynamoDBClient.updateItem(updateItemRequest);
@@ -3069,8 +3142,10 @@ public final class DynamoDBExecutor {
      * @param tableName the name of the DynamoDB table. Must not be null or empty.
      * @param key the primary key of the item to delete. Must not be null.
      * @return a {@link DeleteItemResponse} containing operation metadata
-     * @throws DynamoDbException if DynamoDB rejects the request (a null/empty
-     *         {@code tableName} or a null {@code key} fails service-side validation)
+     * @throws DynamoDbException if DynamoDB rejects the request (a null/empty {@code tableName} or a null {@code key} fails service-side
+     *         validation)
+     * @throws SdkException if the SDK cannot send the deleteItem request or DynamoDB rejects it because of credentials, table/key data,
+     *         conditions, or service limits
      * @see #deleteItem(String, Map, String)
      */
     public DeleteItemResponse deleteItem(final String tableName, final Map<String, AttributeValue> key) {
@@ -3112,8 +3187,10 @@ public final class DynamoDBExecutor {
      * @param key the primary key of the item to delete. Must not be null.
      * @param returnValues "NONE" or "ALL_OLD" to get deleted item attributes
      * @return a {@link DeleteItemResponse} containing metadata and optionally the deleted item
-     * @throws DynamoDbException if DynamoDB rejects the request (a null/empty
-     *         {@code tableName} or a null {@code key} fails service-side validation)
+     * @throws DynamoDbException if DynamoDB rejects the request (a null/empty {@code tableName} or a null {@code key} fails service-side
+     *         validation)
+     * @throws SdkException if the SDK cannot send the deleteItem request or DynamoDB rejects it because of credentials, table/key data,
+     *         conditions, or service limits
      * @see software.amazon.awssdk.services.dynamodb.model.ReturnValue
      */
     public DeleteItemResponse deleteItem(final String tableName, final Map<String, AttributeValue> key, final String returnValues) {
@@ -3158,6 +3235,8 @@ public final class DynamoDBExecutor {
      * @param deleteItemRequest the complete delete request. Must not be null.
      * @return a {@link DeleteItemResponse} containing operation results
      * @throws NullPointerException if {@code deleteItemRequest} is null (rejected by the AWS SDK v2 client)
+     * @throws SdkException if the SDK cannot send the deleteItem request or DynamoDB rejects it because of credentials, table/key data,
+     *         conditions, or service limits
      */
     public DeleteItemResponse deleteItem(final DeleteItemRequest deleteItemRequest) {
         return dynamoDBClient.deleteItem(deleteItemRequest);
@@ -3184,6 +3263,8 @@ public final class DynamoDBExecutor {
      * @param queryRequest the QueryRequest containing the table name and query parameters. Must not be null.
      * @return a list of maps representing the items retrieved by the query. Never null.
      * @throws IllegalArgumentException if queryRequest is null
+     * @throws SdkException if the SDK cannot send the list request or DynamoDB rejects it because of credentials, table/key data, conditions, or
+     *         service limits
      */
     public List<Map<String, Object>> list(final QueryRequest queryRequest) {
         return list(queryRequest, PROP_MAP_TYPE);
@@ -3215,6 +3296,8 @@ public final class DynamoDBExecutor {
      * @return a list of entities aggregated across all pages (when pagination is auto-driven),
      *         never {@code null}; empty when the query matches nothing
      * @throws IllegalArgumentException if queryRequest or targetClass is null
+     * @throws SdkException if the SDK cannot send the list request or DynamoDB rejects it because of credentials, table/key data, conditions, or
+     *         service limits
      */
     public <T> List<T> list(final QueryRequest queryRequest, final Class<T> targetClass) {
         N.checkArgNotNull(queryRequest, "queryRequest");
@@ -3260,6 +3343,8 @@ public final class DynamoDBExecutor {
      * @return a Dataset containing the items retrieved by the query, never {@code null}; empty when
      *         the query matches nothing
      * @throws IllegalArgumentException if queryRequest is null
+     * @throws SdkException if the SDK cannot send the query request or DynamoDB rejects it because of credentials, table/key data, conditions,
+     *         or service limits
      */
     public Dataset query(final QueryRequest queryRequest) {
         return query(queryRequest, PROP_MAP_TYPE);
@@ -3290,6 +3375,8 @@ public final class DynamoDBExecutor {
      *                     (e.g. {@code Map.class}) to keep rows as raw attribute maps instead of mapped entities.
      * @return a Dataset built from the query results. Never null.
      * @throws IllegalArgumentException if queryRequest or targetClass is null
+     * @throws SdkException if the SDK cannot send the query request or DynamoDB rejects it because of credentials, table/key data, conditions,
+     *         or service limits
      */
     public Dataset query(final QueryRequest queryRequest, final Class<?> targetClass) {
         N.checkArgNotNull(queryRequest, "queryRequest");
@@ -3335,7 +3422,7 @@ public final class DynamoDBExecutor {
      * }</pre>
      *
      * @param queryRequest the QueryRequest containing the table name and query parameters. Must not be null.
-     * @return a stream of maps representing the items retrieved by the query. Never null.
+     * @return a stream of maps representing the items retrieved by the query. Never null.; fetching or converting items can fail during stream traversal
      * @throws IllegalArgumentException if queryRequest is null
      */
     public Stream<Map<String, Object>> stream(final QueryRequest queryRequest) {
@@ -3364,7 +3451,7 @@ public final class DynamoDBExecutor {
      * @param <T> the type of the entities to convert to
      * @param queryRequest the QueryRequest containing the table name and query parameters. Must not be null.
      * @param targetClass the class of the entities to convert to. Must not be null.
-     * @return a lazy stream of entities that auto-paginates via {@code lastEvaluatedKey}. Never null.
+     * @return a lazy stream of entities that auto-paginates via {@code lastEvaluatedKey}. Never null.; fetching or converting items can fail during stream traversal
      * @throws IllegalArgumentException if queryRequest or targetClass is null
      */
     public <T> Stream<T> stream(final QueryRequest queryRequest, final Class<T> targetClass) {
@@ -3429,7 +3516,7 @@ public final class DynamoDBExecutor {
      *
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
      * @param attributesToGet a list of attribute names to retrieve for each item, or null/empty to retrieve all attributes
-     * @return a stream of maps representing the items retrieved by the scan, containing only the specified attributes. Never null.
+     * @return a stream of maps representing the items retrieved by the scan, containing only the specified attributes. Never null.; fetching or converting items can fail during stream traversal
      * @throws IllegalArgumentException if tableName is null
      */
     public Stream<Map<String, Object>> scan(final String tableName, final List<String> attributesToGet) {
@@ -3454,7 +3541,7 @@ public final class DynamoDBExecutor {
      *
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
      * @param scanFilter a map of conditions to filter the scan results, or null for no filter
-     * @return a stream of maps representing the items retrieved by the scan. Never null.
+     * @return a stream of maps representing the items retrieved by the scan. Never null.; fetching or converting items can fail during stream traversal
      * @throws IllegalArgumentException if tableName is null
      */
     public Stream<Map<String, Object>> scan(final String tableName, final Map<String, Condition> scanFilter) {
@@ -3481,7 +3568,7 @@ public final class DynamoDBExecutor {
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
      * @param attributesToGet a list of attribute names to retrieve, or null/empty to retrieve all attributes
      * @param scanFilter a map of conditions to filter the scan results, or null for no filter
-     * @return a stream of maps representing the items retrieved by the scan. Never null.
+     * @return a stream of maps representing the items retrieved by the scan. Never null.; fetching or converting items can fail during stream traversal
      * @throws IllegalArgumentException if tableName is null
      */
     public Stream<Map<String, Object>> scan(final String tableName, final List<String> attributesToGet, final Map<String, Condition> scanFilter) {
@@ -3511,7 +3598,7 @@ public final class DynamoDBExecutor {
      * }</pre>
      *
      * @param scanRequest the ScanRequest containing the table name and scan parameters. Must not be null.
-     * @return a stream of maps representing the items retrieved by the scan. Never null.
+     * @return a stream of maps representing the items retrieved by the scan. Never null.; fetching or converting items can fail during stream traversal
      * @throws IllegalArgumentException if scanRequest is null
      */
     public Stream<Map<String, Object>> scan(final ScanRequest scanRequest) {
@@ -3536,7 +3623,7 @@ public final class DynamoDBExecutor {
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
      * @param attributesToGet a list of attribute names to retrieve, or null/empty to retrieve all attributes
      * @param targetClass the class of the entities to convert to. Must not be null.
-     * @return a stream of entities of the specified target class. Never null.
+     * @return a stream of entities of the specified target class. Never null.; fetching or converting items can fail during stream traversal
      * @throws IllegalArgumentException if tableName or targetClass is null
      */
     public <T> Stream<T> scan(final String tableName, final List<String> attributesToGet, final Class<T> targetClass) {
@@ -3565,7 +3652,7 @@ public final class DynamoDBExecutor {
      * @param tableName the name of the DynamoDB table to scan. Must not be null.
      * @param scanFilter a map of conditions to filter the scan results, or null for no filter
      * @param targetClass the class of the entities to convert to. Must not be null.
-     * @return a stream of entities of the specified target class. Never null.
+     * @return a stream of entities of the specified target class. Never null.; fetching or converting items can fail during stream traversal
      * @throws IllegalArgumentException if tableName or targetClass is null
      */
     public <T> Stream<T> scan(final String tableName, final Map<String, Condition> scanFilter, final Class<T> targetClass) {
@@ -3597,7 +3684,7 @@ public final class DynamoDBExecutor {
      * @param attributesToGet a list of attribute names to retrieve, or null/empty to retrieve all attributes
      * @param scanFilter a map of conditions to filter the scan results, or null for no filter
      * @param targetClass the class of the entities to convert to. Must not be null.
-     * @return a stream of entities of the specified target class. Never null.
+     * @return a stream of entities of the specified target class. Never null.; fetching or converting items can fail during stream traversal
      * @throws IllegalArgumentException if tableName or targetClass is null
      */
     public <T> Stream<T> scan(final String tableName, final List<String> attributesToGet, final Map<String, Condition> scanFilter, final Class<T> targetClass) {
@@ -3633,7 +3720,7 @@ public final class DynamoDBExecutor {
      * @param <T> the type of the entities to convert to
      * @param scanRequest the ScanRequest containing the table name and scan parameters. Must not be null.
      * @param targetClass the class of the entities to convert to. Must not be null.
-     * @return a lazy stream of entities that auto-paginates via {@code lastEvaluatedKey}. Never null.
+     * @return a lazy stream of entities that auto-paginates via {@code lastEvaluatedKey}. Never null.; fetching or converting items can fail during stream traversal
      * @throws IllegalArgumentException if scanRequest or targetClass is null
      */
     public <T> Stream<T> scan(final ScanRequest scanRequest, final Class<T> targetClass) {
@@ -3781,9 +3868,8 @@ public final class DynamoDBExecutor {
          * @param dynamoDBExecutor the executor to use for DynamoDB operations; must not be null
          * @param tableName the name of the DynamoDB table; must not be null or empty
          * @param namingPolicy the naming policy for attribute name conversion; uses CAMEL_CASE if null
-         * @throws IllegalArgumentException if {@code targetEntityClass} or {@code dynamoDBExecutor} is null,
-         *         {@code tableName} is null/empty, {@code targetEntityClass} is not a bean class, or it has
-         *         zero or more than two ID-annotated fields
+         * @throws IllegalArgumentException if {@code targetEntityClass} or {@code dynamoDBExecutor} is null, {@code tableName} is null/empty,
+         *         {@code targetEntityClass} is not a bean class, or it has zero or more than two ID-annotated fields
          */
         Mapper(final Class<T> targetEntityClass, final DynamoDBExecutor dynamoDBExecutor, final String tableName, final NamingPolicy namingPolicy) {
             N.checkArgNotNull(targetEntityClass, "targetEntityClass");
@@ -3833,6 +3919,8 @@ public final class DynamoDBExecutor {
          * @param entity an entity instance with populated key fields
          * @return the retrieved entity with all attributes populated, or null if not found
          * @throws IllegalArgumentException if {@code entity} is null or an ID is null, empty, or not a supported scalar key value
+         * @throws SdkException if the SDK cannot send the getItem request or DynamoDB rejects it because of credentials, table/key data,
+         *         conditions, or service limits
          */
         public T getItem(final T entity) {
             return dynamoDBExecutor.getItem(tableName, createKey(entity), targetEntityClass);
@@ -3856,6 +3944,8 @@ public final class DynamoDBExecutor {
          * @param consistentRead true for strongly consistent read, {@code false} for eventually consistent, null to use default
          * @return the retrieved entity with all attributes populated, or null if not found
          * @throws IllegalArgumentException if {@code entity} is null or an ID is null, empty, or not a supported scalar key value
+         * @throws SdkException if the SDK cannot send the getItem request or DynamoDB rejects it because of credentials, table/key data,
+         *         conditions, or service limits
          */
         public T getItem(final T entity, final Boolean consistentRead) {
             return dynamoDBExecutor.getItem(tableName, createKey(entity), consistentRead, targetEntityClass);
@@ -3875,8 +3965,9 @@ public final class DynamoDBExecutor {
          *
          * @param key a map containing the key attributes (partition key and sort key if applicable)
          * @return the retrieved entity with all attributes populated, or null if not found
-         * @throws DynamoDbException if DynamoDB rejects the request (a null
-         *         {@code key} fails service-side validation)
+         * @throws DynamoDbException if DynamoDB rejects the request (a null {@code key} fails service-side validation)
+         * @throws SdkException if the SDK cannot send the getItem request or DynamoDB rejects it because of credentials, table/key data,
+         *         conditions, or service limits
          */
         public T getItem(final Map<String, AttributeValue> key) {
             return dynamoDBExecutor.getItem(tableName, key, targetEntityClass);
@@ -3901,6 +3992,8 @@ public final class DynamoDBExecutor {
          * @param getItemRequest the fully configured request object
          * @return the retrieved entity, or null if not found
          * @throws IllegalArgumentException if {@code getItemRequest} is null or specifies a different table than this mapper's table
+         * @throws SdkException if the SDK cannot send the getItem request or DynamoDB rejects it because of credentials, table/key data,
+         *         conditions, or service limits
          */
         public T getItem(final GetItemRequest getItemRequest) {
             return dynamoDBExecutor.getItem(checkItem(getItemRequest), targetEntityClass);
@@ -3927,7 +4020,10 @@ public final class DynamoDBExecutor {
          *
          * @param entities collection of entities with populated key fields
          * @return list of retrieved entities; may be smaller than input if some items don't exist
-         * @throws IllegalArgumentException if {@code entities} (or any element in it) is null
+         * @throws IllegalArgumentException if {@code entities} or an element is null, or an entity ID is null, empty, non-scalar, or a
+         *         non-finite number
+         * @throws SdkException if the SDK cannot send the batchGetItem request or DynamoDB rejects it because of credentials, table/key data,
+         *         conditions, or service limits
          */
         public List<T> batchGetItem(final Collection<? extends T> entities) {
             final Map<String, List<T>> map = dynamoDBExecutor.batchGetItem(createKeys(entities), targetEntityClass);
@@ -3955,7 +4051,10 @@ public final class DynamoDBExecutor {
          * @param entities collection of entities with populated key fields
          * @param returnConsumedCapacity specify "INDEXES", "TOTAL", or "NONE" for capacity details
          * @return list of retrieved entities; may be smaller than input if some items don't exist
-         * @throws IllegalArgumentException if {@code entities} (or any element in it) is null
+         * @throws IllegalArgumentException if {@code entities} or an element is null, or an entity ID is null, empty, non-scalar, or a
+         *         non-finite number
+         * @throws SdkException if the SDK cannot send the batchGetItem request or DynamoDB rejects it because of credentials, table/key data,
+         *         conditions, or service limits
          */
         public List<T> batchGetItem(final Collection<? extends T> entities, final String returnConsumedCapacity) {
             final Map<String, List<T>> map = dynamoDBExecutor.batchGetItem(createKeys(entities), returnConsumedCapacity, targetEntityClass);
@@ -3988,6 +4087,8 @@ public final class DynamoDBExecutor {
          * @param batchGetItemRequest the fully configured batch request
          * @return list of retrieved entities
          * @throws IllegalArgumentException if {@code batchGetItemRequest} is null or specifies a different table than this mapper's table
+         * @throws SdkException if the SDK cannot send the batchGetItem request or DynamoDB rejects it because of credentials, table/key data,
+         *         conditions, or service limits
          */
         public List<T> batchGetItem(final BatchGetItemRequest batchGetItemRequest) {
             final Map<String, List<T>> map = dynamoDBExecutor.batchGetItem(checkItem(batchGetItemRequest), targetEntityClass);
@@ -4015,6 +4116,8 @@ public final class DynamoDBExecutor {
          * @param entity the entity to save; all non-null fields will be written
          * @return the response from DynamoDB containing metadata about the operation
          * @throws IllegalArgumentException if {@code entity} is null or an ID is null, empty, or not a supported scalar key value
+         * @throws SdkException if the SDK cannot send the putItem request or DynamoDB rejects it because of credentials, table/key data,
+         *         conditions, or service limits
          */
         public PutItemResponse putItem(final T entity) {
             createKey(entity); // Validate that the item contains a complete, service-compatible primary key.
@@ -4038,6 +4141,8 @@ public final class DynamoDBExecutor {
          * @param returnValues specify "NONE" (default) or "ALL_OLD" for what to return
          * @return the response from DynamoDB, potentially containing old item attributes
          * @throws IllegalArgumentException if {@code entity} is null or an ID is null, empty, or not a supported scalar key value
+         * @throws SdkException if the SDK cannot send the putItem request or DynamoDB rejects it because of credentials, table/key data,
+         *         conditions, or service limits
          */
         public PutItemResponse putItem(final T entity, final String returnValues) {
             createKey(entity); // Validate that the item contains a complete, service-compatible primary key.
@@ -4063,6 +4168,8 @@ public final class DynamoDBExecutor {
          * @param putItemRequest the fully configured request object
          * @return the response from DynamoDB
          * @throws IllegalArgumentException if {@code putItemRequest} is null or specifies a different table than this mapper's table
+         * @throws SdkException if the SDK cannot send the putItem request or DynamoDB rejects it because of credentials, table/key data,
+         *         conditions, or service limits
          */
         public PutItemResponse putItem(final PutItemRequest putItemRequest) {
             return dynamoDBExecutor.putItem(checkItem(putItemRequest));
@@ -4090,7 +4197,10 @@ public final class DynamoDBExecutor {
          *
          * @param entities collection of entities to save
          * @return the response containing information about unprocessed items if any
-         * @throws IllegalArgumentException if {@code entities} (or any element in it) is null
+         * @throws IllegalArgumentException if {@code entities} or an element is null, or an entity ID is null, empty, non-scalar, or a
+         *         non-finite number
+         * @throws SdkException if the SDK cannot send the batchPutItem request or DynamoDB rejects it because of credentials, table/key data,
+         *         conditions, or service limits
          */
         public BatchWriteItemResponse batchPutItem(final Collection<? extends T> entities) {
             return dynamoDBExecutor.batchWriteItem(createBatchPutRequest(entities));
@@ -4115,6 +4225,8 @@ public final class DynamoDBExecutor {
          * @param entity the entity containing updates; key fields must be populated
          * @return the response from DynamoDB containing metadata about the operation
          * @throws IllegalArgumentException if {@code entity} is null, an ID is invalid, or no non-key attributes are populated
+         * @throws SdkException if the SDK cannot send the updateItem request or DynamoDB rejects it because of credentials, table/key data,
+         *         conditions, or service limits
          */
         public UpdateItemResponse updateItem(final T entity) {
             return dynamoDBExecutor.updateItem(tableName, createKey(entity), createUpdateItem(entity));
@@ -4139,6 +4251,8 @@ public final class DynamoDBExecutor {
          * @param returnValues specify "ALL_NEW", "ALL_OLD", "UPDATED_NEW", "UPDATED_OLD", or "NONE"
          * @return the response from DynamoDB, potentially containing item attributes
          * @throws IllegalArgumentException if {@code entity} is null, an ID is invalid, or no non-key attributes are populated
+         * @throws SdkException if the SDK cannot send the updateItem request or DynamoDB rejects it because of credentials, table/key data,
+         *         conditions, or service limits
          */
         public UpdateItemResponse updateItem(final T entity, final String returnValues) {
             return dynamoDBExecutor.updateItem(tableName, createKey(entity), createUpdateItem(entity), returnValues);
@@ -4165,6 +4279,8 @@ public final class DynamoDBExecutor {
          * @param updateItemRequest the fully configured request object
          * @return the response from DynamoDB
          * @throws IllegalArgumentException if {@code updateItemRequest} is null or specifies a different table than this mapper's table
+         * @throws SdkException if the SDK cannot send the updateItem request or DynamoDB rejects it because of credentials, table/key data,
+         *         conditions, or service limits
          */
         public UpdateItemResponse updateItem(final UpdateItemRequest updateItemRequest) {
             return dynamoDBExecutor.updateItem(checkItem(updateItemRequest));
@@ -4186,6 +4302,8 @@ public final class DynamoDBExecutor {
          * @param entity an entity instance with populated key fields
          * @return the response from DynamoDB containing metadata about the operation
          * @throws IllegalArgumentException if {@code entity} is null or an ID is null, empty, or not a supported scalar key value
+         * @throws SdkException if the SDK cannot send the deleteItem request or DynamoDB rejects it because of credentials, table/key data,
+         *         conditions, or service limits
          */
         public DeleteItemResponse deleteItem(final T entity) {
             return dynamoDBExecutor.deleteItem(tableName, createKey(entity));
@@ -4209,6 +4327,8 @@ public final class DynamoDBExecutor {
          * @param returnValues specify "ALL_OLD" or "NONE" for what to return
          * @return the response from DynamoDB, potentially containing the deleted item's attributes
          * @throws IllegalArgumentException if {@code entity} is null or an ID is null, empty, or not a supported scalar key value
+         * @throws SdkException if the SDK cannot send the deleteItem request or DynamoDB rejects it because of credentials, table/key data,
+         *         conditions, or service limits
          */
         public DeleteItemResponse deleteItem(final T entity, final String returnValues) {
             return dynamoDBExecutor.deleteItem(tableName, createKey(entity), returnValues);
@@ -4227,8 +4347,9 @@ public final class DynamoDBExecutor {
          *
          * @param key a map containing the key attributes (partition key and sort key if applicable)
          * @return the response from DynamoDB containing metadata about the operation
-         * @throws DynamoDbException if DynamoDB rejects the request (a null
-         *         {@code key} fails service-side validation)
+         * @throws DynamoDbException if DynamoDB rejects the request (a null {@code key} fails service-side validation)
+         * @throws SdkException if the SDK cannot send the deleteItem request or DynamoDB rejects it because of credentials, table/key data,
+         *         conditions, or service limits
          */
         public DeleteItemResponse deleteItem(final Map<String, AttributeValue> key) {
             return dynamoDBExecutor.deleteItem(tableName, key);
@@ -4254,6 +4375,8 @@ public final class DynamoDBExecutor {
          * @param deleteItemRequest the fully configured request object
          * @return the response from DynamoDB
          * @throws IllegalArgumentException if {@code deleteItemRequest} is null or specifies a different table than this mapper's table
+         * @throws SdkException if the SDK cannot send the deleteItem request or DynamoDB rejects it because of credentials, table/key data,
+         *         conditions, or service limits
          */
         public DeleteItemResponse deleteItem(final DeleteItemRequest deleteItemRequest) {
             return dynamoDBExecutor.deleteItem(checkItem(deleteItemRequest));
@@ -4281,7 +4404,10 @@ public final class DynamoDBExecutor {
          *
          * @param entities collection of entities with populated key fields to delete
          * @return the response containing information about unprocessed items if any
-         * @throws IllegalArgumentException if {@code entities} (or any element in it) is null
+         * @throws IllegalArgumentException if {@code entities} or an element is null, or an entity ID is null, empty, non-scalar, or a
+         *         non-finite number
+         * @throws SdkException if the SDK cannot send the batchDeleteItem request or DynamoDB rejects it because of credentials, table/key data,
+         *         conditions, or service limits
          */
         public BatchWriteItemResponse batchDeleteItem(final Collection<? extends T> entities) {
             return dynamoDBExecutor.batchWriteItem(createBatchDeleteRequest(entities));
@@ -4309,6 +4435,8 @@ public final class DynamoDBExecutor {
          * @param batchWriteItemRequest the fully configured batch request
          * @return the response containing information about unprocessed items if any
          * @throws IllegalArgumentException if {@code batchWriteItemRequest} is null or specifies a different table than this mapper's table
+         * @throws SdkException if the SDK cannot send the batchWriteItem request or DynamoDB rejects it because of credentials, table/key data,
+         *         conditions, or service limits
          */
         public BatchWriteItemResponse batchWriteItem(final BatchWriteItemRequest batchWriteItemRequest) {
             return dynamoDBExecutor.batchWriteItem(checkItem(batchWriteItemRequest));
@@ -4333,6 +4461,8 @@ public final class DynamoDBExecutor {
          * @param queryRequest the query request with key conditions and other parameters
          * @return a list of entities matching the query; empty list if no matches found
          * @throws IllegalArgumentException if {@code queryRequest} is null or specifies a different table than this mapper's table
+         * @throws SdkException if the SDK cannot send the list request or DynamoDB rejects it because of credentials, table/key data,
+         *         conditions, or service limits
          */
         public List<T> list(final QueryRequest queryRequest) {
             return dynamoDBExecutor.list(checkQueryRequest(queryRequest), targetEntityClass);
@@ -4357,6 +4487,8 @@ public final class DynamoDBExecutor {
          * @param queryRequest the query request with key conditions and other parameters
          * @return a Dataset containing the query results
          * @throws IllegalArgumentException if {@code queryRequest} is null or specifies a different table than this mapper's table
+         * @throws SdkException if the SDK cannot send the query request or DynamoDB rejects it because of credentials, table/key data,
+         *         conditions, or service limits
          */
         public Dataset query(final QueryRequest queryRequest) {
             return dynamoDBExecutor.query(checkQueryRequest(queryRequest), targetEntityClass);
@@ -4381,7 +4513,7 @@ public final class DynamoDBExecutor {
          * }</pre>
          *
          * @param queryRequest the query request with key conditions and other parameters
-         * @return a Stream of entities; the stream should be closed after use
+         * @return a Stream of entities; the stream should be closed after use; fetching or converting items can fail during stream traversal
          * @throws IllegalArgumentException if {@code queryRequest} is null or specifies a different table than this mapper's table
          */
         public Stream<T> stream(final QueryRequest queryRequest) {
@@ -4402,7 +4534,7 @@ public final class DynamoDBExecutor {
          * }</pre>
          *
          * @param attributesToGet list of attribute names to retrieve; null or empty to get all attributes
-         * @return a Stream of entities from the scan operation
+         * @return a Stream of entities from the scan operation; fetching or converting items can fail during stream traversal
          */
         public Stream<T> scan(final List<String> attributesToGet) {
             return dynamoDBExecutor.scan(tableName, attributesToGet, targetEntityClass);
@@ -4423,7 +4555,7 @@ public final class DynamoDBExecutor {
          * }</pre>
          *
          * @param scanFilter map of attribute names to conditions for filtering results
-         * @return a Stream of entities matching the filter conditions
+         * @return a Stream of entities matching the filter conditions; fetching or converting items can fail during stream traversal
          */
         public Stream<T> scan(final Map<String, Condition> scanFilter) {
             return dynamoDBExecutor.scan(tableName, scanFilter, targetEntityClass);
@@ -4445,7 +4577,7 @@ public final class DynamoDBExecutor {
          *
          * @param attributesToGet list of attribute names to retrieve; null or empty to get all attributes
          * @param scanFilter map of attribute names to conditions for filtering results
-         * @return a Stream of entities matching the filter with only specified attributes
+         * @return a Stream of entities matching the filter with only specified attributes; fetching or converting items can fail during stream traversal
          */
         public Stream<T> scan(final List<String> attributesToGet, final Map<String, Condition> scanFilter) {
             return dynamoDBExecutor.scan(tableName, attributesToGet, scanFilter, targetEntityClass);
@@ -4470,7 +4602,7 @@ public final class DynamoDBExecutor {
          * }</pre>
          *
          * @param scanRequest the fully configured scan request
-         * @return a Stream of entities from the scan operation
+         * @return a Stream of entities from the scan operation; fetching or converting items can fail during stream traversal
          * @throws IllegalArgumentException if {@code scanRequest} is null or specifies a different table than this mapper's table
          */
         public Stream<T> scan(final ScanRequest scanRequest) {
@@ -4693,7 +4825,8 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return a map containing the equality condition
-         * @throws IllegalArgumentException if {@code attrName} is null or empty
+         * @throws IllegalArgumentException if {@code attrName} is null or empty, or if a value being converted is {@code Float.NaN} ,
+         *         {@code Double.NaN} , or a floating-point infinity
          */
         public static Map<String, Condition> eq(final String attrName, final Object attrValue) {
             N.checkArgNotEmpty(attrName, cs.attrName);
@@ -4715,7 +4848,8 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return a map containing the not-equal condition
-         * @throws IllegalArgumentException if {@code attrName} is null or empty
+         * @throws IllegalArgumentException if {@code attrName} is null or empty, or if a value being converted is {@code Float.NaN} ,
+         *         {@code Double.NaN} , or a floating-point infinity
          */
         public static Map<String, Condition> ne(final String attrName, final Object attrValue) {
             N.checkArgNotEmpty(attrName, cs.attrName);
@@ -4737,7 +4871,8 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return a map containing the greater-than condition
-         * @throws IllegalArgumentException if {@code attrName} is null or empty
+         * @throws IllegalArgumentException if {@code attrName} is null or empty, or if a value being converted is {@code Float.NaN} ,
+         *         {@code Double.NaN} , or a floating-point infinity
          */
         public static Map<String, Condition> gt(final String attrName, final Object attrValue) {
             N.checkArgNotEmpty(attrName, cs.attrName);
@@ -4759,7 +4894,8 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return a map containing the greater-than-or-equal condition
-         * @throws IllegalArgumentException if {@code attrName} is null or empty
+         * @throws IllegalArgumentException if {@code attrName} is null or empty, or if a value being converted is {@code Float.NaN} ,
+         *         {@code Double.NaN} , or a floating-point infinity
          */
         public static Map<String, Condition> ge(final String attrName, final Object attrValue) {
             N.checkArgNotEmpty(attrName, cs.attrName);
@@ -4781,7 +4917,8 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return a map containing the less-than condition
-         * @throws IllegalArgumentException if {@code attrName} is null or empty
+         * @throws IllegalArgumentException if {@code attrName} is null or empty, or if a value being converted is {@code Float.NaN} ,
+         *         {@code Double.NaN} , or a floating-point infinity
          */
         public static Map<String, Condition> lt(final String attrName, final Object attrValue) {
             N.checkArgNotEmpty(attrName, cs.attrName);
@@ -4803,7 +4940,8 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return a map containing the less-than-or-equal condition
-         * @throws IllegalArgumentException if {@code attrName} is null or empty
+         * @throws IllegalArgumentException if {@code attrName} is null or empty, or if a value being converted is {@code Float.NaN} ,
+         *         {@code Double.NaN} , or a floating-point infinity
          */
         public static Map<String, Condition> le(final String attrName, final Object attrValue) {
             N.checkArgNotEmpty(attrName, cs.attrName);
@@ -4826,7 +4964,8 @@ public final class DynamoDBExecutor {
          * @param minAttrValue the minimum value (inclusive)
          * @param maxAttrValue the maximum value (inclusive)
          * @return a map containing the between condition
-         * @throws IllegalArgumentException if {@code attrName} is null or empty
+         * @throws IllegalArgumentException if {@code attrName} is null or empty, or if a value being converted is {@code Float.NaN} ,
+         *         {@code Double.NaN} , or a floating-point infinity
          */
         public static Map<String, Condition> bt(final String attrName, final Object minAttrValue, final Object maxAttrValue) {
             N.checkArgNotEmpty(attrName, cs.attrName);
@@ -4898,7 +5037,8 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to search in
          * @param attrValue the value to search for
          * @return a map containing the contains condition
-         * @throws IllegalArgumentException if {@code attrName} is null or empty
+         * @throws IllegalArgumentException if {@code attrName} is null or empty, or if a value being converted is {@code Float.NaN} ,
+         *         {@code Double.NaN} , or a floating-point infinity
          */
         public static Map<String, Condition> contains(final String attrName, final Object attrValue) {
             N.checkArgNotEmpty(attrName, cs.attrName);
@@ -4920,7 +5060,8 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to search in
          * @param attrValue the value that should not be present
          * @return a map containing the not-contains condition
-         * @throws IllegalArgumentException if {@code attrName} is null or empty
+         * @throws IllegalArgumentException if {@code attrName} is null or empty, or if a value being converted is {@code Float.NaN} ,
+         *         {@code Double.NaN} , or a floating-point infinity
          */
         public static Map<String, Condition> notContains(final String attrName, final Object attrValue) {
             N.checkArgNotEmpty(attrName, cs.attrName);
@@ -4942,7 +5083,8 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the string attribute to check
          * @param attrValue the prefix to match
          * @return a map containing the begins-with condition
-         * @throws IllegalArgumentException if {@code attrName} is null or empty
+         * @throws IllegalArgumentException if {@code attrName} is null or empty, or if a value being converted is {@code Float.NaN} ,
+         *         {@code Double.NaN} , or a floating-point infinity
          */
         public static Map<String, Condition> beginsWith(final String attrName, final Object attrValue) {
             N.checkArgNotEmpty(attrName, cs.attrName);
@@ -4964,7 +5106,8 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to check
          * @param attrValues the values to match against
          * @return a map containing the IN condition
-         * @throws IllegalArgumentException if {@code attrName} or {@code attrValues} is null or empty
+         * @throws IllegalArgumentException if {@code attrName} or {@code attrValues} is null or empty, or if a value being converted is
+         *         {@code Float.NaN} , {@code Double.NaN} , or a floating-point infinity
          */
         public static Map<String, Condition> in(final String attrName, final Object... attrValues) {
             final Map<String, Condition> result = new LinkedHashMap<>(1);
@@ -4990,7 +5133,8 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to check
          * @param attrValues collection of values to match against
          * @return a map containing the IN condition
-         * @throws IllegalArgumentException if {@code attrName} or {@code attrValues} is null or empty
+         * @throws IllegalArgumentException if {@code attrName} or {@code attrValues} is null or empty, or if a value being converted is
+         *         {@code Float.NaN} , {@code Double.NaN} , or a floating-point infinity
          */
         public static Map<String, Condition> in(final String attrName, final Collection<?> attrValues) {
             final Map<String, Condition> result = new LinkedHashMap<>(1);
@@ -5104,6 +5248,15 @@ public final class DynamoDBExecutor {
         private Map<String, Condition> condMap;
 
         /**
+         * Checks that this builder still owns its condition map.
+         *
+         * @throws NullPointerException if {@link #build()} has already detached the map
+         */
+        private void assertNotBuilt() {
+            Objects.requireNonNull(condMap, "This condition builder has already been built");
+        }
+
+        /**
          * Constructs a new ConditionBuilder instance.
          *
          * <p>Initializes an empty condition map that will be populated through the builder methods.</p>
@@ -5152,9 +5305,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return this builder instance for method chaining
-         * @throws IllegalArgumentException if {@code attrName} is null or empty
+         * @throws NullPointerException if {@link #build()} has already detached this builder's condition map
+         * @throws IllegalArgumentException if {@code attrName} is null or empty, or a condition value is a floating-point NaN or infinity
          */
         public ConditionBuilder eq(final String attrName, final Object attrValue) {
+            assertNotBuilt();
             N.checkArgNotEmpty(attrName, cs.attrName);
 
             condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.EQ).attributeValueList(toAttributeValue(attrValue)).build());
@@ -5175,9 +5330,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return this builder instance for method chaining
-         * @throws IllegalArgumentException if {@code attrName} is null or empty
+         * @throws NullPointerException if {@link #build()} has already detached this builder's condition map
+         * @throws IllegalArgumentException if {@code attrName} is null or empty, or a condition value is a floating-point NaN or infinity
          */
         public ConditionBuilder ne(final String attrName, final Object attrValue) {
+            assertNotBuilt();
             N.checkArgNotEmpty(attrName, cs.attrName);
 
             condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.NE).attributeValueList(toAttributeValue(attrValue)).build());
@@ -5198,9 +5355,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return this builder instance for method chaining
-         * @throws IllegalArgumentException if {@code attrName} is null or empty
+         * @throws NullPointerException if {@link #build()} has already detached this builder's condition map
+         * @throws IllegalArgumentException if {@code attrName} is null or empty, or a condition value is a floating-point NaN or infinity
          */
         public ConditionBuilder gt(final String attrName, final Object attrValue) {
+            assertNotBuilt();
             N.checkArgNotEmpty(attrName, cs.attrName);
 
             condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.GT).attributeValueList(toAttributeValue(attrValue)).build());
@@ -5221,9 +5380,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return this builder instance for method chaining
-         * @throws IllegalArgumentException if {@code attrName} is null or empty
+         * @throws NullPointerException if {@link #build()} has already detached this builder's condition map
+         * @throws IllegalArgumentException if {@code attrName} is null or empty, or a condition value is a floating-point NaN or infinity
          */
         public ConditionBuilder ge(final String attrName, final Object attrValue) {
+            assertNotBuilt();
             N.checkArgNotEmpty(attrName, cs.attrName);
 
             condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.GE).attributeValueList(toAttributeValue(attrValue)).build());
@@ -5244,9 +5405,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return this builder instance for method chaining
-         * @throws IllegalArgumentException if {@code attrName} is null or empty
+         * @throws NullPointerException if {@link #build()} has already detached this builder's condition map
+         * @throws IllegalArgumentException if {@code attrName} is null or empty, or a condition value is a floating-point NaN or infinity
          */
         public ConditionBuilder lt(final String attrName, final Object attrValue) {
+            assertNotBuilt();
             N.checkArgNotEmpty(attrName, cs.attrName);
 
             condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.LT).attributeValueList(toAttributeValue(attrValue)).build());
@@ -5267,9 +5430,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return this builder instance for method chaining
-         * @throws IllegalArgumentException if {@code attrName} is null or empty
+         * @throws NullPointerException if {@link #build()} has already detached this builder's condition map
+         * @throws IllegalArgumentException if {@code attrName} is null or empty, or a condition value is a floating-point NaN or infinity
          */
         public ConditionBuilder le(final String attrName, final Object attrValue) {
+            assertNotBuilt();
             N.checkArgNotEmpty(attrName, cs.attrName);
 
             condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.LE).attributeValueList(toAttributeValue(attrValue)).build());
@@ -5292,9 +5457,11 @@ public final class DynamoDBExecutor {
          * @param minAttrValue the minimum value (inclusive)
          * @param maxAttrValue the maximum value (inclusive)
          * @return this builder instance for method chaining
-         * @throws IllegalArgumentException if {@code attrName} is null or empty
+         * @throws NullPointerException if {@link #build()} has already detached this builder's condition map
+         * @throws IllegalArgumentException if {@code attrName} is null or empty, or a condition value is a floating-point NaN or infinity
          */
         public ConditionBuilder bt(final String attrName, final Object minAttrValue, final Object maxAttrValue) {
+            assertNotBuilt();
             N.checkArgNotEmpty(attrName, cs.attrName);
 
             condMap.put(attrName,
@@ -5321,9 +5488,11 @@ public final class DynamoDBExecutor {
          *
          * @param attrName the name of the attribute to check
          * @return this builder instance for method chaining
+         * @throws NullPointerException if {@link #build()} has already detached this builder's condition map
          * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public ConditionBuilder isNull(final String attrName) {
+            assertNotBuilt();
             N.checkArgNotEmpty(attrName, cs.attrName);
 
             condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.NULL).build());
@@ -5346,9 +5515,11 @@ public final class DynamoDBExecutor {
          *
          * @param attrName the name of the attribute to check
          * @return this builder instance for method chaining
+         * @throws NullPointerException if {@link #build()} has already detached this builder's condition map
          * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public ConditionBuilder notNull(final String attrName) {
+            assertNotBuilt();
             N.checkArgNotEmpty(attrName, cs.attrName);
 
             condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.NOT_NULL).build());
@@ -5370,9 +5541,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to search in
          * @param attrValue the value to search for
          * @return this builder instance for method chaining
-         * @throws IllegalArgumentException if {@code attrName} is null or empty
+         * @throws NullPointerException if {@link #build()} has already detached this builder's condition map
+         * @throws IllegalArgumentException if {@code attrName} is null or empty, or a condition value is a floating-point NaN or infinity
          */
         public ConditionBuilder contains(final String attrName, final Object attrValue) {
+            assertNotBuilt();
             N.checkArgNotEmpty(attrName, cs.attrName);
 
             condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.CONTAINS).attributeValueList(toAttributeValue(attrValue)).build());
@@ -5393,9 +5566,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to search in
          * @param attrValue the value that should not be present
          * @return this builder instance for method chaining
-         * @throws IllegalArgumentException if {@code attrName} is null or empty
+         * @throws NullPointerException if {@link #build()} has already detached this builder's condition map
+         * @throws IllegalArgumentException if {@code attrName} is null or empty, or a condition value is a floating-point NaN or infinity
          */
         public ConditionBuilder notContains(final String attrName, final Object attrValue) {
+            assertNotBuilt();
             N.checkArgNotEmpty(attrName, cs.attrName);
 
             condMap.put(attrName,
@@ -5417,9 +5592,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the string attribute to check
          * @param attrValue the prefix to match
          * @return this builder instance for method chaining
-         * @throws IllegalArgumentException if {@code attrName} is null or empty
+         * @throws NullPointerException if {@link #build()} has already detached this builder's condition map
+         * @throws IllegalArgumentException if {@code attrName} is null or empty, or a condition value is a floating-point NaN or infinity
          */
         public ConditionBuilder beginsWith(final String attrName, final Object attrValue) {
+            assertNotBuilt();
             N.checkArgNotEmpty(attrName, cs.attrName);
 
             condMap.put(attrName,
@@ -5441,9 +5618,12 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to check
          * @param attrValues the values to match against
          * @return this builder instance for method chaining
-         * @throws IllegalArgumentException if {@code attrName} or {@code attrValues} is null or empty
+         * @throws NullPointerException if {@link #build()} has already detached this builder's condition map
+         * @throws IllegalArgumentException if {@code attrName} or {@code attrValues} is null or empty, or a condition value is a floating-point
+         *         NaN or infinity
          */
         public ConditionBuilder in(final String attrName, final Object... attrValues) {
+            assertNotBuilt();
             Filters.in(condMap, attrName, attrValues);
 
             return this;
@@ -5463,9 +5643,12 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to check
          * @param attrValues collection of values to match against
          * @return this builder instance for method chaining
-         * @throws IllegalArgumentException if {@code attrName} or {@code attrValues} is null or empty
+         * @throws NullPointerException if {@link #build()} has already detached this builder's condition map
+         * @throws IllegalArgumentException if {@code attrName} or {@code attrValues} is null or empty, or a condition value is a floating-point
+         *         NaN or infinity
          */
         public ConditionBuilder in(final String attrName, final Collection<?> attrValues) {
+            assertNotBuilt();
             Filters.in(condMap, attrName, attrValues);
 
             return this;

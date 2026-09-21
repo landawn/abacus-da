@@ -113,6 +113,10 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param query the CQL query to execute
      * @param parameters the positional query parameters
      * @return a future that completes with a Stream of {@code Object[]} rows
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Override
     public ContinuableFuture<Stream<Object[]>> stream(final String query, final Object... parameters) {
@@ -151,10 +155,14 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param rowMapper a function that maps the column definitions and each row to a result object
      * @param parameters the positional query parameters
      * @return a future that completes with a Stream of mapped objects
-     * @throws IllegalArgumentException if {@code rowMapper} is {@code null}
+     * @throws IllegalArgumentException if {@code query} or {@code rowMapper} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public <T> ContinuableFuture<Stream<T>> stream(final String query, final BiFunction<ColumnDefinitions, Row, T> rowMapper, final Object... parameters)
             throws IllegalArgumentException {
+        N.checkArgNotNull(query, "query");
         N.checkArgNotNull(rowMapper, cs.rowMapper);
 
         return execute(query, parameters).map(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(rowMapper)));
@@ -191,10 +199,13 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param statement the CQL statement to execute
      * @param rowMapper a function that maps the column definitions and each row to a result object
      * @return a future that completes with a Stream of mapped objects
-     * @throws IllegalArgumentException if {@code rowMapper} is {@code null}
+     * @throws IllegalArgumentException if {@code statement} or {@code rowMapper} is {@code null}
+     * @throws RuntimeException if the session is closed or the driver rejects request submission;
+     *         failures after submission are reported by the returned future
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Statement<?> statement, final BiFunction<ColumnDefinitions, Row, T> rowMapper)
             throws IllegalArgumentException {
+        N.checkArgNotNull(statement, "statement");
         N.checkArgNotNull(rowMapper, cs.rowMapper);
 
         return execute(statement).map(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(rowMapper)));
@@ -234,8 +245,10 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param parameters the positional query parameters
      * @return a future that completes with an {@code Optional} of the first mapped row, or empty
      *         if no row exists
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null} (rejected eagerly at
-     *         the call site)
+     * @throws IllegalArgumentException if {@code targetClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Override
     public <T> ContinuableFuture<Optional<T>> findFirst(final Class<T> targetClass, final String query, final Object... parameters) {
@@ -277,8 +290,10 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param parameters the positional query parameters
      * @return a future that completes with a {@code Nullable} holding the value (possibly
      *         {@code null}), or empty if no row exists
-     * @throws IllegalArgumentException if {@code valueClass} is {@code null} (rejected eagerly at
-     *         the call site)
+     * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Override
     public <V> ContinuableFuture<Nullable<V>> queryForSingleValue(final Class<V> valueClass, final String query, final Object... parameters) {
@@ -322,8 +337,10 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @return a future that completes with an {@code Optional} of the non-null value, or empty
      *         if no row exists; if a row exists but the value is {@code null}, {@code get()} throws
      *         an {@code ExecutionException} whose cause is a {@link NullPointerException}
-     * @throws IllegalArgumentException if {@code valueClass} is {@code null} (rejected eagerly at
-     *         the call site)
+     * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Override
     public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final Class<V> valueClass, final String query, final Object... parameters) {
@@ -360,6 +377,10 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *
      * @param query the CQL query to execute
      * @return a future that completes with a synchronous-style {@link ResultSet}
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Override
     public ContinuableFuture<ResultSet> execute(final String query) {
@@ -397,6 +418,10 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param query the CQL query to execute
      * @param parameters the positional query parameters
      * @return a future that completes with a synchronous-style {@link ResultSet}
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Override
     public ContinuableFuture<ResultSet> execute(final String query, final Object... parameters) {
@@ -432,6 +457,10 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param query the CQL query to execute
      * @param parameters a map of named parameter values keyed by parameter name
      * @return a future that completes with a synchronous-style {@link ResultSet}
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Override
     public ContinuableFuture<ResultSet> execute(final String query, final Map<String, Object> parameters) {
@@ -468,6 +497,8 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      *
      * @param statement the CQL statement to execute
      * @return a future that completes with a synchronous-style {@link ResultSet}
+     * @throws RuntimeException if the session is closed or the driver rejects request submission;
+     *         failures after submission are reported by the returned future
      */
     @Override
     public ContinuableFuture<ResultSet> execute(final Statement<?> statement) {

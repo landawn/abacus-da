@@ -146,6 +146,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         {@link com.landawn.abacus.exception.DuplicateResultException}
      * @throws IllegalArgumentException if {@code ids} is {@code null} or empty, or if its length does
      *         not match the registered/annotated key columns of {@code targetClass}
+     * @throws NullPointerException if {@code targetClass} is {@code null} when its primary-key metadata is read
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public final <T> ContinuableFuture<Optional<T>> get(final Class<T> targetClass, final Object... ids) {
         return get(targetClass, null, ids);
@@ -185,6 +188,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         row matches
      * @throws IllegalArgumentException if {@code ids} is {@code null} or empty, or if its length does
      *         not match the registered/annotated key columns of {@code targetClass}
+     * @throws NullPointerException if {@code targetClass} is {@code null} when its primary-key metadata is read
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public final <T> ContinuableFuture<Optional<T>> get(final Class<T> targetClass, final Collection<String> selectPropNames, final Object... ids) {
         return get(targetClass, selectPropNames, CassandraExecutorBase.idsToCondition(targetClass, ids));
@@ -220,6 +226,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition identifying at most one row
      * @return a future whose payload is an {@link Optional} containing the entity, or empty if no
      *         row matches
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
+     *         or the supplied condition contains a relation unsupported by CQL
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public <T> ContinuableFuture<Optional<T>> get(final Class<T> targetClass, final Condition whereClause) {
         return get(targetClass, null, whereClause);
@@ -260,6 +270,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition identifying at most one row
      * @return a future whose payload is an {@link Optional} containing the entity, or empty if no
      *         row matches
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
+     *         or the supplied condition contains a relation unsupported by CQL
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public <T> ContinuableFuture<Optional<T>> get(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
         final SP cp = cassandraExecutor.prepareQuery(targetClass, selectPropNames, whereClause, 2);
@@ -299,6 +313,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is the entity instance, or {@code null} if no row matches
      * @throws IllegalArgumentException if {@code ids} is {@code null} or empty, or if its length does
      *         not match the registered/annotated key columns of {@code targetClass}
+     * @throws NullPointerException if {@code targetClass} is {@code null} when its primary-key metadata is read
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public final <T> ContinuableFuture<T> gett(final Class<T> targetClass, final Object... ids) {
         return gett(targetClass, null, ids);
@@ -337,6 +354,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is the entity instance, or {@code null} if no row matches
      * @throws IllegalArgumentException if {@code ids} is {@code null} or empty, or if its length does
      *         not match the registered/annotated key columns of {@code targetClass}
+     * @throws NullPointerException if {@code targetClass} is {@code null} when its primary-key metadata is read
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public final <T> ContinuableFuture<T> gett(final Class<T> targetClass, final Collection<String> selectPropNames, final Object... ids) {
         return gett(targetClass, selectPropNames, CassandraExecutorBase.idsToCondition(targetClass, ids));
@@ -371,6 +391,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the entity class to fetch
      * @param whereClause the WHERE condition identifying at most one row
      * @return a future whose payload is the entity instance, or {@code null} if no row matches
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
+     *         or the supplied condition contains a relation unsupported by CQL
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public <T> ContinuableFuture<T> gett(final Class<T> targetClass, final Condition whereClause) {
         return gett(targetClass, null, whereClause);
@@ -407,6 +431,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *                       to select all mapped properties
      * @param whereClause the WHERE condition identifying at most one row
      * @return a future whose payload is the entity instance, or {@code null} if no row matches
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
+     *         or the supplied condition contains a relation unsupported by CQL
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public <T> ContinuableFuture<T> gett(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
         final SP cp = cassandraExecutor.prepareQuery(targetClass, selectPropNames, whereClause, 2);
@@ -440,6 +468,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param entity the entity instance to insert
      * @return a future whose payload is the driver result set produced by the INSERT
      * @throws IllegalArgumentException if {@code entity} is {@code null} (thrown synchronously at the call site)
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public ContinuableFuture<RS> insert(final Object entity) {
         return execute(cassandraExecutor.prepareInsert(entity));
@@ -473,6 +503,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param props the column-name to column-value map to insert
      * @return a future whose payload is the driver result set produced by the INSERT
      * @throws IllegalArgumentException if {@code props} is {@code null} or empty
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public ContinuableFuture<RS> insert(final Class<?> targetClass, final Map<String, Object> props) {
         return execute(cassandraExecutor.prepareInsert(targetClass, props));
@@ -503,6 +535,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is the driver result set produced by the batch INSERT
      * @throws IllegalArgumentException if {@code entities} is {@code null} or empty (enforced by the
      *         shipped executors' batch-statement builders)
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public ContinuableFuture<RS> batchInsert(final Collection<?> entities, final BT type) {
         return execute(cassandraExecutor.prepareBatchInsertStatement(entities, type));
@@ -536,6 +570,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is the driver result set produced by the batch INSERT
      * @throws IllegalArgumentException if {@code propsList} is {@code null} or empty (enforced by the
      *         shipped executors' batch-statement builders)
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public ContinuableFuture<RS> batchInsert(final Class<?> targetClass, final Collection<? extends Map<String, Object>> propsList, final BT type) {
         return execute(cassandraExecutor.prepareBatchInsertStatement(targetClass, propsList, type));
@@ -570,6 +606,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is the driver result set produced by the UPDATE
      * @throws IllegalArgumentException if {@code entity} is {@code null}, if the entity's class declares
      *         no key, or if a key value is missing (thrown synchronously at the call site)
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public ContinuableFuture<RS> update(final Object entity) {
         N.checkArgNotNull(entity, cs.entity);
@@ -612,8 +650,11 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws IllegalArgumentException if {@code entity} is {@code null}, if {@code propNamesToUpdate}
      *         is {@code null} or empty, if a primary-key property is requested for update, or if a key
      *         value is missing (thrown synchronously at the call site)
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public ContinuableFuture<RS> update(final Object entity, final Collection<String> propNamesToUpdate) {
+        N.checkArgNotNull(entity, cs.entity);
         N.checkArgument(N.notEmpty(propNamesToUpdate), "'propNamesToUpdate' can't be null or empty");
 
         return execute(cassandraExecutor.prepareUpdate(entity, propNamesToUpdate));
@@ -649,8 +690,11 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, if {@code props} is
      *         {@code null} or empty, if {@code whereClause} is {@code null}, or if {@code props}
      *         contains a primary-key property (thrown synchronously at the call site)
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public ContinuableFuture<RS> update(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgument(N.notEmpty(props), "'props' can't be null or empty.");
 
         return execute(cassandraExecutor.prepareUpdate(targetClass, props, whereClause));
@@ -680,6 +724,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param query the parameterized CQL UPDATE / INSERT / DELETE statement
      * @param parameters the parameter values to bind
      * @return a future whose payload is the driver result set produced by the statement
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public ContinuableFuture<RS> update(final String query, final Object... parameters) {
         return execute(query, parameters);
@@ -713,6 +761,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws IllegalArgumentException if {@code entities} is {@code null} or empty, if its first
      *         element is {@code null}, if an entity's class declares no key, or if a key value is
      *         missing (thrown synchronously at the call site)
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public ContinuableFuture<RS> batchUpdate(final Collection<?> entities, final BT type) {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
@@ -755,8 +805,11 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws IllegalArgumentException if {@code propNamesToUpdate} is {@code null} or empty, or if
      *         {@code entities} is {@code null} or empty (the latter enforced by the shipped executors'
      *         batch-statement builders)
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public ContinuableFuture<RS> batchUpdate(final Collection<?> entities, final Collection<String> propNamesToUpdate, final BT type) {
+        N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
         N.checkArgument(N.notEmpty(propNamesToUpdate), "'propNamesToUpdate' can't be null or empty");
 
         return execute(cassandraExecutor.prepareBatchUpdateStatement(entities, propNamesToUpdate, type));
@@ -790,6 +843,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is the driver result set produced by the batch UPDATE
      * @throws IllegalArgumentException if {@code propsList} is {@code null} or empty (enforced by the
      *         shipped executors' batch-statement builders)
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public ContinuableFuture<RS> batchUpdate(final Class<?> targetClass, final Collection<? extends Map<String, Object>> propsList, final BT type) {
         return execute(cassandraExecutor.prepareBatchUpdateStatement(targetClass, propsList, type));
@@ -824,8 +879,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *                       invocation of {@code query}
      * @param type the batch type (e.g. {@code LOGGED}, {@code UNLOGGED}, {@code COUNTER})
      * @return a future whose payload is the driver result set produced by the batch execution
-     * @throws IllegalArgumentException if {@code parametersList} is {@code null} or empty (enforced by
-     *         the shipped executors' batch-statement builders)
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public ContinuableFuture<RS> batchUpdate(final String query, final Collection<?> parametersList, final BT type) {
         return execute(cassandraExecutor.prepareBatchUpdateStatement(query, parametersList, type));
@@ -857,6 +914,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is the driver result set produced by the DELETE
      * @throws IllegalArgumentException if {@code entity} is {@code null}, if the entity's class declares
      *         no key, or if a key value is missing (thrown synchronously at the call site)
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public ContinuableFuture<RS> delete(final Object entity) {
         return delete(entity, null);
@@ -891,6 +950,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws IllegalArgumentException if {@code entity} is {@code null}, if {@code propNamesToDelete}
      *         is non-{@code null} but empty or contains a primary-key property, or if a key value is
      *         missing (thrown synchronously at the call site)
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public ContinuableFuture<RS> delete(final Object entity, final Collection<String> propNamesToDelete) {
         N.checkArgNotNull(entity, cs.entity);
@@ -925,6 +986,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is the driver result set produced by the DELETE
      * @throws IllegalArgumentException if {@code ids} is {@code null} or empty, or if its length does
      *         not match the registered/annotated key columns of {@code targetClass}
+     * @throws NullPointerException if {@code targetClass} is {@code null} when its primary-key metadata is read
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public final ContinuableFuture<RS> delete(final Class<?> targetClass, final Object... ids) {
         return delete(targetClass, null, ids);
@@ -959,8 +1023,12 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws IllegalArgumentException if {@code propNamesToDelete} is non-{@code null} and empty, or if
      *         {@code ids} is {@code null} or empty or its length does not match the registered/annotated
      *         key columns of {@code targetClass}
+     * @throws NullPointerException if {@code targetClass} is {@code null} when its primary-key metadata is read
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public final ContinuableFuture<RS> delete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Object... ids) {
+        Objects.requireNonNull(targetClass, "targetClass");
         N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be empty (pass null to delete the entire row)");
 
         return delete(targetClass, propNamesToDelete, CassandraExecutorBase.idsToCondition(targetClass, ids));
@@ -993,6 +1061,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is the driver result set produced by the DELETE
      * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code whereClause} is
      *         {@code null}
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public ContinuableFuture<RS> delete(final Class<?> targetClass, final Condition whereClause) {
         return delete(targetClass, null, whereClause);
@@ -1029,8 +1099,11 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, if {@code whereClause} is
      *         {@code null}, or if {@code propNamesToDelete} is non-{@code null} but empty or contains a
      *         primary-key property
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public ContinuableFuture<RS> delete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Condition whereClause) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be empty (pass null to delete the entire row)");
 
         return execute(cassandraExecutor.prepareDelete(targetClass, propNamesToDelete, whereClause));
@@ -1063,6 +1136,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @throws IllegalArgumentException if {@code entities} is {@code null} or empty, if any element is
      *         {@code null} or is not an instance of the first entity's class, if the entity has no
      *         single-column key, or if a key value is missing (thrown synchronously at the call site)
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public ContinuableFuture<RS> batchDelete(final Collection<?> entities) {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
@@ -1106,6 +1181,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         single-column key, if a key value is missing, or if {@code propNamesToDelete} is
      *         non-{@code null} but empty or contains a primary-key property (thrown synchronously at
      *         the call site)
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public ContinuableFuture<RS> batchDelete(final Collection<?> entities, final Collection<String> propNamesToDelete) {
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
@@ -1145,6 +1222,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         {@code false} otherwise
      * @throws IllegalArgumentException if {@code ids} is {@code null} or empty, or if its length does
      *         not match the registered/annotated key columns of {@code targetClass}
+     * @throws NullPointerException if {@code targetClass} is {@code null} when its primary-key metadata is read
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public final ContinuableFuture<Boolean> exists(final Class<?> targetClass, final Object... ids) {
         return exists(targetClass, CassandraExecutorBase.idsToCondition(targetClass, ids));
@@ -1176,6 +1256,9 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition to evaluate
      * @return a future whose payload is {@code true} if at least one matching row exists,
      *         {@code false} otherwise
+     * @throws NullPointerException if {@code targetClass} is {@code null} when its primary-key metadata is read
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public ContinuableFuture<Boolean> exists(final Class<?> targetClass, final Condition whereClause) {
         final SP cp = cassandraExecutor.prepareQuery(targetClass, getKeyNames(targetClass), whereClause, 1);
@@ -1208,6 +1291,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param parameters the parameter values to bind
      * @return a future whose payload is {@code true} if the query returned at least one row,
      *         {@code false} otherwise
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public final ContinuableFuture<Boolean> exists(final String query, final Object... parameters) {
         return execute(query, parameters).map(CassandraExecutorBase.exists_mapper);
@@ -1238,6 +1325,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the entity class identifying the target table
      * @param whereClause the WHERE condition to evaluate
      * @return a future whose payload is the number of matching rows
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
+     *         or the supplied condition contains a relation unsupported by CQL
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public ContinuableFuture<Long> count(final Class<?> targetClass, final Condition whereClause) {
         final SP cp = cassandraExecutor.prepareQuery(targetClass, CassandraExecutorBase.COUNT_SELECT_PROP_NAMES, whereClause, 0);
@@ -1274,6 +1365,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @deprecated prefer {@link #queryForLong(String, Object...)} with a {@code COUNT(*)} query, applying
      *             {@code orElse(0L)} to its {@code OptionalLong} payload for the same behavior. Slated for
      *             removal in a future release.
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Deprecated
     public final ContinuableFuture<Long> count(final String query, final Object... parameters) {
@@ -1306,6 +1401,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the entity class to map result rows to
      * @param whereClause the WHERE condition selecting rows
      * @return a future whose payload is a {@link List} of mapped entities (empty if no row matches)
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
+     *         or the supplied condition contains a relation unsupported by CQL
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public <T> ContinuableFuture<List<T>> list(final Class<T> targetClass, final Condition whereClause) {
         return list(targetClass, null, whereClause);
@@ -1339,6 +1438,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *                       to select all mapped properties
      * @param whereClause the WHERE condition selecting rows
      * @return a future whose payload is a {@link List} of mapped entities (empty if no row matches)
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
+     *         or the supplied condition contains a relation unsupported by CQL
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public <T> ContinuableFuture<List<T>> list(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
         final SP cp = cassandraExecutor.prepareQuery(targetClass, selectPropNames, whereClause);
@@ -1373,6 +1476,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param parameters the parameter values to bind
      * @return a future whose payload is a {@link List} of result rows, each row as a
      *         {@code Map<String, Object>}
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public final ContinuableFuture<List<Map<String, Object>>> list(final String query, final Object... parameters) {
         return list(CassandraExecutorBase.PROP_MAP_TYPE, query, parameters);
@@ -1405,8 +1512,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
      * @return a future whose payload is a {@link List} of mapped rows (empty if no row matches)
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null}; rejected eagerly on the
-     *         calling thread, because the row mapping runs on the future's completion thread
+     * @throws IllegalArgumentException if {@code targetClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public final <T> ContinuableFuture<List<T>> list(final Class<T> targetClass, final String query, final Object... parameters) {
         N.checkArgNotNull(targetClass, cs.targetClass);
@@ -1440,6 +1549,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param targetClass the entity class identifying the target table and column mappings
      * @param whereClause the WHERE condition selecting rows
      * @return a future whose payload is a {@link Dataset} containing the result rows
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
+     *         or the supplied condition contains a relation unsupported by CQL
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public ContinuableFuture<Dataset> query(final Class<?> targetClass, final Condition whereClause) {
         return query(targetClass, null, whereClause);
@@ -1472,6 +1585,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *                       to select all mapped properties
      * @param whereClause the WHERE condition selecting rows
      * @return a future whose payload is a {@link Dataset} containing the result rows
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
+     *         or the supplied condition contains a relation unsupported by CQL
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public ContinuableFuture<Dataset> query(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
         final SP cp = cassandraExecutor.prepareQuery(targetClass, selectPropNames, whereClause);
@@ -1505,6 +1622,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
      * @return a future whose payload is a {@link Dataset} containing the result rows
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public final ContinuableFuture<Dataset> query(final String query, final Object... parameters) {
         return query(Map.class, query, parameters);
@@ -1536,6 +1657,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
      * @return a future whose payload is a {@link Dataset} containing the result rows
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public final ContinuableFuture<Dataset> query(final Class<?> targetClass, final String query, final Object... parameters) {
         return execute(query, parameters).map(resultSet -> cassandraExecutor.extractData(targetClass, resultSet));
@@ -1568,6 +1693,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting rows
      * @return a future whose payload is a {@link Stream} of mapped entities, backed by the
      *         underlying result-set iterator
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
+     *         or the supplied condition contains a relation unsupported by CQL
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Class<T> targetClass, final Condition whereClause) {
         return stream(targetClass, null, whereClause);
@@ -1601,6 +1730,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *                       to select all mapped properties
      * @param whereClause the WHERE condition selecting rows
      * @return a future whose payload is a {@link Stream} of mapped entities
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
+     *         or the supplied condition contains a relation unsupported by CQL
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
         final SP cp = cassandraExecutor.prepareQuery(targetClass, selectPropNames, whereClause);
@@ -1634,6 +1767,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
      * @return a future whose payload is a {@link Stream} of {@code Object[]} rows
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public ContinuableFuture<Stream<Object[]>> stream(final String query, final Object... parameters) {
         return stream(Object[].class, query, parameters);
@@ -1666,8 +1803,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
      * @return a future whose payload is a {@link Stream} of mapped rows
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null}; rejected eagerly on the
-     *         calling thread, because the row mapping runs on the future's completion thread
+     * @throws IllegalArgumentException if {@code targetClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public final <T> ContinuableFuture<Stream<T>> stream(final Class<T> targetClass, final String query, final Object... parameters) {
         N.checkArgNotNull(targetClass, cs.targetClass);
@@ -1706,6 +1845,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is a {@link Stream} of mapped rows
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}; rejected eagerly on the
      *         calling thread, because the row mapping runs on the future's completion thread
+     * @throws RuntimeException if {@code statement} is null (rejected by the concrete driver), the session is closed, or the driver rejects request submission;
+     *         failures after submission are reported by the returned future
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Class<T> targetClass, final ST statement) {
         N.checkArgNotNull(targetClass, cs.targetClass);
@@ -1740,6 +1881,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting rows
      * @return a future whose payload is an {@link Optional} containing the first mapped entity,
      *         or empty if no row matches
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
+     *         or the supplied condition contains a relation unsupported by CQL
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public <T> ContinuableFuture<Optional<T>> findFirst(final Class<T> targetClass, final Condition whereClause) {
         return findFirst(targetClass, null, whereClause);
@@ -1774,6 +1919,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param whereClause the WHERE condition selecting rows
      * @return a future whose payload is an {@link Optional} containing the first mapped entity,
      *         or empty if no row matches
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, the selected properties cannot be mapped,
+     *         or the supplied condition contains a relation unsupported by CQL
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public <T> ContinuableFuture<Optional<T>> findFirst(final Class<T> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
         final SP cp = cassandraExecutor.prepareQuery(targetClass, selectPropNames, whereClause, 1);
@@ -1808,6 +1957,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param parameters the parameter values to bind
      * @return a future whose payload is an {@link Optional} containing the first row as a
      *         {@code Map<String, Object>}, or empty if the query returned no row
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public final ContinuableFuture<Optional<Map<String, Object>>> findFirst(final String query, final Object... parameters) {
         return findFirst(CassandraExecutorBase.PROP_MAP_TYPE, query, parameters);
@@ -1845,8 +1998,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param parameters the parameter values to bind
      * @return a future whose payload is an {@link Optional} containing the mapped first row, or
      *         empty if the query returned no row
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null}; rejected eagerly on the
-     *         calling thread, because the row mapping runs on the future's completion thread
+     * @throws IllegalArgumentException if {@code targetClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public <T> ContinuableFuture<Optional<T>> findFirst(final Class<T> targetClass, final String query, final Object... parameters) {
         N.checkArgNotNull(targetClass, cs.targetClass);
@@ -1889,6 +2044,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         ({@code false} when the column is {@code null}); empty only when no row matches
      * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code propName} is
      *         {@code null} or empty
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Beta
     public ContinuableFuture<OptionalBoolean> queryForBoolean(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -1926,6 +2083,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         ({@code (char) 0} when the column is {@code null}); empty only when no row matches
      * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code propName} is
      *         {@code null} or empty
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Beta
     public ContinuableFuture<OptionalChar> queryForChar(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -1963,6 +2122,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         ({@code (byte) 0} when the column is {@code null}); empty only when no row matches
      * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code propName} is
      *         {@code null} or empty
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Beta
     public ContinuableFuture<OptionalByte> queryForByte(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -2000,6 +2161,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         ({@code (short) 0} when the column is {@code null}); empty only when no row matches
      * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code propName} is
      *         {@code null} or empty
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Beta
     public ContinuableFuture<OptionalShort> queryForShort(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -2037,6 +2200,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         ({@code 0} when the column is {@code null}); empty only when no row matches
      * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code propName} is
      *         {@code null} or empty
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Beta
     public ContinuableFuture<OptionalInt> queryForInt(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -2074,6 +2239,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         ({@code 0L} when the column is {@code null}); empty only when no row matches
      * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code propName} is
      *         {@code null} or empty
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Beta
     public ContinuableFuture<OptionalLong> queryForLong(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -2111,6 +2278,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         ({@code 0f} when the column is {@code null}); empty only when no row matches
      * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code propName} is
      *         {@code null} or empty
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Beta
     public ContinuableFuture<OptionalFloat> queryForFloat(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -2148,6 +2317,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         ({@code 0d} when the column is {@code null}); empty only when no row matches
      * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code propName} is
      *         {@code null} or empty
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Beta
     public ContinuableFuture<OptionalDouble> queryForDouble(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -2185,6 +2356,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         empty if no row matches; the value is {@code null} when the column is SQL NULL
      * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code propName} is
      *         {@code null} or empty
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Beta
     public ContinuableFuture<Nullable<String>> queryForString(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -2221,6 +2394,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         empty if no row matches
      * @throws IllegalArgumentException if {@code targetClass} is {@code null} or {@code propName} is
      *         {@code null} or empty
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Beta
     public ContinuableFuture<Nullable<Date>> queryForDate(final Class<?> targetClass, final String propName, final Condition whereClause) {
@@ -2258,6 +2433,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         if no row matches
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code valueClass} is
      *         {@code null}, or {@code propName} is {@code null} or empty
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Beta
     public <E extends Date> ContinuableFuture<Nullable<E>> queryForDate(final Class<?> targetClass, final Class<E> valueClass, final String propName,
@@ -2298,9 +2475,13 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         matches; the value is {@code null} when the column is SQL NULL
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code valueClass} is
      *         {@code null}, or {@code propName} is {@code null} or empty
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public <V> ContinuableFuture<Nullable<V>> queryForSingleValue(final Class<?> targetClass, final Class<V> valueClass, final String propName,
             final Condition whereClause) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+        N.checkArgNotNull(valueClass, "valueClass");
         N.checkArgNotEmpty(propName, cs.propName);
 
         final SP cp = cassandraExecutor.prepareQuery(targetClass, List.of(propName), whereClause, 1);
@@ -2346,9 +2527,13 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         since {@link Optional} cannot hold {@code null}
      * @throws IllegalArgumentException if {@code targetClass} is {@code null}, {@code valueClass} is
      *         {@code null}, or {@code propName} is {@code null} or empty
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final Class<?> targetClass, final Class<V> valueClass, final String propName,
             final Condition whereClause) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+        N.checkArgNotNull(valueClass, "valueClass");
         N.checkArgNotEmpty(propName, cs.propName);
 
         final SP cp = cassandraExecutor.prepareQuery(targetClass, List.of(propName), whereClause, 1);
@@ -2384,6 +2569,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param parameters the parameter values to bind
      * @return a future whose payload is a <i>present</i> {@link OptionalBoolean} holding the value
      *         ({@code false} when the column is {@code null}); empty only when the query returned no row
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Beta
     public final ContinuableFuture<OptionalBoolean> queryForBoolean(final String query, final Object... parameters) {
@@ -2418,6 +2607,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param parameters the parameter values to bind
      * @return a future whose payload is a <i>present</i> {@link OptionalChar} holding the value
      *         ({@code (char) 0} when the column is {@code null}); empty only when the query returned no row
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Beta
     public final ContinuableFuture<OptionalChar> queryForChar(final String query, final Object... parameters) {
@@ -2452,6 +2645,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param parameters the parameter values to bind
      * @return a future whose payload is a <i>present</i> {@link OptionalByte} holding the value
      *         ({@code (byte) 0} when the column is {@code null}); empty only when the query returned no row
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Beta
     public final ContinuableFuture<OptionalByte> queryForByte(final String query, final Object... parameters) {
@@ -2486,6 +2683,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param parameters the parameter values to bind
      * @return a future whose payload is a <i>present</i> {@link OptionalShort} holding the value
      *         ({@code (short) 0} when the column is {@code null}); empty only when the query returned no row
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Beta
     public final ContinuableFuture<OptionalShort> queryForShort(final String query, final Object... parameters) {
@@ -2519,6 +2720,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param parameters the parameter values to bind
      * @return a future whose payload is a <i>present</i> {@link OptionalInt} holding the value
      *         ({@code 0} when the column is {@code null}); empty only when the query returned no row
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Beta
     public final ContinuableFuture<OptionalInt> queryForInt(final String query, final Object... parameters) {
@@ -2552,6 +2757,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param parameters the parameter values to bind
      * @return a future whose payload is a <i>present</i> {@link OptionalLong} holding the value
      *         ({@code 0L} when the column is {@code null}); empty only when the query returned no row
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Beta
     public final ContinuableFuture<OptionalLong> queryForLong(final String query, final Object... parameters) {
@@ -2586,6 +2795,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param parameters the parameter values to bind
      * @return a future whose payload is a <i>present</i> {@link OptionalFloat} holding the value
      *         ({@code 0f} when the column is {@code null}); empty only when the query returned no row
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Beta
     public final ContinuableFuture<OptionalFloat> queryForFloat(final String query, final Object... parameters) {
@@ -2620,6 +2833,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param parameters the parameter values to bind
      * @return a future whose payload is a <i>present</i> {@link OptionalDouble} holding the value
      *         ({@code 0d} when the column is {@code null}); empty only when the query returned no row
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Beta
     public final ContinuableFuture<OptionalDouble> queryForDouble(final String query, final Object... parameters) {
@@ -2655,6 +2872,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is a {@link Nullable} holding the {@code String} value, or
      *         empty if the query returned no row; the value is {@code null} when the column is
      *         SQL NULL
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     @Beta
     public final ContinuableFuture<Nullable<String>> queryForString(final String query, final Object... parameters) {
@@ -2685,6 +2906,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @return a future whose payload is a {@link Nullable} holding the {@code Date} value, or
      *         empty if the query returned no row; the value is {@code null} when the column is
      *         SQL NULL
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      * @see #queryForDate(Class, String, Object...)
      * @see #queryForDate(Class, String, Condition)
      */
@@ -2714,6 +2939,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param parameters the parameter values to bind
      * @return a future whose payload is a {@link Nullable} holding the converted value, or empty
      *         if the query returned no row; the value is {@code null} when the column is SQL NULL
+     * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      * @see #queryForDate(String, Object...)
      * @see #queryForDate(Class, Class, String, Condition)
      */
@@ -2751,8 +2980,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param parameters the parameter values to bind
      * @return a future whose payload is a {@link Nullable} holding the value, or empty if the
      *         query returned no row; the value is {@code null} when the column is SQL NULL
-     * @throws IllegalArgumentException if {@code valueClass} is {@code null}; rejected eagerly on the
-     *         calling thread, because the conversion runs on the future's completion thread
+     * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public <V> ContinuableFuture<Nullable<V>> queryForSingleValue(final Class<V> valueClass, final String query, final Object... parameters) {
         N.checkArgNotNull(valueClass, "valueClass");
@@ -2799,8 +3030,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         query returned no row; if a row was returned but the column value is {@code null},
      *         {@code get()} throws an {@code ExecutionException} whose cause is a
      *         {@link NullPointerException}, since {@link Optional} cannot hold {@code null}
-     * @throws IllegalArgumentException if {@code valueClass} is {@code null}; rejected eagerly on the
-     *         calling thread, because the conversion runs on the future's completion thread
+     * @throws IllegalArgumentException if {@code valueClass} or {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final Class<V> valueClass, final String query, final Object... parameters) {
         N.checkArgNotNull(valueClass, "valueClass");
@@ -2835,6 +3068,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *
      * @param query the CQL statement to execute
      * @return a future that completes with the result set from the query execution
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public abstract ContinuableFuture<RS> execute(final String query);
 
@@ -2862,6 +3099,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param query the parameterized CQL statement
      * @param parameters the parameter values (can be individual values, arrays, collections, maps, or entities)
      * @return a future that completes with the result set from the query execution
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public abstract ContinuableFuture<RS> execute(final String query, final Object... parameters);
 
@@ -2892,6 +3133,10 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * @param query the parameterized CQL statement with named parameters
      * @param parameters a Map containing parameter names as keys and parameter values as values
      * @return a future that completes with the result set from the query execution
+     * @throws IllegalArgumentException if {@code query} is {@code null}, the CQL contains malformed or mixed
+     *         parameter markers, or the supplied parameter count or names do not match the prepared statement
+     * @throws RuntimeException if synchronous CQL preparation or parameter binding fails, or the driver rejects request
+     *         submission; failures after submission are reported by the returned future
      */
     public abstract ContinuableFuture<RS> execute(String query, Map<String, Object> parameters);
 
@@ -2924,6 +3169,8 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *
      * @param statement the configured CQL statement to execute
      * @return a future that completes with the result set from the statement execution
+     * @throws RuntimeException if {@code statement} is null (rejected by the concrete driver), the session is closed, or the driver rejects request submission;
+     *         failures after submission are reported by the returned future
      */
     public abstract ContinuableFuture<RS> execute(final ST statement);
 

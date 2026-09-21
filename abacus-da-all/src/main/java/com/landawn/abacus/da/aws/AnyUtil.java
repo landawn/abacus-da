@@ -90,14 +90,16 @@ public final class AnyUtil {
             throw new IllegalArgumentException("The length of property name/value array must be even: " + propNameAndValues.length);
         }
 
-        final Map<String, Object> props = new LinkedHashMap<>(propNameAndValues.length); // capacity = 2x pair count, so no rehash below the default load factor
-
         for (int i = 0, len = propNameAndValues.length; i < len; i += 2) {
             if (!(propNameAndValues[i] instanceof String)) {
                 throw new IllegalArgumentException("Parameters must be property name-value pairs whose names are Strings, but found "
                         + (propNameAndValues[i] == null ? "null" : propNameAndValues[i].getClass().getName()) + " at index " + i);
             }
+        }
 
+        final Map<String, Object> props = new LinkedHashMap<>(propNameAndValues.length); // capacity = 2x pair count, so no rehash below the default load factor
+
+        for (int i = 0, len = propNameAndValues.length; i < len; i += 2) {
             props.put((String) propNameAndValues[i], propNameAndValues[i + 1]);
         }
 

@@ -161,7 +161,7 @@ public final class MongoDB extends MongoDBBase {
      *
      * @param collectionName the name of the MongoDB collection to retrieve
      * @return a MongoCollection configured for Document operations
-     * @throws IllegalArgumentException if collectionName is null
+     * @throws IllegalArgumentException if collectionName is null or empty
      * @see Document
      * @see MongoCollection
      */
@@ -195,7 +195,7 @@ public final class MongoDB extends MongoDBBase {
      * @param collectionName the name of the MongoDB collection to retrieve
      * @param rowType the Class object representing the document type
      * @return a MongoCollection configured for the specified type
-     * @throws IllegalArgumentException if collectionName or rowType is null
+     * @throws IllegalArgumentException if collectionName is null or empty, or rowType is null
      * @see MongoCollection
      */
     public <T> MongoCollection<T> collection(final String collectionName, final Class<T> rowType) {
@@ -223,7 +223,7 @@ public final class MongoDB extends MongoDBBase {
      *
      * @param collectionName the name of the MongoDB collection
      * @return a MongoCollectionExecutor for the specified collection
-     * @throws IllegalArgumentException if collectionName is null
+     * @throws IllegalArgumentException if collectionName is null or empty
      * @see MongoCollectionExecutor
      */
     public MongoCollectionExecutor collectionExecutor(final String collectionName) {
@@ -315,7 +315,7 @@ public final class MongoDB extends MongoDBBase {
      * @param collectionName the name of the MongoDB collection to map
      * @param rowType the Class representing the entity type
      * @return a MongoCollectionMapper configured for the specified type and collection
-     * @throws IllegalArgumentException if collectionName or rowType is null
+     * @throws IllegalArgumentException if collectionName is null or empty, or rowType is null
      * @see MongoCollectionMapper
      * @see #collectionMapper(Class)
      */

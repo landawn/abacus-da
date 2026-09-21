@@ -120,6 +120,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * column in every family of the row.</p>
      *
      * @param rowKey the row key object to retrieve, automatically converted to bytes
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null} , or its byte representation is empty or exceeds 32,767 bytes
      */
     AnyGet(final Object rowKey) {
         super(new Get(toRowKeyBytes(rowKey)));
@@ -133,6 +134,9 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @param rowKey the row key object whose byte representation will be sliced
      * @param rowOffset the starting position (0-based) within the row key bytes
      * @param rowLength the number of bytes to use from the row key, starting at offset
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} , {@code rowLength} is zero or exceeds 32,767 bytes
+     * @throws NegativeArraySizeException if {@code rowLength} is negative
+     * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
      */
     AnyGet(final Object rowKey, final int rowOffset, final int rowLength) {
         super(new Get(toRowKeyBytes(rowKey), rowOffset, rowLength));
@@ -145,6 +149,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *
      * @param rowKey the row key as a ByteBuffer; must not be {@code null} and must have at
      *               least one remaining byte
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null} , or its byte representation is empty or exceeds 32,767 bytes
      */
     AnyGet(final ByteBuffer rowKey) {
         super(new Get(rowKey));
@@ -157,6 +162,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * (or directly on the original Get) are visible on both.
      *
      * @param get the existing HBase Get object to wrap; must not be {@code null}
+     * @throws IllegalArgumentException if {@code get} is {@code null}
      */
     AnyGet(final Get get) {
         super(get);
@@ -187,8 +193,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *
      * @param rowKey the row key object to retrieve, automatically converted to bytes
      * @return a new AnyGet instance configured with the specified row key
-     * @throws IllegalArgumentException if {@code rowKey} is null or its converted byte
-     *         representation is empty or exceeds HBase's maximum row length
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null} , or its byte representation is empty or exceeds 32,767 bytes
      * @see #of(Object, int, int)
      * @see #of(ByteBuffer)
      * @see #of(Get)
@@ -224,10 +229,9 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @param rowOffset the starting offset within the row key byte array
      * @param rowLength the number of bytes to use from the row key
      * @return a new AnyGet instance configured with the partial row key
-     * @throws IllegalArgumentException if {@code rowKey} is null, the selected slice is empty,
-     *         or {@code rowLength} exceeds HBase's maximum row length
-     * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative, or
-     *         {@code rowOffset + rowLength} exceeds the length of the converted row-key bytes
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} , {@code rowLength} is zero or exceeds 32,767 bytes
+     * @throws NegativeArraySizeException if {@code rowLength} is negative
+     * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
      * @see #of(Object)
      * @see #of(ByteBuffer)
      */
@@ -260,9 +264,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @param rowKey the row key as a ByteBuffer; must not be {@code null} and must have at least
      *               one remaining byte
      * @return a new AnyGet instance configured for the specified row
-     * @throws IllegalArgumentException if {@code rowKey} is {@code null}, empty
-     *         ({@code remaining() == 0}), or exceeds HBase's maximum row length (raised by the
-     *         wrapped {@link org.apache.hadoop.hbase.client.Get#Get(ByteBuffer)} constructor)
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null} , or its byte representation is empty or exceeds 32,767 bytes
      * @see #of(Object)
      * @see java.nio.ByteBuffer
      */
@@ -295,7 +297,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *
      * @param get the existing HBase Get object to wrap; must not be {@code null}
      * @return a new AnyGet instance that wraps the specified Get by reference
-     * @throws IllegalArgumentException if {@code get} is null
+     * @throws IllegalArgumentException if {@code get} is {@code null}
      * @see org.apache.hadoop.hbase.client.Get
      * @see #val()
      */
@@ -618,7 +620,8 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      *
      * @param timestamp the exact timestamp for which to retrieve cell versions
      * @return this AnyGet instance for method chaining
-     * @throws IllegalArgumentException if {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code timestamp} is negative or equals {@link Long#MAX_VALUE} , causing the exclusive upper bound to
+     *         overflow
      * @see #setTimeRange(long, long)
      * @see #getTimeRange()
      */
@@ -993,6 +996,7 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
      * @param other the {@link Row} to compare with
      * @return a negative integer, zero, or a positive integer as this row key is less than,
      *         equal to, or greater than the other row's key
+     * @throws NullPointerException if {@code other} is {@code null}
      * @deprecated As of HBase 2.0.0; will be removed in HBase 3.0.0. Use {@link Row#COMPARATOR}
      *             instead.
      */
@@ -1129,6 +1133,10 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
     public static List<Get> toGet(final Collection<AnyGet> anyGets) {
         N.checkArgNotNull(anyGets, "anyGets");
 
+        for (final AnyGet anyGet : anyGets) {
+            N.checkArgNotNull(anyGet, "anyGet");
+        }
+
         if (N.isEmpty(anyGets)) {
             return new ArrayList<>();
         }
@@ -1136,7 +1144,6 @@ public final class AnyGet extends AnyQuery<AnyGet> implements Row {
         final List<Get> gets = new ArrayList<>(anyGets.size());
 
         for (final AnyGet anyGet : anyGets) {
-            N.checkArgNotNull(anyGet, "anyGet");
             gets.add(anyGet.val());
         }
 

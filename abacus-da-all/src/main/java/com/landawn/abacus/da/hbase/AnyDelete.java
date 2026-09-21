@@ -155,6 +155,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * whose timestamp is in the future relative to the server clock are not affected.</p>
      *
      * @param rowKey the row key object to delete, automatically converted to bytes
+     * @throws NullPointerException if {@code rowKey} converts to {@code null}
+     * @throws IllegalArgumentException if its byte representation is empty or exceeds 32,767 bytes
      */
     AnyDelete(final Object rowKey) {
         super(new Delete(toRowKeyBytes(rowKey)));
@@ -172,6 +174,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * @param rowKey the row key object to delete, automatically converted to bytes
      * @param timestamp the maximum timestamp for versions to delete (inclusive)
+     * @throws NullPointerException if {@code rowKey} converts to {@code null}
+     * @throws IllegalArgumentException if its byte representation is empty or exceeds 32,767 bytes, or {@code timestamp} is negative
      */
     AnyDelete(final Object rowKey, final long timestamp) {
         super(new Delete(toRowKeyBytes(rowKey), timestamp));
@@ -185,6 +189,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param rowKey the row key object whose byte representation will be sliced
      * @param rowOffset the starting position (0-based) within the row key bytes
      * @param rowLength the number of bytes to use from the row key, starting at offset
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} , {@code rowLength} is zero or exceeds 32,767 bytes
+     * @throws NegativeArraySizeException if {@code rowLength} is negative
+     * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
      */
     AnyDelete(final Object rowKey, final int rowOffset, final int rowLength) {
         super(new Delete(toRowKeyBytes(rowKey), rowOffset, rowLength));
@@ -199,6 +206,10 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param rowOffset the starting position (0-based) within the row key bytes
      * @param rowLength the number of bytes to use from the row key, starting at offset
      * @param timestamp the maximum timestamp for versions to delete (inclusive)
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} , {@code rowLength} is zero or exceeds 32,767 bytes, or
+     *         {@code timestamp} is negative
+     * @throws NegativeArraySizeException if {@code rowLength} is negative
+     * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
      */
     AnyDelete(final Object rowKey, final int rowOffset, final int rowLength, final long timestamp) {
         super(new Delete(toRowKeyBytes(rowKey), rowOffset, rowLength, timestamp));
@@ -212,6 +223,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param rowKey the row key object for the delete operation
      * @param timestamp the timestamp to apply to the delete operation
      * @param familyMap a pre-populated NavigableMap of column families to their respective Cell lists
+     * @throws NullPointerException if {@code rowKey} converts to {@code null} , or {@code familyMap} is {@code null}
+     * @throws IllegalArgumentException if {@code rowKey} converts to an empty byte array
      */
     AnyDelete(final Object rowKey, final long timestamp, final NavigableMap<byte[], List<Cell>> familyMap) {
         super(new Delete(toRowKeyBytes(rowKey), timestamp, familyMap));
@@ -227,6 +240,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * {@code addColumn}/{@code addFamily} calls on the wrapper do not affect the source delete.</p>
      *
      * @param deleteToCopy the HBase Delete object to copy
+     * @throws NullPointerException if the operation to copy is {@code null}
      */
     AnyDelete(final Delete deleteToCopy) {
         super(new Delete(deleteToCopy));
@@ -257,8 +271,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * @param rowKey the row key object to delete, automatically converted to bytes
      * @return a new AnyDelete instance configured for the specified row
-     * @throws NullPointerException if {@code rowKey} resolves to a {@code null} byte array
-     * @throws IllegalArgumentException if {@code rowKey} resolves to an empty (zero-length) byte array
+     * @throws NullPointerException if {@code rowKey} converts to {@code null}
+     * @throws IllegalArgumentException if its byte representation is empty or exceeds 32,767 bytes
      * @see #of(Object, long)
      * @see #addColumn(String, String)
      * @see #addFamily(String)
@@ -295,9 +309,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *                  reused as the exact version timestamp by no-timestamp {@code addColumn} and
      *                  as an inclusive upper bound by no-timestamp {@code addColumns}/{@code addFamily}
      * @return a new AnyDelete instance configured for timestamp-based deletion
-     * @throws NullPointerException if {@code rowKey} resolves to a {@code null} byte array
-     * @throws IllegalArgumentException if {@code rowKey} resolves to an empty byte array, or if
-     *         {@code timestamp} is negative
+     * @throws NullPointerException if {@code rowKey} converts to {@code null}
+     * @throws IllegalArgumentException if its byte representation is empty or exceeds 32,767 bytes, or {@code timestamp} is negative
      * @see #of(Object)
      * @see #addFamily(String, long)
      * @see #addColumn(String, String, long)
@@ -334,9 +347,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param rowOffset the starting position (0-based) within the row key bytes
      * @param rowLength the number of bytes to use from the row key, starting at offset
      * @return a new AnyDelete instance configured with the partial row key
-     * @throws IllegalArgumentException if {@code rowKey} resolves to a {@code null} or empty byte array
-     * @throws ArrayIndexOutOfBoundsException if {@code rowOffset}/{@code rowLength} do not describe a
-     *         valid sub-range of the row key bytes
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} , {@code rowLength} is zero or exceeds 32,767 bytes
+     * @throws NegativeArraySizeException if {@code rowLength} is negative
+     * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
      * @see #of(Object)
      * @see #of(Object, int, int, long)
      */
@@ -374,10 +387,10 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param rowLength the number of bytes to use from the row key, starting at offset
      * @param timestamp the maximum timestamp for versions to delete (inclusive)
      * @return a new AnyDelete instance configured with partial row key and timestamp control
-     * @throws IllegalArgumentException if {@code rowKey} resolves to a {@code null} or empty byte array,
-     *         or if {@code timestamp} is negative (validated by the underlying {@link Delete} constructor)
-     * @throws ArrayIndexOutOfBoundsException if {@code rowOffset}/{@code rowLength} do not describe a
-     *         valid sub-range of the row key bytes
+     * @throws IllegalArgumentException if {@code rowKey} converts to {@code null} , {@code rowLength} is zero or exceeds 32,767 bytes, or
+     *         {@code timestamp} is negative
+     * @throws NegativeArraySizeException if {@code rowLength} is negative
+     * @throws ArrayIndexOutOfBoundsException if {@code rowOffset} is negative or the selected slice extends beyond the converted row bytes
      * @see #of(Object, int, int)
      * @see #of(Object, long)
      */
@@ -412,8 +425,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param timestamp the timestamp to apply to the delete operation
      * @param familyMap a pre-populated NavigableMap of column families to their respective Cell lists
      * @return a new AnyDelete instance with the specified configuration
-     * @throws IllegalArgumentException if {@code rowKey} resolves to an empty (zero-length) byte array
-     * @throws NullPointerException if {@code rowKey} resolves to a null byte array or {@code familyMap} is {@code null}
+     * @throws NullPointerException if {@code rowKey} converts to {@code null} , or {@code familyMap} is {@code null}
+     * @throws IllegalArgumentException if {@code rowKey} converts to an empty byte array
      * @see #of(Object)
      * @see #of(Delete)
      * @see NavigableMap
@@ -450,7 +463,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * @param deleteToCopy the HBase Delete object to copy; must not be null
      * @return a new AnyDelete instance backed by a fresh Delete copied from {@code deleteToCopy}
-     * @throws NullPointerException if {@code deleteToCopy} is null
+     * @throws NullPointerException if the operation to copy is {@code null}
      * @see Delete
      * @see #val()
      */
@@ -510,13 +523,9 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param cell an existing Cell to attach to this delete; must not be {@code null} and should be
      *             a delete-type cell whose row matches this delete's row
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if the cell's family is null or empty
-     * @throws NullPointerException if {@code cell} is {@code null} (this method is a straight
-     *         delegation to {@link Delete#add(Cell)}, which dereferences the cell immediately;
-     *         {@link AnyAppend#add(Cell)} differs and reports a {@code null} cell as an
-     *         {@code IllegalArgumentException} because it inspects the cell itself)
-     * @throws IOException if the cell's row does not match this delete's row
-     *         (a {@code WrongRowIOException}, an {@code IOException} subtype)
+     * @throws NullPointerException if {@code cell} is {@code null}
+     * @throws IOException if the cell's row key does not match this mutation's row key
+     * @throws IllegalArgumentException if the matching cell has a null or empty column family
      * @see Cell
      * @see Delete#add(Cell)
      */
@@ -586,6 +595,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param family the name of the column family to delete; encoded via
      *               {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @return this AnyDelete instance for method chaining
+     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size
      * @see #addFamily(String, long)
      * @see #addFamilyVersion(String, long)
      */
@@ -617,7 +627,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *               {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @param timestamp the maximum timestamp for versions to delete (inclusive); must be non-negative
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code timestamp} is negative, or the encoded column family exceeds 127 bytes or the cell exceeds HBase's
+     *         maximum size
      * @see #addFamily(String)
      * @see #addFamilyVersion(String, long)
      */
@@ -647,6 +658,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *
      * @param family the column family name as a byte array
      * @return this AnyDelete instance for method chaining
+     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size
      * @see #addFamily(String)
      * @see #addFamily(byte[], long)
      */
@@ -675,7 +687,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param family the column family name as a byte array
      * @param timestamp the maximum timestamp for versions to delete (inclusive); must be non-negative
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code timestamp} is negative, or the encoded column family exceeds 127 bytes or the cell exceeds HBase's
+     *         maximum size
      * @see #addFamily(byte[])
      * @see #addFamilyVersion(byte[], long)
      */
@@ -706,7 +719,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param family the name of the column family
      * @param timestamp the exact timestamp of the cells to delete; must be non-negative
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code timestamp} is negative, or the encoded column family exceeds 127 bytes or the cell exceeds HBase's
+     *         maximum size
      * @see #addFamily(String, long)
      * @see #addColumn(String, String, long)
      */
@@ -736,7 +750,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param family the column family name as a byte array
      * @param timestamp the exact timestamp of the version to delete; must be non-negative
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code timestamp} is negative, or the encoded column family exceeds 127 bytes or the cell exceeds HBase's
+     *         maximum size
      * @see #addFamilyVersion(String, long)
      * @see #addFamily(byte[], long)
      */
@@ -771,6 +786,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param qualifier the column qualifier name; encoded via
      *                  {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @return this AnyDelete instance for method chaining
+     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size
      * @see #addColumn(String, String, long)
      * @see #addColumns(String, String)
      */
@@ -802,7 +818,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *                  {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @param timestamp the exact timestamp of the version to delete; must be non-negative
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code timestamp} is negative, or the encoded column family exceeds 127 bytes or the cell exceeds HBase's
+     *         maximum size
      * @see #addColumn(String, String)
      * @see #addColumns(String, String, long)
      */
@@ -834,6 +851,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param family the column family name as a byte array
      * @param qualifier the column qualifier name as a byte array
      * @return this AnyDelete instance for method chaining
+     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size
      * @see #addColumn(byte[], byte[], long)
      * @see #addColumns(byte[], byte[])
      */
@@ -864,7 +882,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param qualifier the column qualifier name as a byte array
      * @param timestamp the exact timestamp of the version to delete; must be non-negative
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code timestamp} is negative, or the encoded column family exceeds 127 bytes or the cell exceeds HBase's
+     *         maximum size
      * @see #addColumn(byte[], byte[])
      * @see #addColumns(byte[], byte[], long)
      */
@@ -898,6 +917,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param qualifier the column qualifier name; encoded via
      *                  {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @return this AnyDelete instance for method chaining
+     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size
      * @see #addColumns(String, String, long)
      * @see #addColumn(String, String)
      */
@@ -929,7 +949,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      *                  {@link HBaseExecutor#toFamilyQualifierBytes(String)}
      * @param timestamp the maximum timestamp for versions to delete (inclusive); must be non-negative
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code timestamp} is negative, or the encoded column family exceeds 127 bytes or the cell exceeds HBase's
+     *         maximum size
      * @see #addColumns(String, String)
      * @see #addColumn(String, String, long)
      */
@@ -960,6 +981,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param family the column family name as a byte array
      * @param qualifier the column qualifier name as a byte array
      * @return this AnyDelete instance for method chaining
+     * @throws IllegalArgumentException if the encoded column family exceeds 127 bytes or the cell exceeds HBase's maximum size
      * @see #addColumns(byte[], byte[], long)
      * @see #addColumn(byte[], byte[])
      */
@@ -990,7 +1012,8 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * @param qualifier the column qualifier name as a byte array
      * @param timestamp the maximum timestamp for versions to delete (inclusive); must be non-negative
      * @return this AnyDelete instance for method chaining
-     * @throws IllegalArgumentException if {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code timestamp} is negative, or the encoded column family exceeds 127 bytes or the cell exceeds HBase's
+     *         maximum size
      * @see #addColumns(byte[], byte[])
      * @see #addColumn(byte[], byte[], long)
      */
@@ -1079,6 +1102,7 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * }</pre>
      *
      * @return a string representation of the delete operation
+     * @throws IllegalArgumentException if the stored TTL attribute is not exactly eight bytes
      */
     @Override
     public String toString() {
@@ -1122,10 +1146,13 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
     public static List<Delete> toDelete(final Collection<AnyDelete> anyDeletes) {
         N.checkArgNotNull(anyDeletes, "anyDeletes");
 
+        for (final AnyDelete anyDelete : anyDeletes) {
+            N.checkArgNotNull(anyDelete, "anyDelete");
+        }
+
         final List<Delete> deletes = new ArrayList<>(anyDeletes.size());
 
         for (final AnyDelete anyDelete : anyDeletes) {
-            N.checkArgNotNull(anyDelete, "anyDelete");
             deletes.add(anyDelete.val());
         }
 

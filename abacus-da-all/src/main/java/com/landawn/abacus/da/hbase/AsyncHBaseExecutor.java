@@ -17,6 +17,7 @@ package com.landawn.abacus.da.hbase;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.RejectedExecutionException;
 
 import org.apache.hadoop.hbase.client.Append;
 import org.apache.hadoop.hbase.client.Delete;
@@ -144,8 +145,11 @@ public final class AsyncHBaseExecutor {
      * @throws IllegalArgumentException if either argument is {@code null}
      */
     AsyncHBaseExecutor(final HBaseExecutor hbaseExecutor, final AsyncExecutor asyncExecutor) {
-        this.hbaseExecutor = N.checkArgNotNull(hbaseExecutor, "hbaseExecutor");
-        this.asyncExecutor = N.checkArgNotNull(asyncExecutor, "asyncExecutor");
+        N.checkArgNotNull(hbaseExecutor, "hbaseExecutor");
+        N.checkArgNotNull(asyncExecutor, "asyncExecutor");
+
+        this.hbaseExecutor = hbaseExecutor;
+        this.asyncExecutor = asyncExecutor;
     }
 
     /**
@@ -201,10 +205,12 @@ public final class AsyncHBaseExecutor {
      * @param get the Get operation specifying the row (and optionally column filters) to check for existence
      * @return a {@link ContinuableFuture} that completes with {@code true} if the Get matches one or
      *         more cells, {@code false} otherwise. Wraps {@link HBaseExecutor#exists(String, Get)}.
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#exists(String, Get)
      * @see Get
      */
-    public ContinuableFuture<Boolean> exists(final String tableName, final Get get) {
+    public ContinuableFuture<Boolean> exists(final String tableName, final Get get) throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> hbaseExecutor.exists(tableName, get));
     }
 
@@ -239,10 +245,12 @@ public final class AsyncHBaseExecutor {
      * @return a ContinuableFuture whose value is a {@code List<Boolean>} in the same order as
      *         {@code gets}; the i-th entry is {@code true} if the i-th Get would match one or
      *         more cells, {@code false} otherwise. Wraps {@link HBaseExecutor#exists(String, List)}.
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#exists(String, List)
      * @see Get
      */
-    public ContinuableFuture<List<Boolean>> exists(final String tableName, final List<Get> gets) {
+    public ContinuableFuture<List<Boolean>> exists(final String tableName, final List<Get> gets) throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> hbaseExecutor.exists(tableName, gets));
     }
 
@@ -275,10 +283,12 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} that completes with {@code true} if the row exists,
      *         {@code false} otherwise. Wraps {@link HBaseExecutor#exists(String, AnyGet)}.
      * @throws IllegalArgumentException if {@code anyGet} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#exists(String, AnyGet)
      * @see AnyGet
      */
-    public ContinuableFuture<Boolean> exists(final String tableName, final AnyGet anyGet) {
+    public ContinuableFuture<Boolean> exists(final String tableName, final AnyGet anyGet) throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(anyGet, "anyGet");
 
         return asyncExecutor.execute(() -> hbaseExecutor.exists(tableName, anyGet));
@@ -317,10 +327,13 @@ public final class AsyncHBaseExecutor {
      *         matches one or more cells, {@code false} otherwise. Wraps
      *         {@link HBaseExecutor#exists(String, Collection)}.
      * @throws IllegalArgumentException if {@code anyGets} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#exists(String, Collection)
      * @see AnyGet
      */
-    public ContinuableFuture<List<Boolean>> exists(final String tableName, final Collection<AnyGet> anyGets) {
+    public ContinuableFuture<List<Boolean>> exists(final String tableName, final Collection<AnyGet> anyGets)
+            throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(anyGets, "anyGets");
 
         return asyncExecutor.execute(() -> hbaseExecutor.exists(tableName, anyGets));
@@ -357,11 +370,13 @@ public final class AsyncHBaseExecutor {
      * @param get the Get operation specifying the row and columns to retrieve
      * @return a {@link ContinuableFuture} containing the Result object with the retrieved data
      *         (possibly empty). Wraps {@link HBaseExecutor#get(String, Get)}.
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#get(String, Get)
      * @see Get
      * @see Result
      */
-    public ContinuableFuture<Result> get(final String tableName, final Get get) {
+    public ContinuableFuture<Result> get(final String tableName, final Get get) throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> hbaseExecutor.get(tableName, get));
     }
 
@@ -396,11 +411,13 @@ public final class AsyncHBaseExecutor {
      * @return a ContinuableFuture whose value is a {@code List<Result>} in the same order as
      *         {@code gets}; rows that do not exist are represented by {@linkplain Result#isEmpty() empty}
      *         Result entries. Wraps {@link HBaseExecutor#get(String, List)}.
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#get(String, List)
      * @see Get
      * @see Result
      */
-    public ContinuableFuture<List<Result>> get(final String tableName, final List<Get> gets) {
+    public ContinuableFuture<List<Result>> get(final String tableName, final List<Get> gets) throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> hbaseExecutor.get(tableName, gets));
     }
 
@@ -432,10 +449,12 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} containing the Result object with the retrieved data
      *         (possibly empty). Wraps {@link HBaseExecutor#get(String, AnyGet)}.
      * @throws IllegalArgumentException if {@code anyGet} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#get(String, AnyGet)
      * @see AnyGet
      */
-    public ContinuableFuture<Result> get(final String tableName, final AnyGet anyGet) {
+    public ContinuableFuture<Result> get(final String tableName, final AnyGet anyGet) throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(anyGet, "anyGet");
 
         return asyncExecutor.execute(() -> hbaseExecutor.get(tableName, anyGet));
@@ -470,10 +489,13 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} containing a list of Result objects in the iteration
      *         order of {@code anyGets}. Wraps {@link HBaseExecutor#get(String, Collection)}.
      * @throws IllegalArgumentException if {@code anyGets} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#get(String, Collection)
      * @see AnyGet
      */
-    public ContinuableFuture<List<Result>> get(final String tableName, final Collection<AnyGet> anyGets) {
+    public ContinuableFuture<List<Result>> get(final String tableName, final Collection<AnyGet> anyGets)
+            throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(anyGets, "anyGets");
 
         return asyncExecutor.execute(() -> hbaseExecutor.get(tableName, anyGets));
@@ -511,10 +533,13 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} containing the converted object. Wraps
      *         {@link HBaseExecutor#get(String, Get, Class)}.
      * @throws IllegalArgumentException if {@code targetType} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#get(String, Get, Class)
      * @see Get
      */
-    public <T> ContinuableFuture<T> get(final String tableName, final Get get, final Class<T> targetType) {
+    public <T> ContinuableFuture<T> get(final String tableName, final Get get, final Class<T> targetType)
+            throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(targetType, cs.targetType);
 
         return asyncExecutor.execute(() -> hbaseExecutor.get(tableName, get, targetType));
@@ -552,10 +577,13 @@ public final class AsyncHBaseExecutor {
      * @return a ContinuableFuture whose value is a {@code List<T>} of converted objects,
      *         with empty/missing rows skipped. Wraps {@link HBaseExecutor#get(String, List, Class)}.
      * @throws IllegalArgumentException if {@code targetType} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#get(String, List, Class)
      * @see Get
      */
-    public <T> ContinuableFuture<List<T>> get(final String tableName, final List<Get> gets, final Class<T> targetType) {
+    public <T> ContinuableFuture<List<T>> get(final String tableName, final List<Get> gets, final Class<T> targetType)
+            throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(targetType, cs.targetType);
 
         return asyncExecutor.execute(() -> hbaseExecutor.get(tableName, gets, targetType));
@@ -591,10 +619,13 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} containing the converted object. Wraps
      *         {@link HBaseExecutor#get(String, AnyGet, Class)}.
      * @throws IllegalArgumentException if {@code anyGet} or {@code targetType} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#get(String, AnyGet, Class)
      * @see AnyGet
      */
-    public <T> ContinuableFuture<T> get(final String tableName, final AnyGet anyGet, final Class<T> targetType) {
+    public <T> ContinuableFuture<T> get(final String tableName, final AnyGet anyGet, final Class<T> targetType)
+            throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(anyGet, "anyGet");
         N.checkArgNotNull(targetType, cs.targetType);
 
@@ -633,10 +664,13 @@ public final class AsyncHBaseExecutor {
      * @return a ContinuableFuture whose value is a {@code List<T>} of converted objects,
      *         with empty/missing rows skipped. Wraps {@link HBaseExecutor#get(String, Collection, Class)}.
      * @throws IllegalArgumentException if {@code anyGets} or {@code targetType} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#get(String, Collection, Class)
      * @see AnyGet
      */
-    public <T> ContinuableFuture<List<T>> get(final String tableName, final Collection<AnyGet> anyGets, final Class<T> targetType) {
+    public <T> ContinuableFuture<List<T>> get(final String tableName, final Collection<AnyGet> anyGets, final Class<T> targetType)
+            throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(anyGets, "anyGets");
         N.checkArgNotNull(targetType, cs.targetType);
 
@@ -679,11 +713,13 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} containing a {@code Stream<Result>} of all rows in the
      *         specified family. Wraps {@link HBaseExecutor#scan(String, String)}.
      * @throws IllegalArgumentException if {@code tableName} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#scan(String, String)
      * @see Scan
      * @see Result
      */
-    public ContinuableFuture<Stream<Result>> scan(final String tableName, final String family) {
+    public ContinuableFuture<Stream<Result>> scan(final String tableName, final String family) throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(tableName, "tableName");
 
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family));
@@ -725,11 +761,14 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} containing a {@code Stream<Result>} for the specified
      *         column. Wraps {@link HBaseExecutor#scan(String, String, String)}.
      * @throws IllegalArgumentException if {@code tableName} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#scan(String, String, String)
      * @see Scan
      * @see Result
      */
-    public ContinuableFuture<Stream<Result>> scan(final String tableName, final String family, final String qualifier) {
+    public ContinuableFuture<Stream<Result>> scan(final String tableName, final String family, final String qualifier)
+            throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(tableName, "tableName");
 
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family, qualifier));
@@ -771,11 +810,13 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} containing a {@code Stream<Result>} from the scan. Wraps
      *         {@link HBaseExecutor#scan(String, byte[])}.
      * @throws IllegalArgumentException if {@code tableName} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#scan(String, byte[])
      * @see Scan
      * @see Result
      */
-    public ContinuableFuture<Stream<Result>> scan(final String tableName, final byte[] family) {
+    public ContinuableFuture<Stream<Result>> scan(final String tableName, final byte[] family) throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(tableName, "tableName");
 
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family));
@@ -820,11 +861,14 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} containing a {@code Stream<Result>} for the specified
      *         column. Wraps {@link HBaseExecutor#scan(String, byte[], byte[])}.
      * @throws IllegalArgumentException if {@code tableName} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#scan(String, byte[], byte[])
      * @see Scan
      * @see Result
      */
-    public ContinuableFuture<Stream<Result>> scan(final String tableName, final byte[] family, final byte[] qualifier) {
+    public ContinuableFuture<Stream<Result>> scan(final String tableName, final byte[] family, final byte[] qualifier)
+            throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(tableName, "tableName");
 
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family, qualifier));
@@ -865,11 +909,13 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} containing a {@code Stream<Result>} matching the scan
      *         criteria. Wraps {@link HBaseExecutor#scan(String, AnyScan)}.
      * @throws IllegalArgumentException if {@code tableName} or {@code anyScan} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#scan(String, AnyScan)
      * @see AnyScan
      * @see Result
      */
-    public ContinuableFuture<Stream<Result>> scan(final String tableName, final AnyScan anyScan) {
+    public ContinuableFuture<Stream<Result>> scan(final String tableName, final AnyScan anyScan) throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(tableName, "tableName");
         N.checkArgNotNull(anyScan, "anyScan");
 
@@ -912,11 +958,13 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} containing a {@code Stream<Result>} matching the scan
      *         criteria. Wraps {@link HBaseExecutor#scan(String, Scan)}.
      * @throws IllegalArgumentException if {@code tableName} or {@code scan} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#scan(String, Scan)
      * @see Scan
      * @see Result
      */
-    public ContinuableFuture<Stream<Result>> scan(final String tableName, final Scan scan) {
+    public ContinuableFuture<Stream<Result>> scan(final String tableName, final Scan scan) throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(tableName, "tableName");
         N.checkArgNotNull(scan, "scan");
 
@@ -958,10 +1006,13 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
      *         Wraps {@link HBaseExecutor#scan(String, String, Class)}.
      * @throws IllegalArgumentException if {@code tableName} or {@code targetType} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#scan(String, String, Class)
      * @see Scan
      */
-    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final String family, final Class<T> targetType) {
+    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final String family, final Class<T> targetType)
+            throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(tableName, "tableName");
         N.checkArgNotNull(targetType, cs.targetType);
 
@@ -1008,10 +1059,13 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
      *         Wraps {@link HBaseExecutor#scan(String, String, String, Class)}.
      * @throws IllegalArgumentException if {@code tableName} or {@code targetType} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#scan(String, String, String, Class)
      * @see Scan
      */
-    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final String family, final String qualifier, final Class<T> targetType) {
+    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final String family, final String qualifier, final Class<T> targetType)
+            throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(tableName, "tableName");
         N.checkArgNotNull(targetType, cs.targetType);
 
@@ -1057,10 +1111,13 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
      *         Wraps {@link HBaseExecutor#scan(String, byte[], Class)}.
      * @throws IllegalArgumentException if {@code tableName} or {@code targetType} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#scan(String, byte[], Class)
      * @see Scan
      */
-    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final byte[] family, final Class<T> targetType) {
+    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final byte[] family, final Class<T> targetType)
+            throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(tableName, "tableName");
         N.checkArgNotNull(targetType, cs.targetType);
 
@@ -1108,10 +1165,13 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
      *         Wraps {@link HBaseExecutor#scan(String, byte[], byte[], Class)}.
      * @throws IllegalArgumentException if {@code tableName} or {@code targetType} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#scan(String, byte[], byte[], Class)
      * @see Scan
      */
-    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final byte[] family, final byte[] qualifier, final Class<T> targetType) {
+    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final byte[] family, final byte[] qualifier, final Class<T> targetType)
+            throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(tableName, "tableName");
         N.checkArgNotNull(targetType, cs.targetType);
 
@@ -1154,11 +1214,14 @@ public final class AsyncHBaseExecutor {
      * @param targetType the class to convert each result to
      * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
      *         Wraps {@link HBaseExecutor#scan(String, AnyScan, Class)}.
-     * @throws IllegalArgumentException if {@code tableName}, {@code anyScan} or {@code targetType} is {@code null}
+     * @throws IllegalArgumentException if {@code tableName} , {@code anyScan} or {@code targetType} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#scan(String, AnyScan, Class)
      * @see AnyScan
      */
-    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final AnyScan anyScan, final Class<T> targetType) {
+    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final AnyScan anyScan, final Class<T> targetType)
+            throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(tableName, "tableName");
         N.checkArgNotNull(anyScan, "anyScan");
         N.checkArgNotNull(targetType, cs.targetType);
@@ -1203,11 +1266,14 @@ public final class AsyncHBaseExecutor {
      * @param targetType the class to convert each result to
      * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
      *         Wraps {@link HBaseExecutor#scan(String, Scan, Class)}.
-     * @throws IllegalArgumentException if {@code tableName}, {@code scan} or {@code targetType} is {@code null}
+     * @throws IllegalArgumentException if {@code tableName} , {@code scan} or {@code targetType} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#scan(String, Scan, Class)
      * @see Scan
      */
-    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final Scan scan, final Class<T> targetType) {
+    public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final Scan scan, final Class<T> targetType)
+            throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(tableName, "tableName");
         N.checkArgNotNull(scan, "scan");
         N.checkArgNotNull(targetType, cs.targetType);
@@ -1244,10 +1310,12 @@ public final class AsyncHBaseExecutor {
      * @param put the Put operation containing the row key and cells to store
      * @return a {@link ContinuableFuture} that completes with {@code null} when the put operation
      *         finishes. Wraps {@link HBaseExecutor#put(String, Put)}.
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#put(String, Put)
      * @see Put
      */
-    public ContinuableFuture<Void> put(final String tableName, final Put put) {
+    public ContinuableFuture<Void> put(final String tableName, final Put put) throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> {
             hbaseExecutor.put(tableName, put);
 
@@ -1285,10 +1353,12 @@ public final class AsyncHBaseExecutor {
      * @param puts the list of Put operations to execute
      * @return a {@link ContinuableFuture} that completes with {@code null} when all put operations
      *         finish. Wraps {@link HBaseExecutor#put(String, List)}.
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#put(String, List)
      * @see Put
      */
-    public ContinuableFuture<Void> put(final String tableName, final List<Put> puts) {
+    public ContinuableFuture<Void> put(final String tableName, final List<Put> puts) throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> {
             hbaseExecutor.put(tableName, puts);
 
@@ -1323,10 +1393,12 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} that completes with {@code null} when the put operation
      *         finishes. Wraps {@link HBaseExecutor#put(String, AnyPut)}.
      * @throws IllegalArgumentException if {@code anyPut} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#put(String, AnyPut)
      * @see AnyPut
      */
-    public ContinuableFuture<Void> put(final String tableName, final AnyPut anyPut) {
+    public ContinuableFuture<Void> put(final String tableName, final AnyPut anyPut) throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(anyPut, "anyPut");
 
         return asyncExecutor.execute(() -> {
@@ -1367,10 +1439,12 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} that completes with {@code null} when all put operations
      *         finish. Wraps {@link HBaseExecutor#put(String, Collection)}.
      * @throws IllegalArgumentException if {@code anyPuts} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#put(String, Collection)
      * @see AnyPut
      */
-    public ContinuableFuture<Void> put(final String tableName, final Collection<AnyPut> anyPuts) {
+    public ContinuableFuture<Void> put(final String tableName, final Collection<AnyPut> anyPuts) throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(anyPuts, "anyPuts");
 
         return asyncExecutor.execute(() -> {
@@ -1410,10 +1484,12 @@ public final class AsyncHBaseExecutor {
      * @param delete the Delete operation specifying the row and cells to delete
      * @return a {@link ContinuableFuture} that completes with {@code null} when the delete
      *         operation finishes. Wraps {@link HBaseExecutor#delete(String, Delete)}.
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#delete(String, Delete)
      * @see Delete
      */
-    public ContinuableFuture<Void> delete(final String tableName, final Delete delete) {
+    public ContinuableFuture<Void> delete(final String tableName, final Delete delete) throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> {
             hbaseExecutor.delete(tableName, delete);
 
@@ -1450,10 +1526,12 @@ public final class AsyncHBaseExecutor {
      * @param deletes the list of Delete operations to execute
      * @return a {@link ContinuableFuture} that completes with {@code null} when all delete
      *         operations finish. Wraps {@link HBaseExecutor#delete(String, List)}.
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#delete(String, List)
      * @see Delete
      */
-    public ContinuableFuture<Void> delete(final String tableName, final List<Delete> deletes) {
+    public ContinuableFuture<Void> delete(final String tableName, final List<Delete> deletes) throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> {
             hbaseExecutor.delete(tableName, deletes);
 
@@ -1489,10 +1567,12 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} that completes with {@code null} when the delete
      *         operation finishes. Wraps {@link HBaseExecutor#delete(String, AnyDelete)}.
      * @throws IllegalArgumentException if {@code anyDelete} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#delete(String, AnyDelete)
      * @see AnyDelete
      */
-    public ContinuableFuture<Void> delete(final String tableName, final AnyDelete anyDelete) {
+    public ContinuableFuture<Void> delete(final String tableName, final AnyDelete anyDelete) throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(anyDelete, "anyDelete");
 
         return asyncExecutor.execute(() -> {
@@ -1532,10 +1612,13 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} that completes with {@code null} when all delete
      *         operations finish. Wraps {@link HBaseExecutor#delete(String, Collection)}.
      * @throws IllegalArgumentException if {@code anyDeletes} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#delete(String, Collection)
      * @see AnyDelete
      */
-    public ContinuableFuture<Void> delete(final String tableName, final Collection<AnyDelete> anyDeletes) {
+    public ContinuableFuture<Void> delete(final String tableName, final Collection<AnyDelete> anyDeletes)
+            throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(anyDeletes, "anyDeletes");
 
         return asyncExecutor.execute(() -> {
@@ -1578,10 +1661,12 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} that completes with {@code null} when the mutations
      *         finish. Wraps {@link HBaseExecutor#mutateRow(String, AnyRowMutations)}.
      * @throws IllegalArgumentException if {@code rm} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#mutateRow(String, AnyRowMutations)
      * @see AnyRowMutations
      */
-    public ContinuableFuture<Void> mutateRow(final String tableName, final AnyRowMutations rm) {
+    public ContinuableFuture<Void> mutateRow(final String tableName, final AnyRowMutations rm) throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(rm, "rm");
 
         return asyncExecutor.execute(() -> {
@@ -1623,10 +1708,12 @@ public final class AsyncHBaseExecutor {
      * @param rm the RowMutations object containing the atomic mutations
      * @return a {@link ContinuableFuture} that completes with {@code null} when the mutations
      *         finish. Wraps {@link HBaseExecutor#mutateRow(String, RowMutations)}.
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#mutateRow(String, RowMutations)
      * @see RowMutations
      */
-    public ContinuableFuture<Void> mutateRow(final String tableName, final RowMutations rm) {
+    public ContinuableFuture<Void> mutateRow(final String tableName, final RowMutations rm) throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> {
             hbaseExecutor.mutateRow(tableName, rm);
 
@@ -1666,11 +1753,13 @@ public final class AsyncHBaseExecutor {
      *         enabled; it may contain {@code null} when disabled. Wraps
      *         {@link HBaseExecutor#append(String, AnyAppend)}.
      * @throws IllegalArgumentException if {@code append} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#append(String, AnyAppend)
      * @see AnyAppend
      * @see Result
      */
-    public ContinuableFuture<Result> append(final String tableName, final AnyAppend append) {
+    public ContinuableFuture<Result> append(final String tableName, final AnyAppend append) throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(append, "append");
 
         return asyncExecutor.execute(() -> hbaseExecutor.append(tableName, append));
@@ -1706,11 +1795,13 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} containing post-append values when return-results is
      *         enabled; it may contain {@code null} when disabled. Wraps
      *         {@link HBaseExecutor#append(String, Append)}.
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#append(String, Append)
      * @see Append
      * @see Result
      */
-    public ContinuableFuture<Result> append(final String tableName, final Append append) {
+    public ContinuableFuture<Result> append(final String tableName, final Append append) throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> hbaseExecutor.append(tableName, append));
     }
 
@@ -1737,7 +1828,8 @@ public final class AsyncHBaseExecutor {
      *      .thenRunAsync(result -> System.out.println("New value: " + result)); // returns ContinuableFuture<Void>
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.increment("badTable", AnyIncrement.of("user123").addColumn("stats", "loginCount", 1)).get(); // throws InterruptedException, ExecutionException
+     * async.increment("badTable", AnyIncrement.of("user123").addColumn("stats", "loginCount", 1)).get(); //
+            throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table
@@ -1746,11 +1838,13 @@ public final class AsyncHBaseExecutor {
      *         enabled; callers that disable return-results must not rely on its value. Wraps
      *         {@link HBaseExecutor#increment(String, AnyIncrement)}.
      * @throws IllegalArgumentException if {@code increment} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#increment(String, AnyIncrement)
      * @see AnyIncrement
      * @see Result
      */
-    public ContinuableFuture<Result> increment(final String tableName, final AnyIncrement increment) {
+    public ContinuableFuture<Result> increment(final String tableName, final AnyIncrement increment) throws IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(increment, cs.increment);
 
         return asyncExecutor.execute(() -> hbaseExecutor.increment(tableName, increment));
@@ -1786,11 +1880,13 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} containing post-increment values when return-results is
      *         enabled; callers that disable return-results must not rely on its value. Wraps
      *         {@link HBaseExecutor#increment(String, Increment)}.
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#increment(String, Increment)
      * @see Increment
      * @see Result
      */
-    public ContinuableFuture<Result> increment(final String tableName, final Increment increment) {
+    public ContinuableFuture<Result> increment(final String tableName, final Increment increment) throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> hbaseExecutor.increment(tableName, increment));
     }
 
@@ -1827,10 +1923,12 @@ public final class AsyncHBaseExecutor {
      * @param amount the amount to increment by (can be negative for decrement)
      * @return a {@link ContinuableFuture} containing the new value after the increment. Wraps
      *         {@link HBaseExecutor#incrementColumnValue(String, Object, String, String, long)}.
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#incrementColumnValue(String, Object, String, String, long)
      */
     public ContinuableFuture<Long> incrementColumnValue(final String tableName, final Object rowKey, final String family, final String qualifier,
-            final long amount) {
+            final long amount) throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> hbaseExecutor.incrementColumnValue(tableName, rowKey, family, qualifier, amount));
     }
 
@@ -1853,7 +1951,8 @@ public final class AsyncHBaseExecutor {
      * Long fast = async.incrementColumnValue("users", "user123", "stats", "loginCount", 1, Durability.SKIP_WAL).get(); // returns the post-increment value
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.incrementColumnValue("badTable", "user123", "stats", "loginCount", 1, Durability.SYNC_WAL).get(); // throws InterruptedException, ExecutionException
+     * async.incrementColumnValue("badTable", "user123", "stats", "loginCount", 1, Durability.SYNC_WAL).get(); //
+            throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table
@@ -1864,11 +1963,13 @@ public final class AsyncHBaseExecutor {
      * @param durability the durability level for this operation
      * @return a {@link ContinuableFuture} containing the new value after the increment. Wraps
      *         {@link HBaseExecutor#incrementColumnValue(String, Object, String, String, long, Durability)}.
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#incrementColumnValue(String, Object, String, String, long, Durability)
      * @see Durability
      */
     public ContinuableFuture<Long> incrementColumnValue(final String tableName, final Object rowKey, final String family, final String qualifier,
-            final long amount, final Durability durability) {
+            final long amount, final Durability durability) throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> hbaseExecutor.incrementColumnValue(tableName, rowKey, family, qualifier, amount, durability));
     }
 
@@ -1903,10 +2004,12 @@ public final class AsyncHBaseExecutor {
      * @param amount the amount to increment by (can be negative for decrement)
      * @return a {@link ContinuableFuture} containing the new value after the increment. Wraps
      *         {@link HBaseExecutor#incrementColumnValue(String, Object, byte[], byte[], long)}.
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#incrementColumnValue(String, Object, byte[], byte[], long)
      */
     public ContinuableFuture<Long> incrementColumnValue(final String tableName, final Object rowKey, final byte[] family, final byte[] qualifier,
-            final long amount) {
+            final long amount) throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> hbaseExecutor.incrementColumnValue(tableName, rowKey, family, qualifier, amount));
     }
 
@@ -1931,7 +2034,8 @@ public final class AsyncHBaseExecutor {
      * Long fast = async.incrementColumnValue("users", "user123", family, qualifier, 1, Durability.SKIP_WAL).get(); // returns the post-increment value
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.incrementColumnValue("badTable", "user123", family, qualifier, 1, Durability.SYNC_WAL).get(); // throws InterruptedException, ExecutionException
+     * async.incrementColumnValue("badTable", "user123", family, qualifier, 1, Durability.SYNC_WAL).get(); //
+            throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param tableName the name of the HBase table
@@ -1942,11 +2046,13 @@ public final class AsyncHBaseExecutor {
      * @param durability the durability level for this operation
      * @return a {@link ContinuableFuture} containing the new value after the increment. Wraps
      *         {@link HBaseExecutor#incrementColumnValue(String, Object, byte[], byte[], long, Durability)}.
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#incrementColumnValue(String, Object, byte[], byte[], long, Durability)
      * @see Durability
      */
     public ContinuableFuture<Long> incrementColumnValue(final String tableName, final Object rowKey, final byte[] family, final byte[] qualifier,
-            final long amount, final Durability durability) {
+            final long amount, final Durability durability) throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> hbaseExecutor.incrementColumnValue(tableName, rowKey, family, qualifier, amount, durability));
     }
 
@@ -1979,10 +2085,13 @@ public final class AsyncHBaseExecutor {
      * @param rowKey the row key used to locate the region server / region whose channel is returned
      * @return a {@link ContinuableFuture} containing the {@code CoprocessorRpcChannel} for the
      *         row's region. Wraps {@link HBaseExecutor#coprocessorService(String, Object)}.
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#coprocessorService(String, Object)
      * @see CoprocessorRpcChannel
      */
-    public ContinuableFuture<CoprocessorRpcChannel> coprocessorService(final String tableName, final Object rowKey) {
+    public ContinuableFuture<CoprocessorRpcChannel> coprocessorService(final String tableName, final Object rowKey)
+            throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor.execute(() -> hbaseExecutor.coprocessorService(tableName, rowKey));
     }
 
@@ -2026,11 +2135,13 @@ public final class AsyncHBaseExecutor {
      *         returned by {@code callable} for that region. Wraps
      *         {@link HBaseExecutor#coprocessorService(String, Class, Object, Object, Batch.Call)}.
      * @throws IllegalArgumentException if {@code callable} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#coprocessorService(String, Class, Object, Object, Batch.Call)
      * @see Batch.Call
      */
     public <T extends Service, R> ContinuableFuture<Map<byte[], R>> coprocessorService(final String tableName, final Class<T> service, final Object startRowKey,
-            final Object endRowKey, final Batch.Call<T, R> callable) throws IllegalArgumentException {
+            final Object endRowKey, final Batch.Call<T, R> callable) throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(callable, cs.callable);
 
         return asyncExecutor.execute(() -> hbaseExecutor.coprocessorService(tableName, service, startRowKey, endRowKey, callable));
@@ -2062,7 +2173,8 @@ public final class AsyncHBaseExecutor {
      *      .thenRunAsync(() -> System.out.println("Total = " + total.get())); // returns ContinuableFuture<Void>
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.coprocessorService("badTable", MyService.class, "user1", "user9", call, callback).get(); // throws InterruptedException, ExecutionException
+     * async.coprocessorService("badTable", MyService.class, "user1", "user9", call, callback).get(); //
+            throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param <T> the coprocessor service type
@@ -2076,12 +2188,15 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} that completes with {@code null} when all calls finish.
      *         Wraps {@link HBaseExecutor#coprocessorService(String, Class, Object, Object, Batch.Call, Batch.Callback)}.
      * @throws IllegalArgumentException if {@code callable} or {@code callback} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#coprocessorService(String, Class, Object, Object, Batch.Call, Batch.Callback)
      * @see Batch.Call
      * @see Batch.Callback
      */
     public <T extends Service, R> ContinuableFuture<Void> coprocessorService(final String tableName, final Class<T> service, final Object startRowKey,
-            final Object endRowKey, final Batch.Call<T, R> callable, final Batch.Callback<R> callback) throws IllegalArgumentException {
+            final Object endRowKey, final Batch.Call<T, R> callable, final Batch.Callback<R> callback)
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(callable, cs.callable);
         N.checkArgNotNull(callback, "callback");
 
@@ -2116,7 +2231,8 @@ public final class AsyncHBaseExecutor {
      * Map<byte[], CountResponse> perRegion = future.get();                                                                                                           // returns one response message per region in the range
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.batchCoprocessorService("badTable", methodDescriptor, request, "user1", "user9", responsePrototype).get(); // throws InterruptedException, ExecutionException
+     * async.batchCoprocessorService("badTable", methodDescriptor, request, "user1", "user9", responsePrototype).get(); //
+            throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param <R> the response message type
@@ -2128,12 +2244,14 @@ public final class AsyncHBaseExecutor {
      * @param responsePrototype the prototype instance used to parse responses
      * @return a {@link ContinuableFuture} containing a map of region names (byte arrays) to their
      *         corresponding response messages. Wraps {@link HBaseExecutor#batchCoprocessorService(String, Descriptors.MethodDescriptor, Message, Object, Object, Message)}.
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#batchCoprocessorService(String, Descriptors.MethodDescriptor, Message, Object, Object, Message)
      * @see Descriptors.MethodDescriptor
      */
     public <R extends Message> ContinuableFuture<Map<byte[], R>> batchCoprocessorService(final String tableName,
             final Descriptors.MethodDescriptor methodDescriptor, final Message request, final Object startRowKey, final Object endRowKey,
-            final R responsePrototype) {
+            final R responsePrototype) throws IllegalStateException, RejectedExecutionException {
         return asyncExecutor
                 .execute(() -> hbaseExecutor.batchCoprocessorService(tableName, methodDescriptor, request, startRowKey, endRowKey, responsePrototype));
     }
@@ -2166,7 +2284,8 @@ public final class AsyncHBaseExecutor {
      *      .thenRunAsync(() -> System.out.println("done")); // returns ContinuableFuture<Void>
      *
      * // Negative: exceptions from the underlying call surface wrapped in ExecutionException
-     * async.batchCoprocessorService("badTable", methodDescriptor, request, "user1", "user9", responsePrototype, callback).get(); // throws InterruptedException, ExecutionException
+     * async.batchCoprocessorService("badTable", methodDescriptor, request, "user1", "user9", responsePrototype, callback).get(); //
+            throws InterruptedException, ExecutionException
      * }</pre>
      *
      * @param <R> the response message type
@@ -2180,13 +2299,15 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} that completes with {@code null} when all calls finish.
      *         Wraps {@link HBaseExecutor#batchCoprocessorService(String, Descriptors.MethodDescriptor, Message, Object, Object, Message, Batch.Callback)}.
      * @throws IllegalArgumentException if {@code callback} is {@code null}
+     * @throws IllegalStateException if the configured asynchronous executor has already been shut down
+     * @throws RejectedExecutionException if the executor refuses the task, for example because its queue is full or shutdown races with submission
      * @see HBaseExecutor#batchCoprocessorService(String, Descriptors.MethodDescriptor, Message, Object, Object, Message, Batch.Callback)
      * @see Descriptors.MethodDescriptor
      * @see Batch.Callback
      */
     public <R extends Message> ContinuableFuture<Void> batchCoprocessorService(final String tableName, final Descriptors.MethodDescriptor methodDescriptor,
             final Message request, final Object startRowKey, final Object endRowKey, final R responsePrototype, final Batch.Callback<R> callback)
-            throws IllegalArgumentException {
+            throws IllegalArgumentException, IllegalStateException, RejectedExecutionException {
         N.checkArgNotNull(callback, "callback");
 
         return asyncExecutor.execute(() -> {

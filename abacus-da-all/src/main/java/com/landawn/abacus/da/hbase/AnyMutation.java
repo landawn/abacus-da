@@ -243,6 +243,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * clusters.
      *
      * @return the list of cluster UUIDs; may be empty
+     * @throws IllegalStateException if the stored cluster-ID attribute is too short to decode its count or UUID entries
      * @see #setClusterIds(List)
      * @see UUID
      */
@@ -257,8 +258,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @param clusterIds the cluster UUIDs to record; must not be {@code null} (pass an empty list
      *                   to clear the recorded clusters)
      * @return this mutation instance, to allow fluent method chaining
-     * @throws NullPointerException if {@code clusterIds} is {@code null} (raised by the wrapped
-     *         {@link Mutation#setClusterIds(List)} while encoding the list)
+     * @throws NullPointerException if {@code clusterIds} is {@code null} or contains a {@code null} UUID
      * @see #getClusterIds()
      * @see UUID
      */
@@ -368,8 +368,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      *
      * @param perms a map of username to {@link Permission}; must not be {@code null}
      * @return this mutation instance, to allow fluent method chaining
-     * @throws NullPointerException if {@code perms} is {@code null} (raised by the wrapped
-     *         {@link Mutation#setACL(Map)} while iterating the map)
+     * @throws NullPointerException if {@code perms} , a username key, or a permission value is {@code null}
      * @see #getACL()
      * @see #setACL(String, Permission)
      * @see Permission
@@ -386,6 +385,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * column-family-level TTL (or none) applies.
      *
      * @return the TTL in milliseconds, or {@link Long#MAX_VALUE} if not set
+     * @throws IllegalArgumentException if the stored TTL attribute is not exactly eight bytes
      * @see #setTTL(long)
      */
     public long getTTL() {
@@ -409,8 +409,8 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      *
      * @param ttl the TTL to apply, in milliseconds
      * @return this mutation instance, to allow fluent method chaining
-     * @throws UnsupportedOperationException if the wrapped mutation is an HBase
-     *         {@link org.apache.hadoop.hbase.client.Delete}, which does not support per-mutation TTLs
+     * @throws UnsupportedOperationException if the wrapped mutation is an HBase {@link org.apache.hadoop.hbase.client.Delete} , which does not
+     *         support per-mutation TTLs
      * @see #getTTL()
      */
     public AM setTTL(final long ttl) {
@@ -678,6 +678,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * yields {@code 5}.
      *
      * @return the total number of cells in this mutation
+     * @throws NullPointerException if the family-cell map contains a null cell list
      * @see #isEmpty()
      * @see #numFamilies()
      */
@@ -702,6 +703,8 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * queued cells, and internal data structures. Useful for sizing batches.
      *
      * @return the approximate on-heap size, in bytes
+     * @throws NullPointerException if the family-cell map contains a null family or cell list, a cell list contains a null cell, or an attribute
+     *         has a null name
      */
     public long heapSize() {
         return mutation.heapSize();
@@ -714,6 +717,7 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * @param other the {@link Row} to compare with
      * @return a negative integer, zero, or a positive integer as this row key is less than,
      *         equal to, or greater than the other row's key
+     * @throws NullPointerException if {@code other} is {@code null}
      * @deprecated As of HBase 2.0.0; will be removed in HBase 3.0.0. Use {@link Row#COMPARATOR}
      *             instead.
      */

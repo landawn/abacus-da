@@ -27,6 +27,7 @@ import com.landawn.abacus.annotation.Beta;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.cs;
+import com.mongodb.MongoException;
 import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.model.Aggregates;
 import com.mongodb.client.model.BulkWriteOptions;
@@ -256,9 +257,12 @@ public final class MongoCollectionMapper<T> {
      * userMapper.exists("not-a-valid-hex");   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param objectId the string representation of the ObjectId to check for existence
      * @return a Mono that emits {@code true} if a document with the specified ObjectId exists, {@code false} otherwise
-     * @throws IllegalArgumentException if objectId is null or empty, or if it is not a valid ObjectId hex string
+     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId
      * @see ObjectId
      */
     public Mono<Boolean> exists(final String objectId) {
@@ -289,9 +293,12 @@ public final class MongoCollectionMapper<T> {
      * userMapper.exists((ObjectId) null);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param objectId the ObjectId to check for existence
      * @return a Mono that emits {@code true} if a document with the specified ObjectId exists, {@code false} otherwise
-     * @throws IllegalArgumentException if objectId is null
+     * @throws IllegalArgumentException if {@code objectId} is null
      * @see ObjectId
      */
     public Mono<Boolean> exists(final ObjectId objectId) {
@@ -322,9 +329,12 @@ public final class MongoCollectionMapper<T> {
      * userMapper.exists((Bson) null);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to match documents against; must not be null
      * @return a Mono that emits {@code true} if any documents match the filter, {@code false} otherwise
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code filter} is null
      * @see Bson
      * @see com.mongodb.client.model.Filters
      */
@@ -356,6 +366,9 @@ public final class MongoCollectionMapper<T> {
      * Mono<Long> notRunYet = userMapper.count();   // nothing executed yet
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @return a Mono that emits the total count of documents in the collection
      */
     public Mono<Long> count() {
@@ -386,9 +399,12 @@ public final class MongoCollectionMapper<T> {
      * userMapper.count((Bson) null);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to match documents; must not be null
      * @return a Mono that emits the count of documents matching the filter
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code filter} is null
      * @see Bson
      * @see com.mongodb.client.model.Filters
      */
@@ -420,10 +436,13 @@ public final class MongoCollectionMapper<T> {
      * userMapper.count((Bson) null, options);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to match documents; must not be null
      * @param options the count options to apply (can be null)
      * @return a Mono that emits the count of documents matching the filter with applied options
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code filter} is null
      * @see Bson
      * @see CountOptions
      * @see com.mongodb.client.model.Filters
@@ -462,9 +481,12 @@ public final class MongoCollectionMapper<T> {
      * userMapper.get("xyz");   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param objectId the string representation of the ObjectId to search for
      * @return a Mono that emits the found entity, or empty if no document matches the ObjectId
-     * @throws IllegalArgumentException if objectId is null or empty, or if it is not a valid ObjectId hex string
+     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId
      * @see ObjectId
      */
     public Mono<T> get(final String objectId) {
@@ -498,9 +520,12 @@ public final class MongoCollectionMapper<T> {
      * userMapper.get((ObjectId) null);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param objectId the ObjectId to search for
      * @return a Mono that emits the found entity, or empty if no document matches the ObjectId
-     * @throws IllegalArgumentException if objectId is null
+     * @throws IllegalArgumentException if {@code objectId} is null
      * @see ObjectId
      */
     public Mono<T> get(final ObjectId objectId) {
@@ -534,10 +559,13 @@ public final class MongoCollectionMapper<T> {
      * userMapper.get("nope", fields);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param objectId the string representation of the ObjectId to search for
      * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @return a Mono that emits the projected entity, or empty if no document matches the ObjectId
-     * @throws IllegalArgumentException if objectId is null/empty, or objectId is not a valid ObjectId hex string
+     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId
      * @see ObjectId
      * @see com.mongodb.client.model.Projections
      */
@@ -573,10 +601,13 @@ public final class MongoCollectionMapper<T> {
      * userMapper.get((ObjectId) null, fields);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param objectId the ObjectId to search for
      * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @return a Mono that emits the projected entity, or empty if no document matches the ObjectId
-     * @throws IllegalArgumentException if objectId is null
+     * @throws IllegalArgumentException if {@code objectId} is null
      * @see ObjectId
      * @see com.mongodb.client.model.Projections
      */
@@ -617,10 +648,13 @@ public final class MongoCollectionMapper<T> {
      * userMapper.findFirst((Bson) null);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to match documents
      * @return a {@code Mono} that emits the first matching entity decoded as {@code T}, or
      *         completes empty when no document matches the filter
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code filter} is null
      * @see Bson
      * @see com.mongodb.client.model.Filters
      * @see MongoCollectionExecutor#findFirst(Bson, Class)
@@ -657,10 +691,13 @@ public final class MongoCollectionMapper<T> {
      * userMapper.findFirst(fields, (Bson) null);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents
      * @return a Mono that emits the first matching projected entity, or empty if no documents match
-     * @throws IllegalArgumentException if filter is null
+     * @throws IllegalArgumentException if {@code filter} is null
      * @see Bson
      * @see com.mongodb.client.model.Filters
      * @see com.mongodb.client.model.Projections
@@ -696,11 +733,14 @@ public final class MongoCollectionMapper<T> {
      * Mono<User> unsorted = userMapper.findFirst(fields, filter, (Bson) null);   // no sort applied; not an error
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents
      * @param sort the sort specification for ordering results (can be null for natural order)
      * @return a Mono that emits the first matching projected entity with applied sorting, or empty if no documents match
-     * @throws IllegalArgumentException if filter is null
+     * @throws IllegalArgumentException if {@code filter} is null
      * @see Bson
      * @see com.mongodb.client.model.Filters
      * @see com.mongodb.client.model.Projections
@@ -741,11 +781,14 @@ public final class MongoCollectionMapper<T> {
      * Mono<User> allFields = userMapper.findFirst((Bson) null, filter, sort);   // no projection applied; not an error
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param projection the BSON projection specification for field selection (can be null to select all fields)
      * @param filter the query filter to match documents
      * @param sort the sort specification for ordering results (can be null for natural order)
      * @return a Mono that emits the first matching projected entity with applied sorting, or empty if no documents match
-     * @throws IllegalArgumentException if filter is null
+     * @throws IllegalArgumentException if {@code filter} is null
      * @see Bson
      * @see com.mongodb.client.model.Filters
      * @see com.mongodb.client.model.Projections
@@ -789,10 +832,13 @@ public final class MongoCollectionMapper<T> {
      * userMapper.list((Bson) null);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to match documents
      * @return a cold {@code Flux} that, on subscription, emits each matching entity decoded as
      *         {@code T} (one per emission, honouring downstream demand), then completes
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code filter} is null
      * @see Bson
      * @see com.mongodb.client.model.Filters
      */
@@ -824,12 +870,15 @@ public final class MongoCollectionMapper<T> {
      * userMapper.list(filter, -1, 10);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to match documents against
      * @param offset the number of documents to skip (must be &gt;= 0)
      * @param count the maximum number of documents to return (must be &gt;= 0; {@code 0} yields an empty result)
      * @return a cold {@code Flux} that, on subscription, emits up to {@code count} matching entities
      *         decoded as {@code T} (honouring downstream demand), then completes
-     * @throws IllegalArgumentException if filter is null, offset is negative, or count is negative
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative
      */
     public Flux<T> list(final Bson filter, final int offset, final int count) {
         return collectionExecutor.list(filter, offset, count, rowType);
@@ -862,10 +911,13 @@ public final class MongoCollectionMapper<T> {
      * userMapper.list(fields, (Bson) null);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents
      * @return a Flux that emits matching entities with only the specified fields populated
-     * @throws IllegalArgumentException if filter is null
+     * @throws IllegalArgumentException if {@code filter} is null
      */
     public Flux<T> list(final Collection<String> selectPropNames, final Bson filter) {
         return collectionExecutor.list(selectPropNames, filter, rowType);
@@ -897,12 +949,15 @@ public final class MongoCollectionMapper<T> {
      * userMapper.list(fields, filter, 0, -1);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents against
      * @param offset the number of documents to skip (must be >= 0)
      * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
      * @return a Flux that emits the paginated matching entities with specified fields
-     * @throws IllegalArgumentException if filter is null, offset is negative, or count is negative
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative
      */
     public Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count) {
         return collectionExecutor.list(selectPropNames, filter, offset, count, rowType);
@@ -934,11 +989,14 @@ public final class MongoCollectionMapper<T> {
      * Flux<User> unsorted = userMapper.list(fields, filter, (Bson) null);   // no sort applied; not an error
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results (can be null for natural order)
      * @return a Flux that emits sorted matching entities with specified fields
-     * @throws IllegalArgumentException if filter is null
+     * @throws IllegalArgumentException if {@code filter} is null
      * @see com.mongodb.client.model.Sorts
      */
     public Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort) {
@@ -971,13 +1029,16 @@ public final class MongoCollectionMapper<T> {
      * userMapper.list(fields, filter, sort, -1, 10);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results (can be null for natural order)
      * @param offset the number of documents to skip (must be >= 0)
      * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
      * @return a Flux that emits the fully controlled query results
-     * @throws IllegalArgumentException if filter is null, offset is negative, or count is negative
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative
      */
     public Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count) {
         return collectionExecutor.list(selectPropNames, filter, sort, offset, count, rowType);
@@ -1010,11 +1071,14 @@ public final class MongoCollectionMapper<T> {
      * Flux<User> notRunYet = userMapper.list(projection, Filters.empty(), null);   // no query issued yet
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param projection the BSON projection document for field selection (can be null to select all fields)
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results (can be null for natural order)
      * @return a Flux that emits matching entities with projection applied
-     * @throws IllegalArgumentException if filter is null
+     * @throws IllegalArgumentException if {@code filter} is null
      * @see com.mongodb.client.model.Projections
      */
     public Flux<T> list(final Bson projection, final Bson filter, final Bson sort) {
@@ -1048,13 +1112,16 @@ public final class MongoCollectionMapper<T> {
      * userMapper.list(projection, filter, sort, -1, 100);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param projection the BSON projection document for field selection (can be null to select all fields)
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results (can be null for natural order)
      * @param offset the number of documents to skip (must be >= 0)
      * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
      * @return a Flux that emits the fully controlled query results with projection
-     * @throws IllegalArgumentException if filter is null, offset is negative, or count is negative
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative
      */
     public Flux<T> list(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count) {
         return collectionExecutor.list(projection, filter, sort, offset, count, rowType);
@@ -1094,12 +1161,14 @@ public final class MongoCollectionMapper<T> {
      * userMapper.queryForBoolean("", Filters.empty());   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the {@code Boolean} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForBoolean(String, Bson)
      */
@@ -1138,12 +1207,14 @@ public final class MongoCollectionMapper<T> {
      * userMapper.queryForChar("", Filters.empty());   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the {@code Character} field value on subscription, or
      *         completes empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForChar(String, Bson)
      */
@@ -1184,12 +1255,14 @@ public final class MongoCollectionMapper<T> {
      * userMapper.queryForByte("", Filters.empty());   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the {@code Byte} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForByte(String, Bson)
      */
@@ -1230,12 +1303,14 @@ public final class MongoCollectionMapper<T> {
      * userMapper.queryForShort("", Filters.empty());   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the {@code Short} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForShort(String, Bson)
      */
@@ -1276,12 +1351,14 @@ public final class MongoCollectionMapper<T> {
      * userMapper.queryForInt("", Filters.empty());   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the {@code Integer} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForInt(String, Bson)
      */
@@ -1322,12 +1399,14 @@ public final class MongoCollectionMapper<T> {
      * userMapper.queryForLong("", Filters.empty());   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the {@code Long} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForLong(String, Bson)
      */
@@ -1368,12 +1447,14 @@ public final class MongoCollectionMapper<T> {
      * userMapper.queryForFloat("", Filters.empty());   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the {@code Float} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null
      * @see #queryForDouble(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForFloat(String, Bson)
@@ -1415,12 +1496,14 @@ public final class MongoCollectionMapper<T> {
      * userMapper.queryForDouble("", Filters.empty());   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the {@code Double} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null
      * @see #queryForFloat(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForDouble(String, Bson)
@@ -1465,12 +1548,14 @@ public final class MongoCollectionMapper<T> {
      * userMapper.queryForString("", Filters.empty());   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the {@code String} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForString(String, Bson)
      */
@@ -1511,12 +1596,14 @@ public final class MongoCollectionMapper<T> {
      * userMapper.queryForDate("", Filters.empty());   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against (must not be null)
      * @return a {@code Mono} that emits the {@code Date} field value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null
      * @see #queryForDate(String, Bson, Class)
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForDate(String, Bson)
@@ -1558,14 +1645,16 @@ public final class MongoCollectionMapper<T> {
      * userMapper.queryForDate("processedAt", Filters.empty(), (Class<Timestamp>) null); // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param <V> the specific Date subclass type
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against (must not be null)
      * @param valueType the class of the Date subclass to convert to
      * @return a {@code Mono} that emits the typed {@code Date} value on subscription, or completes
      *         empty when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty, if {@code filter} is null, or if {@code valueType} is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if {@code valueType} is null
      * @see #queryForDate(String, Bson)
      * @see #queryForSingleValue(String, Bson, Class)
      * @see MongoCollectionExecutor#queryForDate(String, Bson, Class)
@@ -1609,14 +1698,16 @@ public final class MongoCollectionMapper<T> {
      * userMapper.queryForSingleValue("amount", Filters.empty(), (Class<BigDecimal>) null); // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param <V> the type of value to retrieve
      * @param propName the name of the property to retrieve
      * @param filter the query filter to match documents against (must not be null)
      * @param valueType the class of the value type to convert to
      * @return a {@code Mono} that emits the converted field value on subscription, or completes empty
      *         when no document matches or the field is missing/null
-     * @throws IllegalArgumentException if {@code propName} is null or empty, if {@code filter} is null, or if {@code valueType} is null (thrown synchronously at the call site)
-     * @throws MongoException if the database operation fails (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code propName} is null or empty, or if {@code filter} is null, or if {@code valueType} is null
      * @see MongoCollectionExecutor#queryForSingleValue(String, Bson, Class)
      */
     public <V> Mono<V> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType) {
@@ -1654,10 +1745,13 @@ public final class MongoCollectionMapper<T> {
      * userMapper.query((Bson) null);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to match documents
      * @return a {@code Mono} that, on subscription, emits exactly one {@code Dataset} containing
      *         all matching documents (possibly empty), then completes
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code filter} is null, or if the mapped type is neither a bean class nor a Map type
      * @see Dataset
      * @see MongoCollectionExecutor#query(Bson, Class)
      */
@@ -1689,11 +1783,15 @@ public final class MongoCollectionMapper<T> {
      * userMapper.query(filter, -1, 100);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to match documents against
      * @param offset the number of documents to skip (must be >= 0)
      * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
      * @return a Mono that emits a Dataset containing the paginated results
-     * @throws IllegalArgumentException if filter is null, offset is negative, or count is negative
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if the
+     *         mapped type is neither a bean class nor a Map type
      */
     public Mono<Dataset> query(final Bson filter, final int offset, final int count) {
         return collectionExecutor.query(filter, offset, count, rowType);
@@ -1725,10 +1823,13 @@ public final class MongoCollectionMapper<T> {
      * userMapper.query(fields, (Bson) null);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents
      * @return a Mono that emits a Dataset with projected fields
-     * @throws IllegalArgumentException if filter is null
+     * @throws IllegalArgumentException if {@code filter} is null, or if the mapped type is neither a bean class nor a Map type
      */
     public Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter) {
         return collectionExecutor.query(selectPropNames, filter, rowType);
@@ -1759,12 +1860,16 @@ public final class MongoCollectionMapper<T> {
      * userMapper.query(fields, filter, -1, 50);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents against
      * @param offset the number of documents to skip (must be >= 0)
      * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
      * @return a Mono that emits a Dataset with projected and paginated results
-     * @throws IllegalArgumentException if filter is null, offset is negative, or count is negative
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if the
+     *         mapped type is neither a bean class nor a Map type
      */
     public Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final int offset, final int count) {
         return collectionExecutor.query(selectPropNames, filter, offset, count, rowType);
@@ -1797,11 +1902,14 @@ public final class MongoCollectionMapper<T> {
      * userMapper.query(fields, (Bson) null, sort);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results (can be null for natural order)
      * @return a Mono that emits a sorted Dataset with projected fields
-     * @throws IllegalArgumentException if filter is null
+     * @throws IllegalArgumentException if {@code filter} is null, or if the mapped type is neither a bean class nor a Map type
      */
     public Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort) {
         return collectionExecutor.query(selectPropNames, filter, sort, rowType);
@@ -1833,13 +1941,17 @@ public final class MongoCollectionMapper<T> {
      * userMapper.query(fields, filter, sort, -1, 10);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results (can be null for natural order)
      * @param offset the number of documents to skip (must be >= 0)
      * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
      * @return a Mono that emits a fully controlled Dataset result
-     * @throws IllegalArgumentException if filter is null, offset is negative, or count is negative
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if the
+     *         mapped type is neither a bean class nor a Map type
      */
     public Mono<Dataset> query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count) {
         return collectionExecutor.query(selectPropNames, filter, sort, offset, count, rowType);
@@ -1875,11 +1987,14 @@ public final class MongoCollectionMapper<T> {
      * userMapper.query(projection, (Bson) null, sort);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param projection the BSON projection document for field selection (can be null to select all fields)
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results (can be null for natural order)
      * @return a Mono that emits a Dataset with projection and sorting applied
-     * @throws IllegalArgumentException if filter is null
+     * @throws IllegalArgumentException if {@code filter} is null, or if the mapped type is neither a bean class nor a Map type
      */
     public Mono<Dataset> query(final Bson projection, final Bson filter, final Bson sort) {
         return collectionExecutor.query(projection, filter, sort, rowType);
@@ -1911,13 +2026,17 @@ public final class MongoCollectionMapper<T> {
      * userMapper.query(projection, filter, sort, -1, 1000);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB read command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param projection the BSON projection document for field selection (can be null to select all fields)
      * @param filter the query filter to match documents against
      * @param sort the sort specification for ordering results (can be null for natural order)
      * @param offset the number of documents to skip (must be >= 0)
      * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
      * @return a Mono that emits a fully controlled Dataset with projection
-     * @throws IllegalArgumentException if filter is null, offset is negative, or count is negative
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code offset} is negative, or if {@code count} is negative, or if the
+     *         mapped type is neither a bean class nor a Map type
      */
     public Mono<Dataset> query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count) {
         return collectionExecutor.query(projection, filter, sort, offset, count, rowType);
@@ -1951,14 +2070,14 @@ public final class MongoCollectionMapper<T> {
      *     .subscribe(r -> {}, err -> System.err.println("Duplicate key: " + err));   // onError(MongoWriteException)
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param obj the entity to insert
      * @return a cold {@code Mono} that, on subscription, emits exactly one
      *         {@link InsertOneResult} when the insert completes, then completes
-     * @throws IllegalArgumentException if obj is null
-     * @throws MongoWriteException if the insert operation fails (signalled via
-     *         {@code Mono})
-     * @throws MongoException if the database operation fails (signalled via
-     *         {@code Mono})
+     * @throws IllegalArgumentException if {@code obj} is null, or if a document value cannot be converted from a Map, bean, or array of String
+     *         name/value pairs
      * @see #insertOne(Object, InsertOneOptions)
      * @see #insertMany(Collection)
      */
@@ -1991,15 +2110,15 @@ public final class MongoCollectionMapper<T> {
      *     .subscribe(r -> {}, err -> System.err.println("Duplicate key: " + err));   // onError(MongoWriteException)
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param obj the entity to insert
      * @param options the insert options to apply (null uses default settings)
      * @return a cold {@code Mono} that, on subscription, emits exactly one
      *         {@link InsertOneResult} when the insert completes, then completes
-     * @throws IllegalArgumentException if obj is null
-     * @throws MongoWriteException if the insert operation fails (signalled via
-     *         {@code Mono})
-     * @throws MongoException if the database operation fails (signalled via
-     *         {@code Mono})
+     * @throws IllegalArgumentException if {@code obj} is null, or if a document value cannot be converted from a Map, bean, or array of String
+     *         name/value pairs
      * @see #insertOne(Object)
      * @see InsertOneOptions
      */
@@ -2035,12 +2154,15 @@ public final class MongoCollectionMapper<T> {
      *     .subscribe(r -> {}, err -> System.err.println("Bulk insert failed: " + err));   // onError(MongoBulkWriteException)
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param objList the collection of entities to insert
      * @return a cold {@code Mono} that, on subscription, emits exactly one
      *         {@link InsertManyResult} when the operation completes, then completes
-     * @throws IllegalArgumentException if objList is null or empty
-     * @throws MongoBulkWriteException if any document fails to insert (signalled via
-     *         {@code Mono})
+     * @throws IllegalArgumentException if {@code objList} is null or empty, or if a document value cannot be converted from a Map, bean, or
+     *         array of String name/value pairs
+     * @throws NullPointerException if {@code objList} contains a null document
      */
     public Mono<InsertManyResult> insertMany(final Collection<? extends T> objList) {
         return collectionExecutor.insertMany(objList);
@@ -2064,10 +2186,15 @@ public final class MongoCollectionMapper<T> {
      *     .subscribe(result -> System.out.println("Inserted: " + result.getInsertedIds().size()));
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param objList the collection of entities to insert
      * @param options the insert options to apply (can be null)
      * @return a Mono that emits the insert result when the operation completes
-     * @throws IllegalArgumentException if objList is null or empty
+     * @throws IllegalArgumentException if {@code objList} is null or empty, or if a document value cannot be converted from a Map, bean, or
+     *         array of String name/value pairs
+     * @throws NullPointerException if {@code objList} contains a null document
      * @see InsertManyOptions
      */
     public Mono<InsertManyResult> insertMany(final Collection<? extends T> objList, final InsertManyOptions options) {
@@ -2100,10 +2227,15 @@ public final class MongoCollectionMapper<T> {
      * userMapper.updateOne("not-hex", updatedUser);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param objectId the string representation of the MongoDB ObjectId
      * @param update the entity containing the update values
      * @return a Mono that emits the update result
-     * @throws IllegalArgumentException if objectId is null or empty, if objectId is not a valid ObjectId hex string, or if update is null
+     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if {@code update} is null,
+     *         or if an update document has a null field name, mixes operator and ordinary field names, or has no updatable fields after removing
+     *         {@code _id}, or if an update value cannot be converted from a Map, bean, or array of String name/value pairs
      */
     public Mono<UpdateResult> updateOne(final String objectId, final T update) {
         return collectionExecutor.updateOne(objectId, update);
@@ -2124,10 +2256,15 @@ public final class MongoCollectionMapper<T> {
      * Mono<UpdateResult> result = userMapper.updateOne(id, updates);
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param objectId the MongoDB ObjectId to match
      * @param update the entity containing the update values
      * @return a Mono that emits the update result
-     * @throws IllegalArgumentException if objectId or update is null
+     * @throws IllegalArgumentException if {@code objectId} is null, or if {@code update} is null, or if an update document has a null field
+     *         name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot
+     *         be converted from a Map, bean, or array of String name/value pairs
      */
     public Mono<UpdateResult> updateOne(final ObjectId objectId, final T update) {
         return collectionExecutor.updateOne(objectId, update);
@@ -2148,10 +2285,15 @@ public final class MongoCollectionMapper<T> {
      * Mono<UpdateResult> result = userMapper.updateOne(filter, updates);
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to match documents
      * @param update the entity containing the update values
      * @return a Mono that emits the update result
-     * @throws IllegalArgumentException if filter or update is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final T update) {
         return collectionExecutor.updateOne(filter, update);
@@ -2172,11 +2314,16 @@ public final class MongoCollectionMapper<T> {
      * Mono<UpdateResult> result = userMapper.updateOne(filter, updates, options);
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to match documents against
      * @param update the entity containing the update values
      * @param options the update options to apply (can be null)
      * @return a Mono that emits the update result
-     * @throws IllegalArgumentException if filter or update is null
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
      * @see UpdateOptions
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final T update, final UpdateOptions options) {
@@ -2202,10 +2349,15 @@ public final class MongoCollectionMapper<T> {
      * Mono<UpdateResult> result = userMapper.updateOne(filter, updates);
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to match documents against
      * @param objList the collection of entities containing update values
      * @return a Mono that emits the update result
-     * @throws IllegalArgumentException if filter or objList is null or empty
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if an update document has a null
+     *         field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value
+     *         cannot be converted from a Map, bean, or array of String name/value pairs
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final Collection<? extends T> objList) {
         return collectionExecutor.updateOne(filter, objList);
@@ -2228,11 +2380,16 @@ public final class MongoCollectionMapper<T> {
      * Mono<UpdateResult> result = userMapper.updateOne(filter, updates, options);
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to match documents against
      * @param objList the collection of entities containing update values
      * @param options the update options to apply (can be null)
      * @return a Mono that emits the update result
-     * @throws IllegalArgumentException if filter or objList is null or empty
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if an update document has a null
+     *         field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value
+     *         cannot be converted from a Map, bean, or array of String name/value pairs
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final Collection<? extends T> objList, final UpdateOptions options) {
         return collectionExecutor.updateOne(filter, objList, options);
@@ -2266,10 +2423,15 @@ public final class MongoCollectionMapper<T> {
      * userMapper.updateMany((Bson) null, updates);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to match documents against
      * @param update the entity containing the update values
      * @return a Mono that emits the update result with modified count
-     * @throws IllegalArgumentException if filter or update is null
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
      */
     public Mono<UpdateResult> updateMany(final Bson filter, final T update) {
         return collectionExecutor.updateMany(filter, update);
@@ -2290,11 +2452,16 @@ public final class MongoCollectionMapper<T> {
      * Mono<UpdateResult> result = userMapper.updateMany(filter, updates, options);
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to match documents against
      * @param update the entity containing the update values
      * @param options the update options to apply (can be null)
      * @return a Mono that emits the update result with modified count
-     * @throws IllegalArgumentException if filter or update is null
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
      */
     public Mono<UpdateResult> updateMany(final Bson filter, final T update, final UpdateOptions options) {
         return collectionExecutor.updateMany(filter, update, options);
@@ -2319,10 +2486,15 @@ public final class MongoCollectionMapper<T> {
      * Mono<UpdateResult> result = userMapper.updateMany(filter, updates);
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to match documents against
      * @param objList the collection of entities containing update values
      * @return a Mono that emits the update result with modified count
-     * @throws IllegalArgumentException if filter or objList is null or empty
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if an update document has a null
+     *         field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value
+     *         cannot be converted from a Map, bean, or array of String name/value pairs
      */
     public Mono<UpdateResult> updateMany(final Bson filter, final Collection<? extends T> objList) {
         return collectionExecutor.updateMany(filter, objList);
@@ -2345,11 +2517,16 @@ public final class MongoCollectionMapper<T> {
      * Mono<UpdateResult> result = userMapper.updateMany(filter, updates, options);
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to match documents against
      * @param objList the collection of entities containing update values
      * @param options the update options to apply (can be null)
      * @return a Mono that emits the update result with modified count
-     * @throws IllegalArgumentException if filter or objList is null or empty
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if an update document has a null
+     *         field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value
+     *         cannot be converted from a Map, bean, or array of String name/value pairs
      */
     public Mono<UpdateResult> updateMany(final Bson filter, final Collection<? extends T> objList, final UpdateOptions options) {
         return collectionExecutor.updateMany(filter, objList, options);
@@ -2379,10 +2556,14 @@ public final class MongoCollectionMapper<T> {
      * userMapper.replaceOne("not-hex", newUser);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param objectId the string representation of the MongoDB ObjectId
      * @param replacement the entity to replace the existing document with
      * @return a Mono that emits the update result
-     * @throws IllegalArgumentException if objectId is null or empty, if objectId is not a valid ObjectId hex string, or if replacement is null
+     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId, or if {@code replacement} is
+     *         null, or if a document value cannot be converted from a Map, bean, or array of String name/value pairs
      */
     public Mono<UpdateResult> replaceOne(final String objectId, final T replacement) {
         return collectionExecutor.replaceOne(objectId, replacement);
@@ -2401,10 +2582,14 @@ public final class MongoCollectionMapper<T> {
      * Mono<UpdateResult> result = userMapper.replaceOne(id, newUser);
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param objectId the MongoDB ObjectId to match
      * @param replacement the entity to replace the existing document with
      * @return a Mono that emits the update result
-     * @throws IllegalArgumentException if objectId or replacement is null
+     * @throws IllegalArgumentException if {@code objectId} is null, or if {@code replacement} is null, or if a document value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
      */
     public Mono<UpdateResult> replaceOne(final ObjectId objectId, final T replacement) {
         return collectionExecutor.replaceOne(objectId, replacement);
@@ -2423,10 +2608,14 @@ public final class MongoCollectionMapper<T> {
      * Mono<UpdateResult> result = userMapper.replaceOne(filter, newUser);
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to match documents against
      * @param replacement the entity to replace the existing document with
      * @return a Mono that emits the update result
-     * @throws IllegalArgumentException if filter or replacement is null
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
      */
     public Mono<UpdateResult> replaceOne(final Bson filter, final T replacement) {
         return collectionExecutor.replaceOne(filter, replacement);
@@ -2446,11 +2635,15 @@ public final class MongoCollectionMapper<T> {
      * Mono<UpdateResult> result = userMapper.replaceOne(filter, newUser, options);
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to match documents against
      * @param replacement the entity to replace the existing document with
      * @param options the replace options to apply (can be null)
      * @return a Mono that emits the update result
-     * @throws IllegalArgumentException if filter or replacement is null
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
      * @see ReplaceOptions
      */
     public Mono<UpdateResult> replaceOne(final Bson filter, final T replacement, final ReplaceOptions options) {
@@ -2480,9 +2673,12 @@ public final class MongoCollectionMapper<T> {
      * userMapper.deleteOne("not-hex");   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param objectId the string representation of the MongoDB ObjectId
      * @return a Mono that emits the delete result
-     * @throws IllegalArgumentException if objectId is null or empty, or if objectId is not a valid ObjectId hex string
+     * @throws IllegalArgumentException if {@code objectId} is null or is not a 24-character hexadecimal ObjectId
      */
     public Mono<DeleteResult> deleteOne(final String objectId) {
         return collectionExecutor.deleteOne(objectId);
@@ -2501,9 +2697,12 @@ public final class MongoCollectionMapper<T> {
      * result.subscribe(r -> System.out.println("Deleted: " + r.getDeletedCount()));
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param objectId the MongoDB ObjectId to match
      * @return a Mono that emits the delete result
-     * @throws IllegalArgumentException if objectId is null
+     * @throws IllegalArgumentException if {@code objectId} is null
      */
     public Mono<DeleteResult> deleteOne(final ObjectId objectId) {
         return collectionExecutor.deleteOne(objectId);
@@ -2534,9 +2733,12 @@ public final class MongoCollectionMapper<T> {
      * userMapper.deleteOne((Bson) null);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to match documents against
      * @return a Mono that emits the delete result
-     * @throws IllegalArgumentException if filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code filter} is null
      */
     public Mono<DeleteResult> deleteOne(final Bson filter) {
         return collectionExecutor.deleteOne(filter);
@@ -2557,10 +2759,13 @@ public final class MongoCollectionMapper<T> {
      * Mono<DeleteResult> result = userMapper.deleteOne(filter, options);
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to match documents against
      * @param options the delete options to apply (can be null)
      * @return a Mono that emits the delete result
-     * @throws IllegalArgumentException if filter is null
+     * @throws IllegalArgumentException if {@code filter} is null
      * @see DeleteOptions
      */
     public Mono<DeleteResult> deleteOne(final Bson filter, final DeleteOptions options) {
@@ -2592,9 +2797,12 @@ public final class MongoCollectionMapper<T> {
      * userMapper.deleteMany((Bson) null);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to match documents against
      * @return a Mono that emits the delete result with deleted count
-     * @throws IllegalArgumentException if filter is null
+     * @throws IllegalArgumentException if {@code filter} is null
      */
     public Mono<DeleteResult> deleteMany(final Bson filter) {
         return collectionExecutor.deleteMany(filter);
@@ -2614,15 +2822,14 @@ public final class MongoCollectionMapper<T> {
      *     .subscribe(r -> System.out.println("Deleted: " + r.getDeletedCount()));
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to match documents for deletion
      * @param options additional options to configure the delete operation (can be null to use defaults)
      * @return a cold {@code Mono} that, on subscription, emits exactly one {@link DeleteResult}
      *         with deletion statistics, then completes
-     * @throws IllegalArgumentException if filter is null
-     * @throws MongoWriteException if the delete operation fails (signalled via
-     *         {@code Mono})
-     * @throws MongoException if the database operation fails (signalled via
-     *         {@code Mono})
+     * @throws IllegalArgumentException if {@code filter} is null
      */
     public Mono<DeleteResult> deleteMany(final Bson filter, final DeleteOptions options) {
         return collectionExecutor.deleteMany(filter, options);
@@ -2654,12 +2861,15 @@ public final class MongoCollectionMapper<T> {
      *     .subscribe(r -> {}, err -> System.err.println("Bulk insert failed: " + err));   // onError(MongoBulkWriteException)
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param entities the collection of entities to insert (must not be null or empty)
      * @return a {@code Mono} that, on subscription, emits exactly one {@link BulkWriteResult}
      *         (use {@link BulkWriteResult#getInsertedCount()} for the inserted count), then completes
-     * @throws IllegalArgumentException if entities is null or empty
-     * @throws MongoBulkWriteException if the bulk write reports any per-document
-     *         failures (signalled via {@code Mono})
+     * @throws IllegalArgumentException if {@code entities} is null or empty, or if a document value cannot be converted from a Map, bean, or
+     *         array of String name/value pairs
+     * @throws NullPointerException if {@code entities} contains a null document
      * @see MongoCollectionExecutor#bulkInsert(Collection)
      */
     public Mono<BulkWriteResult> bulkInsert(final Collection<? extends T> entities) {
@@ -2680,11 +2890,16 @@ public final class MongoCollectionMapper<T> {
      *     .subscribe(result -> System.out.println("Bulk inserted: " + result.getInsertedCount()));
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param entities the collection of entities to insert
      * @param options configuration options for the bulk write operation (may be null to use defaults)
      * @return a Mono emitting the {@link BulkWriteResult} (use {@link BulkWriteResult#getInsertedCount()}
      *         for the inserted count)
-     * @throws IllegalArgumentException if entities is null or empty
+     * @throws IllegalArgumentException if {@code entities} is null or empty, or if a document value cannot be converted from a Map, bean, or
+     *         array of String name/value pairs
+     * @throws NullPointerException if {@code entities} contains a null document
      */
     public Mono<BulkWriteResult> bulkInsert(final Collection<? extends T> entities, final BulkWriteOptions options) {
         return collectionExecutor.bulkInsert(entities, options);
@@ -2721,9 +2936,12 @@ public final class MongoCollectionMapper<T> {
      *     .subscribe(r -> {}, err -> System.err.println("Bulk write failed: " + err));   // onError(MongoBulkWriteException)
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param requests list of write operations to execute (must not be null or empty)
      * @return a Mono emitting BulkWriteResult with detailed operation statistics
-     * @throws IllegalArgumentException if requests is null or empty
+     * @throws IllegalArgumentException if {@code requests} is null or empty
      */
     public Mono<BulkWriteResult> bulkWrite(final List<? extends WriteModel<? extends Document>> requests) {
         return collectionExecutor.bulkWrite(requests);
@@ -2745,10 +2963,13 @@ public final class MongoCollectionMapper<T> {
      *     System.out.println("Bulk write completed: " + result));
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param requests list of write operations to execute
      * @param options configuration for the bulk write behavior (may be null to use defaults)
      * @return a Mono emitting BulkWriteResult with operation statistics
-     * @throws IllegalArgumentException if requests is null or empty
+     * @throws IllegalArgumentException if {@code requests} is null or empty
      */
     public Mono<BulkWriteResult> bulkWrite(final List<? extends WriteModel<? extends Document>> requests, final BulkWriteOptions options) {
         return collectionExecutor.bulkWrite(requests, options);
@@ -2786,11 +3007,16 @@ public final class MongoCollectionMapper<T> {
      * userMapper.findOneAndUpdate((Bson) null, updatedUser);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to identify the document to update
      * @param update the entity containing update values
      * @return a {@code Mono} that emits the matched document (before update) decoded as {@code T},
      *         or completes empty when no document matches
-     * @throws IllegalArgumentException if filter or update is null
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
      * @see MongoCollectionExecutor#findOneAndUpdate(Bson, Object, Class)
      */
     public Mono<T> findOneAndUpdate(final Bson filter, final T update) {
@@ -2813,12 +3039,17 @@ public final class MongoCollectionMapper<T> {
      *     .subscribe(user -> System.out.println("User after update: " + user));
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to identify the document
      * @param update the entity containing update values
      * @param options configuration for the find-and-update operation (can be null to use defaults)
      * @return a {@code Mono} that emits the matched document decoded as {@code T} — the pre- or
      *         post-write version per {@code options} — or completes empty when no document matches
-     * @throws IllegalArgumentException if filter or update is null
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code update} is null, or if an update document has a null field name,
+     *         mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value cannot be
+     *         converted from a Map, bean, or array of String name/value pairs
      */
     public Mono<T> findOneAndUpdate(final Bson filter, final T update, final FindOneAndUpdateOptions options) {
         return collectionExecutor.findOneAndUpdate(filter, update, options, rowType);
@@ -2844,10 +3075,15 @@ public final class MongoCollectionMapper<T> {
      *     .subscribe(user -> System.out.println("Updated from multiple sources"));
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to identify the document
      * @param objList collection of objects containing update values
      * @return a Mono emitting the found document
-     * @throws IllegalArgumentException if filter is null, or objList is null or empty
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if an update document has a null
+     *         field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value
+     *         cannot be converted from a Map, bean, or array of String name/value pairs
      */
     public Mono<T> findOneAndUpdate(final Bson filter, final Collection<? extends T> objList) {
         return collectionExecutor.findOneAndUpdate(filter, objList, rowType);
@@ -2870,12 +3106,17 @@ public final class MongoCollectionMapper<T> {
      *     .subscribe(user -> System.out.println("Merged updates applied"));
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to identify the document
      * @param objList collection of objects containing update values
      * @param options configuration for the operation (can be null to use defaults)
      * @return a {@code Mono} that emits the matched document decoded as {@code T} — the pre- or
      *         post-write version per {@code options} — or completes empty when no document matches
-     * @throws IllegalArgumentException if filter is null, or objList is null or empty
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code objList} is null or empty, or if an update document has a null
+     *         field name, mixes operator and ordinary field names, or has no updatable fields after removing {@code _id}, or if an update value
+     *         cannot be converted from a Map, bean, or array of String name/value pairs
      */
     public Mono<T> findOneAndUpdate(final Bson filter, final Collection<? extends T> objList, final FindOneAndUpdateOptions options) {
         return collectionExecutor.findOneAndUpdate(filter, objList, options, rowType);
@@ -2915,11 +3156,15 @@ public final class MongoCollectionMapper<T> {
      * userMapper.findOneAndReplace((Bson) null, newUser);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to identify the document to replace
      * @param replacement the complete replacement document
      * @return a {@code Mono} that emits the matched document (before replacement) decoded as
      *         {@code T}, or completes empty when no document matches the filter
-     * @throws IllegalArgumentException if filter or replacement is null
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
      * @see MongoCollectionExecutor#findOneAndReplace(Bson, Object, Class)
      */
     public Mono<T> findOneAndReplace(final Bson filter, final T replacement) {
@@ -2942,12 +3187,16 @@ public final class MongoCollectionMapper<T> {
      *     .subscribe(user -> System.out.println("New document: " + user));
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to identify the document
      * @param replacement the complete replacement document
      * @param options configuration for the replace operation (can be null to use defaults)
      * @return a {@code Mono} that emits the matched document decoded as {@code T} — the pre- or
      *         post-write version per {@code options} — or completes empty when no document matches
-     * @throws IllegalArgumentException if filter or replacement is null
+     * @throws IllegalArgumentException if {@code filter} is null, or if {@code replacement} is null, or if a document value cannot be converted
+     *         from a Map, bean, or array of String name/value pairs
      */
     public Mono<T> findOneAndReplace(final Bson filter, final T replacement, final FindOneAndReplaceOptions options) {
         return collectionExecutor.findOneAndReplace(filter, replacement, options, rowType);
@@ -2982,10 +3231,13 @@ public final class MongoCollectionMapper<T> {
      * userMapper.findOneAndDelete((Bson) null);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to identify the document to delete
      * @return a {@code Mono} that emits the deleted document decoded as {@code T}, or completes
      *         empty when no document matches the filter
-     * @throws IllegalArgumentException if filter is null
+     * @throws IllegalArgumentException if {@code filter} is null
      * @see MongoCollectionExecutor#findOneAndDelete(Bson, Class)
      */
     public Mono<T> findOneAndDelete(final Bson filter) {
@@ -3007,10 +3259,13 @@ public final class MongoCollectionMapper<T> {
      *     .subscribe(user -> System.out.println("Deleted oldest: " + user));
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB write command fails. Document decoding or
+     * result conversion failures are also signalled through the publisher.</p>
+     *
      * @param filter the query filter to identify the document
      * @param options configuration for the delete operation (can be null to use defaults)
      * @return a Mono emitting the deleted document
-     * @throws IllegalArgumentException if filter is null
+     * @throws IllegalArgumentException if {@code filter} is null
      */
     public Mono<T> findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options) {
         return collectionExecutor.findOneAndDelete(filter, options, rowType);
@@ -3050,12 +3305,15 @@ public final class MongoCollectionMapper<T> {
      * userMapper.distinct((String) null);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * Document decoding or result conversion failures are also signalled through the publisher.</p>
+     *
      * @param fieldName the name of the field to get distinct values for
      * @return a cold {@code Flux} that, on subscription, emits each distinct value of the field
      *         surfaced on an entity of type {@code T}, then completes; completes empty when the
      *         collection has no documents (documents that all lack the field produce a single
      *         entity whose field value is {@code null})
-     * @throws IllegalArgumentException if fieldName is null or empty (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code fieldName} is null or empty
      * @see #distinct(String, Bson)
      * @see #groupBy(String)
      * @see MongoCollectionExecutor#distinct(String, Class)
@@ -3108,12 +3366,15 @@ public final class MongoCollectionMapper<T> {
      *     .subscribe(depts -> System.out.println("Active departments: " + depts));
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * Document decoding or result conversion failures are also signalled through the publisher.</p>
+     *
      * @param fieldName the name of the field to get distinct values for
      * @param filter the query filter to apply before extracting distinct values (must not be null)
      * @return a cold {@code Flux} that, on subscription, emits each distinct value of the field
      *         (among matching documents) surfaced on an entity of type {@code T}, then completes;
      *         completes empty when no distinct values are found
-     * @throws IllegalArgumentException if fieldName is null or empty, or if filter is null (thrown synchronously at the call site)
+     * @throws IllegalArgumentException if {@code fieldName} is null or empty, or if {@code filter} is null
      * @see #distinct(String)
      * @see MongoCollectionExecutor#distinct(String, Bson, Class)
      */
@@ -3152,13 +3413,15 @@ public final class MongoCollectionMapper<T> {
      * userMapper.aggregate((List<Bson>) null);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * Document decoding or result conversion failures are also signalled through the publisher.</p>
+     *
      * @param pipeline list of aggregation stages to execute in order; the pipeline itself may be
      *        empty (which returns every document)
      * @return a cold {@code Flux} that, on subscription, emits each output document decoded as
      *         {@code T} (one per emission, honouring downstream demand), then completes; completes
      *         empty if the pipeline produces no documents
-     * @throws IllegalArgumentException if pipeline is null
-     * @throws MongoException if the database operation fails (signalled via {@code Flux})
+     * @throws IllegalArgumentException if {@code pipeline} is null
      */
     public Flux<T> aggregate(final List<? extends Bson> pipeline) {
         return collectionExecutor.aggregate(pipeline, rowType);
@@ -3190,10 +3453,13 @@ public final class MongoCollectionMapper<T> {
      *     .subscribe(g -> handleGroup(g));   // errors routed to onErrorResume
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * Document decoding or result conversion failures are also signalled through the publisher.</p>
+     *
      * @param fieldName the field name to group documents by
      * @return a cold {@code Flux} that, on subscription, emits each group result decoded as
      *         {@code T} (one per emission, honouring downstream demand), then completes
-     * @throws IllegalArgumentException if fieldName is null or empty
+     * @throws IllegalArgumentException if {@code fieldName} is null or empty
      */
     @Beta
     public Flux<T> groupBy(final String fieldName) {
@@ -3225,10 +3491,13 @@ public final class MongoCollectionMapper<T> {
      * userMapper.groupBy(Collections.emptyList());   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * Document decoding or result conversion failures are also signalled through the publisher.</p>
+     *
      * @param fieldNames collection of field names to compose the group key
      * @return a cold {@code Flux} that, on subscription, emits each group result decoded as
      *         {@code T} (one per emission, honouring downstream demand), then completes
-     * @throws IllegalArgumentException if fieldNames is null or empty
+     * @throws IllegalArgumentException if {@code fieldNames} is null or empty
      */
     @Beta
     public Flux<T> groupBy(final Collection<String> fieldNames) {
@@ -3261,10 +3530,13 @@ public final class MongoCollectionMapper<T> {
      *     .subscribe(g -> handleCount(g));   // errors routed to onErrorResume
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * Document decoding or result conversion failures are also signalled through the publisher.</p>
+     *
      * @param fieldName the field name to group and count by
      * @return a cold {@code Flux} that, on subscription, emits each group-with-count result decoded
      *         as {@code T} (one per emission, honouring downstream demand), then completes
-     * @throws IllegalArgumentException if fieldName is null or empty
+     * @throws IllegalArgumentException if {@code fieldName} is null or empty
      */
     @Beta
     public Flux<T> groupByAndCount(final String fieldName) {
@@ -3296,10 +3568,13 @@ public final class MongoCollectionMapper<T> {
      * userMapper.groupByAndCount(Collections.emptyList());   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * Document decoding or result conversion failures are also signalled through the publisher.</p>
+     *
      * @param fieldNames collection of field names to compose the group key
      * @return a cold {@code Flux} that, on subscription, emits each group-with-count result decoded
      *         as {@code T} (one per emission, honouring downstream demand), then completes
-     * @throws IllegalArgumentException if fieldNames is null or empty
+     * @throws IllegalArgumentException if {@code fieldNames} is null or empty
      */
     @Beta
     public Flux<T> groupByAndCount(final Collection<String> fieldNames) {
@@ -3333,12 +3608,14 @@ public final class MongoCollectionMapper<T> {
      * userMapper.mapReduce((String) null, reduceFunction);   // throws IllegalArgumentException
      * }</pre>
      *
+     * <p>After subscription, the returned publisher signals a {@link MongoException} if the MongoDB aggregation or distinct command fails.
+     * Document decoding or result conversion failures are also signalled through the publisher.</p>
+     *
      * @param mapFunction the JavaScript map function; must not be null or empty
      * @param reduceFunction the JavaScript reduce function; must not be null or empty
      * @return a {@code Flux} that, on subscription, emits each map-reduce output document decoded
      *         as {@code T}, then completes; completes empty when the operation produces no output
-     * @throws IllegalArgumentException if mapFunction or reduceFunction is null or empty
-     * @throws MongoException if the database operation fails (signalled via {@code Flux})
+     * @throws IllegalArgumentException if {@code mapFunction} is null or empty, or if {@code reduceFunction} is null or empty
      * @deprecated Map-reduce is deprecated in MongoDB 5.0+. Use {@link #aggregate(List)} with an
      *             aggregation pipeline instead.
      */

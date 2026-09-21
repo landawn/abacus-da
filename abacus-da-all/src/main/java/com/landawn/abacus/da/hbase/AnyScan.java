@@ -26,6 +26,7 @@ import org.apache.hadoop.hbase.client.Get;
 import org.apache.hadoop.hbase.client.Scan;
 import org.apache.hadoop.hbase.client.Scan.ReadType;
 import org.apache.hadoop.hbase.filter.Filter;
+import org.apache.hadoop.hbase.filter.IncompatibleFilterException;
 import org.apache.hadoop.hbase.io.TimeRange;
 
 import com.landawn.abacus.annotation.SuppressFBWarnings;
@@ -127,6 +128,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * {@link #withStartRow(Object)}.</p>
      *
      * @param startRow row to start scanner at or after; converted via {@link HBaseExecutor#toRowKeyBytes(Object)}
+     * @throws IllegalArgumentException if the converted {@code startRow} exceeds 32,767 bytes
      * @deprecated Use {@code AnyScan.create().withStartRow(startRow)} instead.
      */
     @Deprecated
@@ -141,6 +143,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * @param startRow row to start scanner at or after (inclusive)
      * @param stopRow row to stop scanner before (exclusive)
+     * @throws IllegalArgumentException if either converted row key exceeds 32,767 bytes
      * @deprecated Use {@code AnyScan.create().withStartRow(startRow).withStopRow(stopRow)} instead.
      */
     @Deprecated
@@ -156,6 +159,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * @param startRow row to start scanner at or after
      * @param filter the {@link Filter} to apply to the scan
+     * @throws IllegalArgumentException if the converted {@code startRow} exceeds 32,767 bytes
      * @deprecated Use {@code AnyScan.create().withStartRow(startRow).setFilter(filter)} instead.
      */
     @Deprecated
@@ -190,6 +194,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * @param get the {@link Get} operation to convert to a {@link Scan}; must not be {@code null}
      * @throws NullPointerException if {@code get} is {@code null} (raised by the wrapped {@link Scan#Scan(Get)} constructor)
+     * @throws ArrayIndexOutOfBoundsException if {@code get} contains an empty isolation-level attribute or an invalid isolation-level ordinal
      */
     AnyScan(final Get get) {
         this(new Scan(get));
@@ -264,7 +269,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * @param cursor the non-null server-progress cursor whose row becomes the inclusive start row
      * @return a new AnyScan configured only with the cursor row as its start row
-     * @throws NullPointerException if {@code cursor} is null (raised by the wrapped {@link Scan#createScanFromCursor(Cursor)})
+     * @throws NullPointerException if {@code cursor} is null (raised by the wrapped {@link Scan#createScanFromCursor(Cursor)} )
+     * @throws IllegalArgumentException if the cursor's row key exceeds 32,767 bytes
      * @see #setNeedCursorResult(boolean)
      */
     public static AnyScan createScanFromCursor(final Cursor cursor) {
@@ -293,6 +299,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * @param startRow row to start scanner at or after
      * @return a new AnyScan instance configured with the specified start row
+     * @throws IllegalArgumentException if the converted {@code startRow} exceeds 32,767 bytes
      * @deprecated Use {@code AnyScan.create().withStartRow(startRow)} instead.
      */
     @Deprecated
@@ -317,6 +324,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @param startRow row to start scanner at or after (inclusive)
      * @param stopRow row to stop scanner before (exclusive)
      * @return a new AnyScan instance configured with the specified start and stop rows
+     * @throws IllegalArgumentException if either converted row key exceeds 32,767 bytes
      * @deprecated Use {@code AnyScan.create().withStartRow(startRow).withStopRow(stopRow)} instead.
      */
     @Deprecated
@@ -339,6 +347,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @param startRow row to start scanner at or after
      * @param filter the filter to apply to the scan
      * @return a new AnyScan instance configured with the specified start row and filter
+     * @throws IllegalArgumentException if the converted {@code startRow} exceeds 32,767 bytes
      * @deprecated Use {@code AnyScan.create().withStartRow(startRow).setFilter(filter)} instead.
      */
     @Deprecated
@@ -396,6 +405,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * @param get the Get operation to convert to a Scan; must not be null
      * @return a new AnyScan instance created from the Get operation
      * @throws NullPointerException if {@code get} is null (raised by the wrapped HBase {@link Scan} constructor)
+     * @throws ArrayIndexOutOfBoundsException if {@code get} contains an empty isolation-level attribute or an invalid isolation-level ordinal
      */
     public static AnyScan of(final Get get) {
         return new AnyScan(get);
@@ -869,7 +879,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * @param timestamp the exact timestamp to filter cells by
      * @return this AnyScan instance for method chaining
-     * @throws IllegalArgumentException if {@code timestamp} is negative
+     * @throws IllegalArgumentException if {@code timestamp} is negative or equals {@link Long#MAX_VALUE} , causing the exclusive upper bound to
+     *         overflow
      * @see #setTimeRange(long, long)
      * @see #readVersions(int)
      */
@@ -951,6 +962,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *                 leaves the scan with an open lower bound ({@link #getStartRow()} then returns
      *                 {@code null})
      * @return this AnyScan instance for method chaining
+     * @throws IllegalArgumentException if the converted {@code startRow} exceeds 32,767 bytes
      * @see #withStartRow(Object, boolean)
      * @see #includeStartRow()
      */
@@ -980,6 +992,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *                 scan with an open lower bound
      * @param inclusive {@code true} to include the start row, {@code false} to exclude it
      * @return this AnyScan instance for method chaining
+     * @throws IllegalArgumentException if the converted {@code startRow} exceeds 32,767 bytes
      * @see #withStartRow(Object)
      * @see #includeStartRow()
      */
@@ -1057,6 +1070,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *                leaves the scan with an open upper bound ({@link #getStopRow()} then returns
      *                {@code null})
      * @return this AnyScan instance for method chaining
+     * @throws IllegalArgumentException if the converted {@code stopRow} exceeds 32,767 bytes
      * @see #withStopRow(Object, boolean)
      * @see #includeStopRow()
      */
@@ -1086,6 +1100,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *                with an open upper bound
      * @param inclusive {@code true} to include the stop row, {@code false} to exclude it
      * @return this AnyScan instance for method chaining
+     * @throws IllegalArgumentException if the converted {@code stopRow} exceeds 32,767 bytes
      * @see #withStopRow(Object)
      * @see #includeStopRow()
      */
@@ -1115,6 +1130,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * @param rowPrefix the row prefix; converted to bytes via {@link HBaseExecutor#toRowKeyBytes(Object)}
      * @return this {@link AnyScan} instance for method chaining
+     * @throws IllegalArgumentException if the converted {@code rowPrefix} exceeds 32,767 bytes
      * @deprecated Since HBase 2.5.0, scheduled for removal in 4.0.0. The name is misleading because
      *             no {@link Filter} is used. Use {@link #setStartStopRowForPrefixScan(Object)} instead.
      */
@@ -1150,6 +1166,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *                  May be {@code null}, in which case the start and stop rows are reset to the
      *                  empty (unbounded) row keys
      * @return this AnyScan instance for method chaining
+     * @throws IllegalArgumentException if the converted {@code rowPrefix} exceeds 32,767 bytes
      * @see Scan#setStartStopRowForPrefixScan(byte[])
      */
     public AnyScan setStartStopRowForPrefixScan(final Object rowPrefix) {
@@ -1286,8 +1303,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * @param batch the maximum number of cells in each result; {@code -1} removes the explicit limit
      * @return this AnyScan instance for method chaining
-     * @throws IncompatibleFilterException if the current filter
-     *         requires whole-row processing ({@link Filter#hasFilterRow()} returns {@code true})
+     * @throws IncompatibleFilterException if the current filter requires whole-row processing ({@link Filter#hasFilterRow()} returns {@code true} )
      * @see #getBatch()
      * @see #setCaching(int)
      */
@@ -1791,6 +1807,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * }</pre>
      *
      * @return {@code true} if this is a raw scan, {@code false} otherwise
+     * @throws IllegalArgumentException if the corresponding stored boolean attribute is not exactly one byte
      * @see #setRaw(boolean)
      */
     public boolean isRaw() {
@@ -1850,6 +1867,7 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * }</pre>
      *
      * @return {@code true} if scan metrics are enabled, {@code false} otherwise
+     * @throws IllegalArgumentException if the corresponding stored boolean attribute is not exactly one byte
      * @see #setScanMetricsEnabled(boolean)
      */
     public boolean isScanMetricsEnabled() {

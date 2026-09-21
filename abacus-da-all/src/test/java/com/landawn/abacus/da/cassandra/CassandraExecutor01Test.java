@@ -356,7 +356,8 @@ public class CassandraExecutor01Test extends TestBase {
 
     @Test
     public void testNullFunctionalInterfaceArguments() {
-        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toMap((Row) null, null));
+        assertThrows(NullPointerException.class, () -> CassandraExecutor.toMap((Row) null, null));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toMap(mock(Row.class), null));
         assertThrows(IllegalArgumentException.class, () -> executor.stream("SELECT * FROM test", (BiFunction<ColumnDefinitions, Row, Object>) null));
         assertThrows(IllegalArgumentException.class, () -> executor.stream((Statement<?>) null, (BiFunction<ColumnDefinitions, Row, Object>) null));
     }

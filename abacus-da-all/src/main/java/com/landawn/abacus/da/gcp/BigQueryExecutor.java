@@ -271,8 +271,8 @@ public class BigQueryExecutor {
      * @param namingPolicy the convention used when translating Java property names to BigQuery
      *                     column/table names; one of {@link NamingPolicy#SNAKE_CASE},
      *                     {@link NamingPolicy#SCREAMING_SNAKE_CASE} or {@link NamingPolicy#CAMEL_CASE}
-     * @throws IllegalArgumentException if {@code bigQuery} or {@code namingPolicy} is {@code null},
-     *         or if {@code namingPolicy} is not one of the three supported policies
+     * @throws IllegalArgumentException if {@code bigQuery} or {@code namingPolicy} is {@code null} , or if {@code namingPolicy} is not one of
+     *         the three supported policies
      * @see NamingPolicy
      */
     public BigQueryExecutor(final BigQuery bigQuery, final NamingPolicy namingPolicy) {
@@ -349,9 +349,8 @@ public class BigQueryExecutor {
      * @param fieldValueList the row to convert
      * @param targetClass the bean class to instantiate; must declare standard getter/setter methods
      * @return a new {@code targetClass} instance with properties populated from {@code fieldValueList}
-     * @throws IllegalArgumentException if {@code schema} or {@code fieldValueList} is {@code null},
-     *                                  the schema and row widths differ, or {@code targetClass} is
-     *                                  not a recognised bean class
+     * @throws IllegalArgumentException if {@code schema} or {@code fieldValueList} is {@code null} , the schema and row widths differ, or
+     *         {@code targetClass} is not a recognised bean class
      * @see #toEntity(FieldList, FieldValueList, Class)
      * @see #toEntity(FieldValueList, Class)
      */
@@ -397,17 +396,16 @@ public class BigQueryExecutor {
      * @param fieldValueList the row to convert; must not be {@code null}
      * @param targetClass the bean class to instantiate; must declare standard getter/setter methods
      * @return a new {@code targetClass} instance with properties populated from {@code fieldValueList}
-     * @throws IllegalArgumentException if {@code targetClass} is not a recognised bean class, if
-     *                                  {@code fields} or {@code fieldValueList} is {@code null}, or
-     *                                  if the number of fields differs from the number of row values
+     * @throws IllegalArgumentException if {@code fields} or {@code fieldValueList} is null, the field and row-value counts differ, or
+     *         {@code targetClass} is not a recognised bean class
      * @see #toEntity(Schema, FieldValueList, Class)
      * @see #toEntity(FieldValueList, Class)
      */
     public static <T> T toEntity(final FieldList fields, final FieldValueList fieldValueList, final Class<T> targetClass) {
-        N.checkArgument(Beans.isBeanClass(targetClass), "{} is not a valid entity class with getter/setter method", targetClass);
         N.checkArgNotNull(fields, "fields");
         N.checkArgNotNull(fieldValueList, "fieldValueList");
         checkFieldCount(fields, fieldValueList);
+        N.checkArgument(Beans.isBeanClass(targetClass), "{} is not a valid entity class with getter/setter method", targetClass);
 
         final Map<String, String> column2FieldNameMap = QueryUtil.columnToPropNameMap(targetClass);
         final BeanInfo entityInfo = ParserUtil.getBeanInfo(targetClass);
@@ -522,9 +520,8 @@ public class BigQueryExecutor {
      * @param fieldValueList the row to convert; must not be {@code null}
      * @param targetClass the bean class to instantiate; must declare standard getter/setter methods
      * @return a new {@code targetClass} instance with properties populated from {@code fieldValueList}
-     * @throws IllegalArgumentException if {@code fieldValueList} is {@code null}, if
-     *                                  {@code targetClass} is not a recognised bean class, or if
-     *                                  the schema cannot be retrieved from {@code fieldValueList}
+     * @throws IllegalArgumentException if {@code fieldValueList} is {@code null} , if {@code targetClass} is not a recognised bean class, or if
+     *         the schema cannot be retrieved from {@code fieldValueList}
      * @see #toEntity(FieldList, FieldValueList, Class)
      */
     public static <T> T toEntity(final FieldValueList fieldValueList, final Class<T> targetClass) {
@@ -560,8 +557,7 @@ public class BigQueryExecutor {
      * @param schema the schema describing {@code fieldValueList}; must not be {@code null}
      * @param fieldValueList the row to convert
      * @return a new {@code HashMap} with one entry per field in {@code schema}
-     * @throws IllegalArgumentException if {@code schema} or {@code fieldValueList} is {@code null},
-     *                                  or if the schema and row widths differ
+     * @throws IllegalArgumentException if {@code schema} or {@code fieldValueList} is {@code null} , or if the schema and row widths differ
      * @see #toMap(FieldList, FieldValueList)
      */
     public static Map<String, Object> toMap(final Schema schema, final FieldValueList fieldValueList) {
@@ -597,8 +593,7 @@ public class BigQueryExecutor {
      * @param fields the BigQuery field list defining field structure and names
      * @param fieldValueList the row data from BigQuery containing the values
      * @return a HashMap containing column names as keys and corresponding values
-     * @throws IllegalArgumentException if {@code fields} or {@code fieldValueList} is {@code null},
-     *                                  or if their sizes differ
+     * @throws IllegalArgumentException if {@code fields} or {@code fieldValueList} is {@code null} , or if their sizes differ
      * @see #toMap(FieldList, FieldValueList, IntFunction)
      */
     public static Map<String, Object> toMap(final FieldList fields, final FieldValueList fieldValueList) {
@@ -636,8 +631,10 @@ public class BigQueryExecutor {
      * @param mapSupplier creates the outer {@link Map} instance given the expected size; must not be
      *                    {@code null}
      * @return the map produced by {@code mapSupplier}, populated with one entry per field
-     * @throws IllegalArgumentException if any argument is {@code null}, or if the number of fields
-     *                                  differs from the number of row values
+     * @throws IllegalArgumentException if any argument is {@code null} , or if the number of fields differs from the number of row values *
+     *         @throws RuntimeException if {@code mapSupplier} throws while creating a result map
+    
+     * @throws NullPointerException if {@code mapSupplier} returns {@code null} and a row value must be inserted into that map
      * @see IntFunctions#ofMap()
      * @see IntFunctions#ofLinkedHashMap()
      */
@@ -720,8 +717,8 @@ public class BigQueryExecutor {
      *
      * @param fieldValueList the row data from BigQuery containing both schema and values
      * @return a HashMap containing column names as keys and corresponding values
-     * @throws IllegalArgumentException if {@code fieldValueList} is {@code null}, or if the schema
-     *                                  cannot be extracted from {@code fieldValueList}
+     * @throws IllegalArgumentException if {@code fieldValueList} is {@code null} , or if the schema cannot be extracted from
+     *         {@code fieldValueList}
      * @see #toMap(Schema, FieldValueList)
      * @see #toMap(FieldList, FieldValueList)
      */
@@ -756,9 +753,10 @@ public class BigQueryExecutor {
      * @param fieldValueList the row data from BigQuery containing both schema and values
      * @param mapSupplier a function that creates Map instances given the expected size
      * @return a Map of the mapSupplier's type containing column names as keys and corresponding values
-     * @throws IllegalArgumentException if {@code fieldValueList} or {@code mapSupplier} is
-     *                                  {@code null}, or if the schema cannot be extracted from
-     *                                  {@code fieldValueList}
+     * @throws IllegalArgumentException if {@code fieldValueList} or {@code mapSupplier} is {@code null} , or if the schema cannot be extracted
+     *         from {@code fieldValueList} * @throws RuntimeException if {@code mapSupplier} throws while creating a result map
+    
+     * @throws NullPointerException if {@code mapSupplier} returns {@code null} and a row value must be inserted into that map
      * @see #toMap(FieldList, FieldValueList, IntFunction)
      */
     public static Map<String, Object> toMap(final FieldValueList fieldValueList, final IntFunction<? extends Map<String, Object>> mapSupplier)
@@ -843,6 +841,14 @@ public class BigQueryExecutor {
                 private FieldList rowFields = fields;
                 private int fieldCount = fields == null ? 0 : fields.size();
 
+                /**
+                 * Converts one query row to the requested result type.
+                 *
+                 * @param row the query row to convert
+                 * @return the converted row
+                 * @throws RuntimeException if the row schema cannot be read or a column value cannot be stored in the target array component
+                 *         type
+                 */
                 @Override
                 public T apply(final FieldValueList row) throws RuntimeException {
                     if (rowFields == null) {
@@ -874,6 +880,14 @@ public class BigQueryExecutor {
                 private FieldList rowFields = fields;
                 private int fieldCount = fields == null ? 0 : fields.size();
 
+                /**
+                 * Converts one query row to the requested result type.
+                 *
+                 * @param row the query row to convert
+                 * @return the converted row
+                 * @throws RuntimeException if the row schema cannot be read, the collection type cannot be instantiated, or a nested value
+                 *         cannot be converted
+                 */
                 @Override
                 public T apply(final FieldValueList row) throws RuntimeException {
                     if (rowFields == null) {
@@ -904,6 +918,14 @@ public class BigQueryExecutor {
             mapper = new Function<>() {
                 private FieldList rowFields = fields;
 
+                /**
+                 * Converts one query row to the requested result type.
+                 *
+                 * @param row the query row to convert
+                 * @return the converted row
+                 * @throws RuntimeException if the row schema cannot be read, the target map cannot be instantiated, or an attribute cannot be
+                 *         converted
+                 */
                 @SuppressWarnings("rawtypes")
                 @Override
                 public T apply(final FieldValueList row) throws RuntimeException {
@@ -918,6 +940,14 @@ public class BigQueryExecutor {
             mapper = new Function<>() {
                 private FieldList rowFields = fields;
 
+                /**
+                 * Converts one query row to the requested result type.
+                 *
+                 * @param row the query row to convert
+                 * @return the converted row
+                 * @throws RuntimeException if the row schema cannot be read, its width differs from the schema, or a column cannot be assigned
+                 *         to its bean property
+                 */
                 @Override
                 public T apply(final FieldValueList row) throws RuntimeException {
                     if (rowFields == null) {
@@ -933,6 +963,14 @@ public class BigQueryExecutor {
                 private Class<?> valueClass = null;
                 int fieldCount = -1;
 
+                /**
+                 * Converts one query row to the requested result type.
+                 *
+                 * @param row the query row to convert
+                 * @return the converted row
+                 * @throws RuntimeException if the row does not contain exactly one column or its value cannot be converted to the requested
+                 *         scalar type
+                 */
                 @SuppressWarnings("null")
                 @Override
                 public T apply(final FieldValueList row) throws RuntimeException {
@@ -1010,9 +1048,9 @@ public class BigQueryExecutor {
      * @return a {@link List} containing one element per data row, sized to
      *         {@link TableResult#getTotalRows()}; an empty list if the result has no rows or no
      *         schema (e.g. a DML statement)
-     * @throws IllegalArgumentException if {@code tableResult} is {@code null}, or if
-     *                                  {@code targetClass} is incompatible with the row width
-     *                                  (see scalar case above)
+     * @throws IllegalArgumentException if {@code tableResult} is {@code null} , or if {@code targetClass} is incompatible with the row width
+     *         (see scalar case above)
+     * @throws ArithmeticException if the result has a schema and its reported row count exceeds {@link Integer#MAX_VALUE}
      * @see #toEntity(FieldValueList, Class)
      * @see #stream(Class, String, Object...)
      */
@@ -1086,6 +1124,7 @@ public class BigQueryExecutor {
      * @return a {@link RowDataset} backed by per-column lists, or {@link N#newEmptyDataset()} if
      *         {@code tableResult} has no schema (e.g. it came from a DML statement)
      * @throws IllegalArgumentException if {@code tableResult} is {@code null}
+     * @throws ArithmeticException if the result has a schema and its reported row count exceeds {@link Integer#MAX_VALUE}
      * @see RowDataset
      * @see #query(Class, String, Object...)
      */
@@ -1206,6 +1245,7 @@ public class BigQueryExecutor {
      * @param entity the entity instance to insert; the table name is resolved from its class via the configured naming policy
      * @return the TableResult containing execution statistics including number of rows affected
      * @throws IllegalArgumentException if entity is null
+     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
      * @see #insert(Class, Map)
      */
     public TableResult insert(final Object entity) {
@@ -1256,11 +1296,12 @@ public class BigQueryExecutor {
      * @param targetClass the class representing the target table (used for table name resolution)
      * @param props a Map containing column names as keys and values to insert
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if props is null or empty, or if targetClass is null
-     *                                  (rejected by the SQL builder)
+     * @throws IllegalArgumentException if {@code targetClass} is null, or {@code props} is null or empty
+     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
      * @see #insert(Object)
      */
     public TableResult insert(final Class<?> targetClass, final Map<String, Object> props) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgument(N.notEmpty(props), "props cannot be null or empty");
 
         final SP sp = prepareInsert(targetClass, props);
@@ -1318,9 +1359,9 @@ public class BigQueryExecutor {
      *               column to NULL explicitly, use {@link #update(Class, Map, Condition)} with a typed
      *               {@code QueryParameterValue}
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if entity is null, if no primary key fields are found for the
-     *         entity class, if a primary-key property of the entity has a null or blank value, or if
-     *         every non-key property of the entity is null (nothing to update)
+     * @throws IllegalArgumentException if entity is null, if no primary key fields are found for the entity class, if a primary-key property of
+     *         the entity has a null or blank value, or if every non-key property of the entity is null (nothing to update)
+     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
      * @see #update(Object, Set)
      */
     public TableResult update(final Object entity) {
@@ -1367,9 +1408,9 @@ public class BigQueryExecutor {
      *               {@code QueryParameterValue}
      * @param primaryKeyNames the set of property names to use as primary key fields in the WHERE clause
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if entity is null, if primaryKeyNames is null or empty, if a
-     *         named primary-key property of the entity has a null or blank value, or if every
-     *         non-key property of the entity is null (nothing to update)
+     * @throws IllegalArgumentException if entity is null, if primaryKeyNames is null or empty, if a named primary-key property of the entity has
+     *         a null or blank value, or if every non-key property of the entity is null (nothing to update)
+     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
      * @see #update(Class, Map, Condition)
      */
     public TableResult update(final Object entity, final Set<String> primaryKeyNames) {
@@ -1466,12 +1507,15 @@ public class BigQueryExecutor {
      *                    (a {@code null} condition is rejected by the SQL builder with
      *                    {@link IllegalArgumentException})
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if props is null or empty, if whereClause is {@code null}, or if
-     *                                  targetClass is null (the latter two are rejected by the SQL builder)
+     * @throws IllegalArgumentException if {@code targetClass} is null, {@code props} is null or empty, or {@code whereClause} is null
+     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
      * @see com.landawn.abacus.query.Filters
      */
     public TableResult update(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgument(N.notEmpty(props), "props cannot be null or empty");
+
+        N.checkArgNotNull(whereClause, "whereClause");
 
         final SP sp = prepareUpdate(targetClass, props, whereClause);
 
@@ -1524,6 +1568,7 @@ public class BigQueryExecutor {
      * @param entity the entity instance containing primary key values for deletion
      * @return the TableResult containing execution statistics including number of rows affected
      * @throws IllegalArgumentException if entity is null, if no primary key fields are defined, or if no key value is set on the entity
+     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
      * @see #delete(Class, Object...)
      */
     public TableResult delete(final Object entity) {
@@ -1561,8 +1606,9 @@ public class BigQueryExecutor {
      * @param targetClass the class representing the target table (used for table name and key resolution)
      * @param ids the primary key values to identify records for deletion
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if targetClass is null, if ids is null or empty,
-     *                                  or the number of IDs doesn't match the primary key structure
+     * @throws IllegalArgumentException if targetClass is null, if ids is null or empty, or the number of IDs doesn't match the primary key
+     *         structure
+     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
      * @see #delete(Class, Condition)
      */
     public final TableResult delete(final Class<?> targetClass, final Object... ids) {
@@ -1601,9 +1647,13 @@ public class BigQueryExecutor {
      *                    {@link IllegalArgumentException})
      * @return the TableResult containing execution statistics including number of rows affected
      * @throws IllegalArgumentException if targetClass is null, or if whereClause is {@code null}
+     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
      * @see com.landawn.abacus.query.Filters
      */
     public TableResult delete(final Class<?> targetClass, final Condition whereClause) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+        N.checkArgNotNull(whereClause, "whereClause");
+
         final SP sp = prepareDelete(targetClass, whereClause);
 
         return execute(sp);
@@ -1654,8 +1704,9 @@ public class BigQueryExecutor {
      * @param targetClass the class representing the target table (used for table name and key resolution)
      * @param ids the primary key values to check for existence
      * @return {@code true} if a record exists with the specified key values, {@code false} otherwise
-     * @throws IllegalArgumentException if targetClass is null, if ids is null or empty,
-     *                                  or the number of IDs doesn't match the primary key structure
+     * @throws IllegalArgumentException if targetClass is null, if ids is null or empty, or the number of IDs doesn't match the primary key
+     *         structure
+     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
      * @see #exists(Class, Condition)
      */
     public final boolean exists(final Class<?> targetClass, final Object... ids) {
@@ -1702,8 +1753,7 @@ public class BigQueryExecutor {
      * @param targetClass the class representing the target table (used for key name resolution), must not be {@code null}
      * @param ids the primary key values in order corresponding to the key fields, must not be {@code null} or empty
      * @return a Condition suitable for WHERE clauses
-     * @throws IllegalArgumentException if ids is null or empty, or if the number of IDs
-     *                                  doesn't match the primary key structure
+     * @throws IllegalArgumentException if ids is null or empty, or if the number of IDs doesn't match the primary key structure
      * @see #entityToCondition(Object)
      */
     static Condition idsToCondition(final Class<?> targetClass, final Object... ids) {
@@ -1824,8 +1874,9 @@ public class BigQueryExecutor {
      * @param targetClass the class representing the target table (used for table name resolution)
      * @param whereClause the condition to check for matching records, or {@code null} to check whether the table has any rows
      * @return {@code true} if at least one record matches the condition, {@code false} otherwise
-     * @throws IllegalArgumentException if targetClass is null. Without this check the key-name lookup
-     *         would fail with a bare {@code NullPointerException} from the internal cache map.
+     * @throws IllegalArgumentException if targetClass is null. Without this check the key-name lookup would fail with a bare
+     *         {@code NullPointerException} from the internal cache map.
+     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
      * @see com.landawn.abacus.query.Filters
      */
     public boolean exists(final Class<?> targetClass, final Condition whereClause) {
@@ -1874,10 +1925,8 @@ public class BigQueryExecutor {
      * @return a <i>present</i> {@code Nullable<V>} holding the column value (possibly {@code null} for
      *         a BigQuery {@code NULL}) when at least one row is returned; {@code Nullable.empty()} when
      *         the query returns no rows
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null} or otherwise rejected by
-     *         the SQL builder
-     * @throws RuntimeException if the underlying BigQuery query execution fails or the calling thread
-     *         is interrupted
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null} or otherwise rejected by the SQL builder
+     * @throws RuntimeException if the underlying BigQuery query execution fails or the calling thread is interrupted
      * @see #queryForSingleValue(Class, String, Object...)
      * @see #queryForSingleNonNull(Class, Class, String, Condition)
      * @see #execute(String, Object...)
@@ -1926,10 +1975,8 @@ public class BigQueryExecutor {
      * @return a <i>present</i> {@code Nullable<V>} holding the column value converted to
      *         {@code valueClass} (possibly {@code null} for a BigQuery {@code NULL}) when at least one
      *         row is returned; {@code Nullable.empty()} when the query returns no rows
-     * @throws IllegalArgumentException if {@code valueClass} or {@code query} is rejected by the
-     *         conversion / BigQuery client layer
-     * @throws RuntimeException if the underlying BigQuery query execution fails or the calling thread
-     *         is interrupted
+     * @throws IllegalArgumentException if {@code valueClass} or {@code query} is rejected by the conversion / BigQuery client layer
+     * @throws RuntimeException if the underlying BigQuery query execution fails or the calling thread is interrupted
      * @see #queryForSingleValue(Class, Class, String, Condition)
      * @see #queryForSingleNonNull(Class, String, Object...)
      * @see #execute(String, Object...)
@@ -1991,12 +2038,10 @@ public class BigQueryExecutor {
      * @param whereClause the condition to filter records, or {@code null} to omit the WHERE clause
      * @return a <i>present</i> {@code Optional<V>} holding the (non-null) column value when at least one
      *         row is returned with a non-null value; {@code Optional.empty()} when the query returns no rows
-     * @throws IllegalArgumentException if {@code targetClass} is {@code null} or otherwise rejected by
-     *         the SQL builder
-     * @throws NullPointerException if a row is returned but the column value (or its conversion) is
-     *         {@code null}, because {@link Optional#of(Object)} rejects a null payload
-     * @throws RuntimeException if the underlying BigQuery query execution fails or the calling thread
-     *         is interrupted
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null} or otherwise rejected by the SQL builder
+     * @throws NullPointerException if a row is returned but the column value (or its conversion) is {@code null} , because
+     *         {@link Optional#of(Object)} rejects a null payload
+     * @throws RuntimeException if the underlying BigQuery query execution fails or the calling thread is interrupted
      * @see #queryForSingleNonNull(Class, String, Object...)
      * @see #queryForSingleValue(Class, Class, String, Condition)
      * @see #execute(String, Object...)
@@ -2047,12 +2092,10 @@ public class BigQueryExecutor {
      * @return a <i>present</i> {@code Optional<V>} holding the (non-null) column value converted to
      *         {@code valueClass} when at least one row is returned with a non-null value;
      *         {@code Optional.empty()} when the query returns no rows
-     * @throws IllegalArgumentException if {@code valueClass} or {@code query} is rejected by the
-     *         conversion / BigQuery client layer
-     * @throws NullPointerException if a row is returned but the column value (or its conversion) is
-     *         {@code null}, because {@link Optional#of(Object)} rejects a null payload
-     * @throws RuntimeException if the underlying BigQuery query execution fails or the calling thread
-     *         is interrupted
+     * @throws IllegalArgumentException if {@code valueClass} or {@code query} is rejected by the conversion / BigQuery client layer
+     * @throws NullPointerException if a row is returned but the column value (or its conversion) is {@code null} , because
+     *         {@link Optional#of(Object)} rejects a null payload
+     * @throws RuntimeException if the underlying BigQuery query execution fails or the calling thread is interrupted
      * @see #queryForSingleNonNull(Class, Class, String, Condition)
      * @see #queryForSingleValue(Class, String, Object...)
      * @see #execute(String, Object...)
@@ -2100,6 +2143,8 @@ public class BigQueryExecutor {
      * @param whereClause the condition to filter records, or {@code null} to select all rows
      * @return a Dataset containing all matching records in columnar format
      * @throws IllegalArgumentException if targetClass is null
+     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
+     * @throws ArithmeticException if the result has a schema and its reported row count exceeds {@link Integer#MAX_VALUE}
      * @see #query(Class, Collection, Condition)
      * @see Dataset
      */
@@ -2136,6 +2181,8 @@ public class BigQueryExecutor {
      * @param whereClause the condition to filter records, or {@code null} to select all rows
      * @return a Dataset containing matching records for the selected columns in columnar format
      * @throws IllegalArgumentException if targetClass is null
+     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
+     * @throws ArithmeticException if the result has a schema and its reported row count exceeds {@link Integer#MAX_VALUE}
      * @see #query(Class, String, Object...)
      */
     public Dataset query(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause) {
@@ -2175,9 +2222,11 @@ public class BigQueryExecutor {
      * @param query the SQL query string with ? parameter placeholders
      * @param parameters the parameter values to bind to the query
      * @return a Dataset containing query results in columnar format
-     * @throws IllegalArgumentException if query is null or empty (rejected by the BigQuery client layer)
-     * @throws IllegalArgumentException if any positional parameter value is null (BigQuery requires
-     *         null parameters to be typed; pass a typed {@code QueryParameterValue} instead)
+     * @throws IllegalArgumentException if {@code query} is null or empty, or any positional parameter is an untyped null (wrap SQL nulls in a
+     *         typed {@code QueryParameterValue} )
+     * @throws RuntimeException if BigQuery rejects the SQL or query job, retrieving a result page fails, or the calling thread is interrupted
+     *         while waiting for the job
+     * @throws ArithmeticException if the result has a schema and its reported row count exceeds {@link Integer#MAX_VALUE}
      * @see #execute(String, Object...)
      * @see Dataset
      */
@@ -2219,6 +2268,8 @@ public class BigQueryExecutor {
      * @param whereClause the condition to filter records, or {@code null} to select all rows
      * @return a List containing all matching records converted to the target type, empty list if no matches
      * @throws IllegalArgumentException if targetClass is null
+     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
+     * @throws ArithmeticException if the result has a schema and its reported row count exceeds {@link Integer#MAX_VALUE}
      * @see com.landawn.abacus.query.Filters
      * @see #list(Class, Collection, Condition)
      */
@@ -2254,6 +2305,8 @@ public class BigQueryExecutor {
      * @param whereClause the condition to filter records, or {@code null} to select all rows
      * @return a List containing matching records for the selected columns converted to the target type
      * @throws IllegalArgumentException if targetClass is null
+     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
+     * @throws ArithmeticException if the result has a schema and its reported row count exceeds {@link Integer#MAX_VALUE}
      * @see com.landawn.abacus.query.Filters
      * @see #list(Class, String, Object...)
      */
@@ -2295,9 +2348,11 @@ public class BigQueryExecutor {
      * @param query the SQL query string with ? parameter placeholders
      * @param parameters the parameter values to bind to the query
      * @return a List containing all query results converted to the target type, empty list if no results
-     * @throws IllegalArgumentException if query is null or empty (rejected by the BigQuery client layer)
-     * @throws IllegalArgumentException if any positional parameter value is null (BigQuery requires
-     *         null parameters to be typed; pass a typed {@code QueryParameterValue} instead)
+     * @throws IllegalArgumentException if {@code query} is null or empty, or any positional parameter is an untyped null (wrap SQL nulls in a
+     *         typed {@code QueryParameterValue} )
+     * @throws RuntimeException if BigQuery rejects the SQL or query job, retrieving a result page fails, or the calling thread is interrupted
+     *         while waiting for the job
+     * @throws ArithmeticException if the result has a schema and its reported row count exceeds {@link Integer#MAX_VALUE}
      * @see #execute(String, Object...)
      * @see #toList(TableResult, Class)
      */
@@ -2337,8 +2392,9 @@ public class BigQueryExecutor {
      * @param <T> the target type for stream elements
      * @param targetClass the entity class used both to derive the table name and to map result rows
      * @param whereClause the condition to filter records, or {@code null} to select all rows
-     * @return a Stream containing all matching records converted to the target type
+     * @return a Stream containing all matching records converted to the target type; later page-fetch and row-conversion failures are raised during stream traversal
      * @throws IllegalArgumentException if targetClass is null
+     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
      * @see com.landawn.abacus.query.Filters
      * @see #stream(Class, Collection, Condition)
      */
@@ -2375,8 +2431,9 @@ public class BigQueryExecutor {
      * @param targetClass the entity class used both to derive the table name and to map result rows
      * @param selectPropNames the collection of property/column names to select, or null for all columns
      * @param whereClause the condition to filter records, or {@code null} to select all rows
-     * @return a Stream containing matching records for the selected columns converted to the target type
+     * @return a Stream containing matching records for the selected columns converted to the target type; later page-fetch and row-conversion failures are raised during stream traversal
      * @throws IllegalArgumentException if targetClass is null
+     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
      * @see com.landawn.abacus.query.Filters
      * @see #stream(Class, String, Object...)
      */
@@ -2418,10 +2475,10 @@ public class BigQueryExecutor {
      *                   or supported basic types)
      * @param query the SQL query string with ? parameter placeholders
      * @param parameters the parameter values to bind to the query
-     * @return a Stream containing all query results converted to the target type
-     * @throws IllegalArgumentException if query is null or empty (rejected by the BigQuery client layer)
-     * @throws IllegalArgumentException if any positional parameter value is null (BigQuery requires
-     *         null parameters to be typed; pass a typed {@code QueryParameterValue} instead)
+     * @return a Stream containing all query results converted to the target type; later page-fetch and row-conversion failures are raised during stream traversal
+     * @throws IllegalArgumentException if {@code query} is null or empty, or any positional parameter is an untyped null (wrap SQL nulls in a
+     *         typed {@code QueryParameterValue} )
+     * @throws RuntimeException if BigQuery rejects the SQL or query job, or the calling thread is interrupted while waiting for the job
      * @see #execute(String, Object...)
      * @see Stream
      */
@@ -2470,10 +2527,8 @@ public class BigQueryExecutor {
      * @param targetClass the target class for result conversion (entity class with getter/setter methods, Map.class,
      *                   or basic single value types)
      * @param queryConfig the BigQuery QueryJobConfiguration with query and job settings; must not be {@code null}
-     * @return a Stream containing all query results converted to the target type
-     * @throws IllegalArgumentException if {@code queryConfig} is {@code null}. The BigQuery client does not
-     *         check it, so an unchecked null would fail with a bare NullPointerException whose origin
-     *         depends on whether debug logging is enabled.
+     * @return a Stream containing all query results converted to the target type; later page-fetch and row-conversion failures are raised during stream traversal
+     * @throws IllegalArgumentException if {@code queryConfig} is {@code null}
      * @throws RuntimeException if the query job fails or the calling thread is interrupted
      * @see QueryJobConfiguration
      * @see #stream(QueryJobConfiguration)
@@ -2537,10 +2592,8 @@ public class BigQueryExecutor {
      * }</pre>
      *
      * @param queryConfig the BigQuery QueryJobConfiguration with query and job settings; must not be {@code null}
-     * @return a Stream containing raw FieldValueList objects from the query results
-     * @throws IllegalArgumentException if {@code queryConfig} is {@code null}. The BigQuery client does not
-     *         check it, so an unchecked null would fail with a bare NullPointerException whose origin
-     *         depends on whether debug logging is enabled.
+     * @return a Stream containing raw FieldValueList objects from the query results; later page-fetch and row-conversion failures are raised during stream traversal
+     * @throws IllegalArgumentException if {@code queryConfig} is {@code null}
      * @throws RuntimeException if the query job fails or the calling thread is interrupted
      * @see QueryJobConfiguration
      * @see FieldValueList
@@ -2600,20 +2653,20 @@ public class BigQueryExecutor {
      * @return the {@link TableResult} returned by BigQuery; for SELECT statements this contains the
      *         rows, for DML the affected-row count via {@link TableResult#getTotalRows()}, for DDL
      *         a result with no schema
-     * @throws IllegalArgumentException if {@code query} is null or empty (rejected by the BigQuery client layer)
-     * @throws IllegalArgumentException if any positional parameter value is null (BigQuery requires
-     *         null parameters to be typed; pass a typed {@code QueryParameterValue} instead)
-     * @throws RuntimeException if the underlying BigQuery call throws {@link JobException} or the
-     *                          calling thread is interrupted while waiting for the job
+     * @throws IllegalArgumentException if {@code query} is null or empty, or any positional parameter is an untyped null (wrap SQL nulls in a
+     *         typed {@code QueryParameterValue} )
+     * @throws RuntimeException if the underlying BigQuery call throws {@link JobException} or the calling thread is interrupted while waiting
+     *         for the job
      * @see #stream(Class, String, Object...)
      * @see #list(Class, String, Object...)
      */
     public final TableResult execute(final String query, final Object... parameters) {
+        N.checkArgument(Strings.isNotEmpty(query), "Provided query is null or empty");
+        final List<QueryParameterValue> values = buildQueryParameterValue(parameters);
+
         if (logger.isDebugEnabled()) {
             logger.debug("Executing query: {}", query);
         }
-
-        final List<QueryParameterValue> values = buildQueryParameterValue(parameters);
         final QueryJobConfiguration queryConfig = QueryJobConfiguration.newBuilder(query).setPositionalParameters(values).build();
 
         try {
@@ -2631,6 +2684,7 @@ public class BigQueryExecutor {
     }
 
     private SP prepareQuery(final Class<?> targetClass, final Collection<String> selectPropNames, final Condition whereClause, final int count) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
         final boolean isNonNullCond = whereClause != null;
         SqlBuilder sqlBuilder = null;
 
@@ -2760,8 +2814,7 @@ public class BigQueryExecutor {
      * @param parameters the values to convert; may be {@code null} or empty
      * @return a list of {@link QueryParameterValue}s in the same order as {@code parameters}, or
      *         {@link N#emptyList()} when {@code parameters} is {@code null} or empty
-     * @throws IllegalArgumentException if any element of {@code parameters} is {@code null} and not
-     *                                  already a {@link QueryParameterValue}
+     * @throws IllegalArgumentException if any element of {@code parameters} is {@code null} and not already a {@link QueryParameterValue}
      * @see QueryParameterValue
      * @see #execute(String, Object...)
      */
@@ -2770,13 +2823,15 @@ public class BigQueryExecutor {
             return N.emptyList();
         }
 
+        for (final Object param : parameters) {
+            N.checkArgument(param != null, "Null query parameters must be wrapped in QueryParameterValue so the SQL type is known");
+        }
+
         final List<QueryParameterValue> queryParameterValues = new ArrayList<>(parameters.length);
 
         for (final Object param : parameters) {
             if (param instanceof final QueryParameterValue qpv) {
                 queryParameterValues.add(qpv);
-            } else if (param == null) {
-                throw new IllegalArgumentException("Null query parameters must be wrapped in QueryParameterValue so the SQL type is known");
             } else {
                 queryParameterValues.add(queryParameterMap.getOrDefault(param.getClass(), defaultQueryParameterCreator).apply(param));
             }
@@ -2803,14 +2858,11 @@ public class BigQueryExecutor {
      *
      * @param fieldValueList the row whose schema to extract; must not be {@code null}
      * @return the {@link FieldList} describing the columns of {@code fieldValueList}
-     * @throws IllegalArgumentException if {@code fieldValueList} is {@code null}, or if the
-     *                                  reflective accessor was not available at class-init
-     *                                  time (e.g. on a future BigQuery client library version that
-     *                                  removes the {@code schema} field), or if the row has no
-     *                                  schema attached
-     * @throws RuntimeException if the accessor was available at class-init but became inaccessible
-     *                          at call time (the accessor is also disabled for subsequent calls in
-     *                          that case)
+     * @throws IllegalArgumentException if {@code fieldValueList} is {@code null} , or if the reflective accessor was not available at class-init
+     *         time (e.g. on a future BigQuery client library version that removes the {@code schema} field), or if the row has no schema
+     *         attached
+     * @throws RuntimeException if the accessor was available at class-init but became inaccessible at call time (the accessor is also disabled
+     *         for subsequent calls in that case)
      * @see FieldList
      * @see FieldValueList
      */

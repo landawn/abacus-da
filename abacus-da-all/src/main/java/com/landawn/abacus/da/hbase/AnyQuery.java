@@ -269,8 +269,7 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      *
      * @param perms a map of username to {@link Permission}; must not be {@code null}
      * @return this query instance, to allow fluent method chaining
-     * @throws NullPointerException if {@code perms} is {@code null} (raised by the wrapped
-     *         {@link Query#setACL(Map)} while iterating the map)
+     * @throws NullPointerException if {@code perms} , a username key, or a permission value is {@code null}
      * @see #getACL()
      * @see #setACL(String, Permission)
      * @see Permission
@@ -363,6 +362,7 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      *
      * @return the isolation level; defaults to {@link IsolationLevel#READ_COMMITTED} when none
      *         has been set explicitly
+     * @throws ArrayIndexOutOfBoundsException if the stored isolation-level attribute is empty or contains an invalid ordinal
      * @see #setIsolationLevel(IsolationLevel)
      * @see IsolationLevel
      */
