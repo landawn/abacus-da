@@ -306,9 +306,9 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * boolean empty = none.isEmpty();                      // returns true
      *
      * // Edge: a row exists but the column is SQL NULL -> Optional.of(null) throws NullPointerException.
-     * // The mapping runs inside get(), so get() throws the NullPointerException directly
-     * // (it is NOT wrapped in an ExecutionException).
-     * Optional<String> ignored = async.queryForSingleNonNull(String.class, "SELECT middle_name FROM users WHERE id = ?", 42).get(); // throws NullPointerException
+     * // The mapping runs inside get(), which reports the failure as an ExecutionException whose
+     * // cause is that NullPointerException.
+     * Optional<String> ignored = async.queryForSingleNonNull(String.class, "SELECT middle_name FROM users WHERE id = ?", 42).get(); // throws ExecutionException
      * }</pre>
      *
      * @param <V> the value type
@@ -317,7 +317,7 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * @param parameters the positional query parameters
      * @return a future that completes with an {@code Optional} of the non-null value, or empty
      *         if no row exists; if a row exists but the value is {@code null}, {@code get()} throws
-     *         a {@link NullPointerException} directly
+     *         an {@code ExecutionException} whose cause is a {@link NullPointerException}
      */
     @Override
     public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final Class<V> valueClass, final String query, final Object... parameters) {

@@ -14,6 +14,7 @@ import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import java.util.function.Function;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -832,7 +833,7 @@ public class CassandraExecutorBaseTest extends TestBase {
     }
 
     @Test
-    public void testAsyncFindFirst_nullMappedRow_throwsNullPointerException() throws Exception {
+    public void testAsyncFindFirst_nullMappedRow_throwsExecutionExceptionCausedByNPE() {
         final TestCassandraExecutor exec = new TestCassandraExecutor() {
             @SuppressWarnings("unchecked")
             @Override
@@ -840,7 +841,13 @@ public class CassandraExecutorBaseTest extends TestBase {
                 return row -> (T) null;
             }
         };
-        assertThrows(NullPointerException.class, () -> exec.async().findFirst(String.class, "SELECT name FROM t WHERE id = ?", 1L).get());
+
+        // The mapping runs inside ContinuableFuture.get(), which reports the Optional.of(null) failure
+        // as an ExecutionException wrapping the NullPointerException.
+        final ExecutionException ex = assertThrows(ExecutionException.class,
+                () -> exec.async().findFirst(String.class, "SELECT name FROM t WHERE id = ?", 1L).get());
+
+        assertTrue(ex.getCause() instanceof NullPointerException, String.valueOf(ex.getCause()));
     }
 
     // ---------------------------------------------------------------------
