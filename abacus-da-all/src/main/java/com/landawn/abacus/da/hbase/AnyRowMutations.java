@@ -139,8 +139,10 @@ public final class AnyRowMutations implements Row {
      * AnyRowMutations.of((Object) null);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param rowKey the row key shared by all mutations in this batch
+     * @param rowKey the row key shared by all mutations in this batch; must not be {@code null}
      * @return a new {@code AnyRowMutations} targeting {@code rowKey}
+     * @throws IllegalArgumentException if {@code rowKey} converts to a {@code null} or empty byte
+     *         array (rejected by the wrapped {@link RowMutations} constructor)
      */
     public static AnyRowMutations of(final Object rowKey) {
         return new AnyRowMutations(rowKey);
@@ -165,9 +167,11 @@ public final class AnyRowMutations implements Row {
      * AnyRowMutations.of((Object) null, 10); // throws IllegalArgumentException
      * }</pre>
      *
-     * @param rowKey the row key shared by all mutations in this batch
+     * @param rowKey the row key shared by all mutations in this batch; must not be {@code null}
      * @param initialCapacity the initial capacity for the internal mutation list
      * @return a new {@code AnyRowMutations} targeting {@code rowKey}
+     * @throws IllegalArgumentException if {@code rowKey} converts to a {@code null} or empty byte
+     *         array (rejected by the wrapped {@link RowMutations} constructor)
      */
     public static AnyRowMutations of(final Object rowKey, final int initialCapacity) {
         return new AnyRowMutations(rowKey, initialCapacity);
@@ -188,8 +192,11 @@ public final class AnyRowMutations implements Row {
      * AnyRowMutations.of((byte[]) null);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param rowKey the row key shared by all mutations in this batch, as a byte array
+     * @param rowKey the row key shared by all mutations in this batch, as a byte array; must not be
+     *               {@code null} or empty
      * @return a new {@code AnyRowMutations} targeting {@code rowKey}
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or empty (rejected by the
+     *         wrapped {@link RowMutations} constructor)
      */
     public static AnyRowMutations of(final byte[] rowKey) {
         return new AnyRowMutations(rowKey);
@@ -214,9 +221,12 @@ public final class AnyRowMutations implements Row {
      * AnyRowMutations.of((byte[]) null, 5); // throws IllegalArgumentException
      * }</pre>
      *
-     * @param rowKey the row key shared by all mutations in this batch, as a byte array
+     * @param rowKey the row key shared by all mutations in this batch, as a byte array; must not be
+     *               {@code null} or empty
      * @param initialCapacity the initial capacity for the internal mutation list
      * @return a new {@code AnyRowMutations} targeting {@code rowKey}
+     * @throws IllegalArgumentException if {@code rowKey} is {@code null} or empty (rejected by the
+     *         wrapped {@link RowMutations} constructor)
      */
     public static AnyRowMutations of(final byte[] rowKey, final int initialCapacity) {
         return new AnyRowMutations(rowKey, initialCapacity);

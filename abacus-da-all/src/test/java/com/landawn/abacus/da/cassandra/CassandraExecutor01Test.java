@@ -678,6 +678,21 @@ public class CassandraExecutor01Test extends TestBase {
     }
 
     @Test
+    public void testRowMappingTargetClassIsRejectedAsAnIllegalArgument() {
+        // The target/value class is consumed by the abacus row-mapping layer, not by the driver,
+        // so a null is rejected up front rather than surfacing as an NPE (or a silent Object[] mapping)
+        // once a row is read.
+        assertThrows(IllegalArgumentException.class, () -> executor.findFirst((Class<Object>) null, "SELECT name FROM test"));
+        assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleValue((Class<Object>) null, "SELECT name FROM test"));
+        assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleNonNull((Class<Object>) null, "SELECT name FROM test"));
+        assertThrows(IllegalArgumentException.class, () -> executor.list((Class<Object>) null, "SELECT name FROM test"));
+        assertThrows(IllegalArgumentException.class, () -> executor.stream((Class<Object>) null, "SELECT name FROM test"));
+
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toList(mockResultSet, (Class<Object>) null));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toEntity(mockRow, (Class<Object>) null));
+    }
+
+    @Test
     public void testStatementSettings() {
         // Test StatementSettings builder
         StatementSettings settings = StatementSettings.builder()

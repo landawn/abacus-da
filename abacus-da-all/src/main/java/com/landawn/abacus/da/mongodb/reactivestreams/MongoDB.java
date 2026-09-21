@@ -19,6 +19,7 @@ import org.bson.Document;
 import com.landawn.abacus.da.mongodb.MongoDBBase;
 import com.landawn.abacus.util.ClassUtil;
 import com.landawn.abacus.util.N;
+import com.landawn.abacus.util.cs;
 import com.mongodb.reactivestreams.client.MongoCollection;
 import com.mongodb.reactivestreams.client.MongoDatabase;
 
@@ -252,7 +253,7 @@ public final class MongoDB extends MongoDBBase {
      */
     public <T> MongoCollection<T> collection(final String collectionName, final Class<T> rowType) {
         N.checkArgNotNull(collectionName, "collectionName");
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return mongoDatabase.getCollection(collectionName, rowType);
     }
@@ -331,7 +332,7 @@ public final class MongoDB extends MongoDBBase {
      * @see com.mongodb.reactivestreams.client.MongoCollection
      */
     public MongoCollectionExecutor collectionExecutor(final MongoCollection<Document> collection) {
-        N.checkArgNotNull(collection, "collection");
+        N.checkArgNotNull(collection, cs.collection);
 
         return new MongoCollectionExecutor(collection);
     }
@@ -370,7 +371,7 @@ public final class MongoDB extends MongoDBBase {
      * @see org.reactivestreams.Publisher
      */
     public <T> MongoCollectionMapper<T> collectionMapper(final Class<T> rowType) {
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return collectionMapper(ClassUtil.getSimpleClassName(rowType), rowType);
     }
@@ -416,7 +417,7 @@ public final class MongoDB extends MongoDBBase {
     @SuppressWarnings("rawtypes")
     public <T> MongoCollectionMapper<T> collectionMapper(final String collectionName, final Class<T> rowType) {
         N.checkArgNotNull(collectionName, "collectionName");
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return new MongoCollectionMapper(collectionExecutor(collectionName), rowType);
     }
@@ -461,8 +462,8 @@ public final class MongoDB extends MongoDBBase {
      */
     @SuppressWarnings("rawtypes")
     public <T> MongoCollectionMapper<T> collectionMapper(final MongoCollection<Document> collection, final Class<T> rowType) {
-        N.checkArgNotNull(collection, "collection");
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(collection, cs.collection);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return new MongoCollectionMapper(collectionExecutor(collection), rowType);
     }

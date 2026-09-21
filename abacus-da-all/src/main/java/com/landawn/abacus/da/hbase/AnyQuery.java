@@ -191,10 +191,15 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * // User has PUBLIC and INTERNAL clearance
      * Authorizations auths = new Authorizations("PUBLIC", "INTERNAL");
      * query.setAuthorizations(auths);
+     *
+     * // Edge: a null value is rejected by the underlying HBase client.
+     * query.setAuthorizations(null);   // throws NullPointerException
      * }</pre>
      *
-     * @param authorizations the {@link Authorizations} to apply
+     * @param authorizations the {@link Authorizations} to apply; must not be {@code null}
      * @return this query instance, to allow fluent method chaining
+     * @throws NullPointerException if {@code authorizations} is {@code null} (raised by the wrapped
+     *         {@link Query#setAuthorizations(Authorizations)} while serializing the labels)
      * @see #getAuthorizations()
      * @see Authorizations
      */
@@ -226,11 +231,17 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * <pre>{@code
      * // Grant read permission to a specific user
      * query.setACL("alice", new Permission(Permission.Action.READ));
+     *
+     * // Edge: neither argument may be null.
+     * query.setACL(null, new Permission(Permission.Action.READ));   // throws NullPointerException
+     * query.setACL("alice", (Permission) null);                     // throws NullPointerException
      * }</pre>
      *
-     * @param user the username to grant permissions to
-     * @param perms the {@link Permission} defining the allowed actions
+     * @param user the username to grant permissions to; must not be {@code null}
+     * @param perms the {@link Permission} defining the allowed actions; must not be {@code null}
      * @return this query instance, to allow fluent method chaining
+     * @throws NullPointerException if {@code user} or {@code perms} is {@code null} (raised by the
+     *         wrapped {@link Query#setACL(String, Permission)} while serializing the ACL)
      * @see #getACL()
      * @see #setACL(Map)
      * @see Permission
@@ -251,10 +262,15 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      * acl.put("alice", new Permission(Permission.Action.READ));
      * acl.put("bob", new Permission(Permission.Action.READ));
      * query.setACL(acl);
+     *
+     * // Edge: a null map is rejected by the underlying HBase client.
+     * query.setACL((Map<String, Permission>) null);   // throws NullPointerException
      * }</pre>
      *
-     * @param perms a map of username to {@link Permission}
+     * @param perms a map of username to {@link Permission}; must not be {@code null}
      * @return this query instance, to allow fluent method chaining
+     * @throws NullPointerException if {@code perms} is {@code null} (raised by the wrapped
+     *         {@link Query#setACL(Map)} while iterating the map)
      * @see #getACL()
      * @see #setACL(String, Permission)
      * @see Permission
@@ -363,8 +379,10 @@ abstract class AnyQuery<AQ extends AnyQuery<AQ>> extends AnyOperationWithAttribu
      *     a state that a committed read would not yet observe.</li>
      * </ul>
      *
-     * @param level the isolation level to apply
+     * @param level the isolation level to apply; must not be {@code null}
      * @return this query instance, to allow fluent method chaining
+     * @throws NullPointerException if {@code level} is {@code null} (raised by the wrapped
+     *         {@link Query#setIsolationLevel(IsolationLevel)} while encoding the level)
      * @see #getIsolationLevel()
      * @see IsolationLevel
      */

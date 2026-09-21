@@ -30,6 +30,7 @@ import com.landawn.abacus.query.condition.Condition;
 import com.landawn.abacus.util.ContinuableFuture;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.N;
+import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.u.OptionalBoolean;
@@ -571,7 +572,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         no key, or if a key value is missing (thrown synchronously at the call site)
      */
     public ContinuableFuture<RS> update(final Object entity) {
-        N.checkArgNotNull(entity, "entity");
+        N.checkArgNotNull(entity, cs.entity);
 
         final Class<?> entityClass = entity.getClass();
         final Set<String> keyNameSet = getKeyNameSet(entityClass);
@@ -892,7 +893,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      *         missing (thrown synchronously at the call site)
      */
     public ContinuableFuture<RS> delete(final Object entity, final Collection<String> propNamesToDelete) {
-        N.checkArgNotNull(entity, "entity");
+        N.checkArgNotNull(entity, cs.entity);
         N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be empty (pass null to delete the entire row)");
 
         return delete(entity.getClass(), propNamesToDelete, CassandraExecutorBase.entityToCondition(entity));
@@ -1400,12 +1401,16 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }</pre>
      *
      * @param <T> the row type
-     * @param targetClass the type each row should be mapped to
+     * @param targetClass the type each row should be mapped to (must not be {@code null})
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
      * @return a future whose payload is a {@link List} of mapped rows (empty if no row matches)
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}; rejected eagerly on the
+     *         calling thread, because the row mapping runs on the future's completion thread
      */
     public final <T> ContinuableFuture<List<T>> list(final Class<T> targetClass, final String query, final Object... parameters) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         return execute(query, parameters).map(resultSet -> cassandraExecutor.toList(targetClass, resultSet));
     }
 
@@ -1657,12 +1662,16 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }</pre>
      *
      * @param <T> the row type
-     * @param targetClass the type each row should be mapped to
+     * @param targetClass the type each row should be mapped to (must not be {@code null})
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
      * @return a future whose payload is a {@link Stream} of mapped rows
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}; rejected eagerly on the
+     *         calling thread, because the row mapping runs on the future's completion thread
      */
     public final <T> ContinuableFuture<Stream<T>> stream(final Class<T> targetClass, final String query, final Object... parameters) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         return execute(query, parameters).map(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(targetClass)));
     }
 
@@ -1692,11 +1701,15 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }</pre>
      *
      * @param <T> the row type
-     * @param targetClass the type each row should be mapped to
+     * @param targetClass the type each row should be mapped to (must not be {@code null})
      * @param statement the driver statement to execute
      * @return a future whose payload is a {@link Stream} of mapped rows
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}; rejected eagerly on the
+     *         calling thread, because the row mapping runs on the future's completion thread
      */
     public <T> ContinuableFuture<Stream<T>> stream(final Class<T> targetClass, final ST statement) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         return execute(statement).map(resultSet -> Stream.of(resultSet.iterator()).map(cassandraExecutor.createRowMapper(targetClass)));
     }
 
@@ -1827,13 +1840,17 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }</pre>
      *
      * @param <T> the row type
-     * @param targetClass the type the first row should be mapped to
+     * @param targetClass the type the first row should be mapped to (must not be {@code null})
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
      * @return a future whose payload is an {@link Optional} containing the mapped first row, or
      *         empty if the query returned no row
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}; rejected eagerly on the
+     *         calling thread, because the row mapping runs on the future's completion thread
      */
     public <T> ContinuableFuture<Optional<T>> findFirst(final Class<T> targetClass, final String query, final Object... parameters) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         return execute(query, parameters).map(resultSet -> {
             final java.util.Iterator<RW> iter = resultSet.iterator();
 
@@ -2284,7 +2301,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      */
     public <V> ContinuableFuture<Nullable<V>> queryForSingleValue(final Class<?> targetClass, final Class<V> valueClass, final String propName,
             final Condition whereClause) {
-        N.checkArgNotEmpty(propName, "propName");
+        N.checkArgNotEmpty(propName, cs.propName);
 
         final SP cp = cassandraExecutor.prepareQuery(targetClass, List.of(propName), whereClause, 1);
 
@@ -2332,7 +2349,7 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      */
     public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final Class<?> targetClass, final Class<V> valueClass, final String propName,
             final Condition whereClause) {
-        N.checkArgNotEmpty(propName, "propName");
+        N.checkArgNotEmpty(propName, cs.propName);
 
         final SP cp = cassandraExecutor.prepareQuery(targetClass, List.of(propName), whereClause, 1);
 
@@ -2729,13 +2746,17 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }</pre>
      *
      * @param <V> the column-value type
-     * @param valueClass the type to convert the column value to
+     * @param valueClass the type to convert the column value to (must not be {@code null})
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
      * @return a future whose payload is a {@link Nullable} holding the value, or empty if the
      *         query returned no row; the value is {@code null} when the column is SQL NULL
+     * @throws IllegalArgumentException if {@code valueClass} is {@code null}; rejected eagerly on the
+     *         calling thread, because the conversion runs on the future's completion thread
      */
     public <V> ContinuableFuture<Nullable<V>> queryForSingleValue(final Class<V> valueClass, final String query, final Object... parameters) {
+        N.checkArgNotNull(valueClass, "valueClass");
+
         return execute(query, parameters).map(resultSet -> {
             final java.util.Iterator<RW> iter = resultSet.iterator();
 
@@ -2771,15 +2792,19 @@ public abstract class AsyncCassandraExecutorBase<RW, RS extends Iterable<RW>, ST
      * }</pre>
      *
      * @param <V> the column-value type
-     * @param valueClass the type to convert the column value to
+     * @param valueClass the type to convert the column value to (must not be {@code null})
      * @param query the parameterized CQL SELECT statement
      * @param parameters the parameter values to bind
      * @return a future whose payload is an {@link Optional} holding the value, or empty if the
      *         query returned no row; if a row was returned but the column value is {@code null},
      *         {@code get()} throws an {@code ExecutionException} whose cause is a
      *         {@link NullPointerException}, since {@link Optional} cannot hold {@code null}
+     * @throws IllegalArgumentException if {@code valueClass} is {@code null}; rejected eagerly on the
+     *         calling thread, because the conversion runs on the future's completion thread
      */
     public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final Class<V> valueClass, final String query, final Object... parameters) {
+        N.checkArgNotNull(valueClass, "valueClass");
+
         return execute(query, parameters).map(resultSet -> {
             final java.util.Iterator<RW> iter = resultSet.iterator();
 

@@ -16,6 +16,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.Arrays;
@@ -518,5 +519,35 @@ public class AsyncHBaseExecutorTest extends TestBase {
         } finally {
             executor.close();
         }
+    }
+
+    // ---------------------------------------------------------------------
+    // Null arguments are rejected eagerly on the calling thread, so the failure
+    // is an IllegalArgumentException here and never an ExecutionException later.
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void testNullArgs_rejectedEagerlyOnCallingThread() {
+        HBaseExecutor sync = mock(HBaseExecutor.class);
+        AsyncHBaseExecutor async = newAsync(sync);
+
+        assertThrows(IllegalArgumentException.class, () -> async.exists("tbl", (AnyGet) null));
+        assertThrows(IllegalArgumentException.class, () -> async.exists("tbl", (Collection<AnyGet>) null));
+        assertThrows(IllegalArgumentException.class, () -> async.get("tbl", (AnyGet) null));
+        assertThrows(IllegalArgumentException.class, () -> async.get("tbl", (Collection<AnyGet>) null));
+        assertThrows(IllegalArgumentException.class, () -> async.get("tbl", AnyGet.of("k"), (Class<Object>) null));
+        assertThrows(IllegalArgumentException.class, () -> async.put("tbl", (AnyPut) null));
+        assertThrows(IllegalArgumentException.class, () -> async.put("tbl", (Collection<AnyPut>) null));
+        assertThrows(IllegalArgumentException.class, () -> async.delete("tbl", (AnyDelete) null));
+        assertThrows(IllegalArgumentException.class, () -> async.delete("tbl", (Collection<AnyDelete>) null));
+        assertThrows(IllegalArgumentException.class, () -> async.mutateRow("tbl", (AnyRowMutations) null));
+        assertThrows(IllegalArgumentException.class, () -> async.append("tbl", (AnyAppend) null));
+        assertThrows(IllegalArgumentException.class, () -> async.increment("tbl", (AnyIncrement) null));
+        assertThrows(IllegalArgumentException.class, () -> async.scan("tbl", (AnyScan) null));
+        assertThrows(IllegalArgumentException.class, () -> async.scan(null, AnyScan.create()));
+        assertThrows(IllegalArgumentException.class, () -> async.scan("tbl", "info", (Class<Object>) null));
+
+        // nothing was ever dispatched to the synchronous executor
+        verifyNoInteractions(sync);
     }
 }

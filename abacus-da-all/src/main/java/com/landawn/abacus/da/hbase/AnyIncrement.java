@@ -394,10 +394,14 @@ public final class AnyIncrement extends AnyMutation<AnyIncrement> {
      * AnyIncrement.of("row1").add(badCell);    // throws IOException
      * }</pre>
      *
-     * @param cell the {@link Cell} to add
+     * @param cell the {@link Cell} to add; must not be {@code null}
      * @return this AnyIncrement instance, to allow fluent method chaining
-     * @throws IOException if the cell's row key does not match this increment's row key
      * @throws IllegalArgumentException if the cell's family is null or empty
+     * @throws NullPointerException if {@code cell} is {@code null} (this method is a straight
+     *         delegation to {@link Increment#add(Cell)}, which dereferences the cell immediately;
+     *         {@link AnyAppend#add(Cell)} differs and reports a {@code null} cell as an
+     *         {@code IllegalArgumentException} because it inspects the cell itself)
+     * @throws IOException if the cell's row key does not match this increment's row key
      * @see Cell
      * @see #addColumn(String, String, long)
      */

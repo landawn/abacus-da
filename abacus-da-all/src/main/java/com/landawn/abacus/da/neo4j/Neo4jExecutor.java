@@ -86,6 +86,26 @@ import com.landawn.abacus.util.u.Optional;
  * is already released, these streams hold no resource — closing them is optional and merely
  * conventional.</p>
  *
+ * <h2>Null Arguments</h2>
+ * <p>This executor is a pass-through facade. Apart from the {@link SessionFactory} handed to the
+ * constructor and the {@code action} callback of {@link #run(Consumer)} / {@link #call(Function)}
+ * &mdash; both rejected with an {@link IllegalArgumentException} &mdash; arguments are forwarded
+ * unvalidated to the OGM {@link Session}, so a {@code null} is reported by whatever that session
+ * does with it. With Neo4j-OGM 5.x that is:</p>
+ * <ul>
+ *   <li>a {@link NullPointerException} for a {@code null} entity class, saved/deleted
+ *       {@code object}, {@code ids} collection, single {@link Filter}, {@code filters} argument of
+ *       {@link #count(Class, Iterable)}, or the {@code sortOrder} of an {@code ids}/{@code objects}
+ *       overload;</li>
+ *   <li>a plain {@link RuntimeException} &mdash; <i>not</i> an {@link IllegalArgumentException}
+ *       &mdash; for a {@code null} {@code cypher}, {@code parameters} map, or query target
+ *       class;</li>
+ *   <li>silently accepted, with the meaning documented on that parameter, for a {@code null}
+ *       {@link Filters} (no filtering, so <i>every</i> node of the type is loaded),
+ *       {@link Pagination} (no paging), {@code objects} collection (returned as-is) or
+ *       {@code possibleEntity} in {@link #getGraphId(Object)} ({@code null} is returned).</li>
+ * </ul>
+ *
  * <p><b>Usage Examples:</b></p>
  * <pre>{@code
  * // Initialize executor (the Bolt driver must also be present at runtime)
@@ -512,7 +532,7 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type
      * @param ids primary-index values, or native graph IDs for a class without a primary index
-     * @param sortOrder the sort order specification for results
+     * @param sortOrder the sort order specification for results; must not be {@code null}
      * @return collection of loaded node entities sorted as specified, may be empty if no nodes found
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Collection, SortOrder, int)
@@ -551,7 +571,7 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type
      * @param ids primary-index values, or native graph IDs for a class without a primary index
-     * @param sortOrder the sort order specification for results
+     * @param sortOrder the sort order specification for results; must not be {@code null}
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of loaded node entities with relationships, sorted as specified
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -591,7 +611,8 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type
      * @param ids primary-index values, or native graph IDs for a class without a primary index
-     * @param pagination pagination settings (page number and size, or an explicit offset)
+     * @param pagination pagination settings (page number and size, or an explicit offset); may be
+     *                   {@code null} for no pagination
      * @return collection of loaded node entities for the specified page, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Collection, Pagination, int)
@@ -630,7 +651,8 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type
      * @param ids primary-index values, or native graph IDs for a class without a primary index
-     * @param pagination pagination settings (page number and size, or an explicit offset)
+     * @param pagination pagination settings (page number and size, or an explicit offset); may be
+     *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of loaded node entities with relationships for the specified page
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -671,8 +693,9 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type
      * @param ids primary-index values, or native graph IDs for a class without a primary index
-     * @param sortOrder the sort order specification for results
-     * @param pagination pagination settings (page number and size, or an explicit offset)
+     * @param sortOrder the sort order specification for results; must not be {@code null}
+     * @param pagination pagination settings (page number and size, or an explicit offset); may be
+     *                   {@code null} for no pagination
      * @return collection of loaded, sorted node entities for the specified page
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Collection, SortOrder, Pagination, int)
@@ -716,8 +739,9 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type
      * @param ids primary-index values, or native graph IDs for a class without a primary index
-     * @param sortOrder the sort order specification for results
-     * @param pagination pagination settings (page number and size, or an explicit offset)
+     * @param sortOrder the sort order specification for results; must not be {@code null}
+     * @param pagination pagination settings (page number and size, or an explicit offset); may be
+     *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of loaded, sorted node entities with relationships for the specified page
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -756,7 +780,8 @@ public final class Neo4jExecutor {
      * }</pre>
      *
      * @param <T> the node type
-     * @param objects collection of node entities to reload
+     * @param objects collection of node entities to reload; may be {@code null} or empty, in which
+     *                case it is returned unchanged without a database round-trip
      * @return collection of reloaded node entities with current database state
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Collection, int)
@@ -792,7 +817,8 @@ public final class Neo4jExecutor {
      * }</pre>
      *
      * @param <T> the node type
-     * @param objects collection of node entities to reload
+     * @param objects collection of node entities to reload; may be {@code null} or empty, in which
+     *                case it is returned unchanged without a database round-trip
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of reloaded node entities with relationships and current database state
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -832,8 +858,9 @@ public final class Neo4jExecutor {
      * }</pre>
      *
      * @param <T> the node type
-     * @param objects collection of node entities to reload
-     * @param sortOrder the sort order specification for results
+     * @param objects collection of node entities to reload; may be {@code null} or empty, in which
+     *                case it is returned unchanged without a database round-trip
+     * @param sortOrder the sort order specification for results; must not be {@code null}
      * @return collection of reloaded, sorted node entities with current database state
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Collection, SortOrder, int)
@@ -871,8 +898,9 @@ public final class Neo4jExecutor {
      * }</pre>
      *
      * @param <T> the node type
-     * @param objects collection of node entities to reload
-     * @param sortOrder the sort order specification for results
+     * @param objects collection of node entities to reload; may be {@code null} or empty, in which
+     *                case it is returned unchanged without a database round-trip
+     * @param sortOrder the sort order specification for results; must not be {@code null}
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of reloaded, sorted node entities with relationships
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -912,8 +940,10 @@ public final class Neo4jExecutor {
      * }</pre>
      *
      * @param <T> the node type
-     * @param objects collection of node entities to reload
-     * @param pagination pagination settings (page number and size, or an explicit offset)
+     * @param objects collection of node entities to reload; may be {@code null} or empty, in which
+     *                case it is returned unchanged without a database round-trip
+     * @param pagination pagination settings (page number and size, or an explicit offset); may be
+     *                   {@code null} for no pagination
      * @return paginated collection of reloaded node entities with current database state
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Collection, Pagination, int)
@@ -951,8 +981,10 @@ public final class Neo4jExecutor {
      * }</pre>
      *
      * @param <T> the node type
-     * @param objects collection of node entities to reload
-     * @param pagination pagination settings (page number and size, or an explicit offset)
+     * @param objects collection of node entities to reload; may be {@code null} or empty, in which
+     *                case it is returned unchanged without a database round-trip
+     * @param pagination pagination settings (page number and size, or an explicit offset); may be
+     *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of reloaded node entities with relationships
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -993,9 +1025,11 @@ public final class Neo4jExecutor {
      * }</pre>
      *
      * @param <T> the node type
-     * @param objects collection of node entities to reload
-     * @param sortOrder the sort order specification for results
-     * @param pagination pagination settings (page number and size, or an explicit offset)
+     * @param objects collection of node entities to reload; may be {@code null} or empty, in which
+     *                case it is returned unchanged without a database round-trip
+     * @param sortOrder the sort order specification for results; must not be {@code null}
+     * @param pagination pagination settings (page number and size, or an explicit offset); may be
+     *                   {@code null} for no pagination
      * @return paginated collection of reloaded, sorted node entities
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Collection, SortOrder, Pagination, int)
@@ -1036,9 +1070,11 @@ public final class Neo4jExecutor {
      * }</pre>
      *
      * @param <T> the node type
-     * @param objects collection of node entities to reload
-     * @param sortOrder the sort order specification for results
-     * @param pagination pagination settings (page number and size, or an explicit offset)
+     * @param objects collection of node entities to reload; may be {@code null} or empty, in which
+     *                case it is returned unchanged without a database round-trip
+     * @param sortOrder the sort order specification for results; must not be {@code null}
+     * @param pagination pagination settings (page number and size, or an explicit offset); may be
+     *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of reloaded, sorted node entities with relationships
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -1225,7 +1261,8 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param pagination pagination settings (page number and size, or an explicit offset)
+     * @param pagination pagination settings (page number and size, or an explicit offset); may be
+     *                   {@code null} for no pagination
      * @return paginated collection of nodes of the specified type, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Pagination, int)
@@ -1260,7 +1297,8 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param pagination pagination settings (page number and size, or an explicit offset)
+     * @param pagination pagination settings (page number and size, or an explicit offset); may be
+     *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of nodes with relationships, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -1299,7 +1337,8 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param sortOrder the sort order specification for results
-     * @param pagination pagination settings (page number and size, or an explicit offset)
+     * @param pagination pagination settings (page number and size, or an explicit offset); may be
+     *                   {@code null} for no pagination
      * @return paginated collection of sorted nodes of the specified type, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, SortOrder, Pagination, int)
@@ -1338,7 +1377,8 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param sortOrder the sort order specification for results
-     * @param pagination pagination settings (page number and size, or an explicit offset)
+     * @param pagination pagination settings (page number and size, or an explicit offset); may be
+     *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of sorted nodes with relationships, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -1534,7 +1574,8 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filter the filter criteria to apply when loading nodes
-     * @param pagination pagination settings (page number and size, or an explicit offset)
+     * @param pagination pagination settings (page number and size, or an explicit offset); may be
+     *                   {@code null} for no pagination
      * @return paginated collection of filtered nodes, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filter, Pagination, int)
@@ -1572,7 +1613,8 @@ public final class Neo4jExecutor {
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
      * @param filter the filter criteria to apply when loading nodes
-     * @param pagination pagination settings (page number and size, or an explicit offset)
+     * @param pagination pagination settings (page number and size, or an explicit offset); may be
+     *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of filtered nodes with relationships, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -1615,7 +1657,8 @@ public final class Neo4jExecutor {
      * @param targetClass the class representing the node type to load
      * @param filter the filter criteria to apply when loading nodes
      * @param sortOrder the sort order specification for results
-     * @param pagination pagination settings (page number and size, or an explicit offset)
+     * @param pagination pagination settings (page number and size, or an explicit offset); may be
+     *                   {@code null} for no pagination
      * @return paginated collection of filtered, sorted nodes, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filter, SortOrder, Pagination, int)
@@ -1657,7 +1700,8 @@ public final class Neo4jExecutor {
      * @param targetClass the class representing the node type to load
      * @param filter the filter criteria to apply when loading nodes
      * @param sortOrder the sort order specification for results
-     * @param pagination pagination settings (page number and size, or an explicit offset)
+     * @param pagination pagination settings (page number and size, or an explicit offset); may be
+     *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of filtered, sorted nodes with relationships, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -1701,7 +1745,8 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param filters the multiple filter criteria to apply when loading nodes
+     * @param filters the multiple filter criteria to apply when loading nodes; may be {@code null}
+     *                or empty, in which case every node of {@code targetClass} is loaded
      * @return collection of entities matching the combined filter expression, possibly empty
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filters, int)
@@ -1740,7 +1785,8 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param filters the multiple filter criteria to apply when loading nodes
+     * @param filters the multiple filter criteria to apply when loading nodes; may be {@code null}
+     *                or empty, in which case every node of {@code targetClass} is loaded
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of filtered nodes with relationships, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -1782,7 +1828,8 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param filters the multiple filter criteria to apply when loading nodes
+     * @param filters the multiple filter criteria to apply when loading nodes; may be {@code null}
+     *                or empty, in which case every node of {@code targetClass} is loaded
      * @param sortOrder the sort order specification for results
      * @return collection of filtered, sorted nodes, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -1823,7 +1870,8 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param filters the multiple filter criteria to apply when loading nodes
+     * @param filters the multiple filter criteria to apply when loading nodes; may be {@code null}
+     *                or empty, in which case every node of {@code targetClass} is loaded
      * @param sortOrder the sort order specification for results
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return collection of filtered, sorted nodes with relationships, may be empty
@@ -1864,8 +1912,10 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param filters the multiple filter criteria to apply when loading nodes
-     * @param pagination pagination settings (page number and size, or an explicit offset)
+     * @param filters the multiple filter criteria to apply when loading nodes; may be {@code null}
+     *                or empty, in which case every node of {@code targetClass} is loaded
+     * @param pagination pagination settings (page number and size, or an explicit offset); may be
+     *                   {@code null} for no pagination
      * @return paginated collection of filtered nodes, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filters, Pagination, int)
@@ -1903,8 +1953,10 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param filters the multiple filter criteria to apply when loading nodes
-     * @param pagination pagination settings (page number and size, or an explicit offset)
+     * @param filters the multiple filter criteria to apply when loading nodes; may be {@code null}
+     *                or empty, in which case every node of {@code targetClass} is loaded
+     * @param pagination pagination settings (page number and size, or an explicit offset); may be
+     *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of filtered nodes with relationships, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -1946,9 +1998,11 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param filters the multiple filter criteria to apply when loading nodes
+     * @param filters the multiple filter criteria to apply when loading nodes; may be {@code null}
+     *                or empty, in which case every node of {@code targetClass} is loaded
      * @param sortOrder the sort order specification for results
-     * @param pagination pagination settings (page number and size, or an explicit offset)
+     * @param pagination pagination settings (page number and size, or an explicit offset); may be
+     *                   {@code null} for no pagination
      * @return paginated collection of filtered, sorted nodes, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
      * @see #loadAll(Class, Filters, SortOrder, Pagination, int)
@@ -1990,9 +2044,11 @@ public final class Neo4jExecutor {
      *
      * @param <T> the node type
      * @param targetClass the class representing the node type to load
-     * @param filters the multiple filter criteria to apply when loading nodes
+     * @param filters the multiple filter criteria to apply when loading nodes; may be {@code null}
+     *                or empty, in which case every node of {@code targetClass} is loaded
      * @param sortOrder the sort order specification for results
-     * @param pagination pagination settings (page number and size, or an explicit offset)
+     * @param pagination pagination settings (page number and size, or an explicit offset); may be
+     *                   {@code null} for no pagination
      * @param depth the depth of relationships to load (0 = node only, -1 = infinite)
      * @return paginated collection of filtered, sorted nodes with relationships, may be empty
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -2192,13 +2248,15 @@ public final class Neo4jExecutor {
      * @param <T> the result type
      * @param targetClass the target class &mdash; either a mapped OGM entity class or a basic value
      *                   type (e.g. {@code Long.class} for an aggregate result)
-     * @param cypher the Cypher query string with {@code $name} parameter placeholders
-     * @param parameters named parameters bound by the OGM session; may be empty but should not be
+     * @param cypher the Cypher query string with {@code $name} parameter placeholders; must not be
+     *               {@code null} or empty
+     * @param parameters named parameters bound by the OGM session; may be empty but must not be
      *                   {@code null}
      * @return an {@link Optional} describing the single mapped result, or an empty {@code Optional} if
      *         the query returns no rows
-     * @throws RuntimeException if the query returns more than one row or the underlying OGM session
-     *                          rejects the query
+     * @throws RuntimeException if the query returns more than one row, or the underlying OGM session
+     *                          rejects the query &mdash; which is also how it reports a {@code null}
+     *                          {@code targetClass}, {@code cypher} or {@code parameters}
      * @see #stream(Class, String, Map)
      * @see #stream(String, Map)
      */
@@ -2237,11 +2295,14 @@ public final class Neo4jExecutor {
      * }
      * }</pre>
      *
-     * @param cypher the Cypher query string with {@code $name} parameter placeholders
-     * @param parameters named parameters bound by the OGM session
+     * @param cypher the Cypher query string with {@code $name} parameter placeholders; must not be
+     *               {@code null} or empty
+     * @param parameters named parameters bound by the OGM session; may be empty but must not be
+     *                   {@code null}
      * @return a {@link Stream} over the already-fetched result rows, each row a {@code Map} keyed by
      *         the {@code RETURN}-clause aliases; it does not retain the borrowed session
-     * @throws RuntimeException if the underlying OGM session rejects the query
+     * @throws RuntimeException if the underlying OGM session rejects the query &mdash; which is also
+     *                          how it reports a {@code null} {@code cypher} or {@code parameters}
      * @see #stream(Class, String, Map)
      * @see #stream(String, Map, boolean)
      * @see #findOnly(Class, String, Map)
@@ -2293,13 +2354,16 @@ public final class Neo4jExecutor {
      * // The session has already been released; try-with-resources is still safe and conventional.
      * }</pre>
      *
-     * @param cypher the Cypher query string with {@code $name} parameter placeholders
-     * @param parameters named parameters bound by the OGM session
+     * @param cypher the Cypher query string with {@code $name} parameter placeholders; must not be
+     *               {@code null} or empty
+     * @param parameters named parameters bound by the OGM session; may be empty but must not be
+     *                   {@code null}
      * @param readOnly {@code true} to mark the query as read-only (eligible for read-replica
      *                 routing); must be {@code false} for queries that write to the graph
      * @return a {@link Stream} over the already-fetched result rows; it does not retain the borrowed
      *         session
-     * @throws RuntimeException if the underlying OGM session rejects the query
+     * @throws RuntimeException if the underlying OGM session rejects the query &mdash; which is also
+     *                          how it reports a {@code null} {@code cypher} or {@code parameters}
      * @see #stream(String, Map)
      * @see #stream(Class, String, Map)
      */
@@ -2341,11 +2405,14 @@ public final class Neo4jExecutor {
      *
      * @param <T> the result row type
      * @param targetClass the target class &mdash; an OGM-mapped entity class or a basic value type
-     * @param cypher the Cypher query string with {@code $name} parameter placeholders
-     * @param parameters named parameters bound by the OGM session
+     * @param cypher the Cypher query string with {@code $name} parameter placeholders; must not be
+     *               {@code null} or empty
+     * @param parameters named parameters bound by the OGM session; may be empty but must not be
+     *                   {@code null}
      * @return a {@link Stream} over the already-fetched rows mapped to {@code targetClass}; it does
      *         not retain the borrowed session
-     * @throws RuntimeException if the underlying OGM session rejects the query
+     * @throws RuntimeException if the underlying OGM session rejects the query &mdash; which is also
+     *                          how it reports a {@code null} {@code cypher} or {@code parameters}
      * @see #findOnly(Class, String, Map)
      * @see #stream(String, Map)
      */
@@ -2393,7 +2460,8 @@ public final class Neo4jExecutor {
      * @param targetClass the OGM-mapped class whose entities are counted
      * @param filters OGM {@link Filter}s whose {@link org.neo4j.ogm.cypher.BooleanOperator}s define
      *                how each filter is joined to the preceding one; pass an empty iterable to
-     *                count all entities of {@code targetClass}
+     *                count all entities of {@code targetClass}. Unlike the {@link Filters} overloads
+     *                of {@code loadAll}, a {@code null} iterable is <i>not</i> accepted here
      * @return the number of entities of {@code targetClass} that satisfy the supplied filter
      *         expression
      * @throws RuntimeException if the underlying OGM session rejects the request
@@ -2474,7 +2542,8 @@ public final class Neo4jExecutor {
      * Long savedId = executor.getGraphId(newPerson); // assigned by Neo4j
      * }</pre>
      *
-     * @param possibleEntity an object that may or may not be an OGM-mapped entity
+     * @param possibleEntity an object that may or may not be an OGM-mapped entity; may be
+     *                       {@code null}, in which case {@code null} is returned
      * @return the native Neo4j graph ID for the entity, or {@code null} if {@code possibleEntity}
      *         is not a mapped/managed entity with an assigned ID
      * @see #load(Class, Serializable)

@@ -41,6 +41,7 @@ import com.landawn.abacus.util.ImmutableSet;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.PropertiesUtil;
 import com.landawn.abacus.util.XmlUtil;
+import com.landawn.abacus.util.cs;
 
 /**
  * Registry of named CQL (Cassandra Query Language) statements, optionally loaded from XML files.
@@ -200,7 +201,7 @@ public final class CqlMapper {
      * @see #loadFrom(File...)
      */
     public static CqlMapper loadFrom(final String filePath) {
-        N.checkArgNotEmpty(filePath, "filePath");
+        N.checkArgNotEmpty(filePath, cs.filePath);
 
         final List<String> filePaths = splitFilePaths(filePath);
 
@@ -245,12 +246,12 @@ public final class CqlMapper {
      * @throws RuntimeException if the required {@code <cqlMapper>} root element is missing
      */
     public static CqlMapper loadFrom(final File... files) {
-        N.checkArgNotEmpty(files, "files");
+        N.checkArgNotEmpty(files, cs.files);
 
         final CqlMapper cqlMapper = new CqlMapper();
 
         for (final File file : files) {
-            N.checkArgNotNull(file, "file");
+            N.checkArgNotNull(file, cs.file);
             cqlMapper.loadFile(file);
         }
 
@@ -280,7 +281,7 @@ public final class CqlMapper {
      * @throws RuntimeException if the required {@code <cqlMapper>} root element is missing
      */
     public static CqlMapper loadFrom(final InputStream is) {
-        N.checkArgNotNull(is, "is");
+        N.checkArgNotNull(is, cs.is);
 
         final CqlMapper cqlMapper = new CqlMapper();
         cqlMapper.loadStream(is, "input stream");
@@ -528,7 +529,7 @@ public final class CqlMapper {
      */
     public void add(final String id, final ParsedCql parsedCql, final Map<String, String> attrs) {
         N.checkArgNotNull(parsedCql, "parsedCql");
-        N.checkArgNotEmpty(id, "id");
+        N.checkArgNotEmpty(id, cs.id);
         checkDuplicateId(id);
 
         cqlMap.put(id, parsedCql);
@@ -590,7 +591,7 @@ public final class CqlMapper {
      *         {@code cql} is null, or the CQL is invalid
      */
     public void add(final String id, final String cql, final Map<String, String> attrs) {
-        N.checkArgNotEmpty(id, "id");
+        N.checkArgNotEmpty(id, cs.id);
         checkDuplicateId(id);
 
         cqlMap.put(id, ParsedCql.parse(cql));
@@ -750,7 +751,7 @@ public final class CqlMapper {
      * @see #loadFrom(String)
      */
     public void saveTo(final File file) throws UncheckedIOException {
-        N.checkArgNotNull(file, "file");
+        N.checkArgNotNull(file, cs.file);
 
         final File parentFile = file.getParentFile();
 
@@ -792,7 +793,7 @@ public final class CqlMapper {
      * @see #loadFrom(String)
      */
     public void saveTo(final OutputStream os) throws UncheckedIOException {
-        N.checkArgNotNull(os, "os");
+        N.checkArgNotNull(os, cs.os);
 
         try {
             final Document doc = XmlUtil.createDOMParser(true, true).newDocument();

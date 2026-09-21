@@ -26,6 +26,7 @@ import org.bson.types.ObjectId;
 import com.landawn.abacus.annotation.Beta;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.N;
+import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.u.OptionalBoolean;
@@ -90,16 +91,17 @@ import com.mongodb.client.result.UpdateResult;
  * <h2>Projection / Sort / Limit Semantics</h2>
  * <ul>
  *   <li>{@code selectPropNames} is passed directly to MongoDB as a collection of BSON field names.
- *       Passing {@code null}
+ *       Passing {@code null} or an empty collection
  *       selects every field. The {@code _id} field is always returned unless explicitly excluded
  *       via the {@link Bson}-projection overloads.</li>
- *   <li>{@link Bson}-projection overloads pass the projection through unchanged, so any
+ *   <li>{@link Bson}-projection overloads pass the projection through unchanged (a {@code null}
+ *       projection selects every field), so any
  *       {@code com.mongodb.client.model.Projections} expression (including computed/sliced fields)
  *       is supported. Computed fields may surface in the returned entity only when the entity has
  *       a matching property/setter.</li>
  *   <li>{@code sort} is any {@link Bson} sort expression
- *       (see {@code com.mongodb.client.model.Sorts}). When omitted, the driver returns documents in
- *       the natural order, which is not stable across queries.</li>
+ *       (see {@code com.mongodb.client.model.Sorts}). When {@code null}, the driver returns documents
+ *       in the natural order, which is not stable across queries.</li>
  *   <li>{@code offset}/{@code count} are forwarded as the driver's {@code skip} and {@code limit}
  *       hints. {@code offset == 0} disables skip; a negative {@code count} throws
  *       {@link IllegalArgumentException}, {@code count == 0} yields an empty result, and
@@ -441,7 +443,7 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param objectId the string representation of the ObjectId to search for
-     * @param selectPropNames collection of field names to include (null includes all fields)
+     * @param selectPropNames collection of field names to include (null or empty includes all fields)
      * @return an Optional containing the entity with only the specified fields populated, or empty if not found
      * @throws IllegalArgumentException if objectId is null, empty, or invalid format
      * @throws MongoException if the database operation fails
@@ -471,7 +473,7 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param objectId the ObjectId to search for
-     * @param selectPropNames collection of field names to include (null includes all fields)
+     * @param selectPropNames collection of field names to include (null or empty includes all fields)
      * @return an Optional containing the entity with only the specified fields populated, or empty if not found
      * @throws IllegalArgumentException if objectId is null
      * @throws MongoException if the database operation fails
@@ -562,7 +564,7 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param objectId the string representation of the ObjectId (24 hex characters)
-     * @param selectPropNames collection of field names to include in the projection (null for all fields)
+     * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @return the matching entity with projected fields, or {@code null} if not found
      * @throws IllegalArgumentException if objectId is null, empty, or invalid format
      * @throws MongoException if the database operation fails
@@ -595,7 +597,7 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param objectId the ObjectId to search for
-     * @param selectPropNames collection of field names to include in the projection (null for all fields)
+     * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @return the matching entity with projected fields, or {@code null} if not found
      * @throws IllegalArgumentException if objectId is null
      * @throws MongoException if the database operation fails
@@ -656,7 +658,7 @@ public final class MongoCollectionMapper<T> {
      * Optional<User> full = mapper.findFirst(null, Filters.eq("status", "active"));
      * }</pre>
      *
-     * @param selectPropNames collection of field names to include in the projection (null for all fields)
+     * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match entities against
      * @return an Optional containing the first matching entity with projected fields, or empty if none found
      * @throws IllegalArgumentException if filter is null
@@ -687,9 +689,9 @@ public final class MongoCollectionMapper<T> {
      * Optional<Order> oldest = mapper.findFirst(fields, filter, Sorts.ascending("createdAt")); // earliest instead
      * }</pre>
      *
-     * @param selectPropNames collection of field names to include in the projection (null for all fields)
+     * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match entities against
-     * @param sort the sort specification to determine result ordering
+     * @param sort the sort specification to determine result ordering (null for the natural, unspecified order)
      * @return an Optional containing the first matching entity with projected fields, or empty if none found
      * @throws IllegalArgumentException if filter is null
      * @throws MongoException if the database operation fails
@@ -725,7 +727,7 @@ public final class MongoCollectionMapper<T> {
      *
      * @param projection the BSON projection specification for field selection (null for all fields)
      * @param filter the query filter to match entities against
-     * @param sort the BSON sort specification for result ordering
+     * @param sort the BSON sort specification for result ordering (null for the natural, unspecified order)
      * @return an Optional containing the first matching entity with projected fields, or empty if none found
      * @throws IllegalArgumentException if filter is null
      * @throws MongoException if the database operation fails
@@ -813,7 +815,7 @@ public final class MongoCollectionMapper<T> {
      * List<User> full = mapper.list(null, Filters.eq("status", "active"));
      * }</pre>
      *
-     * @param selectPropNames collection of field names to include in the projection (null for all fields)
+     * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match entities against
      * @return a List containing all matching entities with projected fields
      * @throws IllegalArgumentException if filter is null
@@ -842,7 +844,7 @@ public final class MongoCollectionMapper<T> {
      * List<Product> page1 = mapper.list(fields, filter, 0, 20);  // returns the first page
      * }</pre>
      *
-     * @param selectPropNames collection of field names to include in the projection (null for all fields)
+     * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match entities against
      * @param offset the number of entities to skip (0-based)
      * @param count the maximum number of entities to return
@@ -874,9 +876,9 @@ public final class MongoCollectionMapper<T> {
      * List<Article> leastViewed = mapper.list(fields, filter, Sorts.ascending("viewCount")); // reverse order
      * }</pre>
      *
-     * @param selectPropNames collection of field names to include in the projection (null for all fields)
+     * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match entities against
-     * @param sort the sort specification for result ordering
+     * @param sort the sort specification for result ordering (null for the natural, unspecified order)
      * @return a List containing all matching entities with projected fields in sorted order
      * @throws IllegalArgumentException if filter is null
      * @throws MongoException if the database operation fails
@@ -906,9 +908,9 @@ public final class MongoCollectionMapper<T> {
      * List<User> firstPage = mapper.list(fields, filter, sort, 0, 25);    // returns the first 25
      * }</pre>
      *
-     * @param selectPropNames collection of field names to include in the projection (null for all fields)
+     * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match entities against
-     * @param sort the sort specification for result ordering
+     * @param sort the sort specification for result ordering (null for the natural, unspecified order)
      * @param offset the number of entities to skip (0-based)
      * @param count the maximum number of entities to return
      * @return a List containing the specified range of matching entities with projected fields in sorted order
@@ -943,9 +945,9 @@ public final class MongoCollectionMapper<T> {
      * // A computed field only surfaces on the entity if it has a matching property/setter.
      * }</pre>
      *
-     * @param projection the BSON projection specification for field selection and transformation
+     * @param projection the BSON projection specification for field selection and transformation (null for all fields)
      * @param filter the query filter to match entities against
-     * @param sort the sort specification for result ordering
+     * @param sort the sort specification for result ordering (null for the natural, unspecified order)
      * @return a List containing all matching entities with BSON-projected fields in sorted order
      * @throws IllegalArgumentException if filter is null
      * @throws MongoException if the database operation fails
@@ -978,9 +980,9 @@ public final class MongoCollectionMapper<T> {
      * List<Product> nextPage = mapper.list(projection, filter, sort, 20, 20); // the following 20
      * }</pre>
      *
-     * @param projection the BSON projection specification for field selection and transformation
+     * @param projection the BSON projection specification for field selection and transformation (null for all fields)
      * @param filter the query filter to match entities against
-     * @param sort the sort specification for result ordering
+     * @param sort the sort specification for result ordering (null for the natural, unspecified order)
      * @param offset the number of entities to skip (0-based)
      * @param count the maximum number of entities to return
      * @return a List containing the specified range of matching entities with BSON-projected fields in sorted order
@@ -1465,7 +1467,8 @@ public final class MongoCollectionMapper<T> {
      *
      * <p><b>Empty vs. present semantics:</b> {@code Optional.empty()} is returned when no document matches
      * the filter. If a document <i>is</i> matched but the field is absent on the matched document or the
-     * stored value is BSON {@code null}, this method throws {@link NullPointerException} (an {@code Optional}
+     * stored value is BSON {@code null} (or the conversion to {@code valueType} yields {@code null}), this
+     * method throws {@link NullPointerException} (an {@code Optional}
      * cannot hold {@code null}). Use {@link #queryForSingleValue(String, Bson, Class)} instead when a
      * matched-but-null field must be representable.</p>
      *
@@ -1484,7 +1487,8 @@ public final class MongoCollectionMapper<T> {
      * @return a <i>present</i> {@code Optional<V>} holding the field value when at least one document is
      *         matched; {@code Optional.empty()} when no document matches
      * @throws IllegalArgumentException if {@code propName} is null or empty, {@code filter} is null, or {@code valueType} is null
-     * @throws NullPointerException if a document is matched but the field is absent or its value is BSON {@code null}
+     * @throws NullPointerException if a document is matched but the field is absent, its value is BSON {@code null},
+     *         or the conversion to {@code valueType} yields {@code null}
      * @throws MongoException if the database operation fails
      * @see #queryForSingleValue(String, Bson, Class)
      * @see Optional
@@ -1561,7 +1565,7 @@ public final class MongoCollectionMapper<T> {
      * List<String> columns = ds.columnNames();
      * }</pre>
      *
-     * @param selectPropNames collection of field names to include in the projection (null for all fields)
+     * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match entities against
      * @return a Dataset containing the query results with projected fields
      * @throws IllegalArgumentException if filter is null
@@ -1586,7 +1590,7 @@ public final class MongoCollectionMapper<T> {
      * Dataset firstPage = mapper.query(fields, Filters.gte("total", 1000), 0, 10); // the first 10 instead
      * }</pre>
      *
-     * @param selectPropNames collection of field names to include in the projection (null for all fields)
+     * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match entities against
      * @param offset the number of matching documents to skip (0-based)
      * @param count the maximum number of documents to return
@@ -1615,9 +1619,9 @@ public final class MongoCollectionMapper<T> {
      * Dataset lowToHigh = mapper.query(fields, Filters.exists("score"), Sorts.ascending("score")); // reversed
      * }</pre>
      *
-     * @param selectPropNames collection of field names to include in the projection (null for all fields)
+     * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match entities against
-     * @param sort the sort specification for result ordering
+     * @param sort the sort specification for result ordering (null for the natural, unspecified order)
      * @return a Dataset containing the sorted query results with projected fields
      * @throws IllegalArgumentException if filter is null
      * @throws MongoException if the database operation fails
@@ -1643,9 +1647,9 @@ public final class MongoCollectionMapper<T> {
      * Dataset nextPage = mapper.query(fields, Filters.gte("rating", 4.0), sort, 20, 20); // the next 20
      * }</pre>
      *
-     * @param selectPropNames collection of field names to include in the projection (null for all fields)
+     * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match entities against
-     * @param sort the sort specification for result ordering
+     * @param sort the sort specification for result ordering (null for the natural, unspecified order)
      * @param offset the number of matching documents to skip (0-based)
      * @param count the maximum number of documents to return
      * @return a Dataset containing the paginated and sorted query results with projected fields
@@ -1674,9 +1678,9 @@ public final class MongoCollectionMapper<T> {
      * Dataset results = mapper.query(projection, Filters.eq("city", "NYC"), Sorts.ascending("name")); // returns Dataset
      * }</pre>
      *
-     * @param projection the BSON projection specification for field selection and transformation
+     * @param projection the BSON projection specification for field selection and transformation (null for all fields)
      * @param filter the query filter to match entities against
-     * @param sort the sort specification for result ordering
+     * @param sort the sort specification for result ordering (null for the natural, unspecified order)
      * @return a Dataset containing the sorted query results with BSON-projected fields
      * @throws IllegalArgumentException if filter is null
      * @throws MongoException if the database operation fails
@@ -1706,9 +1710,9 @@ public final class MongoCollectionMapper<T> {
      *                                 Sorts.descending("date"), 50, 50); // the next 50
      * }</pre>
      *
-     * @param projection the BSON projection specification for field selection and transformation
+     * @param projection the BSON projection specification for field selection and transformation (null for all fields)
      * @param filter the query filter to match entities against
-     * @param sort the sort specification for result ordering
+     * @param sort the sort specification for result ordering (null for the natural, unspecified order)
      * @param offset the number of matching documents to skip (0-based)
      * @param count the maximum number of documents to return
      * @return a Dataset containing the paginated and sorted query results with BSON-projected fields
@@ -1813,7 +1817,7 @@ public final class MongoCollectionMapper<T> {
      * }
      * }</pre>
      *
-     * @param selectPropNames collection of field names to include in the projection (null for all fields)
+     * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match entities against
      * @return a Stream of entities with projected fields matching the filter
      * @throws IllegalArgumentException if filter is null
@@ -1850,7 +1854,7 @@ public final class MongoCollectionMapper<T> {
      * }
      * }</pre>
      *
-     * @param selectPropNames collection of field names to include in the projection (null for all fields)
+     * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match entities against
      * @param offset the number of entities to skip (0-based)
      * @param count the maximum number of entities to include in the stream
@@ -1886,9 +1890,9 @@ public final class MongoCollectionMapper<T> {
      * }
      * }</pre>
      *
-     * @param selectPropNames collection of field names to include in the projection (null for all fields)
+     * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match entities against
-     * @param sort the sort specification for result ordering
+     * @param sort the sort specification for result ordering (null for the natural, unspecified order)
      * @return a Stream of entities with projected fields in sorted order
      * @throws IllegalArgumentException if filter is null
      * @throws MongoException if the database operation fails
@@ -1924,9 +1928,9 @@ public final class MongoCollectionMapper<T> {
      * }
      * }</pre>
      *
-     * @param selectPropNames collection of field names to include in the projection (null for all fields)
+     * @param selectPropNames collection of field names to include in the projection (null or empty for all fields)
      * @param filter the query filter to match entities against
-     * @param sort the sort specification for result ordering
+     * @param sort the sort specification for result ordering (null for the natural, unspecified order)
      * @param offset the number of entities to skip (0-based)
      * @param count the maximum number of entities to include in the stream
      * @return a Stream of entities with projected fields in sorted order within the specified range
@@ -1966,9 +1970,9 @@ public final class MongoCollectionMapper<T> {
      * }
      * }</pre>
      *
-     * @param projection the BSON projection specification for field selection and transformation
+     * @param projection the BSON projection specification for field selection and transformation (null for all fields)
      * @param filter the query filter to match entities against
-     * @param sort the sort specification for result ordering
+     * @param sort the sort specification for result ordering (null for the natural, unspecified order)
      * @return a Stream of entities with BSON-projected fields in sorted order
      * @throws IllegalArgumentException if filter is null
      * @throws MongoException if the database operation fails
@@ -2011,9 +2015,9 @@ public final class MongoCollectionMapper<T> {
      * }
      * }</pre>
      *
-     * @param projection the BSON projection specification for field selection and transformation
+     * @param projection the BSON projection specification for field selection and transformation (null for all fields)
      * @param filter the query filter to match entities against
-     * @param sort the sort specification for result ordering
+     * @param sort the sort specification for result ordering (null for the natural, unspecified order)
      * @param offset the number of entities to skip (0-based)
      * @param count the maximum number of entities to include in the stream
      * @return a Stream of entities with BSON-projected fields in sorted order within the specified range
@@ -2525,7 +2529,7 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the string representation of the ObjectId identifying the entity to replace
      * @param replacement the new entity to replace the existing one
      * @return UpdateResult containing information about the replace operation
-     * @throws IllegalArgumentException if objectId or replacement is null, or objectId format is invalid
+     * @throws IllegalArgumentException if objectId is null or empty, if objectId is not a valid hex ObjectId, or if replacement is null
      * @throws MongoWriteException if the replace operation fails
      * @throws MongoException if the database operation fails
      * @see #replaceOne(ObjectId, Object)
@@ -2642,7 +2646,7 @@ public final class MongoCollectionMapper<T> {
      *
      * @param objectId the string representation of the ObjectId identifying the entity to delete
      * @return DeleteResult containing information about the delete operation
-     * @throws IllegalArgumentException if objectId is null or has invalid format
+     * @throws IllegalArgumentException if objectId is null or empty, or is not a valid hex ObjectId
      * @throws MongoWriteException if the delete operation fails
      * @throws MongoException if the database operation fails
      * @see #deleteOne(ObjectId)
@@ -3202,7 +3206,7 @@ public final class MongoCollectionMapper<T> {
      * @see Stream
      */
     public Stream<T> distinct(final String fieldName) {
-        N.checkArgNotEmpty(fieldName, "fieldName");
+        N.checkArgNotEmpty(fieldName, cs.fieldName);
 
         return collectionExecutor.aggregate(distinctPipeline(fieldName, null), rowType);
     }
@@ -3251,8 +3255,8 @@ public final class MongoCollectionMapper<T> {
      * @see Stream
      */
     public Stream<T> distinct(final String fieldName, final Bson filter) {
-        N.checkArgNotEmpty(fieldName, "fieldName");
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotEmpty(fieldName, cs.fieldName);
+        N.checkArgNotNull(filter, cs.filter);
 
         return collectionExecutor.aggregate(distinctPipeline(fieldName, filter), rowType);
     }

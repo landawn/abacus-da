@@ -514,7 +514,7 @@ public final class DynamoDBExecutor {
      * @see #asItem(String, Object, String, Object)
      */
     public static Map<String, AttributeValue> asKey(final String keyName, final Object value, final String keyName2, final Object value2) {
-        N.checkArgNotEmpty(keyName, "keyName");
+        N.checkArgNotEmpty(keyName, cs.keyName);
         N.checkArgNotEmpty(keyName2, "keyName2");
         N.checkArgument(!keyName.equals(keyName2), "Partition-key and sort-key names must be different: %s", keyName);
 
@@ -611,11 +611,14 @@ public final class DynamoDBExecutor {
      *     .build();
      * }</pre>
      *
-     * @param attrName the name of the attribute. Must not be null.
+     * @param attrName the name of the attribute. Must not be null or empty.
      * @param value the value for the attribute, automatically converted to AttributeValue
      * @return a Map containing the single attribute as AttributeValue, never null
+     * @throws IllegalArgumentException if {@code attrName} is null or empty
      */
     public static Map<String, AttributeValue> asItem(final String attrName, final Object value) {
+        N.checkArgNotEmpty(attrName, cs.attrName);
+
         return N.newLinkedHashMap(N.asMap(attrName, toAttributeValue(value)));
     }
 
@@ -632,13 +635,17 @@ public final class DynamoDBExecutor {
      * // Results in: {"name": AttributeValue.fromS("John Doe"), "age": AttributeValue.fromN("30")}
      * }</pre>
      *
-     * @param attrName  the name of the first attribute. Must not be null.
+     * @param attrName  the name of the first attribute. Must not be null or empty.
      * @param value     the value of the first attribute, automatically converted to {@code AttributeValue}.
-     * @param attrName2 the name of the second attribute. Must not be null.
+     * @param attrName2 the name of the second attribute. Must not be null or empty.
      * @param value2    the value of the second attribute, automatically converted to {@code AttributeValue}.
      * @return an item containing the two attributes as {@code AttributeValue} objects. Never null.
+     * @throws IllegalArgumentException if {@code attrName} or {@code attrName2} is null or empty
      */
     public static Map<String, AttributeValue> asItem(final String attrName, final Object value, final String attrName2, final Object value2) {
+        N.checkArgNotEmpty(attrName, cs.attrName);
+        N.checkArgNotEmpty(attrName2, "attrName2");
+
         return N.newLinkedHashMap(N.asMap(attrName, toAttributeValue(value), attrName2, toAttributeValue(value2)));
     }
 
@@ -655,16 +662,21 @@ public final class DynamoDBExecutor {
      * // Results in: {"name": AttributeValue.fromS("John Doe"), "age": AttributeValue.fromN("30"), "city": AttributeValue.fromS("New York")}
      * }</pre>
      *
-     * @param attrName  the name of the first attribute. Must not be null.
+     * @param attrName  the name of the first attribute. Must not be null or empty.
      * @param value     the value of the first attribute, automatically converted to {@code AttributeValue}.
-     * @param attrName2 the name of the second attribute. Must not be null.
+     * @param attrName2 the name of the second attribute. Must not be null or empty.
      * @param value2    the value of the second attribute, automatically converted to {@code AttributeValue}.
-     * @param attrName3 the name of the third attribute. Must not be null.
+     * @param attrName3 the name of the third attribute. Must not be null or empty.
      * @param value3    the value of the third attribute, automatically converted to {@code AttributeValue}.
      * @return an item containing the three attributes as {@code AttributeValue} objects. Never null.
+     * @throws IllegalArgumentException if {@code attrName}, {@code attrName2}, or {@code attrName3} is null or empty
      */
     public static Map<String, AttributeValue> asItem(final String attrName, final Object value, final String attrName2, final Object value2,
             final String attrName3, final Object value3) {
+        N.checkArgNotEmpty(attrName, cs.attrName);
+        N.checkArgNotEmpty(attrName2, "attrName2");
+        N.checkArgNotEmpty(attrName3, "attrName3");
+
         return N.newLinkedHashMap(N.asMap(attrName, toAttributeValue(value), attrName2, toAttributeValue(value2), attrName3, toAttributeValue(value3)));
     }
 
@@ -686,11 +698,12 @@ public final class DynamoDBExecutor {
      *
      * @param a an array of alternating attribute names and values, must not be {@code null}
      * @return an item containing the attributes as {@code AttributeValue} objects, never null
-     * @throws NullPointerException if {@code a} is {@code null}
-     * @throws IllegalArgumentException if the array length is odd
+     * @throws IllegalArgumentException if {@code a} is {@code null} or the array length is odd
      * @throws ClassCastException if an even-indexed argument is not a String
      */
     public static Map<String, AttributeValue> asItem(final Object... a) {
+        N.checkArgNotNull(a, "nameValuePairs");
+
         if ((a.length % 2) != 0) {
             throw new IllegalArgumentException("Parameters must be name-value pairs (an even number of arguments)");
         }
@@ -724,11 +737,14 @@ public final class DynamoDBExecutor {
      *     .build();
      * }</pre>
      *
-     * @param attrName the name of the attribute to update. Must not be null.
+     * @param attrName the name of the attribute to update. Must not be null or empty.
      * @param value the value for the attribute, automatically converted to AttributeValueUpdate
      * @return a Map containing the single AttributeValueUpdate, never null
+     * @throws IllegalArgumentException if {@code attrName} is null or empty
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final String attrName, final Object value) {
+        N.checkArgNotEmpty(attrName, cs.attrName);
+
         return N.newLinkedHashMap(N.asMap(attrName, toAttributeValueUpdate(value)));
     }
 
@@ -746,13 +762,17 @@ public final class DynamoDBExecutor {
      * //              "age": AttributeValueUpdate.builder().value(AttributeValue.fromN("30")).action(AttributeAction.PUT).build()}
      * }</pre>
      *
-     * @param attrName  the name of the first attribute to update. Must not be null.
+     * @param attrName  the name of the first attribute to update. Must not be null or empty.
      * @param value     the value of the first attribute, automatically converted to {@code AttributeValueUpdate}.
-     * @param attrName2 the name of the second attribute to update. Must not be null.
+     * @param attrName2 the name of the second attribute to update. Must not be null or empty.
      * @param value2    the value of the second attribute, automatically converted to {@code AttributeValueUpdate}.
      * @return an item containing the two attributes as {@code AttributeValueUpdate} objects. Never null.
+     * @throws IllegalArgumentException if {@code attrName} or {@code attrName2} is null or empty
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final String attrName, final Object value, final String attrName2, final Object value2) {
+        N.checkArgNotEmpty(attrName, cs.attrName);
+        N.checkArgNotEmpty(attrName2, "attrName2");
+
         return N.newLinkedHashMap(N.asMap(attrName, toAttributeValueUpdate(value), attrName2, toAttributeValueUpdate(value2)));
     }
 
@@ -771,16 +791,21 @@ public final class DynamoDBExecutor {
      * //              "city": AttributeValueUpdate.builder().value(AttributeValue.fromS("New York")).action(AttributeAction.PUT).build()}
      * }</pre>
      *
-     * @param attrName  the name of the first attribute to update. Must not be null.
+     * @param attrName  the name of the first attribute to update. Must not be null or empty.
      * @param value     the value of the first attribute, automatically converted to {@code AttributeValueUpdate}.
-     * @param attrName2 the name of the second attribute to update. Must not be null.
+     * @param attrName2 the name of the second attribute to update. Must not be null or empty.
      * @param value2    the value of the second attribute, automatically converted to {@code AttributeValueUpdate}.
-     * @param attrName3 the name of the third attribute to update. Must not be null.
+     * @param attrName3 the name of the third attribute to update. Must not be null or empty.
      * @param value3    the value of the third attribute, automatically converted to {@code AttributeValueUpdate}.
      * @return an item containing the three attributes as {@code AttributeValueUpdate} objects. Never null.
+     * @throws IllegalArgumentException if {@code attrName}, {@code attrName2}, or {@code attrName3} is null or empty
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final String attrName, final Object value, final String attrName2, final Object value2,
             final String attrName3, final Object value3) {
+        N.checkArgNotEmpty(attrName, cs.attrName);
+        N.checkArgNotEmpty(attrName2, "attrName2");
+        N.checkArgNotEmpty(attrName3, "attrName3");
+
         return N.newLinkedHashMap(
                 N.asMap(attrName, toAttributeValueUpdate(value), attrName2, toAttributeValueUpdate(value2), attrName3, toAttributeValueUpdate(value3)));
     }
@@ -805,11 +830,12 @@ public final class DynamoDBExecutor {
      *
      * @param a an array of alternating attribute names and values, must not be {@code null}
      * @return an item containing the attributes as {@code AttributeValueUpdate} objects, never null
-     * @throws NullPointerException if {@code a} is {@code null}
-     * @throws IllegalArgumentException if the array length is odd
+     * @throws IllegalArgumentException if {@code a} is {@code null} or the array length is odd
      * @throws ClassCastException if an even-indexed argument is not a String
      */
     public static Map<String, AttributeValueUpdate> asUpdateItem(final Object... a) {
+        N.checkArgNotNull(a, "nameValuePairs");
+
         if ((a.length % 2) != 0) {
             throw new IllegalArgumentException("Parameters must be name-value pairs (an even number of arguments)");
         }
@@ -891,7 +917,7 @@ public final class DynamoDBExecutor {
      */
     @SuppressWarnings("null")
     static AttributeValue toKeyAttributeValue(final String keyName, final Object value) {
-        N.checkArgNotEmpty(keyName, "keyName");
+        N.checkArgNotEmpty(keyName, cs.keyName);
         N.checkArgument(value != null, "DynamoDB key attribute '%s' must not be null", keyName);
         N.checkArgument(!(value instanceof Collection) && !(value instanceof Map) && (!value.getClass().isArray() || value instanceof byte[]),
                 "DynamoDB key attribute '%s' must be scalar, not %s", keyName, value.getClass().getName());
@@ -994,7 +1020,9 @@ public final class DynamoDBExecutor {
      * }</pre>
      *
      * @param value the value for the update operation, can be null for DELETE actions
-     * @param action the update action to perform using AWS SDK v2 AttributeAction enum
+     * @param action the update action to perform using AWS SDK v2 AttributeAction enum; may be
+     *               {@code null}, which leaves {@code Action} unset so DynamoDB applies its default
+     *               ({@code PUT})
      * @return an AttributeValueUpdate with the specified action and converted value, never null
      * @see #toAttributeValue(Object)
      * @see #toAttributeValueUpdate(Object)
@@ -1025,8 +1053,7 @@ public final class DynamoDBExecutor {
      *
      * @param entity the Java object (Entity, Map, or Object[]) to convert, must not be {@code null}
      * @return a Map representing the DynamoDB item, never null
-     * @throws NullPointerException if {@code entity} is {@code null}
-     * @throws IllegalArgumentException if {@code entity} is not an Entity, Map, or Object[]
+     * @throws IllegalArgumentException if {@code entity} is {@code null}, or is not an Entity, Map, or Object[]
      */
     public static Map<String, AttributeValue> toItem(final Object entity) {
         return toItem(entity, NamingPolicy.CAMEL_CASE);
@@ -1050,10 +1077,13 @@ public final class DynamoDBExecutor {
      * @param entity the Java object (Entity, Map, or Object[]) to convert, must not be {@code null}
      * @param namingPolicy the naming policy to use for attribute names, must not be {@code null}
      * @return a Map representing the DynamoDB item, never null
-     * @throws NullPointerException if {@code entity} or {@code namingPolicy} is {@code null}
-     * @throws IllegalArgumentException if {@code entity} is not an Entity, Map, or Object[]
+     * @throws IllegalArgumentException if {@code entity} or {@code namingPolicy} is {@code null}, or if
+     *                                  {@code entity} is not an Entity, Map, or Object[]
      */
     public static Map<String, AttributeValue> toItem(final Object entity, final NamingPolicy namingPolicy) {
+        N.checkArgNotNull(entity, cs.entity);
+        N.checkArgNotNull(namingPolicy, "namingPolicy");
+
         final boolean isCamelCase = namingPolicy == NamingPolicy.CAMEL_CASE;
         final Map<String, AttributeValue> attrs = new LinkedHashMap<>();
         final Class<?> cls = entity.getClass();
@@ -1109,8 +1139,7 @@ public final class DynamoDBExecutor {
      *
      * @param entity the Java object (Entity, Map, or Object[]) to convert, must not be {@code null}
      * @return a Map representing the DynamoDB update item, never null
-     * @throws NullPointerException if {@code entity} is {@code null}
-     * @throws IllegalArgumentException if {@code entity} is not an Entity, Map, or Object[]
+     * @throws IllegalArgumentException if {@code entity} is {@code null}, or is not an Entity, Map, or Object[]
      */
     public static Map<String, AttributeValueUpdate> toUpdateItem(final Object entity) {
         return toUpdateItem(entity, NamingPolicy.CAMEL_CASE);
@@ -1134,10 +1163,13 @@ public final class DynamoDBExecutor {
      * @param entity the Java object (Entity, Map, or Object[]) to convert, must not be {@code null}
      * @param namingPolicy the naming policy to use for attribute names, must not be {@code null}
      * @return a Map representing the DynamoDB update item, never null
-     * @throws NullPointerException if {@code entity} or {@code namingPolicy} is {@code null}
-     * @throws IllegalArgumentException if {@code entity} is not an Entity, Map, or Object[]
+     * @throws IllegalArgumentException if {@code entity} or {@code namingPolicy} is {@code null}, or if
+     *                                  {@code entity} is not an Entity, Map, or Object[]
      */
     public static Map<String, AttributeValueUpdate> toUpdateItem(final Object entity, final NamingPolicy namingPolicy) {
+        N.checkArgNotNull(entity, cs.entity);
+        N.checkArgNotNull(namingPolicy, "namingPolicy");
+
         final boolean isCamelCase = namingPolicy == NamingPolicy.CAMEL_CASE;
         final Map<String, AttributeValueUpdate> attrs = new LinkedHashMap<>();
         final Class<?> cls = entity.getClass();
@@ -1376,11 +1408,15 @@ public final class DynamoDBExecutor {
      *
      * @param <T> the type of the entity to convert to
      * @param getItemResponse the GetItemResponse containing the item to convert, can be {@code null}
-     * @param targetClass the class of the entity to convert to
+     * @param targetClass the entity class to instantiate; must be a bean class with getter/setter methods.
+     *                    Must not be null.
      * @return an instance of the target class representing the item, or null if {@code getItemResponse}
      *         is null or contains no item
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      */
     public static <T> T toEntity(final GetItemResponse getItemResponse, final Class<T> targetClass) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         if (getItemResponse == null || !getItemResponse.hasItem()) {
             return null;
         }
@@ -1417,10 +1453,14 @@ public final class DynamoDBExecutor {
      *
      * @param <T> the type of the entity to convert to
      * @param item the Map representing the DynamoDB item, can be {@code null}
-     * @param targetClass the entity class to instantiate; must be a bean class with getter/setter methods
+     * @param targetClass the entity class to instantiate; must be a bean class with getter/setter methods.
+     *                    Must not be null.
      * @return an instance of {@code targetClass} populated from {@code item}, or {@code null} if {@code item} is {@code null}
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      */
     public static <T> T toEntity(final Map<String, AttributeValue> item, final Class<T> targetClass) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         if (item == null) {
             return null;
         }
@@ -2006,8 +2046,8 @@ public final class DynamoDBExecutor {
      * @param offset the starting index within the single response page (0-based)
      * @param count the maximum number of items to take from {@code offset}
      * @return a Dataset containing the sliced page, never null
-     * @throws NullPointerException if {@code queryResult} is {@code null}
      * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
+     * @throws NullPointerException if {@code queryResult} is {@code null}
      */
     public static Dataset extractData(final QueryResponse queryResult, final int offset, final int count) {
         return extractData(queryResult.items(), offset, count);
@@ -2065,8 +2105,8 @@ public final class DynamoDBExecutor {
      * @param offset the starting index within the single response page (0-based)
      * @param count the maximum number of items to take from {@code offset}
      * @return a Dataset containing the sliced page, never null
-     * @throws NullPointerException if {@code scanResult} is {@code null}
      * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
+     * @throws NullPointerException if {@code scanResult} is {@code null}
      */
     public static Dataset extractData(final ScanResponse scanResult, final int offset, final int count) {
         return extractData(scanResult.items(), offset, count);
@@ -2360,11 +2400,11 @@ public final class DynamoDBExecutor {
      * @return an instance of {@code targetClass} containing the item data, or {@code null} for
      *         reference types when the item doesn't exist (primitive {@code targetClass} returns its
      *         default value such as {@code 0} or {@code false})
-     * @throws NullPointerException if {@code getItemRequest} is null (rejected by the AWS SDK v2 client)
      * @throws IllegalArgumentException if {@code targetClass} is null or unsupported
+     * @throws NullPointerException if {@code getItemRequest} is null (rejected by the AWS SDK v2 client)
      */
     public <T> T getItem(final GetItemRequest getItemRequest, final Class<T> targetClass) {
-        N.checkArgNotNull(targetClass, "targetClass");
+        N.checkArgNotNull(targetClass, cs.targetClass);
 
         return readRow(dynamoDBClient.getItem(getItemRequest), targetClass);
     }
@@ -2604,7 +2644,7 @@ public final class DynamoDBExecutor {
      */
     public <T> Map<String, List<T>> batchGetItem(final BatchGetItemRequest batchGetItemRequest, final Class<T> targetClass) {
         N.checkArgNotNull(batchGetItemRequest, "batchGetItemRequest");
-        N.checkArgNotNull(targetClass, "targetClass");
+        N.checkArgNotNull(targetClass, cs.targetClass);
 
         return toEntities(dynamoDBClient.batchGetItem(batchGetItemRequest), targetClass);
     }
@@ -2748,8 +2788,7 @@ public final class DynamoDBExecutor {
      * @param entity the entity to put; a bean with getter/setter methods, a {@code Map}, or an
      *               {@code Object[]} of alternating name/value pairs; must not be null
      * @return the response from the PutItem operation, containing metadata about the operation
-     * @throws NullPointerException if {@code entity} is {@code null}
-     * @throws IllegalArgumentException if {@code entity} is not an Entity, Map, or Object[]
+     * @throws IllegalArgumentException if {@code entity} is {@code null}, or is not an Entity, Map, or Object[]
      */
     // There isn't much benefit to adding a method for "Object entity",
     // and it may cause errors because "Object" is ambiguous with any type.
@@ -2774,8 +2813,7 @@ public final class DynamoDBExecutor {
      *               {@code Object[]} of alternating name/value pairs; must not be null
      * @param returnValues {@code "NONE"} (default) or {@code "ALL_OLD"} to retrieve the previous item
      * @return the response from the PutItem operation, containing metadata and optionally the old item
-     * @throws NullPointerException if {@code entity} is {@code null}
-     * @throws IllegalArgumentException if {@code entity} is not an Entity, Map, or Object[]
+     * @throws IllegalArgumentException if {@code entity} is {@code null}, or is not an Entity, Map, or Object[]
      */
     PutItemResponse putItem(final String tableName, final Object entity, final String returnValues) {
         PutItemRequest putItemRequest = PutItemRequest.builder().tableName(tableName).item(toItem(entity)).returnValues(returnValues).build();
@@ -3180,7 +3218,7 @@ public final class DynamoDBExecutor {
      */
     public <T> List<T> list(final QueryRequest queryRequest, final Class<T> targetClass) {
         N.checkArgNotNull(queryRequest, "queryRequest");
-        N.checkArgNotNull(targetClass, "targetClass");
+        N.checkArgNotNull(targetClass, cs.targetClass);
 
         final QueryResponse queryResult = dynamoDBClient.query(queryRequest);
         final List<T> res = toList(queryResult, targetClass);
@@ -3255,7 +3293,7 @@ public final class DynamoDBExecutor {
      */
     public Dataset query(final QueryRequest queryRequest, final Class<?> targetClass) {
         N.checkArgNotNull(queryRequest, "queryRequest");
-        N.checkArgNotNull(targetClass, "targetClass");
+        N.checkArgNotNull(targetClass, cs.targetClass);
 
         if (Map.class.isAssignableFrom(targetClass)) {
             final QueryResponse queryResult = dynamoDBClient.query(queryRequest);
@@ -3331,7 +3369,7 @@ public final class DynamoDBExecutor {
      */
     public <T> Stream<T> stream(final QueryRequest queryRequest, final Class<T> targetClass) {
         N.checkArgNotNull(queryRequest, "queryRequest");
-        N.checkArgNotNull(targetClass, "targetClass");
+        N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Iterator<List<Map<String, AttributeValue>>> iterator = new ObjIterator<>() {
             private QueryRequest newQueryRequest = queryRequest;
@@ -3503,7 +3541,7 @@ public final class DynamoDBExecutor {
      */
     public <T> Stream<T> scan(final String tableName, final List<String> attributesToGet, final Class<T> targetClass) {
         N.checkArgNotNull(tableName, "tableName");
-        N.checkArgNotNull(targetClass, "targetClass");
+        N.checkArgNotNull(targetClass, cs.targetClass);
 
         final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).attributesToGet(N.isEmpty(attributesToGet) ? null : attributesToGet).build();
 
@@ -3532,7 +3570,7 @@ public final class DynamoDBExecutor {
      */
     public <T> Stream<T> scan(final String tableName, final Map<String, Condition> scanFilter, final Class<T> targetClass) {
         N.checkArgNotNull(tableName, "tableName");
-        N.checkArgNotNull(targetClass, "targetClass");
+        N.checkArgNotNull(targetClass, cs.targetClass);
 
         final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).scanFilter(scanFilter).build();
 
@@ -3564,7 +3602,7 @@ public final class DynamoDBExecutor {
      */
     public <T> Stream<T> scan(final String tableName, final List<String> attributesToGet, final Map<String, Condition> scanFilter, final Class<T> targetClass) {
         N.checkArgNotNull(tableName, "tableName");
-        N.checkArgNotNull(targetClass, "targetClass");
+        N.checkArgNotNull(targetClass, cs.targetClass);
 
         final ScanRequest scanRequest = ScanRequest.builder()
                 .tableName(tableName)
@@ -3600,7 +3638,7 @@ public final class DynamoDBExecutor {
      */
     public <T> Stream<T> scan(final ScanRequest scanRequest, final Class<T> targetClass) {
         N.checkArgNotNull(scanRequest, "scanRequest");
-        N.checkArgNotNull(targetClass, "targetClass");
+        N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Iterator<List<Map<String, AttributeValue>>> iterator = new ObjIterator<>() {
             private ScanRequest newScanRequest = scanRequest;
@@ -4440,7 +4478,7 @@ public final class DynamoDBExecutor {
         }
 
         private Map<String, AttributeValue> createKey(final T entity) {
-            N.checkArgNotNull(entity, "entity");
+            N.checkArgNotNull(entity, cs.entity);
 
             final Map<String, AttributeValue> key = new HashMap<>(keyPropNames.size());
 
@@ -4453,7 +4491,7 @@ public final class DynamoDBExecutor {
         }
 
         private Map<String, AttributeValueUpdate> createUpdateItem(final T entity) {
-            N.checkArgNotNull(entity, "entity");
+            N.checkArgNotNull(entity, cs.entity);
 
             final Map<String, AttributeValueUpdate> attributeUpdates = DynamoDBExecutor.toUpdateItem(entity, namingPolicy);
 
@@ -4655,8 +4693,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return a map containing the equality condition
+         * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public static Map<String, Condition> eq(final String attrName, final Object attrValue) {
+            N.checkArgNotEmpty(attrName, cs.attrName);
+
             return N.newLinkedHashMap(
                     N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.EQ).attributeValueList(toAttributeValue(attrValue)).build()));
         }
@@ -4674,8 +4715,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return a map containing the not-equal condition
+         * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public static Map<String, Condition> ne(final String attrName, final Object attrValue) {
+            N.checkArgNotEmpty(attrName, cs.attrName);
+
             return N.newLinkedHashMap(
                     N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.NE).attributeValueList(toAttributeValue(attrValue)).build()));
         }
@@ -4693,8 +4737,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return a map containing the greater-than condition
+         * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public static Map<String, Condition> gt(final String attrName, final Object attrValue) {
+            N.checkArgNotEmpty(attrName, cs.attrName);
+
             return N.newLinkedHashMap(
                     N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.GT).attributeValueList(toAttributeValue(attrValue)).build()));
         }
@@ -4712,8 +4759,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return a map containing the greater-than-or-equal condition
+         * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public static Map<String, Condition> ge(final String attrName, final Object attrValue) {
+            N.checkArgNotEmpty(attrName, cs.attrName);
+
             return N.newLinkedHashMap(
                     N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.GE).attributeValueList(toAttributeValue(attrValue)).build()));
         }
@@ -4731,8 +4781,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return a map containing the less-than condition
+         * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public static Map<String, Condition> lt(final String attrName, final Object attrValue) {
+            N.checkArgNotEmpty(attrName, cs.attrName);
+
             return N.newLinkedHashMap(
                     N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.LT).attributeValueList(toAttributeValue(attrValue)).build()));
         }
@@ -4750,8 +4803,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return a map containing the less-than-or-equal condition
+         * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public static Map<String, Condition> le(final String attrName, final Object attrValue) {
+            N.checkArgNotEmpty(attrName, cs.attrName);
+
             return N.newLinkedHashMap(
                     N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.LE).attributeValueList(toAttributeValue(attrValue)).build()));
         }
@@ -4770,8 +4826,11 @@ public final class DynamoDBExecutor {
          * @param minAttrValue the minimum value (inclusive)
          * @param maxAttrValue the maximum value (inclusive)
          * @return a map containing the between condition
+         * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public static Map<String, Condition> bt(final String attrName, final Object minAttrValue, final Object maxAttrValue) {
+            N.checkArgNotEmpty(attrName, cs.attrName);
+
             return N.newLinkedHashMap(N.asMap(attrName,
                     Condition.builder()
                             .comparisonOperator(ComparisonOperator.BETWEEN)
@@ -4794,8 +4853,11 @@ public final class DynamoDBExecutor {
          *
          * @param attrName the name of the attribute to check
          * @return a map containing the null condition
+         * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public static Map<String, Condition> isNull(final String attrName) {
+            N.checkArgNotEmpty(attrName, cs.attrName);
+
             return N.newLinkedHashMap(N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.NULL).build()));
         }
 
@@ -4814,8 +4876,11 @@ public final class DynamoDBExecutor {
          *
          * @param attrName the name of the attribute to check
          * @return a map containing the not-null condition
+         * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public static Map<String, Condition> notNull(final String attrName) {
+            N.checkArgNotEmpty(attrName, cs.attrName);
+
             return N.newLinkedHashMap(N.asMap(attrName, Condition.builder().comparisonOperator(ComparisonOperator.NOT_NULL).build()));
         }
 
@@ -4833,8 +4898,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to search in
          * @param attrValue the value to search for
          * @return a map containing the contains condition
+         * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public static Map<String, Condition> contains(final String attrName, final Object attrValue) {
+            N.checkArgNotEmpty(attrName, cs.attrName);
+
             return N.newLinkedHashMap(N.asMap(attrName,
                     Condition.builder().comparisonOperator(ComparisonOperator.CONTAINS).attributeValueList(toAttributeValue(attrValue)).build()));
         }
@@ -4852,8 +4920,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to search in
          * @param attrValue the value that should not be present
          * @return a map containing the not-contains condition
+         * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public static Map<String, Condition> notContains(final String attrName, final Object attrValue) {
+            N.checkArgNotEmpty(attrName, cs.attrName);
+
             return N.newLinkedHashMap(N.asMap(attrName,
                     Condition.builder().comparisonOperator(ComparisonOperator.NOT_CONTAINS).attributeValueList(toAttributeValue(attrValue)).build()));
         }
@@ -4871,8 +4942,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the string attribute to check
          * @param attrValue the prefix to match
          * @return a map containing the begins-with condition
+         * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public static Map<String, Condition> beginsWith(final String attrName, final Object attrValue) {
+            N.checkArgNotEmpty(attrName, cs.attrName);
+
             return N.newLinkedHashMap(N.asMap(attrName,
                     Condition.builder().comparisonOperator(ComparisonOperator.BEGINS_WITH).attributeValueList(toAttributeValue(attrValue)).build()));
         }
@@ -4935,7 +5009,7 @@ public final class DynamoDBExecutor {
          * @throws IllegalArgumentException if {@code attrName} or {@code attrValues} is null or empty
          */
         static void in(final Map<String, Condition> output, final String attrName, final Object... attrValues) {
-            N.checkArgNotEmpty(attrName, "attrName");
+            N.checkArgNotEmpty(attrName, cs.attrName);
             N.checkArgNotEmpty(attrValues, "attrValues");
 
             final AttributeValue[] attributeValueList = new AttributeValue[attrValues.length];
@@ -4958,7 +5032,7 @@ public final class DynamoDBExecutor {
          * @throws IllegalArgumentException if {@code attrName} or {@code attrValues} is null or empty
          */
         static void in(final Map<String, Condition> output, final String attrName, final Collection<?> attrValues) {
-            N.checkArgNotEmpty(attrName, "attrName");
+            N.checkArgNotEmpty(attrName, cs.attrName);
             N.checkArgNotEmpty(attrValues, "attrValues");
 
             final AttributeValue[] attributeValueList = new AttributeValue[attrValues.size()];
@@ -5078,8 +5152,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return this builder instance for method chaining
+         * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public ConditionBuilder eq(final String attrName, final Object attrValue) {
+            N.checkArgNotEmpty(attrName, cs.attrName);
+
             condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.EQ).attributeValueList(toAttributeValue(attrValue)).build());
 
             return this;
@@ -5098,8 +5175,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return this builder instance for method chaining
+         * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public ConditionBuilder ne(final String attrName, final Object attrValue) {
+            N.checkArgNotEmpty(attrName, cs.attrName);
+
             condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.NE).attributeValueList(toAttributeValue(attrValue)).build());
 
             return this;
@@ -5118,8 +5198,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return this builder instance for method chaining
+         * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public ConditionBuilder gt(final String attrName, final Object attrValue) {
+            N.checkArgNotEmpty(attrName, cs.attrName);
+
             condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.GT).attributeValueList(toAttributeValue(attrValue)).build());
 
             return this;
@@ -5138,8 +5221,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return this builder instance for method chaining
+         * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public ConditionBuilder ge(final String attrName, final Object attrValue) {
+            N.checkArgNotEmpty(attrName, cs.attrName);
+
             condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.GE).attributeValueList(toAttributeValue(attrValue)).build());
 
             return this;
@@ -5158,8 +5244,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return this builder instance for method chaining
+         * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public ConditionBuilder lt(final String attrName, final Object attrValue) {
+            N.checkArgNotEmpty(attrName, cs.attrName);
+
             condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.LT).attributeValueList(toAttributeValue(attrValue)).build());
 
             return this;
@@ -5178,8 +5267,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to compare
          * @param attrValue the value to compare against
          * @return this builder instance for method chaining
+         * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public ConditionBuilder le(final String attrName, final Object attrValue) {
+            N.checkArgNotEmpty(attrName, cs.attrName);
+
             condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.LE).attributeValueList(toAttributeValue(attrValue)).build());
 
             return this;
@@ -5200,8 +5292,11 @@ public final class DynamoDBExecutor {
          * @param minAttrValue the minimum value (inclusive)
          * @param maxAttrValue the maximum value (inclusive)
          * @return this builder instance for method chaining
+         * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public ConditionBuilder bt(final String attrName, final Object minAttrValue, final Object maxAttrValue) {
+            N.checkArgNotEmpty(attrName, cs.attrName);
+
             condMap.put(attrName,
                     Condition.builder()
                             .comparisonOperator(ComparisonOperator.BETWEEN)
@@ -5226,8 +5321,11 @@ public final class DynamoDBExecutor {
          *
          * @param attrName the name of the attribute to check
          * @return this builder instance for method chaining
+         * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public ConditionBuilder isNull(final String attrName) {
+            N.checkArgNotEmpty(attrName, cs.attrName);
+
             condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.NULL).build());
 
             return this;
@@ -5248,8 +5346,11 @@ public final class DynamoDBExecutor {
          *
          * @param attrName the name of the attribute to check
          * @return this builder instance for method chaining
+         * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public ConditionBuilder notNull(final String attrName) {
+            N.checkArgNotEmpty(attrName, cs.attrName);
+
             condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.NOT_NULL).build());
 
             return this;
@@ -5269,8 +5370,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to search in
          * @param attrValue the value to search for
          * @return this builder instance for method chaining
+         * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public ConditionBuilder contains(final String attrName, final Object attrValue) {
+            N.checkArgNotEmpty(attrName, cs.attrName);
+
             condMap.put(attrName, Condition.builder().comparisonOperator(ComparisonOperator.CONTAINS).attributeValueList(toAttributeValue(attrValue)).build());
 
             return this;
@@ -5289,8 +5393,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the attribute to search in
          * @param attrValue the value that should not be present
          * @return this builder instance for method chaining
+         * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public ConditionBuilder notContains(final String attrName, final Object attrValue) {
+            N.checkArgNotEmpty(attrName, cs.attrName);
+
             condMap.put(attrName,
                     Condition.builder().comparisonOperator(ComparisonOperator.NOT_CONTAINS).attributeValueList(toAttributeValue(attrValue)).build());
 
@@ -5310,8 +5417,11 @@ public final class DynamoDBExecutor {
          * @param attrName the name of the string attribute to check
          * @param attrValue the prefix to match
          * @return this builder instance for method chaining
+         * @throws IllegalArgumentException if {@code attrName} is null or empty
          */
         public ConditionBuilder beginsWith(final String attrName, final Object attrValue) {
+            N.checkArgNotEmpty(attrName, cs.attrName);
+
             condMap.put(attrName,
                     Condition.builder().comparisonOperator(ComparisonOperator.BEGINS_WITH).attributeValueList(toAttributeValue(attrValue)).build());
 

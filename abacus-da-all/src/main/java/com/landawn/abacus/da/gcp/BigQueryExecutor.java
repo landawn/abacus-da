@@ -1004,18 +1004,21 @@ public class BigQueryExecutor {
      * }</pre>
      *
      * @param <T> the element type of the returned list
-     * @param tableResult the BigQuery query result to materialise
+     * @param tableResult the BigQuery query result to materialise; must not be {@code null}
      * @param targetClass selects the per-row mapping strategy as described above; may be
      *                    {@code null} to fall back to {@code Object[]} rows
      * @return a {@link List} containing one element per data row, sized to
      *         {@link TableResult#getTotalRows()}; an empty list if the result has no rows or no
      *         schema (e.g. a DML statement)
-     * @throws IllegalArgumentException if {@code targetClass} is incompatible with the row width
+     * @throws IllegalArgumentException if {@code tableResult} is {@code null}, or if
+     *                                  {@code targetClass} is incompatible with the row width
      *                                  (see scalar case above)
      * @see #toEntity(FieldValueList, Class)
      * @see #stream(Class, String, Object...)
      */
     public static <T> List<T> toList(final TableResult tableResult, final Class<T> targetClass) {
+        N.checkArgNotNull(tableResult, "tableResult");
+
         final Schema schema = tableResult.getSchema();
 
         // A null schema (e.g. a DML statement's TableResult) has no result columns regardless of the
@@ -1077,16 +1080,19 @@ public class BigQueryExecutor {
      * empty.columnCount();                               // returns 0
      * }</pre>
      *
-     * @param tableResult the BigQuery query result to materialise
+     * @param tableResult the BigQuery query result to materialise; must not be {@code null}
      * @param targetClass type hint used to choose per-column conversion as described above; may be
      *                    {@code null}
      * @return a {@link RowDataset} backed by per-column lists, or {@link N#newEmptyDataset()} if
      *         {@code tableResult} has no schema (e.g. it came from a DML statement)
+     * @throws IllegalArgumentException if {@code tableResult} is {@code null}
      * @see RowDataset
      * @see #query(Class, String, Object...)
      */
     @SuppressWarnings({ "null" })
     public static Dataset extractData(final TableResult tableResult, final Class<?> targetClass) {
+        N.checkArgNotNull(tableResult, "tableResult");
+
         final Schema schema = tableResult.getSchema();
 
         // Null schema (DML statement) checked before toIntExact: getTotalRows() is the affected-row
@@ -1203,7 +1209,7 @@ public class BigQueryExecutor {
      * @see #insert(Class, Map)
      */
     public TableResult insert(final Object entity) {
-        N.checkArgNotNull(entity, "entity");
+        N.checkArgNotNull(entity, cs.entity);
 
         final SP sp = prepareInsert(entity);
 
@@ -1250,7 +1256,8 @@ public class BigQueryExecutor {
      * @param targetClass the class representing the target table (used for table name resolution)
      * @param props a Map containing column names as keys and values to insert
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if props is null or empty
+     * @throws IllegalArgumentException if props is null or empty, or if targetClass is null
+     *                                  (rejected by the SQL builder)
      * @see #insert(Object)
      */
     public TableResult insert(final Class<?> targetClass, final Map<String, Object> props) {
@@ -1317,7 +1324,7 @@ public class BigQueryExecutor {
      * @see #update(Object, Set)
      */
     public TableResult update(final Object entity) {
-        N.checkArgNotNull(entity, "entity");
+        N.checkArgNotNull(entity, cs.entity);
 
         return update(entity, getKeyNameSet(entity.getClass()));
     }
@@ -1366,7 +1373,7 @@ public class BigQueryExecutor {
      * @see #update(Class, Map, Condition)
      */
     public TableResult update(final Object entity, final Set<String> primaryKeyNames) {
-        N.checkArgNotNull(entity, "entity");
+        N.checkArgNotNull(entity, cs.entity);
 
         final SP sp = prepareUpdate(entity, primaryKeyNames);
 
@@ -1459,7 +1466,8 @@ public class BigQueryExecutor {
      *                    (a {@code null} condition is rejected by the SQL builder with
      *                    {@link IllegalArgumentException})
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if props is null or empty, or if whereClause is {@code null}
+     * @throws IllegalArgumentException if props is null or empty, if whereClause is {@code null}, or if
+     *                                  targetClass is null (the latter two are rejected by the SQL builder)
      * @see com.landawn.abacus.query.Filters
      */
     public TableResult update(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause) {
@@ -1519,7 +1527,7 @@ public class BigQueryExecutor {
      * @see #delete(Class, Object...)
      */
     public TableResult delete(final Object entity) {
-        N.checkArgNotNull(entity, "entity");
+        N.checkArgNotNull(entity, cs.entity);
 
         return delete(entity.getClass(), entityToCondition(entity));
     }
@@ -1553,12 +1561,13 @@ public class BigQueryExecutor {
      * @param targetClass the class representing the target table (used for table name and key resolution)
      * @param ids the primary key values to identify records for deletion
      * @return the TableResult containing execution statistics including number of rows affected
-     * @throws IllegalArgumentException if ids is null or empty,
+     * @throws IllegalArgumentException if targetClass is null, if ids is null or empty,
      *                                  or the number of IDs doesn't match the primary key structure
-     * @throws NullPointerException if targetClass is null
      * @see #delete(Class, Condition)
      */
     public final TableResult delete(final Class<?> targetClass, final Object... ids) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         return delete(targetClass, idsToCondition(targetClass, ids));
     }
 
@@ -1645,12 +1654,13 @@ public class BigQueryExecutor {
      * @param targetClass the class representing the target table (used for table name and key resolution)
      * @param ids the primary key values to check for existence
      * @return {@code true} if a record exists with the specified key values, {@code false} otherwise
-     * @throws IllegalArgumentException if ids is null or empty,
+     * @throws IllegalArgumentException if targetClass is null, if ids is null or empty,
      *                                  or the number of IDs doesn't match the primary key structure
-     * @throws NullPointerException if targetClass is null
      * @see #exists(Class, Condition)
      */
     public final boolean exists(final Class<?> targetClass, final Object... ids) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         return exists(targetClass, idsToCondition(targetClass, ids));
     }
 
@@ -1745,7 +1755,7 @@ public class BigQueryExecutor {
      * @see #idsToCondition(Class, Object...)
      */
     static Condition entityToCondition(final Object entity) {
-        N.checkArgNotNull(entity, "entity");
+        N.checkArgNotNull(entity, cs.entity);
 
         final Class<?> targetClass = entity.getClass();
         final ImmutableList<String> keyNames = getKeyNames(targetClass);
@@ -1814,10 +1824,13 @@ public class BigQueryExecutor {
      * @param targetClass the class representing the target table (used for table name resolution)
      * @param whereClause the condition to check for matching records, or {@code null} to check whether the table has any rows
      * @return {@code true} if at least one record matches the condition, {@code false} otherwise
-     * @throws NullPointerException if targetClass is null
+     * @throws IllegalArgumentException if targetClass is null. Without this check the key-name lookup
+     *         would fail with a bare {@code NullPointerException} from the internal cache map.
      * @see com.landawn.abacus.query.Filters
      */
     public boolean exists(final Class<?> targetClass, final Condition whereClause) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final ImmutableList<String> keyNames = getKeyNames(targetClass);
         final SP sp = prepareQuery(targetClass, keyNames, whereClause, 1);
         final TableResult resultSet = execute(sp);
@@ -2456,13 +2469,18 @@ public class BigQueryExecutor {
      * @param <T> the target type for stream elements
      * @param targetClass the target class for result conversion (entity class with getter/setter methods, Map.class,
      *                   or basic single value types)
-     * @param queryConfig the BigQuery QueryJobConfiguration with query and job settings
+     * @param queryConfig the BigQuery QueryJobConfiguration with query and job settings; must not be {@code null}
      * @return a Stream containing all query results converted to the target type
+     * @throws IllegalArgumentException if {@code queryConfig} is {@code null}. The BigQuery client does not
+     *         check it, so an unchecked null would fail with a bare NullPointerException whose origin
+     *         depends on whether debug logging is enabled.
      * @throws RuntimeException if the query job fails or the calling thread is interrupted
      * @see QueryJobConfiguration
      * @see #stream(QueryJobConfiguration)
      */
     public final <T> Stream<T> stream(final Class<T> targetClass, final QueryJobConfiguration queryConfig) {
+        N.checkArgNotNull(queryConfig, "queryConfig");
+
         if (logger.isDebugEnabled()) {
             logger.debug("Executing query: {}", queryConfig.getQuery());
         }
@@ -2518,14 +2536,19 @@ public class BigQueryExecutor {
      *     });
      * }</pre>
      *
-     * @param queryConfig the BigQuery QueryJobConfiguration with query and job settings
+     * @param queryConfig the BigQuery QueryJobConfiguration with query and job settings; must not be {@code null}
      * @return a Stream containing raw FieldValueList objects from the query results
+     * @throws IllegalArgumentException if {@code queryConfig} is {@code null}. The BigQuery client does not
+     *         check it, so an unchecked null would fail with a bare NullPointerException whose origin
+     *         depends on whether debug logging is enabled.
      * @throws RuntimeException if the query job fails or the calling thread is interrupted
      * @see QueryJobConfiguration
      * @see FieldValueList
      * @see #stream(Class, QueryJobConfiguration)
      */
     public final Stream<FieldValueList> stream(final QueryJobConfiguration queryConfig) {
+        N.checkArgNotNull(queryConfig, "queryConfig");
+
         if (logger.isDebugEnabled()) {
             logger.debug("Executing query: {}", queryConfig.getQuery());
         }

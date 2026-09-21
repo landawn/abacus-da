@@ -48,6 +48,7 @@ import com.landawn.abacus.util.Strings;
 import com.landawn.abacus.util.Throwables;
 import com.landawn.abacus.util.Tuple;
 import com.landawn.abacus.util.Tuple.Tuple2;
+import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.u.OptionalBoolean;
@@ -557,7 +558,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         entity has no value for the key property
      */
     protected static Condition entityToCondition(final Class<?> entityClass, final Collection<?> entities) {
-        N.checkArgNotNull(entityClass, "entityClass");
+        N.checkArgNotNull(entityClass, cs.entityClass);
         N.checkArgument(N.notEmpty(entities), "'entities' can't be null or empty.");
 
         final Set<String> keyNameSet = getKeyNameSet(entityClass);
@@ -973,7 +974,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         or if a key value is missing
      */
     public RS update(final Object entity) {
-        N.checkArgNotNull(entity, "entity");
+        N.checkArgNotNull(entity, cs.entity);
 
         final Class<?> entityClass = entity.getClass();
         final Set<String> keyNameSet = getKeyNameSet(entityClass);
@@ -1257,7 +1258,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *         if a primary-key property is requested for deletion, or if a key value is missing
      */
     public RS delete(final Object entity, final Collection<String> propNamesToDelete) {
-        N.checkArgNotNull(entity, "entity");
+        N.checkArgNotNull(entity, cs.entity);
         N.checkArgument(propNamesToDelete == null || N.notEmpty(propNamesToDelete), "'propNamesToDelete' can't be empty (pass null to delete the entire row)");
 
         return delete(entity.getClass(), propNamesToDelete, entityToCondition(entity));
@@ -2106,7 +2107,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleValue(Class, String, Object...)
      */
     public <V> Nullable<V> queryForSingleValue(final Class<?> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause) {
-        N.checkArgNotEmpty(propName, "propName");
+        N.checkArgNotEmpty(propName, cs.propName);
 
         final SP cp = prepareQuery(targetClass, List.of(propName), whereClause, 1);
 
@@ -2151,7 +2152,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @see #queryForSingleNonNull(Class, String, Object...)
      */
     public <V> Optional<V> queryForSingleNonNull(final Class<?> targetClass, final Class<V> valueClass, final String propName, final Condition whereClause) {
-        N.checkArgNotEmpty(propName, "propName");
+        N.checkArgNotEmpty(propName, cs.propName);
 
         final SP cp = prepareQuery(targetClass, List.of(propName), whereClause, 1);
 
@@ -2631,7 +2632,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * }</pre>
      *
      * @param <V> the type of the single result value to be returned
-     * @param valueClass the Java class the column value is converted to
+     * @param valueClass the Java class the column value is converted to (must not be {@code null})
      * @param query the CQL query string with {@code ?} placeholders for parameters
      * @param parameters the values to bind, in declaration order
      * @return a <i>present</i> {@code Nullable<V>} holding the column value (possibly {@code null} for
@@ -2667,7 +2668,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * }</pre>
      *
      * @param <V> the type of the single result value to be returned
-     * @param valueClass the Java class the column value is converted to
+     * @param valueClass the Java class the column value is converted to (must not be {@code null})
      * @param query the CQL query string with {@code ?} placeholders for parameters
      * @param parameters the values to bind, in declaration order
      * @return a <i>present</i> {@code Optional<V>} holding the (non-null) column value when at least
@@ -2740,7 +2741,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param <T> the type to map the result row to
      * @param targetClass an entity class with getter/setter methods, {@code Map.class}, a collection, or
-     *        an array class
+     *        an array class (must not be {@code null})
      * @param query the CQL query string with {@code ?} placeholders for parameters
      * @param parameters the values to bind, in declaration order
      * @return a <i>present</i> {@code Optional<T>} holding the first mapped row when at least one row is
@@ -2787,12 +2788,15 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param <T> the target type
      * @param targetClass an entity class with getter/setter methods matching column names,
-     *        {@code Map.class}, or a basic single-value type
+     *        {@code Map.class}, or a basic single-value type (must not be {@code null})
      * @param query the CQL query string with {@code ?} placeholders for parameters
      * @param parameters the values to bind, in declaration order
      * @return a list of result rows mapped to {@code targetClass}
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}
      */
     public final <T> List<T> list(final Class<T> targetClass, final String query, final Object... parameters) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         return toList(targetClass, execute(query, parameters));
     }
 
@@ -2878,12 +2882,16 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param <T> the target type
      * @param targetClass an entity class with getter/setter methods matching column names,
-     *        or {@code Map.class}
+     *        or {@code Map.class} (must not be {@code null})
      * @param query the CQL query string with {@code ?} placeholders for parameters
      * @param parameters the values to bind, in declaration order
      * @return a stream of result rows mapped to {@code targetClass}
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}; rejected eagerly,
+     *         because the row mapper is only applied when the lazy stream is consumed
      */
     public final <T> Stream<T> stream(final Class<T> targetClass, final String query, final Object... parameters) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         return Stream.of(execute(query, parameters).iterator()).map(createRowMapper(targetClass));
     }
 
@@ -2902,11 +2910,15 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      *
      * @param <T> the target type
      * @param targetClass an entity class with getter/setter methods matching column names,
-     *        or {@code Map.class}
+     *        or {@code Map.class} (must not be {@code null})
      * @param statement the driver statement to execute (for example a bound or batch statement)
      * @return a stream of result rows mapped to {@code targetClass}
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}; rejected eagerly,
+     *         because the row mapper is only applied when the lazy stream is consumed
      */
     public <T> Stream<T> stream(final Class<T> targetClass, final ST statement) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         return Stream.of(execute(statement).iterator()).map(createRowMapper(targetClass));
     }
 
@@ -3090,7 +3102,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return the prepared statement with parameters
      */
     protected SP prepareInsert(final Object entity) {
-        N.checkArgNotNull(entity, "entity");
+        N.checkArgNotNull(entity, cs.entity);
 
         final Class<?> targetClass = entity.getClass();
 
@@ -3167,7 +3179,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return the prepared statement with parameters
      */
     protected SP prepareUpdate(final Object entity, final Collection<String> propNamesToUpdate) {
-        N.checkArgNotNull(entity, "entity");
+        N.checkArgNotNull(entity, cs.entity);
         N.checkArgument(N.notEmpty(propNamesToUpdate), "'propNamesToUpdate' can't be null or empty.");
 
         final Class<?> targetClass = entity.getClass();
@@ -3208,7 +3220,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return the prepared statement with parameters
      */
     protected SP prepareUpdate(final Class<?> targetClass, final Map<String, Object> props, final Condition whereClause) {
-        N.checkArgNotNull(targetClass, "targetClass");
+        N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgument(N.notEmpty(props), "'props' can't be null or empty.");
         N.checkArgNotNull(whereClause, "whereClause");
         checkNoPrimaryKeyProperties(targetClass, props.keySet(), "props");
@@ -3239,8 +3251,8 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @throws IllegalArgumentException if the class has no key, a key is absent/null/empty, or no update property remains
      */
     protected SP prepareBatchMapUpdate(final Class<?> targetClass, final Map<String, Object> props) {
-        N.checkArgNotNull(targetClass, "targetClass");
-        N.checkArgNotNull(props, "props");
+        N.checkArgNotNull(targetClass, cs.targetClass);
+        N.checkArgNotNull(props, cs.props);
 
         final Set<String> primaryKeyNames = getKeyNameSet(targetClass);
 
@@ -3311,7 +3323,7 @@ public abstract class CassandraExecutorBase<RW, RS extends Iterable<RW>, ST, PS,
      * @return the prepared statement with parameters
      */
     protected SP prepareDelete(final Class<?> targetClass, final Collection<String> propNamesToDelete, final Condition whereClause) {
-        N.checkArgNotNull(targetClass, "targetClass");
+        N.checkArgNotNull(targetClass, cs.targetClass);
         N.checkArgNotNull(whereClause, "whereClause");
 
         if (N.notEmpty(propNamesToDelete)) {

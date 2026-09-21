@@ -4258,4 +4258,20 @@ public class CqlBuilderTest extends TestBase {
         assertEquals(expected + " IF status = ?", recoveredSp.query());
         assertEquals(2, recoveredSp.parameters().size());
     }
+
+    /**
+     * {@code renderCondition(cond, null)} is a documented null-as-default: without an entity class the
+     * property names are still normalized by the DSL's naming policy, only the entity-based
+     * column mapping is skipped. A null condition remains an illegal argument.
+     */
+    @Test
+    public void test_renderCondition_nullEntityClass_isAccepted() {
+        final String cql = PSC.renderCondition(Filters.eq("firstName", "John"), null).build().query();
+        assertTrue(cql.contains("first_name"), cql);
+        assertTrue(cql.contains("?"), cql);
+
+        assertEquals("firstName = :firstName", NSB.renderCondition(Filters.eq("firstName", "John"), null).build().query().trim());
+
+        assertThrows(IllegalArgumentException.class, () -> PSC.renderCondition(null, null));
+    }
 }

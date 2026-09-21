@@ -32,6 +32,7 @@ import com.landawn.abacus.util.AsyncExecutor;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.Fn;
 import com.landawn.abacus.util.N;
+import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.u.Nullable;
 import com.landawn.abacus.util.u.Optional;
 import com.landawn.abacus.util.u.OptionalBoolean;
@@ -366,7 +367,7 @@ public final class MongoCollectionExecutor {
      * @see #count(Bson, CountOptions)
      */
     public long count(final Bson filter) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         return coll.countDocuments(filter);
     }
@@ -394,7 +395,7 @@ public final class MongoCollectionExecutor {
      * @see com.mongodb.client.model.Filters
      */
     public long count(final Bson filter, final CountOptions options) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         if (options == null) {
             return coll.countDocuments(filter);
@@ -891,7 +892,7 @@ public final class MongoCollectionExecutor {
      * @see com.mongodb.client.model.Sorts
      */
     public <T> Optional<T> findFirst(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         final FindIterable<Document> findIterable = query(selectPropNames, filter, sort, 0, 1);
 
@@ -936,7 +937,7 @@ public final class MongoCollectionExecutor {
      * @see com.mongodb.client.model.Sorts
      */
     public <T> Optional<T> findFirst(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         final FindIterable<Document> findIterable = executeQuery(projection, filter, sort, 0, 1);
 
@@ -1146,7 +1147,7 @@ public final class MongoCollectionExecutor {
      */
     public <T> List<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         final FindIterable<Document> findIterable = query(selectPropNames, filter, sort, offset, count);
 
@@ -1229,7 +1230,7 @@ public final class MongoCollectionExecutor {
      * @see com.mongodb.client.model.Sorts
      */
     public <T> List<T> list(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         final FindIterable<Document> findIterable = executeQuery(projection, filter, sort, offset, count);
 
@@ -1654,8 +1655,8 @@ public final class MongoCollectionExecutor {
      * @see com.landawn.abacus.util.u.Nullable
      */
     public <V> Nullable<V> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType) {
-        N.checkArgNotEmpty(propName, "propName");
-        N.checkArgNotNull(valueType, "valueType");
+        N.checkArgNotEmpty(propName, cs.propName);
+        N.checkArgNotNull(valueType, cs.valueType);
 
         final FindIterable<Document> findIterable = query(N.asList(propName), filter, null, 0, 1);
 
@@ -1711,8 +1712,8 @@ public final class MongoCollectionExecutor {
      * @see com.landawn.abacus.util.u.Optional
      */
     public <V> Optional<V> queryForSingleNonNull(final String propName, final Bson filter, final Class<V> valueType) {
-        N.checkArgNotEmpty(propName, "propName");
-        N.checkArgNotNull(valueType, "valueType");
+        N.checkArgNotEmpty(propName, cs.propName);
+        N.checkArgNotNull(valueType, cs.valueType);
 
         final FindIterable<Document> findIterable = query(N.asList(propName), filter, null, 0, 1);
 
@@ -1976,7 +1977,7 @@ public final class MongoCollectionExecutor {
      */
     public Dataset query(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<?> rowType) {
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         final FindIterable<Document> findIterable = query(selectPropNames, filter, sort, offset, count);
 
@@ -2054,7 +2055,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails
      */
     public Dataset query(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<?> rowType) {
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         final FindIterable<Document> findIterable = executeQuery(projection, filter, sort, offset, count);
 
@@ -2138,7 +2139,7 @@ public final class MongoCollectionExecutor {
      * @see #stream(Bson, Class)
      */
     public <T> Stream<T> stream(final Class<T> rowType) {
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         final MongoCursor<Document> cursor = coll.find().iterator();
 
@@ -2371,7 +2372,7 @@ public final class MongoCollectionExecutor {
      */
     public <T> Stream<T> stream(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         final MongoCursor<Document> cursor = query(selectPropNames, filter, sort, offset, count).iterator();
 
@@ -2441,7 +2442,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails
      */
     public <T> Stream<T> stream(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         final MongoCursor<Document> cursor = executeQuery(projection, filter, sort, offset, count).iterator();
 
@@ -2579,14 +2580,14 @@ public final class MongoCollectionExecutor {
      * @throws IllegalArgumentException if offset or count is negative
      */
     private FindIterable<Document> executeQuery(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         if (logger.isDebugEnabled()) {
             logger.debug("Querying collection {} with filter: {}", coll.getNamespace().getFullName(), filter);
         }
 
-        N.checkArgNotNegative(offset, "offset");
-        N.checkArgNotNegative(count, "count");
+        N.checkArgNotNegative(offset, cs.offset);
+        N.checkArgNotNegative(count, cs.count);
 
         if (count == 0) {
             // The MongoDB driver treats limit(0) as "no limit" (return all matching documents).
@@ -2649,13 +2650,13 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the target type for change documents
-     * @param rowType the class to convert change documents to
+     * @param rowType the class to convert change documents to (must not be null)
      * @return a typed ChangeStreamIterable
      * @throws IllegalArgumentException if rowType is null
      * @throws MongoException if the database operation fails
      */
     public <T> ChangeStreamIterable<T> watch(final Class<T> rowType) {
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return coll.watch(rowType);
     }
@@ -2675,7 +2676,7 @@ public final class MongoCollectionExecutor {
      *     .forEach(change -> processChange(change));
      * }</pre>
      *
-     * @param pipeline aggregation pipeline to apply to change events
+     * @param pipeline aggregation pipeline to apply to change events (must not be null)
      * @return a filtered ChangeStreamIterable
      * @throws IllegalArgumentException if pipeline is null
      * @throws MongoException if the database operation fails
@@ -2702,15 +2703,15 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the target type for change documents
-     * @param pipeline aggregation pipeline to apply
-     * @param rowType the class to convert change documents to
+     * @param pipeline aggregation pipeline to apply (must not be null)
+     * @param rowType the class to convert change documents to (must not be null)
      * @return a filtered and typed ChangeStreamIterable
-     * @throws IllegalArgumentException if parameters are null
+     * @throws IllegalArgumentException if pipeline or rowType is null
      * @throws MongoException if the database operation fails
      */
     public <T> ChangeStreamIterable<T> watch(final List<? extends Bson> pipeline, final Class<T> rowType) {
         N.checkArgNotNull(pipeline, "pipeline");
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return coll.watch(pipeline, rowType);
     }
@@ -2740,10 +2741,9 @@ public final class MongoCollectionExecutor {
      * executor.insertOne(user); // entity is converted to a Document and inserted (null properties dropped)
      * }</pre>
      *
-     * @param obj the object to insert - can be Document, {@code Map<String, Object>}, or entity class with getter/setter methods
+     * @param obj the object to insert (must not be null) - can be Document, {@code Map<String, Object>}, or entity class with getter/setter methods
      * @return the {@link InsertOneResult} reported by the server (e.g. the generated {@code _id} via {@link InsertOneResult#getInsertedId()})
-     * @throws IllegalArgumentException if obj is null
-     * @throws IllegalArgumentException if obj is not a Document, Map, or bean class with getter/setter methods
+     * @throws IllegalArgumentException if obj is null, or is not a Document, Map, or bean class with getter/setter methods
      * @throws MongoWriteException if the insert operation fails
      * @throws MongoException if the database operation fails
      * @see #insertOne(Object, InsertOneOptions)
@@ -2773,11 +2773,10 @@ public final class MongoCollectionExecutor {
      * InsertOneResult result = executor.insertOne(user, options); // document inserted bypassing schema validation
      * }</pre>
      *
-     * @param obj the object to insert - can be Document, {@code Map<String, Object>}, or entity class with getter/setter methods
+     * @param obj the object to insert (must not be null) - can be Document, {@code Map<String, Object>}, or entity class with getter/setter methods
      * @param options additional options for the insert operation (null uses defaults)
      * @return the {@link InsertOneResult} reported by the server (e.g. the generated {@code _id} via {@link InsertOneResult#getInsertedId()})
-     * @throws IllegalArgumentException if obj is null
-     * @throws IllegalArgumentException if obj is not a Document, Map, or bean class with getter/setter methods
+     * @throws IllegalArgumentException if obj is null, or is not a Document, Map, or bean class with getter/setter methods
      * @throws MongoWriteException if the insert operation fails
      * @throws MongoException if the database operation fails
      * @see InsertOneOptions
@@ -3029,7 +3028,7 @@ public final class MongoCollectionExecutor {
      * @see #updateOne(String, Object)
      */
     public UpdateResult updateOne(final Bson filter, final Object update) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         return updateOne(filter, update, null);
     }
@@ -3055,7 +3054,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails
      */
     public UpdateResult updateOne(final Bson filter, final Object update, final UpdateOptions options) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         if (options == null) {
             return coll.updateOne(filter, toBson(update));
@@ -3092,7 +3091,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails
      */
     public UpdateResult updateOne(final Bson filter, final Collection<?> objList) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         return updateOne(filter, objList, null);
     }
@@ -3120,7 +3119,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails
      */
     public UpdateResult updateOne(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         final List<Bson> updateToUse = toBson(objList);
 
@@ -3294,7 +3293,7 @@ public final class MongoCollectionExecutor {
      * @see #async()
      */
     public UpdateResult updateMany(final Bson filter, final Object update) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         return updateMany(filter, update, null);
     }
@@ -3332,7 +3331,7 @@ public final class MongoCollectionExecutor {
      * @see UpdateResult
      */
     public UpdateResult updateMany(final Bson filter, final Object update, final UpdateOptions options) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         if (options == null) {
             return coll.updateMany(filter, toBson(update));
@@ -3374,7 +3373,7 @@ public final class MongoCollectionExecutor {
      * @see #updateMany(Bson, Object)
      */
     public UpdateResult updateMany(final Bson filter, final Collection<?> objList) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         return updateMany(filter, objList, null);
     }
@@ -3413,7 +3412,7 @@ public final class MongoCollectionExecutor {
      * @see UpdateOptions
      */
     public UpdateResult updateMany(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         N.checkArgNotEmpty(objList, "objList");
 
@@ -3524,9 +3523,9 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails
      */
     public UpdateResult replaceOne(final Bson filter, final Object replacement, final ReplaceOptions options) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
-        N.checkArgNotNull(replacement, "replacement");
+        N.checkArgNotNull(replacement, cs.replacement);
 
         if (options == null) {
             return coll.replaceOne(filter, toDocument(replacement));
@@ -3590,7 +3589,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails
      */
     public DeleteResult deleteOne(final Bson filter) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         return coll.deleteOne(filter);
     }
@@ -3611,7 +3610,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails
      */
     public DeleteResult deleteOne(final Bson filter, final DeleteOptions options) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         return options == null ? coll.deleteOne(filter) : coll.deleteOne(filter, options);
     }
@@ -3634,7 +3633,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails
      */
     public DeleteResult deleteMany(final Bson filter) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         return coll.deleteMany(filter);
     }
@@ -3655,7 +3654,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails
      */
     public DeleteResult deleteMany(final Bson filter, final DeleteOptions options) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         return options == null ? coll.deleteMany(filter) : coll.deleteMany(filter, options);
     }
@@ -3868,7 +3867,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails
      */
     public Document findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         if (options == null) {
             return coll.findOneAndUpdate(filter, toBson(update));
@@ -3899,8 +3898,8 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails
      */
     public <T> T findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options, final Class<T> rowType) {
-        N.checkArgNotNull(filter, "filter");
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         if (options == null) {
             return toEntity(coll.findOneAndUpdate(filter, toBson(update)), rowType);
@@ -3987,7 +3986,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails
      */
     public Document findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         final List<Bson> updateToUse = toBson(objList);
 
@@ -4023,8 +4022,8 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails
      */
     public <T> T findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options, final Class<T> rowType) {
-        N.checkArgNotNull(filter, "filter");
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         final List<Bson> updateToUse = toBson(objList);
 
@@ -4107,9 +4106,9 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails
      */
     public Document findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
-        N.checkArgNotNull(replacement, "replacement");
+        N.checkArgNotNull(replacement, cs.replacement);
 
         if (options == null) {
             return coll.findOneAndReplace(filter, toDocument(replacement));
@@ -4140,10 +4139,10 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails
      */
     public <T> T findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options, final Class<T> rowType) {
-        N.checkArgNotNull(filter, "filter");
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
-        N.checkArgNotNull(replacement, "replacement");
+        N.checkArgNotNull(replacement, cs.replacement);
 
         if (options == null) {
             return toEntity(coll.findOneAndReplace(filter, toDocument(replacement)), rowType);
@@ -4213,7 +4212,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails
      */
     public Document findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         if (options == null) {
             return coll.findOneAndDelete(filter);
@@ -4243,8 +4242,8 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails
      */
     public <T> T findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options, final Class<T> rowType) {
-        N.checkArgNotNull(filter, "filter");
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         if (options == null) {
             return toEntity(coll.findOneAndDelete(filter), rowType);
@@ -4272,8 +4271,8 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails
      */
     public <T> Stream<T> distinct(final String fieldName, final Class<T> rowType) {
-        N.checkArgNotEmpty(fieldName, "fieldName");
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotEmpty(fieldName, cs.fieldName);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         final MongoCursor<T> cursor = coll.distinct(fieldName, rowType).iterator();
 
@@ -4301,9 +4300,9 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails
      */
     public <T> Stream<T> distinct(final String fieldName, final Bson filter, final Class<T> rowType) {
-        N.checkArgNotEmpty(fieldName, "fieldName");
-        N.checkArgNotNull(filter, "filter");
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotEmpty(fieldName, cs.fieldName);
+        N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         final MongoCursor<T> cursor = coll.distinct(fieldName, filter, rowType).iterator();
 
@@ -4358,7 +4357,7 @@ public final class MongoCollectionExecutor {
      */
     public <T> Stream<T> aggregate(final List<? extends Bson> pipeline, final Class<T> rowType) {
         N.checkArgNotNull(pipeline, "pipeline");
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         final MongoCursor<Document> cursor = coll.aggregate(pipeline, Document.class).iterator();
 
@@ -4407,8 +4406,8 @@ public final class MongoCollectionExecutor {
      */
     @Beta
     public <T> Stream<T> groupBy(final String fieldName, final Class<T> rowType) {
-        N.checkArgNotEmpty(fieldName, "fieldName");
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotEmpty(fieldName, cs.fieldName);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return aggregate(groupByPipeline(fieldName, false, rowType), rowType);
     }
@@ -4457,7 +4456,7 @@ public final class MongoCollectionExecutor {
     @Beta
     public <T> Stream<T> groupBy(final Collection<String> fieldNames, final Class<T> rowType) {
         N.checkArgNotEmpty(fieldNames, "fieldNames");
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return aggregate(groupByPipeline(fieldNames, false, rowType), rowType);
     }
@@ -4504,8 +4503,8 @@ public final class MongoCollectionExecutor {
      */
     @Beta
     public <T> Stream<T> groupByAndCount(final String fieldName, final Class<T> rowType) {
-        N.checkArgNotEmpty(fieldName, "fieldName");
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotEmpty(fieldName, cs.fieldName);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return aggregate(groupByPipeline(fieldName, true, rowType), rowType);
     }
@@ -4554,7 +4553,7 @@ public final class MongoCollectionExecutor {
     @Beta
     public <T> Stream<T> groupByAndCount(final Collection<String> fieldNames, final Class<T> rowType) {
         N.checkArgNotEmpty(fieldNames, "fieldNames");
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return aggregate(groupByPipeline(fieldNames, true, rowType), rowType);
     }
@@ -4662,7 +4661,7 @@ public final class MongoCollectionExecutor {
     public <T> Stream<T> mapReduce(final String mapFunction, final String reduceFunction, final Class<T> rowType) {
         N.checkArgNotEmpty(mapFunction, "mapFunction");
         N.checkArgNotEmpty(reduceFunction, "reduceFunction");
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         final MongoCursor<Document> cursor = coll.mapReduce(mapFunction, reduceFunction, Document.class).iterator();
 

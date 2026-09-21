@@ -947,7 +947,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * int len = empty.getStartRow().length;                         // returns 0
      * }</pre>
      *
-     * @param startRow the row key to start scanning from (inclusive)
+     * @param startRow the row key to start scanning from (inclusive); may be {@code null}, which
+     *                 leaves the scan with an open lower bound ({@link #getStartRow()} then returns
+     *                 {@code null})
      * @return this AnyScan instance for method chaining
      * @see #withStartRow(Object, boolean)
      * @see #includeStartRow()
@@ -974,7 +976,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * boolean incl = scan.includeStartRow();                             // returns false (exclusive)
      * }</pre>
      *
-     * @param startRow the row key to start scanning from
+     * @param startRow the row key to start scanning from; may be {@code null}, which leaves the
+     *                 scan with an open lower bound
      * @param inclusive {@code true} to include the start row, {@code false} to exclude it
      * @return this AnyScan instance for method chaining
      * @see #withStartRow(Object)
@@ -1050,7 +1053,9 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * boolean incl = scan.includeStopRow();                      // returns false (exclusive)
      * }</pre>
      *
-     * @param stopRow the row key to stop scanning before (exclusive)
+     * @param stopRow the row key to stop scanning before (exclusive); may be {@code null}, which
+     *                leaves the scan with an open upper bound ({@link #getStopRow()} then returns
+     *                {@code null})
      * @return this AnyScan instance for method chaining
      * @see #withStopRow(Object, boolean)
      * @see #includeStopRow()
@@ -1077,7 +1082,8 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * boolean incl = scan.includeStopRow();                            // returns true (inclusive)
      * }</pre>
      *
-     * @param stopRow the row key to stop scanning at
+     * @param stopRow the row key to stop scanning at; may be {@code null}, which leaves the scan
+     *                with an open upper bound
      * @param inclusive {@code true} to include the stop row, {@code false} to exclude it
      * @return this AnyScan instance for method chaining
      * @see #withStopRow(Object)
@@ -1134,9 +1140,15 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *
      * // A pre-converted byte[] prefix is passed through unchanged.
      * AnyScan scan2 = AnyScan.create().setStartStopRowForPrefixScan(Bytes.toBytes("user_"));
+     *
+     * // A null prefix is tolerated and resets the scan to the full row range.
+     * AnyScan cleared = AnyScan.create().setStartStopRowForPrefixScan((Object) null);   // no exception
+     * int len = cleared.getStartRow().length;                                           // returns 0
      * }</pre>
      *
-     * @param rowPrefix the row key prefix; passed through {@link HBaseExecutor#toRowKeyBytes(Object)} (a {@code byte[]} input is returned as-is)
+     * @param rowPrefix the row key prefix; passed through {@link HBaseExecutor#toRowKeyBytes(Object)} (a {@code byte[]} input is returned as-is).
+     *                  May be {@code null}, in which case the start and stop rows are reset to the
+     *                  empty (unbounded) row keys
      * @return this AnyScan instance for method chaining
      * @see Scan#setStartStopRowForPrefixScan(byte[])
      */
@@ -1961,6 +1973,11 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      * <p>Note: HBase may override your choice in certain cases. For example, it will always use
      * pread for get scans regardless of this setting.</p>
      *
+     * <p>{@code null} is rejected here rather than forwarded: the wrapped HBase {@link Scan} would
+     * store it silently and only fail — with a bare {@code NullPointerException} raised deep inside
+     * HBase's request encoder — when the scan is finally executed. Pass {@link ReadType#DEFAULT} to
+     * let HBase choose.</p>
+     *
      * <p><b>Usage Examples:</b></p>
      * <pre>{@code
      * // For large sequential table scans
@@ -1972,14 +1989,20 @@ public final class AnyScan extends AnyQuery<AnyScan> {
      *                           .withStartRow("key")
      *                           .setOneRowLimit()
      *                           .setReadType(ReadType.PREAD);
+     *
+     * // Edge: a null read type is rejected.
+     * AnyScan.create().setReadType(null);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param readType the type of read to perform (STREAM, PREAD, or DEFAULT)
+     * @param readType the type of read to perform (STREAM, PREAD, or DEFAULT); must not be {@code null}
      * @return this AnyScan instance for method chaining
+     * @throws IllegalArgumentException if {@code readType} is {@code null}
      * @see #getReadType()
      * @see ReadType
      */
     public AnyScan setReadType(final ReadType readType) {
+        N.checkArgNotNull(readType, "readType");
+
         scan.setReadType(readType);
 
         return this;

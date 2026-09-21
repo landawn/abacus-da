@@ -57,6 +57,7 @@ import com.landawn.abacus.util.NamingPolicy;
 import com.landawn.abacus.util.OperationType;
 import com.landawn.abacus.util.SK;
 import com.landawn.abacus.util.Strings;
+import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.u.Optional;
 
 /**
@@ -307,7 +308,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      */
     @Beta
     public static String repeatPlaceholders(final int count) {
-        N.checkArgNotNegative(count, "count");
+        N.checkArgNotNegative(count, cs.count);
 
         return QueryUtil.placeholders(count);
     }
@@ -689,7 +690,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
         }
     }
 
-    protected  void assertNotClosed() {
+    protected void assertNotClosed() {
         if (_sb == null) {
             throw new IllegalStateException("This CqlBuilder has been closed after build() was called. No further operation is supported");
         }
@@ -1230,7 +1231,7 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
      */
     @Override
     public CqlBuilder from(final Class<?> entityClass, final String alias) {
-        N.checkArgNotNull(entityClass, "entityClass");
+        N.checkArgNotNull(entityClass, cs.entityClass);
 
         if (Strings.isNotEmpty(alias)) {
             throw new IllegalArgumentException("Cassandra CQL does not support table aliases: " + alias);
@@ -2901,10 +2902,11 @@ public class CqlBuilder extends AbstractQueryBuilder<CqlBuilder> { // NOSONAR
          * // Output: first_name = ? AND login_count >= ?
          * }</pre>
          *
-         * @param cond the condition to render
-         * @param entityClass the entity class for property mapping
+         * @param cond the condition to render (must not be {@code null})
+         * @param entityClass the entity class for property mapping, or {@code null} to render the
+         *        property names with the DSL's naming policy only (no entity-based column mapping)
          * @return a new condition-only CqlBuilder instance containing the rendered condition
-         * @throws IllegalArgumentException if cond is null
+         * @throws IllegalArgumentException if {@code cond} is null
          */
         public CqlBuilder renderCondition(final Condition cond, final Class<?> entityClass) {
             N.checkArgNotNull(cond, "cond");

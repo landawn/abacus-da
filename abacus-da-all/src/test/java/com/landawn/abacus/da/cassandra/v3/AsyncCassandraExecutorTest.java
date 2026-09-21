@@ -218,6 +218,32 @@ public class AsyncCassandraExecutorTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> executor.stream((Statement) null, (BiFunction<ColumnDefinitions, Row, Object>) null));
     }
 
+    /**
+     * A null target/value class is rejected up front as an illegal argument: it is consumed by the
+     * abacus reflection/mapping layer, never handed to the driver. The guards run before any
+     * statement is prepared, so no session interaction happens.
+     */
+    @Test
+    public void testNullTargetClassArguments() {
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toEntity(mock(Row.class), (Class<Object>) null));
+        assertThrows(IllegalArgumentException.class, () -> CassandraExecutor.toList(mock(ResultSet.class), (Class<Object>) null));
+
+        final Session session = mock(Session.class);
+        final Cluster cluster = mock(Cluster.class);
+        final Configuration configuration = mock(Configuration.class);
+        final ProtocolOptions protocolOptions = mock(ProtocolOptions.class);
+        when(session.getCluster()).thenReturn(cluster);
+        when(cluster.getConfiguration()).thenReturn(configuration);
+        when(configuration.getCodecRegistry()).thenReturn(mock(CodecRegistry.class));
+        when(configuration.getProtocolOptions()).thenReturn(protocolOptions);
+        when(protocolOptions.getProtocolVersion()).thenReturn(ProtocolVersion.V4);
+
+        final CassandraExecutor executor = new CassandraExecutor(session);
+        assertThrows(IllegalArgumentException.class, () -> executor.findFirst((Class<Object>) null, "SELECT * FROM t"));
+        assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleValue((Class<Object>) null, "SELECT id FROM t"));
+        assertThrows(IllegalArgumentException.class, () -> executor.queryForSingleNonNull((Class<Object>) null, "SELECT id FROM t"));
+    }
+
     @Test
     public void testStream_StringNoParams_ReturnsStreamFuture() throws Exception {
         when(mockExecutor.prepareStatement(anyString(), any(Object[].class))).thenReturn(mockStatement);

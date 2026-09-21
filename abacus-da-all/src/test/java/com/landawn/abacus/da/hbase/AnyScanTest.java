@@ -573,6 +573,18 @@ public class AnyScanTest extends TestBase {
         assertEquals(ReadType.PREAD, scan.getReadType());
     }
 
+    /**
+     * A {@code null} read type is rejected at the call site: the wrapped HBase {@code Scan} would
+     * store it silently and only fail with a bare {@code NullPointerException} when the scan is
+     * finally encoded for the server.
+     */
+    @Test
+    public void testSetReadType_null_throwsIAE() {
+        AnyScan scan = AnyScan.create();
+        assertThrows(IllegalArgumentException.class, () -> scan.setReadType(null));
+        assertEquals(ReadType.DEFAULT, scan.getReadType(), "A rejected value must not have been applied");
+    }
+
     // ---------------------------------------------------------------------
     // Cursor results
     // ---------------------------------------------------------------------

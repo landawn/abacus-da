@@ -851,6 +851,37 @@ public class CassandraExecutorBaseTest extends TestBase {
     }
 
     // ---------------------------------------------------------------------
+    //  Null-argument validation: the row-mapping target class is rejected
+    //  eagerly, because it is only dereferenced when the lazy Stream is
+    //  consumed (sync) or on the future's completion thread (async).
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void testListAndStreamRejectNullTargetClassEagerly() {
+        assertThrows(IllegalArgumentException.class, () -> executor.list((Class<Object>) null, "SELECT * FROM t"));
+        assertThrows(IllegalArgumentException.class, () -> executor.stream((Class<Object>) null, "SELECT * FROM t"));
+        assertThrows(IllegalArgumentException.class, () -> executor.stream((Class<Object>) null, new TestStatement()));
+    }
+
+    @Test
+    public void testAsyncRejectsNullTargetClassOnTheCallingThread() {
+        final AsyncCassandraExecutorBase<TestRow, TestResultSet, TestStatement, TestPreparedStatement, TestBatchType> async = executor.async();
+
+        assertThrows(IllegalArgumentException.class, () -> async.list((Class<Object>) null, "SELECT * FROM t"));
+        assertThrows(IllegalArgumentException.class, () -> async.stream((Class<Object>) null, "SELECT * FROM t"));
+        assertThrows(IllegalArgumentException.class, () -> async.stream((Class<Object>) null, new TestStatement()));
+        assertThrows(IllegalArgumentException.class, () -> async.findFirst((Class<Object>) null, "SELECT * FROM t"));
+    }
+
+    @Test
+    public void testAsyncRejectsNullValueClassOnTheCallingThread() {
+        final AsyncCassandraExecutorBase<TestRow, TestResultSet, TestStatement, TestPreparedStatement, TestBatchType> async = executor.async();
+
+        assertThrows(IllegalArgumentException.class, () -> async.queryForSingleValue((Class<Object>) null, "SELECT v FROM t"));
+        assertThrows(IllegalArgumentException.class, () -> async.queryForSingleNonNull((Class<Object>) null, "SELECT v FROM t"));
+    }
+
+    // ---------------------------------------------------------------------
     //  Coverage gap fillers: idsToCondition / entityToCondition /
     //  prepareInsert / prepareUpdate / prepareDelete / prepareQuery
     // ---------------------------------------------------------------------

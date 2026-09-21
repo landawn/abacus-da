@@ -47,6 +47,7 @@ import com.mongodb.client.model.FindOneAndDeleteOptions;
 import com.mongodb.client.model.FindOneAndReplaceOptions;
 import com.mongodb.client.model.FindOneAndUpdateOptions;
 import com.mongodb.client.model.InsertManyOptions;
+import com.mongodb.client.model.InsertOneModel;
 import com.mongodb.client.model.InsertOneOptions;
 import com.mongodb.client.model.ReplaceOptions;
 import com.mongodb.client.model.UpdateOptions;
@@ -316,7 +317,7 @@ public class AsyncMongoCollectionExecutorTest extends TestBase {
 
     @Test
     public void testBulkWrite() throws Exception {
-        List<WriteModel<Document>> requests = Arrays.asList();
+        List<WriteModel<Document>> requests = Arrays.asList(new InsertOneModel<>(new Document("k", "v")));
         BulkWriteResult bulkWriteResult = mock(BulkWriteResult.class);
         when(mockAsyncExecutor.execute(any(Callable.class))).thenReturn(ContinuableFuture.completed(bulkWriteResult));
 
@@ -909,7 +910,7 @@ public class AsyncMongoCollectionExecutorTest extends TestBase {
 
     @Test
     public void testBulkWriteWithOptions() throws Exception {
-        List<WriteModel<Document>> requests = Arrays.asList();
+        List<WriteModel<Document>> requests = Arrays.asList(new InsertOneModel<>(new Document("k", "v")));
         BulkWriteOptions options = new BulkWriteOptions();
         BulkWriteResult bulkWriteResult = mock(BulkWriteResult.class);
         when(mockAsyncExecutor.execute(any(Callable.class))).thenReturn(ContinuableFuture.completed(bulkWriteResult));
@@ -1712,7 +1713,7 @@ public class AsyncMongoCollectionExecutorTest extends TestBase {
     @Test
     public void testBulkWrite_LambdaRuns() throws Exception {
         stubRunCallable();
-        List<WriteModel<? extends Document>> requests = Collections.emptyList();
+        List<WriteModel<? extends Document>> requests = Collections.singletonList(new InsertOneModel<>(new Document("k", "v")));
         BulkWriteResult br = mock(BulkWriteResult.class);
         when(mockCollExecutor.bulkWrite(requests)).thenReturn(br);
 
@@ -1722,7 +1723,7 @@ public class AsyncMongoCollectionExecutorTest extends TestBase {
     @Test
     public void testBulkWriteWithOptions_LambdaRuns() throws Exception {
         stubRunCallable();
-        List<WriteModel<? extends Document>> requests = Collections.emptyList();
+        List<WriteModel<? extends Document>> requests = Collections.singletonList(new InsertOneModel<>(new Document("k", "v")));
         BulkWriteOptions opts = new BulkWriteOptions();
         BulkWriteResult br = mock(BulkWriteResult.class);
         when(mockCollExecutor.bulkWrite(requests, opts)).thenReturn(br);
@@ -2348,6 +2349,60 @@ public class AsyncMongoCollectionExecutorTest extends TestBase {
         verify(mockColl, org.mockito.Mockito.never()).find();
         verify(mockColl, org.mockito.Mockito.never()).find(any(Bson.class));
         verify(mockColl, org.mockito.Mockito.never()).countDocuments(any(Bson.class));
+    }
+
+    @Test
+    @SuppressWarnings({ "unchecked", "rawtypes" })
+    public void testNullArgumentsRejectedEagerlyOnCallingThread() {
+        // mockAsyncExecutor is deliberately NOT stubbed here: an unstubbed execute(Callable) returns null
+        // without ever invoking the callable. Every assertion below therefore only passes if the argument
+        // is validated on the calling thread, BEFORE the task is submitted.
+        final Bson filter = new Document();
+        final String oid = "507f1f77bcf86cd799439011";
+
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.exists((Bson) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.exists((ObjectId) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.exists((String) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.count((Bson) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.get((String) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.get((ObjectId) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.get(oid, (Class<Document>) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.gett((String) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.findFirst((Bson) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.findFirst(filter, (Class<Document>) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.list((Bson) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.query((Bson) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.stream((Bson) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.queryForSingleValue(null, filter, String.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.queryForSingleValue("p", filter, (Class<String>) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.watch((Class<Document>) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.watch((List<Bson>) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.insertOne(null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.insertMany(null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.insertMany(Collections.emptyList()));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.updateOne((Bson) null, (Object) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.updateOne(filter, (Object) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.updateOne(filter, (java.util.Collection<?>) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.updateMany(filter, (Object) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.replaceOne(filter, (Object) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.deleteOne((Bson) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.deleteMany((Bson) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.bulkInsert(null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.bulkWrite(null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.findOneAndUpdate(filter, (Object) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.findOneAndReplace(filter, (Object) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.findOneAndDelete((Bson) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.distinct((String) null, String.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.distinct("name", (Bson) null, String.class));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.aggregate((List<Bson>) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.groupBy((String) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.groupBy((java.util.Collection<String>) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.groupByAndCount((String) null));
+        Assertions.assertThrows(IllegalArgumentException.class, () -> asyncExecutor.mapReduce(null, "reduce"));
+
+        // Nothing was ever submitted to the executor and the sync executor was never touched.
+        verify(mockAsyncExecutor, org.mockito.Mockito.never()).execute(any(Callable.class));
+        org.mockito.Mockito.verifyNoInteractions(mockCollExecutor);
     }
 
     // Test entity class for testing

@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.HashMap;
@@ -77,6 +78,17 @@ public class AnyQueryTest extends TestBase {
         assertEquals(2, retrieved.getLabels().size());
     }
 
+    /**
+     * {@code setAuthorizations} is a straight delegation to the wrapped HBase {@code Query}, which
+     * dereferences the argument immediately; the driver's {@code NullPointerException} is the
+     * documented contract.
+     */
+    @Test
+    public void testSetAuthorizations_null_throwsNpe() {
+        AnyGet get = AnyGet.of("row");
+        assertThrows(NullPointerException.class, () -> get.setAuthorizations(null));
+    }
+
     // ---------------------------------------------------------------------
     // ACL
     // ---------------------------------------------------------------------
@@ -101,6 +113,19 @@ public class AnyQueryTest extends TestBase {
         acl.put("bob", new Permission(Permission.Action.READ));
         AnyGet get = AnyGet.of("row").setACL(acl);
         assertNotNull(get.getACL());
+    }
+
+    /**
+     * Both {@code setACL} overloads are straight delegations to the wrapped HBase {@code Query},
+     * which dereferences its arguments immediately; the driver's {@code NullPointerException} is
+     * the documented contract.
+     */
+    @Test
+    public void testSetACL_nullArguments_throwNpe() {
+        AnyGet get = AnyGet.of("row");
+        assertThrows(NullPointerException.class, () -> get.setACL(null, new Permission(Permission.Action.READ)));
+        assertThrows(NullPointerException.class, () -> get.setACL("alice", (Permission) null));
+        assertThrows(NullPointerException.class, () -> get.setACL((Map<String, Permission>) null));
     }
 
     // ---------------------------------------------------------------------
@@ -150,6 +175,17 @@ public class AnyQueryTest extends TestBase {
     public void testSetIsolationLevel_readUncommitted() {
         AnyGet get = AnyGet.of("row").setIsolationLevel(IsolationLevel.READ_UNCOMMITTED);
         assertEquals(IsolationLevel.READ_UNCOMMITTED, get.getIsolationLevel());
+    }
+
+    /**
+     * {@code setIsolationLevel} is a straight delegation to the wrapped HBase {@code Query}, which
+     * encodes the level immediately; the driver's {@code NullPointerException} is the documented
+     * contract.
+     */
+    @Test
+    public void testSetIsolationLevel_null_throwsNpe() {
+        AnyGet get = AnyGet.of("row");
+        assertThrows(NullPointerException.class, () -> get.setIsolationLevel(null));
     }
 
     // ---------------------------------------------------------------------

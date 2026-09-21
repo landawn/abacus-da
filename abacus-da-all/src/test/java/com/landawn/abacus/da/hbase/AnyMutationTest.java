@@ -73,6 +73,18 @@ public class AnyMutationTest extends TestBase {
         }
     }
 
+    /**
+     * A {@code null} durability is rejected at the call site: the wrapped HBase {@code Mutation}
+     * would store it silently and only fail with a bare {@code NullPointerException} when the
+     * mutation is finally encoded for the server.
+     */
+    @Test
+    public void testSetDurability_null_throwsIAE() {
+        AnyPut put = AnyPut.of("row");
+        assertThrows(IllegalArgumentException.class, () -> put.setDurability(null));
+        assertEquals(Durability.USE_DEFAULT, put.getDurability(), "A rejected value must not have been applied");
+    }
+
     @Test
     public void testGetFamilyCellMap_emptyMutation() {
         AnyPut put = AnyPut.of("row");
@@ -104,6 +116,21 @@ public class AnyMutationTest extends TestBase {
         AnyPut returned = put.setClusterIds(ids);
         assertSame(put, returned);
         assertEquals(2, put.getClusterIds().size());
+    }
+
+    /**
+     * {@code setClusterIds}, {@code setCellVisibility} and both {@code setACL} overloads are
+     * straight delegations to the wrapped HBase {@code Mutation}, which dereferences their
+     * arguments immediately; the driver's {@code NullPointerException} is the documented contract.
+     */
+    @Test
+    public void testNullArguments_onPassThroughSetters_throwNpe() {
+        AnyPut put = AnyPut.of("row");
+        assertThrows(NullPointerException.class, () -> put.setClusterIds(null));
+        assertThrows(NullPointerException.class, () -> put.setCellVisibility(null));
+        assertThrows(NullPointerException.class, () -> put.setACL(null, new Permission(Permission.Action.READ)));
+        assertThrows(NullPointerException.class, () -> put.setACL("alice", (Permission) null));
+        assertThrows(NullPointerException.class, () -> put.setACL((Map<String, Permission>) null));
     }
 
     @Test

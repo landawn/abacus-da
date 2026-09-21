@@ -832,6 +832,83 @@ public class CosmosContainerExecutorTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> new CosmosContainerExecutor(mockCosmosContainer, NamingPolicy.NO_CHANGE));
     }
 
+    // ------------------------------------------------------------------------------------------------
+    // Null-argument guards. The Cosmos SDK does not reject these eagerly: a null id is reported as a
+    // 404, a null partition key as an UnsupportedOperationException, a null result type only fails on
+    // getItem(), and the query/read-all methods return a lazy iterable/stream. They are checked here.
+    // ------------------------------------------------------------------------------------------------
+
+    @Test
+    public void testReadItemRejectsNullArguments() {
+        assertThrows(IllegalArgumentException.class, () -> executor.readItem(null, partitionKey, TestItem.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.readItem("id1", null, TestItem.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.readItem("id1", partitionKey, (Class<TestItem>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.readItem(null, partitionKey, itemRequestOptions, TestItem.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.readItem("id1", null, itemRequestOptions, TestItem.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.readItem("id1", partitionKey, itemRequestOptions, (Class<TestItem>) null));
+    }
+
+    /** A null id must not be swallowed by the 404 handling and reported as an absent item. */
+    @Test
+    public void testGetAndGettRejectNullItemId() {
+        assertThrows(IllegalArgumentException.class, () -> executor.get(null, partitionKey, TestItem.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.get(null, partitionKey, itemRequestOptions, TestItem.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.gett(null, partitionKey, TestItem.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.gett(null, partitionKey, itemRequestOptions, TestItem.class));
+    }
+
+    @Test
+    public void testDeleteRejectsNullArguments() {
+        assertThrows(IllegalArgumentException.class, () -> executor.deleteItem((Object) null, itemRequestOptions));
+        assertThrows(IllegalArgumentException.class, () -> executor.deleteItem(null, partitionKey, itemRequestOptions));
+        assertThrows(IllegalArgumentException.class, () -> executor.deleteItem("id1", null, itemRequestOptions));
+        assertThrows(IllegalArgumentException.class, () -> executor.deleteAllItemsByPartitionKey(null, itemRequestOptions));
+    }
+
+    @Test
+    public void testReplaceAndPatchRejectNullArguments() {
+        assertThrows(IllegalArgumentException.class, () -> executor.replaceItem(null, partitionKey, testItem, itemRequestOptions));
+        assertThrows(IllegalArgumentException.class,
+                () -> executor.patchItem("id1", partitionKey, CosmosPatchOperations.create(), (Class<TestItem>) null));
+        assertThrows(IllegalArgumentException.class,
+                () -> executor.patchItem("id1", partitionKey, CosmosPatchOperations.create(), patchRequestOptions, (Class<TestItem>) null));
+    }
+
+    @Test
+    public void testReadManyRejectsNullArguments() {
+        assertThrows(IllegalArgumentException.class, () -> executor.readMany(null, TestItem.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.readMany(List.<CosmosItemIdentity> of(), (Class<TestItem>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.readMany(null, "sessionToken", TestItem.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.readMany(List.<CosmosItemIdentity> of(), "sessionToken", (Class<TestItem>) null));
+    }
+
+    @Test
+    public void testReadAllAndStreamAllItemsRejectNullArguments() {
+        assertThrows(IllegalArgumentException.class, () -> executor.readAllItems(null, TestItem.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.readAllItems(partitionKey, (Class<TestItem>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.readAllItems(null, queryRequestOptions, TestItem.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.readAllItems(partitionKey, queryRequestOptions, (Class<TestItem>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.streamAllItems(null, TestItem.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.streamAllItems(partitionKey, (Class<TestItem>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.streamAllItems(null, queryRequestOptions, TestItem.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.streamAllItems(partitionKey, queryRequestOptions, (Class<TestItem>) null));
+    }
+
+    /** queryItems/streamItems hand back a lazy iterable/stream, so a null query must fail at the call site. */
+    @Test
+    public void testQueryAndStreamItemsRejectNullArguments() {
+        final SqlQuerySpec spec = new SqlQuerySpec("SELECT * FROM c");
+
+        assertThrows(IllegalArgumentException.class, () -> executor.queryItems((String) null, TestItem.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.queryItems("SELECT * FROM c", (Class<TestItem>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.queryItems((SqlQuerySpec) null, TestItem.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.queryItems(spec, (Class<TestItem>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.streamItems((String) null, TestItem.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.streamItems("SELECT * FROM c", (Class<TestItem>) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.streamItems((SqlQuerySpec) null, TestItem.class));
+        assertThrows(IllegalArgumentException.class, () -> executor.streamItems(spec, (Class<TestItem>) null));
+    }
+
     // Test data class
     public static class TestItem {
         public String id;

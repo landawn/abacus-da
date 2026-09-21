@@ -2,6 +2,7 @@ package com.landawn.abacus.da.aws.dynamodb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.times;
@@ -696,6 +697,29 @@ public class AsyncDynamoDBExecutorTest extends TestBase {
         assertNotNull(result);
         assertEquals(1, result.count());
         verify(mockDynamoDBExecutor, times(1)).scan(scanRequest, TestEntity.class);
+    }
+
+    @Test
+    public void testNullArguments_rejectedEagerlyWithIAE() {
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.getItem("T", new HashMap<>(), (Class<TestEntity>) null));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.getItem("T", new HashMap<>(), Boolean.TRUE, (Class<TestEntity>) null));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.getItem(new GetItemRequest(), (Class<TestEntity>) null));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.batchGetItem((BatchGetItemRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.batchGetItem((BatchGetItemRequest) null, TestEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.list((QueryRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.list((QueryRequest) null, TestEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.query((QueryRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.query((QueryRequest) null, TestEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.stream((QueryRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.stream((QueryRequest) null, TestEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.scan((String) null, (List<String>) null));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.scan((String) null, (Map<String, Condition>) null));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.scan((String) null, (List<String>) null, (Map<String, Condition>) null));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.scan((ScanRequest) null));
+        assertThrows(IllegalArgumentException.class, () -> asyncExecutor.scan((ScanRequest) null, TestEntity.class));
+
+        // Every guard fires on the calling thread, so no task was ever submitted to the async executor.
+        verify(mockAsyncExecutor, times(0)).execute(any(Callable.class));
     }
 
     private static class TestEntity {

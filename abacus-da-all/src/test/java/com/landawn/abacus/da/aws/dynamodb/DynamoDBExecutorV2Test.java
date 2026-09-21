@@ -2642,6 +2642,92 @@ public class DynamoDBExecutorV2Test extends TestBase {
         assertEquals("42", result.get("k2").n());
     }
 
+    // ===== Null-argument validation: the abacus-side converters and filter builders reject null =====
+    // with IllegalArgumentException rather than letting an incidental NullPointerException escape.
+    @Test
+    public void testAsItemVarargs_NullArrayThrowsIllegalArgument() {
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asItem((Object[]) null));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asUpdateItem((Object[]) null));
+    }
+
+    @Test
+    public void testAsItem_NullOrEmptyAttrNameThrowsIllegalArgument() {
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asItem(null, "v"));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asItem("", "v"));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asItem("a", "v", null, "v2"));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asItem("a", "v", "b", "v2", null, "v3"));
+
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asUpdateItem(null, "v"));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asUpdateItem("", "v"));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asUpdateItem("a", "v", null, "v2"));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.asUpdateItem("a", "v", "b", "v2", null, "v3"));
+    }
+
+    @Test
+    public void testToItem_NullArgumentsThrowIllegalArgument() {
+        TestEntity entity = new TestEntity();
+        entity.setId("1");
+
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toItem(null));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toItem(null, NamingPolicy.CAMEL_CASE));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toItem(entity, null));
+    }
+
+    @Test
+    public void testToUpdateItem_NullArgumentsThrowIllegalArgument() {
+        TestEntity entity = new TestEntity();
+        entity.setId("1");
+
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toUpdateItem(null));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toUpdateItem(null, NamingPolicy.CAMEL_CASE));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toUpdateItem(entity, null));
+    }
+
+    @Test
+    public void testToEntity_NullTargetClassThrowsIllegalArgument() {
+        Map<String, AttributeValue> item = Map.of("id", AttributeValue.builder().s("1").build());
+
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toEntity(item, null));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toEntity((Map<String, AttributeValue>) null, null));
+        assertThrows(IllegalArgumentException.class,
+                () -> DynamoDBExecutor.toEntity(GetItemResponse.builder().item(item).build(), null));
+        assertThrows(IllegalArgumentException.class, () -> DynamoDBExecutor.toEntity((GetItemResponse) null, null));
+    }
+
+    @Test
+    public void testFilters_NullOrEmptyAttrNameThrowsIllegalArgument() {
+        assertThrows(IllegalArgumentException.class, () -> Filters.eq(null, "v"));
+        assertThrows(IllegalArgumentException.class, () -> Filters.eq("", "v"));
+        assertThrows(IllegalArgumentException.class, () -> Filters.ne(null, "v"));
+        assertThrows(IllegalArgumentException.class, () -> Filters.gt(null, 1));
+        assertThrows(IllegalArgumentException.class, () -> Filters.ge(null, 1));
+        assertThrows(IllegalArgumentException.class, () -> Filters.lt(null, 1));
+        assertThrows(IllegalArgumentException.class, () -> Filters.le(null, 1));
+        assertThrows(IllegalArgumentException.class, () -> Filters.bt(null, 1, 2));
+        assertThrows(IllegalArgumentException.class, () -> Filters.isNull(null));
+        assertThrows(IllegalArgumentException.class, () -> Filters.notNull(null));
+        assertThrows(IllegalArgumentException.class, () -> Filters.contains(null, "v"));
+        assertThrows(IllegalArgumentException.class, () -> Filters.notContains(null, "v"));
+        assertThrows(IllegalArgumentException.class, () -> Filters.beginsWith(null, "v"));
+    }
+
+    @Test
+    public void testConditionBuilder_NullOrEmptyAttrNameThrowsIllegalArgument() {
+        assertThrows(IllegalArgumentException.class, () -> Filters.builder().eq(null, "v"));
+        assertThrows(IllegalArgumentException.class, () -> Filters.builder().eq("", "v"));
+        assertThrows(IllegalArgumentException.class, () -> Filters.builder().ne(null, "v"));
+        assertThrows(IllegalArgumentException.class, () -> Filters.builder().gt(null, 1));
+        assertThrows(IllegalArgumentException.class, () -> Filters.builder().ge(null, 1));
+        assertThrows(IllegalArgumentException.class, () -> Filters.builder().lt(null, 1));
+        assertThrows(IllegalArgumentException.class, () -> Filters.builder().le(null, 1));
+        assertThrows(IllegalArgumentException.class, () -> Filters.builder().bt(null, 1, 2));
+        assertThrows(IllegalArgumentException.class, () -> Filters.builder().isNull(null));
+        assertThrows(IllegalArgumentException.class, () -> Filters.builder().notNull(null));
+        assertThrows(IllegalArgumentException.class, () -> Filters.builder().contains(null, "v"));
+        assertThrows(IllegalArgumentException.class, () -> Filters.builder().notContains(null, "v"));
+        assertThrows(IllegalArgumentException.class, () -> Filters.builder().beginsWith(null, "v"));
+    }
+
     // Entity with no @Table to test mapper failure path
     public static class V2NoTableEntity {
         @com.landawn.abacus.annotation.Id

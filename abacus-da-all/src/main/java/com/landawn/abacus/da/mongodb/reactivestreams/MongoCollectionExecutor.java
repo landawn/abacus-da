@@ -31,6 +31,7 @@ import com.landawn.abacus.util.Beans;
 import com.landawn.abacus.util.ClassUtil;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.N;
+import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.function.Function;
 import com.mongodb.BasicDBObject;
 import com.mongodb.bulk.BulkWriteResult;
@@ -413,7 +414,7 @@ public final class MongoCollectionExecutor {
      * @see com.mongodb.client.model.Filters
      */
     public Mono<Long> count(final Bson filter) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         return Mono.from(coll.countDocuments(filter));
     }
@@ -453,7 +454,7 @@ public final class MongoCollectionExecutor {
      * @see com.mongodb.client.model.Filters
      */
     public Mono<Long> count(final Bson filter, final CountOptions options) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         if (options == null) {
             return Mono.from(coll.countDocuments(filter));
@@ -690,8 +691,7 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the type to convert the projected document to
      * @param objectId the ObjectId as a string to search for
-     * @param selectPropNames the collection of field names to include in the projection
-     *                        (null/empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields)
      * @param rowType the Class representing the target type for conversion
      * @return a {@code Mono} that emits the converted projected object on subscription, or completes
      *         empty when no document matches the ObjectId
@@ -725,8 +725,7 @@ public final class MongoCollectionExecutor {
      *
      * @param <T> the type to convert the projected document to
      * @param objectId the ObjectId to search for
-     * @param selectPropNames the collection of field names to include in the projection
-     *                        (null/empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields)
      * @param rowType the Class representing the target type for conversion
      * @return a {@code Mono} that emits the converted projected object on subscription, or completes
      *         empty when no document matches the ObjectId
@@ -832,8 +831,7 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to convert the projected document to
-     * @param selectPropNames the collection of field names to include in the projection
-     *                        (null/empty selects all fields)
+     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields)
      * @param filter the query filter to match documents against (must not be null)
      * @param rowType the Class representing the target type for conversion; must not be null
      * @return a {@code Mono} that emits the first matching projected document converted to {@code T}
@@ -867,9 +865,9 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to convert the document to
-     * @param selectPropNames the collection of field names to include in the projection
+     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields)
      * @param filter the query filter to match documents against (must not be null)
-     * @param sort the sort criteria to determine document order
+     * @param sort the sort criteria to determine document order (null for natural order)
      * @param rowType the Class representing the target type for conversion
      * @return a Mono that emits the first matching document converted to type T, or empty if no match
      * @throws IllegalArgumentException if filter or rowType is null (thrown synchronously at the call site)
@@ -878,7 +876,7 @@ public final class MongoCollectionExecutor {
      */
     @SuppressWarnings("unchecked")
     public <T> Mono<T> findFirst(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         // Same short-circuit as list: raw documents for Document/Map/Object/Bson targets.
         if (rowType.isAssignableFrom(Document.class)) {
@@ -904,9 +902,9 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to convert the document to
-     * @param projection the Bson projection specification for fields to include/exclude
+     * @param projection the Bson projection specification for fields to include/exclude (null for all fields)
      * @param filter the query filter to match documents against (must not be null)
-     * @param sort the sort criteria to determine document order
+     * @param sort the sort criteria to determine document order (null for natural order)
      * @param rowType the Class representing the target type for conversion
      * @return a Mono that emits the first matching document converted to type T, or empty if no match
      * @throws IllegalArgumentException if filter or rowType is null (thrown synchronously at the call site)
@@ -914,7 +912,7 @@ public final class MongoCollectionExecutor {
      */
     @SuppressWarnings("unchecked")
     public <T> Mono<T> findFirst(final Bson projection, final Bson filter, final Bson sort, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         // Same short-circuit as list: raw documents for Document/Map/Object/Bson targets.
         if (rowType.isAssignableFrom(Document.class)) {
@@ -1029,7 +1027,7 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to convert documents to
-     * @param selectPropNames the collection of field names to include in the projection
+     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields)
      * @param filter the query filter to match documents against (must not be null)
      * @param rowType the Class representing the target type for conversion
      * @return a Flux that emits all matching documents with projected fields, converted to type T
@@ -1054,7 +1052,7 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to convert documents to
-     * @param selectPropNames the collection of field names to include in the projection
+     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields)
      * @param filter the query filter to match documents against (must not be null)
      * @param offset the number of documents to skip before returning results
      * @param count the maximum number of documents to return
@@ -1081,9 +1079,9 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to convert documents to
-     * @param selectPropNames the collection of field names to include in the projection
+     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields)
      * @param filter the query filter to match documents against (must not be null)
-     * @param sort the sort criteria to determine document order
+     * @param sort the sort criteria to determine document order (null for natural order)
      * @param rowType the Class representing the target type for conversion
      * @return a Flux that emits sorted matching documents with projected fields, converted to type T
      * @throws IllegalArgumentException if filter or rowType is null (thrown synchronously at the call site)
@@ -1110,9 +1108,9 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to convert documents to
-     * @param selectPropNames the collection of field names to include in the projection
+     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields)
      * @param filter the query filter to match documents against (must not be null)
-     * @param sort the sort criteria to determine document order
+     * @param sort the sort criteria to determine document order (null for natural order)
      * @param offset the number of documents to skip before returning results
      * @param count the maximum number of documents to return
      * @param rowType an entity class with getter/setter methods, Map.class, or basic single value type
@@ -1123,7 +1121,7 @@ public final class MongoCollectionExecutor {
     @SuppressWarnings("unchecked")
     public <T> Flux<T> list(final Collection<String> selectPropNames, final Bson filter, final Bson sort, final int offset, final int count,
             final Class<T> rowType) {
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         // Same short-circuit as the sync executor (MongoDBBase.toList / sync stream): when the caller asks
         // for Document/Map/Object, return the raw documents untouched instead of rebuilding them through
@@ -1149,9 +1147,9 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to convert documents to
-     * @param projection the Bson projection specification for fields to include/exclude
+     * @param projection the Bson projection specification for fields to include/exclude (null for all fields)
      * @param filter the query filter to match documents against (must not be null)
-     * @param sort the sort criteria to determine document order
+     * @param sort the sort criteria to determine document order (null for natural order)
      * @param rowType the Class representing the target type for conversion
      * @return a Flux that emits all matching sorted documents with projection, converted to type T
      * @throws IllegalArgumentException if filter or rowType is null (thrown synchronously at the call site)
@@ -1176,9 +1174,9 @@ public final class MongoCollectionExecutor {
      * }</pre>
      *
      * @param <T> the type to convert documents to
-     * @param projection the Bson projection specification for fields to include/exclude
+     * @param projection the Bson projection specification for fields to include/exclude (null for all fields)
      * @param filter the query filter to match documents against (must not be null)
-     * @param sort the sort criteria to determine document order
+     * @param sort the sort criteria to determine document order (null for natural order)
      * @param offset the number of documents to skip before returning results
      * @param count the maximum number of documents to return
      * @param rowType an entity class with getter/setter methods, Map.class, or basic single value type
@@ -1188,7 +1186,7 @@ public final class MongoCollectionExecutor {
      */
     @SuppressWarnings("unchecked")
     public <T> Flux<T> list(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         // Same short-circuit as the sync executor: raw documents for Document/Map/Object targets.
         if (rowType.isAssignableFrom(Document.class)) {
@@ -1763,8 +1761,8 @@ public final class MongoCollectionExecutor {
      * @see com.landawn.abacus.da.mongodb.MongoCollectionExecutor#queryForSingleValue(String, Bson, Class)
      */
     public <V> Mono<V> queryForSingleValue(final String propName, final Bson filter, final Class<V> valueType) {
-        N.checkArgNotEmpty(propName, "propName");
-        N.checkArgNotNull(valueType, "valueType");
+        N.checkArgNotEmpty(propName, cs.propName);
+        N.checkArgNotNull(valueType, cs.valueType);
 
         return query(N.asList(propName), filter, null, 0, 1).next().flatMap(doc -> convert(doc, propName, valueType));
     }
@@ -1879,7 +1877,7 @@ public final class MongoCollectionExecutor {
      * Mono<Dataset> employeeData = executor.query(fields, filter, Employee.class);
      * }</pre>
      *
-     * @param selectPropNames the collection of field names to include in the projection
+     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields)
      * @param filter the query filter to match documents against (must not be null)
      * @param rowType a non-null bean or Map class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with projected fields and typed rows
@@ -1902,7 +1900,7 @@ public final class MongoCollectionExecutor {
      * Mono<Dataset> userData = executor.query(fields, filter, 0, 50, User.class);
      * }</pre>
      *
-     * @param selectPropNames the collection of field names to include in the projection
+     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields)
      * @param filter the query filter to match documents against (must not be null)
      * @param offset the number of documents to skip before returning results
      * @param count the maximum number of documents to return
@@ -1929,9 +1927,9 @@ public final class MongoCollectionExecutor {
      * Mono<Dataset> leaderboard = executor.query(fields, filter, sort, Player.class);
      * }</pre>
      *
-     * @param selectPropNames the collection of field names to include in the projection
+     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields)
      * @param filter the query filter to match documents against (must not be null)
-     * @param sort the sort criteria to determine document order
+     * @param sort the sort criteria to determine document order (null for natural order)
      * @param rowType a non-null bean or Map class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with projected fields and sorted typed rows
      * @throws IllegalArgumentException if filter or rowType is null, or rowType is not a bean/Map class
@@ -1954,9 +1952,9 @@ public final class MongoCollectionExecutor {
      * Mono<Dataset> topEarners = executor.query(fields, filter, sort, 0, 10, Employee.class);
      * }</pre>
      *
-     * @param selectPropNames the collection of field names to include in the projection
+     * @param selectPropNames the collection of field names to include in the projection (null/empty selects all fields)
      * @param filter the query filter to match documents against (must not be null)
-     * @param sort the sort criteria to determine document order
+     * @param sort the sort criteria to determine document order (null for natural order)
      * @param offset the number of documents to skip before returning results
      * @param count the maximum number of documents to return
      * @param rowType a non-null bean or Map class representing the row type for the Dataset
@@ -1988,9 +1986,9 @@ public final class MongoCollectionExecutor {
      * Mono<Dataset> statusReport = executor.query(projection, filter, sort, Task.class);
      * }</pre>
      *
-     * @param projection the Bson projection specification for fields to include/exclude
+     * @param projection the Bson projection specification for fields to include/exclude (null for all fields)
      * @param filter the query filter to match documents against (must not be null)
-     * @param sort the sort criteria to determine document order
+     * @param sort the sort criteria to determine document order (null for natural order)
      * @param rowType a non-null bean or Map class representing the row type for the Dataset
      * @return a Mono that emits a Dataset with projected and sorted typed rows
      * @throws IllegalArgumentException if filter or rowType is null, or rowType is not a bean/Map class
@@ -2012,9 +2010,9 @@ public final class MongoCollectionExecutor {
      * Mono<Dataset> analysis = executor.query(projection, filter, sort, 0, 100, Report.class);
      * }</pre>
      *
-     * @param projection the Bson projection specification for fields to include/exclude
+     * @param projection the Bson projection specification for fields to include/exclude (null for all fields)
      * @param filter the query filter to match documents against (must not be null)
-     * @param sort the sort criteria to determine document order
+     * @param sort the sort criteria to determine document order (null for natural order)
      * @param offset the number of documents to skip before returning results
      * @param count the maximum number of documents to return
      * @param rowType a non-null bean or Map class representing the row type for the Dataset
@@ -2033,7 +2031,7 @@ public final class MongoCollectionExecutor {
     // side, so an invalid rowType fails fast with the same IllegalArgumentException instead of producing a
     // malformed Dataset on subscription.
     private static void checkResultClass(final Class<?> rowType) {
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         if (!(Beans.isBeanClass(rowType) || Map.class.isAssignableFrom(rowType))) {
             throw new IllegalArgumentException("The target class must be an entity class with getter/setter methods or Map.class/Document.class. But it is: "
@@ -2092,10 +2090,10 @@ public final class MongoCollectionExecutor {
     }
 
     private Flux<Document> executeQuery(final Bson projection, final Bson filter, final Bson sort, final int offset, final int count) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
-        N.checkArgNotNegative(offset, "offset");
-        N.checkArgNotNegative(count, "count");
+        N.checkArgNotNegative(offset, cs.offset);
+        N.checkArgNotNegative(count, cs.count);
 
         if (count == 0) {
             // The MongoDB driver treats limit(0) as "no limit" (return all matching documents).
@@ -2186,7 +2184,7 @@ public final class MongoCollectionExecutor {
      * @see com.mongodb.reactivestreams.client.MongoCollection#watch(Class)
      */
     public <T> ChangeStreamPublisher<T> watch(final Class<T> rowType) {
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return coll.watch(rowType);
     }
@@ -2244,7 +2242,7 @@ public final class MongoCollectionExecutor {
      */
     public <T> ChangeStreamPublisher<T> watch(final List<? extends Bson> pipeline, final Class<T> rowType) {
         N.checkArgNotNull(pipeline, "pipeline");
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return coll.watch(pipeline, rowType);
     }
@@ -2560,7 +2558,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails (signalled via {@code Mono})
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final Object update, final UpdateOptions options) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         if (options == null) {
             return Mono.from(coll.updateOne(filter, toBson(update)));
@@ -2636,7 +2634,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails (signalled via {@code Mono})
      */
     public Mono<UpdateResult> updateOne(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         final List<Bson> updateToUse = toBson(objList);
 
@@ -2815,7 +2813,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails (signalled via {@code Mono})
      */
     public Mono<UpdateResult> updateMany(final Bson filter, final Object update, final UpdateOptions options) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         if (options == null) {
             return Mono.from(coll.updateMany(filter, toBson(update)));
@@ -2879,7 +2877,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails (signalled via {@code Mono})
      */
     public Mono<UpdateResult> updateMany(final Bson filter, final Collection<?> objList, final UpdateOptions options) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
         N.checkArgNotEmpty(objList, "objList");
 
         final List<Bson> updateToUse = toBson(objList);
@@ -3008,8 +3006,8 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails (signalled via {@code Mono})
      */
     public Mono<UpdateResult> replaceOne(final Bson filter, final Object replacement, final ReplaceOptions options) {
-        N.checkArgNotNull(filter, "filter");
-        N.checkArgNotNull(replacement, "replacement");
+        N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(replacement, cs.replacement);
 
         if (options == null) {
             return Mono.from(coll.replaceOne(filter, toDocument(replacement)));
@@ -3096,7 +3094,7 @@ public final class MongoCollectionExecutor {
      * @see #deleteOne(Bson, DeleteOptions)
      */
     public Mono<DeleteResult> deleteOne(final Bson filter) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         return Mono.from(coll.deleteOne(filter));
     }
@@ -3124,7 +3122,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails (signalled via {@code Mono})
      */
     public Mono<DeleteResult> deleteOne(final Bson filter, final DeleteOptions options) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         return Mono.from(options == null ? coll.deleteOne(filter) : coll.deleteOne(filter, options));
     }
@@ -3160,7 +3158,7 @@ public final class MongoCollectionExecutor {
      * @see #deleteMany(Bson, DeleteOptions)
      */
     public Mono<DeleteResult> deleteMany(final Bson filter) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         return Mono.from(coll.deleteMany(filter));
     }
@@ -3191,7 +3189,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails (signalled via {@code Mono})
      */
     public Mono<DeleteResult> deleteMany(final Bson filter, final DeleteOptions options) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         return Mono.from(options == null ? coll.deleteMany(filter) : coll.deleteMany(filter, options));
     }
@@ -3454,7 +3452,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails (signalled via {@code Mono})
      */
     public Mono<Document> findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         if (options == null) {
             return Mono.from(coll.findOneAndUpdate(filter, toBson(update)));
@@ -3490,7 +3488,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails (signalled via {@code Mono})
      */
     public <T> Mono<T> findOneAndUpdate(final Bson filter, final Object update, final FindOneAndUpdateOptions options, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return findOneAndUpdate(filter, update, options).mapNotNull(toEntity(rowType));
     }
@@ -3597,7 +3595,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails (signalled via {@code Mono})
      */
     public Mono<Document> findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         final List<Bson> updateToUse = toBson(objList);
 
@@ -3638,7 +3636,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails (signalled via {@code Mono})
      */
     public <T> Mono<T> findOneAndUpdate(final Bson filter, final Collection<?> objList, final FindOneAndUpdateOptions options, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return findOneAndUpdate(filter, objList, options).mapNotNull(toEntity(rowType));
     }
@@ -3739,8 +3737,8 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails (signalled via {@code Mono})
      */
     public Mono<Document> findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options) {
-        N.checkArgNotNull(filter, "filter");
-        N.checkArgNotNull(replacement, "replacement");
+        N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(replacement, cs.replacement);
 
         if (options == null) {
             return Mono.from(coll.findOneAndReplace(filter, toDocument(replacement)));
@@ -3777,7 +3775,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails (signalled via {@code Mono})
      */
     public <T> Mono<T> findOneAndReplace(final Bson filter, final Object replacement, final FindOneAndReplaceOptions options, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return findOneAndReplace(filter, replacement, options).mapNotNull(toEntity(rowType));
     }
@@ -3868,7 +3866,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails (signalled via {@code Mono})
      */
     public Mono<Document> findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options) {
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotNull(filter, cs.filter);
 
         if (options == null) {
             return Mono.from(coll.findOneAndDelete(filter));
@@ -3903,7 +3901,7 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails (signalled via {@code Mono})
      */
     public <T> Mono<T> findOneAndDelete(final Bson filter, final FindOneAndDeleteOptions options, final Class<T> rowType) {
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return findOneAndDelete(filter, options).mapNotNull(toEntity(rowType));
     }
@@ -3939,8 +3937,8 @@ public final class MongoCollectionExecutor {
      * @see #distinct(String, Bson, Class)
      */
     public <T> Flux<T> distinct(final String fieldName, final Class<T> rowType) {
-        N.checkArgNotEmpty(fieldName, "fieldName");
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotEmpty(fieldName, cs.fieldName);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return Flux.from(coll.distinct(fieldName, rowType));
     }
@@ -3967,9 +3965,9 @@ public final class MongoCollectionExecutor {
      * @throws MongoException if the database operation fails (signalled via {@code Flux})
      */
     public <T> Flux<T> distinct(final String fieldName, final Bson filter, final Class<T> rowType) {
-        N.checkArgNotEmpty(fieldName, "fieldName");
-        N.checkArgNotNull(filter, "filter");
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotEmpty(fieldName, cs.fieldName);
+        N.checkArgNotNull(filter, cs.filter);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return Flux.from(coll.distinct(fieldName, filter, rowType));
     }
@@ -4044,7 +4042,7 @@ public final class MongoCollectionExecutor {
      */
     public <T> Flux<T> aggregate(final List<? extends Bson> pipeline, final Class<T> rowType) {
         N.checkArgNotNull(pipeline, "pipeline");
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return Flux.from(coll.aggregate(pipeline, Document.class)).mapNotNull(toEntity(rowType));
     }
@@ -4102,7 +4100,8 @@ public final class MongoCollectionExecutor {
      */
     @Beta
     public <T> Flux<T> groupBy(final String fieldName, final Class<T> rowType) {
-        N.checkArgNotEmpty(fieldName, "fieldName");
+        N.checkArgNotEmpty(fieldName, cs.fieldName);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return aggregate(groupByPipeline(fieldName, false, rowType), rowType);
     }
@@ -4151,7 +4150,7 @@ public final class MongoCollectionExecutor {
     @Beta
     public <T> Flux<T> groupBy(final Collection<String> fieldNames, final Class<T> rowType) {
         N.checkArgNotEmpty(fieldNames, "fieldNames");
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return aggregate(groupByPipeline(fieldNames, false, rowType), rowType);
     }
@@ -4208,7 +4207,8 @@ public final class MongoCollectionExecutor {
      */
     @Beta
     public <T> Flux<T> groupByAndCount(final String fieldName, final Class<T> rowType) {
-        N.checkArgNotEmpty(fieldName, "fieldName");
+        N.checkArgNotEmpty(fieldName, cs.fieldName);
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return aggregate(groupByPipeline(fieldName, true, rowType), rowType);
     }
@@ -4257,7 +4257,7 @@ public final class MongoCollectionExecutor {
     @Beta
     public <T> Flux<T> groupByAndCount(final Collection<String> fieldNames, final Class<T> rowType) {
         N.checkArgNotEmpty(fieldNames, "fieldNames");
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return aggregate(groupByPipeline(fieldNames, true, rowType), rowType);
     }
@@ -4379,7 +4379,7 @@ public final class MongoCollectionExecutor {
     public <T> Flux<T> mapReduce(final String mapFunction, final String reduceFunction, final Class<T> rowType) {
         N.checkArgNotEmpty(mapFunction, "mapFunction");
         N.checkArgNotEmpty(reduceFunction, "reduceFunction");
-        N.checkArgNotNull(rowType, "rowType");
+        N.checkArgNotNull(rowType, cs.rowType);
 
         return Flux.from(coll.mapReduce(mapFunction, reduceFunction, Document.class)).mapNotNull(toEntity(rowType));
     }

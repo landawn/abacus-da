@@ -274,10 +274,13 @@ public final class AsyncHBaseExecutor {
      * @param anyGet the AnyGet operation builder specifying the row to check
      * @return a {@link ContinuableFuture} that completes with {@code true} if the row exists,
      *         {@code false} otherwise. Wraps {@link HBaseExecutor#exists(String, AnyGet)}.
+     * @throws IllegalArgumentException if {@code anyGet} is {@code null}
      * @see HBaseExecutor#exists(String, AnyGet)
      * @see AnyGet
      */
     public ContinuableFuture<Boolean> exists(final String tableName, final AnyGet anyGet) {
+        N.checkArgNotNull(anyGet, "anyGet");
+
         return asyncExecutor.execute(() -> hbaseExecutor.exists(tableName, anyGet));
     }
 
@@ -313,10 +316,13 @@ public final class AsyncHBaseExecutor {
      *         order of {@code anyGets}; each entry is {@code true} if the corresponding AnyGet
      *         matches one or more cells, {@code false} otherwise. Wraps
      *         {@link HBaseExecutor#exists(String, Collection)}.
+     * @throws IllegalArgumentException if {@code anyGets} is {@code null}
      * @see HBaseExecutor#exists(String, Collection)
      * @see AnyGet
      */
     public ContinuableFuture<List<Boolean>> exists(final String tableName, final Collection<AnyGet> anyGets) {
+        N.checkArgNotNull(anyGets, "anyGets");
+
         return asyncExecutor.execute(() -> hbaseExecutor.exists(tableName, anyGets));
     }
 
@@ -425,10 +431,13 @@ public final class AsyncHBaseExecutor {
      * @param anyGet the AnyGet operation builder specifying the row and columns
      * @return a {@link ContinuableFuture} containing the Result object with the retrieved data
      *         (possibly empty). Wraps {@link HBaseExecutor#get(String, AnyGet)}.
+     * @throws IllegalArgumentException if {@code anyGet} is {@code null}
      * @see HBaseExecutor#get(String, AnyGet)
      * @see AnyGet
      */
     public ContinuableFuture<Result> get(final String tableName, final AnyGet anyGet) {
+        N.checkArgNotNull(anyGet, "anyGet");
+
         return asyncExecutor.execute(() -> hbaseExecutor.get(tableName, anyGet));
     }
 
@@ -460,10 +469,13 @@ public final class AsyncHBaseExecutor {
      * @param anyGets the collection of AnyGet builders specifying the rows to retrieve
      * @return a {@link ContinuableFuture} containing a list of Result objects in the iteration
      *         order of {@code anyGets}. Wraps {@link HBaseExecutor#get(String, Collection)}.
+     * @throws IllegalArgumentException if {@code anyGets} is {@code null}
      * @see HBaseExecutor#get(String, Collection)
      * @see AnyGet
      */
     public ContinuableFuture<List<Result>> get(final String tableName, final Collection<AnyGet> anyGets) {
+        N.checkArgNotNull(anyGets, "anyGets");
+
         return asyncExecutor.execute(() -> hbaseExecutor.get(tableName, anyGets));
     }
 
@@ -498,10 +510,13 @@ public final class AsyncHBaseExecutor {
      * @param targetType the class to convert the result to
      * @return a {@link ContinuableFuture} containing the converted object. Wraps
      *         {@link HBaseExecutor#get(String, Get, Class)}.
+     * @throws IllegalArgumentException if {@code targetType} is {@code null}
      * @see HBaseExecutor#get(String, Get, Class)
      * @see Get
      */
     public <T> ContinuableFuture<T> get(final String tableName, final Get get, final Class<T> targetType) {
+        N.checkArgNotNull(targetType, cs.targetType);
+
         return asyncExecutor.execute(() -> hbaseExecutor.get(tableName, get, targetType));
     }
 
@@ -536,10 +551,13 @@ public final class AsyncHBaseExecutor {
      * @param targetType the class to convert each non-empty result to
      * @return a ContinuableFuture whose value is a {@code List<T>} of converted objects,
      *         with empty/missing rows skipped. Wraps {@link HBaseExecutor#get(String, List, Class)}.
+     * @throws IllegalArgumentException if {@code targetType} is {@code null}
      * @see HBaseExecutor#get(String, List, Class)
      * @see Get
      */
     public <T> ContinuableFuture<List<T>> get(final String tableName, final List<Get> gets, final Class<T> targetType) {
+        N.checkArgNotNull(targetType, cs.targetType);
+
         return asyncExecutor.execute(() -> hbaseExecutor.get(tableName, gets, targetType));
     }
 
@@ -572,10 +590,14 @@ public final class AsyncHBaseExecutor {
      * @param targetType the class to convert the result to
      * @return a {@link ContinuableFuture} containing the converted object. Wraps
      *         {@link HBaseExecutor#get(String, AnyGet, Class)}.
+     * @throws IllegalArgumentException if {@code anyGet} or {@code targetType} is {@code null}
      * @see HBaseExecutor#get(String, AnyGet, Class)
      * @see AnyGet
      */
     public <T> ContinuableFuture<T> get(final String tableName, final AnyGet anyGet, final Class<T> targetType) {
+        N.checkArgNotNull(anyGet, "anyGet");
+        N.checkArgNotNull(targetType, cs.targetType);
+
         return asyncExecutor.execute(() -> hbaseExecutor.get(tableName, anyGet, targetType));
     }
 
@@ -610,10 +632,14 @@ public final class AsyncHBaseExecutor {
      * @param targetType the class to convert each non-empty result to
      * @return a ContinuableFuture whose value is a {@code List<T>} of converted objects,
      *         with empty/missing rows skipped. Wraps {@link HBaseExecutor#get(String, Collection, Class)}.
+     * @throws IllegalArgumentException if {@code anyGets} or {@code targetType} is {@code null}
      * @see HBaseExecutor#get(String, Collection, Class)
      * @see AnyGet
      */
     public <T> ContinuableFuture<List<T>> get(final String tableName, final Collection<AnyGet> anyGets, final Class<T> targetType) {
+        N.checkArgNotNull(anyGets, "anyGets");
+        N.checkArgNotNull(targetType, cs.targetType);
+
         return asyncExecutor.execute(() -> hbaseExecutor.get(tableName, anyGets, targetType));
     }
 
@@ -652,11 +678,14 @@ public final class AsyncHBaseExecutor {
      * @param family the column family name to retrieve (as String)
      * @return a {@link ContinuableFuture} containing a {@code Stream<Result>} of all rows in the
      *         specified family. Wraps {@link HBaseExecutor#scan(String, String)}.
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}
      * @see HBaseExecutor#scan(String, String)
      * @see Scan
      * @see Result
      */
     public ContinuableFuture<Stream<Result>> scan(final String tableName, final String family) {
+        N.checkArgNotNull(tableName, "tableName");
+
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family));
     }
 
@@ -695,11 +724,14 @@ public final class AsyncHBaseExecutor {
      * @param qualifier the column qualifier name (as String)
      * @return a {@link ContinuableFuture} containing a {@code Stream<Result>} for the specified
      *         column. Wraps {@link HBaseExecutor#scan(String, String, String)}.
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}
      * @see HBaseExecutor#scan(String, String, String)
      * @see Scan
      * @see Result
      */
     public ContinuableFuture<Stream<Result>> scan(final String tableName, final String family, final String qualifier) {
+        N.checkArgNotNull(tableName, "tableName");
+
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family, qualifier));
     }
 
@@ -738,11 +770,14 @@ public final class AsyncHBaseExecutor {
      * @param family the column family name as a byte array
      * @return a {@link ContinuableFuture} containing a {@code Stream<Result>} from the scan. Wraps
      *         {@link HBaseExecutor#scan(String, byte[])}.
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}
      * @see HBaseExecutor#scan(String, byte[])
      * @see Scan
      * @see Result
      */
     public ContinuableFuture<Stream<Result>> scan(final String tableName, final byte[] family) {
+        N.checkArgNotNull(tableName, "tableName");
+
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family));
     }
 
@@ -784,11 +819,14 @@ public final class AsyncHBaseExecutor {
      * @param qualifier the column qualifier name as a byte array
      * @return a {@link ContinuableFuture} containing a {@code Stream<Result>} for the specified
      *         column. Wraps {@link HBaseExecutor#scan(String, byte[], byte[])}.
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}
      * @see HBaseExecutor#scan(String, byte[], byte[])
      * @see Scan
      * @see Result
      */
     public ContinuableFuture<Stream<Result>> scan(final String tableName, final byte[] family, final byte[] qualifier) {
+        N.checkArgNotNull(tableName, "tableName");
+
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family, qualifier));
     }
 
@@ -826,11 +864,15 @@ public final class AsyncHBaseExecutor {
      * @param anyScan the AnyScan builder specifying scan criteria
      * @return a {@link ContinuableFuture} containing a {@code Stream<Result>} matching the scan
      *         criteria. Wraps {@link HBaseExecutor#scan(String, AnyScan)}.
+     * @throws IllegalArgumentException if {@code tableName} or {@code anyScan} is {@code null}
      * @see HBaseExecutor#scan(String, AnyScan)
      * @see AnyScan
      * @see Result
      */
     public ContinuableFuture<Stream<Result>> scan(final String tableName, final AnyScan anyScan) {
+        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(anyScan, "anyScan");
+
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, anyScan));
     }
 
@@ -869,11 +911,15 @@ public final class AsyncHBaseExecutor {
      * @param scan the HBase Scan object specifying scan criteria
      * @return a {@link ContinuableFuture} containing a {@code Stream<Result>} matching the scan
      *         criteria. Wraps {@link HBaseExecutor#scan(String, Scan)}.
+     * @throws IllegalArgumentException if {@code tableName} or {@code scan} is {@code null}
      * @see HBaseExecutor#scan(String, Scan)
      * @see Scan
      * @see Result
      */
     public ContinuableFuture<Stream<Result>> scan(final String tableName, final Scan scan) {
+        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(scan, "scan");
+
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, scan));
     }
 
@@ -911,10 +957,14 @@ public final class AsyncHBaseExecutor {
      * @param targetType the class to convert each result to
      * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
      *         Wraps {@link HBaseExecutor#scan(String, String, Class)}.
+     * @throws IllegalArgumentException if {@code tableName} or {@code targetType} is {@code null}
      * @see HBaseExecutor#scan(String, String, Class)
      * @see Scan
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final String family, final Class<T> targetType) {
+        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(targetType, cs.targetType);
+
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family, targetType));
     }
 
@@ -957,10 +1007,14 @@ public final class AsyncHBaseExecutor {
      * @param targetType the class to convert each result to
      * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
      *         Wraps {@link HBaseExecutor#scan(String, String, String, Class)}.
+     * @throws IllegalArgumentException if {@code tableName} or {@code targetType} is {@code null}
      * @see HBaseExecutor#scan(String, String, String, Class)
      * @see Scan
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final String family, final String qualifier, final Class<T> targetType) {
+        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(targetType, cs.targetType);
+
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family, qualifier, targetType));
     }
 
@@ -1002,10 +1056,14 @@ public final class AsyncHBaseExecutor {
      * @param targetType the class to convert each result to
      * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
      *         Wraps {@link HBaseExecutor#scan(String, byte[], Class)}.
+     * @throws IllegalArgumentException if {@code tableName} or {@code targetType} is {@code null}
      * @see HBaseExecutor#scan(String, byte[], Class)
      * @see Scan
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final byte[] family, final Class<T> targetType) {
+        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(targetType, cs.targetType);
+
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family, targetType));
     }
 
@@ -1049,10 +1107,14 @@ public final class AsyncHBaseExecutor {
      * @param targetType the class to convert each result to
      * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
      *         Wraps {@link HBaseExecutor#scan(String, byte[], byte[], Class)}.
+     * @throws IllegalArgumentException if {@code tableName} or {@code targetType} is {@code null}
      * @see HBaseExecutor#scan(String, byte[], byte[], Class)
      * @see Scan
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final byte[] family, final byte[] qualifier, final Class<T> targetType) {
+        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(targetType, cs.targetType);
+
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, family, qualifier, targetType));
     }
 
@@ -1092,10 +1154,15 @@ public final class AsyncHBaseExecutor {
      * @param targetType the class to convert each result to
      * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
      *         Wraps {@link HBaseExecutor#scan(String, AnyScan, Class)}.
+     * @throws IllegalArgumentException if {@code tableName}, {@code anyScan} or {@code targetType} is {@code null}
      * @see HBaseExecutor#scan(String, AnyScan, Class)
      * @see AnyScan
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final AnyScan anyScan, final Class<T> targetType) {
+        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(anyScan, "anyScan");
+        N.checkArgNotNull(targetType, cs.targetType);
+
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, anyScan, targetType));
     }
 
@@ -1136,10 +1203,15 @@ public final class AsyncHBaseExecutor {
      * @param targetType the class to convert each result to
      * @return a {@link ContinuableFuture} containing a {@code Stream<T>} of converted objects.
      *         Wraps {@link HBaseExecutor#scan(String, Scan, Class)}.
+     * @throws IllegalArgumentException if {@code tableName}, {@code scan} or {@code targetType} is {@code null}
      * @see HBaseExecutor#scan(String, Scan, Class)
      * @see Scan
      */
     public <T> ContinuableFuture<Stream<T>> scan(final String tableName, final Scan scan, final Class<T> targetType) {
+        N.checkArgNotNull(tableName, "tableName");
+        N.checkArgNotNull(scan, "scan");
+        N.checkArgNotNull(targetType, cs.targetType);
+
         return asyncExecutor.execute(() -> hbaseExecutor.scan(tableName, scan, targetType));
     }
 
@@ -1250,10 +1322,13 @@ public final class AsyncHBaseExecutor {
      * @param anyPut the AnyPut builder specifying the row and cells to store
      * @return a {@link ContinuableFuture} that completes with {@code null} when the put operation
      *         finishes. Wraps {@link HBaseExecutor#put(String, AnyPut)}.
+     * @throws IllegalArgumentException if {@code anyPut} is {@code null}
      * @see HBaseExecutor#put(String, AnyPut)
      * @see AnyPut
      */
     public ContinuableFuture<Void> put(final String tableName, final AnyPut anyPut) {
+        N.checkArgNotNull(anyPut, "anyPut");
+
         return asyncExecutor.execute(() -> {
             hbaseExecutor.put(tableName, anyPut);
 
@@ -1291,10 +1366,13 @@ public final class AsyncHBaseExecutor {
      * @param anyPuts the collection of AnyPut builders specifying the rows to store
      * @return a {@link ContinuableFuture} that completes with {@code null} when all put operations
      *         finish. Wraps {@link HBaseExecutor#put(String, Collection)}.
+     * @throws IllegalArgumentException if {@code anyPuts} is {@code null}
      * @see HBaseExecutor#put(String, Collection)
      * @see AnyPut
      */
     public ContinuableFuture<Void> put(final String tableName, final Collection<AnyPut> anyPuts) {
+        N.checkArgNotNull(anyPuts, "anyPuts");
+
         return asyncExecutor.execute(() -> {
             hbaseExecutor.put(tableName, anyPuts);
 
@@ -1410,10 +1488,13 @@ public final class AsyncHBaseExecutor {
      * @param anyDelete the AnyDelete builder specifying the row and cells to delete
      * @return a {@link ContinuableFuture} that completes with {@code null} when the delete
      *         operation finishes. Wraps {@link HBaseExecutor#delete(String, AnyDelete)}.
+     * @throws IllegalArgumentException if {@code anyDelete} is {@code null}
      * @see HBaseExecutor#delete(String, AnyDelete)
      * @see AnyDelete
      */
     public ContinuableFuture<Void> delete(final String tableName, final AnyDelete anyDelete) {
+        N.checkArgNotNull(anyDelete, "anyDelete");
+
         return asyncExecutor.execute(() -> {
             hbaseExecutor.delete(tableName, anyDelete);
 
@@ -1450,10 +1531,13 @@ public final class AsyncHBaseExecutor {
      * @param anyDeletes the collection of AnyDelete builders specifying the rows to delete
      * @return a {@link ContinuableFuture} that completes with {@code null} when all delete
      *         operations finish. Wraps {@link HBaseExecutor#delete(String, Collection)}.
+     * @throws IllegalArgumentException if {@code anyDeletes} is {@code null}
      * @see HBaseExecutor#delete(String, Collection)
      * @see AnyDelete
      */
     public ContinuableFuture<Void> delete(final String tableName, final Collection<AnyDelete> anyDeletes) {
+        N.checkArgNotNull(anyDeletes, "anyDeletes");
+
         return asyncExecutor.execute(() -> {
             hbaseExecutor.delete(tableName, anyDeletes);
 
@@ -1493,10 +1577,13 @@ public final class AsyncHBaseExecutor {
      * @param rm the AnyRowMutations builder containing the atomic mutations
      * @return a {@link ContinuableFuture} that completes with {@code null} when the mutations
      *         finish. Wraps {@link HBaseExecutor#mutateRow(String, AnyRowMutations)}.
+     * @throws IllegalArgumentException if {@code rm} is {@code null}
      * @see HBaseExecutor#mutateRow(String, AnyRowMutations)
      * @see AnyRowMutations
      */
     public ContinuableFuture<Void> mutateRow(final String tableName, final AnyRowMutations rm) {
+        N.checkArgNotNull(rm, "rm");
+
         return asyncExecutor.execute(() -> {
             hbaseExecutor.mutateRow(tableName, rm);
 
@@ -1578,11 +1665,14 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} containing post-append values when return-results is
      *         enabled; it may contain {@code null} when disabled. Wraps
      *         {@link HBaseExecutor#append(String, AnyAppend)}.
+     * @throws IllegalArgumentException if {@code append} is {@code null}
      * @see HBaseExecutor#append(String, AnyAppend)
      * @see AnyAppend
      * @see Result
      */
     public ContinuableFuture<Result> append(final String tableName, final AnyAppend append) {
+        N.checkArgNotNull(append, "append");
+
         return asyncExecutor.execute(() -> hbaseExecutor.append(tableName, append));
     }
 
@@ -1655,11 +1745,14 @@ public final class AsyncHBaseExecutor {
      * @return a {@link ContinuableFuture} containing post-increment values when return-results is
      *         enabled; callers that disable return-results must not rely on its value. Wraps
      *         {@link HBaseExecutor#increment(String, AnyIncrement)}.
+     * @throws IllegalArgumentException if {@code increment} is {@code null}
      * @see HBaseExecutor#increment(String, AnyIncrement)
      * @see AnyIncrement
      * @see Result
      */
     public ContinuableFuture<Result> increment(final String tableName, final AnyIncrement increment) {
+        N.checkArgNotNull(increment, cs.increment);
+
         return asyncExecutor.execute(() -> hbaseExecutor.increment(tableName, increment));
     }
 

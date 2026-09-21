@@ -7,6 +7,7 @@ package com.landawn.abacus.da.hbase;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.atLeastOnce;
@@ -404,5 +405,38 @@ public class HBaseMapperTest extends TestBase {
 
         assertSame(channel, m.mapper.coprocessorService("rk"));
         verify(m.table, times(1)).close();
+    }
+
+    // ---------------------------------------------------------------------
+    // Null-argument validation: rejected as IllegalArgumentException, not NPE
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void testNullAnyOperationArgs_throwIllegalArgumentException() throws Exception {
+        Mocks m = new Mocks();
+
+        assertThrows(IllegalArgumentException.class, () -> m.mapper.exists((AnyGet) null));
+        assertThrows(IllegalArgumentException.class, () -> m.mapper.get((AnyGet) null));
+        assertThrows(IllegalArgumentException.class, () -> m.mapper.exists((List<AnyGet>) null));
+        assertThrows(IllegalArgumentException.class, () -> m.mapper.put((AnyPut) null));
+        assertThrows(IllegalArgumentException.class, () -> m.mapper.delete((AnyDelete) null));
+        assertThrows(IllegalArgumentException.class, () -> m.mapper.mutateRow(null));
+        assertThrows(IllegalArgumentException.class, () -> m.mapper.append(null));
+        assertThrows(IllegalArgumentException.class, () -> m.mapper.increment(null));
+        assertThrows(IllegalArgumentException.class, () -> m.mapper.scan((AnyScan) null));
+        assertThrows(IllegalArgumentException.class, () -> m.mapper.put((User) null));
+        assertThrows(IllegalArgumentException.class, () -> m.mapper.delete((User) null));
+    }
+
+    @Test
+    public void testNullRowKeyCollections_areTreatedAsEmpty() throws Exception {
+        Mocks m = new Mocks();
+
+        assertTrue(m.mapper.exists((List<String>) null).isEmpty());
+        assertTrue(m.mapper.get((List<String>) null).isEmpty());
+
+        // no-op rather than an exception
+        m.mapper.deleteByRowKey((List<String>) null);
+        m.mapper.delete((List<User>) null);
     }
 }

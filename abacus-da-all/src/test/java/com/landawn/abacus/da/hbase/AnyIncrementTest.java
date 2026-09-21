@@ -282,4 +282,16 @@ public class AnyIncrementTest extends TestBase {
         // Original increment should still have only 1 family
         assertEquals(1, orig.getFamilyMapOfLongs().size());
     }
+
+    /**
+     * {@code AnyIncrement.add(Cell)} is a straight delegation to {@code Increment.add(Cell)}, which
+     * dereferences the cell immediately; the driver's {@code NullPointerException} is the documented
+     * contract. ({@code AnyAppend.add(Cell)} deliberately differs -- it inspects the cell itself and
+     * so rejects {@code null} with an {@code IllegalArgumentException}.)
+     */
+    @Test
+    public void testAdd_nullCell_throwsNpe() {
+        AnyIncrement inc = AnyIncrement.of("row");
+        assertThrows(NullPointerException.class, () -> inc.add((Cell) null));
+    }
 }

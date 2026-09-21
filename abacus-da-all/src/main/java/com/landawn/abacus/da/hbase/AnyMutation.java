@@ -31,6 +31,8 @@ import org.apache.hadoop.hbase.exceptions.DeserializationException;
 import org.apache.hadoop.hbase.security.access.Permission;
 import org.apache.hadoop.hbase.security.visibility.CellVisibility;
 
+import com.landawn.abacus.util.N;
+
 /**
  * Abstract base wrapper for HBase {@link Mutation} operations. Concrete subclasses include
  * {@link AnyPut}, {@link AnyDelete}, {@link AnyAppend}, and {@link AnyIncrement}.
@@ -168,12 +170,20 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * <li><strong>USE_DEFAULT</strong>: use the table-level setting</li>
      * </ul>
      *
-     * @param d the durability level to apply
+     * <p>{@code null} is rejected here rather than forwarded: the wrapped HBase {@link Mutation}
+     * would store it silently and only fail — with a bare {@code NullPointerException} raised deep
+     * inside HBase's request encoder — when the mutation is finally executed. Pass
+     * {@link Durability#USE_DEFAULT} to fall back to the table-level setting.</p>
+     *
+     * @param d the durability level to apply; must not be {@code null}
      * @return this mutation instance, to allow fluent method chaining
+     * @throws IllegalArgumentException if {@code d} is {@code null}
      * @see #getDurability()
      * @see Durability
      */
     public AM setDurability(final Durability d) {
+        N.checkArgNotNull(d, "durability");
+
         mutation.setDurability(d);
 
         return (AM) this;
@@ -244,8 +254,11 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * Records the set of clusters that have already consumed this mutation. Used internally by
      * HBase replication to suppress loops; ordinary client code rarely needs to call this.
      *
-     * @param clusterIds the cluster UUIDs to record
+     * @param clusterIds the cluster UUIDs to record; must not be {@code null} (pass an empty list
+     *                   to clear the recorded clusters)
      * @return this mutation instance, to allow fluent method chaining
+     * @throws NullPointerException if {@code clusterIds} is {@code null} (raised by the wrapped
+     *         {@link Mutation#setClusterIds(List)} while encoding the list)
      * @see #getClusterIds()
      * @see UUID
      */
@@ -288,8 +301,10 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * <li><code>"(SECRET|CONFIDENTIAL)&amp;DEPT_A"</code> - combined boolean expression</li>
      * </ul>
      *
-     * @param expression the {@link CellVisibility} expression to apply
+     * @param expression the {@link CellVisibility} expression to apply; must not be {@code null}
      * @return this mutation instance, to allow fluent method chaining
+     * @throws NullPointerException if {@code expression} is {@code null} (raised by the wrapped
+     *         {@link Mutation#setCellVisibility(CellVisibility)} while reading its expression)
      * @see #getCellVisibility()
      * @see CellVisibility
      */
@@ -317,9 +332,11 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * Grants the specified {@link Permission} to a single user on the data written by this
      * mutation. Existing ACL settings on the mutation are replaced.
      *
-     * @param user the username to grant permissions to
-     * @param perms the {@link Permission} defining the allowed actions
+     * @param user the username to grant permissions to; must not be {@code null}
+     * @param perms the {@link Permission} defining the allowed actions; must not be {@code null}
      * @return this mutation instance, to allow fluent method chaining
+     * @throws NullPointerException if {@code user} or {@code perms} is {@code null} (raised by the
+     *         wrapped {@link Mutation#setACL(String, Permission)} while serializing the ACL)
      * @see #getACL()
      * @see #setACL(Map)
      * @see Permission
@@ -344,10 +361,15 @@ abstract class AnyMutation<AM extends AnyMutation<AM>> extends AnyOperationWithA
      * acl.put("alice", new Permission(Permission.Action.READ, Permission.Action.WRITE));
      * acl.put("bob", new Permission(Permission.Action.READ));
      * mutation.setACL(acl);
+     *
+     * // Edge: a null map is rejected by the underlying HBase client.
+     * mutation.setACL((Map<String, Permission>) null);   // throws NullPointerException
      * }</pre>
      *
-     * @param perms a map of username to {@link Permission}
+     * @param perms a map of username to {@link Permission}; must not be {@code null}
      * @return this mutation instance, to allow fluent method chaining
+     * @throws NullPointerException if {@code perms} is {@code null} (raised by the wrapped
+     *         {@link Mutation#setACL(Map)} while iterating the map)
      * @see #getACL()
      * @see #setACL(String, Permission)
      * @see Permission

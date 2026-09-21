@@ -24,6 +24,7 @@ import static org.mockito.Mockito.when;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.List;
 
@@ -1408,6 +1409,51 @@ public class HBaseExecutorStaticTest extends TestBase {
             try (var stream = executor.scan("tbl", "info", Bean.class)) {
                 assertNotNull(stream);
             }
+        } finally {
+            executor.close();
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Null-argument validation: rejected as IllegalArgumentException, not NPE
+    // ---------------------------------------------------------------------
+
+    @Test
+    public void testRegisterRowKeyProperty_nullArgs_throwIllegalArgumentException() {
+        assertThrows(IllegalArgumentException.class, () -> HBaseExecutor.registerRowKeyProperty(null, "id"));
+        assertThrows(IllegalArgumentException.class, () -> HBaseExecutor.registerRowKeyProperty(PlainBean.class, null));
+    }
+
+    @Test
+    public void testToList_nullTargetType_throwsIllegalArgumentException() {
+        assertThrows(IllegalArgumentException.class, () -> HBaseExecutor.toList((ResultScanner) null, (Class<PlainBean>) null));
+    }
+
+    @Test
+    public void testNullAnyOperationArgs_throwIllegalArgumentException() throws Exception {
+        Connection conn = mock(Connection.class);
+        Admin admin = mock(Admin.class);
+        when(conn.getAdmin()).thenReturn(admin);
+
+        final HBaseExecutor executor = new HBaseExecutor(conn);
+
+        try {
+            assertThrows(IllegalArgumentException.class, () -> executor.mapper(null));
+
+            assertThrows(IllegalArgumentException.class, () -> executor.exists("tbl", (AnyGet) null));
+            assertThrows(IllegalArgumentException.class, () -> executor.exists("tbl", (Collection<AnyGet>) null));
+            assertThrows(IllegalArgumentException.class, () -> executor.get("tbl", (AnyGet) null));
+            assertThrows(IllegalArgumentException.class, () -> executor.get("tbl", (Collection<AnyGet>) null));
+            assertThrows(IllegalArgumentException.class, () -> executor.put("tbl", (AnyPut) null));
+            assertThrows(IllegalArgumentException.class, () -> executor.put("tbl", (Collection<AnyPut>) null));
+            assertThrows(IllegalArgumentException.class, () -> executor.delete("tbl", (AnyDelete) null));
+            assertThrows(IllegalArgumentException.class, () -> executor.delete("tbl", (Collection<AnyDelete>) null));
+            assertThrows(IllegalArgumentException.class, () -> executor.mutateRow("tbl", (AnyRowMutations) null));
+            assertThrows(IllegalArgumentException.class, () -> executor.append("tbl", (AnyAppend) null));
+            assertThrows(IllegalArgumentException.class, () -> executor.increment("tbl", (AnyIncrement) null));
+            assertThrows(IllegalArgumentException.class, () -> executor.scan("tbl", (AnyScan) null));
+            assertThrows(IllegalArgumentException.class, () -> executor.scan(null, AnyScan.create()));
+            assertThrows(IllegalArgumentException.class, () -> executor.scan("tbl", "info", (Class<PlainBean>) null));
         } finally {
             executor.close();
         }

@@ -26,6 +26,7 @@ import org.bson.types.ObjectId;
 import com.landawn.abacus.annotation.Beta;
 import com.landawn.abacus.util.Dataset;
 import com.landawn.abacus.util.N;
+import com.landawn.abacus.util.cs;
 import com.mongodb.bulk.BulkWriteResult;
 import com.mongodb.client.model.Aggregates;
 import com.mongodb.client.model.BulkWriteOptions;
@@ -935,7 +936,7 @@ public final class MongoCollectionMapper<T> {
      *
      * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents against
-     * @param sort the sort specification for ordering results
+     * @param sort the sort specification for ordering results (can be null for natural order)
      * @return a Flux that emits sorted matching entities with specified fields
      * @throws IllegalArgumentException if filter is null
      * @see com.mongodb.client.model.Sorts
@@ -972,7 +973,7 @@ public final class MongoCollectionMapper<T> {
      *
      * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents against
-     * @param sort the sort specification for ordering results
+     * @param sort the sort specification for ordering results (can be null for natural order)
      * @param offset the number of documents to skip (must be >= 0)
      * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
      * @return a Flux that emits the fully controlled query results
@@ -1009,9 +1010,9 @@ public final class MongoCollectionMapper<T> {
      * Flux<User> notRunYet = userMapper.list(projection, Filters.empty(), null);   // no query issued yet
      * }</pre>
      *
-     * @param projection the BSON projection document for field selection
+     * @param projection the BSON projection document for field selection (can be null to select all fields)
      * @param filter the query filter to match documents against
-     * @param sort the sort specification for ordering results (can be null)
+     * @param sort the sort specification for ordering results (can be null for natural order)
      * @return a Flux that emits matching entities with projection applied
      * @throws IllegalArgumentException if filter is null
      * @see com.mongodb.client.model.Projections
@@ -1047,9 +1048,9 @@ public final class MongoCollectionMapper<T> {
      * userMapper.list(projection, filter, sort, -1, 100);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param projection the BSON projection document for field selection
+     * @param projection the BSON projection document for field selection (can be null to select all fields)
      * @param filter the query filter to match documents against
-     * @param sort the sort specification for ordering results (can be null)
+     * @param sort the sort specification for ordering results (can be null for natural order)
      * @param offset the number of documents to skip (must be >= 0)
      * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
      * @return a Flux that emits the fully controlled query results with projection
@@ -1798,7 +1799,7 @@ public final class MongoCollectionMapper<T> {
      *
      * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents against
-     * @param sort the sort specification for ordering results
+     * @param sort the sort specification for ordering results (can be null for natural order)
      * @return a Mono that emits a sorted Dataset with projected fields
      * @throws IllegalArgumentException if filter is null
      */
@@ -1834,7 +1835,7 @@ public final class MongoCollectionMapper<T> {
      *
      * @param selectPropNames the collection of field names to include in the projection (null or empty selects all fields)
      * @param filter the query filter to match documents against
-     * @param sort the sort specification for ordering results
+     * @param sort the sort specification for ordering results (can be null for natural order)
      * @param offset the number of documents to skip (must be >= 0)
      * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
      * @return a Mono that emits a fully controlled Dataset result
@@ -1874,9 +1875,9 @@ public final class MongoCollectionMapper<T> {
      * userMapper.query(projection, (Bson) null, sort);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param projection the BSON projection document for field selection
+     * @param projection the BSON projection document for field selection (can be null to select all fields)
      * @param filter the query filter to match documents against
-     * @param sort the sort specification for ordering results (can be null)
+     * @param sort the sort specification for ordering results (can be null for natural order)
      * @return a Mono that emits a Dataset with projection and sorting applied
      * @throws IllegalArgumentException if filter is null
      */
@@ -1910,9 +1911,9 @@ public final class MongoCollectionMapper<T> {
      * userMapper.query(projection, filter, sort, -1, 1000);   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param projection the BSON projection document for field selection
+     * @param projection the BSON projection document for field selection (can be null to select all fields)
      * @param filter the query filter to match documents against
-     * @param sort the sort specification for ordering results (can be null)
+     * @param sort the sort specification for ordering results (can be null for natural order)
      * @param offset the number of documents to skip (must be >= 0)
      * @param count the maximum number of documents to return (must be >= 0; {@code 0} yields an empty result)
      * @return a Mono that emits a fully controlled Dataset with projection
@@ -2102,7 +2103,7 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the string representation of the MongoDB ObjectId
      * @param update the entity containing the update values
      * @return a Mono that emits the update result
-     * @throws IllegalArgumentException if objectId or update is null, or if objectId is not a valid ObjectId format
+     * @throws IllegalArgumentException if objectId is null or empty, if objectId is not a valid ObjectId hex string, or if update is null
      */
     public Mono<UpdateResult> updateOne(final String objectId, final T update) {
         return collectionExecutor.updateOne(objectId, update);
@@ -2381,7 +2382,7 @@ public final class MongoCollectionMapper<T> {
      * @param objectId the string representation of the MongoDB ObjectId
      * @param replacement the entity to replace the existing document with
      * @return a Mono that emits the update result
-     * @throws IllegalArgumentException if objectId or replacement is null, or if objectId is not a valid ObjectId format
+     * @throws IllegalArgumentException if objectId is null or empty, if objectId is not a valid ObjectId hex string, or if replacement is null
      */
     public Mono<UpdateResult> replaceOne(final String objectId, final T replacement) {
         return collectionExecutor.replaceOne(objectId, replacement);
@@ -2481,7 +2482,7 @@ public final class MongoCollectionMapper<T> {
      *
      * @param objectId the string representation of the MongoDB ObjectId
      * @return a Mono that emits the delete result
-     * @throws IllegalArgumentException if objectId is null, or if objectId is not a valid ObjectId format
+     * @throws IllegalArgumentException if objectId is null or empty, or if objectId is not a valid ObjectId hex string
      */
     public Mono<DeleteResult> deleteOne(final String objectId) {
         return collectionExecutor.deleteOne(objectId);
@@ -2614,7 +2615,7 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param filter the query filter to match documents for deletion
-     * @param options additional options to configure the delete operation
+     * @param options additional options to configure the delete operation (can be null to use defaults)
      * @return a cold {@code Mono} that, on subscription, emits exactly one {@link DeleteResult}
      *         with deletion statistics, then completes
      * @throws IllegalArgumentException if filter is null
@@ -2814,7 +2815,7 @@ public final class MongoCollectionMapper<T> {
      *
      * @param filter the query filter to identify the document
      * @param update the entity containing update values
-     * @param options configuration for the find-and-update operation
+     * @param options configuration for the find-and-update operation (can be null to use defaults)
      * @return a {@code Mono} that emits the matched document decoded as {@code T} — the pre- or
      *         post-write version per {@code options} — or completes empty when no document matches
      * @throws IllegalArgumentException if filter or update is null
@@ -2871,7 +2872,7 @@ public final class MongoCollectionMapper<T> {
      *
      * @param filter the query filter to identify the document
      * @param objList collection of objects containing update values
-     * @param options configuration for the operation
+     * @param options configuration for the operation (can be null to use defaults)
      * @return a {@code Mono} that emits the matched document decoded as {@code T} — the pre- or
      *         post-write version per {@code options} — or completes empty when no document matches
      * @throws IllegalArgumentException if filter is null, or objList is null or empty
@@ -2943,7 +2944,7 @@ public final class MongoCollectionMapper<T> {
      *
      * @param filter the query filter to identify the document
      * @param replacement the complete replacement document
-     * @param options configuration for the replace operation
+     * @param options configuration for the replace operation (can be null to use defaults)
      * @return a {@code Mono} that emits the matched document decoded as {@code T} — the pre- or
      *         post-write version per {@code options} — or completes empty when no document matches
      * @throws IllegalArgumentException if filter or replacement is null
@@ -3007,7 +3008,7 @@ public final class MongoCollectionMapper<T> {
      * }</pre>
      *
      * @param filter the query filter to identify the document
-     * @param options configuration for the delete operation
+     * @param options configuration for the delete operation (can be null to use defaults)
      * @return a Mono emitting the deleted document
      * @throws IllegalArgumentException if filter is null
      */
@@ -3060,7 +3061,7 @@ public final class MongoCollectionMapper<T> {
      * @see MongoCollectionExecutor#distinct(String, Class)
      */
     public Flux<T> distinct(final String fieldName) {
-        N.checkArgNotEmpty(fieldName, "fieldName");
+        N.checkArgNotEmpty(fieldName, cs.fieldName);
 
         return collectionExecutor.aggregate(distinctPipeline(fieldName, null), rowType);
     }
@@ -3117,8 +3118,8 @@ public final class MongoCollectionMapper<T> {
      * @see MongoCollectionExecutor#distinct(String, Bson, Class)
      */
     public Flux<T> distinct(final String fieldName, final Bson filter) {
-        N.checkArgNotEmpty(fieldName, "fieldName");
-        N.checkArgNotNull(filter, "filter");
+        N.checkArgNotEmpty(fieldName, cs.fieldName);
+        N.checkArgNotNull(filter, cs.filter);
 
         return collectionExecutor.aggregate(distinctPipeline(fieldName, filter), rowType);
     }

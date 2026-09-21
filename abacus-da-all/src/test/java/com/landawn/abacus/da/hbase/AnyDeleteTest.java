@@ -388,4 +388,16 @@ public class AnyDeleteTest extends TestBase {
         assertSame(delete, returned);
         assertEquals(1, delete.numFamilies());
     }
+
+    /**
+     * {@code AnyDelete.add(Cell)} is a straight delegation to {@code Delete.add(Cell)}, which
+     * dereferences the cell immediately; the driver's {@code NullPointerException} is the documented
+     * contract. ({@code AnyAppend.add(Cell)} deliberately differs -- it inspects the cell itself and
+     * so rejects {@code null} with an {@code IllegalArgumentException}.)
+     */
+    @Test
+    public void testAddCell_nullCell_throwsNpe() {
+        AnyDelete delete = AnyDelete.of("rk");
+        assertThrows(NullPointerException.class, () -> delete.add((Cell) null));
+    }
 }

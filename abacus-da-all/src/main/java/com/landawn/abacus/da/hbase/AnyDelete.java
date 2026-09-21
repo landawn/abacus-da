@@ -507,12 +507,16 @@ public final class AnyDelete extends AnyMutation<AnyDelete> {
      * AnyDelete.of("user123").add(wrongRow);           // throws IOException
      * }</pre>
      *
-     * @param cell an existing Cell to attach to this delete; should be a delete-type cell
-     *             whose row matches this delete's row
+     * @param cell an existing Cell to attach to this delete; must not be {@code null} and should be
+     *             a delete-type cell whose row matches this delete's row
      * @return this AnyDelete instance for method chaining
+     * @throws IllegalArgumentException if the cell's family is null or empty
+     * @throws NullPointerException if {@code cell} is {@code null} (this method is a straight
+     *         delegation to {@link Delete#add(Cell)}, which dereferences the cell immediately;
+     *         {@link AnyAppend#add(Cell)} differs and reports a {@code null} cell as an
+     *         {@code IllegalArgumentException} because it inspects the cell itself)
      * @throws IOException if the cell's row does not match this delete's row
      *         (a {@code WrongRowIOException}, an {@code IOException} subtype)
-     * @throws IllegalArgumentException if the cell's family is null or empty
      * @see Cell
      * @see Delete#add(Cell)
      */

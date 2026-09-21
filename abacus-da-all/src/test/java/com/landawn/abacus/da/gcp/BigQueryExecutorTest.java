@@ -2227,6 +2227,32 @@ public class BigQueryExecutorTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> new BigQueryExecutor(mockBigQuery, null));
     }
 
+    // ===== Null-argument guards =====
+
+    /**
+     * {@code targetClass} feeds the key-name cache (a ConcurrentHashMap), so an unchecked null used to
+     * surface as a bare NullPointerException from the map rather than as an IllegalArgumentException.
+     */
+    @Test
+    public void testKeyBasedMethodsRejectNullTargetClass() {
+        assertThrows(IllegalArgumentException.class, () -> executor.delete((Class<?>) null, "id1"));
+        assertThrows(IllegalArgumentException.class, () -> executor.exists((Class<?>) null, "id1"));
+        assertThrows(IllegalArgumentException.class, () -> executor.exists((Class<?>) null, Filters.eq("id", 1)));
+    }
+
+    /** A null job configuration is not checked by the BigQuery client; reject it at the call site. */
+    @Test
+    public void testStreamRejectsNullQueryJobConfiguration() {
+        assertThrows(IllegalArgumentException.class, () -> executor.stream((QueryJobConfiguration) null));
+        assertThrows(IllegalArgumentException.class, () -> executor.stream(TestEntity.class, (QueryJobConfiguration) null));
+    }
+
+    @Test
+    public void testToListAndExtractDataRejectNullTableResult() {
+        assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.toList(null, TestEntity.class));
+        assertThrows(IllegalArgumentException.class, () -> BigQueryExecutor.extractData(null, TestEntity.class));
+    }
+
     // ===== extractData branches: value of type FieldValueList in column =====
     @Test
     public void testExtractData_NestedFieldValueListInColumn() {

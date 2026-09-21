@@ -50,6 +50,7 @@ import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.NamingPolicy;
 import com.landawn.abacus.util.ObjIterator;
 import com.landawn.abacus.util.Strings;
+import com.landawn.abacus.util.cs;
 import com.landawn.abacus.util.stream.Stream;
 
 import software.amazon.awssdk.services.dynamodb.DynamoDbAsyncClient;
@@ -562,7 +563,9 @@ public final class AsyncDynamoDBExecutor {
      * @param getItemRequest the complete GetItemRequest with all parameters configured. Must not be null.
      * @return a CompletableFuture containing the item as a Map of attribute names to values,
      *         or null if not found
-     * @throws NullPointerException if {@code getItemRequest} is null (rejected by the AWS SDK v2 client)
+     * @throws NullPointerException if {@code getItemRequest} is null — the AWS SDK v2 async client
+     *         dereferences the request before it builds the future, so this is thrown synchronously
+     *         instead of being reported through the returned {@code CompletableFuture}
      */
     public CompletableFuture<Map<String, Object>> getItem(final GetItemRequest getItemRequest) {
         return getItem(getItemRequest, PROP_MAP_TYPE);
@@ -723,11 +726,13 @@ public final class AsyncDynamoDBExecutor {
      *         {@code targetClass} yields its default value such as {@code 0} or {@code false}),
      *         or completes exceptionally with the underlying SDK exception wrapped in
      *         {@link java.util.concurrent.CompletionException}
-     * @throws NullPointerException if {@code getItemRequest} is null (rejected by the AWS SDK v2 client)
      * @throws IllegalArgumentException if {@code targetClass} is null
+     * @throws NullPointerException if {@code getItemRequest} is null — the AWS SDK v2 async client
+     *         dereferences the request before it builds the future, so this is thrown synchronously
+     *         instead of being reported through the returned {@code CompletableFuture}
      */
     public <T> CompletableFuture<T> getItem(final GetItemRequest getItemRequest, final Class<T> targetClass) {
-        N.checkArgNotNull(targetClass, "targetClass");
+        N.checkArgNotNull(targetClass, cs.targetClass);
 
         return dynamoDBClient.getItem(getItemRequest).thenApply(getItemResponse -> readRow(getItemResponse, targetClass));
     }
@@ -1032,7 +1037,7 @@ public final class AsyncDynamoDBExecutor {
      */
     public <T> CompletableFuture<Map<String, List<T>>> batchGetItem(final BatchGetItemRequest batchGetItemRequest, final Class<T> targetClass) {
         N.checkArgNotNull(batchGetItemRequest, "batchGetItemRequest");
-        N.checkArgNotNull(targetClass, "targetClass");
+        N.checkArgNotNull(targetClass, cs.targetClass);
 
         return dynamoDBClient.batchGetItem(batchGetItemRequest).thenApply(batchGetItemResponse -> toEntities(batchGetItemResponse, targetClass));
     }
@@ -1203,7 +1208,9 @@ public final class AsyncDynamoDBExecutor {
      *         completes exceptionally (wrapped in {@link java.util.concurrent.CompletionException})
      *         on SDK error — common causes include
      *         {@link software.amazon.awssdk.services.dynamodb.model.ConditionalCheckFailedException}
-     * @throws NullPointerException if {@code putItemRequest} is null (rejected by the AWS SDK v2 client)
+     * @throws NullPointerException if {@code putItemRequest} is null — the AWS SDK v2 async client
+     *         dereferences the request before it builds the future, so this is thrown synchronously
+     *         instead of being reported through the returned {@code CompletableFuture}
      * @see PutItemRequest
      * @see PutItemResponse
      */
@@ -1225,8 +1232,7 @@ public final class AsyncDynamoDBExecutor {
      * @param tableName the name of the DynamoDB table to put the item into; must not be null or empty
      * @param entity the entity object to convert and store; must not be null
      * @return a CompletableFuture containing the PutItemResponse with operation metadata
-     * @throws NullPointerException if {@code entity} is {@code null}
-     * @throws IllegalArgumentException if {@code entity} is not an Entity, Map, or Object[]
+     * @throws IllegalArgumentException if {@code entity} is {@code null}, or is not an Entity, Map, or Object[]
      * @see #putItem(String, Object, String)
      * @see #putItem(String, Map)
      */
@@ -1253,8 +1259,7 @@ public final class AsyncDynamoDBExecutor {
      * @param entity the entity object to convert and store; must not be null
      * @param returnValues {@code "NONE"} (default) or {@code "ALL_OLD"} to retrieve the previous item
      * @return a CompletableFuture containing the PutItemResponse with requested return values
-     * @throws NullPointerException if {@code entity} is {@code null}
-     * @throws IllegalArgumentException if {@code entity} is not an Entity, Map, or Object[]
+     * @throws IllegalArgumentException if {@code entity} is {@code null}, or is not an Entity, Map, or Object[]
      * @see #putItem(String, Object)
      * @see #putItem(String, Map, String)
      */
@@ -1367,7 +1372,9 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param batchWriteItemRequest the complete BatchWriteItemRequest. Must not be null.
      * @return a CompletableFuture containing BatchWriteItemResponse with operation results
-     * @throws NullPointerException if {@code batchWriteItemRequest} is null (rejected by the AWS SDK v2 client)
+     * @throws NullPointerException if {@code batchWriteItemRequest} is null — the AWS SDK v2 async client
+     *         dereferences the request before it builds the future, so this is thrown synchronously
+     *         instead of being reported through the returned {@code CompletableFuture}
      */
     public CompletableFuture<BatchWriteItemResponse> batchWriteItem(final BatchWriteItemRequest batchWriteItemRequest) {
         return dynamoDBClient.batchWriteItem(batchWriteItemRequest);
@@ -1534,7 +1541,9 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param updateItemRequest the complete UpdateItemRequest with all parameters configured. Must not be null.
      * @return a CompletableFuture containing the UpdateItemResponse with operation results
-     * @throws NullPointerException if {@code updateItemRequest} is null (rejected by the AWS SDK v2 client)
+     * @throws NullPointerException if {@code updateItemRequest} is null — the AWS SDK v2 async client
+     *         dereferences the request before it builds the future, so this is thrown synchronously
+     *         instead of being reported through the returned {@code CompletableFuture}
      * @see UpdateItemRequest
      * @see UpdateItemResponse
      */
@@ -1666,7 +1675,9 @@ public final class AsyncDynamoDBExecutor {
      *
      * @param deleteItemRequest the complete DeleteItemRequest. Must not be null.
      * @return a CompletableFuture containing DeleteItemResponse with operation results
-     * @throws NullPointerException if {@code deleteItemRequest} is null (rejected by the AWS SDK v2 client)
+     * @throws NullPointerException if {@code deleteItemRequest} is null — the AWS SDK v2 async client
+     *         dereferences the request before it builds the future, so this is thrown synchronously
+     *         instead of being reported through the returned {@code CompletableFuture}
      */
     public CompletableFuture<DeleteItemResponse> deleteItem(final DeleteItemRequest deleteItemRequest) {
         return dynamoDBClient.deleteItem(deleteItemRequest);
@@ -1774,7 +1785,7 @@ public final class AsyncDynamoDBExecutor {
      */
     public <T> CompletableFuture<List<T>> list(final QueryRequest queryRequest, final Class<T> targetClass) {
         N.checkArgNotNull(queryRequest, "queryRequest");
-        N.checkArgNotNull(targetClass, "targetClass");
+        N.checkArgNotNull(targetClass, cs.targetClass);
 
         final CompletableFuture<QueryResponse> queryResultFuture = dynamoDBClient.query(queryRequest);
 
@@ -1904,7 +1915,7 @@ public final class AsyncDynamoDBExecutor {
      */
     public CompletableFuture<Dataset> query(final QueryRequest queryRequest, final Class<?> targetClass) {
         N.checkArgNotNull(queryRequest, "queryRequest");
-        N.checkArgNotNull(targetClass, "targetClass");
+        N.checkArgNotNull(targetClass, cs.targetClass);
 
         if (Map.class.isAssignableFrom(targetClass)) {
             final CompletableFuture<QueryResponse> queryResultFuture = dynamoDBClient.query(queryRequest);
@@ -2051,7 +2062,7 @@ public final class AsyncDynamoDBExecutor {
      */
     public <T> CompletableFuture<Stream<T>> stream(final QueryRequest queryRequest, final Class<T> targetClass) {
         N.checkArgNotNull(queryRequest, "queryRequest");
-        N.checkArgNotNull(targetClass, "targetClass");
+        N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Iterator<List<Map<String, AttributeValue>>> iterator = new ObjIterator<>() {
             private QueryRequest newQueryRequest = queryRequest;
@@ -2304,7 +2315,7 @@ public final class AsyncDynamoDBExecutor {
      */
     public <T> CompletableFuture<Stream<T>> scan(final String tableName, final List<String> attributesToGet, final Class<T> targetClass) {
         N.checkArgNotNull(tableName, "tableName");
-        N.checkArgNotNull(targetClass, "targetClass");
+        N.checkArgNotNull(targetClass, cs.targetClass);
 
         final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).attributesToGet(N.isEmpty(attributesToGet) ? null : attributesToGet).build();
 
@@ -2341,7 +2352,7 @@ public final class AsyncDynamoDBExecutor {
      */
     public <T> CompletableFuture<Stream<T>> scan(final String tableName, final Map<String, Condition> scanFilter, final Class<T> targetClass) {
         N.checkArgNotNull(tableName, "tableName");
-        N.checkArgNotNull(targetClass, "targetClass");
+        N.checkArgNotNull(targetClass, cs.targetClass);
 
         final ScanRequest scanRequest = ScanRequest.builder().tableName(tableName).scanFilter(scanFilter).build();
 
@@ -2382,7 +2393,7 @@ public final class AsyncDynamoDBExecutor {
     public <T> CompletableFuture<Stream<T>> scan(final String tableName, final List<String> attributesToGet, final Map<String, Condition> scanFilter,
             final Class<T> targetClass) {
         N.checkArgNotNull(tableName, "tableName");
-        N.checkArgNotNull(targetClass, "targetClass");
+        N.checkArgNotNull(targetClass, cs.targetClass);
 
         final ScanRequest scanRequest = ScanRequest.builder()
                 .tableName(tableName)
@@ -2431,7 +2442,7 @@ public final class AsyncDynamoDBExecutor {
      */
     public <T> CompletableFuture<Stream<T>> scan(final ScanRequest scanRequest, final Class<T> targetClass) {
         N.checkArgNotNull(scanRequest, "scanRequest");
-        N.checkArgNotNull(targetClass, "targetClass");
+        N.checkArgNotNull(targetClass, cs.targetClass);
 
         final Iterator<List<Map<String, AttributeValue>>> iterator = new ObjIterator<>() {
             private ScanRequest newScanRequest = scanRequest;
@@ -3517,7 +3528,7 @@ public final class AsyncDynamoDBExecutor {
         }
 
         private Map<String, AttributeValue> createKey(final T entity) {
-            N.checkArgNotNull(entity, "entity");
+            N.checkArgNotNull(entity, cs.entity);
 
             final Map<String, AttributeValue> key = new HashMap<>(keyPropNames.size());
 
@@ -3530,7 +3541,7 @@ public final class AsyncDynamoDBExecutor {
         }
 
         private Map<String, AttributeValueUpdate> createUpdateItem(final T entity) {
-            N.checkArgNotNull(entity, "entity");
+            N.checkArgNotNull(entity, cs.entity);
 
             final Map<String, AttributeValueUpdate> attributeUpdates = toUpdateItem(entity, namingPolicy);
 

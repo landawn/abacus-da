@@ -414,6 +414,18 @@ public class AnyPutTest extends TestBase {
         assertTrue(put.has("cf", "q"));
     }
 
+    /**
+     * {@code AnyPut.add(Cell)} is a straight delegation to {@code Put.add(Cell)}, which dereferences
+     * the cell immediately; the driver's {@code NullPointerException} is the documented contract.
+     * ({@code AnyAppend.add(Cell)} deliberately differs -- it inspects the cell itself and so
+     * rejects {@code null} with an {@code IllegalArgumentException}.)
+     */
+    @Test
+    public void testAdd_nullCell_throwsNpe() {
+        AnyPut put = AnyPut.of("row");
+        assertThrows(NullPointerException.class, () -> put.add((Cell) null));
+    }
+
     // ---------------------------------------------------------------------
     // AnyMutation accessors (get, has, family map, etc.)
     // ---------------------------------------------------------------------

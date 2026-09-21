@@ -758,13 +758,15 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * @param <T> the target type
      * @param resultSet the Cassandra ResultSet to convert
-     * @param targetClass the per-row target type (see supported types above)
+     * @param targetClass the per-row target type (see supported types above); must not be {@code null}
      * @return a list of converted rows
-     * @throws NullPointerException if {@code resultSet} or {@code targetClass} is {@code null}
-     * @throws IllegalArgumentException if {@code targetClass} is a single-value type but
-     *         the result set has more than one column
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null}, or if
+     *         {@code targetClass} is a single-value type but the result set has more than one column
+     * @throws NullPointerException if {@code resultSet} is {@code null}
      */
     public static <T> List<T> toList(final ResultSet resultSet, final Class<T> targetClass) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         if (targetClass.isAssignableFrom(Row.class)) {
             return (List<T>) resultSet.all();
         }
@@ -827,15 +829,21 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * // Edge case: a null row throws NullPointerException
      * CassandraExecutor.toEntity((Row) null, User.class); // throws NullPointerException
+     *
+     * // Edge case: a null entity class is rejected as an illegal argument
+     * CassandraExecutor.toEntity(row, (Class<User>) null); // throws IllegalArgumentException ('entityClass' cannot be null)
      * }</pre>
      *
      * @param <T> the entity type
      * @param row the Cassandra Row to convert
-     * @param entityClass the target entity class with getter/setter methods
+     * @param entityClass the target entity class with getter/setter methods (must not be {@code null})
      * @return an instance of the entity class populated with row data
-     * @throws NullPointerException if row or entityClass is null
+     * @throws IllegalArgumentException if {@code entityClass} is {@code null}
+     * @throws NullPointerException if {@code row} is {@code null}
      */
     public static <T> T toEntity(final Row row, final Class<T> entityClass) {
+        N.checkArgNotNull(entityClass, cs.entityClass);
+
         final ColumnDefinitions columnDefinitions = row.getColumnDefinitions();
         final int columnCount = columnDefinitions.size();
 
@@ -1200,7 +1208,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * }</pre>
      *
      * @param <V> the type of the single result value to be returned
-     * @param valueClass the Java class the column value is converted to
+     * @param valueClass the Java class the column value is converted to (must not be {@code null})
      * @param query the CQL query string with {@code ?} placeholders for parameters
      * @param parameters the values to bind, in declaration order
      * @return a <i>present</i> {@code Nullable<V>} holding the column value (possibly {@code null} for
@@ -1211,6 +1219,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      */
     @Override
     public <V> Nullable<V> queryForSingleValue(final Class<V> valueClass, final String query, final Object... parameters) {
+        N.checkArgNotNull(valueClass, "valueClass");
+
         final ResultSet resultSet = execute(query, parameters);
         final Row row = resultSet.one();
 
@@ -1247,7 +1257,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      * }</pre>
      *
      * @param <V> the type of the single result value to be returned
-     * @param valueClass the Java class the column value is converted to
+     * @param valueClass the Java class the column value is converted to (must not be {@code null})
      * @param query the CQL query string with {@code ?} placeholders for parameters
      * @param parameters the values to bind, in declaration order
      * @return a <i>present</i> {@code Optional<V>} holding the (non-null) column value when at least
@@ -1260,6 +1270,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      */
     @Override
     public <V> Optional<V> queryForSingleNonNull(final Class<V> valueClass, final String query, final Object... parameters) {
+        N.checkArgNotNull(valueClass, "valueClass");
+
         final ResultSet resultSet = execute(query, parameters);
         final Row row = resultSet.one();
 
@@ -1303,7 +1315,7 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      *
      * @param <T> the type to map the result row to
      * @param targetClass an entity class with getter/setter methods, {@code Map.class}, a collection, or
-     *        an array class
+     *        an array class (must not be {@code null})
      * @param query the CQL query string with {@code ?} placeholders for parameters
      * @param parameters the values to bind, in declaration order
      * @return a <i>present</i> {@code Optional<T>} holding the first mapped row when at least one row is
@@ -1314,6 +1326,8 @@ public final class CassandraExecutor extends CassandraExecutorBase<Row, ResultSe
      */
     @Override
     public <T> Optional<T> findFirst(final Class<T> targetClass, final String query, final Object... parameters) {
+        N.checkArgNotNull(targetClass, cs.targetClass);
+
         final ResultSet resultSet = execute(query, parameters);
         final Row row = resultSet.one();
 

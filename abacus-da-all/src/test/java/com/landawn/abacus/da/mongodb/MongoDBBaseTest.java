@@ -307,6 +307,48 @@ public class MongoDBBaseTest extends TestBase {
         assertThrows(IllegalArgumentException.class, () -> MongoDBBase.extractData(mockFindIterable, String.class));
     }
 
+    @Test
+    public void testToEntityRejectsNullRowType() {
+        // rowType is consumed by this library's reflection, so it is rejected as an illegal
+        // argument rather than surfacing as an NPE from the internal id-setter cache lookup.
+        final Document doc = new Document("value", "a");
+
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toEntity(doc, null));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.toEntity(null, null));
+    }
+
+    @Test
+    public void testExtractDataFromListRejectsNullRowType() {
+        // Consistent with the MongoIterable-based overloads, which reject a null rowType via
+        // checkResultClass instead of dereferencing it.
+        final List<Document> docs = Arrays.asList(new Document("value", "a"));
+
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.extractData(docs, (Class<?>) null));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.extractData(null, docs, (Class<?>) null));
+    }
+
+    @Test
+    public void testExtractDataFromNullListYieldsEmptyDataset() {
+        // A null row list is treated exactly like an empty one (N.firstNonNull tolerates null).
+        final Dataset fromNullList = MongoDBBase.extractData((List<?>) null);
+        assertNotNull(fromNullList);
+        assertEquals(0, fromNullList.size());
+
+        final Dataset fromNullListTyped = MongoDBBase.extractData((List<?>) null, NoIdEntity.class);
+        assertNotNull(fromNullListTyped);
+        assertEquals(0, fromNullListTyped.size());
+
+        final Dataset fromNullListWithProps = MongoDBBase.extractData(Arrays.asList("value"), (List<?>) null, NoIdEntity.class);
+        assertNotNull(fromNullListWithProps);
+        assertEquals(0, fromNullListWithProps.size());
+    }
+
+    @Test
+    public void testToJsonBasicDBObjectAcceptsNull() {
+        // N.toJson(null) returns an empty string; this overload performs no null check of its own.
+        assertEquals("", MongoDBBase.toJson((BasicDBObject) null));
+    }
+
     // -- toDocument/toBSONObject/toDBObject varargs branches --
 
     @Test
@@ -454,6 +496,14 @@ public class MongoDBBaseTest extends TestBase {
     public void testRegisterIdPropertyWithUnsupportedTypeThrows() {
         // Wrong setter type -- registerIdProperty should reject it
         assertThrows(IllegalArgumentException.class, () -> MongoDBBase.registerIdProperty(IntIdEntity.class, "id"));
+    }
+
+    @Test
+    public void testRegisterIdPropertyRejectsNullArguments() {
+        // Both arguments feed this library's bean reflection, so null is an illegal argument
+        // rather than an NPE raised from inside the property-method cache.
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.registerIdProperty(null, "id"));
+        assertThrows(IllegalArgumentException.class, () -> MongoDBBase.registerIdProperty(ObjectIdEntity.class, null));
     }
 
     // -- toJson Bson Map branch --

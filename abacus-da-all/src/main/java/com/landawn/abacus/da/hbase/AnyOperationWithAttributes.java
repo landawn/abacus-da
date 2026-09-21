@@ -180,12 +180,16 @@ abstract class AnyOperationWithAttributes<AOWA extends AnyOperationWithAttribute
      *
      * // Custom format with context
      * operation.setId("batch-user-updates-" + System.currentTimeMillis());
+     *
+     * // Edge: a null id is rejected by the underlying HBase client.
+     * operation.setId(null);   // throws NullPointerException
      * }</pre>
      *
-     * @param id the identifier to assign; must not be {@code null} (the underlying HBase client
-     *           raises {@code NullPointerException} converting it to bytes) — once set, the id
-     *           cannot be cleared via this API
+     * @param id the identifier to assign; must not be {@code null} — once set, the id cannot be
+     *           cleared via this API
      * @return this instance, to allow fluent method chaining
+     * @throws NullPointerException if {@code id} is {@code null} (raised by the wrapped
+     *         {@link OperationWithAttributes#setId(String)} while converting it to bytes)
      * @see #getId()
      */
     public AOWA setId(final String id) {

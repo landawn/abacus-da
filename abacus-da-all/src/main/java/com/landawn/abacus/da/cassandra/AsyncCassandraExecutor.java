@@ -229,11 +229,13 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * }</pre>
      *
      * @param <T> the result type
-     * @param targetClass the class to map the first row to
+     * @param targetClass the class to map the first row to (must not be {@code null})
      * @param query the CQL query to execute
      * @param parameters the positional query parameters
      * @return a future that completes with an {@code Optional} of the first mapped row, or empty
      *         if no row exists
+     * @throws IllegalArgumentException if {@code targetClass} is {@code null} (rejected eagerly at
+     *         the call site)
      */
     @Override
     public <T> ContinuableFuture<Optional<T>> findFirst(final Class<T> targetClass, final String query, final Object... parameters) {
@@ -270,11 +272,13 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * }</pre>
      *
      * @param <V> the value type
-     * @param valueClass the class to convert the single value to
+     * @param valueClass the class to convert the single value to (must not be {@code null})
      * @param query the CQL query to execute
      * @param parameters the positional query parameters
      * @return a future that completes with a {@code Nullable} holding the value (possibly
      *         {@code null}), or empty if no row exists
+     * @throws IllegalArgumentException if {@code valueClass} is {@code null} (rejected eagerly at
+     *         the call site)
      */
     @Override
     public <V> ContinuableFuture<Nullable<V>> queryForSingleValue(final Class<V> valueClass, final String query, final Object... parameters) {
@@ -312,12 +316,14 @@ public final class AsyncCassandraExecutor extends AsyncCassandraExecutorBase<Row
      * }</pre>
      *
      * @param <V> the value type
-     * @param valueClass the class to convert the single value to
+     * @param valueClass the class to convert the single value to (must not be {@code null})
      * @param query the CQL query to execute
      * @param parameters the positional query parameters
      * @return a future that completes with an {@code Optional} of the non-null value, or empty
      *         if no row exists; if a row exists but the value is {@code null}, {@code get()} throws
      *         an {@code ExecutionException} whose cause is a {@link NullPointerException}
+     * @throws IllegalArgumentException if {@code valueClass} is {@code null} (rejected eagerly at
+     *         the call site)
      */
     @Override
     public <V> ContinuableFuture<Optional<V>> queryForSingleNonNull(final Class<V> valueClass, final String query, final Object... parameters) {

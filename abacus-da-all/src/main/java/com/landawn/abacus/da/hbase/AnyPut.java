@@ -40,6 +40,7 @@ import com.landawn.abacus.util.HBaseColumn;
 import com.landawn.abacus.util.N;
 import com.landawn.abacus.util.NamingPolicy;
 import com.landawn.abacus.util.Tuple.Tuple3;
+import com.landawn.abacus.util.cs;
 
 /**
  * A fluent builder wrapper around HBase {@link Put} that simplifies data insertion and updates by
@@ -693,7 +694,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @see NamingPolicy
      */
     public static AnyPut create(final Object entity, final NamingPolicy namingPolicy) {
-        N.checkArgNotNull(entity, "entity");
+        N.checkArgNotNull(entity, cs.entity);
         N.checkArgNotNull(namingPolicy, "namingPolicy");
 
         final BeanInfo entityInfo = ParserUtil.getBeanInfo(entity.getClass());
@@ -843,7 +844,7 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      * @see NamingPolicy
      */
     public static AnyPut create(final Object entity, final Collection<String> selectPropNames, final NamingPolicy namingPolicy) {
-        N.checkArgNotNull(entity, "entity");
+        N.checkArgNotNull(entity, cs.entity);
         N.checkArgNotNull(namingPolicy, "namingPolicy");
 
         if (selectPropNames == null) {
@@ -1316,9 +1317,13 @@ public final class AnyPut extends AnyMutation<AnyPut> {
      *
      * @param cell the Cell to add; must not be null and must have the same row key as this put
      * @return this {@code AnyPut} instance, to allow fluent method chaining
+     * @throws IllegalArgumentException if the cell's family is null or empty
+     * @throws NullPointerException if {@code cell} is {@code null} (this method is a straight
+     *         delegation to {@link Put#add(Cell)}, which dereferences the cell immediately;
+     *         {@link AnyAppend#add(Cell)} differs and reports a {@code null} cell as an
+     *         {@code IllegalArgumentException} because it inspects the cell itself)
      * @throws IOException if the cell's row key does not match this Put's row key (thrown by the
      *         underlying {@link Put#add(Cell)})
-     * @throws IllegalArgumentException if the cell's family is null or empty
      * @see Cell
      * @see Put#add(Cell)
      * @see #addColumn(String, String, Object)

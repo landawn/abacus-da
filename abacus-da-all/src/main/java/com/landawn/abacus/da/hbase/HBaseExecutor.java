@@ -405,9 +405,10 @@ public final class HBaseExecutor {
      * HBaseExecutor.registerRowKeyProperty(AccountWithVersionedColumn.class, "hc1");   // throws IllegalArgumentException
      * }</pre>
      *
-     * @param cls the entity class (must be a JavaBean class) on which to register the row-key property
-     * @param rowKeyPropertyName the name of the property to use as the row key
-     * @throws IllegalArgumentException if {@code cls} has no getter or setter for
+     * @param cls the entity class (must be a JavaBean class) on which to register the row-key property; must not be {@code null}
+     * @param rowKeyPropertyName the name of the property to use as the row key; must not be {@code null}
+     * @throws IllegalArgumentException if {@code cls} or {@code rowKeyPropertyName} is {@code null},
+     *         if {@code cls} has no getter or setter for
      *         {@code rowKeyPropertyName}, or if the property's declared type is
      *         {@link HBaseColumn} (directly, as the single type-arg of a generic such as
      *         {@code Collection<HBaseColumn>}, or as the value type of a two-arg generic
@@ -417,6 +418,9 @@ public final class HBaseExecutor {
      */
     @Deprecated
     public static void registerRowKeyProperty(final Class<?> cls, final String rowKeyPropertyName) {
+        N.checkArgNotNull(cls, cs.cls);
+        N.checkArgNotNull(rowKeyPropertyName, "rowKeyPropertyName");
+
         if (Beans.getPropGetter(cls, rowKeyPropertyName) == null || Beans.getPropSetter(cls, rowKeyPropertyName) == null) {
             throw new IllegalArgumentException("The specified class: " + ClassUtil.getCanonicalClassName(cls)
                     + " doesn't have getter or setter method for the specified row key property: " + rowKeyPropertyName);
@@ -622,16 +626,21 @@ public final class HBaseExecutor {
      *     List<User> users = HBaseExecutor.toList(scanner, User.class);  // scanner is closed inside toList
      * }
      *
-     * // A null scanner is dereferenced once iteration begins -> NullPointerException
+     * // A null scanner is dereferenced while draining -> NullPointerException
      * HBaseExecutor.toList((ResultScanner) null, User.class);       // throws NullPointerException
+     *
+     * // A null target type is rejected before the scanner is read
+     * HBaseExecutor.toList((ResultScanner) null, (Class<User>) null);   // throws IllegalArgumentException
      * }</pre>
      *
      * @param <T> the target type for conversion
-     * @param resultScanner the HBase result scanner to drain
+     * @param resultScanner the HBase result scanner to drain; must not be {@code null}
      * @param targetType the target class — a JavaBean class or a single-value type
-     *                    (e.g. {@code String}, {@code Integer}, {@code Date})
+     *                    (e.g. {@code String}, {@code Integer}, {@code Date}); must not be {@code null}
      * @return a list of converted objects; empty results, including cursor-only progress
      *         notifications, are skipped
+     * @throws IllegalArgumentException if {@code targetType} is {@code null}
+     * @throws NullPointerException if {@code resultScanner} is {@code null}
      * @throws UncheckedIOException if reading from {@code resultScanner} fails with an {@link IOException}
      * @see #toList(ResultScanner, int, int, Class)
      */
@@ -665,13 +674,17 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param <T> the target type for conversion
-     * @param resultScanner the HBase result scanner to process
+     * @param resultScanner the HBase result scanner to process; must not be {@code null} unless both
+     *                    {@code offset} and {@code count} are zero
      * @param offset the number of data-bearing results to skip from the beginning; must be non-negative
      * @param count the maximum number of data-bearing results to convert; must be non-negative
      * @param targetType the target class — a JavaBean class or a single-value type
-     *                    (e.g. {@code String}, {@code Integer}, {@code Date})
+     *                    (e.g. {@code String}, {@code Integer}, {@code Date}); must not be {@code null}
      * @return a list of converted objects from the requested window
-     * @throws IllegalArgumentException if {@code offset} or {@code count} is negative
+     * @throws IllegalArgumentException if {@code offset} or {@code count} is negative, or if
+     *         {@code targetType} is {@code null}
+     * @throws NullPointerException if {@code resultScanner} is {@code null} and at least one result
+     *         would be read from it (that is, unless both {@code offset} and {@code count} are zero)
      * @throws UncheckedIOException if reading from {@code resultScanner} fails with an {@link IOException}
      */
     public static <T> List<T> toList(final ResultScanner resultScanner, int offset, int count, final Class<T> targetType) {
@@ -793,13 +806,15 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param <T> the target type
-     * @param result the HBase Result to convert
+     * @param result the HBase Result to convert; must not be {@code null}
      * @param targetType the target class — a JavaBean class with getter/setter methods or a
      *                    single-value type (e.g. {@code String}, {@code Integer}, {@code Date}).
-     *                    {@link Map} types are not supported.
+     *                    {@link Map} types are not supported. Must not be {@code null}.
      * @return the converted entity, or the type's default value if the result is empty
-     * @throws IllegalArgumentException if {@code targetType} is a {@link Map} type, or if the
-     *         result has more than one cell when {@code targetType} is a single-value type
+     * @throws IllegalArgumentException if {@code targetType} is {@code null} or is a {@link Map}
+     *         type, or if the result has more than one cell when {@code targetType} is a
+     *         single-value type
+     * @throws NullPointerException if {@code result} is {@code null}
      * @throws UncheckedIOException if reading cells from {@code result} fails with an {@link IOException}
      * @see Result
      */
@@ -816,12 +831,13 @@ public final class HBaseExecutor {
      * {@link UncheckedIOException}.</p>
      *
      * @param <T> the target type for conversion
-     * @param result the HBase Result to convert
+     * @param result the HBase Result to convert; must not be {@code null}
      * @param targetType the target class — a JavaBean class or a single-value type
-     *                    (e.g. {@code String}, {@code Integer}, {@code Date})
+     *                    (e.g. {@code String}, {@code Integer}, {@code Date}); must not be {@code null}
      * @return the converted entity, or the type's default value if the result is empty
-     * @throws IllegalArgumentException if {@code targetType} is a {@link Map} type, or if the result
-     *         has more than one cell when {@code targetType} is a single-value type
+     * @throws IllegalArgumentException if {@code targetType} is {@code null} or is a {@link Map} type,
+     *         or if the result has more than one cell when {@code targetType} is a single-value type
+     * @throws NullPointerException if {@code result} is {@code null}
      * @throws UncheckedIOException if reading cells from {@code result} fails with an {@link IOException}
      */
     static <T> T toValue(final Result result, final Class<T> targetType) {
@@ -1275,7 +1291,11 @@ public final class HBaseExecutor {
         return t -> toValue(t, targetType);
     }
 
+    // Guard here rather than in each scan(..., Class) overload: the returned Stream is lazy, so an
+    // unchecked targetType would only fail when the first row is pulled, far from the call site.
     private static <T> Stream<T> mapResults(final Stream<Result> results, final Class<T> targetType) {
+        N.checkArgNotNull(targetType, cs.targetType);
+
         return results.filter(result -> !result.isEmpty()).map(createRowMapper(targetType));
     }
 
@@ -1400,14 +1420,17 @@ public final class HBaseExecutor {
      *
      * @param <T> the entity type
      * @param <K> the row key type
-     * @param targetEntityClass an entity class carrying a {@code @Table} annotation
+     * @param targetEntityClass an entity class carrying a {@code @Table} annotation; must not be {@code null}
      * @return a cached typed mapper for the specified entity class
-     * @throws IllegalArgumentException if {@code targetEntityClass} has no {@code @Table}
-     *         annotation, has no {@code @Id} property, or has more than one {@code @Id} property
+     * @throws IllegalArgumentException if {@code targetEntityClass} is {@code null}, has no
+     *         {@code @Table} annotation, has no {@code @Id} property, or has more than one
+     *         {@code @Id} property
      * @see HBaseMapper
      * @see #mapper(Class, String, NamingPolicy)
      */
     public <T, K> HBaseMapper<T, K> mapper(final Class<T> targetEntityClass) {
+        N.checkArgNotNull(targetEntityClass, "targetEntityClass");
+
         @SuppressWarnings("rawtypes")
         HBaseMapper mapper = mapperPool.get(targetEntityClass);
 
@@ -1450,12 +1473,13 @@ public final class HBaseExecutor {
      *
      * @param <T> the entity type
      * @param <K> the row key type
-     * @param targetEntityClass the entity class to map (must be a JavaBean class with one {@code @Id} property)
-     * @param tableName the HBase table name to bind the mapper to; must not be empty
+     * @param targetEntityClass the entity class to map (must be a JavaBean class with one {@code @Id} property); must not be {@code null}
+     * @param tableName the HBase table name to bind the mapper to; must not be {@code null} or empty
      * @param namingPolicy the naming policy for column name conversion; {@code null} maps to {@link NamingPolicy#CAMEL_CASE}
      * @return a configured (non-cached) typed mapper for the specified entity class and table
-     * @throws IllegalArgumentException if {@code targetEntityClass} is not a bean class, has no
-     *         {@code @Id} property, or has more than one {@code @Id} property; or if {@code tableName} is empty
+     * @throws IllegalArgumentException if {@code targetEntityClass} is {@code null} or is not a bean
+     *         class, has no {@code @Id} property, or has more than one {@code @Id} property; or if
+     *         {@code tableName} is {@code null} or empty
      * @see NamingPolicy
      * @see HBaseMapper
      */
@@ -1575,13 +1599,16 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param anyGet the AnyGet operation to test for existence
+     * @param anyGet the AnyGet operation to test for existence; must not be {@code null}
      * @return {@code true} if the Get operation would return results, {@code false} otherwise
+     * @throws IllegalArgumentException if {@code anyGet} is {@code null}
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see AnyGet
      * @see #exists(String, Get)
      */
     public boolean exists(final String tableName, final AnyGet anyGet) throws UncheckedIOException {
+        N.checkArgNotNull(anyGet, "anyGet");
+
         return exists(tableName, anyGet.val());
     }
 
@@ -1602,8 +1629,10 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param anyGets the collection of AnyGet operations to test for existence
+     * @param anyGets the collection of AnyGet operations to test for existence; must not be
+     *        {@code null} and must not contain {@code null} elements
      * @return a list of Boolean values corresponding to each AnyGet operation
+     * @throws IllegalArgumentException if {@code anyGets} is {@code null} or contains a {@code null} element
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see AnyGet
      * @see #exists(String, List)
@@ -1723,13 +1752,16 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param anyGet the AnyGet operation specifying what data to retrieve
+     * @param anyGet the AnyGet operation specifying what data to retrieve; must not be {@code null}
      * @return the HBase Result containing the retrieved data, or a present-but-{@linkplain Result#isEmpty() empty} Result if the row does not exist
+     * @throws IllegalArgumentException if {@code anyGet} is {@code null}
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see AnyGet
      * @see #get(String, Get)
      */
     public Result get(final String tableName, final AnyGet anyGet) throws UncheckedIOException {
+        N.checkArgNotNull(anyGet, "anyGet");
+
         return get(tableName, anyGet.val());
     }
 
@@ -1750,9 +1782,11 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param anyGets the collection of AnyGet operations to execute
+     * @param anyGets the collection of AnyGet operations to execute; must not be {@code null} and
+     *        must not contain {@code null} elements
      * @return a list of Results positionally aligned with {@code anyGets}; entries for rows that
      *         do not exist are present in the list but are {@linkplain Result#isEmpty() empty}
+     * @throws IllegalArgumentException if {@code anyGets} is {@code null} or contains a {@code null} element
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see AnyGet
      * @see #get(String, List)
@@ -1861,9 +1895,10 @@ public final class HBaseExecutor {
      *
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table
-     * @param anyGet the AnyGet operation specifying what data to retrieve
-     * @param targetType the class to convert the result to
+     * @param anyGet the AnyGet operation specifying what data to retrieve; must not be {@code null}
+     * @param targetType the class to convert the result to; must not be {@code null}
      * @return the converted object of the specified type
+     * @throws IllegalArgumentException if {@code anyGet} or {@code targetType} is {@code null}
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see AnyGet
      * @see #get(String, Get, Class)
@@ -1890,11 +1925,14 @@ public final class HBaseExecutor {
      *
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table
-     * @param anyGets the collection of AnyGet operations to execute
-     * @param targetType the class to convert each result to
+     * @param anyGets the collection of AnyGet operations to execute; must not be {@code null} and
+     *        must not contain {@code null} elements
+     * @param targetType the class to convert each result to; must not be {@code null}
      * @return a list of converted objects of the specified type. Empty results (rows that
      *         did not exist) are skipped, so the returned list may contain fewer elements
      *         than {@code anyGets} and does not necessarily correspond positionally to it.
+     * @throws IllegalArgumentException if {@code anyGets} is {@code null} or contains a
+     *         {@code null} element, or if {@code targetType} is {@code null}
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see AnyGet
      * @see #get(String, List, Class)
@@ -1922,6 +1960,7 @@ public final class HBaseExecutor {
      * @param tableName the name of the HBase table to scan
      * @param family the name of the column family to scan
      * @return a lazy stream of HBase Results from the scan operation
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}
      * @see #scan(String, Scan)
      */
     public Stream<Result> scan(final String tableName, final String family) {
@@ -1946,6 +1985,7 @@ public final class HBaseExecutor {
      * @param family the name of the column family
      * @param qualifier the column qualifier
      * @return a lazy stream of HBase Results from the scan operation
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}
      * @see #scan(String, Scan)
      */
     public Stream<Result> scan(final String tableName, final String family, final String qualifier) {
@@ -1967,6 +2007,7 @@ public final class HBaseExecutor {
      * @param tableName the name of the HBase table to scan
      * @param family the column family as a byte array
      * @return a lazy stream of HBase Results from the scan operation
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}
      * @see #scan(String, Scan)
      */
     public Stream<Result> scan(final String tableName, final byte[] family) {
@@ -1990,6 +2031,7 @@ public final class HBaseExecutor {
      * @param family the column family as a byte array
      * @param qualifier the column qualifier as a byte array
      * @return a lazy stream of HBase Results from the scan operation
+     * @throws IllegalArgumentException if {@code tableName} is {@code null}
      * @see #scan(String, Scan)
      */
     public Stream<Result> scan(final String tableName, final byte[] family, final byte[] qualifier) {
@@ -2015,12 +2057,15 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table to scan
-     * @param anyScan the AnyScan operation defining the scan parameters
+     * @param anyScan the AnyScan operation defining the scan parameters; must not be {@code null}
      * @return a lazy stream of HBase Results from the scan operation
+     * @throws IllegalArgumentException if {@code tableName} or {@code anyScan} is {@code null}
      * @see AnyScan
      * @see #scan(String, Scan)
      */
     public Stream<Result> scan(final String tableName, final AnyScan anyScan) {
+        N.checkArgNotNull(anyScan, "anyScan");
+
         return scan(tableName, anyScan.val());
     }
 
@@ -2134,8 +2179,9 @@ public final class HBaseExecutor {
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to scan
      * @param family the name of the column family to scan
-     * @param targetType the class to convert each result to
+     * @param targetType the class to convert each result to; must not be {@code null}
      * @return a lazy stream of converted objects
+     * @throws IllegalArgumentException if {@code tableName} or {@code targetType} is {@code null}
      * @see #scan(String, String)
      */
     public <T> Stream<T> scan(final String tableName, final String family, final Class<T> targetType) {
@@ -2160,8 +2206,9 @@ public final class HBaseExecutor {
      * @param tableName the name of the HBase table to scan
      * @param family the name of the column family
      * @param qualifier the column qualifier
-     * @param targetType the class to convert each result to
+     * @param targetType the class to convert each result to; must not be {@code null}
      * @return a lazy stream of converted objects
+     * @throws IllegalArgumentException if {@code tableName} or {@code targetType} is {@code null}
      * @see #scan(String, String, String)
      */
     public <T> Stream<T> scan(final String tableName, final String family, final String qualifier, final Class<T> targetType) {
@@ -2184,8 +2231,9 @@ public final class HBaseExecutor {
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to scan
      * @param family the column family as a byte array
-     * @param targetType the class to convert each result to
+     * @param targetType the class to convert each result to; must not be {@code null}
      * @return a lazy stream of converted objects
+     * @throws IllegalArgumentException if {@code tableName} or {@code targetType} is {@code null}
      * @see #scan(String, byte[])
      */
     public <T> Stream<T> scan(final String tableName, final byte[] family, final Class<T> targetType) {
@@ -2210,8 +2258,9 @@ public final class HBaseExecutor {
      * @param tableName the name of the HBase table to scan
      * @param family the column family as a byte array
      * @param qualifier the column qualifier as a byte array
-     * @param targetType the class to convert each result to
+     * @param targetType the class to convert each result to; must not be {@code null}
      * @return a lazy stream of converted objects
+     * @throws IllegalArgumentException if {@code tableName} or {@code targetType} is {@code null}
      * @see #scan(String, byte[], byte[])
      */
     public <T> Stream<T> scan(final String tableName, final byte[] family, final byte[] qualifier, final Class<T> targetType) {
@@ -2239,9 +2288,11 @@ public final class HBaseExecutor {
      *
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to scan
-     * @param anyScan the AnyScan operation defining the scan parameters
-     * @param targetType the class to convert each result to
+     * @param anyScan the AnyScan operation defining the scan parameters; must not be {@code null}
+     * @param targetType the class to convert each result to; must not be {@code null}
      * @return a lazy stream of converted objects
+     * @throws IllegalArgumentException if {@code tableName}, {@code anyScan} or {@code targetType}
+     *         is {@code null}
      * @see AnyScan
      * @see #scan(String, AnyScan)
      */
@@ -2274,9 +2325,11 @@ public final class HBaseExecutor {
      *
      * @param <T> the target type for conversion
      * @param tableName the name of the HBase table to scan
-     * @param scan the Scan operation defining the scan parameters
-     * @param targetType the class to convert each result to
+     * @param scan the Scan operation defining the scan parameters; must not be {@code null}
+     * @param targetType the class to convert each result to; must not be {@code null}
      * @return a lazy stream of converted objects
+     * @throws IllegalArgumentException if {@code tableName}, {@code scan} or {@code targetType}
+     *         is {@code null}
      * @see Scan
      * @see #scan(String, Scan)
      */
@@ -2373,12 +2426,15 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param anyPut the AnyPut operation containing the data to store
+     * @param anyPut the AnyPut operation containing the data to store; must not be {@code null}
+     * @throws IllegalArgumentException if {@code anyPut} is {@code null}
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see AnyPut
      * @see #put(String, Put)
      */
     public void put(final String tableName, final AnyPut anyPut) throws UncheckedIOException {
+        N.checkArgNotNull(anyPut, "anyPut");
+
         put(tableName, anyPut.val());
     }
 
@@ -2399,12 +2455,16 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param anyPuts the collection of AnyPut operations to execute
+     * @param anyPuts the collection of AnyPut operations to execute; must not be {@code null} and
+     *        must not contain {@code null} elements
+     * @throws IllegalArgumentException if {@code anyPuts} is {@code null} or contains a {@code null} element
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see AnyPut
      * @see #put(String, List)
      */
     public void put(final String tableName, final Collection<AnyPut> anyPuts) throws UncheckedIOException {
+        N.checkArgNotNull(anyPuts, "anyPuts");
+
         put(tableName, AnyPut.toPut(anyPuts));
     }
 
@@ -2514,12 +2574,15 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param anyDelete the AnyDelete operation specifying what data to remove
+     * @param anyDelete the AnyDelete operation specifying what data to remove; must not be {@code null}
+     * @throws IllegalArgumentException if {@code anyDelete} is {@code null}
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see AnyDelete
      * @see #delete(String, Delete)
      */
     public void delete(final String tableName, final AnyDelete anyDelete) throws UncheckedIOException {
+        N.checkArgNotNull(anyDelete, "anyDelete");
+
         delete(tableName, anyDelete.val());
     }
 
@@ -2539,7 +2602,9 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param anyDeletes the collection of AnyDelete operations to execute
+     * @param anyDeletes the collection of AnyDelete operations to execute; must not be {@code null}
+     *        and must not contain {@code null} elements
+     * @throws IllegalArgumentException if {@code anyDeletes} is {@code null} or contains a {@code null} element
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see AnyDelete
      * @see #delete(String, List)
@@ -2565,12 +2630,15 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param rm the AnyRowMutations containing the atomic mutations to perform
+     * @param rm the AnyRowMutations containing the atomic mutations to perform; must not be {@code null}
+     * @throws IllegalArgumentException if {@code rm} is {@code null}
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see AnyRowMutations
      * @see #mutateRow(String, RowMutations)
      */
     public void mutateRow(final String tableName, final AnyRowMutations rm) throws UncheckedIOException {
+        N.checkArgNotNull(rm, "rm");
+
         mutateRow(tableName, rm.val());
     }
 
@@ -2620,14 +2688,17 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param append the AnyAppend operation specifying the values to append
+     * @param append the AnyAppend operation specifying the values to append; must not be {@code null}
      * @return the post-append values when return-results is enabled; HBase may return
      *         {@code null} when {@link Append#setReturnResults(boolean)} is set to {@code false}
+     * @throws IllegalArgumentException if {@code append} is {@code null}
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see AnyAppend
      * @see #append(String, Append)
      */
     public Result append(final String tableName, final AnyAppend append) throws UncheckedIOException {
+        N.checkArgNotNull(append, "append");
+
         return append(tableName, append.val());
     }
 
@@ -2680,14 +2751,17 @@ public final class HBaseExecutor {
      * }</pre>
      *
      * @param tableName the name of the HBase table
-     * @param increment the AnyIncrement operation specifying the values to increment
+     * @param increment the AnyIncrement operation specifying the values to increment; must not be {@code null}
      * @return the post-increment values when return-results is enabled; callers that set
      *         {@link Increment#setReturnResults(boolean)} to {@code false} must not rely on returned values
+     * @throws IllegalArgumentException if {@code increment} is {@code null}
      * @throws UncheckedIOException if an I/O error occurs during the operation
      * @see AnyIncrement
      * @see #increment(String, Increment)
      */
     public Result increment(final String tableName, final AnyIncrement increment) throws UncheckedIOException {
+        N.checkArgNotNull(increment, cs.increment);
+
         return increment(tableName, increment.val());
     }
 
@@ -3407,7 +3481,8 @@ public final class HBaseExecutor {
          * List<Boolean> empty = mapper.exists(N.<String> emptyList());   // returns [] (empty list)
          * }</pre>
          *
-         * @param rowKeys the collection of row keys to check
+         * @param rowKeys the collection of row keys to check; {@code null} is treated as an empty
+         *        collection and yields an empty list
          * @return a list of Boolean values corresponding to each row key, where {@code true}
          *         indicates the entity exists
          * @throws UncheckedIOException if an I/O error occurs during the operation
@@ -3451,7 +3526,8 @@ public final class HBaseExecutor {
          * List<User> empty = mapper.get(N.<String> emptyList());   // returns [] (empty list)
          * }</pre>
          *
-         * @param rowKeys the collection of row keys to retrieve
+         * @param rowKeys the collection of row keys to retrieve; {@code null} is treated as an empty
+         *        collection and yields an empty list
          * @return a list of entity objects for the row keys that were found
          * @throws UncheckedIOException if an I/O error occurs during the operation
          */
@@ -3476,7 +3552,9 @@ public final class HBaseExecutor {
          * mapper.put(user);   // void; row keyed by user.getId() is stored
          * }</pre>
          *
-         * @param entityToPut the entity to store
+         * @param entityToPut the entity to store; must not be {@code null}
+         * @throws IllegalArgumentException if {@code entityToPut} is {@code null}, or if it has no
+         *         row-key property or a {@code null} row-key value
          * @throws UncheckedIOException if an I/O error occurs during the operation
          */
         public void put(final T entityToPut) throws UncheckedIOException {
@@ -3496,7 +3574,10 @@ public final class HBaseExecutor {
          * mapper.put(N.<User> emptyList());   // void; no-op
          * }</pre>
          *
-         * @param entitiesToPut the collection of entities to store
+         * @param entitiesToPut the collection of entities to store; must not be {@code null} and
+         *        must not contain {@code null} elements
+         * @throws IllegalArgumentException if {@code entitiesToPut} is {@code null} or contains a
+         *         {@code null} element
          * @throws UncheckedIOException if an I/O error occurs during the operation
          */
         public void put(final Collection<? extends T> entitiesToPut) throws UncheckedIOException {
@@ -3516,7 +3597,8 @@ public final class HBaseExecutor {
          * }
          * }</pre>
          *
-         * @param entityToDelete the entity to delete
+         * @param entityToDelete the entity to delete; must not be {@code null}
+         * @throws IllegalArgumentException if {@code entityToDelete} is {@code null}
          * @throws UncheckedIOException if an I/O error occurs during the operation
          */
         @SuppressWarnings("unchecked")
@@ -3533,7 +3615,9 @@ public final class HBaseExecutor {
          * mapper.delete(users);   // void; the row of every entity is removed
          * }</pre>
          *
-         * @param entitiesToDelete the collection of entities to delete
+         * @param entitiesToDelete the collection of entities to delete; {@code null} is treated as an
+         *        empty collection and is a no-op
+         * @throws IllegalArgumentException if any element of {@code entitiesToDelete} is {@code null}
          * @throws UncheckedIOException if an I/O error occurs during the operation
          */
         @SuppressWarnings("unchecked")
@@ -3566,7 +3650,8 @@ public final class HBaseExecutor {
          * mapper.deleteByRowKey(N.<String> emptyList());   // void; no-op
          * }</pre>
          *
-         * @param rowKeys the collection of row keys to delete
+         * @param rowKeys the collection of row keys to delete; {@code null} is treated as an empty
+         *        collection and is a no-op
          * @throws UncheckedIOException if an I/O error occurs during the operation
          */
         public void deleteByRowKey(final Collection<? extends K> rowKeys) throws UncheckedIOException {
@@ -3583,12 +3668,15 @@ public final class HBaseExecutor {
          * boolean hasEmail = mapper.exists(AnyGet.of("user123").addColumn("info", "email"));
          * }</pre>
          *
-         * @param anyGet the AnyGet operation specifying what to check
+         * @param anyGet the AnyGet operation specifying what to check; must not be {@code null}
          * @return {@code true} if the data exists, {@code false} otherwise
+         * @throws IllegalArgumentException if {@code anyGet} is {@code null}
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @see AnyGet
          */
         public boolean exists(final AnyGet anyGet) throws UncheckedIOException {
+            N.checkArgNotNull(anyGet, "anyGet");
+
             return hbaseExecutor.exists(tableName, anyGet.val());
         }
 
@@ -3602,8 +3690,10 @@ public final class HBaseExecutor {
          * // flags is positionally aligned with the input list
          * }</pre>
          *
-         * @param anyGets the list of AnyGet operations to check
+         * @param anyGets the list of AnyGet operations to check; must not be {@code null} and must
+         *        not contain {@code null} elements
          * @return a list of Boolean values corresponding to each AnyGet operation
+         * @throws IllegalArgumentException if {@code anyGets} is {@code null} or contains a {@code null} element
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @see AnyGet
          */
@@ -3620,9 +3710,10 @@ public final class HBaseExecutor {
          * User user = mapper.get(AnyGet.of("user123").readVersions(1000));   // null if the row is missing
          * }</pre>
          *
-         * @param anyGet the AnyGet operation specifying what to retrieve
+         * @param anyGet the AnyGet operation specifying what to retrieve; must not be {@code null}
          * @return the entity object, or the type's default value (typically {@code null} for bean classes)
          *         when no row matches
+         * @throws IllegalArgumentException if {@code anyGet} is {@code null}
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @see AnyGet
          */
@@ -3644,8 +3735,10 @@ public final class HBaseExecutor {
          * // users contains only the rows that were found
          * }</pre>
          *
-         * @param anyGets the list of AnyGet operations to execute
+         * @param anyGets the list of AnyGet operations to execute; must not be {@code null} and must
+         *        not contain {@code null} elements
          * @return a list of entity objects for the operations whose rows were found
+         * @throws IllegalArgumentException if {@code anyGets} is {@code null} or contains a {@code null} element
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @see AnyGet
          */
@@ -3740,8 +3833,9 @@ public final class HBaseExecutor {
          * }
          * }</pre>
          *
-         * @param anyScan the AnyScan operation defining the scan parameters
+         * @param anyScan the AnyScan operation defining the scan parameters; must not be {@code null}
          * @return a lazy stream of entity objects
+         * @throws IllegalArgumentException if {@code anyScan} is {@code null}
          * @see AnyScan
          * @see Stream
          */
@@ -3757,7 +3851,8 @@ public final class HBaseExecutor {
          * mapper.put(AnyPut.of("user123").addColumn("info", "name", "John"));   // void
          * }</pre>
          *
-         * @param anyPut the AnyPut operation containing the data to store
+         * @param anyPut the AnyPut operation containing the data to store; must not be {@code null}
+         * @throws IllegalArgumentException if {@code anyPut} is {@code null}
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @see AnyPut
          */
@@ -3775,7 +3870,9 @@ public final class HBaseExecutor {
          *         AnyPut.of("user456").addColumn("info", "name", "Jane")));   // void
          * }</pre>
          *
-         * @param anyPuts the list of AnyPut operations to execute
+         * @param anyPuts the list of AnyPut operations to execute; must not be {@code null} and must
+         *        not contain {@code null} elements
+         * @throws IllegalArgumentException if {@code anyPuts} is {@code null} or contains a {@code null} element
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @see AnyPut
          */
@@ -3792,7 +3889,8 @@ public final class HBaseExecutor {
          * mapper.delete(AnyDelete.of("user123").addColumn("info", "email"));   // void
          * }</pre>
          *
-         * @param anyDelete the AnyDelete operation specifying what to delete
+         * @param anyDelete the AnyDelete operation specifying what to delete; must not be {@code null}
+         * @throws IllegalArgumentException if {@code anyDelete} is {@code null}
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @see AnyDelete
          */
@@ -3809,7 +3907,9 @@ public final class HBaseExecutor {
          *         AnyDelete.of("user123"), AnyDelete.of("user456")));   // void; both rows removed
          * }</pre>
          *
-         * @param anyDeletes the list of AnyDelete operations to execute
+         * @param anyDeletes the list of AnyDelete operations to execute; must not be {@code null} and
+         *        must not contain {@code null} elements
+         * @throws IllegalArgumentException if {@code anyDeletes} is {@code null} or contains a {@code null} element
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @see AnyDelete
          */
@@ -3829,7 +3929,8 @@ public final class HBaseExecutor {
          * mapper.mutateRow(rm);                                                                               // void; mutations applied atomically
          * }</pre>
          *
-         * @param rm the AnyRowMutations containing the mutations to perform
+         * @param rm the AnyRowMutations containing the mutations to perform; must not be {@code null}
+         * @throws IllegalArgumentException if {@code rm} is {@code null}
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @see AnyRowMutations
          */
@@ -3848,9 +3949,10 @@ public final class HBaseExecutor {
          * // With the default return-results setting, result holds the post-append values.
          * }</pre>
          *
-         * @param append the AnyAppend operation specifying the values to append
+         * @param append the AnyAppend operation specifying the values to append; must not be {@code null}
          * @return the post-append values when return-results is enabled; HBase may return
          *         {@code null} when {@link Append#setReturnResults(boolean)} is set to {@code false}
+         * @throws IllegalArgumentException if {@code append} is {@code null}
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @see AnyAppend
          */
@@ -3869,9 +3971,10 @@ public final class HBaseExecutor {
          * // With the default return-results setting, result holds the post-increment values.
          * }</pre>
          *
-         * @param increment the AnyIncrement operation specifying the values to increment
+         * @param increment the AnyIncrement operation specifying the values to increment; must not be {@code null}
          * @return the post-increment values when return-results is enabled; callers that set
          *         {@link Increment#setReturnResults(boolean)} to {@code false} must not rely on returned values
+         * @throws IllegalArgumentException if {@code increment} is {@code null}
          * @throws UncheckedIOException if an I/O error occurs during the operation
          * @see AnyIncrement
          */
